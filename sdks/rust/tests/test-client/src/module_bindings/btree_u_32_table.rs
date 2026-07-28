@@ -18,6 +18,18 @@ pub struct BtreeU32TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `btree_u_32`.
+pub struct BtreeU32TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for BtreeU32TableAccessor {
+    type Row = BTreeU32;
+    type Handle<'db> = BtreeU32TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.btree_u_32()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `btree_u_32`.
 ///

@@ -19,6 +19,18 @@ pub struct ResultSimpleEnumI32TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `result_simple_enum_i_32`.
+pub struct ResultSimpleEnumI32TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ResultSimpleEnumI32TableAccessor {
+    type Row = ResultSimpleEnumI32;
+    type Handle<'db> = ResultSimpleEnumI32TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.result_simple_enum_i_32()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `result_simple_enum_i_32`.
 ///

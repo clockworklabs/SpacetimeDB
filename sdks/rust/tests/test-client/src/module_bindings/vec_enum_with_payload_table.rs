@@ -19,6 +19,18 @@ pub struct VecEnumWithPayloadTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `vec_enum_with_payload`.
+pub struct VecEnumWithPayloadTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for VecEnumWithPayloadTableAccessor {
+    type Row = VecEnumWithPayload;
+    type Handle<'db> = VecEnumWithPayloadTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.vec_enum_with_payload()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `vec_enum_with_payload`.
 ///

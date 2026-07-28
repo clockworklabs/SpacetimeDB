@@ -1,13 +1,12 @@
 use crossbeam_queue::ArrayQueue;
 use itertools::Itertools;
 use spacetimedb_paths::server::{ConfigToml, LogsDir};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::time::Duration;
 use tracing_appender::rolling;
 use tracing_core::LevelFilter;
 use tracing_flame::FlameLayer;
-use tracing_subscriber::fmt::writer::BoxMakeWriter;
-use tracing_subscriber::fmt::writer::MakeWriterExt;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{reload, EnvFilter};
@@ -58,20 +57,27 @@ pub fn configure_tracing(opts: TracingOptions) {
         .with_target(false)
         .compact();
 
-    let write_to = if let Some(logs_dir) = opts.disk_logging {
+    let use_ansi = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty());
+
+    let file_fmt_layer = if let Some(logs_dir) = opts.disk_logging {
         let roller = rolling::Builder::new()
             .filename_prefix(LogsDir::filename_prefix(&opts.edition))
             .filename_suffix(LogsDir::filename_extension())
             .build(logs_dir)
             .unwrap();
-        // TODO: syslog?
-        BoxMakeWriter::new(std::io::stdout.and(roller))
+        Some(
+            tracing_subscriber::fmt::Layer::default()
+                .with_ansi(false)
+                .with_writer(roller)
+                .event_format(format.clone()),
+        )
     } else {
-        BoxMakeWriter::new(std::io::stdout)
+        None
     };
 
     let fmt_layer = tracing_subscriber::fmt::Layer::default()
-        .with_writer(write_to)
+        .with_ansi(use_ansi)
+        .with_writer(std::io::stdout)
         .event_format(format);
 
     let env_filter_layer = conf_to_filter(opts.config);
@@ -94,6 +100,7 @@ pub fn configure_tracing(opts: TracingOptions) {
     let subscriber = tracing_subscriber::Registry::default()
         .with(tracy_layer)
         .with(fmt_layer)
+        .with(file_fmt_layer)
         .with(flame_layer);
 
     if let Some(conf_file) = opts.reload_config {

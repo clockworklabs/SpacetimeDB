@@ -18,6 +18,18 @@ pub struct SenderLeftViewTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `sender_left_view`.
+pub struct SenderLeftViewTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for SenderLeftViewTableAccessor {
+    type Row = LeftSource;
+    type Handle<'db> = SenderLeftViewTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.sender_left_view()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `sender_left_view`.
 ///

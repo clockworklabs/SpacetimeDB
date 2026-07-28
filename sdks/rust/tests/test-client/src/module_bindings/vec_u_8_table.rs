@@ -18,6 +18,18 @@ pub struct VecU8TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `vec_u_8`.
+pub struct VecU8TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for VecU8TableAccessor {
+    type Row = VecU8;
+    type Handle<'db> = VecU8TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.vec_u_8()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `vec_u_8`.
 ///

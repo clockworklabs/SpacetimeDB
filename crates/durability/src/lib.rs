@@ -1,4 +1,4 @@
-use std::{iter, marker::PhantomData, sync::Arc};
+use std::{io, iter, marker::PhantomData, sync::Arc};
 
 use futures::future::BoxFuture;
 use thiserror::Error;
@@ -190,17 +190,17 @@ pub trait History {
     fn fold_transactions_from<D>(&self, offset: TxOffset, decoder: D) -> Result<(), D::Error>
     where
         D: Decoder,
-        D::Error: From<error::Traversal>;
+        D::Error: From<error::Traversal> + From<io::Error>;
 
     /// Obtain an iterator over the history of transactions, starting from `offset`.
     fn transactions_from<'a, D>(
-        &self,
+        &'a self,
         offset: TxOffset,
         decoder: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<Self::TxData>, D::Error>>
+    ) -> impl Iterator<Item = Result<Transaction<Self::TxData>, D::Error>> + 'a
     where
         D: Decoder<Record = Self::TxData>,
-        D::Error: From<error::Traversal>,
+        D::Error: From<error::Traversal> + From<io::Error>,
         Self::TxData: 'a;
 
     /// Get the maximum transaction offset contained in this history.
@@ -224,19 +224,19 @@ impl<T: History> History for Arc<T> {
     fn fold_transactions_from<D>(&self, offset: TxOffset, decoder: D) -> Result<(), D::Error>
     where
         D: Decoder,
-        D::Error: From<error::Traversal>,
+        D::Error: From<error::Traversal> + From<io::Error>,
     {
         (**self).fold_transactions_from(offset, decoder)
     }
 
     fn transactions_from<'a, D>(
-        &self,
+        &'a self,
         offset: TxOffset,
         decoder: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<Self::TxData>, D::Error>>
+    ) -> impl Iterator<Item = Result<Transaction<Self::TxData>, D::Error>> + 'a
     where
         D: Decoder<Record = Self::TxData>,
-        D::Error: From<error::Traversal>,
+        D::Error: From<error::Traversal> + From<io::Error>,
         Self::TxData: 'a,
     {
         (**self).transactions_from(offset, decoder)
@@ -273,7 +273,7 @@ impl<T> History for EmptyHistory<T> {
         &self,
         _offset: TxOffset,
         _decoder: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<Self::TxData>, D::Error>>
+    ) -> impl Iterator<Item = Result<Transaction<Self::TxData>, D::Error>> + 'a
     where
         D: Decoder<Record = Self::TxData>,
         D::Error: From<error::Traversal>,

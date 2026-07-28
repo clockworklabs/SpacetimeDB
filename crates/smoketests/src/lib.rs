@@ -1111,6 +1111,10 @@ impl Smoketest {
     pub fn spacetime_cmd(&self, args: &[&str]) -> Output {
         let start = Instant::now();
         let cli_path = self.cli_path();
+
+        let cmd_name = args.first().unwrap_or(&"unknown");
+        eprintln!("[TIMING] spacetime {cmd_name}: starting at {start:?}");
+
         let output = Command::new(&cli_path)
             .arg("--config-path")
             .arg(&self.config_path)
@@ -1119,8 +1123,8 @@ impl Smoketest {
             .output()
             .expect("Failed to execute spacetime command");
 
-        let cmd_name = args.first().unwrap_or(&"unknown");
-        eprintln!("[TIMING] spacetime {}: {:?}", cmd_name, start.elapsed());
+        eprintln!("[TIMING] spacetime {}: completed in {:?}", cmd_name, start.elapsed());
+
         output
     }
 
@@ -1261,6 +1265,8 @@ impl Smoketest {
             "--non-interactive",
             "--lang",
             "csharp",
+            "--dotnet-version",
+            "10",
             "--project-path",
             module_root_str,
             module_name,
@@ -1277,6 +1283,8 @@ impl Smoketest {
             &self.server_url,
             "--module-path",
             module_path_str,
+            "--dotnet-version",
+            "10",
             "--yes",
         ];
         if clear {

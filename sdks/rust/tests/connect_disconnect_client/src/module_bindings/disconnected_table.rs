@@ -18,6 +18,18 @@ pub struct DisconnectedTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `disconnected`.
+pub struct DisconnectedTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for DisconnectedTableAccessor {
+    type Row = Disconnected;
+    type Handle<'db> = DisconnectedTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.disconnected()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `disconnected`.
 ///

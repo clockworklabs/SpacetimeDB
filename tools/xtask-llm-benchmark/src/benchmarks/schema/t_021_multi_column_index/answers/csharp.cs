@@ -2,7 +2,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Accessor = "Log")]
+    [Table(Accessor = "Log", Public = true)]
     [SpacetimeDB.Index.BTree(Accessor = "by_user_day", Columns = new[] { nameof(UserId), nameof(Day) })]
     public partial struct Log
     {

@@ -18,6 +18,18 @@ pub struct OneI8TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_i_8`.
+pub struct OneI8TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneI8TableAccessor {
+    type Row = OneI8;
+    type Handle<'db> = OneI8TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_i_8()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_i_8`.
 ///

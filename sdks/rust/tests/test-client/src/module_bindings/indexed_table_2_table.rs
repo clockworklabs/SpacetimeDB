@@ -18,6 +18,18 @@ pub struct IndexedTable2TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `indexed_table_2`.
+pub struct IndexedTable2TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for IndexedTable2TableAccessor {
+    type Row = IndexedTable2;
+    type Handle<'db> = IndexedTable2TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.indexed_table_2()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `indexed_table_2`.
 ///

@@ -19,6 +19,18 @@ pub struct OneEveryPrimitiveStructTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_every_primitive_struct`.
+pub struct OneEveryPrimitiveStructTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneEveryPrimitiveStructTableAccessor {
+    type Row = OneEveryPrimitiveStruct;
+    type Handle<'db> = OneEveryPrimitiveStructTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_every_primitive_struct()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_every_primitive_struct`.
 ///

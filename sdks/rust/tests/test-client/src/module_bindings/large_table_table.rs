@@ -24,6 +24,18 @@ pub struct LargeTableTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `large_table`.
+pub struct LargeTableTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for LargeTableTableAccessor {
+    type Row = LargeTable;
+    type Handle<'db> = LargeTableTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.large_table()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `large_table`.
 ///

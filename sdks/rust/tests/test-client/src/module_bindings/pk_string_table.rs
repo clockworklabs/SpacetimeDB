@@ -18,6 +18,18 @@ pub struct PkStringTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `pk_string`.
+pub struct PkStringTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PkStringTableAccessor {
+    type Row = PkString;
+    type Handle<'db> = PkStringTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.pk_string()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `pk_string`.
 ///

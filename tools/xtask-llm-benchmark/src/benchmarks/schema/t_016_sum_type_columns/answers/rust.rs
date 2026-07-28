@@ -12,7 +12,7 @@ pub enum Shape {
     Rectangle(Rect),
 }
 
-#[table(accessor = drawing)]
+#[table(accessor = drawing, public)]
 pub struct Drawing {
     #[primary_key]
     #[auto_inc]

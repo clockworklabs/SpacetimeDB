@@ -19,6 +19,18 @@ pub struct OneByteStructTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_byte_struct`.
+pub struct OneByteStructTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneByteStructTableAccessor {
+    type Row = OneByteStruct;
+    type Handle<'db> = OneByteStructTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_byte_struct()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_byte_struct`.
 ///

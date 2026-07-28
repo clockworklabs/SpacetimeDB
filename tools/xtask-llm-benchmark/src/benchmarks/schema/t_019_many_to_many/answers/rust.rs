@@ -18,6 +18,7 @@ pub struct Group {
 
 #[table(
     accessor = membership,
+    public,
     index(accessor = by_user,  btree(columns = [user_id])),
     index(accessor = by_group, btree(columns = [group_id]))
 )]

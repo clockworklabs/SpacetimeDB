@@ -18,6 +18,18 @@ pub struct NearbyPlayersTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `nearby_players`.
+pub struct NearbyPlayersTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for NearbyPlayersTableAccessor {
+    type Row = PlayerLocation;
+    type Handle<'db> = NearbyPlayersTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.nearby_players()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `nearby_players`.
 ///

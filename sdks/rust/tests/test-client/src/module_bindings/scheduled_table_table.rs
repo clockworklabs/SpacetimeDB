@@ -18,6 +18,18 @@ pub struct ScheduledTableTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `scheduled_table`.
+pub struct ScheduledTableTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ScheduledTableTableAccessor {
+    type Row = ScheduledTable;
+    type Handle<'db> = ScheduledTableTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.scheduled_table()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `scheduled_table`.
 ///

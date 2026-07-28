@@ -1,5 +1,6 @@
 use std::{
     io,
+    marker::PhantomData,
     num::NonZeroUsize,
     sync::{
         atomic::{AtomicU64, Ordering::Relaxed},
@@ -12,13 +13,13 @@ use itertools::Itertools as _;
 use log::{info, trace, warn};
 use scopeguard::ScopeGuard;
 use spacetimedb_commitlog::{
-    error,
+    commitlog, error,
     payload::Txdata,
-    repo::{Fs, Repo, RepoWithoutLockFile},
-    Commit, Commitlog, CompressionStats, Decoder, Encode, Transaction,
+    repo::{self, Fs, Repo, RepoWithoutLockFile},
+    Commit, Commitlog, CompressionStats, Decoder, Encode, Transaction, DEFAULT_LOG_FORMAT_VERSION,
 };
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
-use spacetimedb_paths::server::ReplicaDir;
+use spacetimedb_paths::server::{CommitLogDir, ReplicaDir};
 use spacetimedb_runtime::{Handle, JoinHandle};
 use thiserror::Error;
 use tokio::sync::watch;
@@ -92,6 +93,10 @@ where
 {
     /// The [`Commitlog`] this [`Durability`] and [`History`] impl wraps.
     clog: Arc<Commitlog<Txdata<T>, R>>,
+    /// Copy of the underlying [`Repo`].
+    ///
+    /// Used to obtain a [LocalHistory] via [Self::as_history].
+    repo: R,
     /// The durable transaction offset, as reported by the background
     /// [`FlushAndSyncTask`].
     durable_offset: watch::Receiver<Option<TxOffset>>,
@@ -133,12 +138,9 @@ impl<T: Encode + Send + Sync + 'static> Local<T, Fs> {
         // yet for backwards-compatibility, we keep using the `db.lock` file.
         let lock = LockedFile::lock(replica_dir.0.join("db.lock"))?;
 
-        let clog = Arc::new(Commitlog::open(
-            replica_dir.commit_log(),
-            opts.commitlog,
-            on_new_segment,
-        )?);
-        Self::open_inner(clog, rt, opts, Some(lock))
+        let repo = repo::Fs::new(replica_dir.commit_log(), on_new_segment)?;
+        let clog = Commitlog::open_with_repo(repo.clone(), opts.commitlog).map(Arc::new)?;
+        Self::open_inner(clog, repo, rt, opts, Some(lock))
     }
 }
 
@@ -150,8 +152,8 @@ where
     /// Create a [`Local`] instance backed by the provided commitlog repo.
     pub fn open_with_repo(repo: R, rt: Handle, opts: Options) -> Result<Self, OpenError> {
         info!("open local durability");
-        let clog = Arc::new(Commitlog::open_with_repo(repo, opts.commitlog)?);
-        Self::open_inner(clog, rt, opts, None)
+        let clog = Arc::new(Commitlog::open_with_repo(repo.clone(), opts.commitlog)?);
+        Self::open_inner(clog, repo, rt, opts, None)
     }
 }
 
@@ -162,6 +164,7 @@ where
 {
     fn open_inner(
         clog: Arc<Commitlog<Txdata<T>, R>>,
+        repo: R,
         rt: Handle,
         opts: Options,
         lock: Option<LockedFile>,
@@ -184,6 +187,7 @@ where
 
         Ok(Self {
             clog,
+            repo,
             durable_offset: durable_rx,
             queue,
             queue_depth,
@@ -193,7 +197,16 @@ where
 
     /// Obtain a read-only copy of the durable state that implements [History].
     pub fn as_history(&self) -> impl History<TxData = Txdata<T>> + use<T, R> {
-        self.clog.clone()
+        let tx_range = {
+            let min = self.clog.min_committed_offset().unwrap_or_default();
+            let max = self.clog.max_committed_offset();
+            (min, max)
+        };
+        LocalHistory {
+            repo: self.repo.clone(),
+            tx_range,
+            _payload: PhantomData,
+        }
     }
 }
 
@@ -383,39 +396,65 @@ where
     }
 }
 
-impl<T, R> History for Commitlog<Txdata<T>, R>
-where
-    T: Encode + 'static,
-    R: Repo + Send + Sync + 'static,
-{
+/// [History] impl that operates on a local [Repo] `R`.
+pub struct LocalHistory<T, R> {
+    repo: R,
+    tx_range: (TxOffset, Option<TxOffset>),
+    _payload: PhantomData<T>,
+}
+
+impl<T> LocalHistory<T, repo::Fs> {
+    /// Open the commitlog at `dir` as a read-only [History].
+    pub fn open(dir: CommitLogDir) -> io::Result<Self> {
+        let repo = repo::Fs::new(dir, None)?;
+        let meta = commitlog::committed_meta(&repo)?;
+        let tx_range = match meta {
+            // Log is empty
+            None => (0, None),
+            Some(committed) => {
+                let max = committed.metadata().tx_range.end.saturating_sub(1);
+                let min = repo.existing_offsets()?.first().copied().unwrap_or_default();
+
+                (min, Some(max))
+            }
+        };
+
+        Ok(Self {
+            repo,
+            tx_range,
+            _payload: PhantomData,
+        })
+    }
+}
+
+impl<T: Encode + 'static, R: Repo> History for LocalHistory<T, R> {
     type TxData = Txdata<T>;
 
     fn fold_transactions_from<D>(&self, offset: TxOffset, decoder: D) -> Result<(), D::Error>
     where
         D: Decoder,
-        D::Error: From<error::Traversal>,
+        D::Error: From<error::Traversal> + From<io::Error>,
     {
-        self.fold_transactions_from(offset, decoder)
+        commitlog::fold_transactions_from(&self.repo, DEFAULT_LOG_FORMAT_VERSION, offset, decoder)
     }
 
     fn transactions_from<'a, D>(
-        &self,
+        &'a self,
         offset: TxOffset,
         decoder: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<Self::TxData>, D::Error>>
+    ) -> impl Iterator<Item = Result<Transaction<Self::TxData>, D::Error>> + 'a
     where
         D: Decoder<Record = Self::TxData>,
-        D::Error: From<error::Traversal>,
+        D::Error: From<error::Traversal> + From<io::Error>,
         Self::TxData: 'a,
     {
-        self.transactions_from(offset, decoder)
+        commitlog::transactions_from(&self.repo, DEFAULT_LOG_FORMAT_VERSION, offset, decoder)
+            .into_iter()
+            .flatten()
     }
 
     fn tx_range_hint(&self) -> (TxOffset, Option<TxOffset>) {
-        let min = self.min_committed_offset().unwrap_or_default();
-        let max = self.max_committed_offset();
-
-        (min, max)
+        self.tx_range
     }
 }
 

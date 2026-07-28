@@ -5,7 +5,10 @@ use spacetimedb_runtime::sim::Rng;
 pub trait TargetDriver<I> {
     type Observation;
 
-    fn execute(&mut self, interaction: &I) -> Result<Self::Observation, Error>;
+    fn execute<'a>(
+        &'a mut self,
+        interaction: &'a I,
+    ) -> impl std::future::Future<Output = Result<Self::Observation, Error>> + 'a;
 }
 
 /// Ensures if Output of `TargetDrive` is expected for the input
@@ -20,32 +23,35 @@ pub type TestSuiteParts<S> = (
 );
 
 pub trait TestSuite {
-    type Interaction;
+    type Interaction: std::fmt::Debug;
     type Interactions: Iterator<Item = Self::Interaction> + std::fmt::Debug;
     type Target: TargetDriver<Self::Interaction>;
     type Properties: Properties<Self::Interaction, <Self::Target as TargetDriver<Self::Interaction>>::Observation>;
 
-    fn build(&self, rng: Rng) -> Result<TestSuiteParts<Self>, Error>
+    fn build(&self, rng: Rng) -> impl std::future::Future<Output = Result<TestSuiteParts<Self>, Error>> + '_
     where
         Self: Sized;
 
-    fn run(&self, rng: Rng, max_interactions: Option<usize>) -> Result<(), Error>
+    fn run(&self, rng: Rng, max_interactions: usize) -> impl std::future::Future<Output = Result<(), Error>> + '_
     where
         Self: Sized,
     {
-        let (mut interactions, mut target, mut properties) = self.build(rng)?;
+        async move {
+            let (mut interactions, mut target, mut properties) = self.build(rng).await?;
 
-        let result = (|| {
-            for interaction in interactions.by_ref().take(max_interactions.unwrap_or(usize::MAX)) {
-                let observation = target.execute(&interaction)?;
-                properties.observe(&interaction, &observation)?;
+            let result = async {
+                for interaction in interactions.by_ref().take(max_interactions) {
+                    let observation = target.execute(&interaction).await?;
+                    properties.observe(&interaction, &observation)?;
+                }
+
+                Ok(())
             }
+            .await;
 
-            Ok(())
-        })();
+            tracing::info!(interaction_counts = ?interactions, "final interaction counts");
 
-        tracing::info!(interaction_counts = ?interactions, "final interaction counts");
-
-        result
+            result
+        }
     }
 }

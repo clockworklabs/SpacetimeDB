@@ -274,10 +274,11 @@ impl EngineTarget {
 impl TargetDriver<Interaction> for EngineTarget {
     type Observation = Observation;
 
-    fn execute(&mut self, interaction: &Interaction) -> Result<Self::Observation, anyhow::Error> {
+    async fn execute<'a>(&'a mut self, interaction: &'a Interaction) -> Result<Self::Observation, anyhow::Error> {
         EngineTarget::execute(self, interaction)
     }
 }
+
 pub struct EngineTest;
 
 impl TestSuite for EngineTest {
@@ -289,7 +290,7 @@ impl TestSuite for EngineTest {
 
     type Properties = EngineProperties;
 
-    fn build(&self, rng: Rng) -> Result<(Self::Interactions, Self::Target, Self::Properties), anyhow::Error> {
+    async fn build(&self, rng: Rng) -> Result<(Self::Interactions, Self::Target, Self::Properties), anyhow::Error> {
         let schema = default_schema(rng.clone());
         let runtime_seed = rng.next_u64();
         let target = EngineTarget::init(schema.clone(), runtime_seed)?;
