@@ -1578,8 +1578,10 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     .await
 }
 
-// Remove all gauges associated with a database.
-// This is useful if a database is being deleted.
+/// Removes metrics associated with a database when the database is deleted.
+///
+/// Despite the historical function name, this cleans up per-database metric
+/// series even when they are not literally `Gauge`s or `IntGauge`s.
 pub fn remove_database_gauges<'a, I>(db: &Identity, table_names: I)
 where
     I: IntoIterator<Item = &'a str>,
@@ -1609,4 +1611,5 @@ where
     V8HeapMetrics::remove_all_metric_label_values_for_database(db);
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
+    let _ = DB_METRICS.http_response_size_bytes.remove_label_values(db);
 }

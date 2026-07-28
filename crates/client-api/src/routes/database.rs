@@ -42,6 +42,7 @@ use spacetimedb_client_api_messages::name::{
     self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
     PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
+use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{http as st_http, ConnectionId};
@@ -1621,7 +1622,10 @@ where
     S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
 {
     pub fn into_router(self, ctx: S) -> axum::Router<S> {
-        let db_router = axum::Router::<S>::new()
+        let egress_metrics_middleware =
+            axum::middleware::from_fn_with_state(ctx.clone(), http_response_egress_metrics_middleware::<S>);
+
+        let counted_db_router = axum::Router::<S>::new()
             .route("/", self.db_put)
             .route("/", self.db_get)
             .route("/", self.db_delete)
@@ -1629,7 +1633,6 @@ where
             .route("/names", self.names_post)
             .route("/names", self.names_put)
             .route("/identity", self.identity_get)
-            .route("/subscribe", self.subscribe_get)
             .route("/call/:reducer", self.call_reducer_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
@@ -1639,7 +1642,13 @@ where
             .route("/pre_publish", self.pre_publish)
             .route("/reset", self.db_reset)
             .route("/lock", self.lock_post)
-            .route("/unlock", self.unlock_post);
+            .route("/unlock", self.unlock_post)
+            .route_layer(egress_metrics_middleware.clone());
+
+        // Add the subscribe route after `egress_metrics_middleware`
+        // so that its egress bytes don't get counted into `http_response_size_bytes`;
+        // we have different metrics tracking WebSocket message size.
+        let db_router = counted_db_router.route("/subscribe", self.subscribe_get);
 
         let authed_root_router = axum::Router::new().route(
             "/",
@@ -1661,13 +1670,76 @@ where
         let http_route_router = axum::Router::<S>::new()
             .route("/:name_or_identity/route", self.http_route_root)
             .route("/:name_or_identity/route/", self.http_route_root_slash)
-            .route("/:name_or_identity/route/*path", self.http_route);
+            .route("/:name_or_identity/route/*path", self.http_route)
+            .route_layer(egress_metrics_middleware);
 
         axum::Router::new()
             .merge(authed_root_router)
             .merge(authed_named_router)
             .merge(http_route_router)
     }
+}
+
+/// Middleware which counts response bytes in the metric `spacetime_http_response_size_bytes_total`.
+///
+/// This middleware is intended to be supplied to all HTTP routes which apply to a particular database,
+/// *except* the WebSocket connection route (confusingly named `subscribe`), whose egress is measured separately.
+async fn http_response_egress_metrics_middleware<S>(
+    State(worker_ctx): State<S>,
+    Path(DatabaseParam { name_or_identity }): Path<DatabaseParam>,
+    request: Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response
+where
+    S: ControlStateDelegate + Clone + Send + Sync + 'static,
+{
+    let Ok(Ok(database_identity)) = name_or_identity.try_resolve(&worker_ctx).await else {
+        // The provided name doesn't map to an `Identity`.
+        // Run the route unchanged (as opposed to returning an error from the middleware)
+        // to preserve the error-handling behavior of the route.
+        return next.run(request).await;
+    };
+
+    if !matches!(
+        worker_ctx_find_database(&worker_ctx, &database_identity).await,
+        Ok(Some(_))
+    ) {
+        // We have what appears to be an `Identity`, but it doesn't name any database.
+        // Don't create a metrics label for it,
+        // and run the route unchanged (as opposed to returning an error from the middleware)
+        // to preserve the error-handling behavior of the route.
+        return next.run(request).await;
+    }
+
+    let response = next.run(request).await;
+    let (parts, body) = response.into_parts();
+
+    // Count the number of bytes used by the headers.
+    // For guest-defined routes bound to HTTP handlers, these may be arbitrarily large and are worth billing for;
+    // for built-in routes they will be small and it doesn't really matter one way or another whether we do or don't bill.
+    // N.b. headers installed by other middleware may or may not be counted here,
+    // depending on the order in which the middleware applies.
+    let header_bytes: usize = parts
+        .headers
+        .iter()
+        .map(|(name, value)| name.as_str().len() + value.as_bytes().len())
+        .sum();
+
+    let counter = DB_METRICS
+        .http_response_size_bytes
+        .with_label_values(&database_identity);
+    counter.inc_by(header_bytes as u64);
+
+    // `/logs?follow=true` can stream indefinitely.
+    // Counting frames as they are emitted preserves streaming behavior and avoids buffering the response.
+    let body = body.map_frame(move |frame| {
+        if let Some(data) = frame.data_ref() {
+            counter.inc_by(data.len() as u64);
+        }
+        frame
+    });
+
+    axum::response::Response::from_parts(parts, Body::new(body))
 }
 
 #[cfg(test)]
@@ -1690,10 +1762,15 @@ mod tests {
     use spacetimedb_client_api_messages::name::{
         DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld,
     };
+    use spacetimedb_lib::Hash;
     use spacetimedb_paths::server::ModuleLogsDir;
     use spacetimedb_paths::FromPathUnchecked;
     use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
+    use std::collections::HashMap;
     use tower::util::ServiceExt;
+
+    static HTTP_EGRESS_METRIC_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[derive(Clone, Default)]
     struct DummyValidator;
 
@@ -1710,8 +1787,14 @@ mod tests {
     }
 
     impl TokenSigner for DummyJwtProvider {
-        fn sign<T: serde::Serialize>(&self, _claims: &T) -> Result<String, JwtError> {
-            Err(JwtError::from(JwtErrorKind::InvalidSignature))
+        fn sign<T: serde::Serialize>(&self, claims: &T) -> Result<String, JwtError> {
+            use base64::{engine::general_purpose, Engine};
+
+            let payload = serde_json::to_vec(claims).map_err(|_| JwtError::from(JwtErrorKind::InvalidSignature))?;
+            Ok(format!(
+                "test.{}.signature",
+                general_purpose::URL_SAFE_NO_PAD.encode(payload)
+            ))
         }
     }
 
@@ -1736,6 +1819,8 @@ mod tests {
         jwt: DummyJwtProvider,
         client_actor_index: std::sync::Arc<ClientActorIndex>,
         module_logs_dir: ModuleLogsDir,
+        databases: std::sync::Arc<HashMap<Identity, Database>>,
+        dns: std::sync::Arc<HashMap<String, Identity>>,
     }
 
     impl DummyState {
@@ -1746,8 +1831,83 @@ mod tests {
                 },
                 client_actor_index: std::sync::Arc::new(ClientActorIndex::new()),
                 module_logs_dir: ModuleLogsDir::from_path_unchecked(std::env::temp_dir()),
+                databases: std::sync::Arc::new(HashMap::new()),
+                dns: std::sync::Arc::new(HashMap::new()),
             }
         }
+
+        fn with_database(mut self, database_identity: Identity) -> Self {
+            let mut databases = HashMap::new();
+            databases.insert(database_identity, test_database(database_identity));
+            self.databases = std::sync::Arc::new(databases);
+            self
+        }
+
+        fn with_dns(mut self, name: &str, database_identity: Identity) -> Self {
+            let mut dns = HashMap::new();
+            dns.insert(name.to_owned(), database_identity);
+            self.dns = std::sync::Arc::new(dns);
+            self
+        }
+    }
+
+    fn test_identity(byte: u8) -> Identity {
+        Identity::from_byte_array([byte; 32])
+    }
+
+    fn test_database(database_identity: Identity) -> Database {
+        Database {
+            id: u64::from(database_identity.to_byte_array()[0]),
+            database_identity,
+            owner_identity: test_identity(254),
+            host_type: HostType::Wasm,
+            initial_program: Hash::from_byte_array([0; 32]),
+            bootstrap_generation: 0,
+        }
+    }
+
+    fn http_response_size_metric(database_identity: Identity) -> u64 {
+        DB_METRICS
+            .http_response_size_bytes
+            .with_label_values(&database_identity)
+            .get()
+    }
+
+    fn collected_http_response_size_metric(database_identity: Identity) -> Option<u64> {
+        let db_label = database_identity.to_hex();
+        for metric_family in prometheus::core::Collector::collect(&DB_METRICS.http_response_size_bytes) {
+            if metric_family.name() != "spacetime_http_response_size_bytes_total" {
+                continue;
+            }
+
+            for metric in metric_family.get_metric() {
+                let has_db_label = metric
+                    .get_label()
+                    .iter()
+                    .any(|label| label.name() == "db" && label.value() == db_label.as_str());
+                if has_db_label {
+                    return Some(metric.get_counter().value() as u64);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn remove_http_response_size_metric(database_identity: Identity) {
+        let _ = DB_METRICS
+            .http_response_size_bytes
+            .remove_label_values(&database_identity);
+    }
+
+    fn text_plain_header_bytes() -> u64 {
+        "content-type".len() as u64 + "text/plain; charset=utf-8".len() as u64
+    }
+
+    fn http_egress_metric_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        HTTP_EGRESS_METRIC_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     impl HasWebSocketOptions for DummyState {
@@ -1817,8 +1977,8 @@ mod tests {
         async fn get_database_by_id(&self, _id: u64) -> anyhow::Result<Option<Database>> {
             Ok(None)
         }
-        async fn get_database_by_identity(&self, _database_identity: &Identity) -> anyhow::Result<Option<Database>> {
-            Ok(None)
+        async fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>> {
+            Ok(self.databases.get(database_identity).cloned())
         }
         async fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
             Ok(Vec::new())
@@ -1835,8 +1995,8 @@ mod tests {
         async fn get_energy_balance(&self, _identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
             Ok(None)
         }
-        async fn lookup_database_identity(&self, _domain: &str) -> anyhow::Result<Option<Identity>> {
-            Ok(None)
+        async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+            Ok(self.dns.get(domain).copied())
         }
         async fn reverse_lookup(&self, _database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
             Ok(Vec::new())
@@ -1965,5 +2125,198 @@ mod tests {
         // - `find_leader_and_database`
         // - `name_or_identity.resolve(worker_ctx)` -> `NameOrIdentity::resolve`
         assert_eq!(body, "`not-a-database` not found");
+    }
+
+    #[tokio::test]
+    async fn http_response_egress_metric_counts_database_routes() {
+        let _guard = http_egress_metric_test_guard();
+        let database_identity = test_identity(11);
+        remove_http_response_size_metric(database_identity);
+
+        let state = DummyState::new().with_database(database_identity);
+        let app = DatabaseRoutes::<DummyState> {
+            db_get: axum::routing::get(|| async { ([(http::header::CONTENT_TYPE, "text/plain")], "hello") }),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/{database_identity}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+
+        assert_eq!(body, "hello");
+        assert_eq!(
+            http_response_size_metric(database_identity),
+            "content-type".len() as u64 + "text/plain".len() as u64 + "hello".len() as u64
+        );
+
+        remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
+    async fn http_response_egress_metric_counts_user_http_route_headers_and_body() {
+        let _guard = http_egress_metric_test_guard();
+        let database_identity = test_identity(12);
+        remove_http_response_size_metric(database_identity);
+
+        let state = DummyState::new()
+            .with_database(database_identity)
+            .with_dns("metric-test", database_identity);
+        let app = DatabaseRoutes::<DummyState> {
+            http_route: axum::routing::any(|| async { ([("x-large-test-header", "abcdef")], "route-body") }),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metric-test/route/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+
+        assert_eq!(body, "route-body");
+        assert_eq!(
+            http_response_size_metric(database_identity),
+            "x-large-test-header".len() as u64
+                + "abcdef".len() as u64
+                + text_plain_header_bytes()
+                + "route-body".len() as u64
+        );
+
+        remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
+    async fn http_response_egress_metric_skips_unresolved_and_nonexistent_databases() {
+        let _guard = http_egress_metric_test_guard();
+        let resolved_but_missing_identity = test_identity(13);
+        let arbitrary_identity = test_identity(14);
+        remove_http_response_size_metric(resolved_but_missing_identity);
+        remove_http_response_size_metric(arbitrary_identity);
+
+        let state = DummyState::new().with_dns("missing-db", resolved_but_missing_identity);
+        let app = DatabaseRoutes::<DummyState> {
+            db_get: axum::routing::get(|| async { "not counted" }),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+
+        let _ = app
+            .clone()
+            .oneshot(Request::builder().uri("/unresolved-name").body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .into_body()
+            .collect()
+            .await
+            .unwrap();
+        let _ = app
+            .clone()
+            .oneshot(Request::builder().uri("/missing-db").body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .into_body()
+            .collect()
+            .await
+            .unwrap();
+        let _ = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/{arbitrary_identity}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .into_body()
+            .collect()
+            .await
+            .unwrap();
+
+        assert_eq!(collected_http_response_size_metric(resolved_but_missing_identity), None);
+        assert_eq!(collected_http_response_size_metric(arbitrary_identity), None);
+
+        remove_http_response_size_metric(resolved_but_missing_identity);
+        remove_http_response_size_metric(arbitrary_identity);
+    }
+
+    #[tokio::test]
+    async fn http_response_egress_metric_does_not_count_subscribe() {
+        let _guard = http_egress_metric_test_guard();
+        let database_identity = test_identity(15);
+        remove_http_response_size_metric(database_identity);
+
+        let state = DummyState::new().with_database(database_identity);
+        let app = DatabaseRoutes::<DummyState> {
+            subscribe_get: axum::routing::get(|| async { "subscribe response" }),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/{database_identity}/subscribe"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+
+        assert_eq!(body, "subscribe response");
+        assert_eq!(http_response_size_metric(database_identity), 0);
+
+        remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
+    async fn http_response_egress_metric_counts_error_responses_for_existing_database() {
+        let _guard = http_egress_metric_test_guard();
+        let database_identity = test_identity(16);
+        remove_http_response_size_metric(database_identity);
+
+        let state = DummyState::new().with_database(database_identity);
+        let app = DatabaseRoutes::<DummyState> {
+            db_get: axum::routing::get(|| async { (StatusCode::BAD_REQUEST, "bad request body") }),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/{database_identity}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+
+        assert_eq!(body, "bad request body");
+        assert_eq!(
+            http_response_size_metric(database_identity),
+            text_plain_header_bytes() + "bad request body".len() as u64
+        );
+
+        remove_http_response_size_metric(database_identity);
     }
 }
