@@ -192,7 +192,7 @@ const MAX_SCHEDULE_DELAY: Duration = Duration::from_millis(
 );
 
 /// Record when a scheduled function starts more than this long after it was due.
-const RECORD_SCHEDULED_FUNCTION_DELAY_THRESHOLD: Duration = Duration::from_millis(20);
+const RECORD_SCHEDULED_FUNCTION_DELAY_THRESHOLD: Duration = Duration::from_millis(50);
 
 #[derive(thiserror::Error, Debug)]
 pub enum ScheduleError {
