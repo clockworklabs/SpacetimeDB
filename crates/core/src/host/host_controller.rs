@@ -21,7 +21,7 @@ use crate::subscription::module_subscription_manager::{spawn_send_worker, Subscr
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::util::asyncify;
 use crate::util::jobs::{AllocatedJobCore, JobCores};
-use crate::worker_metrics::{record_module_host_init_attempt, WORKER_METRICS};
+use crate::worker_metrics::{record_module_host_init_attempt, record_module_host_init_failure, WORKER_METRICS};
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
@@ -758,8 +758,11 @@ impl HostController {
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<HostInit> {
         let database_identity = database.database_identity;
+        record_module_host_init_attempt(database_identity);
+
         Host::try_init(self, database, replica_id)
             .await
+            .inspect_err(|_| record_module_host_init_failure(database_identity))
             .with_context(|| format!("failed to init replica {} for {}", replica_id, database_identity))
     }
 }
@@ -1051,9 +1054,6 @@ impl Host {
             memory_observer,
             ..
         } = host_controller;
-        let database_identity = database.database_identity;
-        record_module_host_init_attempt(database_identity);
-
         let replica_dir = data_dir.replica(replica_id);
         let runtime = spacetimedb_runtime::Handle::tokio_current();
         let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder(&runtime);
