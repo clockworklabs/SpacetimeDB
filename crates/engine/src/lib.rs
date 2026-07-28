@@ -22,7 +22,7 @@ use spacetimedb_schema::reducer_name::ReducerName;
 
 use crate::metrics::ExecutionCounters;
 
-/// A message that is processed by the [`spawn_metrics_recorder`] actor.
+/// A message that is processed by the [`spawn_tx_metrics_recorder`] actor.
 /// We use a separate task to record metrics to avoid blocking transactions.
 pub struct MetricsMessage {
     /// The reducer the produced these metrics.
@@ -41,7 +41,6 @@ pub struct MetricsMessage {
 }
 
 /// The handle used to send work to the tx metrics recorder.
-#[derive(Clone)]
 pub struct MetricsRecorderQueue {
     tx: spacetimedb_runtime::sync::mpsc::UnboundedSender<MetricsMessage>,
 }
@@ -101,33 +100,37 @@ fn record_metrics(
 /// While we want to avoid unnecessary compute on the critical path, communicating with other
 /// threads is not free, and for this case in particular waking a parked task is not free.
 ///
-/// Previously, each tx would send its metrics to the recorder task. As soon as the recorder
-/// task `recv`d a message, it would update the counters and gauges, and immediately wait for
-/// the next tx's message. This meant that the tx would need to be more expensive than the
-/// recording of its metrics in order for the recorder task not to be parked on `recv` when
-/// the tx would `send` its metrics. This would obviously never be the case, and so each `send`
-/// would incur the overhead of waking the task.
-///
-/// To mitigate this, we now record metrics, for potentially many transactions, periodically
-/// every 5ms.
-const TX_METRICS_RECORDING_INTERVAL: std::time::Duration = std::time::Duration::from_millis(5);
+/// Once woken by the first message, the recorder drains a bounded batch of
+/// messages that are already queued before waiting again. This batches bursts
+/// of transaction metrics without adding a fixed delay to every batch.
+const TX_METRICS_RECORDING_BATCH_SIZE: usize = 32;
+
+fn process_batch<T>(
+    first: T,
+    rx: &mut spacetimedb_runtime::sync::mpsc::UnboundedReceiver<T>,
+    mut process: impl FnMut(T),
+) {
+    process(first);
+    for _ in 1..TX_METRICS_RECORDING_BATCH_SIZE {
+        let Ok(message) = rx.try_recv() else {
+            break;
+        };
+        process(message);
+    }
+}
+
+async fn run_tx_metrics_recorder(mut rx: spacetimedb_runtime::sync::mpsc::UnboundedReceiver<MetricsMessage>) {
+    while let Some(metrics) = rx.recv().await {
+        process_batch(metrics, &mut rx, record_metrics);
+    }
+}
 
 /// Spawns a task for recording transaction metrics.
-/// Returns the handle for pushing metrics to the recorder.
-pub fn spawn_tx_metrics_recorder(
-    handle: &spacetimedb_runtime::Handle,
-) -> (MetricsRecorderQueue, spacetimedb_runtime::AbortHandle) {
-    let handle_clone = handle.clone();
-    let (tx, mut rx) = spacetimedb_runtime::sync::mpsc::unbounded_channel();
-    let abort_handle = handle
-        .spawn(async move {
-            loop {
-                handle_clone.sleep(TX_METRICS_RECORDING_INTERVAL).await;
-                while let Ok(metrics) = rx.try_recv() {
-                    record_metrics(metrics);
-                }
-            }
-        })
-        .abort_handle();
-    (MetricsRecorderQueue { tx }, abort_handle)
+///
+/// The returned queue uniquely owns the sending side of the recorder channel.
+/// Dropping it closes the channel and causes the recorder task to exit.
+pub fn spawn_tx_metrics_recorder(handle: &spacetimedb_runtime::Handle) -> MetricsRecorderQueue {
+    let (tx, rx) = spacetimedb_runtime::sync::mpsc::unbounded_channel();
+    drop(handle.spawn(run_tx_metrics_recorder(rx)));
+    MetricsRecorderQueue { tx }
 }

@@ -46,8 +46,6 @@ pub struct Config {
 
 pub type MetricsRecorderQueue = spacetimedb_engine::MetricsRecorderQueue;
 
-pub fn spawn_tx_metrics_recorder(
-    handle: &spacetimedb_runtime::Handle,
-) -> (MetricsRecorderQueue, spacetimedb_runtime::AbortHandle) {
+pub fn spawn_tx_metrics_recorder(handle: &spacetimedb_runtime::Handle) -> MetricsRecorderQueue {
     spacetimedb_engine::spawn_tx_metrics_recorder(handle)
 }

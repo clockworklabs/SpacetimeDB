@@ -1020,9 +1020,6 @@ struct Host {
     /// The task collects metrics from the `replica_ctx`, and so stays alive as long
     /// as the `replica_ctx` is live. The task is aborted when [`Host`] is dropped.
     disk_metrics_recorder_task: AbortHandle,
-    /// Handle to the task responsible for recording metrics for each transaction.
-    /// The task is aborted when [`Host`] is dropped.
-    tx_metrics_recorder_task: AbortHandle,
     /// Handle to the task responsible for cleaning up old views.
     /// The task is aborted when [`Host`] is dropped.
     view_cleanup_task: AbortHandle,
@@ -1053,7 +1050,7 @@ impl Host {
         } = host_controller;
         let replica_dir = data_dir.replica(replica_id);
         let runtime = spacetimedb_runtime::Handle::tokio_current();
-        let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder(&runtime);
+        let tx_metrics_queue = spawn_tx_metrics_recorder(&runtime);
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
@@ -1277,7 +1274,6 @@ impl Host {
                 replica_ctx,
                 scheduler,
                 disk_metrics_recorder_task,
-                tx_metrics_recorder_task,
                 view_cleanup_task,
             },
             bootstrap_completion,
@@ -1461,7 +1457,6 @@ impl Drop for Host {
             self.replica_ctx.database.database_identity, self.replica_ctx.replica_id
         );
         self.disk_metrics_recorder_task.abort();
-        self.tx_metrics_recorder_task.abort();
         self.view_cleanup_task.abort();
     }
 }
