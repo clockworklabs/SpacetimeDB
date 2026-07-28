@@ -1,0 +1,53 @@
+name: Run smoketest partition
+description: Download a smoketest build and run one nextest hash partition.
+
+inputs:
+  artifact-name:
+    description: Name of the workflow artifact to download.
+    required: true
+  partition:
+    description: One-based hash partition number.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/smoketest-setup
+
+    - name: Download smoketest build
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+
+    - name: Extract smoketest support files
+      shell: bash
+      run: tar -xzf smoketest-support.tar.gz
+
+    # --test-threads=1 eliminates contention in the C# tests where they fight over
+    # bindings build artifacts. It also improved unpartitioned job performance.
+    - name: Run smoketest partition (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        if [ -f ~/emsdk/emsdk_env.sh ]; then
+          source ~/emsdk/emsdk_env.sh
+        fi
+        ./target/debug/ci smoketests run-archive \
+          --archive-file smoketest-nextest.tar.zst \
+          -- \
+          --test-threads=1 \
+          --partition hash:${{ inputs.partition }}/4
+
+    # Due to Emscripten PATH issues this remains separate so OpenSSL builds correctly.
+    - name: Run smoketest partition (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
+          & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
+        }
+        & .\target\debug\ci.exe smoketests run-archive `
+          --archive-file smoketest-nextest.tar.zst `
+          -- `
+          --test-threads=1 `
+          --partition "hash:${{ inputs.partition }}/4"

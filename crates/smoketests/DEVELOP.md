@@ -18,6 +18,30 @@ cargo smoketest test_sql_format
 cargo smoketest "cli::"  # Run all CLI tests
 ```
 
+### Archived and partitioned runs
+
+CI can build the CLI, standalone server, precompiled modules, and smoketest
+binaries once:
+
+```bash
+cargo ci smoketests archive --archive-file smoketest-nextest.tar.zst
+```
+
+After transferring the nextest archive and the required support binaries to a
+runner, a partition can be executed without rebuilding the CLI, server, or test
+binaries:
+
+```bash
+target/debug/ci smoketests run-archive \
+    --archive-file smoketest-nextest.tar.zst \
+    -- \
+    --partition hash:1/4
+```
+
+The four hash partitions are deterministic and independently runnable. Tests
+that intentionally verify module compilation still compile their temporary
+module as part of the test itself.
+
 ### Remote Servers
 
 Run against a standalone-compatible remote server with:

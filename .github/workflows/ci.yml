@@ -27,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.compare.outputs.skip }}
+      source_sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Checkout merge queue commit
         uses: actions/checkout@v4
@@ -70,175 +71,117 @@ jobs:
             echo "Merge queue commit ${GITHUB_SHA} differs from PR #${pr_number} head ${pr_head_sha}; running CI normally."
           fi
 
-  smoketests:
+      - name: Resolve source revision
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pr_number="${{ github.event.inputs.pr_number || null }}"
+          if [[ -n "${pr_number}" ]]; then
+            source_sha="$(gh pr view --repo clockworklabs/SpacetimeDB "${pr_number}" --json headRefOid --jq .headRefOid)"
+          else
+            source_sha="${GITHUB_SHA}"
+          fi
+
+          if [[ -z "${source_sha}" || "${source_sha}" == "null" ]]; then
+            echo "Could not resolve the source revision."
+            exit 1
+          fi
+
+          echo "sha=${source_sha}" >>"$GITHUB_OUTPUT"
+
+  smoketest_build_linux:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: Smoketests (${{ matrix.name }})
-    strategy:
-      matrix:
-        include:
-          - name: Linux
-            runner: spacetimedb-new-runner-2
-          - name: Windows
-            runner: spacetimedb-windows-runner
-    runs-on: ${{ matrix.runner }}
+    name: Build smoketests (Linux)
+    runs-on: spacetimedb-new-runner-2
     timeout-minutes: 120
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
     steps:
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.GIT_REF }}
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.10
-
-      - name: Enable sccache
-        shell: bash
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/smoketest-build
         with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          cache-on-failure: false
-          cache-all-crates: true
-          cache-workspace-crates: true
-          prefix-key: v1
+          artifact-name: smoketest-build-Linux
 
-      - uses: actions/setup-dotnet@v4
+  smoketest_build_windows:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Build smoketests (Windows)
+    runs-on: spacetimedb-windows-runner
+    timeout-minutes: 120
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
         with:
-          global-json-file: global.json
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
-      # nodejs and pnpm are required for the typescript quickstart smoketest
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: ./.github/actions/smoketest-build
         with:
-          node-version: 18
+          artifact-name: smoketest-build-Windows
 
-      - uses: ./.github/actions/setup-pnpm
+  smoketests_linux:
+    needs: [merge_queue_noop, smoketest_build_linux]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Smoketests (Linux, ${{ matrix.partition }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 120
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
         with:
-          run_install: true
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
-      # Install emscripten for C++ module compilation tests.
-      - name: Install emscripten (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-          cd ~/emsdk
-          ./emsdk install 4.0.21
-          ./emsdk activate 4.0.21
+      - uses: ./.github/actions/smoketest-run-partition
+        with:
+          artifact-name: smoketest-build-Linux
+          partition: ${{ matrix.partition }}
 
-      - name: Install emscripten (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          git clone https://github.com/emscripten-core/emsdk.git $env:USERPROFILE\emsdk
-          cd $env:USERPROFILE\emsdk
-          .\emsdk install 4.0.21
-          .\emsdk activate 4.0.21
+  smoketests_windows:
+    needs: [merge_queue_noop, smoketest_build_windows]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Smoketests (Windows, ${{ matrix.partition }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    runs-on: spacetimedb-windows-runner
+    timeout-minutes: 120
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
-      - name: Install psql (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # Fail properly if any individual command fails
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-          choco install psql -y --no-progress
-          # Check for existence, since `choco` doesn't seem to fail the step if it fails to install..
-          # See https://github.com/clockworklabs/SpacetimeDB/pull/4399 for more background.
-          Get-Command psql
-
-      - name: Update dotnet workloads
-        if: runner.os == 'Windows'
-        run: |
-          # Fail properly if any individual command fails
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-
-          cd modules
-          # the sdk-manifests on windows-latest are messed up, so we need to update them
-          dotnet workload config --update-mode manifests
-          dotnet workload update --from-previous-sdk
-          # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
-          # Create temp global.json to target .NET 8 SDK for workload install
-          $sdk8Json = '{"sdk":{"version":"8.0.400","rollForward":"latestFeature"}}'
-          $sdk8Json | Out-File -FilePath global.json -Encoding utf8
-          dotnet workload install wasi-experimental
-          Remove-Item global.json
-
-      - name: Override NuGet packages
-        shell: bash
-        run: |
-          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
-          dotnet pack -c Release crates/bindings-csharp/Runtime
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
-
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        shell: bash
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
-
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@nextest
-
-      # --test-threads=1 eliminates contention in the C# tests where they fight over bindings
-      # build artifacts.
-      # It also seemed to improve performance a fair amount (11m -> 6m)
-      - name: Run smoketests (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          if [ -f ~/emsdk/emsdk_env.sh ]; then
-            source ~/emsdk/emsdk_env.sh
-          fi
-          cargo ci smoketests -- --test-threads=1
-
-      # Due to Emscripten PATH issues this was separated to make sure OpenSSL still builds correctly
-      - name: Run smoketests (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
-            & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
-          }
-          cargo ci smoketests -- --test-threads=1          
+      - uses: ./.github/actions/smoketest-run-partition
+        with:
+          artifact-name: smoketest-build-Windows
+          partition: ${{ matrix.partition }}
 
   # this is a no-op version of the above check with a trivially-passing body.
   # we can't just let the check be entirely skipped because each matrix target is a required check,
@@ -246,12 +189,26 @@ jobs:
   smoketests_noop:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
-    name: Smoketests (${{ matrix.name }})
+    name: Smoketests (${{ matrix.name }}, ${{ matrix.partition }}/4)
     strategy:
       matrix:
         include:
           - name: Linux
+            partition: 1
+          - name: Linux
+            partition: 2
+          - name: Linux
+            partition: 3
+          - name: Linux
+            partition: 4
           - name: Windows
+            partition: 1
+          - name: Windows
+            partition: 2
+          - name: Windows
+            partition: 3
+          - name: Windows
+            partition: 4
     runs-on: ubuntu-latest
     steps:
       - name: Skip duplicate merge queue smoketest

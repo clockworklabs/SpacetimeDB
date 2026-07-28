@@ -56,7 +56,6 @@ pub mod modules;
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
-use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -181,7 +180,8 @@ macro_rules! timed {
 
 /// Returns the workspace root directory.
 pub fn workspace_root() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let manifest_dir =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set when running tests"));
     manifest_dir
         .parent()
         .and_then(|p| p.parent())
