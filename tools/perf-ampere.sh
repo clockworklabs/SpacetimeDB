@@ -18,6 +18,14 @@ Options:
 EOF
 }
 
+PERF_PATH=/home/ubuntu/bin/perf
+
+if ! [ -f "$PERF_PATH" ] ; then
+    echo "Perf needs to be installed using via the ubuntu user. See Notion for instructions."
+    echo "Error: no perf: $PERF_PATH"
+    exit 1
+fi
+
 if ! [ -f /usr/share/d3-flame-graph/d3-flamegraph-base.html ] ; then
     read -p "Could not find d3-flamegraph-base.html, should we download it? (y/n): " answer
 
@@ -113,6 +121,7 @@ fi
 echo "Instrumenting PID $SPACETIME_PID for $SLEEP_TIME seconds."
 echo "Writing data to $DATAFILE and flamegraph to $OUTFILE."
 
+# Download the required FlameGraph scripts
 if ! [ -d /home/ubuntu/FlameGraph ] ; then
 	git clone https://github.com/brendangregg/FlameGraph.git /home/ubuntu/FlameGraph
 	chown -R ubuntu:ubuntu /home/ubuntu/FlameGraph
@@ -121,9 +130,10 @@ fi
 # /home/ubuntu/bin/perf record -m 8192 --call-graph lbr --pid $SPACETIME_PID -o $DATAFILE sleep $SLEEP_TIME
 # /home/ubuntu/bin/perf record --call-graph dwarf,4096 -m 8192 -e task-clock -F 999 \
   # --pid $SPACETIME_PID -o perf.data sleep 10
-sudo /home/ubuntu/bin/perf record -m 8192 -e task-clock -F 999 --call-graph fp \
+
+"$PERF_PATH" record -m 8192 -e task-clock -F 999 --call-graph fp \
   --pid $SPACETIME_PID -o perf.data sleep 30
-/home/ubuntu/bin/perf script -i perf.data \
+"$PERF_PATH" script -i perf.data \
   | /home/ubuntu/FlameGraph/stackcollapse-perf.pl \
   | /home/ubuntu/FlameGraph/flamegraph.pl > flamegraph.html
 
