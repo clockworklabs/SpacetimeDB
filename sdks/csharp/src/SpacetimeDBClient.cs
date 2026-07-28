@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -136,6 +135,8 @@ namespace SpacetimeDB
         where DbConnection : DbConnectionBase<DbConnection, Tables, Reducer>, new()
         where Tables : RemoteTablesBase
     {
+        internal static bool IsTesting { get; set; } = false;
+
         public static DbConnectionBuilder<DbConnection> Builder() => new();
 
         internal event Action<Identity, string>? onConnect;
@@ -284,7 +285,6 @@ namespace SpacetimeDB
         private readonly BlockingCollection<ParsedMessage> _applyQueue =
             new(new ConcurrentQueue<ParsedMessage>());
 
-        internal static bool IsTesting;
         internal bool HasMessageToApply => _applyQueue.Count > 0;
 
         private readonly CancellationTokenSource _parseCancellationTokenSource = new();

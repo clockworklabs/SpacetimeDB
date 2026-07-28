@@ -369,7 +369,7 @@ internal static partial class FFI
         )]
         internal static class ConsoleTimerIdMarshaller
         {
-            public static ConsoleTimerId ConvertToManaged(uint id) => new ConsoleTimerId(id);
+            public static ConsoleTimerId ConvertToManaged(uint id) => new(id);
 
             public static uint ConvertToUnmanaged(ConsoleTimerId id) => id.timer_id;
         }
