@@ -9,10 +9,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: ./.github/actions/smoketest-setup
-      with:
-        runtime-dependencies: "false"
-
     # This step shouldn't be needed, but some caches are missing librusty_v8.a.
     # This job mixes `cargo build -p` with `cargo build --manifest-path`, which can
     # produce different dependency trees in the same target directory.

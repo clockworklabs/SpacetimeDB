@@ -16,7 +16,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: pnpm/action-setup@v6
+    - uses: pnpm/action-setup@v4
       with:
         package_json_file: ${{ inputs.package_json_file }}
 

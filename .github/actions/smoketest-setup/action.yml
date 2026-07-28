@@ -41,19 +41,6 @@ runs:
       with:
         global-json-file: global.json
 
-    # Node.js and pnpm are required for the TypeScript quickstart smoketest.
-    - name: Set up Node.js
-      if: inputs.runtime-dependencies == 'true'
-      uses: actions/setup-node@v4
-      with:
-        node-version: 18
-
-    - name: Set up pnpm
-      if: inputs.runtime-dependencies == 'true'
-      uses: ./.github/actions/setup-pnpm
-      with:
-        run_install: true
-
     # Install Emscripten for C++ module compilation tests.
     - name: Install Emscripten (Linux)
       if: inputs.runtime-dependencies == 'true' && runner.os == 'Linux'

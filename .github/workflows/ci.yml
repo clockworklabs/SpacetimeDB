@@ -109,6 +109,10 @@ jobs:
         with:
           ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
+      - uses: ./.github/actions/smoketest-setup
+        with:
+          runtime-dependencies: "false"
+
       - uses: ./.github/actions/smoketest-build
         with:
           artifact-name: smoketest-build-Linux
@@ -128,6 +132,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
+
+      - uses: ./.github/actions/smoketest-setup
+        with:
+          runtime-dependencies: "false"
 
       - uses: ./.github/actions/smoketest-build
         with:
@@ -153,6 +161,18 @@ jobs:
         with:
           ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
+      - uses: ./.github/actions/smoketest-setup
+
+      # Node.js and pnpm are required for the TypeScript quickstart smoketest.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
       - uses: ./.github/actions/smoketest-run-partition
         with:
           artifact-name: smoketest-build-Linux
@@ -177,6 +197,18 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
+
+      - uses: ./.github/actions/smoketest-setup
+
+      # Node.js and pnpm are required for the TypeScript quickstart smoketest.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
 
       - uses: ./.github/actions/smoketest-run-partition
         with:

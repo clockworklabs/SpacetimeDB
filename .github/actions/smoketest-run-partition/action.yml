@@ -12,8 +12,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: ./.github/actions/smoketest-setup
-
     - name: Download smoketest build
       uses: actions/download-artifact@v4
       with:
