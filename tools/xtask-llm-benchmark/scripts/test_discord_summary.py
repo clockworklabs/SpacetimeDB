@@ -99,9 +99,11 @@ class DiscordSummaryTests(unittest.TestCase):
         self.assertEqual(infrastructure["color"], RED)
 
     def test_empty_and_long_fields_stay_valid(self):
-        empty = build_payload([], "https://example.com/run", "Manual run")["embeds"][0]
+        payload = build_payload([], "https://example.com/run", "Manual run")
+        empty = payload["embeds"][0]
         long_value = field_value([f"- {index} {'x' * 400}" for index in range(6)], "None", "finding")
 
+        self.assertEqual(payload["allowed_mentions"], {"parse": []})
         self.assertEqual(empty["color"], RED)
         self.assertIn("No analysis reports", empty["fields"][0]["value"])
         self.assertLessEqual(len(long_value), 1000)

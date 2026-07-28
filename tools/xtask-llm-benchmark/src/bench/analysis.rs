@@ -248,6 +248,31 @@ pub fn build_report(
     let total_tasks = outcomes.len();
     let passed_scorers: u32 = outcomes.iter().map(|outcome| outcome.passed_tests).sum();
     let total_scorers: u32 = outcomes.iter().map(|outcome| outcome.total_tests).sum();
+    let failures_without_output: Vec<&str> = outcomes
+        .iter()
+        .filter(|outcome| outcome.passed_tests < outcome.total_tests && outcome.llm_output.is_none())
+        .map(|outcome| outcome.task.as_str())
+        .collect();
+    let unavailable_output_section = if failures_without_output.is_empty() {
+        None
+    } else {
+        let task_count = failures_without_output.len();
+        let task_label = if task_count == 1 { "task" } else { "tasks" };
+        let tasks = failures_without_output
+            .iter()
+            .map(|task| format!("`{task}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        Some(format!(
+            "\
+### Model output unavailable ({task_count} {task_label})
+
+- **Classification:** Infrastructure/provider problem
+- **Tasks:** {tasks}
+- **What happened:** The model request failed before producing output, so source-level failure analysis was not possible.
+- **Suggested action:** Retry the affected tasks and inspect the benchmark logs if the failure persists."
+        ))
+    };
 
     let mut report = format!(
         "\
@@ -265,7 +290,26 @@ pub fn build_report(
     );
 
     match analysis {
-        Some(analysis) => report.push_str(analysis.trim()),
+        Some(analysis) => {
+            report.push_str(analysis.trim());
+            if let Some(section) = unavailable_output_section {
+                report.push_str("\n\n");
+                report.push_str(&section);
+            }
+        }
+        None if unavailable_output_section.is_some() => {
+            report.push_str(&format!(
+                "\
+## Recommended actions
+
+No repository changes recommended.
+
+## Failure patterns
+
+{}",
+                unavailable_output_section.unwrap()
+            ));
+        }
         None => report.push_str(
             "\
 ## Recommended actions
@@ -405,5 +449,38 @@ mod tests {
 
         assert!(report.contains("No repository changes recommended."));
         assert!(report.contains("No failures detected."));
+    }
+
+    #[test]
+    fn failed_request_without_output_is_reported_as_infrastructure() {
+        let report = build_report(
+            &[outcome("t_001", 0, 1)],
+            "typescript",
+            "guidelines",
+            "test-model",
+            None,
+        );
+
+        assert!(report.contains("Model output unavailable (1 task)"));
+        assert!(report.contains("Infrastructure/provider problem"));
+        assert!(report.contains("`t_001`"));
+        assert!(!report.contains("No failures detected."));
+    }
+
+    #[test]
+    fn failed_request_without_output_is_added_to_model_analysis() {
+        let mut generated_failure = outcome("t_001", 0, 1);
+        generated_failure.llm_output = Some("generated source".to_string());
+        let report = build_report(
+            &[generated_failure, outcome("t_002", 0, 1)],
+            "typescript",
+            "guidelines",
+            "test-model",
+            Some("## Recommended actions\n\nNo repository changes recommended.\n\n## Failure patterns\n\n### Invalid API"),
+        );
+
+        assert!(report.contains("### Invalid API"));
+        assert!(report.contains("Model output unavailable (1 task)"));
+        assert!(report.contains("`t_002`"));
     }
 }

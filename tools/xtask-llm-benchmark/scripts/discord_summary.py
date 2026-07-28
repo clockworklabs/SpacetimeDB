@@ -123,6 +123,7 @@ def build_payload(reports: list[Report], run_url: str, run_label: str) -> dict:
     ]
     return {
         "username": "SpacetimeDB LLM Benchmarks",
+        "allowed_mentions": {"parse": []},
         "embeds": [
             {
                 "title": "LLM Benchmark Analysis",

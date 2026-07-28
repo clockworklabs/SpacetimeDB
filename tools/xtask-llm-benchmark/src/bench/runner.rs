@@ -543,11 +543,7 @@ fn write_analysis_report(
 
 async fn maybe_generate_analysis(cfg: &BenchRunContext<'_>, outcomes: &[RunOutcome]) -> Result<Option<String>> {
     let configured_path = configured_analysis_path(cfg.lang.as_str(), cfg.mode, cfg.route);
-    let should_run = if cfg.dry_run {
-        cfg.local_analysis
-    } else {
-        cfg.api_client.is_some() || configured_path.is_some()
-    };
+    let should_run = cfg.local_analysis || configured_path.is_some() || (!cfg.dry_run && cfg.api_client.is_some());
 
     if !should_run {
         return Ok(None);
