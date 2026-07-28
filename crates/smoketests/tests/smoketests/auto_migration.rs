@@ -290,11 +290,13 @@ pub struct Person {
     age: u16,
     #[default(19)]
     mass: u16,
+    #[default("Student")]
+    title: String,
 }
 
 #[spacetimedb::reducer]
 pub fn add_person(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name, age: 70, mass: 180 });
+    ctx.db.person().insert(Person { name, age: 70, mass: 180, title: "Professor".to_string() });
 }
 
 #[spacetimedb::reducer]
@@ -320,13 +322,14 @@ pub struct Person {
     age: u16,
     #[default(19)]
     mass: u16,
+    title: String,
     #[default(160)]
     height: u32,
 }
 
 #[spacetimedb::reducer]
 pub fn add_person(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name, age: 70, mass: 180, height: 72 });
+    ctx.db.person().insert(Person { name, age: 70, mass: 180, title: "Professor".to_string(), height: 72 });
 }
 
 #[spacetimedb::reducer]
@@ -369,7 +372,7 @@ fn test_add_table_columns() {
     assert!(
         logs1
             .iter()
-            .any(|l| l.contains("FIRST_UPDATE: Person { name: \"Robert\", age: 0, mass: 19 }")),
+            .any(|l| l.contains("FIRST_UPDATE: Person { name: \"Robert\", age: 0, mass: 19, title: \"Student\" }")),
         "Expected migrated person with defaults in logs: {:?}",
         logs1
     );
@@ -400,9 +403,9 @@ fn test_add_table_columns() {
 
     let logs2 = test.logs(100).unwrap();
     assert!(
-        logs2
-            .iter()
-            .any(|l| { l.contains("UPDATE_2: Person { name: \"Robert2\", age: 70, mass: 180, height: 160 }") }),
+        logs2.iter().any(|l| {
+            l.contains("UPDATE_2: Person { name: \"Robert2\", age: 70, mass: 180, title: \"Professor\", height: 160 }")
+        }),
         "Expected updated schema with default height in logs: {:?}",
         logs2
     );

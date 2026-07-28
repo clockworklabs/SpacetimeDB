@@ -282,24 +282,6 @@ pub fn add(ctx: &ReducerContext, name: String, age: u8) {
     ctx.db.person().insert(Person { id: 0, name, age });
 }
 
-#[cfg(feature = "test-add-column")]
-#[spacetimedb::reducer]
-pub fn assert_person_string_default(ctx: &ReducerContext, name: String, expected: String) {
-    let mut found = false;
-
-    for person in ctx.db.person().iter().filter(|person| person.name == name) {
-        found = true;
-        assert_eq!(
-            person.string.as_str(),
-            expected.as_str(),
-            "migrated person row {} has the wrong string default",
-            person.id
-        );
-    }
-
-    assert!(found, "expected to find a migrated person row named {name}");
-}
-
 #[spacetimedb::reducer]
 pub fn say_hello(ctx: &ReducerContext) {
     for person in ctx.db.person().iter() {

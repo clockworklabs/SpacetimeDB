@@ -67,14 +67,6 @@ fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bo
         ])
         .unwrap();
 
-    let should_assert_added_column_defaults = republish_args.iter().any(|arg| arg.contains("test-add-column"))
-        && !republish_args.contains(&"--delete-data")
-        && expect_success;
-
-    if should_assert_added_column_defaults {
-        test.call("add", &["Arthur", "42"]).unwrap();
-    }
-
     let dir = dir.to_string();
     let mut args = vec![
         "publish",
@@ -93,9 +85,6 @@ fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bo
             "republish should have succeeded: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        if should_assert_added_column_defaults {
-            test.call("assert_person_string_default", &["Arthur", "test"]).unwrap();
-        }
     } else {
         assert!(!output.status.success(), "republish should have failed but succeeded");
     }
