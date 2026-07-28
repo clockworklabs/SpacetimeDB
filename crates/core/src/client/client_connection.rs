@@ -13,7 +13,6 @@ use crate::error::DBError;
 use crate::host::module_host::{ClientConnectedError, ProcedureResultTarget};
 use crate::host::{FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError};
 use crate::subscription::module_subscription_manager::BroadcastError;
-use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::{
     record_client_rejection, ClientDisconnectCause, ClientDisconnectRecorder, ClientRejectCause, WORKER_METRICS,
 };
@@ -29,6 +28,7 @@ use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
+use spacetimedb_metrics::utils::IntGaugeExt;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
