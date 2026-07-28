@@ -17,9 +17,9 @@ use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::traits::TxData;
 pub use spacetimedb_lib::identity;
 pub use spacetimedb_lib::Identity;
+use spacetimedb_runtime::sync::mpsc::error::TryRecvError;
 pub use spacetimedb_sats::hash;
 use spacetimedb_schema::reducer_name::ReducerName;
-use tokio::sync::mpsc::error::TryRecvError;
 
 use crate::metrics::ExecutionCounters;
 
