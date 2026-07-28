@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
-use scopeguard::defer;
+use scopeguard::{defer, guard};
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
@@ -1054,6 +1054,7 @@ impl Host {
         let replica_dir = data_dir.replica(replica_id);
         let runtime = spacetimedb_runtime::Handle::tokio_current();
         let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder(&runtime);
+        let tx_metrics_recorder_task = guard(tx_metrics_recorder_task, |task| task.abort());
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
@@ -1270,6 +1271,7 @@ impl Host {
         let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone(), &runtime);
 
         let module = watch::Sender::new(module_host);
+        let tx_metrics_recorder_task = scopeguard::ScopeGuard::into_inner(tx_metrics_recorder_task);
 
         Ok(HostInit {
             host: Host {
