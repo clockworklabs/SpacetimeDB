@@ -1265,6 +1265,8 @@ impl Smoketest {
             "--non-interactive",
             "--lang",
             "csharp",
+            "--dotnet-version",
+            "10",
             "--project-path",
             module_root_str,
             module_name,
@@ -1281,6 +1283,8 @@ impl Smoketest {
             &self.server_url,
             "--module-path",
             module_path_str,
+            "--dotnet-version",
+            "10",
             "--yes",
         ];
         if clear {

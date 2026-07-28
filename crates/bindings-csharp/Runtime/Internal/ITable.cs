@@ -146,7 +146,9 @@ public interface ITableView<View, T>
             return out_;
         });
 
+#pragma warning disable IDE1006 // Used by static interface member call sites.
     internal static FFI.TableId tableId => tableId_.Value;
+#pragma warning restore IDE1006
 
     ulong Count { get; }
 

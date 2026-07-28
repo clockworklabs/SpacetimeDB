@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <AssemblyName>SpacetimeDB.BSATN.Runtime</AssemblyName>
-    <Version>2.7.0</Version>
+    <Version>2.7.1</Version>
     <Title>SpacetimeDB BSATN Runtime</Title>
     <Description>The SpacetimeDB BSATN Runtime implements APIs for BSATN serialization/deserialization in C#.</Description>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
@@ -9,7 +9,7 @@
 
   <PropertyGroup>
     <!-- Note: the binary produced by this package is used in Unity too, which is limited to .NET Standard 2.1. -->
-    <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.1;net8.0;net10.0</TargetFrameworks>
     <RootNamespace>SpacetimeDB</RootNamespace>
     <!-- You can enable this when debugging codegen problems. Outputs in obj/debug/[version]/generated. -->
     <!-- <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles> -->
