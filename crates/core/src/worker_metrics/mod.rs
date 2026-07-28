@@ -184,6 +184,13 @@ pub fn record_client_rejection(database_identity: Identity, cause: ClientRejectC
         .inc();
 }
 
+pub fn record_module_host_init_attempt(database_identity: Identity) {
+    WORKER_METRICS
+        .module_host_init_attempts
+        .with_label_values(&database_identity)
+        .inc();
+}
+
 /// Records at most one disconnect cause for a single accepted websocket client.
 #[derive(Clone, Debug)]
 pub struct ClientDisconnectRecorder {
@@ -496,6 +503,11 @@ metrics_group!(
         #[help = "Current number of live module instances (WASM or V8) for this database"]
         #[labels(database_identity: Identity, module_type: HostType)]
         pub module_instances: IntGaugeVec,
+
+        #[name = spacetime_module_host_init_attempts_total]
+        #[help = "The cumulative number of module host initialization attempts"]
+        #[labels(database_identity: Identity)]
+        pub module_host_init_attempts: IntCounterVec,
 
         #[name = spacetime_reducer_wait_time_sec]
         #[help = "The amount of time (in seconds) a reducer spends in the queue waiting to run"]
