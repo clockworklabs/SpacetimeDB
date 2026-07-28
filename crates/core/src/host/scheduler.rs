@@ -633,12 +633,16 @@ fn delete_scheduled_function_row(
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
 ) -> Option<Reschedule> {
-    let (timestamp, instant) = reschedule_from;
     let tx = tx.unwrap_or_else(|| db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
     let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id, inst_common, inst)?;
+    interval_reschedule(schedule_at, reschedule_from)
+}
+
+fn interval_reschedule(schedule_at: ScheduleAt, reschedule_from: (Timestamp, Instant)) -> Option<Reschedule> {
     let ScheduleAt::Interval(dur) = schedule_at else {
         return None;
     };
+    let (timestamp, instant) = reschedule_from;
     Some(Reschedule {
         at_ts: schedule_at.to_timestamp_from(timestamp),
         at_real: instant + dur.to_duration_abs(),
@@ -843,4 +847,28 @@ pub fn get_schedule_from_row(
 fn read_schedule_at(row: &RowRef<'_>, at_column: ColId) -> anyhow::Result<ScheduleAt> {
     let schedule_at_av: AlgebraicValue = row.read_col(at_column)?;
     ScheduleAt::try_from(schedule_at_av).map_err(|e| anyhow!("Failed to convert 'scheduled_at' to ScheduleAt: {e:?}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interval_reschedule_advances_from_previous_schedule() {
+        let interval = Duration::from_secs(5);
+        let previous_timestamp = Timestamp::from_micros_since_unix_epoch(1_000_000);
+        let previous_instant = Instant::now();
+
+        let reschedule = interval_reschedule(interval.into(), (previous_timestamp, previous_instant)).unwrap();
+
+        assert_eq!(reschedule.at_ts, previous_timestamp + interval);
+        assert_eq!(reschedule.at_real, previous_instant + interval);
+    }
+
+    #[test]
+    fn one_shot_schedule_does_not_reschedule() {
+        let schedule_at = ScheduleAt::Time(Timestamp::from_micros_since_unix_epoch(1_000_000));
+
+        assert!(interval_reschedule(schedule_at, (Timestamp::UNIX_EPOCH, Instant::now())).is_none());
+    }
 }
