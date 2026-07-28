@@ -305,7 +305,8 @@ public readonly record struct Identity
         return FromBigEndian(Util.StringToByteArray(hex));
     }
 
-    public void WriteFields(BinaryWriter writer) => new SpacetimeDB.BSATN.U256().Write(writer, value);
+    public void WriteFields(BinaryWriter writer) =>
+        new SpacetimeDB.BSATN.U256().Write(writer, value);
 
     // --- auto-generated ---
     public readonly struct BSATN : IReadWrite<Identity>

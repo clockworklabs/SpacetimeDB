@@ -646,9 +646,7 @@ public static class Module
             var response = httpHandlers[(int)id]
                 .Invoke(ctx, SpacetimeDB.HttpClient.FromWire(requestWire, requestBody.Consume()));
             var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
-            responseSink.Write(
-                IStructuralWrite.ToBytes(responseWire)
-            );
+            responseSink.Write(IStructuralWrite.ToBytes(responseWire));
             responseBodySink.Write(responseBody);
 
             return Errno.OK;

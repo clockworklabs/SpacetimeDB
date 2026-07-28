@@ -93,12 +93,10 @@ public interface IStructuralReadWrite : IStructuralWrite
     }
 
     public static new byte[] ToBytes<RW, T>(RW rw, T value)
-        where RW : IReadWrite<T> =>
-        IStructuralWrite.ToBytes(rw, value);
+        where RW : IReadWrite<T> => IStructuralWrite.ToBytes(rw, value);
 
     public static new byte[] ToBytes<T>(T value)
-        where T : IStructuralReadWrite =>
-        IStructuralWrite.ToBytes(value);
+        where T : IStructuralReadWrite => IStructuralWrite.ToBytes(value);
 }
 
 /// <summary>

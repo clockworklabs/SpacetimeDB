@@ -629,32 +629,33 @@ public abstract record BaseTypeDeclaration<M>
 
             extensions.Contents.Append(
                 $$"""
-                private {{ShortNameIdentifier}}() { }
-
-            """
+                    private {{ShortNameIdentifier}}() { }
+                
+                """
             );
 
             extensions.Contents.Append(
                 string.Join(
                     "\n",
-                    Members.Select((m, i) =>
-                        // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
-                        // To avoid this, we append an underscore to the field name.
-                        // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
-                        $$"""
-                            public sealed record {{m.Identifier}}({{m.Type.Name}} {{m.Identifier}}_) : {{ShortNameIdentifier}}
-                            {
-                                public override void WriteFields(System.IO.BinaryWriter writer)
+                    Members.Select(
+                        (m, i) =>
+                            // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
+                            // To avoid this, we append an underscore to the field name.
+                            // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
+                            $$"""
+                                public sealed record {{m.Identifier}}({{m.Type.Name}} {{m.Identifier}}_) : {{ShortNameIdentifier}}
                                 {
-                                    writer.Write((byte){{i}});
-                                    BSATN.{{m.Identifier}}{{TypeUse.BsatnFieldSuffix}}.Write(writer, {{m.Identifier}}_);
-                                }
+                                    public override void WriteFields(System.IO.BinaryWriter writer)
+                                    {
+                                        writer.Write((byte){{i}});
+                                        BSATN.{{m.Identifier}}{{TypeUse.BsatnFieldSuffix}}.Write(writer, {{m.Identifier}}_);
+                                    }
 
-                                public override string ToString() =>
-                                    $"{{m.Name}}({ SpacetimeDB.BSATN.StringUtil.GenericToString({{m.Identifier}}_) })";
-                            }
-                        
-                        """
+                                    public override string ToString() =>
+                                        $"{{m.Name}}({ SpacetimeDB.BSATN.StringUtil.GenericToString({{m.Identifier}}_) })";
+                                }
+                            
+                            """
                     )
                 )
             );
