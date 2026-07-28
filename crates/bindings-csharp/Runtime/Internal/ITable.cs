@@ -23,7 +23,7 @@ internal abstract class RawTableIterBase<T>
             {
                 return false;
             }
-            
+
             while (true)
             {
                 var requestedLen = buffer.Length;
