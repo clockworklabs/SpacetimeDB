@@ -37,6 +37,7 @@ pub struct SmoketestsArgs {
     #[arg(long, num_args = 0..=1, require_equals = true, default_missing_value = "")]
     auth_host: Option<String>,
 
+    /// Whether to run smoketests that require .NET.
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     dotnet: bool,
 
