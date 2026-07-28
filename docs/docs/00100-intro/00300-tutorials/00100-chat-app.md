@@ -807,7 +807,7 @@ spacetime call --server local quickstart-chat send_message 'Hello, World!'
 <TabItem value="csharp" label="C#">
 
 ```bash
-spacetime call --server local quickstart-chat SendMessage 'Hello, World!'
+spacetime call --server local quickstart-chat send_message 'Hello, World!'
 ```
 
 </TabItem>
@@ -848,7 +848,7 @@ spacetime sql --server local quickstart-chat "SELECT * FROM message"
 <TabItem value="csharp" label="C#">
 
 ```bash
-spacetime sql --server local quickstart-chat "SELECT * FROM Message"
+spacetime sql --server local quickstart-chat "SELECT * FROM message"
 ```
 
 </TabItem>

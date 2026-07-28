@@ -107,7 +107,7 @@ cd my-spacetime-app
 spacetime call add Alice
 
 # Query the person table
-spacetime sql "SELECT * FROM Person"
+spacetime sql "SELECT * FROM person"
  name
 ---------
  "Alice"
@@ -219,7 +219,7 @@ cd my-spacetime-app
 spacetime call add Alice
 
 # Query the person table
-spacetime sql "SELECT * FROM Person"
+spacetime sql "SELECT * FROM person"
  name
 ---------
  "Alice"
