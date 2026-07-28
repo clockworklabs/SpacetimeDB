@@ -20,6 +20,11 @@ EOF
 
 PERF_PATH=/home/ubuntu/bin/perf
 
+if ! [ "$UID" == "0" ] ; then
+    echo "Please run with sudo otherwise symbols will be missing!"
+    exit 1
+fi
+
 if ! [ -f "$PERF_PATH" ] ; then
     echo "Perf needs to be installed using via the ubuntu user. See Notion for instructions."
     echo "Error: no perf: $PERF_PATH"
