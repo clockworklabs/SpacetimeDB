@@ -519,7 +519,8 @@ fn prepare_scheduled_procedure_call(
             log::error!("could not determine scheduled procedure or its parameters: {err:#}");
             let reschedule = id.and_then(|id| {
                 let reschedule_from = (Timestamp::now(), Instant::now());
-                delete_scheduled_function_row(module_info, db, id, Some(tx), reschedule_from, inst_common, inst)
+                delete_scheduled_function_row(module_info, db, id, Some(tx), inst_common, inst)
+                    .and_then(|schedule_at| calculate_reschedule(schedule_at, reschedule_from))
             });
             return ScheduledProcedureStep::Done(CallScheduledFunctionResult { reschedule }, false);
         }
@@ -528,7 +529,8 @@ fn prepare_scheduled_procedure_call(
     // For scheduled procedures, it's incorrect to retry them if execution aborts midway,
     // so we must remove the schedule row before executing.
     let reschedule = id.and_then(|id| {
-        delete_scheduled_function_row(module_info, db, id, Some(tx), (timestamp, instant), inst_common, inst)
+        delete_scheduled_function_row(module_info, db, id, Some(tx), inst_common, inst)
+            .and_then(|schedule_at| calculate_reschedule(schedule_at, (timestamp, instant)))
     });
     ScheduledProcedureStep::Procedure { params, reschedule }
 }
@@ -555,7 +557,8 @@ fn call_scheduled_reducer_until_done(
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
             let reschedule = id.and_then(|id| {
                 let reschedule_from = (Timestamp::now(), Instant::now());
-                delete_scheduled_function_row(module_info, db, id, Some(tx), reschedule_from, inst_common, inst)
+                delete_scheduled_function_row(module_info, db, id, Some(tx), inst_common, inst)
+                    .and_then(|schedule_at| calculate_reschedule(schedule_at, reschedule_from))
             });
             return (CallScheduledFunctionResult { reschedule }, false);
         }
@@ -604,11 +607,13 @@ fn call_scheduled_reducer_with_tx(
     // as it might be, so catch it so we can handle it "gracefully". Panics will
     // print their message and backtrace when they occur, so we don't need to do
     // anything with the error payload.
-    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        inst_common.call_reducer_with_tx(Some(tx), params, inst)
-    }));
-    let reschedule =
-        id.and_then(|id| delete_scheduled_function_row(module_info, db, id, None, reschedule_from, inst_common, inst));
+    let (result, reschedule) = execute_then_reschedule(reschedule_from, || {
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            inst_common.call_reducer_with_tx(Some(tx), params, inst)
+        }));
+        let schedule_at = id.and_then(|id| delete_scheduled_function_row(module_info, db, id, None, inst_common, inst));
+        (result, schedule_at)
+    });
     // Currently, we drop the return value from the function call. In the future,
     // we might want to handle it somehow.
     let trapped = match result {
@@ -623,22 +628,20 @@ fn call_scheduled_reducer_with_tx(
 /// open and otherwise creating an internal transaction for the cleanup.
 ///
 /// One-shot schedules are deleted and committed immediately. Interval schedules are not
-/// deleted here; instead their `ScheduleAt` is returned to the caller as a `Reschedule`.
+/// deleted here; instead their `ScheduleAt` is returned to the caller for rescheduling.
 fn delete_scheduled_function_row(
     module_info: &ModuleInfo,
     db: &RelationalDB,
     id: ScheduledFunctionId,
     tx: Option<MutTxId>,
-    reschedule_from: (Timestamp, Instant),
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
-) -> Option<Reschedule> {
+) -> Option<ScheduleAt> {
     let tx = tx.unwrap_or_else(|| db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
-    let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id, inst_common, inst)?;
-    interval_reschedule(schedule_at, reschedule_from)
+    delete_scheduled_function_row_with_tx(module_info, db, tx, id, inst_common, inst)
 }
 
-fn interval_reschedule(schedule_at: ScheduleAt, reschedule_from: (Timestamp, Instant)) -> Option<Reschedule> {
+fn calculate_reschedule(schedule_at: ScheduleAt, reschedule_from: (Timestamp, Instant)) -> Option<Reschedule> {
     let ScheduleAt::Interval(dur) = schedule_at else {
         return None;
     };
@@ -647,6 +650,17 @@ fn interval_reschedule(schedule_at: ScheduleAt, reschedule_from: (Timestamp, Ins
         at_ts: schedule_at.to_timestamp_from(timestamp),
         at_real: instant + dur.to_duration_abs(),
     })
+}
+
+/// Executes a scheduled reducer and its cleanup while retaining the call time captured
+/// before execution. This keeps reducer runtime out of the next interval calculation.
+fn execute_then_reschedule<T>(
+    reschedule_from: (Timestamp, Instant),
+    execute: impl FnOnce() -> (T, Option<ScheduleAt>),
+) -> (T, Option<Reschedule>) {
+    let (result, schedule_at) = execute();
+    let reschedule = schedule_at.and_then(|schedule_at| calculate_reschedule(schedule_at, reschedule_from));
+    (result, reschedule)
 }
 
 /// Deletes a scheduled-row entry inside an existing mutable transaction.
@@ -854,21 +868,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn interval_reschedule_advances_from_previous_schedule() {
+    fn reducer_reschedules_from_call_time_not_completion_time() {
         let interval = Duration::from_secs(5);
-        let previous_timestamp = Timestamp::from_micros_since_unix_epoch(1_000_000);
-        let previous_instant = Instant::now();
+        let call_timestamp = Timestamp::from_micros_since_unix_epoch(1_000_000);
+        let call_instant = Instant::now();
+        let completion_timestamp = call_timestamp + Duration::from_secs(30);
+        let completion_instant = call_instant + Duration::from_secs(30);
 
-        let reschedule = interval_reschedule(interval.into(), (previous_timestamp, previous_instant)).unwrap();
+        let (completion, reschedule) = execute_then_reschedule((call_timestamp, call_instant), || {
+            (
+                (completion_timestamp, completion_instant),
+                Some(ScheduleAt::Interval(interval.into())),
+            )
+        });
+        let reschedule = reschedule.unwrap();
 
-        assert_eq!(reschedule.at_ts, previous_timestamp + interval);
-        assert_eq!(reschedule.at_real, previous_instant + interval);
-    }
-
-    #[test]
-    fn one_shot_schedule_does_not_reschedule() {
-        let schedule_at = ScheduleAt::Time(Timestamp::from_micros_since_unix_epoch(1_000_000));
-
-        assert!(interval_reschedule(schedule_at, (Timestamp::UNIX_EPOCH, Instant::now())).is_none());
+        assert_eq!(completion, (completion_timestamp, completion_instant));
+        assert_eq!(reschedule.at_ts, call_timestamp + interval);
+        assert_eq!(reschedule.at_real, call_instant + interval);
+        assert_ne!(reschedule.at_ts, completion_timestamp + interval);
+        assert_ne!(reschedule.at_real, completion_instant + interval);
     }
 }
