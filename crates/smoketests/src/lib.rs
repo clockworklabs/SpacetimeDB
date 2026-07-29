@@ -393,8 +393,29 @@ pub fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
 pub fn build_typescript_sdk() -> Result<()> {
     let workspace = workspace_root();
     let ts_bindings = workspace.join("crates/bindings-typescript");
-    pnpm(&["install"], &ts_bindings)?;
-    pnpm(&["build"], &ts_bindings)?;
+    if std::env::var("SPACETIME_PREBUILT_TYPESCRIPT_SDK").ok().as_deref() == Some("1") {
+        for relative_path in [
+            "dist/index.mjs",
+            "dist/index.d.ts",
+            "dist/server/index.mjs",
+            "dist/server/index.d.ts",
+        ] {
+            let artifact = ts_bindings.join(relative_path);
+            if !artifact.is_file() {
+                bail!(
+                    "SPACETIME_PREBUILT_TYPESCRIPT_SDK is set, but the TypeScript SDK artifact is missing: {}",
+                    artifact.display()
+                );
+            }
+        }
+        return Ok(());
+    }
+
+    pnpm(
+        &["--filter", "spacetimedb...", "install", "--frozen-lockfile"],
+        &workspace,
+    )?;
+    pnpm(&["--filter", "spacetimedb", "build"], &workspace)?;
     Ok(())
 }
 

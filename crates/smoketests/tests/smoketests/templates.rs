@@ -13,7 +13,7 @@ use anyhow::{bail, Context, Result};
 use regex::Regex;
 use serde_json::Value;
 use spacetimedb_guard::ensure_binaries_built;
-use spacetimedb_smoketests::{pnpm, random_string, workspace_root, Smoketest};
+use spacetimedb_smoketests::{build_typescript_sdk, pnpm, random_string, workspace_root, Smoketest};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -719,17 +719,6 @@ fn pin_csharp_client_sdk_package_version(project_path: &Path) -> Result<()> {
         );
     }
 
-    Ok(())
-}
-
-/// Builds the TypeScript SDK (`crates/bindings-typescript`).
-///
-/// Should be called once before testing any TypeScript templates.
-fn build_typescript_sdk() -> Result<()> {
-    let sdk_path = workspace_root().join("crates/bindings-typescript");
-    eprintln!("[TEMPLATES] Building TypeScript SDK at {:?}", sdk_path);
-    run_pnpm(&["install"], &sdk_path)?;
-    run_pnpm(&["build"], &sdk_path)?;
     Ok(())
 }
 

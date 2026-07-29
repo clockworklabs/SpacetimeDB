@@ -26,6 +26,8 @@ runs:
     - name: Run smoketest partition (Linux)
       if: runner.os == 'Linux'
       shell: bash
+      env:
+        SPACETIME_PREBUILT_TYPESCRIPT_SDK: "1"
       run: |
         if [ -f ~/emsdk/emsdk_env.sh ]; then
           source ~/emsdk/emsdk_env.sh
@@ -40,6 +42,8 @@ runs:
     - name: Run smoketest partition (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
+      env:
+        SPACETIME_PREBUILT_TYPESCRIPT_SDK: "1"
       run: |
         if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
           & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null

@@ -41,6 +41,7 @@ runs:
         fi
 
         tar -czf smoketest-support.tar.gz \
+          crates/bindings-typescript/dist \
           "target/debug/ci${executable_suffix}" \
           "target/release/spacetimedb-cli${executable_suffix}" \
           "target/release/spacetimedb-standalone${executable_suffix}" \
