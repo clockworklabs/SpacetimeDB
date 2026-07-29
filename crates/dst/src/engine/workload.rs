@@ -2,7 +2,7 @@
 
 use std::fmt::{Debug, Error as FmtError, Formatter};
 
-use super::generation::GenCtx;
+use super::generation::{GenCtx, GenerationState};
 use super::migrations::{Migration, MigrationRejection};
 use super::model::Model;
 use super::row::Row;
@@ -95,6 +95,7 @@ impl Default for InteractionWeights {
 pub struct WorkloadGen {
     rng: Rng,
     model: Model,
+    generation: GenerationState,
     stats: InteractionCounts,
     weights: InteractionWeights,
 }
@@ -105,9 +106,11 @@ impl WorkloadGen {
     }
 
     pub fn with_weights(rng: Rng, model: Model, weights: InteractionWeights) -> Self {
+        let generation = GenerationState::seeded(model.schema());
         Self {
             rng,
             model,
+            generation,
             stats: InteractionCounts::default(),
             weights,
         }
@@ -127,17 +130,41 @@ impl WorkloadGen {
     }
 
     fn observe_interaction(&mut self, interaction: &Interaction, observation: &Observation) -> Result<(), Error> {
-        match (interaction, observation) {
-            (Interaction::Insert { .. }, Observation::Inserted { .. }) => {
-                self.model.apply(interaction);
-            }
+        let model_observation = match (interaction, observation) {
+            (Interaction::Insert { .. }, Observation::Inserted { .. }) => self.model.apply(interaction),
             (Interaction::Insert { .. }, _) => anyhow::bail!("insert produced unexpected observation"),
-            _ => {
-                self.model.apply(interaction);
+            _ => self.model.apply(interaction),
+        };
+
+        self.observe_generation(interaction, &model_observation);
+        Ok(())
+    }
+
+    fn observe_generation(&mut self, interaction: &Interaction, model_observation: &Observation) {
+        match (interaction, model_observation) {
+            (Interaction::Insert { table, row }, Observation::Inserted { outcome }) => {
+                let table_plan = self.model.schema().tables[*table].clone();
+                self.generation.observe_row(&table_plan, row);
+                if let InsertOutcome::Accepted(row) = outcome {
+                    self.generation.observe_row(&table_plan, row);
+                }
+            }
+            (_, Observation::Migrated) => self.observe_schema_values(),
+            _ => {}
+        }
+    }
+
+    fn observe_schema_values(&mut self) {
+        let schema = self.model.schema().clone();
+        self.generation.seed_schema(&schema);
+        for (table, table_plan) in schema.tables.iter().enumerate() {
+            let rows = (0..self.model.row_count(table))
+                .map(|row| self.model.row(table, row).expect("row index is in bounds").clone())
+                .collect::<Vec<_>>();
+            for row in rows {
+                self.generation.observe_row(table_plan, &row);
             }
         }
-
-        Ok(())
     }
 }
 
@@ -199,9 +226,10 @@ impl WorkloadGen {
             InteractionChoice::Insert => {
                 let table = self.insert_table_idx();
 
+                let mut ctx = GenCtx::new(&self.rng, &self.model, &mut self.generation);
                 Interaction::Insert {
                     table,
-                    row: GenCtx::new(&self.rng, &self.model).gen_insert_row(table),
+                    row: ctx.gen_insert_row(table),
                 }
             }
 
@@ -266,8 +294,8 @@ impl WorkloadGen {
         data_tables
     }
 
-    fn gen_migration(&self) -> Option<Migration> {
-        GenCtx::new(&self.rng, &self.model).gen_migration()
+    fn gen_migration(&mut self) -> Option<Migration> {
+        GenCtx::new(&self.rng, &self.model, &mut self.generation).gen_migration()
     }
 
     fn deletable_table_idx(&self) -> Option<usize> {
