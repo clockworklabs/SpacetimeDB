@@ -206,7 +206,7 @@ public static partial class Module
         [Default(32U)] public uint u32_value;
         [Default(-64L)] public long i64_value;
         [Default(64UL)] public ulong u64_value;
-        [Default(32.5f)] public float f32_value;
+        //[Default(32.5f)] public float f32_value;
         [Default(-64.25)] public double f64_value;
         [Default("default string")] public string string_value;
     }
