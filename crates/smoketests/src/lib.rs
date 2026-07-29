@@ -656,11 +656,17 @@ impl<'a> PublishBuilder<'a> {
                 ),
             };
             ("--module-path", module_path, module_build_args)
+        } else if let Some(module_path) = smoketest.precompiled_wasm_path.clone() {
+            // Use pre-compiled WASM directly (no build needed)
+            eprintln!("[TIMING] spacetime build: skipped (using precompiled)");
+            ("--bin-path", module_path, &[])
         } else {
+            // Rust is built separately to use the shared Cargo target cache; publishing the resulting WASM
+            // by path avoids rebuilding it. This is a harness optimization, not a Rust requirement.
             ("--bin-path", smoketest.prepare_rust_module_internal()?, &[])
         };
 
-        let identity = smoketest.publish_prepared_module_internal(
+        let identity = smoketest.publish_module_internal(
             module_path_arg,
             &module_path,
             module_build_args,
@@ -1398,14 +1404,11 @@ log = "0.4"
         PublishBuilder::new(self)
     }
 
+    /// Builds the Rust module using the target directory shared by smoketests.
+    ///
+    /// The caller publishes the resulting WASM with `--bin-path` to avoid a second build. Rust modules
+    /// could instead use `--module-path` if the publish command inherited this shared target directory.
     fn prepare_rust_module_internal(&self) -> Result<PathBuf> {
-        // Determine the WASM path - either precompiled or build it
-        if let Some(precompiled_path) = &self.precompiled_wasm_path {
-            // Use pre-compiled WASM directly (no build needed)
-            eprintln!("[TIMING] spacetime build: skipped (using precompiled)");
-            return Ok(precompiled_path.clone());
-        }
-
         // Build the WASM module from source
         let project_path = self.project_dir.path().to_str().unwrap();
         let build_start = Instant::now();
@@ -1444,7 +1447,7 @@ log = "0.4"
     /// When `name` is an existing database identity, this re-publishes to that database, which is useful for testing
     /// auto-migrations where you want to update the module without clearing the database.
     #[allow(clippy::too_many_arguments)]
-    fn publish_prepared_module_internal(
+    fn publish_module_internal(
         &mut self,
         module_path_arg: &str,
         module_path: &Path,
