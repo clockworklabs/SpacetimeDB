@@ -76,6 +76,16 @@ macro_rules! declare_tests {
                     }
                 )*
             }
+            mod ensure_same_schema_rust_cpp {
+                use super::*;
+                $(
+                    #[test]
+                    #[serial]
+                    fn $name() {
+                        super::assert_identical_modules($path, "C++", "cpp");
+                    }
+                )*
+            }
         }
     }
 
