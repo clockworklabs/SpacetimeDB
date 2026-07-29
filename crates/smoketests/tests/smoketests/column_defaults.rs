@@ -15,7 +15,7 @@ const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     //("i64_value", "-64"),
     ("f32_value", "32.5"),
     //("f64_value", "-64.25"),
-    // TODO: uncomment once this is fixed in Rust
+    // TODO: uncomment this once string default values are fixed in Rust
     //("string_value", r#""default string""#),
 ];
 
