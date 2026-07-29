@@ -636,18 +636,21 @@ impl<'a> PublishBuilder<'a> {
                     module_name,
                     &source.module_source,
                     clear,
+                    break_clients,
                 ),
                 ModuleLanguage::CSharp => smoketest.publish_csharp_module_source_internal(
                     &source.project_dir_name,
                     module_name,
                     &source.module_source,
                     clear,
+                    break_clients,
                 ),
                 ModuleLanguage::Cpp => smoketest.publish_cpp_module_source_internal(
                     &source.project_dir_name,
                     module_name,
                     &source.module_source,
                     clear,
+                    break_clients,
                 ),
             };
         }
@@ -1202,6 +1205,7 @@ impl Smoketest {
         module_name: &str,
         module_source: &str,
         clear: bool,
+        break_clients: bool,
     ) -> Result<String> {
         let module_root = self.project_dir.path().join(project_dir_name);
         let module_root_str = module_root.to_str().context("Invalid TypeScript project path")?;
@@ -1237,6 +1241,9 @@ impl Smoketest {
         if clear {
             publish_args.push("--clear-database");
         }
+        if break_clients {
+            publish_args.push("--break-clients");
+        }
         publish_args.push(module_name);
         let publish_output = self.spacetime(&publish_args)?;
 
@@ -1257,6 +1264,7 @@ impl Smoketest {
         module_name: &str,
         module_source: &str,
         clear: bool,
+        break_clients: bool,
     ) -> Result<String> {
         let module_root = self.project_dir.path().join(project_dir_name);
         let module_root_str = module_root.to_str().context("Invalid C# project path")?;
@@ -1290,6 +1298,9 @@ impl Smoketest {
         if clear {
             publish_args.push("--clear-database");
         }
+        if break_clients {
+            publish_args.push("--break-clients");
+        }
         publish_args.push(module_name);
         let publish_output = self.spacetime(&publish_args)?;
         csharp::verify_csharp_module_restore(&module_path)?;
@@ -1306,6 +1317,7 @@ impl Smoketest {
         module_name: &str,
         module_source: &str,
         clear: bool,
+        break_clients: bool,
     ) -> Result<String> {
         let module_path = self.project_dir.path().join(project_dir_name);
         let src_dir = module_path.join("src");
@@ -1332,6 +1344,9 @@ impl Smoketest {
         ];
         if clear {
             publish_args.push("--clear-database");
+        }
+        if break_clients {
+            publish_args.push("--break-clients");
         }
         publish_args.push(module_name);
         let publish_output = self.spacetime(&publish_args)?;
