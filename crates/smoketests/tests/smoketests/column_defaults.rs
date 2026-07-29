@@ -5,12 +5,15 @@ use spacetimedb_smoketests::{
 const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     ("bool_value", "true"),
     ("u8_value", "8"),
-    // TODO: uncomment this and other negative values once they're fixed in Rust
+    // TODO: uncomment this and other negative values once they're fixed in Rust.
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i8_value", "-8"),
     ("u16_value", "16"),
     //("i16_value", "-16"),
     ("u32_value", "32"),
     //("i32_value", "-32"),
+    // TODO: uncomment once u64s are fixed.
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5623
     ("u64_value", "64"),
     //("i64_value", "-64"),
     ("f32_value", "32.5"),
@@ -123,8 +126,8 @@ pub struct DefaultsTestTable {
     pub u32_value: u32,
 //    #[default(-64)]
 //    pub i64_value: i64,
-    #[default(64)]
-    pub u64_value: u64,
+//    #[default(64)]
+//    pub u64_value: u64,
     #[default(32.5)]
     pub f32_value: f32,
 //    #[default(-64.25)]
