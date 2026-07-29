@@ -52,16 +52,34 @@ echo "This launches an INTERACTIVE Claude Code session with Chrome MCP."
 echo "It will test the deployed app, write bug reports, and grade features."
 echo ""
 
-# Auto-detect backend from app directory structure
-if [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
+# Auto-detect backend. Prefer the marker run.sh writes at generate time; fall
+# back to directory shape. The marker is the only reliable way to tell postgres
+# and mongodb apart (both use a server/ dir).
+if [[ -f "$APP_DIR/.benchmark-backend" ]]; then
+  GRADE_BACKEND="$(tr -d '[:space:]' < "$APP_DIR/.benchmark-backend")"
+elif [[ -d "$APP_DIR/backend/spacetimedb" ]]; then
   GRADE_BACKEND="spacetime"
-  VITE_PORT=5173
 elif [[ -d "$APP_DIR/server" ]]; then
   GRADE_BACKEND="postgres"
-  VITE_PORT=5174
 else
   GRADE_BACKEND="unknown"
-  VITE_PORT=5173
+fi
+
+# Resolve the Vite port the app was actually deployed on. Default to the
+# per-backend range used by run.sh (spacetime 6173 / postgres 6273 / mongodb 6373),
+# then override with the recorded vitePort from the run's metadata.json if present
+# (handles parallel runs with run-index port offsets).
+case "$GRADE_BACKEND" in
+  spacetime) VITE_PORT=6173 ;;
+  postgres)  VITE_PORT=6273 ;;
+  mongodb)   VITE_PORT=6373 ;;
+  *)         VITE_PORT=6173 ;;
+esac
+_META=$(ls -t "$APP_DIR"/../../telemetry/*/metadata.json 2>/dev/null | head -1)
+if [[ -n "$_META" ]]; then
+  _META_ARG=$(cygpath -w "$_META" 2>/dev/null || echo "$_META")
+  _VP=$(node -e "try{const j=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));if(j.vitePort)process.stdout.write(String(j.vitePort));}catch(e){}" -- "$_META_ARG" 2>/dev/null || echo "")
+  [[ -n "$_VP" ]] && VITE_PORT="$_VP"
 fi
 echo "  Backend:  $GRADE_BACKEND (port $VITE_PORT)"
 

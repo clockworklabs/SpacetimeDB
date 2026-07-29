@@ -7,7 +7,7 @@ TABLES
     - title: string
     - completed: boolean
 
-- firstIncomplete
+- first_incomplete
   - Fields:
     - taskId: number (u64, primary key)
     - title: string
@@ -16,4 +16,4 @@ REDUCERS
 - find_first_incomplete(ctx)
   - Iterate through the task table
   - Find the first task where completed is false
-  - If found, insert it into firstIncomplete
+  - If found, insert it into first_incomplete

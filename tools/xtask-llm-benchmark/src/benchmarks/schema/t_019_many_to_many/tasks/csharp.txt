@@ -13,7 +13,7 @@ TABLES
     - GroupId: ulong (primary key, auto-increment)
     - Title: string
 
-- Membership
+- Membership (public)
   - Struct: Membership
   - Fields:
     - Id: ulong (primary key, auto-increment)

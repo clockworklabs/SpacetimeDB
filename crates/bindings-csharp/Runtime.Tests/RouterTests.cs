@@ -101,7 +101,7 @@ public class RouterTests
             SpacetimeDB.Internal.TxContext inner
         ) => throw new NotSupportedException();
 
-        protected internal override LocalBase CreateLocal() => throw new NotSupportedException();
+        protected override LocalBase CreateLocal() => throw new NotSupportedException();
     }
 
     private static HttpResponse GetHandler(TestHandlerContext _, HttpRequest __) => default;

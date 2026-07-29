@@ -6,7 +6,7 @@ TABLES
   - Fields:
     - Id: ulong (primary key, auto-increment)
 
-- Position
+- Position (public)
   - Struct: Position
   - Fields:
     - EntityId: int (primary key) — NOT auto-increment, this is a foreign key to Entity
@@ -20,7 +20,7 @@ TABLES
     - VX: int
     - VY: int
 
-- NextPosition
+- NextPosition (public)
   - Struct: NextPosition
   - Fields:
     - EntityId: int (primary key) — NOT auto-increment, this is a foreign key to Entity

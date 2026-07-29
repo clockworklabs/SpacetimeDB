@@ -39,15 +39,20 @@ fn test_build_csharp_module() {
         .expect("Failed to pack bindings");
     assert!(status.success(), "Failed to pack C# bindings");
 
+    // The non-AOT path is only supported on .NET 8. .NET 10 C# modules use NativeAOT-LLVM
+    // and are covered by csharp_aot_module.rs.
+    let dotnet_version = "8";
+
     // Create temp directory for the project
     let tmpdir = tempfile::tempdir().expect("Failed to create temp directory");
 
-    // Initialize C# project
     let output = Command::new(&cli_path)
         .args([
             "init",
             "--non-interactive",
             "--lang=csharp",
+            "--dotnet-version",
+            dotnet_version,
             "--project-path",
             tmpdir.path().to_str().unwrap(),
             "csharp-project",
@@ -56,7 +61,8 @@ fn test_build_csharp_module() {
         .expect("Failed to run spacetime init");
     assert!(
         output.status.success(),
-        "spacetime init failed:\nstdout: {}\nstderr: {}",
+        "spacetime init --dotnet-version {} failed:\nstdout: {}\nstderr: {}",
+        dotnet_version,
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -68,6 +74,8 @@ fn test_build_csharp_module() {
     let packed_projects = ["BSATN.Runtime", "Runtime"];
     let mut sources =
         String::from("    <clear />\n    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" />\n");
+    // Add experimental NuGet feed for Microsoft.DotNet.ILCompiler.LLVM packages
+    sources.push_str("    <add key=\"dotnet-experimental\" value=\"https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json\" />\n");
     let mut mappings = String::new();
 
     for project in &packed_projects {
@@ -83,6 +91,8 @@ fn test_build_csharp_module() {
             package_name, package_name
         ));
     }
+    // Add mappings for experimental packages
+    mappings.push_str("    <packageSource key=\"dotnet-experimental\">\n      <package pattern=\"Microsoft.DotNet.ILCompiler.LLVM\" />\n      <package pattern=\"runtime.*\" />\n    </packageSource>\n");
     // Add fallback for other packages
     mappings.push_str("    <packageSource key=\"nuget.org\">\n      <package pattern=\"*\" />\n    </packageSource>\n");
 
@@ -103,7 +113,7 @@ fn test_build_csharp_module() {
 
     // Run dotnet publish
     let output = Command::new("dotnet")
-        .args(["publish"])
+        .args(["publish", "-f", "net8.0"])
         .current_dir(&server_path)
         .output()
         .expect("Failed to run dotnet publish");

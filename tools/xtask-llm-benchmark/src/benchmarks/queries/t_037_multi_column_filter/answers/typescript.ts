@@ -1,6 +1,6 @@
 import { schema, table, t } from 'spacetimedb/server';
 
-const eventLog = table({
+const event_log = table({
   name: 'event_log',
   indexes: [{ accessor: 'byCategorySeverity', algorithm: 'btree', columns: ['category', 'severity'] }],
 }, {
@@ -10,22 +10,22 @@ const eventLog = table({
   message: t.string(),
 });
 
-const filteredEvent = table({
+const filtered_event = table({
   name: 'filtered_event',
 }, {
   eventId: t.u64().primaryKey(),
   message: t.string(),
 });
 
-const spacetimedb = schema({ eventLog, filteredEvent });
+const spacetimedb = schema({ event_log, filtered_event });
 export default spacetimedb;
 
 export const filter_events = spacetimedb.reducer(
   { category: t.string(), severity: t.u32() },
   (ctx, { category, severity }) => {
-    for (const e of ctx.db.eventLog.iter()) {
+    for (const e of ctx.db.event_log.iter()) {
       if (e.category === category && e.severity === severity) {
-        ctx.db.filteredEvent.insert({
+        ctx.db.filtered_event.insert({
           eventId: e.id,
           message: e.message,
         });

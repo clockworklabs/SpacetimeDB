@@ -6,6 +6,7 @@ use clap::{Arg, ArgMatches};
 use colored::Colorize;
 use convert_case::{Case, Casing};
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect, Input, Select};
+use regex::Regex;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -16,8 +17,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use toml_edit::{value, DocumentMut, Item};
-use xmltree::{Element, XMLNode};
 
+use crate::common_args;
 use crate::spacetime_config::{PackageManager, SpacetimeConfig, CONFIG_FILENAME};
 use crate::subcommands::login::{spacetimedb_login_and_save, DEFAULT_AUTH_HOST};
 
@@ -134,11 +135,13 @@ pub struct InitOptions {
     pub skip_next_steps: bool,
     /// When true, configure C# projects for NativeAOT-LLVM compilation.
     pub native_aot: bool,
+    /// Explicit .NET major version override (e.g. 8 or 10). When set, skips auto-detection.
+    pub dotnet_version: Option<u8>,
 }
 
 impl InitOptions {
-    pub fn from_args(args: &ArgMatches) -> Self {
-        Self {
+    pub fn from_args(args: &ArgMatches) -> anyhow::Result<Self> {
+        Ok(Self {
             project_path: args.get_one::<PathBuf>("project-path").cloned(),
             project_name: args.get_one::<String>("project-name").cloned(),
             project_name_default: None,
@@ -150,7 +153,8 @@ impl InitOptions {
             non_interactive: args.get_flag("non-interactive"),
             skip_next_steps: false,
             native_aot: args.get_flag("native-aot"),
-        }
+            dotnet_version: args.get_one::<u8>("dotnet_version").copied(),
+        })
     }
 }
 
@@ -200,6 +204,9 @@ pub fn cli() -> clap::Command {
                 .long("native-aot")
                 .action(clap::ArgAction::SetTrue)
                 .help("Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)"),
+        )
+        .arg(
+            common_args::dotnet_version().help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed."),
         )
 }
 
@@ -545,21 +552,47 @@ pub async fn exec_with_options(config: &mut Config, options: &InitOptions) -> an
 
     template_config.use_local = use_local;
 
+    if options.dotnet_version.is_some() && template_config.server_lang != Some(ServerLanguage::Csharp) {
+        anyhow::bail!("--dotnet-version is only supported for C# projects (--lang csharp)");
+    }
+
+    // For C# projects, resolve the target .NET version before scaffolding.
+    let dotnet_major = if template_config.server_lang == Some(ServerLanguage::Csharp) {
+        let dotnet_major = options.dotnet_version.unwrap_or_else(resolve_default_dotnet_major);
+        println!("Targeting .NET SDK {dotnet_major}.");
+        Some(dotnet_major)
+    } else {
+        None
+    };
+
     ensure_empty_directory(
         &template_config.project_name,
         &template_config.project_path,
         is_server_only,
     )?;
-    init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
+    init_from_template(
+        &template_config,
+        &template_config.project_path,
+        is_server_only,
+        dotnet_major,
+    )
+    .await?;
 
-    // Add NativeAOT-LLVM package references to C# projects if --native-aot was specified
-    if options.native_aot && template_config.server_lang == Some(ServerLanguage::Csharp) {
+    // Add NativeAOT-LLVM project configuration for C# projects when:
+    //   - --native-aot was explicitly specified, OR
+    //   - .NET 10 was selected/detected as the target
+    let needs_native_aot = if template_config.server_lang == Some(ServerLanguage::Csharp) {
+        options.native_aot || dotnet_major == Some(10)
+    } else {
+        false
+    };
+    if needs_native_aot {
         let server_dir = template_config.project_path.join("spacetimedb");
-        add_native_aot_packages_to_csproj(&server_dir)?;
+        add_native_aot_packages_to_csproj(&server_dir, dotnet_major)?;
     }
 
     let default_server = config.default_server_name().unwrap_or("maincloud");
-    if let Some(path) = create_default_spacetime_config_if_missing(&project_path, options.native_aot, default_server)? {
+    if let Some(path) = create_default_spacetime_config_if_missing(&project_path, needs_native_aot, default_server)? {
         println!("{} Created {}", "✓".green(), path.display());
     }
 
@@ -1139,17 +1172,12 @@ pub fn update_csproj_server_to_nuget(dir: &Path) -> anyhow::Result<()> {
     if let Some(csproj_path) = find_first_csproj(dir)? {
         let original =
             fs::read_to_string(&csproj_path).with_context(|| format!("reading {}", csproj_path.display()))?;
-        let mut root: Element =
-            Element::parse(original.as_bytes()).with_context(|| format!("parsing xml {}", csproj_path.display()))?;
-
-        upsert_packageref(
-            &mut root,
+        let updated = update_csproj_package_ref_to_nuget(
+            &original,
             "SpacetimeDB.Runtime",
             &get_spacetimedb_csharp_runtime_version(),
         );
-        remove_all_project_references(&mut root);
-
-        write_if_changed(csproj_path, original, root)?;
+        write_if_changed(csproj_path, original, updated)?;
     }
     Ok(())
 }
@@ -1158,28 +1186,19 @@ pub fn update_csproj_client_to_nuget(dir: &Path) -> anyhow::Result<()> {
     if let Some(csproj_path) = find_first_csproj(dir)? {
         let original =
             fs::read_to_string(&csproj_path).with_context(|| format!("reading {}", csproj_path.display()))?;
-        let mut root: Element =
-            Element::parse(original.as_bytes()).with_context(|| format!("parsing xml {}", csproj_path.display()))?;
-
-        upsert_packageref(
-            &mut root,
+        let updated = update_csproj_package_ref_to_nuget(
+            &original,
             "SpacetimeDB.ClientSDK",
             &get_spacetimedb_csharp_clientsdk_version(),
         );
-        remove_all_project_references(&mut root);
-
-        write_if_changed(csproj_path, original, root)?;
+        write_if_changed(csproj_path, original, updated)?;
     }
     Ok(())
 }
 
 // Helpers
 
-fn write_if_changed(path: PathBuf, original: String, root: Element) -> anyhow::Result<()> {
-    let mut out = Vec::new();
-    root.write(&mut out)?;
-    let compact = String::from_utf8(out)?;
-    let updated = pretty_format_xml(&compact)?;
+fn write_if_changed(path: PathBuf, original: String, updated: String) -> anyhow::Result<()> {
     if updated != original {
         fs::write(&path, updated).with_context(|| format!("writing {}", path.display()))?;
     }
@@ -1199,99 +1218,75 @@ fn find_first_csproj(dir: &Path) -> anyhow::Result<Option<PathBuf>> {
     Ok(None)
 }
 
-/// Remove every <ProjectReference/> under any <ItemGroup>
-fn remove_all_project_references(project: &mut Element) {
-    for node in project.children.iter_mut() {
-        if let XMLNode::Element(item_group) = node
-            && item_group.name == "ItemGroup"
-        {
-            item_group
-                .children
-                .retain(|n| !matches!(n, XMLNode::Element(el) if el.name == "ProjectReference"));
-        }
-    }
-    // Optional: prune empty ItemGroups
-    project.children.retain(|n| {
-        if let XMLNode::Element(el) = n
-            && el.name == "ItemGroup"
-        {
-            return el.children.iter().any(|c| matches!(c, XMLNode::Element(_)));
-        }
-        true
-    });
+fn update_csproj_package_ref_to_nuget(original: &str, include: &str, version: &str) -> String {
+    let updated = remove_project_reference_lines(original);
+    upsert_package_reference_text(&updated, include, version)
 }
 
-/// Insert or update <PackageReference Include="..." Version="..."/>
-fn upsert_packageref(project: &mut Element, include: &str, version: &str) {
-    // Try to find an existing PackageReference
-    for node in project.children.iter_mut() {
-        if let XMLNode::Element(item_group) = node
-            && item_group.name == "ItemGroup"
-            && let Some(XMLNode::Element(existing)) = item_group.children.iter_mut().find(|n| {
-                matches!(n,
-                    XMLNode::Element(e)
-                    if e.name == "PackageReference"
-                       && e.attributes.get("Include").map(|v| v == include).unwrap_or(false)
-                )
-            })
-        {
-            existing.attributes.insert("Version".to_string(), version.to_string());
-            return;
-        }
+fn remove_project_reference_lines(original: &str) -> String {
+    let mut updated = original
+        .lines()
+        .filter(|line| !line.contains("<ProjectReference"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if original.ends_with('\n') {
+        updated.push('\n');
     }
-    // Otherwise create one in (or create) an ItemGroup
-    let item_group = get_or_create_direct_child(project, "ItemGroup");
-    let mut pr = Element::new("PackageReference");
-    pr.attributes.insert("Include".into(), include.to_string());
-    pr.attributes.insert("Version".into(), version.to_string());
-    item_group.children.push(XMLNode::Element(pr));
+    updated
 }
 
-fn get_or_create_direct_child<'a>(parent: &'a mut Element, name: &str) -> &'a mut Element {
-    // First, scan IMMUTABLY to find the index of an existing child.
-    if let Some(idx) = parent.children.iter().enumerate().find_map(|(i, n)| match n {
-        XMLNode::Element(e) if e.name == name => Some(i),
-        _ => None,
-    }) {
-        // Now borrow MUTABLY by index.
-        if let XMLNode::Element(el) = &mut parent.children[idx] {
-            return el;
-        }
-        unreachable!("Matched non-element while checking by name");
+fn upsert_package_reference_text(original: &str, include: &str, version: &str) -> String {
+    let include_attr = format!(r#"Include="{include}""#);
+    let mut found = false;
+    let mut updated = original
+        .lines()
+        .map(|line| {
+            if line.contains("<PackageReference") && line.contains(&include_attr) {
+                found = true;
+                set_package_reference_version(line, version)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if original.ends_with('\n') {
+        updated.push('\n');
     }
 
-    // Not found: create, then borrow by index.
-    parent.children.push(XMLNode::Element(Element::new(name)));
-    let idx = parent.children.len() - 1;
-    match &mut parent.children[idx] {
-        XMLNode::Element(el) => el,
-        _ => unreachable!("just pushed an Element"),
+    if found {
+        return updated;
+    }
+
+    let package_reference = format!(
+        r#"  <ItemGroup>
+    <PackageReference Include="{include}" Version="{version}" />
+  </ItemGroup>
+"#
+    );
+    if let Some(pos) = updated.rfind("</Project>") {
+        let (before, after) = updated.split_at(pos);
+        format!("{}{}{}", before.trim_end(), package_reference, after)
+    } else {
+        updated
     }
 }
 
-/// Pretty-print XML with indentation.
-/// Keeps UTF-8 declaration if present.
-fn pretty_format_xml(xml: &str) -> anyhow::Result<String> {
-    use quick_xml::events::Event;
-    use quick_xml::Reader;
-    use quick_xml::Writer;
-    use std::io::Cursor;
-
-    let mut reader = Reader::from_str(xml);
-    reader.trim_text(true);
-    let mut buf = Vec::new();
-    let mut writer = Writer::new_with_indent(Cursor::new(Vec::new()), b' ', 2);
-
-    loop {
-        match reader.read_event_into(&mut buf)? {
-            Event::Eof => break,
-            e => writer.write_event(e)?,
-        }
-        buf.clear();
+fn set_package_reference_version(line: &str, version: &str) -> String {
+    let version_attr = Regex::new(r#"Version="[^"]*""#).expect("valid regex");
+    if version_attr.is_match(line) {
+        return version_attr
+            .replace(line, format!(r#"Version="{version}""#).as_str())
+            .into_owned();
     }
 
-    let result = writer.into_inner().into_inner();
-    Ok(String::from_utf8(result)?)
+    if let Some(pos) = line.rfind("/>") {
+        return format!("{} Version=\"{}\" {}", line[..pos].trim_end(), version, &line[pos..]);
+    }
+    if let Some(pos) = line.rfind('>') {
+        return format!("{} Version=\"{}\"{}", &line[..pos], version, &line[pos..]);
+    }
+    line.to_string()
 }
 
 fn get_spacetimedb_csharp_runtime_version() -> String {
@@ -1353,13 +1348,14 @@ pub async fn init_from_template(
     config: &TemplateConfig,
     project_path: &Path,
     is_server_only: bool,
+    dotnet_major: Option<u8>,
 ) -> anyhow::Result<()> {
     println!("{}", "Initializing project from template...".cyan());
 
     match config.template_type {
-        TemplateType::Builtin => init_builtin(config, project_path, is_server_only)?,
+        TemplateType::Builtin => init_builtin(config, project_path, is_server_only, dotnet_major)?,
         TemplateType::GitHub => init_github_template(config, project_path, is_server_only)?,
-        TemplateType::Empty => init_empty(config, project_path)?,
+        TemplateType::Empty => init_empty(config, project_path, dotnet_major)?,
     }
 
     // Install AI assistant rules for multiple editors/tools
@@ -1370,7 +1366,12 @@ pub async fn init_from_template(
     Ok(())
 }
 
-fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bool) -> anyhow::Result<()> {
+fn init_builtin(
+    config: &TemplateConfig,
+    project_path: &Path,
+    is_server_only: bool,
+    dotnet_major: Option<u8>,
+) -> anyhow::Result<()> {
     let template_def = config
         .template_def
         .as_ref()
@@ -1439,6 +1440,10 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
         None => {}
     }
 
+    if config.server_lang == Some(ServerLanguage::Csharp) {
+        configure_csharp_project_files(&server_dir, dotnet_major.unwrap_or_else(resolve_default_dotnet_major))?;
+    }
+
     Ok(())
 }
 
@@ -1476,7 +1481,7 @@ fn init_github_template(config: &TemplateConfig, project_path: &Path, is_server_
     Ok(())
 }
 
-fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
+fn init_empty(config: &TemplateConfig, project_path: &Path, dotnet_major: Option<u8>) -> anyhow::Result<()> {
     match config.server_lang {
         Some(ServerLanguage::Rust) => {
             println!("Setting up Rust server...");
@@ -1486,7 +1491,7 @@ fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()
         Some(ServerLanguage::Csharp) => {
             println!("Setting up C# server...");
             let server_dir = project_path.join("spacetimedb");
-            init_empty_csharp_server(&server_dir, &config.project_name)?;
+            init_empty_csharp_server(&server_dir, &config.project_name, dotnet_major)?;
         }
         Some(ServerLanguage::TypeScript) => {
             println!("Setting up TypeScript server...");
@@ -1510,8 +1515,8 @@ fn init_empty_rust_server(server_dir: &Path, project_name: &str) -> anyhow::Resu
     Ok(())
 }
 
-fn init_empty_csharp_server(server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
-    init_csharp_project(server_dir)
+fn init_empty_csharp_server(server_dir: &Path, _project_name: &str, dotnet_major: Option<u8>) -> anyhow::Result<()> {
+    init_csharp_project(server_dir, dotnet_major)
 }
 
 fn init_empty_typescript_server(server_dir: &Path, project_name: &str) -> anyhow::Result<()> {
@@ -1622,6 +1627,64 @@ fn check_for_cargo() -> bool {
     false
 }
 
+fn resolve_default_dotnet_major() -> u8 {
+    let installed_majors = installed_dotnet_sdk_majors();
+    if let Some(reason) = dotnet8_default_reason(std::env::consts::OS, installed_majors.as_deref()) {
+        match reason {
+            Dotnet8DefaultReason::MacOsHost => println!(
+                "{}",
+                "Warning: NativeAOT-LLVM does not support macOS hosts, so this C# project will target .NET 8. .NET 8 support will be deprecated soon."
+                    .yellow()
+            ),
+            Dotnet8DefaultReason::OnlySdkInstalled => println!(
+                "{}",
+                "Warning: Only the .NET 8 SDK is installed, so this C# project will target .NET 8. .NET 8 support will be deprecated soon; install .NET 10 to create new C# modules targeting .NET 10."
+                    .yellow()
+            ),
+        }
+        return 8;
+    }
+
+    10
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Dotnet8DefaultReason {
+    MacOsHost,
+    OnlySdkInstalled,
+}
+
+fn dotnet8_default_reason(os: &str, majors: Option<&[u8]>) -> Option<Dotnet8DefaultReason> {
+    if os == "macos" {
+        return Some(Dotnet8DefaultReason::MacOsHost);
+    }
+
+    majors
+        .is_some_and(|majors| majors == [8])
+        .then_some(Dotnet8DefaultReason::OnlySdkInstalled)
+}
+
+fn installed_dotnet_sdk_majors() -> Option<Vec<u8>> {
+    let dotnet = match std::env::consts::OS {
+        "windows" => find_executable("dotnet.exe").or_else(|| find_executable("dotnet"))?,
+        _ => find_executable("dotnet")?,
+    };
+    let output = std::process::Command::new(dotnet).arg("--list-sdks").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let mut majors = stdout.lines().filter_map(parse_dotnet_sdk_major).collect::<Vec<_>>();
+    majors.sort_unstable();
+    majors.dedup();
+    Some(majors)
+}
+
+fn parse_dotnet_sdk_major(line: &str) -> Option<u8> {
+    line.split_whitespace().next()?.split('.').next()?.parse().ok()
+}
+
 fn check_for_dotnet() -> bool {
     use std::fmt::Write;
 
@@ -1690,7 +1753,7 @@ fn check_for_git() -> bool {
 }
 
 pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathBuf> {
-    let options = InitOptions::from_args(args);
+    let options = InitOptions::from_args(args)?;
 
     // --template without arg prints templates list and link to website
     if options.template.as_deref() == Some("") {
@@ -1721,6 +1784,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
             "{}",
             "Note: NativeAOT-LLVM is experimental and building for this platform is currently only supported on Windows.".yellow()
         );
+    }
+
+    // Validate that --dotnet-version is only used with C# projects
+    if options.dotnet_version.is_some()
+        && let Some(lang) = server_lang
+        && lang.to_lowercase() != "csharp"
+        && lang.to_lowercase() != "c#"
+    {
+        anyhow::bail!("--dotnet-version is only supported for C# projects (--lang csharp)");
     }
 
     if !is_interactive {
@@ -1760,24 +1832,26 @@ pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
+pub fn init_csharp_project(project_path: &Path, dotnet_major: Option<u8>) -> anyhow::Result<()> {
+    check_for_dotnet();
+    check_for_git();
+
+    let dotnet_major = dotnet_major.unwrap_or_else(resolve_default_dotnet_major);
+
     let export_files = vec![
         (
-            include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj"),
+            csharp_csproj_for_target(
+                include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj"),
+                dotnet_major,
+            )?,
             "StdbModule.csproj",
         ),
         (
-            include_str!("../../../../templates/basic-cs/spacetimedb/Lib.cs"),
+            include_str!("../../../../templates/basic-cs/spacetimedb/Lib.cs").to_string(),
             "Lib.cs",
         ),
-        (
-            include_str!("../../../../templates/basic-cs/spacetimedb/global.json"),
-            "global.json",
-        ),
+        (csharp_global_json(dotnet_major).to_string(), "global.json"),
     ];
-
-    check_for_dotnet();
-    check_for_git();
 
     for data_file in export_files {
         let path = project_path.join(data_file.1);
@@ -1788,9 +1862,55 @@ pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Adds NativeAOT-LLVM package references to an existing C# .csproj file and creates NuGet.Config.
-/// This is called when `--native-aot` is specified during `spacetime init`.
-fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> {
+fn csharp_global_json(dotnet_major: u8) -> &'static str {
+    match dotnet_major {
+        8 => "{\n  \"sdk\": {\n    \"version\": \"8.0.100\",\n    \"rollForward\": \"latestFeature\"\n  }\n}\n",
+        10 => "{\n  \"sdk\": {\n    \"version\": \"10.0.100\",\n    \"rollForward\": \"latestMinor\"\n  }\n}\n",
+        _ => unreachable!("unsupported .NET version should have been validated before init"),
+    }
+}
+
+fn csharp_csproj_for_target(content: &str, dotnet_major: u8) -> anyhow::Result<String> {
+    let target_framework = match dotnet_major {
+        8 => "net8.0",
+        10 => "net10.0",
+        _ => unreachable!("unsupported .NET version should have been validated before init"),
+    };
+    let target_framework_property = format!("<TargetFramework>{target_framework}</TargetFramework>");
+    if content.contains("<TargetFrameworks>net8.0;net10.0</TargetFrameworks>") {
+        return Ok(content.replace(
+            "<TargetFrameworks>net8.0;net10.0</TargetFrameworks>",
+            &target_framework_property,
+        ));
+    }
+
+    anyhow::bail!("Invalid C# template: missing net8.0/net10.0 TargetFrameworks property")
+}
+
+fn configure_csharp_project_files(project_path: &Path, dotnet_major: u8) -> anyhow::Result<()> {
+    let global_json_path = project_path.join("global.json");
+    std::fs::write(&global_json_path, csharp_global_json(dotnet_major))?;
+
+    let csproj_path = project_path.join("StdbModule.csproj");
+    let csproj = std::fs::read_to_string(&csproj_path)?;
+    std::fs::write(&csproj_path, csharp_csproj_for_target(&csproj, dotnet_major)?)?;
+
+    Ok(())
+}
+
+/// Adds NativeAOT-LLVM project configuration to an existing C# .csproj file and creates NuGet.Config.
+///
+/// The configuration differs depending on the target .NET version:
+///
+/// **.NET 8 AOT** (`--native-aot`): Keeps `net8.0` TFM and adds explicit ILCompiler.LLVM 8.0.0-*
+/// package references, gated on `EXPERIMENTAL_WASM_AOT=1`.
+///
+/// **.NET 10 AOT**: Replaces the TFM with `net10.0` directly (no conditional needed since the
+/// project is definitively targeting .NET 10). ILCompiler.LLVM refs are provided transitively
+/// by the SpacetimeDB.Runtime NuGet package.
+///
+/// Both paths need a NuGet.Config with the dotnet-experimental feed for ILCompiler.LLVM resolution.
+fn add_native_aot_packages_to_csproj(project_path: &Path, dotnet_major: Option<u8>) -> anyhow::Result<()> {
     let csproj_path = project_path.join("StdbModule.csproj");
     if !csproj_path.exists() {
         anyhow::bail!("Could not find StdbModule.csproj at {}", csproj_path.display());
@@ -1798,31 +1918,37 @@ fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> 
 
     let content = std::fs::read_to_string(&csproj_path)?;
 
-    // The NativeAOT-LLVM ItemGroup to add
-    let native_aot_item_group = r#"
+    let new_content = if dotnet_major == Some(8) {
+        // .NET 8 AOT: keep net8.0 TFM, add explicit ILCompiler.LLVM package references.
+        let native_aot_config = r#"
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
-    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.$(NETCoreSdkPortableRuntimeIdentifier).Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
   </ItemGroup>
 "#;
-
-    // Insert the ItemGroup before the closing </Project> tag
-    let new_content = if let Some(pos) = content.rfind("</Project>") {
-        let (before, after) = content.split_at(pos);
-        format!("{}{}{}", before.trim_end(), native_aot_item_group, after)
+        if let Some(pos) = content.rfind("</Project>") {
+            let (before, after) = content.split_at(pos);
+            format!("{}{}{}", before.trim_end(), native_aot_config, after)
+        } else {
+            anyhow::bail!("Invalid .csproj file: missing </Project> tag");
+        }
     } else {
-        anyhow::bail!("Invalid .csproj file: missing </Project> tag");
+        // .NET 10 AOT: directly set TFM to net10.0 (no conditional needed).
+        // ILCompiler.LLVM comes transitively via the SpacetimeDB.Runtime NuGet package.
+        content.replace(
+            "<TargetFramework>net8.0</TargetFramework>",
+            "<TargetFramework>net10.0</TargetFramework>",
+        )
     };
 
     std::fs::write(&csproj_path, new_content)?;
     println!(
-        "{} Added NativeAOT-LLVM package references to {}",
+        "{} Added NativeAOT-LLVM project configuration to {}",
         "✓".green(),
         csproj_path.display()
     );
 
-    // Create NuGet.Config with the dotnet-experimental feed required for NativeAOT-LLVM packages
+    // Create NuGet.Config with the dotnet-experimental feed required for ILCompiler.LLVM packages
     let nuget_config_path = project_path.join("NuGet.Config");
     let nuget_config_content = r#"<?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -1831,6 +1957,17 @@ fn add_native_aot_packages_to_csproj(project_path: &Path) -> anyhow::Result<()> 
     <add key="dotnet-experimental" value="https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json" />
     <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
   </packageSources>
+  <packageSourceMapping>
+    <!-- Experimental packages for NativeAOT-LLVM compilation -->
+    <packageSource key="dotnet-experimental">
+      <package pattern="Microsoft.DotNet.ILCompiler.LLVM" />
+      <package pattern="runtime.*" />
+    </packageSource>
+    <!-- Fallback for other packages -->
+    <packageSource key="nuget.org">
+      <package pattern="*" />
+    </packageSource>
+  </packageSourceMapping>
 </configuration>
 "#;
 
@@ -1913,7 +2050,7 @@ pub async fn exec_init_rust(args: &ArgMatches) -> anyhow::Result<()> {
 
 pub async fn exec_init_csharp(args: &ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
-    init_csharp_project(project_path)?;
+    init_csharp_project(project_path, None)?;
 
     println!(
         "{}",
@@ -2298,6 +2435,9 @@ bytes.workspace = true
         std::fs::write(
             &csproj,
             r#"<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup Condition="$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'">
+    <PublishTrimmed>true</PublishTrimmed>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="SpacetimeDB.Runtime" Version="workspace" />
     <ProjectReference Include="..\Runtime\Runtime.csproj" />
@@ -2310,13 +2450,16 @@ bytes.workspace = true
         update_csproj_server_to_nuget(temp.path()).unwrap();
 
         let content = std::fs::read_to_string(csproj).unwrap();
-        let root = Element::parse(content.as_bytes()).unwrap();
+        assert!(content
+            .contains("Condition=\"$(TargetFramework.StartsWith('net10.')) Or '$(EXPERIMENTAL_WASM_AOT)' == '1'\""));
+        assert!(!content.contains("&apos;"));
+        let root = xmltree::Element::parse(content.as_bytes()).unwrap();
         let runtime_version = root.children.iter().find_map(|node| {
-            let XMLNode::Element(item_group) = node else {
+            let xmltree::XMLNode::Element(item_group) = node else {
                 return None;
             };
             item_group.children.iter().find_map(|node| {
-                let XMLNode::Element(package_ref) = node else {
+                let xmltree::XMLNode::Element(package_ref) = node else {
                     return None;
                 };
                 if package_ref.name == "PackageReference"
@@ -2330,6 +2473,64 @@ bytes.workspace = true
         });
         assert_eq!(runtime_version, Some(cli_patch_wildcard().as_str()));
         assert!(!content.contains("ProjectReference"));
+    }
+
+    #[test]
+    fn test_parse_dotnet_sdk_major() {
+        assert_eq!(parse_dotnet_sdk_major("8.0.125 [/usr/lib64/dotnet/sdk]"), Some(8));
+        assert_eq!(parse_dotnet_sdk_major("10.0.108 [/usr/lib64/dotnet/sdk]"), Some(10));
+        assert_eq!(parse_dotnet_sdk_major("not-a-version [/usr/lib64/dotnet/sdk]"), None);
+        assert_eq!(parse_dotnet_sdk_major(""), None);
+    }
+
+    #[test]
+    fn test_dotnet_init_default_is_8_on_macos_or_when_it_is_the_only_sdk_major() {
+        assert_eq!(
+            dotnet8_default_reason("macos", Some(&[8, 10])),
+            Some(Dotnet8DefaultReason::MacOsHost)
+        );
+        assert_eq!(
+            dotnet8_default_reason("linux", Some(&[8])),
+            Some(Dotnet8DefaultReason::OnlySdkInstalled)
+        );
+        assert_eq!(dotnet8_default_reason("linux", Some(&[])), None);
+        assert_eq!(dotnet8_default_reason("linux", Some(&[10])), None);
+        assert_eq!(dotnet8_default_reason("linux", Some(&[8, 10])), None);
+        assert_eq!(dotnet8_default_reason("linux", None), None);
+    }
+
+    #[test]
+    fn test_csharp_global_json_matches_selected_target() {
+        assert!(csharp_global_json(8).contains("\"version\": \"8.0.100\""));
+        assert!(csharp_global_json(8).contains("\"rollForward\": \"latestFeature\""));
+        assert!(csharp_global_json(10).contains("\"version\": \"10.0.100\""));
+        assert!(csharp_global_json(10).contains("\"rollForward\": \"latestMinor\""));
+    }
+
+    #[test]
+    fn test_init_cli_parses_dotnet_version_as_supported_sdk_major() {
+        let matches = cli().try_get_matches_from(["init", "--dotnet-version", "10"]).unwrap();
+        let options = InitOptions::from_args(&matches).unwrap();
+
+        assert_eq!(options.dotnet_version, Some(10));
+    }
+
+    #[test]
+    fn test_init_cli_rejects_unsupported_dotnet_version() {
+        assert!(cli().try_get_matches_from(["init", "--dotnet-version", "9"]).is_err());
+    }
+
+    #[test]
+    fn test_csharp_csproj_for_target_uses_single_target_framework() {
+        let template = include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj");
+
+        let net8 = csharp_csproj_for_target(template, 8).unwrap();
+        assert!(net8.contains("<TargetFramework>net8.0</TargetFramework>"));
+        assert!(!net8.contains("<TargetFrameworks"));
+
+        let net10 = csharp_csproj_for_target(template, 10).unwrap();
+        assert!(net10.contains("<TargetFramework>net10.0</TargetFramework>"));
+        assert!(!net10.contains("<TargetFrameworks"));
     }
 
     #[test]

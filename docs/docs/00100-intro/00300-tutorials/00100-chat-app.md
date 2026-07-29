@@ -68,18 +68,12 @@ No additional installation needed - Node.js/npm will handle dependencies.
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Next we need to [install .NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) so that we can build and publish our module.
+Next we need to [install .NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) so that we can build and publish our module.
 
-You may already have .NET 8 installed:
+You may already have .NET 10 installed:
 
 ```bash
 dotnet --list-sdks
-```
-
-.NET 8.0 is the earliest to have the `wasi-experimental` workload that we rely on, but requires manual activation:
-
-```bash
-dotnet workload install wasi-experimental
 ```
 
 </TabItem>

@@ -88,7 +88,7 @@ The complete set of column attributes:
 ```csharp
 [PrimaryKey]          // primary key
 [AutoInc]             // auto-increment (use 0 as placeholder on insert)
-[Unique]              // unique constraint
+[Unique]              // unique constraint; indexes the column, enables .Find()
 [SpacetimeDB.Index.BTree]  // btree index (enables .Filter() on this column)
 ```
 
@@ -127,9 +127,10 @@ public static void DoReset(ReducerContext ctx) { ... }
 ## DB Operations
 
 ```csharp
-ctx.Db.Entity.Insert(new Entity { Name = "Sample" });             // Insert
+var row = ctx.Db.Entity.Insert(new Entity { Name = "Sample" });   // Insert; returns the row with AutoInc fields assigned
 ctx.Db.Entity.Id.Find(entityId);                                  // Find by PK → Entity? (nullable)
 ctx.Db.Entity.Identity.Find(ctx.Sender);                          // Find by unique column → Entity?
+if (ctx.Db.Entity.Id.Find(entityId) is { } entity) { ... }        // unwrap Entity? before member access
 ctx.Db.Item.AuthorId.Filter(authorId);                            // Filter by index → IEnumerable<Item>
 ctx.Db.Entity.Iter();                                             // All rows → IEnumerable<Entity>
 ctx.Db.Entity.Count;                                              // Count rows
@@ -191,7 +192,7 @@ var expiry = ctx.Timestamp + new TimeDuration(delayMicros);
 int roll = ctx.Rng.Next(1, 7);          // [1, 7): inclusive 1, exclusive 7
 double f = ctx.Rng.NextDouble();        // [0.0, 1.0)
 
-// Client: Timestamp → milliseconds since epoch
+// Timestamp → milliseconds since epoch
 timestamp.MicrosecondsSinceUnixEpoch / 1000
 ```
 

@@ -35,7 +35,7 @@ public abstract class HandlerContextBase
     }
 
     protected abstract HandlerTxContextBase CreateTxContext(Internal.TxContext inner);
-    protected internal abstract LocalBase CreateLocal();
+    protected abstract LocalBase CreateLocal();
 
     public Internal.TxContext EnterTxContext(long timestampMicros) =>
         txState.EnterTxContext(timestampMicros);
@@ -99,7 +99,7 @@ internal sealed partial class RuntimeHandlerContext(Random random, Timestamp tim
 {
     private readonly RuntimeLocal _db = new();
 
-    protected internal override LocalBase CreateLocal() => _db;
+    protected override LocalBase CreateLocal() => _db;
 
     protected override HandlerTxContextBase CreateTxContext(Internal.TxContext inner) =>
         _cached ??= new RuntimeHandlerTxContext(inner);

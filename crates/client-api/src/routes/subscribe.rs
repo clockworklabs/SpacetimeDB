@@ -892,6 +892,23 @@ fn ws_recv_loop(
     idle_tx: watch::Sender<Instant>,
     mut ws: impl Stream<Item = Result<WsMessage, WsError>> + Unpin,
 ) -> impl Stream<Item = ClientMessage> {
+    fn receive_error_cause(error: &WsError) -> ClientDisconnectCause {
+        match error {
+            WsError::ConnectionClosed => ClientDisconnectCause::WebsocketReceiveConnectionClosed,
+            WsError::AlreadyClosed => ClientDisconnectCause::WebsocketReceiveAlreadyClosed,
+            WsError::Io(_) => ClientDisconnectCause::WebsocketReceiveIo,
+            WsError::Tls(_) => ClientDisconnectCause::WebsocketReceiveTls,
+            WsError::Capacity(_) => ClientDisconnectCause::WebsocketReceiveCapacity,
+            WsError::Protocol(_) => ClientDisconnectCause::WebsocketReceiveProtocol,
+            WsError::WriteBufferFull(_) => ClientDisconnectCause::WebsocketReceiveWriteBufferFull,
+            WsError::Utf8(_) => ClientDisconnectCause::WebsocketReceiveUtf8,
+            WsError::AttackAttempt => ClientDisconnectCause::WebsocketReceiveAttackAttempt,
+            WsError::Url(_) => ClientDisconnectCause::WebsocketReceiveUrl,
+            WsError::Http(_) => ClientDisconnectCause::WebsocketReceiveHttp,
+            WsError::HttpFormat(_) => ClientDisconnectCause::WebsocketReceiveHttpFormat,
+        }
+    }
+
     // Get the next message from `ws`, or `None` if the stream is exhausted.
     //
     // If `state.closed`, `ws` is drained until it either yields an `Err`, is
@@ -948,27 +965,13 @@ fn ws_recv_loop(
                     log::trace!("message received while already closed");
                 }
                 // None of the error cases can be meaningfully recovered from
-                // (and some can't even occur on the `ws` stream).
-                // Exit here but spell out an exhaustive match
-                // in order to bring any future library changes to our attention.
-                Err(e) => match e {
-                    e @ (WsError::ConnectionClosed
-                    | WsError::AlreadyClosed
-                    | WsError::Io(_)
-                    | WsError::Tls(_)
-                    | WsError::Capacity(_)
-                    | WsError::Protocol(_)
-                    | WsError::WriteBufferFull(_)
-                    | WsError::Utf8(_)
-                    | WsError::AttackAttempt
-                    | WsError::Url(_)
-                    | WsError::Http(_)
-                    | WsError::HttpFormat(_)) => {
-                        state.record_disconnect(ClientDisconnectCause::WebsocketReceiveError);
-                        log::warn!("Websocket receive error: {e}");
-                        break;
-                    }
-                },
+                // (and some can't even occur on the `ws` stream), so record the
+                // specific receive error cause and terminate the stream.
+                Err(e) => {
+                    state.record_disconnect(receive_error_cause(&e));
+                    log::warn!("Websocket receive error: {e}");
+                    break;
+                }
             }
         }
     }
@@ -2129,7 +2132,8 @@ mod tests {
     #[tokio::test]
     async fn recv_loop_terminates_when_input_yields_err() {
         let state = Arc::new(actor_state_with_disconnect_recorder(2, <_>::default()));
-        let before = disconnect_count(state.database, ClientDisconnectCause::WebsocketReceiveError);
+        let cause = ClientDisconnectCause::WebsocketReceiveConnectionClosed;
+        let before = disconnect_count(state.database, cause);
         let (idle_tx, _idle_rx) = watch::channel(Instant::now() + state.config.idle_timeout);
 
         let input = stream::iter(vec![
@@ -2144,7 +2148,7 @@ mod tests {
 
         assert_matches!(recv_loop.next().await, Some(ClientMessage::Ping(_)));
         assert_matches!(recv_loop.next().await, None);
-        assert_disconnect_count_incremented(state.database, ClientDisconnectCause::WebsocketReceiveError, before);
+        assert_disconnect_count_incremented(state.database, cause, before);
     }
 
     #[tokio::test]

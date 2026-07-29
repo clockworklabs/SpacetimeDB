@@ -12,6 +12,7 @@ const Shape = t.enum('Shape', {
 
 const drawing = table({
   name: 'drawing',
+  public: true,
 }, {
   id: t.u64().primaryKey().autoInc(),
   a: Shape,
