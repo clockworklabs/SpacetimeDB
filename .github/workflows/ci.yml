@@ -163,15 +163,24 @@ jobs:
 
       - uses: ./.github/actions/smoketest-setup
 
-      # Node.js and pnpm are required for the TypeScript quickstart smoketest.
+      # Node.js and pnpm are required for the TypeScript smoketests.
+      # pnpm must be available before setup-node can locate and cache its store.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: package.json
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
+      - name: Install pnpm dependencies
+        run: |
+          pnpm config set --global minimumReleaseAge 1440
+          pnpm install --frozen-lockfile
 
       - uses: ./.github/actions/smoketest-run-partition
         with:
@@ -200,15 +209,24 @@ jobs:
 
       - uses: ./.github/actions/smoketest-setup
 
-      # Node.js and pnpm are required for the TypeScript quickstart smoketest.
+      # Node.js and pnpm are required for the TypeScript smoketests.
+      # pnpm must be available before setup-node can locate and cache its store.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: package.json
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
-      - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
+      - name: Install pnpm dependencies
+        run: |
+          pnpm config set --global minimumReleaseAge 1440
+          pnpm install --frozen-lockfile
 
       - uses: ./.github/actions/smoketest-run-partition
         with:
