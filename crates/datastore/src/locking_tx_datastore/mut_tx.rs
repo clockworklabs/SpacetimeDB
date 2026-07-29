@@ -1349,7 +1349,7 @@ impl MutTxId {
         Ok(())
     }
 
-    /// Change the runtime source-name alias of the index identified by `index_id`.
+    /// Change the source-name alias of the index identified by `index_id`.
     pub(crate) fn alter_index_source_name(
         &mut self,
         index_id: IndexId,
@@ -1389,7 +1389,7 @@ impl MutTxId {
         Ok(())
     }
 
-    /// Change the runtime accessor name alias of the table identified by `table_id`.
+    /// Change the accessor name alias of the table identified by `table_id`.
     pub(crate) fn alter_table_accessor_name(&mut self, table_id: TableId, new_alias: Identifier) -> Result<()> {
         let table_name = self.find_st_table_row(table_id)?.table_name;
 
@@ -1418,7 +1418,7 @@ impl MutTxId {
         Ok(())
     }
 
-    /// Change the runtime accessor name alias of the column identified by `table_id` and `col_id`.
+    /// Change the accessor name alias of the column identified by `table_id` and `col_id`.
     pub(crate) fn alter_column_accessor_name(
         &mut self,
         table_id: TableId,

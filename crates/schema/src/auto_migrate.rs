@@ -298,12 +298,12 @@ pub enum AutoMigrateStep<'def> {
     /// no `ChangeColumns` steps will be, for the same table.
     AddColumns(<TableDef as ModuleDefLookup>::Key<'def>),
 
-    /// Change the runtime source-name alias of an existing index.
+    /// Change the source-name alias of an existing index.
     ChangeIndexSourceName(<IndexDef as ModuleDefLookup>::Key<'def>),
 
-    /// Change the runtime accessor name alias of an existing table.
+    /// Change the accessor name alias of an existing table.
     ChangeTableAccessorName(<TableDef as ModuleDefLookup>::Key<'def>),
-    /// Change the runtime accessor name alias of an existing column.
+    /// Change the accessor name alias of an existing column.
     ChangeColumnAccessorName(<TableDef as ModuleDefLookup>::Key<'def>, &'def Identifier),
 
     /// Add a table, including all indexes, constraints, and sequences.
