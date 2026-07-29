@@ -580,7 +580,8 @@ fn call_scheduled_reducer_until_done(
         }
     };
 
-    let result = call_scheduled_reducer_with_tx(module_info, db, id, tx, (timestamp, instant), params, inst_common, inst);
+    let result =
+        call_scheduled_reducer_with_tx(module_info, db, id, tx, (timestamp, instant), params, inst_common, inst);
     if let Some((function_name, delay)) = delay.as_ref() {
         record_scheduled_function_delay(module_info, function_name, *delay);
     }
