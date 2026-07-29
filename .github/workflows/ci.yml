@@ -120,4 +120,4 @@ jobs:
       - name: Run tests
         run: |
           source ~/emsdk/emsdk_env.sh
-          cargo nextest run --manifest-path crates/schema/Cargo.toml
+          cargo test --manifest-path crates/schema/Cargo.toml
