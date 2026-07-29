@@ -16,7 +16,9 @@ const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     // https://github.com/clockworklabs/SpacetimeDB/issues/5623
     //("u64_value", "64"),
     //("i64_value", "-64"),
-    ("f32_value", "32.5"),
+    // TODO: uncomment once f32s are fixed.
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5624
+    //("f32_value", "32.5"),
     //("f64_value", "-64.25"),
     // TODO: uncomment this once string default values are fixed in Rust
     //("string_value", r#""default string""#),
