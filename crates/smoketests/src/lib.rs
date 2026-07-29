@@ -628,34 +628,41 @@ impl<'a> PublishBuilder<'a> {
             source,
         } = self;
 
-        if let Some(source) = source {
+        let mut csharp_module_path = None;
+        let (module_path_arg, module_path, module_build_args): (&str, PathBuf, &[&str]) = if let Some(source) = source {
             let module_name = name.as_deref().context("No module name provided for source publish")?;
-            return match source.language {
-                ModuleLanguage::TypeScript => smoketest.publish_typescript_module_source_internal(
+            let module_path = match source.language {
+                ModuleLanguage::TypeScript => smoketest.prepare_typescript_module_source_internal(
                     &source.project_dir_name,
                     module_name,
                     &source.module_source,
-                    clear,
-                    break_clients,
-                ),
-                ModuleLanguage::CSharp => smoketest.publish_csharp_module_source_internal(
-                    &source.project_dir_name,
-                    module_name,
-                    &source.module_source,
-                    clear,
-                    break_clients,
-                ),
-                ModuleLanguage::Cpp => smoketest.publish_cpp_module_source_internal(
-                    &source.project_dir_name,
-                    module_name,
-                    &source.module_source,
-                    clear,
-                    break_clients,
-                ),
+                )?,
+                ModuleLanguage::CSharp => {
+                    let module_path = smoketest.prepare_csharp_module_source_internal(
+                        &source.project_dir_name,
+                        module_name,
+                        &source.module_source,
+                    )?;
+                    csharp_module_path = Some(module_path.clone());
+                    module_path
+                }
+                ModuleLanguage::Cpp => {
+                    smoketest.prepare_cpp_module_source_internal(&source.project_dir_name, &source.module_source)?
+                }
             };
-        }
+            let module_build_args: &[&str] = match source.language {
+                ModuleLanguage::CSharp => &["--dotnet-version", "10"],
+                ModuleLanguage::TypeScript | ModuleLanguage::Cpp => &[],
+            };
+            ("--module-path", module_path, module_build_args)
+        } else {
+            ("--bin-path", smoketest.prepare_rust_module_internal()?, &[])
+        };
 
-        smoketest.publish_module_internal(
+        let identity = smoketest.publish_prepared_module_internal(
+            module_path_arg,
+            &module_path,
+            module_build_args,
             name.as_deref(),
             clear,
             break_clients,
@@ -663,7 +670,13 @@ impl<'a> PublishBuilder<'a> {
             organization.as_deref(),
             force,
             stdin_input.as_deref(),
-        )
+        )?;
+
+        if let Some(module_path) = csharp_module_path {
+            csharp::verify_csharp_module_restore(&module_path)?;
+        }
+
+        Ok(identity)
     }
 }
 
@@ -1199,14 +1212,12 @@ impl Smoketest {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    fn publish_typescript_module_source_internal(
+    fn prepare_typescript_module_source_internal(
         &mut self,
         project_dir_name: &str,
         module_name: &str,
         module_source: &str,
-        clear: bool,
-        break_clients: bool,
-    ) -> Result<String> {
+    ) -> Result<PathBuf> {
         let module_root = self.project_dir.path().join(project_dir_name);
         let module_root_str = module_root.to_str().context("Invalid TypeScript project path")?;
         self.spacetime(&[
@@ -1229,43 +1240,15 @@ impl Smoketest {
         let ts_bindings_path = ts_bindings.to_str().context("Invalid TypeScript bindings path")?;
         pnpm(&["install", ts_bindings_path], &module_path)?;
 
-        let module_path_str = module_path.to_str().context("Invalid TypeScript module path")?;
-        let mut publish_args = vec![
-            "publish",
-            "--server",
-            &self.server_url,
-            "--module-path",
-            module_path_str,
-            "--yes",
-        ];
-        if clear {
-            publish_args.push("--clear-database");
-        }
-        if break_clients {
-            publish_args.push("--break-clients");
-        }
-        publish_args.push(module_name);
-        let publish_output = self.spacetime(&publish_args)?;
-
-        let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
-        let identity = re
-            .captures(&publish_output)
-            .and_then(|caps| caps.get(1))
-            .map(|m| m.as_str().to_string())
-            .context("Failed to parse database identity from publish output")?;
-        self.database_identity = Some(identity.clone());
-
-        Ok(identity)
+        Ok(module_path)
     }
 
-    fn publish_csharp_module_source_internal(
+    fn prepare_csharp_module_source_internal(
         &mut self,
         project_dir_name: &str,
         module_name: &str,
         module_source: &str,
-        clear: bool,
-        break_clients: bool,
-    ) -> Result<String> {
+    ) -> Result<PathBuf> {
         let module_root = self.project_dir.path().join(project_dir_name);
         let module_root_str = module_root.to_str().context("Invalid C# project path")?;
         self.spacetime(&[
@@ -1284,41 +1267,10 @@ impl Smoketest {
         fs::write(module_path.join("Lib.cs"), module_source).context("Failed to write C# module code")?;
         csharp::prepare_csharp_module(&module_path)?;
 
-        let module_path_str = module_path.to_str().context("Invalid C# module path")?;
-        let mut publish_args = vec![
-            "publish",
-            "--server",
-            &self.server_url,
-            "--module-path",
-            module_path_str,
-            "--dotnet-version",
-            "10",
-            "--yes",
-        ];
-        if clear {
-            publish_args.push("--clear-database");
-        }
-        if break_clients {
-            publish_args.push("--break-clients");
-        }
-        publish_args.push(module_name);
-        let publish_output = self.spacetime(&publish_args)?;
-        csharp::verify_csharp_module_restore(&module_path)?;
-
-        let identity = parse_identity_from_publish_output(&publish_output)?;
-        self.database_identity = Some(identity.clone());
-
-        Ok(identity)
+        Ok(module_path)
     }
 
-    fn publish_cpp_module_source_internal(
-        &mut self,
-        project_dir_name: &str,
-        module_name: &str,
-        module_source: &str,
-        clear: bool,
-        break_clients: bool,
-    ) -> Result<String> {
+    fn prepare_cpp_module_source_internal(&mut self, project_dir_name: &str, module_source: &str) -> Result<PathBuf> {
         let module_path = self.project_dir.path().join(project_dir_name);
         let src_dir = module_path.join("src");
         fs::create_dir_all(&src_dir).context("Failed to create C++ source directory")?;
@@ -1333,28 +1285,7 @@ impl Smoketest {
         fs::write(module_path.join("CMakeLists.txt"), cmakelists).context("Failed to write C++ CMakeLists.txt")?;
         fs::write(src_dir.join("lib.cpp"), module_source).context("Failed to write C++ module code")?;
 
-        let module_path_str = module_path.to_str().context("Invalid C++ module path")?;
-        let mut publish_args = vec![
-            "publish",
-            "--server",
-            &self.server_url,
-            "--module-path",
-            module_path_str,
-            "--yes",
-        ];
-        if clear {
-            publish_args.push("--clear-database");
-        }
-        if break_clients {
-            publish_args.push("--break-clients");
-        }
-        publish_args.push(module_name);
-        let publish_output = self.spacetime(&publish_args)?;
-
-        let identity = parse_identity_from_publish_output(&publish_output)?;
-        self.database_identity = Some(identity.clone());
-
-        Ok(identity)
+        Ok(module_path)
     }
 
     /// Writes new module code to the project.
@@ -1461,18 +1392,44 @@ log = "0.4"
         PublishBuilder::new(self)
     }
 
-    /// Publishes the module and stores the database identity.
-    ///
-    /// If `name` is provided, the database will be published with that name.
-    /// If `clear` is true, the database will be cleared before publishing.
-    /// If `force` is false, the publish command will not pass `--yes`, so interactive prompts are not suppressed.
-    /// If `stdin_input` is provided, it will be passed to the CLI for interactive prompts.
-    ///
-    /// When `name` is an existing database identity, this re-publishes to that database, which is useful for testing
-    /// auto-migrations where you want to update the module without clearing the database.
+    fn prepare_rust_module_internal(&self) -> Result<PathBuf> {
+        if let Some(precompiled_path) = &self.precompiled_wasm_path {
+            eprintln!("[TIMING] spacetime build: skipped (using precompiled)");
+            return Ok(precompiled_path.clone());
+        }
+
+        let project_path = self.project_dir.path().to_str().unwrap();
+        let build_start = Instant::now();
+        let cli_path = self.cli_path();
+        let target_dir = shared_target_dir();
+
+        let mut build_cmd = Command::new(&cli_path);
+        build_cmd
+            .args(["build", "--module-path", project_path])
+            .current_dir(self.project_dir.path())
+            .env("CARGO_TARGET_DIR", &target_dir);
+
+        let build_output = build_cmd.output().expect("Failed to execute spacetime build");
+        eprintln!("[TIMING] spacetime build: {:?}", build_start.elapsed());
+
+        if !build_output.status.success() {
+            bail!(
+                "spacetime build failed:\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&build_output.stdout),
+                String::from_utf8_lossy(&build_output.stderr)
+            );
+        }
+
+        let wasm_filename = format!("{}.wasm", self.module_name);
+        Ok(target_dir.join("wasm32-unknown-unknown/release").join(wasm_filename))
+    }
+
     #[allow(clippy::too_many_arguments)]
-    fn publish_module_internal(
+    fn publish_prepared_module_internal(
         &mut self,
+        module_path_arg: &str,
+        module_path: &Path,
+        module_build_args: &[&str],
         name: Option<&str>,
         clear: bool,
         break_clients: bool,
@@ -1481,84 +1438,30 @@ log = "0.4"
         force: Option<&str>,
         stdin_input: Option<&str>,
     ) -> Result<String> {
-        let start = Instant::now();
-
-        // Determine the WASM path - either precompiled or build it
-        let wasm_path_str = if let Some(ref precompiled_path) = self.precompiled_wasm_path {
-            // Use pre-compiled WASM directly (no build needed)
-            eprintln!("[TIMING] spacetime build: skipped (using precompiled)");
-            precompiled_path.to_str().unwrap().to_string()
-        } else {
-            // Build the WASM module from source
-            let project_path = self.project_dir.path().to_str().unwrap().to_string();
-            let build_start = Instant::now();
-            let cli_path = self.cli_path();
-            let target_dir = shared_target_dir();
-
-            let mut build_cmd = Command::new(&cli_path);
-            build_cmd
-                .args(["build", "--module-path", &project_path])
-                .current_dir(self.project_dir.path())
-                .env("CARGO_TARGET_DIR", &target_dir);
-
-            let build_output = build_cmd.output().expect("Failed to execute spacetime build");
-            eprintln!("[TIMING] spacetime build: {:?}", build_start.elapsed());
-
-            if !build_output.status.success() {
-                bail!(
-                    "spacetime build failed:\nstdout: {}\nstderr: {}",
-                    String::from_utf8_lossy(&build_output.stdout),
-                    String::from_utf8_lossy(&build_output.stderr)
-                );
-            }
-
-            // Construct the wasm path using the unique module name
-            let wasm_filename = format!("{}.wasm", self.module_name);
-            let wasm_path = target_dir.join("wasm32-unknown-unknown/release").join(&wasm_filename);
-            wasm_path.to_str().unwrap().to_string()
-        };
-
-        // Now publish with --bin-path to skip rebuild
         let publish_start = Instant::now();
-        let mut args = vec!["publish", "--server", &self.server_url, "--bin-path", &wasm_path_str];
-        let force_arg;
-        if let Some(force) = force {
-            force_arg = format!("--yes={force}");
-            args.push(&force_arg);
-        }
-
-        if clear {
-            args.push("--clear-database");
-        }
-
-        if break_clients {
-            args.push("--break-clients");
-        }
-
-        let num_replicas_owned = num_replicas.map(|n| n.to_string());
-        if let Some(n) = num_replicas_owned.as_ref() {
-            args.push("--num-replicas");
-            args.push(n);
-        }
-
-        if let Some(org) = organization {
-            args.push("--organization");
-            args.push(org);
-        }
-
-        if let Some(n) = name {
-            args.push(n);
-        }
+        let module_path = module_path.to_str().context("Invalid module path")?;
+        let args = build_publish_args(
+            &self.server_url,
+            module_path_arg,
+            module_path,
+            module_build_args,
+            name,
+            clear,
+            break_clients,
+            num_replicas,
+            organization,
+            force,
+        );
+        let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
 
         let output = match stdin_input {
-            Some(stdin_input) => self.spacetime_with_stdin(&args, stdin_input)?,
-            None => self.spacetime(&args)?,
+            Some(stdin_input) => self.spacetime_with_stdin(&arg_refs, stdin_input)?,
+            None => self.spacetime(&arg_refs)?,
         };
         eprintln!(
             "[TIMING] spacetime publish (after build): {:?}",
             publish_start.elapsed()
         );
-        eprintln!("[TIMING] publish_module total: {:?}", start.elapsed());
 
         parse_identity_from_publish_output(&output).inspect(|identity| {
             self.database_identity = Some(identity.clone());
@@ -1954,6 +1857,53 @@ impl Drop for SubscriptionHandle {
             Err(_) => {}
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[deny(unused_variables)]
+fn build_publish_args(
+    server_url: &str,
+    module_path_arg: &str,
+    module_path: &str,
+    module_build_args: &[&str],
+    name: Option<&str>,
+    clear: bool,
+    break_clients: bool,
+    num_replicas: Option<u32>,
+    organization: Option<&str>,
+    force: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec![
+        "publish".to_string(),
+        "--server".to_string(),
+        server_url.to_string(),
+        module_path_arg.to_string(),
+        module_path.to_string(),
+    ];
+    args.extend(module_build_args.iter().map(|arg| (*arg).to_string()));
+
+    if let Some(force) = force {
+        args.push(format!("--yes={force}"));
+    }
+    if clear {
+        args.push("--clear-database".to_string());
+    }
+    if break_clients {
+        args.push("--break-clients".to_string());
+    }
+    if let Some(num_replicas) = num_replicas {
+        args.push("--num-replicas".to_string());
+        args.push(num_replicas.to_string());
+    }
+    if let Some(organization) = organization {
+        args.push("--organization".to_string());
+        args.push(organization.to_string());
+    }
+    if let Some(name) = name {
+        args.push(name.to_string());
+    }
+
+    args
 }
 
 fn split_server_url(server_url: &str) -> (&str, &str) {
