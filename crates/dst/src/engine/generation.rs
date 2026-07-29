@@ -4,13 +4,13 @@
 //! - `ValueGen::gen_insert_row` chooses the row-level insert shape: valid row,
 //!   whole-row duplicate, arbitrary candidate, or targeted uniqueness conflict.
 //! - `ValueGen::gen_value_for_case` chooses one generated column value: fresh
-//!   random, sampled from the accumulated pool, or mutated from that pool.
+//!   random, sampled from the accumulated pool, or near an accumulated pool value.
 //! - `MigrationGen` only chooses accepted vs. rejected migration work; concrete
 //!   schema rewrite rules live in `migrations.rs`.
 
 use std::collections::BTreeMap;
 
-use spacetimedb_lib::{bsatn, AlgebraicValue, ProductValue};
+use spacetimedb_lib::{AlgebraicValue, ProductValue};
 use spacetimedb_runtime::sim::Rng;
 use spacetimedb_sats::ArrayValue;
 
@@ -24,7 +24,6 @@ use crate::schema::{SchemaPlan, TablePlan, Type};
 // unique constraints, but a failed search must not stall the workload.
 const INSERT_CANDIDATE_ATTEMPTS: usize = 32;
 const VALUE_POOL_VALUES_PER_TYPE: usize = 4096;
-const MUTATION_BYTE_DELTAS: [u8; 4] = [1, u8::MAX, 0x80, 0x7f];
 
 /// Generation context for one model state plus accumulated generator memory.
 pub(crate) struct GenCtx<'a> {
@@ -72,14 +71,14 @@ impl WeightedChoice for InsertRowCase {}
 enum ColumnValueCase {
     Random,
     Pooled,
-    Mutated,
+    Near,
 }
 
 impl ColumnValueCase {
     const CHOICES: [Choice<Self>; 3] = [
         choice(50, Self::Random),
         choice(30, Self::Pooled),
-        choice(20, Self::Mutated),
+        choice(20, Self::Near),
     ];
 }
 
@@ -373,7 +372,21 @@ impl TypeValueGen for StringGen {
     }
 
     fn random(&self, rng: &Rng) -> AlgebraicValue {
-        AlgebraicValue::String(format!("v_{}", rng.next_u64()).into())
+        let mut state = rng.next_u64();
+        let len = match state % 100 {
+            0..=9 => 0,
+            10..=79 => (state as usize >> 8) % 32,
+            80..=97 => 32 + ((state as usize >> 8) % 224),
+            _ => 256 + ((state as usize >> 8) % 768),
+        };
+        let alphabet = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-'\"\\\n\t\0 %.,:;()[]{}";
+        let value = (0..len)
+            .map(|_| {
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                alphabet[(state as usize >> 32) % alphabet.len()] as char
+            })
+            .collect::<String>();
+        AlgebraicValue::String(value.into())
     }
 
     fn near_from(&self, rng: &Rng, value: AlgebraicValue) -> AlgebraicValue {
@@ -422,9 +435,19 @@ impl TypeValueGen for BytesGen {
             AlgebraicValue::Array(ArrayValue::U8(value)) => {
                 let mut value = value.to_vec();
                 if value.is_empty() {
-                    value.push(sample_delta(rng));
+                    value.push(rng.next_u64() as u8);
                 } else {
-                    mutate_bytes(rng, &mut value);
+                    let edits = 1 + rng.index(3);
+                    for _ in 0..edits {
+                        let index = rng.index(value.len());
+                        let delta = match rng.index(4) {
+                            0 => 1,
+                            1 => u8::MAX,
+                            2 => 0x80,
+                            _ => 0x7f,
+                        };
+                        value[index] = value[index].wrapping_add(delta);
+                    }
                 }
                 AlgebraicValue::Array(ArrayValue::U8(value.into()))
             }
@@ -564,7 +587,7 @@ impl<'a> ValueGen<'a> {
         match case {
             ColumnValueCase::Random => Some(self.generation.generator_mut(ty).random(self.rng)),
             ColumnValueCase::Pooled => self.pooled_value(ty),
-            ColumnValueCase::Mutated => self.mutated_pooled_value(ty),
+            ColumnValueCase::Near => Some(self.near_value(ty)),
         }
     }
 
@@ -619,11 +642,6 @@ impl<'a> ValueGen<'a> {
         self.generation.generator_mut(ty).pooled(self.rng)
     }
 
-    fn mutated_pooled_value(&mut self, ty: Type) -> Option<AlgebraicValue> {
-        let type_gen = self.generation.generator_mut(ty);
-        mutate_value(self.rng, type_gen, ty)
-    }
-
     fn near_value(&mut self, ty: Type) -> AlgebraicValue {
         let type_gen = self.generation.generator_mut(ty);
         type_gen.near(self.rng).unwrap_or_else(|| type_gen.random(self.rng))
@@ -639,37 +657,6 @@ impl<'a> ValueGen<'a> {
     fn table(&self, table: usize) -> &TablePlan {
         &self.model.schema().tables[table]
     }
-}
-
-fn mutate_value(rng: &Rng, type_gen: &dyn TypeValueGen, ty: Type) -> Option<AlgebraicValue> {
-    let value = type_gen.pooled(rng)?;
-    if let Some(mutated) = mutate_bsatn_value(rng, ty, &value).filter(|mutated| type_gen.matches(mutated)) {
-        return Some(mutated);
-    }
-
-    type_gen.near(rng)
-}
-
-fn mutate_bsatn_value(rng: &Rng, ty: Type, value: &AlgebraicValue) -> Option<AlgebraicValue> {
-    let mut bytes = bsatn::to_vec(value).ok()?;
-    mutate_bytes(rng, &mut bytes);
-    let ty = ty.to_algebraic();
-    AlgebraicValue::decode(&ty, &mut &bytes[..]).ok()
-}
-
-fn mutate_bytes(rng: &Rng, bytes: &mut [u8]) {
-    if bytes.is_empty() {
-        return;
-    }
-    let edits = 1 + rng.index(3);
-    for _ in 0..edits {
-        let index = rng.index(bytes.len());
-        bytes[index] = bytes[index].wrapping_add(sample_delta(rng));
-    }
-}
-
-fn sample_delta(rng: &Rng) -> u8 {
-    MUTATION_BYTE_DELTAS[rng.index(MUTATION_BYTE_DELTAS.len())]
 }
 
 // Sequence columns are engine-filled on insert. The command still needs a SATS
@@ -705,19 +692,6 @@ impl<'a> MigrationGen<'a> {
     }
 
     fn choose_accepted(&self) -> Option<Migration> {
-        let original = self.model.schema();
-        let mut schema = original.clone();
-        let steps = 1 + self.rng.index(10);
-
-        for _ in 0..steps {
-            let Some(rewrite) = Migration::choose_rewrite(self.rng, &schema, self.model) else {
-                break;
-            };
-            rewrite
-                .apply_to(&mut schema)
-                .expect("generated rewrite must be valid for the draft schema");
-        }
-
-        (schema != *original).then(|| Migration::from_schema(schema))
+        Migration::choose_accepted(self.rng, self.model.schema(), self.model)
     }
 }

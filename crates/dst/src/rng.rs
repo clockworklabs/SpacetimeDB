@@ -9,12 +9,6 @@ pub(crate) struct Choice<T> {
     value: T,
 }
 
-impl<T: Copy> Choice<T> {
-    pub(crate) const fn value(self) -> T {
-        self.value
-    }
-}
-
 /// Construct a weighted choice entry.
 pub(crate) const fn choice<T>(weight: u64, value: T) -> Choice<T> {
     Choice { weight, value }
