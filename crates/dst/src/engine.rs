@@ -25,7 +25,7 @@ mod row;
 mod state;
 mod workload;
 
-use self::migrations::{Migration, MigrationExpectation, MigrationRejection};
+use self::migrations::{Migration, MigrationExpectation};
 use self::row::{normalize_rows, row_to_bytes};
 use self::state::{
     table_schema_state_for_schema, CommitDelta, CountState, SchemaState, TableDelta, TableRowCount, TableRows,
@@ -234,12 +234,8 @@ impl EngineTarget {
             Ok(module_def) => module_def,
             Err(error) => {
                 return match migration.expectation() {
-                    MigrationExpectation::Rejected(MigrationRejection::InvalidDefinition) => {
-                        Ok(Observation::MigrationRejected {
-                            reason: MigrationRejection::InvalidDefinition,
-                        })
-                    }
-                    _ => Err(error),
+                    MigrationExpectation::Rejected => Ok(Observation::MigrationRejected),
+                    MigrationExpectation::Accepted => Err(error),
                 };
             }
         };
@@ -248,12 +244,8 @@ impl EngineTarget {
             Ok(plan) => plan,
             Err(error) => {
                 return match migration.expectation() {
-                    MigrationExpectation::Rejected(MigrationRejection::InvalidDefinition) => {
-                        Ok(Observation::MigrationRejected {
-                            reason: MigrationRejection::InvalidDefinition,
-                        })
-                    }
-                    _ => Err(error.into()),
+                    MigrationExpectation::Rejected => Ok(Observation::MigrationRejected),
+                    MigrationExpectation::Accepted => Err(error.into()),
                 };
             }
         };
@@ -264,21 +256,7 @@ impl EngineTarget {
                 self.apply_auto_migration(migration, plan)?;
                 Ok(Observation::Migrated)
             }
-            MigrationExpectation::Rejected(MigrationRejection::ManualRequired) => match plan {
-                MigratePlan::Manual(_) => Ok(Observation::MigrationRejected {
-                    reason: MigrationRejection::ManualRequired,
-                }),
-                MigratePlan::Auto(_) => {
-                    anyhow::bail!("engine unexpectedly auto-accepted migration expected to require manual migration")
-                }
-            },
-            MigrationExpectation::Rejected(MigrationRejection::PrecheckFailure) => {
-                ensure_auto_plan(&plan)?;
-                self.expect_precheck_failure(plan)
-            }
-            MigrationExpectation::Rejected(MigrationRejection::InvalidDefinition) => {
-                anyhow::bail!("engine produced a migration plan for a schema expected to be invalid")
-            }
+            MigrationExpectation::Rejected => self.expect_rejected_migration(plan),
         }
     }
 
@@ -298,17 +276,19 @@ impl EngineTarget {
         Ok(())
     }
 
-    fn expect_precheck_failure(&self, plan: MigratePlan<'_>) -> anyhow::Result<Observation> {
+    fn expect_rejected_migration(&self, plan: MigratePlan<'_>) -> anyhow::Result<Observation> {
+        if matches!(&plan, MigratePlan::Manual(_)) {
+            return Ok(Observation::MigrationRejected);
+        }
+
         let db = self
             .db
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
         match update_database(db, &mut tx, AuthCtx::for_testing(), plan, &DstUpdateLogger) {
-            Ok(_) => anyhow::bail!("engine applied migration expected to fail precheck"),
-            Err(_) => Ok(Observation::MigrationRejected {
-                reason: MigrationRejection::PrecheckFailure,
-            }),
+            Ok(_) => anyhow::bail!("engine applied migration expected to be rejected"),
+            Err(_) => Ok(Observation::MigrationRejected),
         }
     }
 

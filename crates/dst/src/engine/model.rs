@@ -340,7 +340,7 @@ impl Model {
                         self.sequences = remap_sequence_states(&old_schema, &self.schema, old_sequences);
                         Observation::Migrated
                     }
-                    MigrationExpectation::Rejected(reason) => Observation::MigrationRejected { reason },
+                    MigrationExpectation::Rejected => Observation::MigrationRejected,
                 }
             }
             Interaction::Replay => {

@@ -3,7 +3,7 @@
 use std::fmt::{Debug, Error as FmtError, Formatter};
 
 use super::generation::{GenCtx, GenerationState};
-use super::migrations::{Migration, MigrationRejection};
+use super::migrations::Migration;
 use super::model::Model;
 use super::row::Row;
 use super::state::{CommitDelta, CountState};
@@ -59,7 +59,7 @@ pub enum Observation {
     Deleted,
     Committed { delta: CommitDelta },
     Migrated,
-    MigrationRejected { reason: MigrationRejection },
+    MigrationRejected,
     Replayed { state: CountState },
 }
 
