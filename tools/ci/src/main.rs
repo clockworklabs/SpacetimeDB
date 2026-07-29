@@ -182,6 +182,59 @@ fn npmrc_minimum_release_age(path: &Path, expected_minimum_release_age: u64) -> 
         })
 }
 
+fn workflow_job_bounds(lines: &[&str], line_index: usize) -> (usize, usize) {
+    let is_job_header = |line: &str| {
+        line.starts_with("  ")
+            && !line.starts_with("   ")
+            && !line.trim_start().starts_with('#')
+            && line.trim_end().ends_with(':')
+    };
+
+    let start = (0..line_index)
+        .rev()
+        .find(|&index| is_job_header(lines[index]))
+        .unwrap_or(0);
+    let end = (line_index + 1..lines.len())
+        .find(|&index| is_job_header(lines[index]))
+        .unwrap_or(lines.len());
+    (start, end)
+}
+
+fn check_workflow_pnpm_release_age_policy(
+    workflow_path: &Path,
+    contents: &str,
+    expected_minimum_release_age: u64,
+) -> Result<()> {
+    const DIRECT_PNPM_SETUP: &str = "uses: pnpm/action-setup@v4";
+    let required_policy = format!("pnpm config set --global minimumReleaseAge {expected_minimum_release_age}");
+    let lines: Vec<_> = contents.lines().collect();
+
+    for (setup_index, _) in lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.trim().trim_start_matches("- ") == DIRECT_PNPM_SETUP)
+    {
+        let (_, job_end) = workflow_job_bounds(&lines, setup_index);
+        let following_steps = &lines[setup_index + 1..job_end];
+        let policy_index = following_steps.iter().position(|line| line.contains(&required_policy));
+        let install_index = following_steps.iter().position(|line| line.contains("pnpm install"));
+        let policy_is_missing_or_late = match policy_index {
+            Some(policy_index) => install_index.is_some_and(|install_index| policy_index > install_index),
+            None => true,
+        };
+
+        if policy_is_missing_or_late {
+            bail!(
+                "{} must run `{}` after pnpm/action-setup@v4 and before pnpm install",
+                workflow_path.display(),
+                required_policy
+            );
+        }
+    }
+
+    Ok(())
+}
+
 fn check_pnpm_release_age_policy() -> Result<()> {
     ensure_repo_root()?;
 
@@ -283,15 +336,67 @@ fn check_pnpm_release_age_policy() -> Result<()> {
 
     for workflow_path in git_tracked_files(".github/workflows/*")? {
         let contents = fs::read_to_string(&workflow_path)?;
-        if contents.contains("pnpm/action-setup@v4") {
-            bail!(
-                "{} must use ./.github/actions/setup-pnpm instead of pnpm/action-setup@v4",
-                workflow_path.display()
-            );
-        }
+        check_workflow_pnpm_release_age_policy(&workflow_path, &contents, root_minimum_release_age)?;
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_workflow_pnpm_release_age_policy;
+    use std::path::Path;
+
+    const WORKFLOW_PATH: &str = ".github/workflows/ci.yml";
+
+    #[test]
+    fn ci_workflow_obeys_direct_pnpm_release_age_policy() {
+        let workflow = include_str!("../../../.github/workflows/ci.yml");
+        check_workflow_pnpm_release_age_policy(Path::new(WORKFLOW_PATH), workflow, 1440).unwrap();
+    }
+
+    #[test]
+    fn direct_pnpm_setup_requires_release_age_before_install() {
+        let workflow = r#"
+jobs:
+  smoketests:
+    steps:
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+      - run: |
+          pnpm config set --global minimumReleaseAge 1440
+          pnpm install --frozen-lockfile
+"#;
+        check_workflow_pnpm_release_age_policy(Path::new(WORKFLOW_PATH), workflow, 1440).unwrap();
+    }
+
+    #[test]
+    fn direct_pnpm_setup_rejects_missing_release_age() {
+        let workflow = r#"
+jobs:
+  smoketests:
+    steps:
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+"#;
+        let error = check_workflow_pnpm_release_age_policy(Path::new(WORKFLOW_PATH), workflow, 1440).unwrap_err();
+        assert!(error.to_string().contains("minimumReleaseAge 1440"));
+    }
+
+    #[test]
+    fn direct_pnpm_setup_rejects_release_age_after_install() {
+        let workflow = r#"
+jobs:
+  smoketests:
+    steps:
+      - uses: pnpm/action-setup@v4
+      - run: |
+          pnpm install --frozen-lockfile
+          pnpm config set --global minimumReleaseAge 1440
+"#;
+        let error = check_workflow_pnpm_release_age_policy(Path::new(WORKFLOW_PATH), workflow, 1440).unwrap_err();
+        assert!(error.to_string().contains("before pnpm install"));
+    }
 }
 
 #[derive(Subcommand)]
