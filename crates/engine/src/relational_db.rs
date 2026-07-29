@@ -1083,7 +1083,9 @@ impl RelationalDB {
         col_id: ColId,
         new_alias: spacetimedb_schema::identifier::Identifier,
     ) -> Result<(), DBError> {
-        Ok(self.inner.alter_column_accessor_name_mut_tx(tx, table_id, col_id, new_alias)?)
+        Ok(self
+            .inner
+            .alter_column_accessor_name_mut_tx(tx, table_id, col_id, new_alias)?)
     }
 
     pub(crate) fn alter_table_row_type(

@@ -1390,15 +1390,15 @@ impl MutTxId {
     }
 
     /// Change the runtime accessor name alias of the table identified by `table_id`.
-    pub(crate) fn alter_table_accessor_name(
-        &mut self,
-        table_id: TableId,
-        new_alias: Identifier,
-    ) -> Result<()> {
+    pub(crate) fn alter_table_accessor_name(&mut self, table_id: TableId, new_alias: Identifier) -> Result<()> {
         let table_name = self.find_st_table_row(table_id)?.table_name;
 
         let old_alias = self
-            .iter_by_col_eq(ST_TABLE_ACCESSOR_ID, StTableAccessorFields::TableName, &table_name.as_ref().into())?
+            .iter_by_col_eq(
+                ST_TABLE_ACCESSOR_ID,
+                StTableAccessorFields::TableName,
+                &table_name.as_ref().into(),
+            )?
             .next()
             .map(|row| StTableAccessorRow::try_from(row).ok())
             .flatten()
@@ -1464,7 +1464,9 @@ impl MutTxId {
             }
         });
 
-        self.push_schema_change(PendingSchemaChange::ColumnAlterAccessorName(table_id, col_id, old_alias));
+        self.push_schema_change(PendingSchemaChange::ColumnAlterAccessorName(
+            table_id, col_id, old_alias,
+        ));
 
         Ok(())
     }

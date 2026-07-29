@@ -67,9 +67,7 @@ fn format_step<F: MigrationFormatter>(
             let table_info = extract_table_info(*table, plan)?;
             f.format_change_table_accessor_name(table_info.name.as_ref())
         }
-        AutoMigrateStep::ChangeColumnAccessorName(table, col) => {
-            f.format_change_column_accessor_name(table, col)
-        }
+        AutoMigrateStep::ChangeColumnAccessorName(table, col) => f.format_change_column_accessor_name(table, col),
         AutoMigrateStep::RemoveConstraint(constraint) => {
             let constraint_info = extract_constraint_info(*constraint, plan.old)?;
             f.format_constraint(&constraint_info, Action::Removed)
