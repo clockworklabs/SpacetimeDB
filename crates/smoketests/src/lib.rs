@@ -1399,11 +1399,14 @@ log = "0.4"
     }
 
     fn prepare_rust_module_internal(&self) -> Result<PathBuf> {
+        // Determine the WASM path - either precompiled or build it
         if let Some(precompiled_path) = &self.precompiled_wasm_path {
+            // Use pre-compiled WASM directly (no build needed)
             eprintln!("[TIMING] spacetime build: skipped (using precompiled)");
             return Ok(precompiled_path.clone());
         }
 
+        // Build the WASM module from source
         let project_path = self.project_dir.path().to_str().unwrap();
         let build_start = Instant::now();
         let cli_path = self.cli_path();
@@ -1426,6 +1429,7 @@ log = "0.4"
             );
         }
 
+        // Construct the wasm path using the unique module name
         let wasm_filename = format!("{}.wasm", self.module_name);
         Ok(target_dir.join("wasm32-unknown-unknown/release").join(wasm_filename))
     }
