@@ -47,6 +47,15 @@ runs:
           "target/release/spacetimedb-standalone${executable_suffix}" \
           "${precompiled_modules[@]}"
 
+    - name: Upload Cargo timings
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}-cargo-timings
+        path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings
+        if-no-files-found: warn
+        overwrite: true
+
     - name: Upload smoketest build
       uses: actions/upload-artifact@v4
       with:

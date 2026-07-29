@@ -105,6 +105,7 @@ fn build_binaries() -> Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.args([
         "build",
+        "--timings",
         "--release",
         "-p",
         "spacetimedb-cli",
