@@ -145,6 +145,10 @@ struct RunArgs {
     #[arg(long)]
     dry_run: bool,
 
+    /// Skip uploading the benchmark task catalog
+    #[arg(long)]
+    skip_task_catalog_upload: bool,
+
     /// When used with --dry-run, also generate local markdown analysis files
     #[arg(long, requires = "dry_run")]
     local_analysis: bool,
@@ -287,7 +291,8 @@ fn run_benchmarks(args: RunArgs, reasoning: ReasoningEffort) -> Result<()> {
     let bench_root = find_bench_root();
 
     // Upload task catalog before running benchmarks
-    if let Some(ref api) = upload_client
+    if !args.skip_task_catalog_upload
+        && let Some(ref api) = upload_client
         && let Err(e) = api.upload_task_catalog(&bench_root)
     {
         eprintln!("[warn] failed to upload task catalog: {e}");
@@ -970,6 +975,7 @@ mod tests {
             models: None,
             model_source: ModelSource::Static,
             dry_run: false,
+            skip_task_catalog_upload: false,
             local_analysis: false,
             route_overrides: None,
         }
@@ -1002,6 +1008,15 @@ mod tests {
 
         let overridden = Cli::try_parse_from(["llm", "run", "--hash-only", "--reasoning", "high"]).unwrap();
         assert_eq!(overridden.reasoning, ReasoningEffort::High);
+    }
+
+    #[test]
+    fn task_catalog_upload_can_be_skipped() {
+        let cli = Cli::try_parse_from(["llm", "run", "--hash-only", "--skip-task-catalog-upload"]).unwrap();
+        let Commands::Run(args) = cli.command else {
+            panic!("expected run command");
+        };
+        assert!(args.skip_task_catalog_upload);
     }
 
     #[test]
