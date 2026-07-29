@@ -6,6 +6,10 @@ inputs:
     description: Install dependencies needed while executing smoketests.
     required: false
     default: "true"
+  rust-cache-enabled:
+    description: Restore and save the Rust cache.
+    required: false
+    default: "true"
   rust-cache-targets:
     description: Cache Cargo target directories and installed binaries in addition to dependencies.
     required: false
@@ -34,6 +38,7 @@ runs:
         echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
 
     - name: Cache Rust dependencies
+      if: inputs.rust-cache-enabled == 'true'
       uses: Swatinem/rust-cache@v2
       with:
         workspaces: ${{ github.workspace }}

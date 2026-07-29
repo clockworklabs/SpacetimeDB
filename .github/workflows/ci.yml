@@ -239,8 +239,7 @@ jobs:
 
       - uses: ./.github/actions/smoketest-setup
         with:
-          rust-cache-targets: "false"
-          rust-cache-shared-key: spacetimedb-smoketest-runtime
+          rust-cache-enabled: "false"
 
       # Node.js and pnpm are required for the TypeScript smoketests.
       # pnpm must be available before setup-node can locate and cache its store.
@@ -286,8 +285,7 @@ jobs:
 
       - uses: ./.github/actions/smoketest-setup
         with:
-          rust-cache-targets: "false"
-          rust-cache-shared-key: spacetimedb-smoketest-runtime
+          rust-cache-enabled: "false"
 
       # Node.js and pnpm are required for the TypeScript smoketests.
       # pnpm must be available before setup-node can locate and cache its store.
