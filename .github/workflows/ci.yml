@@ -182,6 +182,7 @@ jobs:
       - uses: ./.github/actions/smoketest-setup
         with:
           runtime-dependencies: "false"
+          rust-cache-enabled: "false"
 
       - uses: ./.github/actions/smoketest-build
         with:
@@ -212,6 +213,7 @@ jobs:
       - uses: ./.github/actions/smoketest-setup
         with:
           runtime-dependencies: "false"
+          rust-cache-enabled: "false"
 
       - uses: ./.github/actions/smoketest-build
         with:
