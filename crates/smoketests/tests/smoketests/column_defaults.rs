@@ -5,15 +5,15 @@ use spacetimedb_smoketests::{
 const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     ("bool_value", "true"),
     ("u8_value", "8"),
-    // TODO: uncomment this once negative values are fixed in Rust
+    // TODO: uncomment this once negative defaults are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i8_value", "-8"),
     ("u16_value", "16"),
-    // TODO: uncomment this once negative values are fixed in Rust
+    // TODO: uncomment this once negative defaults are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i16_value", "-16"),
     ("u32_value", "32"),
-    // TODO: uncomment this once negative values are fixed in Rust
+    // TODO: uncomment this once negative defaults are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i32_value", "-32"),
 
@@ -21,15 +21,15 @@ const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     // https://github.com/clockworklabs/SpacetimeDB/issues/5623
     //("u64_value", "64"),
 
-    // TODO: uncomment this once negative values are fixed in Rust
+    // TODO: uncomment this once negative defaults are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i64_value", "-64"),
 
-    // TODO: uncomment once f32s are fixed in C#.
+    // TODO: uncomment once floats are fixed in C#.
     // https://github.com/clockworklabs/SpacetimeDB/issues/5624
     //("f32_positive_value", "32.5"),
 
-    // TODO: uncomment once f32s are fixed in C# and negative values are fixed in Rust
+    // TODO: uncomment once floats are fixed in C# and negative defaults are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5624
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("f32_negative_value", "-32.5"),
