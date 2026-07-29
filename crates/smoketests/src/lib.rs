@@ -616,6 +616,7 @@ impl<'a> PublishBuilder<'a> {
     }
 
     pub fn run(self) -> Result<String> {
+        let start = Instant::now();
         let PublishBuilder {
             smoketest,
             name,
@@ -631,12 +632,15 @@ impl<'a> PublishBuilder<'a> {
         let mut csharp_module_path = None;
         let (module_path_arg, module_path, module_build_args): (&str, PathBuf, &[&str]) = if let Some(source) = source {
             let module_name = name.as_deref().context("No module name provided for source publish")?;
-            let module_path = match source.language {
-                ModuleLanguage::TypeScript => smoketest.prepare_typescript_module_source_internal(
-                    &source.project_dir_name,
-                    module_name,
-                    &source.module_source,
-                )?,
+            let (module_path, module_build_args): (PathBuf, &[&str]) = match source.language {
+                ModuleLanguage::TypeScript => (
+                    smoketest.prepare_typescript_module_source_internal(
+                        &source.project_dir_name,
+                        module_name,
+                        &source.module_source,
+                    )?,
+                    &[],
+                ),
                 ModuleLanguage::CSharp => {
                     let module_path = smoketest.prepare_csharp_module_source_internal(
                         &source.project_dir_name,
@@ -644,15 +648,12 @@ impl<'a> PublishBuilder<'a> {
                         &source.module_source,
                     )?;
                     csharp_module_path = Some(module_path.clone());
-                    module_path
+                    (module_path, &["--dotnet-version", "10"])
                 }
-                ModuleLanguage::Cpp => {
-                    smoketest.prepare_cpp_module_source_internal(&source.project_dir_name, &source.module_source)?
-                }
-            };
-            let module_build_args: &[&str] = match source.language {
-                ModuleLanguage::CSharp => &["--dotnet-version", "10"],
-                ModuleLanguage::TypeScript | ModuleLanguage::Cpp => &[],
+                ModuleLanguage::Cpp => (
+                    smoketest.prepare_cpp_module_source_internal(&source.project_dir_name, &source.module_source)?,
+                    &[],
+                ),
             };
             ("--module-path", module_path, module_build_args)
         } else {
@@ -675,6 +676,8 @@ impl<'a> PublishBuilder<'a> {
         if let Some(module_path) = csharp_module_path {
             csharp::verify_csharp_module_restore(&module_path)?;
         }
+
+        eprintln!("[TIMING] publish_module total: {:?}", start.elapsed());
 
         Ok(identity)
     }
@@ -1424,6 +1427,15 @@ log = "0.4"
         Ok(target_dir.join("wasm32-unknown-unknown/release").join(wasm_filename))
     }
 
+    /// Publishes the prepared module and stores the database identity.
+    ///
+    /// If `name` is provided, the database will be published with that name.
+    /// If `clear` is true, the database will be cleared before publishing.
+    /// If `force` is false, the publish command will not pass `--yes`, so interactive prompts are not suppressed.
+    /// If `stdin_input` is provided, it will be passed to the CLI for interactive prompts.
+    ///
+    /// When `name` is an existing database identity, this re-publishes to that database, which is useful for testing
+    /// auto-migrations where you want to update the module without clearing the database.
     #[allow(clippy::too_many_arguments)]
     fn publish_prepared_module_internal(
         &mut self,
@@ -1440,40 +1452,41 @@ log = "0.4"
     ) -> Result<String> {
         let publish_start = Instant::now();
         let module_path = module_path.to_str().context("Invalid module path")?;
-        let mut args = vec![
-            "publish".to_string(),
-            "--server".to_string(),
-            self.server_url.clone(),
-            module_path_arg.to_string(),
-            module_path.to_string(),
-        ];
-        args.extend(module_build_args.iter().map(|arg| (*arg).to_string()));
+        let mut args = vec!["publish", "--server", &self.server_url, module_path_arg, module_path];
+        args.extend(module_build_args.iter().copied());
 
+        let force_arg;
         if let Some(force) = force {
-            args.push(format!("--yes={force}"));
+            force_arg = format!("--yes={force}");
+            args.push(&force_arg);
         }
+
         if clear {
-            args.push("--clear-database".to_string());
+            args.push("--clear-database");
         }
+
         if break_clients {
-            args.push("--break-clients".to_string());
+            args.push("--break-clients");
         }
-        if let Some(num_replicas) = num_replicas {
-            args.push("--num-replicas".to_string());
-            args.push(num_replicas.to_string());
+
+        let num_replicas_owned = num_replicas.map(|n| n.to_string());
+        if let Some(n) = num_replicas_owned.as_ref() {
+            args.push("--num-replicas");
+            args.push(n);
         }
-        if let Some(organization) = organization {
-            args.push("--organization".to_string());
-            args.push(organization.to_string());
+
+        if let Some(org) = organization {
+            args.push("--organization");
+            args.push(org);
         }
-        if let Some(name) = name {
-            args.push(name.to_string());
+
+        if let Some(n) = name {
+            args.push(n);
         }
-        let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
 
         let output = match stdin_input {
-            Some(stdin_input) => self.spacetime_with_stdin(&arg_refs, stdin_input)?,
-            None => self.spacetime(&arg_refs)?,
+            Some(stdin_input) => self.spacetime_with_stdin(&args, stdin_input)?,
+            None => self.spacetime(&args)?,
         };
         eprintln!(
             "[TIMING] spacetime publish (after build): {:?}",
