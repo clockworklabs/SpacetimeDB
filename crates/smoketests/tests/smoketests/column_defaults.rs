@@ -5,19 +5,14 @@ use spacetimedb_smoketests::{
 const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     ("bool_value", "true"),
     ("u8_value", "8"),
-
     // TODO: uncomment this once negative values are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i8_value", "-8"),
-
     ("u16_value", "16"),
-
     // TODO: uncomment this once negative values are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i16_value", "-16"),
-
     ("u32_value", "32"),
-
     // TODO: uncomment this once negative values are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i32_value", "-32"),
@@ -38,9 +33,7 @@ const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     // https://github.com/clockworklabs/SpacetimeDB/issues/5624
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("f32_negative_value", "-32.5"),
-
     ("f64_positive_value", "64.25"),
-
     // TODO: uncomment once negative defaults are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("f64_negative_value", "-64.25"),
