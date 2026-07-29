@@ -7,6 +7,8 @@ use anyhow::{Context, Error};
 use futures::FutureExt;
 use spacetimedb_runtime::sim::Rng;
 
+const PROGRESS_INTERVAL: usize = 10_000;
+
 /// This should be implemented by System under test.
 pub trait TargetDriver<I> {
     type Observation;
@@ -76,6 +78,11 @@ pub trait TestSuite {
                     interactions.observe(&interaction, &observation).with_context(|| {
                         format!("DST generator feedback failed at interaction #{step}: {interaction:?}")
                     })?;
+
+                    let completed = step + 1;
+                    if completed % PROGRESS_INTERVAL == 0 {
+                        eprintln!("interaction progress: completed {completed} interactions: {interactions:?}");
+                    }
                 }
 
                 Ok(())
