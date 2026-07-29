@@ -5,22 +5,46 @@ use spacetimedb_smoketests::{
 const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     ("bool_value", "true"),
     ("u8_value", "8"),
-    // TODO: uncomment this and other negative values once they're fixed in Rust.
+
+    // TODO: uncomment this once negative values are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i8_value", "-8"),
+
     ("u16_value", "16"),
+
+    // TODO: uncomment this once negative values are fixed in Rust
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i16_value", "-16"),
+
     ("u32_value", "32"),
+
+    // TODO: uncomment this once negative values are fixed in Rust
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i32_value", "-32"),
+
     // TODO: uncomment once u64s are fixed.
     // https://github.com/clockworklabs/SpacetimeDB/issues/5623
     //("u64_value", "64"),
+
+    // TODO: uncomment this once negative values are fixed in Rust
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i64_value", "-64"),
-    // TODO: uncomment once f32s are fixed.
+
+    // TODO: uncomment once f32s are fixed in C#.
     // https://github.com/clockworklabs/SpacetimeDB/issues/5624
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5627
-    //("f32_value", "32.5"),
-    //("f64_value", "-64.25"),
+    //("f32_positive_value", "32.5"),
+
+    // TODO: uncomment once f32s are fixed in C# and negative values are fixed in Rust
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5624
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
+    //("f32_negative_value", "-32.5"),
+
+    ("f64_positive_value", "64.25"),
+
+    // TODO: uncomment once negative defaults are fixed in Rust
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
+    //("f64_negative_value", "-64.25"),
+
     // TODO: uncomment this once string default values are fixed in Rust
     //("string_value", r#""default string""#),
 ];
@@ -132,9 +156,13 @@ pub struct DefaultsTestTable {
 //    #[default(64)]
 //    pub u64_value: u64,
     #[default(32.5)]
-    pub f32_value: f32,
+    pub f32_positive_value: f32,
+//    #[default(-32.5)]
+//    pub f32_negative_value: f32,
+    #[default(64.25)]
+    pub f64_positive_value: f64,
 //    #[default(-64.25)]
-//    pub f64_value: f64,
+//    pub f64_negative_value: f64,
 //    #[default("default string")]
 //    pub string_value: String,
 }
@@ -167,8 +195,10 @@ const defaultsTestTable = table(
     u32_value: t.u32().default(32),
     i64_value: t.i64().default(-64n),
     u64_value: t.u64().default(64n),
-    f32_value: t.f32().default(32.5),
-    f64_value: t.f64().default(-64.25),
+    f32_positive_value: t.f32().default(32.5),
+    f32_negative_value: t.f32().default(-32.5),
+    f64_positive_value: t.f64().default(64.25),
+    f64_negative_value: t.f64().default(-64.25),
     string_value: t.string().default("default string"),
   }
 );
@@ -207,8 +237,10 @@ public static partial class Module
         [Default(32U)] public uint u32_value;
         [Default(-64L)] public long i64_value;
         [Default(64UL)] public ulong u64_value;
-        //[Default(32.5f)] public float f32_value;
-        [Default(-64.25)] public double f64_value;
+        //[Default(32.5f)] public float f32_positive_value;
+        //[Default(-32.5f)] public float f32_negative_value;
+        [Default(64.25)] public double f64_positive_value;
+        [Default(-64.25)] public double f64_negative_value;
         [Default("default string")] public string string_value;
     }
 }
@@ -242,8 +274,10 @@ struct DefaultsTestTable {
     uint32_t u32_value;
     int64_t i64_value;
     uint64_t u64_value;
-    float f32_value;
-    double f64_value;
+    float f32_positive_value;
+    float f32_negative_value;
+    double f64_positive_value;
+    double f64_negative_value;
     std::string string_value;
 };
 SPACETIMEDB_STRUCT(
@@ -258,8 +292,10 @@ SPACETIMEDB_STRUCT(
     u32_value,
     i64_value,
     u64_value,
-    f32_value,
-    f64_value,
+    f32_positive_value,
+    f32_negative_value,
+    f64_positive_value,
+    f64_negative_value,
     string_value
 )
 SPACETIMEDB_TABLE(DefaultsTestTable, defaults_test_table, Public)
@@ -272,7 +308,9 @@ FIELD_Default(defaults_test_table, i32_value, int32_t(-32))
 FIELD_Default(defaults_test_table, u32_value, uint32_t(32))
 FIELD_Default(defaults_test_table, i64_value, int64_t(-64))
 FIELD_Default(defaults_test_table, u64_value, uint64_t(64))
-FIELD_Default(defaults_test_table, f32_value, float(32.5))
-FIELD_Default(defaults_test_table, f64_value, double(-64.25))
+FIELD_Default(defaults_test_table, f32_positive_value, float(32.5))
+FIELD_Default(defaults_test_table, f32_negative_value, float(-32.5))
+FIELD_Default(defaults_test_table, f64_positive_value, double(64.25))
+FIELD_Default(defaults_test_table, f64_negative_value, double(-64.25))
 FIELD_Default(defaults_test_table, string_value, std::string("default string"))
 "#;
