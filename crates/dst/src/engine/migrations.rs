@@ -93,9 +93,11 @@ pub(crate) enum MigrationMode {
     Rejected,
 }
 
-impl WeightedChoice for MigrationMode {
-    const CHOICES: &'static [Choice<Self>] = &[choice(95, Self::Accepted), choice(5, Self::Rejected)];
+impl MigrationMode {
+    pub(super) const CHOICES: [Choice<Self>; 2] = [choice(95, Self::Accepted), choice(5, Self::Rejected)];
 }
+
+impl WeightedChoice for MigrationMode {}
 
 /// Weighted categories of auto-migration surfaces to probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,8 +117,8 @@ enum MigrationChoice {
     ReschemaEventTable,
 }
 
-impl WeightedChoice for MigrationChoice {
-    const CHOICES: &'static [Choice<Self>] = &[
+impl MigrationChoice {
+    const CHOICES: [Choice<Self>; 13] = [
         choice(2, Self::AddTable),
         choice(1, Self::RemoveTable),
         choice(14, Self::AddColumn),
@@ -133,6 +135,8 @@ impl WeightedChoice for MigrationChoice {
     ];
 }
 
+impl WeightedChoice for MigrationChoice {}
+
 /// Weighted rejected migration boundaries to probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RejectedMigrationChoice {
@@ -140,12 +144,14 @@ enum RejectedMigrationChoice {
     AddI64DefaultMaxSequencePrecheckFailure,
 }
 
-impl WeightedChoice for RejectedMigrationChoice {
-    const CHOICES: &'static [Choice<Self>] = &[
+impl RejectedMigrationChoice {
+    const CHOICES: [Choice<Self>; 2] = [
         choice(1, Self::AddSequencePrecheckFailure),
         choice(1, Self::AddI64DefaultMaxSequencePrecheckFailure),
     ];
 }
+
+impl WeightedChoice for RejectedMigrationChoice {}
 
 impl Migration {
     pub(crate) fn from_schema(schema: SchemaPlan) -> Self {
@@ -185,7 +191,7 @@ impl Migration {
 
     pub(crate) fn choose_rewrite(rng: &Rng, schema: &SchemaPlan, model: &Model) -> Option<SchemaRewrite> {
         for _ in 0..16 {
-            let choice = MigrationChoice::pick(rng);
+            let choice = MigrationChoice::pick(rng, &MigrationChoice::CHOICES);
             if let Some(rewrite) = pick_rewrite(rng, Self::candidates_for(rng, schema, model, choice)) {
                 return Some(rewrite);
             }
@@ -196,7 +202,7 @@ impl Migration {
 
     pub(crate) fn choose_rejected(rng: &Rng, schema: &SchemaPlan, model: &Model) -> Option<Self> {
         for _ in 0..16 {
-            let choice = RejectedMigrationChoice::pick(rng);
+            let choice = RejectedMigrationChoice::pick(rng, &RejectedMigrationChoice::CHOICES);
             if let Some(migration) = pick_migration(Self::rejected_candidates_for(schema, model, choice), rng) {
                 return Some(migration);
             }
@@ -206,7 +212,7 @@ impl Migration {
     }
 
     pub(crate) fn candidates(rng: &Rng, schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
-        <MigrationChoice as WeightedChoice>::CHOICES
+        MigrationChoice::CHOICES
             .iter()
             .flat_map(|choice| Self::candidates_for(rng, schema, model, choice.value()))
             .collect()
@@ -231,7 +237,7 @@ impl Migration {
     }
 
     fn rejected_candidates(schema: &SchemaPlan, model: &Model) -> Vec<Self> {
-        <RejectedMigrationChoice as WeightedChoice>::CHOICES
+        RejectedMigrationChoice::CHOICES
             .iter()
             .flat_map(|choice| Self::rejected_candidates_for(schema, model, choice.value()))
             .collect()

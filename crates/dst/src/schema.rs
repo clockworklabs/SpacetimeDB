@@ -21,7 +21,7 @@ pub fn default_schema(rng: Rng) -> SchemaPlan {
 /// Lower a generated schema plan into the raw module format used by the engine.
 pub fn to_raw_def(schema: &SchemaPlan) -> RawModuleDefV10 {
     let mut builder = RawModuleDefV10Builder::new();
-    builder.set_case_conversion_policy(CaseConversionPolicy::None);
+    builder.set_case_conversion_policy(CaseConversionPolicy::SnakeCase);
 
     for table in &schema.tables {
         to_raw_def_table(&mut builder, table);
@@ -257,7 +257,6 @@ pub struct TypeWeights {
     pub bytes: u64,
     pub sum: u64,
 }
-
 impl Default for TypeWeights {
     fn default() -> Self {
         Self {

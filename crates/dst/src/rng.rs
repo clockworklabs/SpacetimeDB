@@ -39,12 +39,10 @@ pub(crate) fn pick_choice<T: Copy>(rng: &Rng, choices: &[Choice<T>]) -> T {
     unreachable!("selected value is always inside total weight")
 }
 
-/// Static weighted choices for enum-like generator cases.
-pub(crate) trait WeightedChoice: Copy + 'static {
-    const CHOICES: &'static [Choice<Self>];
-
-    fn pick(rng: &Rng) -> Self {
-        pick_choice(rng, Self::CHOICES)
+/// Weighted choice helper for enum-like generator cases.
+pub(crate) trait WeightedChoice: Copy {
+    fn pick(rng: &Rng, choices: &[Choice<Self>]) -> Self {
+        pick_choice(rng, choices)
     }
 }
 
@@ -59,4 +57,31 @@ pub(crate) fn range_inclusive(rng: &Rng, lo: usize, hi: usize) -> usize {
         return lo;
     }
     lo + (rng.next_u64() as usize % (hi - lo + 1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Case {
+        Default,
+        Mutated,
+    }
+
+    impl Case {
+        const CHOICES: [Choice<Self>; 2] = [choice(1, Self::Default), choice(0, Self::Mutated)];
+    }
+
+    impl WeightedChoice for Case {}
+
+    #[test]
+    fn fixed_choice_arrays_can_be_locally_mutated() {
+        let mut choices = Case::CHOICES;
+        choices[0] = choice(0, Case::Default);
+        choices[1] = choice(1, Case::Mutated);
+
+        assert_eq!(Case::pick(&Rng::new(0), &choices), Case::Mutated);
+        assert_eq!(Case::pick(&Rng::new(0), &Case::CHOICES), Case::Default);
+    }
 }

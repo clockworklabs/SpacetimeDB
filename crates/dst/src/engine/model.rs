@@ -117,9 +117,7 @@ impl ModelSequence {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ColumnDomain {
-    pub(crate) ty: Type,
     pub(crate) values: Vec<AlgebraicValue>,
-    pub(crate) unique: bool,
     pub(crate) single_column_unique: bool,
     pub(crate) single_column_indexed: bool,
     pub(crate) sequenced: bool,
@@ -240,6 +238,26 @@ impl Model {
             }
         }
         false
+    }
+
+    pub(crate) fn insert_would_violate_unique_constraint(&self, table: usize, row: &Row) -> bool {
+        let row = self.project_sequence_values(table, row);
+        !self.any_visible_row(table, |visible_row| visible_row == &row) && self.violates_unique_constraint(table, &row)
+    }
+
+    fn project_sequence_values(&self, table: usize, row: &Row) -> Row {
+        let mut row = row.clone();
+        let mut sequences = self.sequences[table].clone();
+
+        for sequence in &mut sequences {
+            let column = sequence.column;
+            if row.elements[column].is_numeric_zero() {
+                let (value, _allocation) = sequence.generate();
+                row.elements[column] = value;
+            }
+        }
+
+        row
     }
 
     fn apply_sequence_values(&mut self, table: usize, row: &Row) -> Row {
@@ -442,15 +460,10 @@ impl Model {
     pub(crate) fn column_domain(&self, table: usize, column: usize) -> ColumnDomain {
         let table_plan = &self.schema.tables[table];
         ColumnDomain {
-            ty: table_plan.columns[column].ty,
             values: self
                 .visible_rows(table)
                 .map(|row| row.elements[column].clone())
                 .collect(),
-            unique: table_plan
-                .unique_constraints
-                .iter()
-                .any(|constraint| constraint.columns.contains(&column)),
             single_column_unique: table_plan
                 .unique_constraints
                 .iter()
@@ -641,7 +654,7 @@ mod tests {
     use spacetimedb_lib::AlgebraicValue;
 
     use super::*;
-    use crate::schema::{ColumnPlan, IndexAlgorithm, IndexPlan, TablePlan, Type, UniqueConstraintPlan};
+    use crate::schema::{ColumnPlan, IndexAlgorithm, IndexPlan, SequencePlan, TablePlan, Type, UniqueConstraintPlan};
 
     fn schema() -> SchemaPlan {
         SchemaPlan {
@@ -668,6 +681,60 @@ mod tests {
         Row {
             elements: vec![AlgebraicValue::U64(id)].into(),
         }
+    }
+
+    fn keyed_payload_schema(sequence: bool) -> SchemaPlan {
+        SchemaPlan {
+            tables: vec![TablePlan {
+                name: "items".into(),
+                columns: vec![
+                    ColumnPlan {
+                        name: "id".into(),
+                        ty: Type::U64,
+                    },
+                    ColumnPlan {
+                        name: "payload".into(),
+                        ty: Type::String,
+                    },
+                ],
+                primary_key: Some(0),
+                indexes: vec![IndexPlan {
+                    columns: vec![0],
+                    algorithm: IndexAlgorithm::BTree,
+                }],
+                unique_constraints: vec![UniqueConstraintPlan { columns: vec![0] }],
+                sequences: sequence
+                    .then(|| SequencePlan::new(0, Type::U64).expect("u64 sequence"))
+                    .into_iter()
+                    .collect(),
+                is_public: true,
+                is_event: false,
+            }],
+        }
+    }
+
+    fn payload_row(id: u64, payload: &str) -> Row {
+        Row {
+            elements: vec![AlgebraicValue::U64(id), AlgebraicValue::String(payload.into())].into(),
+        }
+    }
+
+    #[test]
+    fn insert_would_violate_unique_constraint_distinguishes_duplicates_from_conflicts() {
+        let mut model = Model::new(keyed_payload_schema(false));
+        model.committed_tables[0].rows.push(payload_row(1, "a"));
+
+        assert!(!model.insert_would_violate_unique_constraint(0, &payload_row(1, "a")));
+        assert!(model.insert_would_violate_unique_constraint(0, &payload_row(1, "b")));
+        assert!(!model.insert_would_violate_unique_constraint(0, &payload_row(2, "b")));
+    }
+
+    #[test]
+    fn insert_would_violate_unique_constraint_projects_sequence_values() {
+        let mut model = Model::new(keyed_payload_schema(true));
+        model.committed_tables[0].rows.push(payload_row(1, "a"));
+
+        assert!(model.insert_would_violate_unique_constraint(0, &payload_row(0, "b")));
     }
 
     #[test]
