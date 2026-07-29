@@ -6,6 +6,14 @@ inputs:
     description: Install dependencies needed while executing smoketests.
     required: false
     default: "true"
+  rust-cache-targets:
+    description: Cache Cargo target directories and installed binaries in addition to dependencies.
+    required: false
+    default: "true"
+  rust-cache-shared-key:
+    description: Shared key used for the Rust cache.
+    required: false
+    default: spacetimedb
 
 runs:
   using: composite
@@ -29,7 +37,9 @@ runs:
       uses: Swatinem/rust-cache@v2
       with:
         workspaces: ${{ github.workspace }}
-        shared-key: spacetimedb
+        shared-key: ${{ inputs.rust-cache-shared-key }}
+        cache-targets: ${{ inputs.rust-cache-targets }}
+        cache-bin: ${{ inputs.rust-cache-targets }}
         cache-on-failure: false
         cache-all-crates: true
         cache-workspace-crates: true
