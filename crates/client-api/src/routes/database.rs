@@ -1769,8 +1769,6 @@ mod tests {
     use std::collections::HashMap;
     use tower::util::ServiceExt;
 
-    static HTTP_EGRESS_METRIC_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[derive(Clone, Default)]
     struct DummyValidator;
 
@@ -1902,12 +1900,6 @@ mod tests {
 
     fn text_plain_header_bytes() -> u64 {
         "content-type".len() as u64 + "text/plain; charset=utf-8".len() as u64
-    }
-
-    fn http_egress_metric_test_guard() -> std::sync::MutexGuard<'static, ()> {
-        HTTP_EGRESS_METRIC_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     impl HasWebSocketOptions for DummyState {
@@ -2129,7 +2121,6 @@ mod tests {
 
     #[tokio::test]
     async fn http_response_egress_metric_counts_database_routes() {
-        let _guard = http_egress_metric_test_guard();
         let database_identity = test_identity(11);
         remove_http_response_size_metric(database_identity);
 
@@ -2163,7 +2154,6 @@ mod tests {
 
     #[tokio::test]
     async fn http_response_egress_metric_counts_user_http_route_headers_and_body() {
-        let _guard = http_egress_metric_test_guard();
         let database_identity = test_identity(12);
         remove_http_response_size_metric(database_identity);
 
@@ -2202,7 +2192,6 @@ mod tests {
 
     #[tokio::test]
     async fn http_response_egress_metric_skips_unresolved_and_nonexistent_databases() {
-        let _guard = http_egress_metric_test_guard();
         let resolved_but_missing_identity = test_identity(13);
         let arbitrary_identity = test_identity(14);
         remove_http_response_size_metric(resolved_but_missing_identity);
@@ -2257,7 +2246,6 @@ mod tests {
 
     #[tokio::test]
     async fn http_response_egress_metric_does_not_count_subscribe() {
-        let _guard = http_egress_metric_test_guard();
         let database_identity = test_identity(15);
         remove_http_response_size_metric(database_identity);
 
@@ -2288,7 +2276,6 @@ mod tests {
 
     #[tokio::test]
     async fn http_response_egress_metric_counts_error_responses_for_existing_database() {
-        let _guard = http_egress_metric_test_guard();
         let database_identity = test_identity(16);
         remove_http_response_size_metric(database_identity);
 
