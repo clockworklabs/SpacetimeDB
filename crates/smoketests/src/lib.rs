@@ -629,8 +629,9 @@ impl<'a> PublishBuilder<'a> {
             source,
         } = self;
 
-        let mut csharp_module_path = None;
-        let (module_path_arg, module_path, module_build_args): (&str, PathBuf, &[&str]) = if let Some(source) = source {
+        let (module_path_arg, module_path, module_build_args): (&str, PathBuf, &[&str]) = if let Some(source) =
+            source.as_ref()
+        {
             let module_name = name.as_deref().context("No module name provided for source publish")?;
             let (module_path, module_build_args): (PathBuf, &[&str]) = match source.language {
                 ModuleLanguage::TypeScript => (
@@ -647,7 +648,6 @@ impl<'a> PublishBuilder<'a> {
                         module_name,
                         &source.module_source,
                     )?;
-                    csharp_module_path = Some(module_path.clone());
                     (module_path, &["--dotnet-version", "10"])
                 }
                 ModuleLanguage::Cpp => (
@@ -673,7 +673,10 @@ impl<'a> PublishBuilder<'a> {
             stdin_input.as_deref(),
         )?;
 
-        if let Some(module_path) = csharp_module_path {
+        if matches!(
+            source.as_ref().map(|source| source.language),
+            Some(ModuleLanguage::CSharp)
+        ) {
             csharp::verify_csharp_module_restore(&module_path)?;
         }
 
