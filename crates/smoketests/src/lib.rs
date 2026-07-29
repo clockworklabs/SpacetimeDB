@@ -1440,18 +1440,35 @@ log = "0.4"
     ) -> Result<String> {
         let publish_start = Instant::now();
         let module_path = module_path.to_str().context("Invalid module path")?;
-        let args = build_publish_args(
-            &self.server_url,
-            module_path_arg,
-            module_path,
-            module_build_args,
-            name,
-            clear,
-            break_clients,
-            num_replicas,
-            organization,
-            force,
-        );
+        let mut args = vec![
+            "publish".to_string(),
+            "--server".to_string(),
+            self.server_url.clone(),
+            module_path_arg.to_string(),
+            module_path.to_string(),
+        ];
+        args.extend(module_build_args.iter().map(|arg| (*arg).to_string()));
+
+        if let Some(force) = force {
+            args.push(format!("--yes={force}"));
+        }
+        if clear {
+            args.push("--clear-database".to_string());
+        }
+        if break_clients {
+            args.push("--break-clients".to_string());
+        }
+        if let Some(num_replicas) = num_replicas {
+            args.push("--num-replicas".to_string());
+            args.push(num_replicas.to_string());
+        }
+        if let Some(organization) = organization {
+            args.push("--organization".to_string());
+            args.push(organization.to_string());
+        }
+        if let Some(name) = name {
+            args.push(name.to_string());
+        }
         let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
 
         let output = match stdin_input {
@@ -1857,53 +1874,6 @@ impl Drop for SubscriptionHandle {
             Err(_) => {}
         }
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-#[deny(unused_variables)]
-fn build_publish_args(
-    server_url: &str,
-    module_path_arg: &str,
-    module_path: &str,
-    module_build_args: &[&str],
-    name: Option<&str>,
-    clear: bool,
-    break_clients: bool,
-    num_replicas: Option<u32>,
-    organization: Option<&str>,
-    force: Option<&str>,
-) -> Vec<String> {
-    let mut args = vec![
-        "publish".to_string(),
-        "--server".to_string(),
-        server_url.to_string(),
-        module_path_arg.to_string(),
-        module_path.to_string(),
-    ];
-    args.extend(module_build_args.iter().map(|arg| (*arg).to_string()));
-
-    if let Some(force) = force {
-        args.push(format!("--yes={force}"));
-    }
-    if clear {
-        args.push("--clear-database".to_string());
-    }
-    if break_clients {
-        args.push("--break-clients".to_string());
-    }
-    if let Some(num_replicas) = num_replicas {
-        args.push("--num-replicas".to_string());
-        args.push(num_replicas.to_string());
-    }
-    if let Some(organization) = organization {
-        args.push("--organization".to_string());
-        args.push(organization.to_string());
-    }
-    if let Some(name) = name {
-        args.push(name.to_string());
-    }
-
-    args
 }
 
 fn split_server_url(server_url: &str) -> (&str, &str) {
