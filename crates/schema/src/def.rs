@@ -1098,12 +1098,13 @@ impl From<ModuleDef> for RawModuleDefV10 {
         }
 
         // Collect ExplicitNames for reducers: accessor_name → source_name, name → canonical_name.
+        // local name so re-validating this raw def doesn't reject dotted identifiers.
         let raw_reducers: Vec<RawReducerDefV10> = reducers
             .into_values()
             .map(|rd| {
                 explicit_names.insert_function(
                     RawIdentifier::from(rd.accessor_name.clone()),
-                    RawIdentifier::from(rd.name.clone()),
+                    RawIdentifier::from(rd.name.local().clone()),
                 );
                 rd.into()
             })
