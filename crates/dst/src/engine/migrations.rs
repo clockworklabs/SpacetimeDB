@@ -7,8 +7,8 @@
 use super::model::{ColumnDomain, Model};
 use crate::rng::{choice, choose_index, Choice, WeightedChoice};
 use crate::schema::{
-    ColumnPlan, IndexAlgorithm, IndexPlan, SchemaGenerator, SchemaNames, SchemaPlan, SchemaProfile, SequencePlan,
-    TablePlan, Type, UniqueConstraintPlan,
+    canonical_schema, ColumnPlan, IndexAlgorithm, IndexPlan, SchemaGenerator, SchemaNames, SchemaPlan, SchemaProfile,
+    SequencePlan, TablePlan, Type, UniqueConstraintPlan,
 };
 use spacetimedb_runtime::sim::Rng;
 use std::collections::HashSet;
@@ -18,9 +18,16 @@ const MAX_EVENT_COLUMNS: usize = 32;
 const MAX_TABLE_COLUMNS: usize = 32;
 const MAX_TABLES: usize = 128;
 
-/// A fully materialized target schema for one migration interaction.
+/// A fully materialized schema migration interaction.
+///
+/// `target_schema` is the raw schema handed to engine validation. `schema` is
+/// the canonical schema the model should observe after the engine applies the
+/// raw definition and `SnakeCase` conversion. Rejected migrations may not have a
+/// valid canonical form, so they keep both fields identical and never advance
+/// model state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Migration {
+    target_schema: SchemaPlan,
     schema: SchemaPlan,
     expectation: MigrationExpectation,
 }
@@ -315,12 +322,21 @@ enum AcceptedComposition {
 }
 
 impl Migration {
-    pub(crate) fn from_schema(schema: SchemaPlan) -> Self {
-        Self::from_schema_with_expectation(schema, MigrationExpectation::Accepted)
+    fn accepted(target_schema: SchemaPlan) -> anyhow::Result<Self> {
+        let schema = canonical_schema(&target_schema)?;
+        Ok(Self {
+            target_schema,
+            schema,
+            expectation: MigrationExpectation::Accepted,
+        })
     }
 
-    pub(crate) fn from_schema_with_expectation(schema: SchemaPlan, expectation: MigrationExpectation) -> Self {
-        Self { schema, expectation }
+    fn rejected(target_schema: SchemaPlan, rejection: MigrationRejection) -> Self {
+        Self {
+            schema: target_schema.clone(),
+            target_schema,
+            expectation: MigrationExpectation::Rejected(rejection),
+        }
     }
 
     fn from_rewrite_with_expectation(
@@ -330,7 +346,10 @@ impl Migration {
     ) -> anyhow::Result<Self> {
         let mut schema = base.clone();
         rewrite.apply_to(&mut schema)?;
-        Ok(Self::from_schema_with_expectation(schema, expectation))
+        match expectation {
+            MigrationExpectation::Accepted => Self::accepted(schema),
+            MigrationExpectation::Rejected(rejection) => Ok(Self::rejected(schema, rejection)),
+        }
     }
 
     #[cfg(test)]
@@ -339,11 +358,17 @@ impl Migration {
         for rewrite in &rewrites {
             rewrite.apply_to(&mut schema)?;
         }
-        Ok(Self::from_schema(schema))
+        Self::accepted(schema)
     }
 
+    /// Canonical schema visible to the DST model after an accepted migration.
     pub(crate) fn schema(&self) -> &SchemaPlan {
         &self.schema
+    }
+
+    /// Raw target schema handed to engine validation and auto-migration.
+    pub(crate) fn target_schema(&self) -> &SchemaPlan {
+        &self.target_schema
     }
 
     pub(crate) fn expectation(&self) -> MigrationExpectation {
@@ -388,14 +413,16 @@ fn build_validated_accepted_batch(ctx: RuleCtx<'_>, cases: Vec<AcceptedCase>) ->
         case.rewrite.apply_to(&mut draft)?;
     }
 
+    let final_schema = canonical_schema(&draft)?;
+
     for case in &cases {
         let rule = rule_by_id(case.rule)
             .ok_or_else(|| anyhow::anyhow!("accepted migration case references missing rule {:?}", case.rule))?;
-        rule.rule.validate_accepted(case, ctx, &draft)?;
+        rule.rule.validate_accepted(case, ctx, &final_schema)?;
     }
 
-    anyhow::ensure!(draft != *ctx.schema, "accepted migration batch was no-op");
-    Ok(Migration::from_schema(draft))
+    anyhow::ensure!(final_schema != *ctx.schema, "accepted migration batch was no-op");
+    Migration::accepted(draft)
 }
 
 fn build_rejected_migration(rng: &Rng, ctx: RuleCtx<'_>) -> Option<Migration> {

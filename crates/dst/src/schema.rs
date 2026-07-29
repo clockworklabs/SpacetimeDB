@@ -1,13 +1,14 @@
 //! Schema plans and raw module lowering for the engine DST harness.
 
 use crate::rng;
-use spacetimedb_lib::db::raw_def::v10::*;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableAccess, TableType};
+use spacetimedb_lib::{db::raw_def::v10::*, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_runtime::sim::Rng;
 use spacetimedb_sats::{
     AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, ProductType, ProductTypeElement, SumType, SumTypeVariant,
 };
+use spacetimedb_schema::def::ModuleDef;
 
 /// Generate the default engine DST schema.
 ///
@@ -30,6 +31,54 @@ pub fn to_raw_def(schema: &SchemaPlan) -> RawModuleDefV10 {
     let mut raw = builder.finish();
     apply_sequence_bounds(schema, &mut raw);
     raw
+}
+
+/// Lower and validate a schema plan exactly as the engine update path will see it.
+pub fn to_module_def(schema: &SchemaPlan) -> anyhow::Result<ModuleDef> {
+    ModuleDef::try_from(RawModuleDef::V10(to_raw_def(schema)))
+        .map_err(|error| anyhow::anyhow!("schema validation failed: {error}"))
+}
+
+/// Return the schema as the engine will see it after raw definition validation.
+///
+/// The DST generator intentionally goes through the same `ModuleDef` validation
+/// path as the engine instead of duplicating snake-case conversion rules in the
+/// model. This keeps migration generation deterministic while making the model
+/// use the canonical names that replay and auto-migration observe.
+pub fn canonical_schema(schema: &SchemaPlan) -> anyhow::Result<SchemaPlan> {
+    let module_def = to_module_def(schema)?;
+
+    let mut tables = Vec::with_capacity(schema.tables.len());
+    for table_plan in &schema.tables {
+        let table_def = module_def
+            .tables()
+            .find(|table_def| &*table_def.accessor_name == table_plan.name)
+            .ok_or_else(|| anyhow::anyhow!("validated schema is missing table accessor {:?}", table_plan.name))?;
+
+        anyhow::ensure!(
+            table_def.columns.len() == table_plan.columns.len(),
+            "validated table {:?} has {} columns, plan has {}",
+            table_plan.name,
+            table_def.columns.len(),
+            table_plan.columns.len()
+        );
+
+        let mut table = table_plan.clone();
+        table.name = table_def.name.to_string();
+        for (column, column_def) in table.columns.iter_mut().zip(&table_def.columns) {
+            anyhow::ensure!(
+                &*column_def.accessor_name == column.name,
+                "validated table {:?} column accessor mismatch: expected {:?}, got {:?}",
+                table_plan.name,
+                column.name,
+                column_def.accessor_name.to_string()
+            );
+            column.name = column_def.name.to_string();
+        }
+        tables.push(table);
+    }
+
+    Ok(SchemaPlan { tables })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -421,7 +470,7 @@ impl SchemaDecisions {
 
     fn gen_ident(rng: &Rng) -> String {
         const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789_";
-        const FIRST: &[u8] = b"abcdefghijklmnopqrstuvwxyz_";
+        const FIRST: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
         let len = 4 + (rng.next_u64() as usize % 12);
         let mut s = String::with_capacity(len);
         s.push(FIRST[Self::index(rng, FIRST.len())] as char);
@@ -687,6 +736,23 @@ fn schema_has_sum_column(schema: &SchemaPlan) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn seed_3000_schema_canonicalizes_to_valid_snake_case_model_schema() {
+        let raw_schema = default_schema(Rng::new(3000));
+        let schema = canonical_schema(&raw_schema).unwrap();
+        let module_def = to_module_def(&schema).unwrap();
+
+        assert_eq!(canonical_schema(&schema).unwrap(), schema);
+
+        for table_plan in &schema.tables {
+            let table_def = module_def.table(table_plan.name.as_str()).unwrap();
+            assert_eq!(table_def.name.to_string(), table_plan.name);
+
+            for (column_def, column_plan) in table_def.columns.iter().zip(&table_plan.columns) {
+                assert_eq!(column_def.name.to_string(), column_plan.name);
+            }
+        }
+    }
 
     #[test]
     fn lower_single_table() {

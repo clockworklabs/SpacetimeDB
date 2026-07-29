@@ -8,7 +8,7 @@ use spacetimedb_engine::persistence::{DiskSizeFn, Durability as EngineDurability
 use spacetimedb_engine::relational_db::{MutTx, RelationalDB};
 use spacetimedb_engine::update::{update_database, UpdateLogger};
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{Identity, RawModuleDef};
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use spacetimedb_runtime::sim::{Rng, Runtime as SimRuntime};
 use spacetimedb_runtime::Handle;
@@ -35,7 +35,7 @@ use self::workload::{InsertOutcome, Interaction, Observation};
 use crate::engine::model::Model;
 use crate::engine::properties::EngineProperties;
 use crate::engine::workload::WorkloadGen;
-use crate::schema::{default_schema, to_raw_def, SchemaPlan};
+use crate::schema::{canonical_schema, default_schema, to_module_def, SchemaPlan};
 use crate::sim::commitlog::{InMemoryCommitlog, InMemoryCommitlogHandle};
 use crate::traits::{TargetDriver, TestSuite};
 
@@ -50,13 +50,14 @@ pub struct EngineTarget {
 
 impl EngineTarget {
     pub fn init(schema: SchemaPlan, runtime_seed: u64) -> anyhow::Result<Self> {
+        let canonical = canonical_schema(&schema)?;
         let runtime = SimRuntime::new(runtime_seed);
         let runtime_handle = Handle::simulation(runtime.handle());
         let commitlog = InMemoryCommitlog::new();
         let db = Self::open_db(&commitlog, runtime_handle.clone())?;
 
         Self::install_schema(&db, &schema)?;
-        let table_ids = Self::load_table_ids(&db, &schema)?;
+        let table_ids = Self::load_table_ids(&db, &canonical)?;
 
         Ok(Self {
             db: Some(db),
@@ -64,7 +65,7 @@ impl EngineTarget {
             active_mut_tx: None,
             commitlog,
             runtime_handle,
-            schema,
+            schema: canonical,
         })
     }
 
@@ -100,9 +101,7 @@ impl EngineTarget {
     }
 
     fn module_def(schema: &SchemaPlan) -> anyhow::Result<ModuleDef> {
-        let raw = to_raw_def(schema);
-        let raw_module_def = RawModuleDef::V10(raw);
-        ModuleDef::try_from(raw_module_def).map_err(|e| anyhow::anyhow!("schema validation failed: {e}"))
+        to_module_def(schema)
     }
 
     fn install_schema(db: &RelationalDB, schema: &SchemaPlan) -> anyhow::Result<()> {
@@ -231,7 +230,7 @@ impl EngineTarget {
         );
 
         let old_module_def = Self::module_def(&self.schema)?;
-        let new_module_def = match Self::module_def(migration.schema()) {
+        let new_module_def = match Self::module_def(migration.target_schema()) {
             Ok(module_def) => module_def,
             Err(error) => {
                 return match migration.expectation() {
@@ -438,7 +437,8 @@ impl TestSuite for EngineTest {
     async fn build(&self, rng: Rng) -> Result<(Self::Interactions, Self::Target, Self::Properties), anyhow::Error> {
         let schema = default_schema(rng.clone());
         let runtime_seed = rng.next_u64();
-        let target = EngineTarget::init(schema.clone(), runtime_seed)?;
+        let target = EngineTarget::init(schema, runtime_seed)?;
+        let schema = target.schema.clone();
         let properties = EngineProperties::new(schema.clone());
 
         let model = Model::new(schema);
@@ -561,6 +561,33 @@ mod tests {
     fn engine_dst_smoke_runs_random_workload() -> anyhow::Result<()> {
         let mut runtime = SimRuntime::new(0);
         runtime.block_on(EngineTest.run(Rng::new(0), 1_000))?;
+        Ok(())
+    }
+
+    #[test]
+    fn init_installs_raw_schema_and_stores_canonical_schema() -> anyhow::Result<()> {
+        let raw_schema = SchemaPlan {
+            tables: vec![TablePlan {
+                name: "RawTable".into(),
+                columns: vec![ColumnPlan {
+                    name: "SomeValue".into(),
+                    ty: Type::U64,
+                }],
+                primary_key: None,
+                indexes: vec![],
+                unique_constraints: vec![],
+                sequences: vec![],
+                is_public: true,
+                is_event: false,
+            }],
+        };
+
+        let expected = canonical_schema(&raw_schema)?;
+        assert_ne!(expected, raw_schema);
+
+        let target = EngineTarget::init(raw_schema, 0)?;
+        assert_eq!(target.schema, expected);
+
         Ok(())
     }
 

@@ -1,13 +1,11 @@
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::AlgebraicType;
-use spacetimedb_primitives::ColId;
+use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_schema::def::IndexAlgorithm as SchemaIndexAlgorithm;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::{Schema, TableSchema};
 
 use super::row::Row;
-use crate::schema::{
-    IndexAlgorithm as PlanIndexAlgorithm, IndexPlan, SchemaPlan, SequencePlan, TablePlan, UniqueConstraintPlan,
-};
+use crate::schema::{to_module_def, SchemaPlan};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CountState {
@@ -89,15 +87,6 @@ pub struct TableDelta {
     pub truncated: bool,
 }
 
-impl From<PlanIndexAlgorithm> for IndexAlgorithmState {
-    fn from(algorithm: PlanIndexAlgorithm) -> Self {
-        match algorithm {
-            PlanIndexAlgorithm::BTree => Self::BTree,
-            PlanIndexAlgorithm::Hash => Self::Hash,
-        }
-    }
-}
-
 impl From<&SchemaIndexAlgorithm> for IndexAlgorithmState {
     fn from(algorithm: &SchemaIndexAlgorithm) -> Self {
         match algorithm {
@@ -110,13 +99,6 @@ impl From<&SchemaIndexAlgorithm> for IndexAlgorithmState {
 }
 
 impl IndexState {
-    fn from_plan(index: &IndexPlan) -> Self {
-        Self {
-            columns: index.columns.clone(),
-            algorithm: index.algorithm.into(),
-        }
-    }
-
     fn from_schema(algorithm: &SchemaIndexAlgorithm) -> Self {
         Self {
             columns: schema_index_columns(algorithm),
@@ -126,12 +108,6 @@ impl IndexState {
 }
 
 impl UniqueConstraintState {
-    fn from_plan(constraint: &UniqueConstraintPlan) -> Self {
-        Self {
-            columns: constraint.columns.clone(),
-        }
-    }
-
     fn from_schema_columns(columns: impl IntoIterator<Item = ColId>) -> Self {
         Self {
             columns: columns.into_iter().map(|col| col.0 as usize).collect(),
@@ -140,12 +116,6 @@ impl UniqueConstraintState {
 }
 
 impl SequenceState {
-    fn from_plan(sequence: &SequencePlan) -> Self {
-        Self {
-            column: sequence.column,
-        }
-    }
-
     fn from_schema_column(column: ColId) -> Self {
         Self {
             column: column.0 as usize,
@@ -154,14 +124,27 @@ impl SequenceState {
 }
 
 pub fn schema_state_for_plan(schema: &SchemaPlan) -> SchemaState {
-    SchemaState {
-        tables: schema
-            .tables
-            .iter()
-            .enumerate()
-            .map(|(table, table_plan)| table_schema_state_for_plan(table, table_plan))
-            .collect(),
-    }
+    schema_state_for_valid_plan(schema).expect("model schema must lower to a valid module definition")
+}
+
+fn schema_state_for_valid_plan(schema: &SchemaPlan) -> anyhow::Result<SchemaState> {
+    let module_def = to_module_def(schema)?;
+
+    let tables = schema
+        .tables
+        .iter()
+        .enumerate()
+        .map(|(table, table_plan)| {
+            let table_def = module_def
+                .tables()
+                .find(|table_def| &*table_def.accessor_name == table_plan.name)
+                .ok_or_else(|| anyhow::anyhow!("validated schema is missing table accessor {:?}", table_plan.name))?;
+            let table_schema = TableSchema::from_module_def(&module_def, table_def, (), TableId::SENTINEL);
+            Ok(table_schema_state_for_schema(table, &table_schema))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    Ok(SchemaState { tables })
 }
 
 pub fn table_schema_state_for_schema(table: usize, schema: &TableSchema) -> TableSchemaState {
@@ -197,32 +180,6 @@ pub fn table_schema_state_for_schema(table: usize, schema: &TableSchema) -> Tabl
                 .iter()
                 .map(|sequence| SequenceState::from_schema_column(sequence.col_pos)),
         ),
-    }
-}
-
-fn table_schema_state_for_plan(table: usize, table_plan: &TablePlan) -> TableSchemaState {
-    TableSchemaState {
-        table,
-        name: table_plan.name.clone(),
-        is_public: table_plan.is_public,
-        is_event: table_plan.is_event,
-        primary_key: table_plan.primary_key,
-        columns: table_plan
-            .columns
-            .iter()
-            .map(|column| ColumnState {
-                name: column.name.clone(),
-                ty: column.ty.to_algebraic(),
-            })
-            .collect(),
-        indexes: sorted(table_plan.indexes.iter().map(IndexState::from_plan)),
-        unique_constraints: sorted(
-            table_plan
-                .unique_constraints
-                .iter()
-                .map(UniqueConstraintState::from_plan),
-        ),
-        sequences: sorted(table_plan.sequences.iter().map(SequenceState::from_plan)),
     }
 }
 
