@@ -175,7 +175,6 @@ jobs:
       - name: Install NuGet
         shell: bash
         run: |
-          sudo apt update
           sudo apt install -y mono-complete
           mkdir bin
           cd bin
@@ -303,10 +302,15 @@ jobs:
           echo "$PWD/shared-bin" >> "$GITHUB_PATH"
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22.x'
-          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install npm with trusted publishing support
+        run: |
+          # this is the minimum version required to use trusted publishing
+          npm install --global npm@11.5.1
+          npm --version
 
       - name: Install pnpm
         run: npm install -g pnpm
