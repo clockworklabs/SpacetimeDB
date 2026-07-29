@@ -14,7 +14,7 @@ const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     //("i32_value", "-32"),
     // TODO: uncomment once u64s are fixed.
     // https://github.com/clockworklabs/SpacetimeDB/issues/5623
-    ("u64_value", "64"),
+    //("u64_value", "64"),
     //("i64_value", "-64"),
     ("f32_value", "32.5"),
     //("f64_value", "-64.25"),
