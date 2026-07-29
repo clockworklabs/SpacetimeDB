@@ -1400,8 +1400,7 @@ impl MutTxId {
                 &table_name.as_ref().into(),
             )?
             .next()
-            .map(|row| StTableAccessorRow::try_from(row).ok())
-            .flatten()
+            .and_then(|row| StTableAccessorRow::try_from(row).ok())
             .map(|row| row.accessor_name);
 
         if old_alias.as_ref() == Some(&new_alias) {
