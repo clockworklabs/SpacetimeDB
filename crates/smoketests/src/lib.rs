@@ -629,47 +629,78 @@ impl<'a> PublishBuilder<'a> {
             source,
         } = self;
 
-        let (module_path_arg, module_path, module_build_args): (&str, PathBuf, &[&str]) = if let Some(source) =
-            source.as_ref()
-        {
+        let post_publish_step: Option<Box<dyn FnOnce() -> Result<()>>>;
+        let module_args;
+        if let Some(source) = source.as_ref() {
             let module_name = name.as_deref().context("No module name provided for source publish")?;
-            let (module_path, module_build_args): (PathBuf, &[&str]) = match source.language {
-                ModuleLanguage::TypeScript => (
-                    smoketest.prepare_typescript_module_source_internal(
+            match source.language {
+                ModuleLanguage::TypeScript => {
+                    post_publish_step = None;
+                    let module_path = smoketest.prepare_typescript_module_source_internal(
                         &source.project_dir_name,
                         module_name,
                         &source.module_source,
-                    )?,
-                    &[],
-                ),
+                    )?;
+                    module_args = vec![
+                        "--module-path".to_string(),
+                        module_path
+                            .to_str()
+                            .context("Invalid TypeScript module path")?
+                            .to_string(),
+                    ];
+                }
                 ModuleLanguage::CSharp => {
                     let module_path = smoketest.prepare_csharp_module_source_internal(
                         &source.project_dir_name,
                         module_name,
                         &source.module_source,
                     )?;
-                    (module_path, &["--dotnet-version", "10"])
+                    let module_path_arg = module_path.to_str().context("Invalid C# module path")?.to_string();
+                    post_publish_step = Some(Box::new(move || csharp::verify_csharp_module_restore(&module_path)));
+                    module_args = vec![
+                        "--module-path".to_string(),
+                        module_path_arg,
+                        "--dotnet-version".to_string(),
+                        "10".to_string(),
+                    ];
                 }
-                ModuleLanguage::Cpp => (
-                    smoketest.prepare_cpp_module_source_internal(&source.project_dir_name, &source.module_source)?,
-                    &[],
-                ),
-            };
-            ("--module-path", module_path, module_build_args)
-        } else if let Some(module_path) = smoketest.precompiled_wasm_path.clone() {
+                ModuleLanguage::Cpp => {
+                    post_publish_step = None;
+                    let module_path = smoketest
+                        .prepare_cpp_module_source_internal(&source.project_dir_name, &source.module_source)?;
+                    module_args = vec![
+                        "--module-path".to_string(),
+                        module_path.to_str().context("Invalid C++ module path")?.to_string(),
+                    ];
+                }
+            }
+        } else if let Some(module_path) = smoketest.precompiled_wasm_path.as_ref() {
+            post_publish_step = None;
             // Use pre-compiled WASM directly (no build needed)
             eprintln!("[TIMING] spacetime build: skipped (using precompiled)");
-            ("--bin-path", module_path, &[])
+            module_args = vec![
+                "--bin-path".to_string(),
+                module_path
+                    .to_str()
+                    .context("Invalid precompiled module path")?
+                    .to_string(),
+            ];
         } else {
+            post_publish_step = None;
             // Rust is built separately to use the shared Cargo target cache; publishing the resulting WASM
             // by path avoids rebuilding it. This is a harness optimization, not a Rust requirement.
-            ("--bin-path", smoketest.prepare_rust_module_internal()?, &[])
-        };
+            module_args = vec![
+                "--bin-path".to_string(),
+                smoketest
+                    .prepare_rust_module_internal()?
+                    .to_str()
+                    .context("Invalid Rust module path")?
+                    .to_string(),
+            ];
+        }
 
         let identity = smoketest.publish_module_internal(
-            module_path_arg,
-            &module_path,
-            module_build_args,
+            &module_args,
             name.as_deref(),
             clear,
             break_clients,
@@ -679,11 +710,8 @@ impl<'a> PublishBuilder<'a> {
             stdin_input.as_deref(),
         )?;
 
-        if matches!(
-            source.as_ref().map(|source| source.language),
-            Some(ModuleLanguage::CSharp)
-        ) {
-            csharp::verify_csharp_module_restore(&module_path)?;
+        if let Some(post_publish_step) = post_publish_step {
+            post_publish_step()?;
         }
 
         eprintln!("[TIMING] publish_module total: {:?}", start.elapsed());
@@ -1449,9 +1477,7 @@ log = "0.4"
     #[allow(clippy::too_many_arguments)]
     fn publish_module_internal(
         &mut self,
-        module_path_arg: &str,
-        module_path: &Path,
-        module_build_args: &[&str],
+        module_args: &[String],
         name: Option<&str>,
         clear: bool,
         break_clients: bool,
@@ -1461,9 +1487,8 @@ log = "0.4"
         stdin_input: Option<&str>,
     ) -> Result<String> {
         let publish_start = Instant::now();
-        let module_path = module_path.to_str().context("Invalid module path")?;
-        let mut args = vec!["publish", "--server", &self.server_url, module_path_arg, module_path];
-        args.extend(module_build_args.iter().copied());
+        let mut args = vec!["publish", "--server", &self.server_url];
+        args.extend(module_args.iter().map(String::as_str));
 
         let force_arg;
         if let Some(force) = force {
