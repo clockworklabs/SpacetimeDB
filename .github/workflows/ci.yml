@@ -260,6 +260,9 @@ jobs:
       - name: Configure pnpm package age policy
         run: pnpm config set --global minimumReleaseAge 1440
 
+      - name: Install TypeScript SDK runtime dependencies
+        run: pnpm --filter spacetimedb install --prod --frozen-lockfile --prefer-offline
+
       - uses: ./.github/actions/smoketest-run-partition
         with:
           artifact-name: smoketest-build-Linux
@@ -305,6 +308,9 @@ jobs:
 
       - name: Configure pnpm package age policy
         run: pnpm config set --global minimumReleaseAge 1440
+
+      - name: Install TypeScript SDK runtime dependencies
+        run: pnpm --filter spacetimedb install --prod --frozen-lockfile --prefer-offline
 
       - uses: ./.github/actions/smoketest-run-partition
         with:
