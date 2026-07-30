@@ -208,7 +208,6 @@ jobs:
         with:
           runtime-dependencies: "false"
           rust-cache-enabled: "true"
-          rust-cache-targets: "true"
           rust-cache-shared-key: smoketest-build-dependencies
 
       - name: Resolve V8 version
