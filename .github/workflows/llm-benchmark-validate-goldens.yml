@@ -72,8 +72,10 @@ jobs:
       - name: Install pnpm
         if: matrix.lang == 'typescript'
         uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
+
+      - name: Install TypeScript SDK dependencies
+        if: matrix.lang == 'typescript'
+        run: pnpm --filter spacetimedb... install --frozen-lockfile
 
       - name: Build TypeScript SDK
         if: matrix.lang == 'typescript'

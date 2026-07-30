@@ -439,8 +439,9 @@ jobs:
           node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
+
+      - name: Install TypeScript SDK dependencies
+        run: pnpm --filter spacetimedb... install --frozen-lockfile
 
       # Install cmake and emscripten for C++ module compilation tests.
       - name: Install cmake and emscripten
@@ -507,10 +508,9 @@ jobs:
           node-version: 24
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          package_json_file: package.json
-          working_directory: .
-          run_install: "true"
+
+      - name: Install Keynote dependencies
+        run: pnpm --filter spacetime-simulations... install --frozen-lockfile
 
       - uses: ./.github/actions/keynote-bench-setup
 
@@ -844,8 +844,6 @@ jobs:
           node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
 
       - name: Get pnpm store directory
         shell: bash
@@ -1253,8 +1251,6 @@ jobs:
           node-version: '22'
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
 
       - name: Get pnpm store directory
         working-directory: sdks/typescript
@@ -1294,8 +1290,6 @@ jobs:
           node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
 
       - name: Get pnpm store directory
         shell: bash
@@ -1310,6 +1304,9 @@ jobs:
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
+
+      - name: Install TypeScript test dependencies
+        run: pnpm install --frozen-lockfile
 
       # - name: Extract SpacetimeDB branch name from file
       #   id: extract-branch

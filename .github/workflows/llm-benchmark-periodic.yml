@@ -87,8 +87,10 @@ jobs:
       - name: Install pnpm
         if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'typescript') }}
         uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
+
+      - name: Install TypeScript SDK dependencies
+        if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'typescript') }}
+        run: pnpm --filter spacetimedb... install --frozen-lockfile
 
       - name: Build TypeScript SDK
         if: ${{ github.event_name != 'workflow_dispatch' || contains(inputs.languages || 'rust,csharp,typescript', 'typescript') }}

@@ -21,8 +21,6 @@ jobs:
           node-version: '22'
       
       - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
 
       - name: Get pnpm store directory
         working-directory: sdks/typescript
@@ -39,8 +37,7 @@ jobs:
             ${{ runner.os }}-pnpm-store-
 
       - name: Install dependencies
-        working-directory: docs
-        run: pnpm install
+        run: pnpm --filter docs... install --frozen-lockfile
 
       - name: Docusaurus build
         working-directory: docs
