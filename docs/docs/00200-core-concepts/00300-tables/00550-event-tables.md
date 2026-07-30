@@ -175,7 +175,7 @@ This behavior follows naturally from the fact that event table rows are never me
 
 ## Subscribing to Events
 
-On the client side, event tables are subscribed to in the same way as regular tables. The important difference is that event table rows are never stored in the client cache. Calling `count()` on an event table always returns 0, and `iter()` always yields no rows. Instead, you observe events through `on_insert` callbacks, which fire for each row that was inserted during the transaction.
+On the client side, event tables are subscribed to with explicit queries, just like regular tables. Subscribe-all helpers such as `subscribeToAllTables`, `SubscribeToAllTables`, and `subscribe_to_all_tables` do not include event tables. Once subscribed, event table rows are never stored in the client cache. Calling `count()` on an event table always returns 0, and `iter()` always yields no rows. Instead, you observe events through `on_insert` callbacks, which fire for each row that was inserted during the transaction.
 
 Because event table rows are ephemeral, only `on_insert` callbacks are available. There are no `on_delete`, `on_update`, or `on_before_delete` callbacks, since rows are never present in the client state to be deleted or updated.
 
