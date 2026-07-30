@@ -254,11 +254,11 @@ jobs:
   smoketests_linux:
     needs: [merge_queue_noop, smoketest_build_linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: Smoketests (Linux, ${{ matrix.partition }}/4)
+    name: Smoketests (Linux, ${{ matrix.partition }}/2)
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4]
+        partition: [1, 2]
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 120
     env:
@@ -287,6 +287,7 @@ jobs:
         with:
           artifact-name: smoketest-build-Linux
           partition: ${{ matrix.partition }}
+          partition-total: 2
 
   smoketests_windows:
     needs: [merge_queue_noop, smoketest_build_windows]
@@ -324,6 +325,7 @@ jobs:
         with:
           artifact-name: smoketest-build-Windows
           partition: ${{ matrix.partition }}
+          partition-total: 4
 
   # this is a no-op version of the above check with a trivially-passing body.
   # we can't just let the check be entirely skipped because each matrix target is a required check,
@@ -331,26 +333,28 @@ jobs:
   smoketests_noop:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
-    name: Smoketests (${{ matrix.name }}, ${{ matrix.partition }}/4)
+    name: Smoketests (${{ matrix.name }}, ${{ matrix.partition }}/${{ matrix.partition-total }})
     strategy:
       matrix:
         include:
           - name: Linux
             partition: 1
+            partition-total: 2
           - name: Linux
             partition: 2
-          - name: Linux
-            partition: 3
-          - name: Linux
-            partition: 4
+            partition-total: 2
           - name: Windows
             partition: 1
+            partition-total: 4
           - name: Windows
             partition: 2
+            partition-total: 4
           - name: Windows
             partition: 3
+            partition-total: 4
           - name: Windows
             partition: 4
+            partition-total: 4
     runs-on: ubuntu-latest
     steps:
       - name: Skip duplicate merge queue smoketest

@@ -8,6 +8,9 @@ inputs:
   partition:
     description: One-based hash partition number.
     required: true
+  partition-total:
+    description: Total number of hash partitions.
+    required: true
 
 runs:
   using: composite
@@ -34,7 +37,7 @@ runs:
           --archive-file smoketest-nextest.tar.zst \
           -- \
           --test-threads=1 \
-          --partition hash:${{ inputs.partition }}/4
+          --partition hash:${{ inputs.partition }}/${{ inputs.partition-total }}
 
     - name: Run smoketest partition (Windows)
       if: runner.os == 'Windows'
@@ -47,4 +50,4 @@ runs:
           --archive-file smoketest-nextest.tar.zst `
           -- `
           --test-threads=1 `
-          --partition "hash:${{ inputs.partition }}/4"
+          --partition "hash:${{ inputs.partition }}/${{ inputs.partition-total }}"
