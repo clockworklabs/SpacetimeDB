@@ -23,8 +23,6 @@ runs:
         tar -xzf smoketest-support.tar.gz
         echo "SPACETIME_PREBUILT_TYPESCRIPT_SDK=1" >>"$GITHUB_ENV"
 
-    # --test-threads=1 eliminates contention in the C# tests where they fight over
-    # bindings build artifacts. It also improved unpartitioned job performance.
     - name: Run smoketest partition (Linux)
       if: runner.os == 'Linux'
       shell: bash
@@ -38,7 +36,6 @@ runs:
           --test-threads=1 \
           --partition hash:${{ inputs.partition }}/4
 
-    # Due to Emscripten PATH issues this remains separate so OpenSSL builds correctly.
     - name: Run smoketest partition (Windows)
       if: runner.os == 'Windows'
       shell: pwsh
