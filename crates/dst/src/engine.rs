@@ -6,15 +6,17 @@ use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_engine::error::{DBError, DatastoreError, IndexError};
 use spacetimedb_engine::persistence::{DiskSizeFn, Durability as EngineDurability, Persistence};
 use spacetimedb_engine::relational_db::{MutTx, RelationalDB};
+use spacetimedb_engine::snapshot::{Compression, SnapshotWorker};
 use spacetimedb_engine::update::{update_database, UpdateLogger};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
-use spacetimedb_runtime::sim::{Rng, Runtime as SimRuntime};
+use spacetimedb_runtime::sim::{yield_now, Rng};
 use spacetimedb_runtime::Handle;
 use spacetimedb_schema::auto_migrate::{ponder_migrate, MigratePlan};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
+use spacetimedb_snapshot::DynSnapshotRepo;
 use spacetimedb_table::page_pool::PagePool;
 
 mod generation;
@@ -37,6 +39,7 @@ use crate::engine::properties::EngineProperties;
 use crate::engine::workload::WorkloadGen;
 use crate::schema::{canonical_schema, default_schema, to_module_def, SchemaPlan};
 use crate::sim::commitlog::{InMemoryCommitlog, InMemoryCommitlogHandle};
+use crate::sim::snapshot::InMemorySnapshotRepo;
 use crate::traits::{TargetDriver, TestSuite};
 
 pub struct EngineTarget {
@@ -45,16 +48,16 @@ pub struct EngineTarget {
     active_mut_tx: Option<MutTx>,
     commitlog: InMemoryCommitlog,
     runtime_handle: Handle,
+    snapshot_repo: Arc<InMemorySnapshotRepo>,
     schema: SchemaPlan,
 }
 
 impl EngineTarget {
-    pub fn init(schema: SchemaPlan, runtime_seed: u64) -> anyhow::Result<Self> {
+    pub fn init(schema: SchemaPlan, runtime_handle: Handle) -> anyhow::Result<Self> {
         let canonical = canonical_schema(&schema)?;
-        let runtime = SimRuntime::new(runtime_seed);
-        let runtime_handle = Handle::simulation(runtime.handle());
         let commitlog = InMemoryCommitlog::new();
-        let db = Self::open_db(&commitlog, runtime_handle.clone())?;
+        let snapshot_repo = Arc::new(InMemorySnapshotRepo::new(Identity::ZERO, 0));
+        let db = Self::open_db(&commitlog, snapshot_repo.clone(), runtime_handle.clone())?;
 
         Self::install_schema(&db, &schema)?;
         let table_ids = Self::load_table_ids(&db, &canonical)?;
@@ -65,13 +68,21 @@ impl EngineTarget {
             active_mut_tx: None,
             commitlog,
             runtime_handle,
+            snapshot_repo,
             schema: canonical,
         })
     }
 
-    fn open_db(commitlog: &InMemoryCommitlog, runtime_handle: Handle) -> anyhow::Result<RelationalDB> {
+    fn open_db(
+        commitlog: &InMemoryCommitlog,
+        snapshot_repo: Arc<InMemorySnapshotRepo>,
+        runtime_handle: Handle,
+    ) -> anyhow::Result<RelationalDB> {
+        let snapshot_repo: Arc<DynSnapshotRepo> = snapshot_repo;
+        let snapshot_worker = SnapshotWorker::new(snapshot_repo, Compression::Disabled, runtime_handle.clone());
+        let snapshot_requester = snapshot_worker.clone();
         let history = commitlog.open_handle()?;
-        let persistence = Self::persistence(history.clone(), runtime_handle);
+        let persistence = Self::persistence(history.clone(), Some(snapshot_worker), runtime_handle);
         let (db, connected_clients) = RelationalDB::open(
             Identity::ZERO,
             Identity::ZERO,
@@ -81,10 +92,17 @@ impl EngineTarget {
             PagePool::new_for_test(),
         )?;
         anyhow::ensure!(connected_clients.is_empty(), "replay produced connected clients");
+        commitlog.set_on_new_segment(Some(Arc::new(move || {
+            snapshot_requester.request_snapshot_ignore_closed();
+        })));
         Ok(db)
     }
 
-    fn persistence(handle: InMemoryCommitlogHandle, runtime_handle: Handle) -> Persistence {
+    fn persistence(
+        handle: InMemoryCommitlogHandle,
+        snapshots: Option<SnapshotWorker>,
+        runtime_handle: Handle,
+    ) -> Persistence {
         let durability: Arc<EngineDurability> = Arc::new(handle);
         let disk_size: DiskSizeFn = Arc::new(|| {
             io::Result::Ok(SizeOnDisk {
@@ -95,7 +113,7 @@ impl EngineTarget {
         Persistence {
             durability,
             disk_size,
-            snapshots: None,
+            snapshots,
             runtime: runtime_handle,
         }
     }
@@ -140,7 +158,11 @@ impl EngineTarget {
 
         drop(db);
 
-        self.db = Some(Self::open_db(&self.commitlog, self.runtime_handle.clone())?);
+        self.db = Some(Self::open_db(
+            &self.commitlog,
+            self.snapshot_repo.clone(),
+            self.runtime_handle.clone(),
+        )?);
         Ok(())
     }
 
@@ -357,9 +379,8 @@ impl EngineTarget {
                 let Some((_tx_offset, tx_data, _tx_metrics, _reducer)) = db.commit_tx(tx)? else {
                     anyhow::bail!("commit produced no transaction data");
                 };
-                Ok(Observation::Committed {
-                    delta: self.commit_delta_from_tx_data(&tx_data),
-                })
+                let delta = self.commit_delta_from_tx_data(&tx_data);
+                Ok(Observation::Committed { delta })
             }
             Interaction::Migrate(migration) => self.migrate(migration),
             Interaction::Replay => {
@@ -398,8 +419,17 @@ impl UpdateLogger for DstUpdateLogger {
 impl TargetDriver<Interaction> for EngineTarget {
     type Observation = Observation;
 
+    fn progress_status(&self) -> Option<String> {
+        Some(self.snapshot_repo.stats().to_string())
+    }
+
     async fn execute<'a>(&'a mut self, interaction: &'a Interaction) -> Result<Self::Observation, anyhow::Error> {
-        EngineTarget::execute(self, interaction)
+        let observation = EngineTarget::execute(self, interaction)?;
+        if matches!(interaction, Interaction::CommitTx | Interaction::Migrate(_)) {
+            // DO not yeild when tx lock is held.
+            yield_now().await;
+        }
+        Ok(observation)
     }
 }
 
@@ -414,10 +444,13 @@ impl TestSuite for EngineTest {
 
     type Properties = EngineProperties;
 
-    async fn build(&self, rng: Rng) -> Result<(Self::Interactions, Self::Target, Self::Properties), anyhow::Error> {
+    async fn build(
+        &self,
+        rng: Rng,
+        runtime: Handle,
+    ) -> Result<(Self::Interactions, Self::Target, Self::Properties), anyhow::Error> {
         let schema = default_schema(rng.clone());
-        let runtime_seed = rng.next_u64();
-        let target = EngineTarget::init(schema, runtime_seed)?;
+        let target = EngineTarget::init(schema, runtime)?;
         let schema = target.schema.clone();
         let properties = EngineProperties::new(schema.clone());
 
@@ -540,7 +573,8 @@ mod tests {
     #[test]
     fn engine_dst_smoke_runs_random_workload() -> anyhow::Result<()> {
         let mut runtime = SimRuntime::new(0);
-        runtime.block_on(EngineTest.run(Rng::new(0), 1_000))?;
+        let runtime_handle = Handle::simulation(runtime.handle());
+        runtime.block_on(EngineTest.run(Rng::new(0), runtime_handle, 1_000))?;
         Ok(())
     }
 
@@ -565,7 +599,7 @@ mod tests {
         let expected = canonical_schema(&raw_schema)?;
         assert_ne!(expected, raw_schema);
 
-        let target = EngineTarget::init(raw_schema, 0)?;
+        let target = EngineTarget::init(raw_schema, Handle::simulation(SimRuntime::new(0).handle()))?;
         assert_eq!(target.schema, expected);
 
         Ok(())
@@ -573,7 +607,10 @@ mod tests {
 
     #[test]
     fn add_column_migration_replays_with_existing_rows() -> anyhow::Result<()> {
-        let mut target = EngineTarget::init(add_column_replay_schema(), 0)?;
+        let mut target = EngineTarget::init(
+            add_column_replay_schema(),
+            Handle::simulation(SimRuntime::new(0).handle()),
+        )?;
         insert_u64_rows(&mut target)?;
 
         target.execute(&Interaction::Migrate(Migration::from_rewrites(
@@ -593,7 +630,10 @@ mod tests {
 
     #[test]
     fn change_index_migration_replays_with_existing_rows() -> anyhow::Result<()> {
-        let mut target = EngineTarget::init(change_index_replay_schema(), 0)?;
+        let mut target = EngineTarget::init(
+            change_index_replay_schema(),
+            Handle::simulation(SimRuntime::new(0).handle()),
+        )?;
         insert_u64_rows(&mut target)?;
 
         target.execute(&Interaction::Migrate(Migration::from_rewrites(
@@ -613,7 +653,10 @@ mod tests {
 
     #[test]
     fn migration_that_updates_st_table_and_st_column_replays() -> anyhow::Result<()> {
-        let mut target = EngineTarget::init(migration_replay_schema(), 0)?;
+        let mut target = EngineTarget::init(
+            migration_replay_schema(),
+            Handle::simulation(SimRuntime::new(0).handle()),
+        )?;
 
         target.execute(&Interaction::BeginMutTx)?;
         for id in 0..128u64 {

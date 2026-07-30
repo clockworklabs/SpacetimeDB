@@ -16,7 +16,12 @@ use spacetimedb_durability::{Close, Durability, DurableOffset, History, Prepared
 use spacetimedb_engine::relational_db::Txdata;
 use spacetimedb_runtime::sync::watch;
 
-#[derive(Clone, Debug)]
+pub const DST_COMMITLOG_SEGMENT_SIZE_MB: u64 = 32;
+const BYTES_PER_MB: u64 = 1024 * 1024;
+
+pub type OnNewSegment = Arc<dyn Fn() + Send + Sync + 'static>;
+
+#[derive(Clone)]
 pub struct InMemoryCommitlog {
     repo: Memory,
     options: Options,
@@ -30,14 +35,21 @@ impl Default for InMemoryCommitlog {
 
 impl InMemoryCommitlog {
     pub fn new() -> Self {
+        let mut options = Options::default();
+        options.max_segment_size = DST_COMMITLOG_SEGMENT_SIZE_MB * BYTES_PER_MB;
+
         Self {
             repo: Memory::unlimited(),
-            options: Options::default(),
+            options,
         }
     }
 
     pub fn open_handle(&self) -> io::Result<InMemoryCommitlogHandle> {
         InMemoryCommitlogHandle::open(self.repo.clone(), self.options)
+    }
+
+    pub fn set_on_new_segment(&self, callback: Option<OnNewSegment>) {
+        self.repo.set_on_new_segment(callback);
     }
 }
 
@@ -134,10 +146,11 @@ const PAGE_SIZE: usize = 4096;
 type SharedLock<T> = Arc<RwLock<T>>;
 type SpaceOnDevice = Arc<Mutex<u64>>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Memory {
     space: SpaceOnDevice,
     segments: SharedLock<BTreeMap<u64, SharedLock<Storage>>>,
+    on_new_segment: SharedLock<Option<OnNewSegment>>,
 }
 
 impl Memory {
@@ -145,11 +158,16 @@ impl Memory {
         Self {
             space: Arc::new(Mutex::new(total_space)),
             segments: <_>::default(),
+            on_new_segment: <_>::default(),
         }
     }
 
     pub fn unlimited() -> Self {
         Self::new(u64::MAX)
+    }
+
+    fn set_on_new_segment(&self, callback: Option<OnNewSegment>) {
+        *self.on_new_segment.write().unwrap() = callback;
     }
 }
 
@@ -164,25 +182,31 @@ impl Repo for Memory {
     type SegmentReader = ReadOnlySegment;
 
     fn create_segment(&self, offset: u64, header: Header) -> io::Result<Self::SegmentWriter> {
-        let mut inner = self.segments.write().unwrap();
-        let mut segment = match inner.entry(offset) {
-            btree_map::Entry::Occupied(entry) => {
-                let entry = entry.get();
-                if entry.read().unwrap().is_empty() {
-                    Segment::from_shared(self.space.clone(), entry.clone())
-                } else {
-                    return Err(io::Error::new(
-                        io::ErrorKind::AlreadyExists,
-                        format!("segment {offset} already exists"),
-                    ));
+        let mut segment = {
+            let mut inner = self.segments.write().unwrap();
+            match inner.entry(offset) {
+                btree_map::Entry::Occupied(entry) => {
+                    let entry = entry.get();
+                    if entry.read().unwrap().is_empty() {
+                        Segment::from_shared(self.space.clone(), entry.clone())
+                    } else {
+                        return Err(io::Error::new(
+                            io::ErrorKind::AlreadyExists,
+                            format!("segment {offset} already exists"),
+                        ));
+                    }
                 }
-            }
-            btree_map::Entry::Vacant(entry) => {
-                let storage = entry.insert(Arc::new(RwLock::new(Storage::new())));
-                Segment::from_shared(self.space.clone(), storage.clone())
+                btree_map::Entry::Vacant(entry) => {
+                    let storage = entry.insert(Arc::new(RwLock::new(Storage::new())));
+                    Segment::from_shared(self.space.clone(), storage.clone())
+                }
             }
         };
         header.write(&mut segment)?;
+
+        if let Some(callback) = self.on_new_segment.read().unwrap().clone() {
+            callback();
+        }
 
         Ok(segment)
     }

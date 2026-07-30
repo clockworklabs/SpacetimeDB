@@ -5,13 +5,17 @@ use std::{
 
 use anyhow::{Context, Error};
 use futures::FutureExt;
-use spacetimedb_runtime::sim::Rng;
+use spacetimedb_runtime::{sim::Rng, Handle};
 
 const PROGRESS_INTERVAL: usize = 10_000;
 
 /// This should be implemented by System under test.
 pub trait TargetDriver<I> {
     type Observation;
+
+    fn progress_status(&self) -> Option<String> {
+        None
+    }
 
     fn execute<'a>(
         &'a mut self,
@@ -49,16 +53,25 @@ pub trait TestSuite {
     type Target: TargetDriver<Self::Interaction>;
     type Properties: Properties<Self::Interaction, <Self::Target as TargetDriver<Self::Interaction>>::Observation>;
 
-    fn build(&self, rng: Rng) -> impl std::future::Future<Output = Result<TestSuiteParts<Self>, Error>> + '_
+    fn build(
+        &self,
+        rng: Rng,
+        runtime: Handle,
+    ) -> impl std::future::Future<Output = Result<TestSuiteParts<Self>, Error>> + '_
     where
         Self: Sized;
 
-    fn run(&self, rng: Rng, max_interactions: usize) -> impl std::future::Future<Output = Result<(), Error>> + '_
+    fn run(
+        &self,
+        rng: Rng,
+        runtime: Handle,
+        max_interactions: usize,
+    ) -> impl std::future::Future<Output = Result<(), Error>> + '_
     where
         Self: Sized,
     {
         async move {
-            let (mut interactions, mut target, mut properties) = self.build(rng).await?;
+            let (mut interactions, mut target, mut properties) = self.build(rng, runtime).await?;
 
             let result = AssertUnwindSafe(async {
                 for step in 0..max_interactions {
@@ -81,7 +94,13 @@ pub trait TestSuite {
 
                     let completed = step + 1;
                     if completed % PROGRESS_INTERVAL == 0 {
-                        eprintln!("interaction progress: completed {completed} interactions: {interactions:?}");
+                        if let Some(status) = target.progress_status() {
+                            eprintln!(
+                                "interaction progress: completed {completed} interactions: {interactions:?}; {status}"
+                            );
+                        } else {
+                            eprintln!("interaction progress: completed {completed} interactions: {interactions:?}");
+                        }
                     }
                 }
 
@@ -90,8 +109,13 @@ pub trait TestSuite {
             .catch_unwind()
             .await;
 
-            eprintln!("final interaction counts: {interactions:?}");
-            tracing::info!(interaction_counts = ?interactions, "final interaction counts");
+            let final_status = target.progress_status();
+            if let Some(status) = &final_status {
+                eprintln!("final interaction counts: {interactions:?}; {status}");
+            } else {
+                eprintln!("final interaction counts: {interactions:?}");
+            }
+            tracing::info!(interaction_counts = ?interactions, progress_status = ?final_status, "final interaction counts");
 
             match result {
                 Ok(result) => result,

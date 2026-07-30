@@ -16,11 +16,13 @@ spacetimedb-datastore.workspace = true
 spacetimedb-commitlog.workspace = true
 spacetimedb-durability.workspace = true
 spacetimedb-engine.workspace = true
+spacetimedb-fs-utils.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-runtime = { workspace = true, features = ["simulation"] }
 spacetimedb-sats.workspace = true
 spacetimedb-schema.workspace = true
+spacetimedb-snapshot.workspace = true
 spacetimedb-table.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
