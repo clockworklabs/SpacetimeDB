@@ -16,21 +16,12 @@ const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     // TODO: uncomment this once negative defaults are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i32_value", "-32"),
-
-    // TODO: uncomment once u64s are fixed.
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5623
-    //("u64_value", "64"),
-
+    ("u64_value", "64"),
     // TODO: uncomment this once negative defaults are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i64_value", "-64"),
-
-    // TODO: uncomment once floats are fixed in C#.
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5624
-    //("f32_positive_value", "32.5"),
-
-    // TODO: uncomment once floats are fixed in C# and negative defaults are fixed in Rust
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5624
+    ("f32_positive_value", "32.5"),
+    // TODO: uncomment once negative defaults are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("f32_negative_value", "-32.5"),
     ("f64_positive_value", "64.25"),
@@ -146,8 +137,8 @@ pub struct DefaultsTestTable {
     pub u32_value: u32,
 //    #[default(-64)]
 //    pub i64_value: i64,
-//    #[default(64)]
-//    pub u64_value: u64,
+    #[default(64)]
+    pub u64_value: u64,
     #[default(32.5)]
     pub f32_positive_value: f32,
 //    #[default(-32.5)]
@@ -230,8 +221,8 @@ public static partial class Module
         [Default(32U)] public uint u32_value;
         [Default(-64L)] public long i64_value;
         [Default(64UL)] public ulong u64_value;
-        //[Default(32.5f)] public float f32_positive_value;
-        //[Default(-32.5f)] public float f32_negative_value;
+        [Default(32.5f)] public float f32_positive_value;
+        [Default(-32.5f)] public float f32_negative_value;
         [Default(64.25)] public double f64_positive_value;
         [Default(-64.25)] public double f64_negative_value;
         [Default("default string")] public string string_value;
