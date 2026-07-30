@@ -46,13 +46,3 @@ runs:
           cargo build --release -p v8
         fi
       working-directory: ${{ inputs.public_root }}
-
-    - name: Build public keynote benchmark binaries
-      shell: bash
-      run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
-      working-directory: ${{ inputs.public_root }}
-
-    - name: Build TypeScript SDK
-      shell: bash
-      run: pnpm build
-      working-directory: ${{ inputs.public_root }}/crates/bindings-typescript

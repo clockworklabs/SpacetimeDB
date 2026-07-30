@@ -451,7 +451,7 @@ jobs:
           cargo ci test
 
   keynote_bench:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, smoketest_build_linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Keynote Bench
     runs-on: spacetimedb-benchmark-runner
@@ -463,22 +463,10 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.GIT_REF }}
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
       # Node 24 is the current Active LTS line.
       - name: Set up Node.js
@@ -496,6 +484,10 @@ jobs:
         with:
           public_root: .
           rust_cache_workspaces: ${{ github.workspace }}
+
+      - uses: ./.github/actions/restore-smoketest-build
+        with:
+          artifact-name: smoketest-build-Linux
 
       - name: Run keynote-2 benchmark regression check
         run: cargo ci keynote-bench
@@ -883,7 +875,7 @@ jobs:
           cargo ci cli-docs
 
   unity-testsuite:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, smoketest_build_linux]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
@@ -899,6 +891,8 @@ jobs:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
       # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
@@ -946,28 +940,9 @@ jobs:
           save-if: false
           prefix-key: v1
 
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
-
-      - name: Install SpacetimeDB CLI from the local checkout
-        run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+      - uses: ./.github/actions/restore-smoketest-build
+        with:
+          artifact-name: smoketest-build-Linux
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
@@ -1029,7 +1004,7 @@ jobs:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
 
   godot-testsuite:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, smoketest_build_linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     permissions:
       contents: read
@@ -1041,6 +1016,8 @@ jobs:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -1086,28 +1063,9 @@ jobs:
           save-if: false
           prefix-key: v1
 
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
-
-      - name: Install SpacetimeDB CLI from the local checkout
-        run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+      - uses: ./.github/actions/restore-smoketest-build
+        with:
+          artifact-name: smoketest-build-Linux
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
@@ -1157,7 +1115,7 @@ jobs:
         run: godot --headless --scene res://tests/GodotPlayModeTests.tscn
 
   csharp-testsuite:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, smoketest_build_linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
@@ -1168,6 +1126,8 @@ jobs:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -1224,34 +1184,9 @@ jobs:
           save-if: false
           prefix-key: v1
 
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean -p v8 || true
-            cargo build -p v8
-          fi
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
-
-      - name: Install SpacetimeDB CLI from the local checkout
-        run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --features allow_loopback_http_for_tests --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+      - uses: ./.github/actions/restore-smoketest-build
+        with:
+          artifact-name: smoketest-build-Linux
 
       - name: Check quickstart-chat bindings are up to date
         run: |

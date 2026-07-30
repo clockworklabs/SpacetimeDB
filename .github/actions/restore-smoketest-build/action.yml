@@ -1,0 +1,33 @@
+name: Restore smoketest build
+description: Restore prebuilt Linux CLI and standalone binaries from a smoketest build artifact.
+
+inputs:
+  artifact-name:
+    description: Name of the smoketest build artifact to download.
+    required: true
+  support-archive:
+    description: Path to the support archive within the downloaded artifact.
+    required: false
+    default: smoketest-support.tar.gz
+
+runs:
+  using: composite
+  steps:
+    - name: Download smoketest build
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/smoketest-build
+
+    - name: Extract smoketest support files
+      shell: bash
+      run: tar -xzf "${RUNNER_TEMP}/smoketest-build/${{ inputs.support-archive }}"
+
+    - name: Configure prebuilt SpacetimeDB binaries
+      shell: bash
+      run: |
+        test -x "${CARGO_TARGET_DIR}/release/spacetimedb-cli"
+        test -x "${CARGO_TARGET_DIR}/release/spacetimedb-standalone"
+        ln -sf spacetimedb-cli "${CARGO_TARGET_DIR}/release/spacetime"
+        echo "${CARGO_TARGET_DIR}/release" >>"$GITHUB_PATH"
+        echo "SPACETIME_PREBUILT_BINARIES=1" >>"$GITHUB_ENV"
