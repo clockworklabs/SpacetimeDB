@@ -25,12 +25,14 @@ const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("i64_value", "-64"),
 
-    // TODO: uncomment once floats are fixed in C#.
+    // TODO: uncomment once floats are fixed in C# and f32s are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5624
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5627
     //("f32_positive_value", "32.5"),
 
-    // TODO: uncomment once floats are fixed in C# and negative defaults are fixed in Rust
+    // TODO: uncomment once floats are fixed in C#, f32s are fixed in Rust, and negative defaults are fixed in Rust
     // https://github.com/clockworklabs/SpacetimeDB/issues/5624
+    // https://github.com/clockworklabs/SpacetimeDB/issues/5627
     // https://github.com/clockworklabs/SpacetimeDB/issues/5622
     //("f32_negative_value", "-32.5"),
     ("f64_positive_value", "64.25"),
