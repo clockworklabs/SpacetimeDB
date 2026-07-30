@@ -116,10 +116,16 @@ fn build_binaries() -> Result<()> {
     ]);
 
     // Remove cargo/rust env vars that could cause fingerprint mismatches
-    // when the test later runs cargo build from a different environment
+    // when the test later runs cargo build from a different environment.
+    // CI intentionally overrides release LTO on Windows and supplies a cached
+    // V8 archive, so preserve those settings across every build performed by
+    // the smoketest build job.
     for (key, _) in env::vars() {
-        let should_remove = (key.starts_with("CARGO") && key != "CARGO_HOME" && key != "CARGO_TARGET_DIR")
-            || key.starts_with("RUST")
+        let should_remove = (key.starts_with("CARGO")
+            && key != "CARGO_HOME"
+            && key != "CARGO_TARGET_DIR"
+            && key != "CARGO_PROFILE_RELEASE_LTO")
+            || (key.starts_with("RUST") && key != "RUSTY_V8_ARCHIVE")
             // > The environment variable `__CARGO_FIX_YOLO` is an undocumented, internal-use-only feature
             // > for the Rust cargo fix command (and cargo clippy --fix) that forces the application of all
             // > available suggestions, including those that are marked as potentially incorrect or dangerous.

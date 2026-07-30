@@ -11,7 +11,7 @@ inputs:
     required: false
     default: "true"
   rust-cache-targets:
-    description: Cache Cargo target directories and installed binaries in addition to dependencies.
+    description: Cache compiled dependency artifacts in Cargo target directories.
     required: false
     default: "true"
   rust-cache-shared-key:
@@ -44,10 +44,10 @@ runs:
         workspaces: ${{ github.workspace }}
         shared-key: ${{ inputs.rust-cache-shared-key }}
         cache-targets: ${{ inputs.rust-cache-targets }}
-        cache-bin: ${{ inputs.rust-cache-targets }}
+        cache-bin: false
         cache-on-failure: false
-        cache-all-crates: true
-        cache-workspace-crates: true
+        cache-all-crates: false
+        cache-workspace-crates: false
         prefix-key: v1
 
     - name: Set up .NET
