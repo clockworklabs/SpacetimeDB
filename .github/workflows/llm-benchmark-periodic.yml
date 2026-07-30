@@ -58,7 +58,6 @@ jobs:
           fetch-depth: 1
 
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4

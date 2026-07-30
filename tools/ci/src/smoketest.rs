@@ -3,7 +3,6 @@ use anyhow::{bail, ensure, Context, Result};
 use clap::{Args, Subcommand};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::{env, fs};
@@ -174,6 +173,8 @@ fn build_precompiled_modules() -> Result<()> {
 const DEFAULT_PARALLELISM: &str = "16";
 
 fn archive_smoketests(archive_file: &Path) -> Result<()> {
+    // Validate the source module list before doing any expensive compilation.
+    check_smoketests_mod_rs_complete()?;
     build_binaries()?;
     build_precompiled_modules()?;
 
@@ -402,27 +403,23 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
         let ft = entry.file_type()?;
         if ft.is_dir() {
             expected.insert(name.to_string());
-        } else if ft.is_file()
-            && path.extension() == Some(OsStr::new("rs"))
-            && let Some(stem) = path.file_stem()
-        {
+        } else if ft.is_file() && path.extension().is_some_and(|extension| extension == "rs") {
+            let stem = path.file_stem().context("Rust smoketest module has no file stem")?;
             expected.insert(stem.to_string_lossy().to_string());
         }
     }
 
-    let out = cmd!("cargo", "test", "-p", "spacetimedb-smoketests", "--", "--list",).read()?;
-
     let mut present = std::collections::BTreeSet::<String>::new();
-    for line in out.lines() {
-        let line = line.trim();
-        let parts: Vec<&str> = line.split("::").collect();
-        if parts.len() < 2 {
-            continue;
+    let mod_rs = fs::read_to_string(expected_dir.join("mod.rs"))?;
+    for line in mod_rs.lines() {
+        let line = line.split_once("//").map_or(line, |(code, _)| code).trim();
+        let declaration = line.strip_prefix("mod ").or_else(|| line.strip_prefix("pub mod "));
+        if let Some(module) = declaration.and_then(|declaration| declaration.strip_suffix(';')) {
+            let module = module.trim();
+            if is_rust_identifier(module) {
+                present.insert(module.strip_prefix("r#").unwrap_or(module).to_string());
+            }
         }
-        if parts[0] != "smoketests" {
-            continue;
-        }
-        present.insert(parts[1].to_string());
     }
 
     let missing = expected
@@ -432,7 +429,7 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
 
     if !missing.is_empty() {
         bail!(
-            "crates/smoketests/tests/smoketests/mod.rs appears incomplete; missing modules (not present in `cargo test -- --list`):\n{}",
+            "crates/smoketests/tests/smoketests/mod.rs appears incomplete; missing modules:\n{}",
             missing
                 .iter()
                 .map(|m| format!("- mod {m};"))
@@ -442,4 +439,13 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn is_rust_identifier(identifier: &str) -> bool {
+    let identifier = identifier.strip_prefix("r#").unwrap_or(identifier);
+    let mut chars = identifier.chars();
+    chars
+        .next()
+        .is_some_and(|first| first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }
