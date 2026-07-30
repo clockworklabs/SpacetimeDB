@@ -1,9 +1,11 @@
 use crate::error::IdentifierError;
+use lean_string::LeanString;
 use spacetimedb_data_structures::map::{Equivalent, HashSet};
 use spacetimedb_sats::raw_identifier::{RawIdentifier, RawNamespacedIdentifier};
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st};
 use std::fmt::{self, Debug, Display};
 use std::ops::Deref;
+use std::sync::Arc;
 use unicode_ident::{is_xid_continue, is_xid_start};
 use unicode_normalization::UnicodeNormalization;
 
@@ -159,9 +161,9 @@ impl From<Identifier> for RawIdentifier {
 #[derive(Clone)]
 pub struct NamespacedIdentifier {
     /// always non-empty.
-    segments: Box<[Identifier]>,
+    segments: Arc<[Identifier]>,
     /// Cached dot-joined rendering of `segments`.
-    joined: Box<str>,
+    joined: LeanString,
 }
 
 impl_st!([] NamespacedIdentifier, ts => RawNamespacedIdentifier::make_type(ts));
@@ -178,10 +180,10 @@ impl NamespacedIdentifier {
             !segments.is_empty(),
             "NamespacedIdentifier must have at least one segment"
         );
-        let joined = segments.iter().map(|s| &**s).collect::<Vec<_>>().join(".").into();
+        let joined = segments.iter().map(|s| &**s).collect::<Vec<_>>().join(".");
         Self {
             segments: segments.into(),
-            joined,
+            joined: joined.into(),
         }
     }
 
@@ -246,7 +248,7 @@ impl FromIterator<Identifier> for NamespacedIdentifier {
 
 impl From<NamespacedIdentifier> for RawNamespacedIdentifier {
     fn from(id: NamespacedIdentifier) -> Self {
-        RawNamespacedIdentifier::new(&*id)
+        RawNamespacedIdentifier::new(id.joined)
     }
 }
 
@@ -270,7 +272,8 @@ impl Ord for NamespacedIdentifier {
 }
 impl std::hash::Hash for NamespacedIdentifier {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.joined.hash(state)
+        // Hash as `str` so `Equivalent<_> for str` map lookups keep working.
+        (*self.joined).hash(state)
     }
 }
 

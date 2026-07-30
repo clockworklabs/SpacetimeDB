@@ -59,7 +59,7 @@ impl From<ReducerName> for RawNamespacedIdentifier {
 impl From<ReducerName> for RawIdentifier {
     /// Flattens the qualified name; only for the wire types that carry it as a plain string.
     fn from(id: ReducerName) -> Self {
-        RawIdentifier::new(&*id.0)
+        RawIdentifier::new(RawNamespacedIdentifier::from(id.0).into_inner())
     }
 }
 
