@@ -6,7 +6,6 @@ use crate::db::relational_db::RelationalDB;
 use crate::host::module_host::{CallProcedureParams, ModuleInfo};
 use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::{InvalidProcedureArguments, InvalidReducerArguments, NoSuchModule};
-use crate::worker_metrics::WORKER_METRICS;
 use anyhow::anyhow;
 use core::time::Duration;
 use futures::{FutureExt, StreamExt};
@@ -191,8 +190,8 @@ const MAX_SCHEDULE_DELAY: Duration = Duration::from_millis(
     (1 << (6 * 6)) - 1,
 );
 
-/// Record when a scheduled function starts more than this long after it was due.
-const RECORD_SCHEDULED_FUNCTION_DELAY_THRESHOLD: Duration = Duration::from_millis(50);
+/// Warn when a scheduled function starts more than this long after it was due.
+const SCHEDULED_FUNCTION_DELAY_WARNING_THRESHOLD: Duration = Duration::from_millis(10);
 
 #[derive(thiserror::Error, Debug)]
 pub enum ScheduleError {
@@ -517,7 +516,7 @@ fn prepare_scheduled_procedure_call(
     inst: &mut impl WasmInstance,
 ) -> ScheduledProcedureStep {
     let ScheduledFunctionParams(item) = params;
-    let delay = scheduled_function_delay_for_item(&item);
+    let delay = scheduled_function_delay_context_for_item(&item);
     let id = scheduled_item_id(&item);
     let db = &**module_info.relational_db();
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
@@ -544,6 +543,8 @@ fn prepare_scheduled_procedure_call(
     let reschedule = id.and_then(|id| {
         delete_scheduled_function_row(module_info, db, id, Some(tx), (timestamp, instant), inst_common, inst)
     });
+    let delay =
+        delay.map(|(function_name, requested_at)| (function_name, scheduled_function_delay(timestamp, requested_at)));
     ScheduledProcedureStep::Procedure {
         params: Box::new(params),
         reschedule,
@@ -558,7 +559,7 @@ fn call_scheduled_reducer_until_done(
     inst: &mut impl WasmInstance,
 ) -> (CallScheduledFunctionResult, bool) {
     let ScheduledFunctionParams(item) = params;
-    let delay = scheduled_function_delay_for_item(&item);
+    let delay = scheduled_function_delay_context_for_item(&item);
     let id = scheduled_item_id(&item);
     let db = &**module_info.relational_db();
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
@@ -580,12 +581,11 @@ fn call_scheduled_reducer_until_done(
         }
     };
 
-    let result =
-        call_scheduled_reducer_with_tx(module_info, db, id, tx, (timestamp, instant), params, inst_common, inst);
-    if let Some((function_name, delay)) = delay.as_ref() {
-        record_scheduled_function_delay(module_info, function_name, *delay);
+    if let Some((function_name, requested_at)) = delay {
+        let delay = scheduled_function_delay(timestamp, requested_at);
+        record_scheduled_function_delay(module_info, &function_name, delay);
     }
-    result
+    call_scheduled_reducer_with_tx(module_info, db, id, tx, (timestamp, instant), params, inst_common, inst)
 }
 
 fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
@@ -595,30 +595,28 @@ fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
     }
 }
 
-fn scheduled_function_delay_for_item(item: &QueueItem) -> Option<(Arc<str>, Duration)> {
+fn scheduled_function_delay_context_for_item(item: &QueueItem) -> Option<(Arc<str>, Timestamp)> {
     match item {
-        QueueItem::Id { function_name, at, .. } => {
-            Some((function_name.clone(), scheduled_function_delay(Timestamp::now(), *at)))
-        }
+        QueueItem::Id { function_name, at, .. } => Some((function_name.clone(), *at)),
         QueueItem::VolatileNonatomicImmediate { .. } => None,
     }
 }
 
 fn record_scheduled_function_delay(module_info: &ModuleInfo, function_name: &str, delay: Duration) {
-    if delay <= RECORD_SCHEDULED_FUNCTION_DELAY_THRESHOLD {
+    module_info
+        .metrics
+        .observe_scheduled_function_delay(function_name, delay);
+
+    if delay <= SCHEDULED_FUNCTION_DELAY_WARNING_THRESHOLD {
         return;
     }
-    WORKER_METRICS
-        .scheduled_function_delay
-        .with_label_values(&module_info.database_identity, function_name)
-        .observe(delay.as_secs_f64());
 
     log::warn!(
         "scheduled function `{}` for database {} is delayed by {:.3}s, exceeding the {:.3}s threshold",
         function_name,
         module_info.database_identity,
         delay.as_secs_f64(),
-        RECORD_SCHEDULED_FUNCTION_DELAY_THRESHOLD.as_secs_f64(),
+        SCHEDULED_FUNCTION_DELAY_WARNING_THRESHOLD.as_secs_f64(),
     );
 }
 
@@ -810,7 +808,9 @@ fn call_params_for_queued_item<T>(
     ) -> anyhow::Result<(Timestamp, Instant, T)>,
 ) -> anyhow::Result<Option<(Timestamp, Instant, T)>> {
     Ok(Some(match item {
-        QueueItem::Id { id, function_name, at } => {
+        QueueItem::Id {
+            id, function_name, at, ..
+        } => {
             let Some(schedule_row) = get_schedule_row_mut(tx, db, id)? else {
                 // If the row is not found, it means the schedule is cancelled by the user.
                 return Ok(None);
