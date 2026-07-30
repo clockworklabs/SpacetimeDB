@@ -750,7 +750,14 @@ impl Language {
 
 pub type ExtractDescriptions = fn(&Path) -> anyhow::Result<ModuleDef>;
 pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
-    let bin_path = resolve_sibling_binary("spacetimedb-standalone")?;
+    // Internal Tests execute public smoketests against private cloud binaries
+    // and intentionally do not package standalone. The private CI driver
+    // exposes the same `extract-schema` interface and provides this override.
+    // Normal CLI installations continue to use the sibling standalone binary.
+    let bin_path = std::env::var_os("SPACETIMEDB_SCHEMA_EXTRACTOR")
+        .map(PathBuf::from)
+        .map(Ok)
+        .unwrap_or_else(|| resolve_sibling_binary("spacetimedb-standalone"))?;
     let child = Command::new(&bin_path)
         .arg("extract-schema")
         .arg(wasm_file)
