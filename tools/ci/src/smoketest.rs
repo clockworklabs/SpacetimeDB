@@ -416,9 +416,7 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
         let declaration = line.strip_prefix("mod ").or_else(|| line.strip_prefix("pub mod "));
         if let Some(module) = declaration.and_then(|declaration| declaration.strip_suffix(';')) {
             let module = module.trim();
-            if is_rust_identifier(module) {
-                present.insert(module.strip_prefix("r#").unwrap_or(module).to_string());
-            }
+            present.insert(module.strip_prefix("r#").unwrap_or(module).to_string());
         }
     }
 
@@ -439,13 +437,4 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn is_rust_identifier(identifier: &str) -> bool {
-    let identifier = identifier.strip_prefix("r#").unwrap_or(identifier);
-    let mut chars = identifier.chars();
-    chars
-        .next()
-        .is_some_and(|first| first == '_' || first.is_ascii_alphabetic())
-        && chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
 }

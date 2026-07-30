@@ -19,7 +19,9 @@ runs:
 
     - name: Extract smoketest support files
       shell: bash
-      run: tar -xzf smoketest-support.tar.gz
+      run: |
+        tar -xzf smoketest-support.tar.gz
+        echo "SPACETIME_PREBUILT_TYPESCRIPT_SDK=1" >>"$GITHUB_ENV"
 
     # --test-threads=1 eliminates contention in the C# tests where they fight over
     # bindings build artifacts. It also improved unpartitioned job performance.
@@ -27,11 +29,9 @@ runs:
       if: runner.os == 'Linux'
       shell: bash
       env:
-        SPACETIME_PREBUILT_TYPESCRIPT_SDK: "1"
+        SPACETIMEDB_WORKSPACE_ROOT: ${{ github.workspace }}
       run: |
-        if [ -f ~/emsdk/emsdk_env.sh ]; then
-          source ~/emsdk/emsdk_env.sh
-        fi
+        source ~/emsdk/emsdk_env.sh
         ./target/debug/ci smoketests run-archive \
           --archive-file smoketest-nextest.tar.zst \
           -- \
@@ -43,11 +43,9 @@ runs:
       if: runner.os == 'Windows'
       shell: pwsh
       env:
-        SPACETIME_PREBUILT_TYPESCRIPT_SDK: "1"
+        SPACETIMEDB_WORKSPACE_ROOT: ${{ github.workspace }}
       run: |
-        if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
-          & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
-        }
+        & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
         & .\target\debug\ci.exe smoketests run-archive `
           --archive-file smoketest-nextest.tar.zst `
           -- `

@@ -24,15 +24,16 @@ fn next_spawn_id() -> u64 {
 /// Returns the workspace root directory.
 // TODO: Should this use something like `git rev-parse --show-toplevel` to avoid being directory-relative? Or perhaps `CARGO_WORKSPACE_DIR` is set?
 fn workspace_root() -> PathBuf {
-    // Private CI builds this crate into a nextest archive in one job and runs it in
-    // another, so prefer the public root supplied by the runner instead of embedding
-    // the build job's absolute path with `env!`.
+    // Archived binaries may execute in a different checkout from the build, so
+    // prefer the workspace root explicitly supplied by the runner.
     if let Ok(workspace_root) = env::var("SPACETIMEDB_WORKSPACE_ROOT") {
         return PathBuf::from(workspace_root);
     }
 
-    let manifest_dir =
-        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set when running tests"));
+    // Cargo and nextest set this at runtime, including nextest's remapped path.
+    let manifest_dir = PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set when running smoketests"),
+    );
     manifest_dir
         .parent() // crates/
         .and_then(|p| p.parent()) // workspace root

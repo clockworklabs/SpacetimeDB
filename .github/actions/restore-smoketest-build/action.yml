@@ -5,10 +5,6 @@ inputs:
   artifact-name:
     description: Name of the smoketest build artifact to download.
     required: true
-  support-archive:
-    description: Path to the support archive within the downloaded artifact.
-    required: false
-    default: smoketest-support.tar.gz
 
 runs:
   using: composite
@@ -21,7 +17,7 @@ runs:
 
     - name: Extract smoketest support files
       shell: bash
-      run: tar -xzf "${RUNNER_TEMP}/smoketest-build/${{ inputs.support-archive }}"
+      run: tar -xzf "${RUNNER_TEMP}/smoketest-build/smoketest-support.tar.gz"
 
     - name: Configure prebuilt SpacetimeDB binaries
       shell: bash

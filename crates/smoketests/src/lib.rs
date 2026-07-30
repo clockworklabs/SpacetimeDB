@@ -180,15 +180,16 @@ macro_rules! timed {
 
 /// Returns the workspace root directory.
 pub fn workspace_root() -> PathBuf {
-    // Nextest archives are built and executed in different jobs, so prefer the
-    // current public checkout supplied by the runner instead of embedding the build
-    // job's absolute path with `env!`.
+    // Archived tests may execute in a different checkout from the build, so
+    // prefer the workspace root explicitly supplied by the runner.
     if let Ok(workspace_root) = std::env::var("SPACETIMEDB_WORKSPACE_ROOT") {
         return PathBuf::from(workspace_root);
     }
 
-    let manifest_dir =
-        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set when running tests"));
+    // Cargo and nextest set this at runtime, including nextest's remapped path.
+    let manifest_dir = PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set when running smoketests"),
+    );
     manifest_dir
         .parent()
         .and_then(|p| p.parent())
