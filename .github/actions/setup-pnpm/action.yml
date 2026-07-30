@@ -5,6 +5,10 @@ inputs:
     description: package.json file used to determine the pnpm version
     required: false
     default: package.json
+  node_version:
+    description: Node.js version to install with pnpm dependency caching; omitted when Node.js is already configured
+    required: false
+    default: ""
   run_install:
     description: Run pnpm install after configuring pnpm
     required: false
@@ -19,6 +23,15 @@ runs:
     - uses: pnpm/action-setup@v4
       with:
         package_json_file: ${{ inputs.package_json_file }}
+
+    # setup-node's pnpm cache requires the pnpm executable to exist first.
+    - name: Set up Node.js
+      if: inputs.node_version != ''
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node_version }}
+        cache: pnpm
+        cache-dependency-path: pnpm-lock.yaml
 
     - name: Configure pnpm package age policy
       shell: bash

@@ -115,14 +115,8 @@ jobs:
       - name: Set up pnpm for TypeScript SDK build
         if: steps.typescript-sdk-cache.outputs.cache-hit != 'true'
         uses: ./.github/actions/setup-pnpm
-
-      - name: Set up Node.js for TypeScript SDK build
-        if: steps.typescript-sdk-cache.outputs.cache-hit != 'true'
-        uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          node_version: 22
 
       - name: Build TypeScript SDK
         if: steps.typescript-sdk-cache.outputs.cache-hit != 'true'
@@ -281,17 +275,10 @@ jobs:
         with:
           rust-cache-enabled: "false"
 
-      # Node.js and pnpm are required for the TypeScript smoketests.
-      # pnpm must be available before setup-node can locate and cache its store.
       - name: Set up pnpm
         uses: ./.github/actions/setup-pnpm
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          node_version: 18
 
       - name: Install TypeScript SDK runtime dependencies
         run: pnpm --filter spacetimedb install --prod --frozen-lockfile --prefer-offline
@@ -325,17 +312,10 @@ jobs:
         with:
           rust-cache-enabled: "false"
 
-      # Node.js and pnpm are required for the TypeScript smoketests.
-      # pnpm must be available before setup-node can locate and cache its store.
       - name: Set up pnpm
         uses: ./.github/actions/setup-pnpm
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          node_version: 18
 
       - name: Install TypeScript SDK runtime dependencies
         run: pnpm --filter spacetimedb install --prod --frozen-lockfile --prefer-offline
