@@ -1167,86 +1167,84 @@ fn test_basic_cs_init_default_dotnet_selection() -> Result<()> {
     Ok(())
 }
 
-/// Tests all templates discovered in the `templates/` directory.
+/// Runs the init + publish + client-test cycle for one registered template.
 ///
-/// For each template the test:
-/// 1. Runs `spacetime init --template <id>` into a temp directory
-/// 2. Wires local SDK dependencies so the template builds against the current source
-/// 3. Publishes the server module and verifies it succeeds
-/// 4. Type-checks / builds the client code
-///
-/// All templates are exercised even if some fail; a summary is printed at the
-/// end and the test fails if any template did.
-#[test]
-fn test_all_templates() {
-    let templates = get_templates();
-    assert!(!templates.is_empty(), "No templates found in templates/");
+/// Each template is a separate Rust test so nextest can hash it independently
+/// into a partition and report or rerun failures independently.
+fn run_registered_template(template_id: &str) {
+    let template = get_templates()
+        .into_iter()
+        .find(|template| template.id == template_id)
+        .unwrap_or_else(|| panic!("Registered template not found: {template_id}"));
 
-    let has_typescript = templates.iter().any(|t| t.server_lang.as_deref() == Some("typescript"));
-    let has_csharp = templates.iter().any(|t| t.server_lang.as_deref() == Some("csharp"));
-
-    // Guard checks - verify required tools are available before starting.
-    if has_typescript {
-        spacetimedb_smoketests::require_pnpm!();
-    }
-    if has_csharp {
-        spacetimedb_smoketests::require_dotnet!();
+    match template.server_lang.as_deref() {
+        Some("typescript") => {
+            spacetimedb_smoketests::require_pnpm!();
+            build_typescript_sdk().expect("Failed to build TypeScript SDK");
+        }
+        Some("csharp") => {
+            spacetimedb_smoketests::require_dotnet!();
+        }
+        _ => {}
     }
 
-    // Build the TypeScript SDK once up-front if any TypeScript templates exist.
-    if has_typescript {
-        build_typescript_sdk().expect("Failed to build TypeScript SDK");
-    }
-
-    // One shared server for all templates.
     let test = Smoketest::builder().autopublish(false).build();
+    test_template(&test, &template).unwrap_or_else(|error| panic!("Template {template_id} failed: {error:#}"));
+}
 
-    let mut results: Vec<(String, Result<()>)> = Vec::new();
+macro_rules! template_tests {
+    ($($test_name:ident => $template_id:literal),+ $(,)?) => {
+        const REGISTERED_TEMPLATE_IDS: &[&str] = &[$($template_id),+];
 
-    for template in &templates {
-        let result = test_template(&test, template);
-        let passed = result.is_ok();
-        eprintln!(
-            "[TEMPLATES] {} {}",
-            if passed { "[PASS]" } else { "[FAIL]" },
-            template.id
-        );
-        results.push((template.id.clone(), result));
-    }
-
-    // Print summary.
-    eprintln!("\n{}", "=".repeat(60));
-    eprintln!("TEMPLATE TEST SUMMARY");
-    eprintln!("{}", "=".repeat(60));
-    for (id, result) in &results {
-        eprintln!(
-            "{:40} {}",
-            id,
-            if result.is_ok() {
-                "[PASS]".to_string()
-            } else {
-                format!("[FAIL]: {:#}", result.as_ref().unwrap_err())
+        $(
+            #[test]
+            fn $test_name() {
+                run_registered_template($template_id);
             }
-        );
-    }
-    let passed = results.iter().filter(|(_, r)| r.is_ok()).count();
-    let total = results.len();
-    eprintln!("{}", "=".repeat(60));
-    eprintln!("TOTAL: {}/{} passed", passed, total);
+        )+
+    };
+}
 
-    // Fail if any template failed.
-    let failures: Vec<_> = results
+template_tests! {
+    test_template_angular_ts => "angular-ts",
+    test_template_astro_ts => "astro-ts",
+    test_template_basic_cpp => "basic-cpp",
+    test_template_basic_cs => "basic-cs",
+    test_template_basic_rs => "basic-rs",
+    test_template_basic_ts => "basic-ts",
+    test_template_browser_ts => "browser-ts",
+    test_template_bun_ts => "bun-ts",
+    test_template_chat_console_cs => "chat-console-cs",
+    test_template_chat_console_rs => "chat-console-rs",
+    test_template_chat_react_ts => "chat-react-ts",
+    test_template_deno_ts => "deno-ts",
+    test_template_hangman_react_ts => "hangman-react-ts",
+    test_template_llm_chat_ts => "llm-chat-ts",
+    test_template_money_exchange_react_ts => "money-exchange-react-ts",
+    test_template_nextjs_ts => "nextjs-ts",
+    test_template_nodejs_ts => "nodejs-ts",
+    test_template_nuxt_ts => "nuxt-ts",
+    test_template_react_ts => "react-ts",
+    test_template_remix_ts => "remix-ts",
+    test_template_solid_ts => "solid-ts",
+    test_template_svelte_ts => "svelte-ts",
+    test_template_tanstack_ts => "tanstack-ts",
+    test_template_vue_ts => "vue-ts",
+}
+
+#[test]
+fn test_template_registry_matches_discovered_templates() {
+    let discovered = get_templates()
+        .into_iter()
+        .map(|template| template.id)
+        .collect::<Vec<_>>();
+    let registered = REGISTERED_TEMPLATE_IDS
         .iter()
-        .filter(|(_, r)| r.is_err())
-        .map(|(id, r)| format!("  {}: {:#}", id, r.as_ref().unwrap_err()))
-        .collect();
+        .map(|template_id| (*template_id).to_owned())
+        .collect::<Vec<_>>();
 
-    if !failures.is_empty() {
-        panic!(
-            "{}/{} template(s) failed:\n{}",
-            failures.len(),
-            total,
-            failures.join("\n")
-        );
-    }
+    assert_eq!(
+        discovered, registered,
+        "Every discovered template must have its own nextest-visible test"
+    );
 }
