@@ -191,7 +191,7 @@ const MAX_SCHEDULE_DELAY: Duration = Duration::from_millis(
 );
 
 /// Warn when a scheduled function starts more than this long after it was due.
-const SCHEDULED_FUNCTION_DELAY_WARNING_THRESHOLD: Duration = Duration::from_millis(10);
+const SCHEDULED_FUNCTION_DELAY_WARNING_THRESHOLD: Duration = Duration::from_millis(30);
 
 #[derive(thiserror::Error, Debug)]
 pub enum ScheduleError {
