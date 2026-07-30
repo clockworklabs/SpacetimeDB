@@ -31,16 +31,29 @@ jobs:
   announce-release:
     name: Announce GitHub release (Internal)
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
+    if: >-
+      ${{
+        github.event_name == 'release'
+        || (github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run != 'true')
+      }}
     steps:
       - name: Send Discord notification
+        env:
+          RELEASE_NAME: ${{ github.event.release.name || github.event.inputs.release_tag }}
+          RELEASE_URL: ${{ github.event.release.html_url || github.event.inputs.release_url }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           set -euo pipefail
 
-          message="SpacetimeDB GitHub release published: [${{ github.event.release.name }}](<${{ github.event.release.html_url }}>)"
+          message="SpacetimeDB GitHub release published: [${RELEASE_NAME}](<${RELEASE_URL}>)"
 
           data="$(jq --null-input --arg msg "$message" '.content=$msg')"
-          curl -X POST -H 'Content-Type: application/json' -d "$data" "${{ secrets.DISCORD_WEBHOOK_RELEASE_ANNOUNCE_URL }}"
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "=== DRY RUN ==="
+            echo "$data" | jq .
+          else
+            curl -X POST -H 'Content-Type: application/json' -d "$data" "${{ secrets.DISCORD_WEBHOOK_RELEASE_ANNOUNCE_URL }}"
+          fi
 
   # Public announcement with full release notes
   public-discord-notification:
