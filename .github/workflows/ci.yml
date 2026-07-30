@@ -410,8 +410,8 @@ jobs:
 
       - uses: ./.github/actions/setup-pnpm
 
-      - name: Install TypeScript SDK dependencies
-        run: pnpm --filter spacetimedb... install --frozen-lockfile
+      - name: Install pnpm workspace dependencies
+        run: pnpm install --frozen-lockfile
 
       # Install cmake and emscripten for C++ module compilation tests.
       - name: Install cmake and emscripten
