@@ -16,7 +16,6 @@ const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     ("f32_negative_value", "-32.5"),
     ("f64_positive_value", "64.25"),
     ("f64_negative_value", "-64.25"),
-
     // TODO: uncomment this once string default values are fixed in Rust
     //("string_value", r#""default string""#),
 ];
