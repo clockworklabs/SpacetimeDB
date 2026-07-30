@@ -866,12 +866,24 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      UNITY_VERSION: 2022.3.32f1
     steps:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
+
+      # Key the Library by the inputs Unity imports so unrelated PRs share the same
+      # cache. Keep this before generation/hydration so ignored build outputs do not
+      # affect hashFiles.
+      - name: Restore Unity Library
+        uses: actions/cache@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: Unity-v2-${{ runner.os }}-${{ env.UNITY_VERSION }}-${{ hashFiles('demo/Blackholio/client-unity/**', 'sdks/csharp/**', 'crates/bindings-csharp/BSATN.Runtime/**', 'crates/bindings-csharp/Runtime/**', 'crates/bindings-csharp/Directory.Build.props', 'tools/regen/src/csharp.rs', 'global.json') }}
+          restore-keys: |
+            Unity-v2-${{ runner.os }}-${{ env.UNITY_VERSION }}-
 
       # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
@@ -953,16 +965,10 @@ jobs:
           yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "file:../../../../sdks/csharp"' manifest.json
           cat manifest.json
 
-      - uses: actions/cache@v3
-        with:
-          path: demo/Blackholio/client-unity/Library
-          key: Unity-${{ github.head_ref }}
-          restore-keys: Unity-
-
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
-          unityVersion: 2022.3.32f1 # Adjust Unity version to a valid tag
+          unityVersion: ${{ env.UNITY_VERSION }}
           projectPath: demo/Blackholio/client-unity # Path to the Unity project subdirectory
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           testMode: playmode
