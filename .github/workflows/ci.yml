@@ -229,7 +229,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/spacetimedb-native-cache/rusty-v8/rusty_v8.lib.gz
-          key: native-v1-rusty-v8-${{ steps.v8-version.outputs.v8 }}-x86_64-pc-windows-msvc-release-pc0-sb0
+          key: native-v1-rusty-v8-${{ steps.v8-version.outputs.v8 }}
 
       - name: Prepare native V8 library
         shell: pwsh
