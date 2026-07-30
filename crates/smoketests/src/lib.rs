@@ -180,6 +180,13 @@ macro_rules! timed {
 
 /// Returns the workspace root directory.
 pub fn workspace_root() -> PathBuf {
+    // Nextest archives are built and executed in different jobs, so prefer the
+    // current public checkout supplied by the runner instead of embedding the build
+    // job's absolute path with `env!`.
+    if let Ok(workspace_root) = std::env::var("SPACETIMEDB_WORKSPACE_ROOT") {
+        return PathBuf::from(workspace_root);
+    }
+
     let manifest_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set when running tests"));
     manifest_dir

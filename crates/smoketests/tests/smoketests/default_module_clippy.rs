@@ -1,16 +1,7 @@
 //! These tests verify that the Rust module templates have no clippy warnings.
 
-use std::path::PathBuf;
+use spacetimedb_smoketests::workspace_root;
 use std::process::Command;
-
-fn workspace_root() -> PathBuf {
-    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set when running tests"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
 
 /// Run clippy on a template's spacetimedb module directory.
 /// Both templates use workspace dependencies, so they can be checked in place.
