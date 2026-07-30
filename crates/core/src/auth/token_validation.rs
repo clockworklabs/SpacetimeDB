@@ -323,6 +323,8 @@ impl TokenValidator for JwksValidator {
 
 #[cfg(test)]
 mod tests {
+    use spacetimedb_data_structures::map::HashMap;
+    use std::assert_eq;
     use std::time::Duration;
 
     use crate::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
@@ -574,9 +576,10 @@ mod tests {
         }
     }
 
-    #[derive(Debug, Default, Copy, Clone)]
+    #[derive(Debug, Default, Clone)]
     struct TestOptions {
         pub issuer_trailing_slash: bool,
+        pub extra_claims: Option<HashMap<Box<str>, serde_json::Value>>,
     }
 
     async fn run_oidc_test<T: TokenValidator>(validator: T, opts: &TestOptions) -> anyhow::Result<()> {
@@ -613,7 +616,7 @@ mod tests {
             audience: [].into(),
             iat: std::time::SystemTime::now(),
             exp: None,
-            extra: None,
+            extra: opts.extra_claims.clone(),
         };
         for kp in [kp1, kp2] {
             log::debug!("Testing with key {:?}", kp.kid);
@@ -624,6 +627,14 @@ mod tests {
             assert_eq!(&*validated_claims.issuer, &*issuer);
             assert_eq!(&*validated_claims.subject, subject);
             assert_eq!(validated_claims.identity, Identity::from_claims(&issuer, subject));
+            let parsed_extra_claims = validated_claims.extra.unwrap_or_default();
+
+            for (key, value) in opts.extra_claims.clone().unwrap_or_default() {
+                let parsed_value = parsed_extra_claims.get(&key);
+                // assert!(parsed_value.is_some(), format!("We are missing {:?}", key));
+                assert!(parsed_value.is_some(), "We are missing {:?}", key);
+                assert_eq!(parsed_value.unwrap(), &value);
+            }
         }
 
         let invalid_token = invalid_kp.private.sign(&orig_claims)?;
@@ -644,10 +655,29 @@ mod tests {
     async fn test_issuer_slash() -> anyhow::Result<()> {
         let opts = TestOptions {
             issuer_trailing_slash: true,
+            ..Default::default()
         };
 
         run_oidc_test(OidcTokenValidator, &opts).await?;
         run_oidc_test(CachingOidcTokenValidator::get_default(), &opts).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_custom_claim_types() -> anyhow::Result<()> {
+        let extra_claims: HashMap<Box<str>, serde_json::Value> = [
+            ("custom_field_bool".into(), serde_json::json!(true)),
+            ("custom_field_number".into(), serde_json::json!(12.5)),
+            ("custom_field_array".into(), serde_json::json!([12.5, "string"])),
+            ("custom_field_object".into(), serde_json::json!([12.5, {"x": "y"}])),
+        ]
+        .into_iter()
+        .collect();
+        let opts = TestOptions {
+            extra_claims: Some(extra_claims),
+            ..Default::default()
+        };
+        run_oidc_test(OidcTokenValidator, &opts).await?;
         Ok(())
     }
 
