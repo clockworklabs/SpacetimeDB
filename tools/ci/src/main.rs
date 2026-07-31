@@ -612,6 +612,7 @@ fn main() -> Result<()> {
             cmd!(
                 "cargo",
                 "clippy",
+                "--timings",
                 "--all",
                 "--tests",
                 "--benches",
@@ -623,6 +624,7 @@ fn main() -> Result<()> {
             cmd!(
                 "cargo",
                 "clippy",
+                "--timings",
                 "--no-default-features",
                 "--features=browser",
                 "-pspacetimedb-sdk",
