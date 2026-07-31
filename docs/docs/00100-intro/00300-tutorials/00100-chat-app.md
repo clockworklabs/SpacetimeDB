@@ -2042,7 +2042,10 @@ void PrintMessage(RemoteTables tables, Message message)
 
 #### Warn if our name was rejected
 
-We can also register callbacks to run each time a reducer is invoked. We register these callbacks using the `OnReducerEvent` method of the `Reducer` namespace, which is automatically implemented for each reducer by `spacetime generate`.
+We can also register callbacks for reducer results. We register these callbacks
+using generated events on `conn.Reducers`, such as `conn.Reducers.OnSetName`
+and `conn.Reducers.OnSendMessage`, which are automatically implemented for
+each reducer by `spacetime generate`.
 
 Each reducer callback takes one fixed argument:
 
@@ -2061,7 +2064,11 @@ These callbacks will be invoked in one of two cases:
 
 Note that a status of `Failed` or `OutOfEnergy` implies that the caller identity is our own identity.
 
-We already handle successful `SetName` invocations using our `User.OnUpdate` callback, but if the module rejects a user's chosen name, we'd like that user's client to let them know. We define a function `Reducer_OnSetNameEvent` as a `Reducer.OnSetNameEvent` callback which checks if the reducer failed, and if it did, prints an error message including the rejected name.
+We already handle successful `SetName` invocations using our `User.OnUpdate`
+callback, but if the module rejects a user's chosen name, we'd like that user's
+client to let them know. We define a function `Reducer_OnSetNameEvent` and
+register it with `conn.Reducers.OnSetName`; the callback checks if the reducer
+failed, and if it did, prints an error message including the rejected name.
 
 We'll test both that our identity matches the sender and that the status is `Failed`, even though the latter implies the former, for demonstration purposes.
 
