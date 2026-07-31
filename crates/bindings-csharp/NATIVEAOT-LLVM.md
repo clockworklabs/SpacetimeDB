@@ -123,6 +123,10 @@ spacetime publish --native-aot my-database-name
 
 Technically all of these options just set the `EXPERIMENTAL_WASM_AOT` environment variable, but they provide different user experiences. Using `--native-aot` during `init` will create a project with a `spacetime.json` configured like Option 3 so the new project is consistently published with NativeAOT-LLVM.
 
+### `dotnet build` with NativeAOT-LLVM
+
+To use NativeAOT-LLVM, the project expects the flag `EXPERIMENTAL_WASM_AOT` to be set. When calling `spacetime publish`, this is dealt with internally. To build your project manually calling `dotnet build`, if you want to use NativeAOT-LLVM, you need to set the flag manually: `dotnet build -f net8.0 -p:EXPERIMENTAL_WASM_AOT=1`. 
+
 ---
 
 ## Build Target: .NET 10.0+ NativeAOT-LLVM (Windows & Linux)
