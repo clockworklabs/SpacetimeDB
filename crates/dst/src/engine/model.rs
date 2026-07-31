@@ -1,16 +1,15 @@
-use spacetimedb_lib::{db::raw_def::SEQUENCE_ALLOCATION_STEP, AlgebraicValue, ProductValue};
+use spacetimedb_lib::{AlgebraicValue, ProductValue};
 
 use super::migrations::MigrationExpectation;
 use super::row::{normalize_rows, Row};
 use super::state::{schema_state_for_plan, CommitDelta, CountState, TableDelta, TableRowCount, TableRows};
 use super::workload::{InsertOutcome, Interaction, Observation};
-use crate::schema::{ColumnPlan, SchemaPlan, SequencePlan, TablePlan, Type};
+use crate::schema::{ColumnPlan, SchemaPlan, TablePlan};
 
 #[derive(Debug)]
 pub struct Model {
     schema: SchemaPlan,
     committed_tables: Vec<TableState>,
-    sequences: Vec<Vec<ModelSequence>>,
     pending_tx: Option<PendingTx>,
 }
 
@@ -23,114 +22,6 @@ struct TableState {
 #[derive(Debug)]
 struct PendingTx {
     tables: Vec<PendingTable>,
-    sequence_allocations: Vec<Vec<Option<i128>>>,
-}
-
-#[derive(Debug, Clone)]
-struct ModelSequence {
-    column: usize,
-    ty: Type,
-    value: i128,
-    allocated: i128,
-    durable_allocated: i128,
-    min_value: i128,
-    max_value: i128,
-    increment: i128,
-}
-
-impl ModelSequence {
-    fn new(plan: &SequencePlan, ty: Type) -> Self {
-        let start = plan.start.unwrap_or(1);
-        Self {
-            column: plan.column,
-            ty,
-            value: start,
-            allocated: start,
-            durable_allocated: start,
-            min_value: plan.min_value.unwrap_or(1),
-            max_value: plan.max_value.unwrap_or(i128::MAX),
-            increment: plan.increment,
-        }
-    }
-
-    fn same_definition(&self, plan: &SequencePlan, ty: Type) -> bool {
-        self.ty == ty
-            && self.min_value == plan.min_value.unwrap_or(1)
-            && self.max_value == plan.max_value.unwrap_or(i128::MAX)
-            && self.increment == plan.increment
-    }
-
-    fn with_column(mut self, column: usize) -> Self {
-        self.column = column;
-        self
-    }
-
-    fn generate(&mut self) -> (AlgebraicValue, Option<i128>) {
-        let old_allocated = self.allocated;
-        if self.needs_allocation() {
-            self.allocate_steps(SEQUENCE_ALLOCATION_STEP as usize);
-        }
-
-        let value = self.value;
-        self.value = self.next_value();
-        let allocation = (self.allocated != old_allocated).then_some(self.allocated);
-        (self.value_to_algebraic(value), allocation)
-    }
-
-    fn reset_to_durable(&mut self) {
-        self.value = self.durable_allocated;
-        self.allocated = self.durable_allocated;
-    }
-
-    fn needs_allocation(&self) -> bool {
-        self.value == self.allocated
-    }
-
-    fn allocate_steps(&mut self, steps: usize) {
-        if !self.needs_allocation() {
-            return;
-        }
-
-        let original_allocation = self.allocated;
-        for _ in 0..steps {
-            let next = next_sequence_value(self.min_value, self.max_value, self.increment, self.allocated);
-            if next == original_allocation {
-                break;
-            }
-            self.allocated = next;
-        }
-        debug_assert!(!self.needs_allocation(), "sequence allocation should make progress");
-    }
-
-    fn next_value(&self) -> i128 {
-        next_sequence_value(self.min_value, self.max_value, self.increment, self.value)
-    }
-
-    fn value_to_algebraic(&self, value: i128) -> AlgebraicValue {
-        match self.ty {
-            Type::I64 => AlgebraicValue::I64(value as i64),
-            Type::U64 => AlgebraicValue::U64(value as u64),
-            _ => unreachable!("sequence columns are integral in the DST schema"),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct ColumnDomain {
-    pub(crate) values: Vec<AlgebraicValue>,
-    pub(crate) single_column_unique: bool,
-    pub(crate) single_column_indexed: bool,
-    pub(crate) sequenced: bool,
-}
-
-impl ColumnDomain {
-    pub(crate) fn integral_values(&self) -> impl Iterator<Item = i128> + '_ {
-        self.values.iter().filter_map(|value| match value {
-            AlgebraicValue::U64(value) => Some(*value as i128),
-            AlgebraicValue::I64(value) => Some(*value as i128),
-            _ => None,
-        })
-    }
 }
 
 // Keep mutable transactions as an overlay: committed rows stay shared, while
@@ -148,13 +39,9 @@ impl PendingTable {
 }
 
 impl PendingTx {
-    fn new(sequences: &[Vec<ModelSequence>]) -> Self {
+    fn new(table_count: usize) -> Self {
         Self {
-            tables: (0..sequences.len()).map(|_| PendingTable::default()).collect(),
-            sequence_allocations: sequences
-                .iter()
-                .map(|table_sequences| vec![None; table_sequences.len()])
-                .collect(),
+            tables: (0..table_count).map(|_| PendingTable::default()).collect(),
         }
     }
 }
@@ -169,11 +56,9 @@ impl Model {
                 ever_inserted: false,
             })
             .collect();
-        let sequences = sequence_states_for_schema(&schema);
         Self {
             schema,
             committed_tables,
-            sequences,
             pending_tx: None,
         }
     }
@@ -189,15 +74,6 @@ impl Model {
     fn pending_table_mut(&mut self, table: usize) -> &mut PendingTable {
         debug_assert!(self.pending_tx.is_some());
         &mut self.pending_tx.as_mut().expect("active transaction").tables[table]
-    }
-
-    fn pending_sequence_allocation_mut(&mut self, table: usize, sequence: usize) -> &mut Option<i128> {
-        debug_assert!(self.pending_tx.is_some());
-        &mut self
-            .pending_tx
-            .as_mut()
-            .expect("active transaction")
-            .sequence_allocations[table][sequence]
     }
 
     fn visible_committed_rows(&self, table: usize) -> impl Iterator<Item = &Row> + '_ {
@@ -225,9 +101,18 @@ impl Model {
         self.visible_rows(table).any(matches)
     }
 
-    fn violates_unique_constraint(&self, table: usize, row: &Row) -> bool {
+    fn violates_unique_constraint(&self, table: usize, row: &Row, ignore_sequence_constraints: bool) -> bool {
         let table_plan = &self.schema.tables[table];
         for constraint in &table_plan.unique_constraints {
+            if ignore_sequence_constraints
+                && constraint
+                    .columns
+                    .iter()
+                    .any(|&column| column_has_sequence(table_plan, column))
+            {
+                continue;
+            }
+
             if self.any_visible_row(table, |visible_row| {
                 constraint
                     .columns
@@ -241,77 +126,50 @@ impl Model {
     }
 
     pub(crate) fn insert_would_violate_unique_constraint(&self, table: usize, row: &Row) -> bool {
-        let row = self.project_sequence_values(table, row);
-        !self.any_visible_row(table, |visible_row| visible_row == &row) && self.violates_unique_constraint(table, &row)
+        !self.any_visible_row(table, |visible_row| visible_row == row)
+            && self.violates_unique_constraint(table, row, true)
     }
 
-    fn project_sequence_values(&self, table: usize, row: &Row) -> Row {
-        let mut row = row.clone();
-        let mut sequences = self.sequences[table].clone();
-
-        for sequence in &mut sequences {
-            let column = sequence.column;
-            if row.elements[column].is_numeric_zero() {
-                let (value, _allocation) = sequence.generate();
-                row.elements[column] = value;
-            }
-        }
-
-        row
-    }
-
-    fn apply_sequence_values(&mut self, table: usize, row: &Row) -> Row {
-        let mut row = row.clone();
-        let sequence_count = self.sequences[table].len();
-
-        for sequence_idx in 0..sequence_count {
-            let column = self.sequences[table][sequence_idx].column;
-            if !row.elements[column].is_numeric_zero() {
-                continue;
-            }
-
-            let (value, allocation) = self.sequences[table][sequence_idx].generate();
-            row.elements[column] = value;
-            if let Some(allocation) = allocation {
-                *self.pending_sequence_allocation_mut(table, sequence_idx) = Some(allocation);
-            }
-        }
-
-        row
-    }
-
-    pub fn apply(&mut self, interaction: &Interaction) -> Observation {
+    pub fn apply(&mut self, interaction: &Interaction, observation: &Observation) -> anyhow::Result<Observation> {
         match interaction {
             Interaction::BeginMutTx => {
+                anyhow::ensure!(
+                    matches!(observation, Observation::BeganMutTx),
+                    "begin-mut-tx produced unexpected observation"
+                );
                 debug_assert!(self.pending_tx.is_none());
-                self.pending_tx = Some(PendingTx::new(&self.sequences));
-                Observation::BeganMutTx
+                self.pending_tx = Some(PendingTx::new(self.schema.tables.len()));
+                Ok(Observation::BeganMutTx)
             }
-            Interaction::Insert { table, row } => {
+            Interaction::Insert { table, .. } => {
                 debug_assert!(self.pending_tx.is_some());
+                let Observation::Inserted { outcome } = observation else {
+                    anyhow::bail!("insert produced unexpected observation");
+                };
+
                 self.committed_tables[*table].ever_inserted = true;
-                let row = self.apply_sequence_values(*table, row);
-
-                if self.any_visible_row(*table, |visible_row| visible_row == &row) {
-                    return Observation::Inserted {
-                        outcome: InsertOutcome::Accepted(row),
-                    };
-                }
-
-                if self.violates_unique_constraint(*table, &row) {
-                    return Observation::Inserted {
-                        outcome: InsertOutcome::UniqueConstraintViolation {
-                            details: "model unique constraint".into(),
-                        },
-                    };
-                }
-
-                self.pending_table_mut(*table).inserts.push(row.clone());
-                Observation::Inserted {
-                    outcome: InsertOutcome::Accepted(row),
+                match outcome {
+                    InsertOutcome::Accepted(row) => {
+                        let already_visible = self.any_visible_row(*table, |visible_row| visible_row == row);
+                        anyhow::ensure!(
+                            already_visible || !self.violates_unique_constraint(*table, row, false),
+                            "target accepted row that violates a visible unique constraint"
+                        );
+                        if !already_visible {
+                            self.pending_table_mut(*table).inserts.push(row.clone());
+                        }
+                        Ok(Observation::Inserted {
+                            outcome: InsertOutcome::Accepted(row.clone()),
+                        })
+                    }
+                    InsertOutcome::UniqueConstraintViolation { .. } => Ok(observation.clone()),
                 }
             }
             Interaction::Delete { table, row } => {
+                anyhow::ensure!(
+                    matches!(observation, Observation::Deleted),
+                    "delete produced unexpected observation"
+                );
                 debug_assert!(self.pending_tx.is_some());
                 if self.any_visible_row(*table, |visible_row| visible_row == row) {
                     let committed_has_row = self.visible_committed_rows(*table).any(|committed| committed == row);
@@ -321,13 +179,17 @@ impl Model {
                         pending_table.deletes.push(row.clone());
                     }
                 }
-                Observation::Deleted
+                Ok(Observation::Deleted)
             }
             Interaction::CommitTx => {
+                anyhow::ensure!(
+                    matches!(observation, Observation::Committed { .. }),
+                    "commit produced unexpected observation"
+                );
                 debug_assert!(self.pending_tx.is_some());
                 let pending_tx = self.pending_tx.take().expect("active transaction");
                 let delta = self.commit_pending(pending_tx);
-                Observation::Committed { delta }
+                Ok(Observation::Committed { delta })
             }
             Interaction::Migrate(migration) => {
                 debug_assert!(self.pending_tx.is_none());
@@ -335,29 +197,27 @@ impl Model {
                     MigrationExpectation::Accepted => {
                         let old_schema = std::mem::replace(&mut self.schema, migration.schema().clone());
                         let old_tables = std::mem::take(&mut self.committed_tables);
-                        let old_sequences = std::mem::take(&mut self.sequences);
                         self.committed_tables = remap_table_states(&old_schema, &self.schema, old_tables);
-                        self.sequences = remap_sequence_states(&old_schema, &self.schema, old_sequences);
-                        Observation::Migrated
+                        Ok(Observation::Migrated)
                     }
-                    MigrationExpectation::Rejected => Observation::MigrationRejected,
+                    MigrationExpectation::Rejected => Ok(Observation::MigrationRejected),
                 }
             }
             Interaction::Replay => {
+                anyhow::ensure!(
+                    matches!(observation, Observation::Replayed { .. }),
+                    "replay produced unexpected observation"
+                );
                 self.pending_tx = None;
-                self.reset_sequences_to_durable();
-                Observation::Replayed {
+                Ok(Observation::Replayed {
                     state: self.count_state(),
-                }
+                })
             }
         }
     }
 
     fn commit_pending(&mut self, pending_tx: PendingTx) -> CommitDelta {
-        let PendingTx {
-            tables: pending_tables,
-            sequence_allocations,
-        } = pending_tx;
+        let PendingTx { tables: pending_tables } = pending_tx;
         let mut tables = Vec::new();
 
         for (table, pending_table) in pending_tables.into_iter().enumerate() {
@@ -403,21 +263,7 @@ impl Model {
             committed_rows.extend(pending_table.inserts);
         }
 
-        for (table, allocations) in sequence_allocations.into_iter().enumerate() {
-            for (sequence, allocation) in allocations.into_iter().enumerate() {
-                if let Some(allocation) = allocation {
-                    self.sequences[table][sequence].durable_allocated = allocation;
-                }
-            }
-        }
-
         CommitDelta { tables }
-    }
-
-    fn reset_sequences_to_durable(&mut self) {
-        for sequence in self.sequences.iter_mut().flatten() {
-            sequence.reset_to_durable();
-        }
     }
 
     pub fn in_mut_tx(&self) -> bool {
@@ -441,36 +287,11 @@ impl Model {
             .is_some_and(|table| self.committed_tables[table].ever_inserted)
     }
 
-    pub(crate) fn column_domain_by_name(&self, table: &str, column: &str) -> Option<ColumnDomain> {
-        let table = self.table_index(table)?;
-        let column = self.schema.tables[table]
-            .columns
-            .iter()
-            .position(|column_plan| column_plan.name == column)?;
-        Some(self.column_domain(table, column))
-    }
-
     fn table_index(&self, table: &str) -> Option<usize> {
         self.schema
             .tables
             .iter()
             .position(|table_plan| table_plan.name == table)
-    }
-
-    pub(crate) fn column_domain(&self, table: usize, column: usize) -> ColumnDomain {
-        let table_plan = &self.schema.tables[table];
-        ColumnDomain {
-            values: self
-                .visible_rows(table)
-                .map(|row| row.elements[column].clone())
-                .collect(),
-            single_column_unique: table_plan
-                .unique_constraints
-                .iter()
-                .any(|constraint| constraint.columns == [column]),
-            single_column_indexed: table_plan.indexes.iter().any(|index| index.columns == [column]),
-            sequenced: table_plan.sequences.iter().any(|sequence| sequence.column == column),
-        }
     }
 
     pub fn row(&self, table: usize, row: usize) -> Option<&Row> {
@@ -504,88 +325,8 @@ impl Model {
     }
 }
 
-fn sequence_states_for_schema(schema: &SchemaPlan) -> Vec<Vec<ModelSequence>> {
-    schema.tables.iter().map(sequence_states_for_table).collect()
-}
-
-fn sequence_states_for_table(table: &TablePlan) -> Vec<ModelSequence> {
-    table
-        .sequences
-        .iter()
-        .map(|sequence| ModelSequence::new(sequence, table.columns[sequence.column].ty))
-        .collect()
-}
-
-fn remap_sequence_states(
-    old_schema: &SchemaPlan,
-    new_schema: &SchemaPlan,
-    old_sequences: Vec<Vec<ModelSequence>>,
-) -> Vec<Vec<ModelSequence>> {
-    new_schema
-        .tables
-        .iter()
-        .map(|new_table| {
-            let Some(old_table_idx) = old_schema
-                .tables
-                .iter()
-                .position(|old_table| old_table.name == new_table.name)
-            else {
-                return sequence_states_for_table(new_table);
-            };
-
-            let old_table = &old_schema.tables[old_table_idx];
-            new_table
-                .sequences
-                .iter()
-                .map(|new_sequence| {
-                    remap_sequence_state(old_table, new_table, &old_sequences[old_table_idx], new_sequence)
-                })
-                .collect()
-        })
-        .collect()
-}
-
-fn remap_sequence_state(
-    old_table: &TablePlan,
-    new_table: &TablePlan,
-    old_sequences: &[ModelSequence],
-    new_sequence: &SequencePlan,
-) -> ModelSequence {
-    let new_column = &new_table.columns[new_sequence.column];
-    let Some(old_column_idx) = old_table
-        .columns
-        .iter()
-        .position(|old_column| old_column.name == new_column.name)
-    else {
-        return ModelSequence::new(new_sequence, new_column.ty);
-    };
-
-    let Some(old_sequence_idx) = old_table
-        .sequences
-        .iter()
-        .position(|old_sequence| old_sequence.column == old_column_idx)
-    else {
-        return ModelSequence::new(new_sequence, new_column.ty);
-    };
-
-    let old_sequence = &old_sequences[old_sequence_idx];
-    if old_sequence.same_definition(new_sequence, new_column.ty) {
-        old_sequence.clone().with_column(new_sequence.column)
-    } else {
-        ModelSequence::new(new_sequence, new_column.ty)
-    }
-}
-
-fn next_sequence_value(min: i128, max: i128, increment: i128, value: i128) -> i128 {
-    let mut next = value + increment;
-    if increment > 0 {
-        if next > max {
-            next = min + (next - max - 1) % (max - min + 1);
-        }
-    } else if next < min {
-        next = max - (min - next - 1) % (max - min + 1);
-    }
-    next
+fn column_has_sequence(table: &TablePlan, column: usize) -> bool {
+    table.sequences.iter().any(|sequence| sequence.column == column)
 }
 
 fn remap_table_states(
@@ -683,6 +424,30 @@ mod tests {
         }
     }
 
+    fn observe(model: &mut Model, interaction: Interaction, observation: Observation) -> Observation {
+        model
+            .apply(&interaction, &observation)
+            .expect("model should accept target observation")
+    }
+
+    fn accepted(row: Row) -> Observation {
+        Observation::Inserted {
+            outcome: InsertOutcome::Accepted(row),
+        }
+    }
+
+    fn committed() -> Observation {
+        Observation::Committed {
+            delta: CommitDelta { tables: Vec::new() },
+        }
+    }
+
+    fn replayed(model: &Model) -> Observation {
+        Observation::Replayed {
+            state: model.count_state(),
+        }
+    }
+
     fn keyed_payload_schema(sequence: bool) -> SchemaPlan {
         SchemaPlan {
             tables: vec![TablePlan {
@@ -730,11 +495,11 @@ mod tests {
     }
 
     #[test]
-    fn insert_would_violate_unique_constraint_projects_sequence_values() {
+    fn insert_would_violate_unique_constraint_treats_sequence_constraints_as_ambiguous() {
         let mut model = Model::new(keyed_payload_schema(true));
         model.committed_tables[0].rows.push(payload_row(1, "a"));
 
-        assert!(model.insert_would_violate_unique_constraint(0, &payload_row(0, "b")));
+        assert!(!model.insert_would_violate_unique_constraint(0, &payload_row(0, "b")));
     }
 
     #[test]
@@ -742,7 +507,7 @@ mod tests {
         let mut model = Model::new(schema());
         model.committed_tables[0].rows.push(row(1));
 
-        model.apply(&Interaction::BeginMutTx);
+        observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
 
         let pending_tx = model.pending_tx.as_ref().expect("active transaction");
         assert!(pending_tx
@@ -757,8 +522,12 @@ mod tests {
         let mut model = Model::new(schema());
         model.committed_tables[0].rows.push(row(1));
 
-        model.apply(&Interaction::BeginMutTx);
-        model.apply(&Interaction::Insert { table: 0, row: row(2) });
+        observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
+        observe(
+            &mut model,
+            Interaction::Insert { table: 0, row: row(2) },
+            accepted(row(2)),
+        );
 
         let pending_table = &model.pending_tx.as_ref().expect("active transaction").tables[0];
         assert_eq!(pending_table.inserts, vec![row(2)]);
@@ -773,8 +542,12 @@ mod tests {
         model.committed_tables[0].rows.push(row(1));
         model.committed_tables[0].rows.push(row(2));
 
-        model.apply(&Interaction::BeginMutTx);
-        model.apply(&Interaction::Delete { table: 0, row: row(1) });
+        observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
+        observe(
+            &mut model,
+            Interaction::Delete { table: 0, row: row(1) },
+            Observation::Deleted,
+        );
 
         let pending_table = &model.pending_tx.as_ref().expect("active transaction").tables[0];
         assert!(pending_table.inserts.is_empty());
@@ -787,12 +560,17 @@ mod tests {
     fn insert_is_visible_before_commit_and_replay_rolls_back() {
         let mut model = Model::new(schema());
 
-        model.apply(&Interaction::BeginMutTx);
-        model.apply(&Interaction::Insert { table: 0, row: row(1) });
+        observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
+        observe(
+            &mut model,
+            Interaction::Insert { table: 0, row: row(1) },
+            accepted(row(1)),
+        );
         assert_eq!(model.row_count(0), 1);
 
-        model.apply(&Interaction::Replay);
-        model.apply(&Interaction::BeginMutTx);
+        let replay = replayed(&model);
+        observe(&mut model, Interaction::Replay, replay);
+        observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
         assert_eq!(model.row_count(0), 0);
     }
 
@@ -800,9 +578,13 @@ mod tests {
     fn commit_applies_only_pending_overlay() {
         let mut model = Model::new(schema());
 
-        model.apply(&Interaction::BeginMutTx);
-        model.apply(&Interaction::Insert { table: 0, row: row(1) });
-        let observation = model.apply(&Interaction::CommitTx);
+        observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
+        observe(
+            &mut model,
+            Interaction::Insert { table: 0, row: row(1) },
+            accepted(row(1)),
+        );
+        let observation = observe(&mut model, Interaction::CommitTx, committed());
 
         let Observation::Committed { delta, .. } = observation else {
             panic!("expected commit observation");
@@ -817,8 +599,12 @@ mod tests {
         let mut model = Model::new(schema());
         model.committed_tables[0].rows.push(row(1));
 
-        model.apply(&Interaction::BeginMutTx);
-        model.apply(&Interaction::Delete { table: 0, row: row(1) });
+        observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
+        observe(
+            &mut model,
+            Interaction::Delete { table: 0, row: row(1) },
+            Observation::Deleted,
+        );
 
         assert_eq!(model.row_count(0), 0);
     }

@@ -14,7 +14,7 @@ use spacetimedb_lib::{AlgebraicValue, ProductValue};
 use spacetimedb_runtime::sim::Rng;
 use spacetimedb_sats::ArrayValue;
 
-use super::migrations::{Migration, MigrationMode};
+use super::migrations::Migration;
 use super::model::Model;
 use super::row::Row;
 use crate::rng::{choice, Choice, WeightedChoice};
@@ -669,9 +669,21 @@ fn sequence_placeholder(ty: Type) -> AlgebraicValue {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+enum MigrationCase {
+    Accepted,
+    Rejected,
+}
+
+impl MigrationCase {
+    const CHOICES: [Choice<Self>; 2] = [choice(95, Self::Accepted), choice(5, Self::Rejected)];
+}
+
+impl WeightedChoice for MigrationCase {}
+
 // Migration generation is intentionally shallow here: accepted migrations are
-// short rewrite chains, while rejected migration construction lives in
-// `migrations.rs` and falls back to accepted work when no rejection applies.
+// short rewrite chains, while rejected migrations are one invalidated accepted
+// rule composed with otherwise valid accepted cases.
 struct MigrationGen<'a> {
     rng: &'a Rng,
     model: &'a Model,
@@ -683,9 +695,9 @@ impl<'a> MigrationGen<'a> {
     }
 
     fn choose(&self) -> Option<Migration> {
-        match MigrationMode::pick(self.rng, &MigrationMode::CHOICES) {
-            MigrationMode::Accepted => self.choose_accepted(),
-            MigrationMode::Rejected => {
+        match MigrationCase::pick(self.rng, &MigrationCase::CHOICES) {
+            MigrationCase::Accepted => self.choose_accepted(),
+            MigrationCase::Rejected => {
                 Migration::choose_rejected(self.rng, self.model.schema(), self.model).or_else(|| self.choose_accepted())
             }
         }

@@ -247,7 +247,7 @@ impl EngineTarget {
             "migration while mutable transaction is active"
         );
         anyhow::ensure!(
-            migration.schema() != &self.schema,
+            migration.target_schema() != &self.schema,
             "engine DST generated a no-op migration"
         );
 
@@ -467,7 +467,7 @@ mod tests {
     use spacetimedb_runtime::sim::Runtime as SimRuntime;
     use spacetimedb_sats::product;
 
-    use super::migrations::{Migration, SchemaRewrite, TableMigrationOp};
+    use super::migrations::{Migration, MigrationExpectation, SchemaRewrite, TableMigrationOp};
     use super::*;
     use crate::schema::{ColumnPlan, IndexAlgorithm, IndexPlan, TablePlan, Type, UniqueConstraintPlan};
 
@@ -601,6 +601,25 @@ mod tests {
 
         let target = EngineTarget::init(raw_schema, Handle::simulation(SimRuntime::new(0).handle()))?;
         assert_eq!(target.schema, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn rejected_migration_is_expected_rejected_by_engine() -> anyhow::Result<()> {
+        let mut target = EngineTarget::init(
+            add_column_replay_schema(),
+            Handle::simulation(SimRuntime::new(0).handle()),
+        )?;
+        let model = Model::new(target.schema.clone());
+        let migration = Migration::choose_rejected(&Rng::new(0), &target.schema, &model)
+            .expect("schema should produce a duplicate-object rejected migration");
+
+        assert_eq!(migration.expectation(), MigrationExpectation::Rejected);
+        assert_eq!(
+            target.execute(&Interaction::Migrate(migration))?,
+            Observation::MigrationRejected
+        );
 
         Ok(())
     }

@@ -1,11 +1,11 @@
 //! Schema migration candidates for the engine DST driver.
 //!
-//! This module generates schema changes with an explicit expected outcome.
-//! Accepted migrations exercise engine auto-migration. Rejected migrations are
-//! rule-local counterexamples where the engine should refuse the change.
+//! This module generates accepted schema changes for engine auto-migration and
+//! rejected schema changes by asking the same rule set for one intentionally
+//! invalidated precondition.
 
-use super::model::{ColumnDomain, Model};
-use crate::rng::{choice, choose_index, Choice, WeightedChoice};
+use super::model::Model;
+use crate::rng::choose_index;
 use crate::schema::{
     canonical_schema, ColumnPlan, IndexAlgorithm, IndexPlan, SchemaGenerator, SchemaNames, SchemaPlan, SchemaProfile,
     SequencePlan, TablePlan, Type, UniqueConstraintPlan,
@@ -21,10 +21,8 @@ const MAX_TABLES: usize = 128;
 /// A fully materialized schema migration interaction.
 ///
 /// `target_schema` is the raw schema handed to engine validation. `schema` is
-/// the canonical schema the model should observe after the engine applies the
-/// raw definition and `SnakeCase` conversion. Rejected migrations may not have a
-/// valid canonical form, so they keep both fields identical and never advance
-/// model state.
+/// the canonical schema the model should observe after the engine applies an
+/// accepted migration. Rejected migrations never advance model state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Migration {
     target_schema: SchemaPlan,
@@ -85,20 +83,6 @@ pub enum TableMigrationOp {
     ReschemaEventTable,
 }
 
-/// Top-level migration outcome bucket. Keep this gate separate so adding more
-/// rejected rules does not silently increase total rejection frequency.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MigrationMode {
-    Accepted,
-    Rejected,
-}
-
-impl MigrationMode {
-    pub(super) const CHOICES: [Choice<Self>; 2] = [choice(95, Self::Accepted), choice(5, Self::Rejected)];
-}
-
-impl WeightedChoice for MigrationMode {}
-
 /// Stable identity for migration rules.
 ///
 /// Keep this ID separate from weights and rule implementation. It is the
@@ -113,7 +97,6 @@ enum RuleId {
     RemoveIndex,
     ChangeIndex,
     AddSequenceOnPristineTable,
-    AddSequenceBoundaryProbe,
     RemoveSequence,
     AddUniqueConstraintOnPristineTable,
     RemoveUniqueConstraint,
@@ -166,10 +149,6 @@ static MIGRATION_RULES: &[RuleEntry] = &[
         rule: &AddSequenceOnPristineTableRule,
     },
     RuleEntry {
-        id: RuleId::AddSequenceBoundaryProbe,
-        rule: &AddSequenceBoundaryProbeRule,
-    },
-    RuleEntry {
         id: RuleId::RemoveSequence,
         rule: &RemoveSequenceRule,
     },
@@ -205,7 +184,6 @@ static DEFAULT_RULE_WEIGHTS: RuleWeights = RuleWeights {
         (RuleId::RemoveIndex, 8),
         (RuleId::ChangeIndex, 10),
         (RuleId::AddSequenceOnPristineTable, 8),
-        (RuleId::AddSequenceBoundaryProbe, 10),
         (RuleId::RemoveSequence, 8),
         (RuleId::AddUniqueConstraintOnPristineTable, 12),
         (RuleId::RemoveUniqueConstraint, 8),
@@ -229,7 +207,7 @@ struct RuleCtx<'a> {
 ///
 /// `writes` are derived from the rewrite and used by the batch validator.
 /// `protects` are rule-owned semantic dependencies such as "this table was
-/// pristine" or "this column domain cleared the add-sequence precheck."
+/// pristine."
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AcceptedCase {
     rule: RuleId,
@@ -255,7 +233,7 @@ impl AcceptedCase {
     }
 }
 
-/// A rule-local counterexample emitted by a migration rule.
+/// A rejected case emitted by intentionally violating one accepted rule precondition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RejectedCase {
     rule: RuleId,
@@ -274,11 +252,6 @@ impl RejectedCase {
             protects: Vec::new(),
         }
     }
-
-    fn protecting(mut self, protects: impl Into<Vec<Resource>>) -> Self {
-        self.protects = protects.into();
-        self
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -296,7 +269,7 @@ trait MigrationRule: Sync {
         Vec::new()
     }
 
-    fn rejected_cases(&self, _rng: &Rng, _ctx: RuleCtx<'_>, _rule: RuleId) -> Vec<RejectedCase> {
+    fn invalid_cases(&self, _rng: &Rng, _ctx: RuleCtx<'_>, _rule: RuleId) -> Vec<RejectedCase> {
         Vec::new()
     }
 
@@ -417,14 +390,14 @@ fn validate_accepted_cases(ctx: RuleCtx<'_>, cases: &[AcceptedCase], final_schem
 
 fn build_rejected_migration(rng: &Rng, ctx: RuleCtx<'_>) -> Option<Migration> {
     for _ in 0..16 {
-        let rejected = pick_rejected_case(rng, ctx)?;
+        let rejected = pick_rejected_case(rng, ctx, &DEFAULT_RULE_WEIGHTS)?;
         let accepted = pick_accepted_cases_around_rejected(rng, ctx, &rejected);
         if let Ok(migration) = build_validated_rejected_batch(ctx, accepted, rejected) {
             return Some(migration);
         }
     }
 
-    let rejected = pick_rejected_case(rng, ctx)?;
+    let rejected = pick_rejected_case(rng, ctx, &DEFAULT_RULE_WEIGHTS)?;
     build_validated_rejected_batch(ctx, Vec::new(), rejected).ok()
 }
 
@@ -440,9 +413,9 @@ fn build_validated_rejected_batch(
     for case in &accepted {
         case.rewrite.apply_to(&mut draft)?;
     }
-    rejected.rewrite.apply_to(&mut draft)?;
 
     validate_accepted_cases(ctx, &accepted, &draft)?;
+    rejected.rewrite.apply_unchecked_to(&mut draft)?;
     anyhow::ensure!(draft != *ctx.schema, "rejected migration batch was no-op");
     Ok(Migration::rejected(draft))
 }
@@ -497,15 +470,9 @@ fn pick_accepted_case(rng: &Rng, ctx: RuleCtx<'_>, weights: &RuleWeights) -> Opt
     pick_candidate(rng, accepted_cases_for_weights(rng, ctx, weights.rules))
 }
 
-fn pick_rejected_case(rng: &Rng, ctx: RuleCtx<'_>) -> Option<RejectedCase> {
-    for _ in 0..16 {
-        let entry = pick_weighted_rule(rng, DEFAULT_RULE_WEIGHTS.rules)?;
-        if let Some(case) = pick_candidate(rng, entry.rule.rejected_cases(rng, ctx, entry.id)) {
-            return Some(case);
-        }
-    }
-
-    pick_candidate(rng, rejected_cases_for_weights(rng, ctx, DEFAULT_RULE_WEIGHTS.rules))
+fn pick_rejected_case(rng: &Rng, ctx: RuleCtx<'_>, weights: &RuleWeights) -> Option<RejectedCase> {
+    // Enumerate first so rules with no invalidation hook do not consume weighted retries.
+    pick_candidate(rng, rejected_cases_for_weights(rng, ctx, weights.rules))
 }
 
 fn pick_weighted_rule(rng: &Rng, weights: &[(RuleId, u32)]) -> Option<&'static RuleEntry> {
@@ -539,7 +506,7 @@ fn rejected_cases_for_weights(rng: &Rng, ctx: RuleCtx<'_>, weights: &[(RuleId, u
         .iter()
         .filter(|(_, weight)| *weight > 0)
         .filter_map(|(id, _)| rule_by_id(*id))
-        .flat_map(|entry| entry.rule.rejected_cases(rng, ctx, entry.id))
+        .flat_map(|entry| entry.rule.invalid_cases(rng, ctx, entry.id))
         .collect()
 }
 
@@ -677,6 +644,13 @@ fn accepted_cases_from_rewrites(rule: RuleId, rewrites: Vec<SchemaRewrite>) -> V
         .collect()
 }
 
+fn rejected_cases_from_rewrites(rule: RuleId, rewrites: Vec<SchemaRewrite>) -> Vec<RejectedCase> {
+    rewrites
+        .into_iter()
+        .map(|rewrite| RejectedCase::new(rule, rewrite))
+        .collect()
+}
+
 fn table_is_pristine(model: &Model, table: &TablePlan) -> bool {
     model.row_count_by_table_name(&table.name) == 0 && !model.ever_inserted_by_table_name(&table.name)
 }
@@ -700,18 +674,6 @@ fn alter_table_sequence(case: &AcceptedCase) -> anyhow::Result<(&str, &SequenceP
         anyhow::bail!("add-sequence rule emitted rewrite without add-sequence op");
     };
     Ok((table, sequence))
-}
-
-fn rejected_sequence_case(rule: RuleId, rewrite: SchemaRewrite) -> RejectedCase {
-    let protects = match &rewrite {
-        SchemaRewrite::AlterTable { table, ops }
-            if ops.iter().any(|op| matches!(op, TableMigrationOp::AddSequence { .. })) =>
-        {
-            vec![Resource::Table(table.clone())]
-        }
-        _ => Vec::new(),
-    };
-    RejectedCase::new(rule, rewrite).protecting(protects)
 }
 
 struct AddTableRule;
@@ -823,6 +785,10 @@ impl MigrationRule for AddIndexRule {
     fn accepted_cases(&self, _rng: &Rng, ctx: RuleCtx<'_>, rule: RuleId) -> Vec<AcceptedCase> {
         accepted_cases_from_rewrites(rule, add_index_rewrites(ctx.schema))
     }
+
+    fn invalid_cases(&self, _rng: &Rng, ctx: RuleCtx<'_>, rule: RuleId) -> Vec<RejectedCase> {
+        rejected_cases_from_rewrites(rule, duplicate_index_rewrites(ctx.schema))
+    }
 }
 
 struct RemoveIndexRule;
@@ -861,6 +827,13 @@ impl MigrationRule for AddSequenceOnPristineTableRule {
             .collect()
     }
 
+    fn invalid_cases(&self, _rng: &Rng, ctx: RuleCtx<'_>, rule: RuleId) -> Vec<RejectedCase> {
+        duplicate_sequence_rewrites(ctx.schema, ctx.model)
+            .into_iter()
+            .map(|rewrite| RejectedCase::new(rule, rewrite))
+            .collect()
+    }
+
     fn validate_accepted(
         &self,
         case: &AcceptedCase,
@@ -888,88 +861,6 @@ impl MigrationRule for AddSequenceOnPristineTableRule {
                 .iter()
                 .all(|existing| existing.column != sequence.column),
             "add-sequence-pristine rule selected already sequenced column"
-        );
-        Ok(())
-    }
-}
-
-struct AddSequenceBoundaryProbeRule;
-
-impl MigrationRule for AddSequenceBoundaryProbeRule {
-    fn accepted_cases(&self, _rng: &Rng, ctx: RuleCtx<'_>, rule: RuleId) -> Vec<AcceptedCase> {
-        ctx.schema
-            .tables
-            .iter()
-            .filter(|table| !table.is_event && ctx.model.row_count_by_table_name(&table.name) > 0)
-            .flat_map(|table| {
-                addable_sequence_boundary_probes(table, |column| column_domain(ctx.model, table, column))
-                    .into_iter()
-                    .map(move |sequence| {
-                        AcceptedCase::new(
-                            rule,
-                            SchemaRewrite::alter_table(table, [TableMigrationOp::AddSequence { sequence }]),
-                        )
-                        .protecting(vec![Resource::Table(table.name.clone())])
-                    })
-            })
-            .collect()
-    }
-
-    fn rejected_cases(&self, _rng: &Rng, ctx: RuleCtx<'_>, rule: RuleId) -> Vec<RejectedCase> {
-        add_sequence_precheck_failure_rewrites(ctx.schema, ctx.model)
-            .into_iter()
-            .chain(add_i64_explicit_max_sequence_precheck_failure_rewrites(
-                ctx.schema, ctx.model,
-            ))
-            .map(|rewrite| rejected_sequence_case(rule, rewrite))
-            .collect()
-    }
-
-    fn validate_accepted(
-        &self,
-        case: &AcceptedCase,
-        original: RuleCtx<'_>,
-        _final_schema: &SchemaPlan,
-    ) -> anyhow::Result<()> {
-        let (table, sequence) = alter_table_sequence(case)?;
-        let table_plan = original_table(original, table)?;
-        anyhow::ensure!(!table_plan.is_event, "add-sequence-boundary rule selected event table");
-        anyhow::ensure!(
-            original.model.row_count_by_table_name(table) > 0,
-            "add-sequence-boundary rule selected empty table"
-        );
-        let column_plan = table_plan
-            .columns
-            .get(sequence.column)
-            .ok_or_else(|| anyhow::anyhow!("add-sequence-boundary rule references missing column"))?;
-        let domain = column_domain(original.model, table_plan, sequence.column)
-            .ok_or_else(|| anyhow::anyhow!("add-sequence-boundary rule references missing column domain"))?;
-        anyhow::ensure!(
-            column_plan.ty.is_integral(),
-            "add-sequence-boundary rule selected non-integral column"
-        );
-        anyhow::ensure!(
-            table_plan
-                .sequences
-                .iter()
-                .all(|existing| existing.column != sequence.column),
-            "add-sequence-boundary rule selected already sequenced column"
-        );
-        anyhow::ensure!(
-            !domain.sequenced,
-            "add-sequence-boundary rule selected model-sequenced column"
-        );
-        anyhow::ensure!(
-            domain.single_column_indexed,
-            "add-sequence-boundary rule selected unindexed column"
-        );
-        anyhow::ensure!(
-            domain.single_column_unique,
-            "add-sequence-boundary rule selected non-unique column"
-        );
-        anyhow::ensure!(
-            added_sequence_precheck_range_is_clear(&domain, sequence),
-            "accepted add-sequence boundary case no longer clears precheck range"
         );
         Ok(())
     }
@@ -1007,6 +898,13 @@ impl MigrationRule for AddUniqueConstraintOnPristineTableRule {
                             .protecting(vec![Resource::Table(table.name.clone())])
                     })
             })
+            .collect()
+    }
+
+    fn invalid_cases(&self, _rng: &Rng, ctx: RuleCtx<'_>, rule: RuleId) -> Vec<RejectedCase> {
+        duplicate_unique_constraint_rewrites(ctx.schema, ctx.model)
+            .into_iter()
+            .map(|rewrite| RejectedCase::new(rule, rewrite))
             .collect()
     }
 
@@ -1164,6 +1062,25 @@ fn add_index_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
         .collect()
 }
 
+fn duplicate_index_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| !table.is_event)
+        .flat_map(|table| {
+            table.indexes.iter().map(|index| {
+                SchemaRewrite::alter_table(
+                    table,
+                    [TableMigrationOp::AddIndex {
+                        columns: index.columns.clone(),
+                        algorithm: index.algorithm,
+                    }],
+                )
+            })
+        })
+        .collect()
+}
+
 fn remove_index_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
     schema
         .tables
@@ -1196,32 +1113,6 @@ fn change_index_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
         .collect()
 }
 
-fn add_sequence_precheck_failure_rewrites(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
-    schema
-        .tables
-        .iter()
-        .filter(|table| !table.is_event && model.row_count_by_table_name(&table.name) > 0)
-        .flat_map(|table| {
-            sequence_precheck_failure_probes(table, |column| column_domain(model, table, column))
-                .into_iter()
-                .map(|sequence| SchemaRewrite::alter_table(table, [TableMigrationOp::AddSequence { sequence }]))
-        })
-        .collect()
-}
-
-fn add_i64_explicit_max_sequence_precheck_failure_rewrites(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
-    schema
-        .tables
-        .iter()
-        .filter(|table| !table.is_event && model.row_count_by_table_name(&table.name) > 0)
-        .flat_map(|table| {
-            i64_explicit_max_sequence_precheck_failure_probes(table, |column| column_domain(model, table, column))
-                .into_iter()
-                .map(|sequence| SchemaRewrite::alter_table(table, [TableMigrationOp::AddSequence { sequence }]))
-        })
-        .collect()
-}
-
 fn remove_sequence_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
     schema
         .tables
@@ -1235,6 +1126,21 @@ fn remove_sequence_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
         .collect()
 }
 
+fn duplicate_sequence_rewrites(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| !table.is_event && table_is_pristine(model, table))
+        .flat_map(|table| {
+            table
+                .sequences
+                .iter()
+                .cloned()
+                .map(|sequence| SchemaRewrite::alter_table(table, [TableMigrationOp::AddSequence { sequence }]))
+        })
+        .collect()
+}
+
 fn remove_unique_constraint_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> {
     schema
         .tables
@@ -1243,6 +1149,24 @@ fn remove_unique_constraint_rewrites(schema: &SchemaPlan) -> Vec<SchemaRewrite> 
         .flat_map(|table| {
             removable_unique_constraint_columns(table).into_iter().map(|columns| {
                 SchemaRewrite::alter_table(table, [TableMigrationOp::RemoveUniqueConstraint { columns }])
+            })
+        })
+        .collect()
+}
+
+fn duplicate_unique_constraint_rewrites(schema: &SchemaPlan, model: &Model) -> Vec<SchemaRewrite> {
+    schema
+        .tables
+        .iter()
+        .filter(|table| !table.is_event && table_is_pristine(model, table))
+        .flat_map(|table| {
+            table.unique_constraints.iter().map(|constraint| {
+                SchemaRewrite::alter_table(
+                    table,
+                    [TableMigrationOp::AddUniqueConstraint {
+                        columns: constraint.columns.clone(),
+                    }],
+                )
             })
         })
         .collect()
@@ -1345,6 +1269,24 @@ impl SchemaRewrite {
                     }
                     let table_plan = &mut schema.tables[table];
                     apply_table_op(table_plan, op.clone())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_unchecked_to(&self, schema: &mut SchemaPlan) -> anyhow::Result<()> {
+        match self {
+            Self::AddTable { table } => schema.tables.push(table.clone()),
+            Self::RemoveTable { table } => {
+                let table = table_position(schema, table)?;
+                schema.tables.remove(table);
+            }
+            Self::AlterTable { table, ops } => {
+                let table = table_position(schema, table)?;
+                for op in ops {
+                    let table_plan = &mut schema.tables[table];
+                    apply_table_op_unchecked(table_plan, op.clone())?;
                 }
             }
         }
@@ -1492,6 +1434,63 @@ fn apply_table_op(table: &mut TablePlan, op: TableMigrationOp) -> anyhow::Result
     Ok(())
 }
 
+fn apply_table_op_unchecked(table: &mut TablePlan, op: TableMigrationOp) -> anyhow::Result<()> {
+    match op {
+        TableMigrationOp::ChangeAccess => table.is_public = !table.is_public,
+        TableMigrationOp::AddColumn { ty } => table.columns.push(ColumnPlan {
+            name: SchemaNames::fresh_column_name(table, "added_col"),
+            ty,
+        }),
+        TableMigrationOp::AddIndex { columns, algorithm } => table.indexes.push(IndexPlan { columns, algorithm }),
+        TableMigrationOp::RemoveIndex { columns } => {
+            let index = table
+                .indexes
+                .iter()
+                .position(|index| index.columns == columns)
+                .ok_or_else(|| anyhow::anyhow!("unchecked remove-index references missing columns {columns:?}"))?;
+            table.indexes.remove(index);
+        }
+        TableMigrationOp::AddSequence { sequence } => table.sequences.push(sequence),
+        TableMigrationOp::RemoveSequence { column } => {
+            let sequence = table
+                .sequences
+                .iter()
+                .position(|sequence| sequence.column == column)
+                .ok_or_else(|| anyhow::anyhow!("unchecked remove-sequence references missing column {column}"))?;
+            table.sequences.remove(sequence);
+        }
+        TableMigrationOp::AddUniqueConstraint { columns } => {
+            table.unique_constraints.push(UniqueConstraintPlan { columns });
+        }
+        TableMigrationOp::RemoveUniqueConstraint { columns } => {
+            let constraint = table
+                .unique_constraints
+                .iter()
+                .position(|constraint| constraint.columns == columns)
+                .ok_or_else(|| anyhow::anyhow!("unchecked remove-constraint references missing columns {columns:?}"))?;
+            table.unique_constraints.remove(constraint);
+        }
+        TableMigrationOp::ChangePrimaryKey { column } => table.primary_key = column,
+        TableMigrationOp::ChangeIndex { columns } => {
+            let index_plan = table
+                .indexes
+                .iter_mut()
+                .find(|index| index.columns == columns)
+                .ok_or_else(|| anyhow::anyhow!("unchecked change-index references missing columns {columns:?}"))?;
+            index_plan.algorithm = match index_plan.algorithm {
+                IndexAlgorithm::BTree => IndexAlgorithm::Hash,
+                IndexAlgorithm::Hash => IndexAlgorithm::BTree,
+            };
+        }
+        TableMigrationOp::ChangeColumnType { column } => widen_sum_column(table, Some(column))?,
+        TableMigrationOp::ReschemaEventTable => table.columns.push(ColumnPlan {
+            name: SchemaNames::fresh_column_name(table, "reschema_payload"),
+            ty: Type::U64,
+        }),
+    }
+    Ok(())
+}
+
 fn widenable_sum_columns(table: &TablePlan) -> Vec<usize> {
     table
         .columns
@@ -1531,100 +1530,6 @@ fn addable_sequences(table: &TablePlan) -> Vec<SequencePlan> {
                 .then(|| SequencePlan::new(column, column_plan.ty).expect("column type checked above"))
         })
         .collect()
-}
-
-fn addable_sequence_boundary_probes(
-    table: &TablePlan,
-    column_domain: impl Fn(usize) -> Option<ColumnDomain>,
-) -> Vec<SequencePlan> {
-    table
-        .columns
-        .iter()
-        .enumerate()
-        .filter_map(|(column, column_plan)| {
-            let domain = column_domain(column)?;
-            if !column_plan.ty.is_integral()
-                || table.sequences.iter().any(|sequence| sequence.column == column)
-                || domain.sequenced
-                || !domain.single_column_indexed
-                || !domain.single_column_unique
-            {
-                return None;
-            }
-
-            domain
-                .integral_values()
-                .filter_map(|max_value| SequencePlan::with_existing_value_as_max(column, column_plan.ty, max_value))
-                .find(|sequence| added_sequence_precheck_range_is_clear(&domain, sequence))
-        })
-        .collect()
-}
-
-fn i64_explicit_max_sequence_precheck_failure_probes(
-    table: &TablePlan,
-    column_domain: impl Fn(usize) -> Option<ColumnDomain>,
-) -> Vec<SequencePlan> {
-    table
-        .columns
-        .iter()
-        .enumerate()
-        .filter_map(|(column, column_plan)| {
-            let domain = column_domain(column)?;
-            if column_plan.ty != Type::I64
-                || table.sequences.iter().any(|sequence| sequence.column == column)
-                || domain.sequenced
-                || !domain
-                    .integral_values()
-                    .any(|value| (1..i64::MAX as i128).contains(&value))
-            {
-                return None;
-            }
-
-            SequencePlan::with_bounds(column, column_plan.ty, 1, 1, i64::MAX as i128, 1)
-        })
-        .collect()
-}
-
-fn sequence_precheck_failure_probes(
-    table: &TablePlan,
-    column_domain: impl Fn(usize) -> Option<ColumnDomain>,
-) -> Vec<SequencePlan> {
-    table
-        .columns
-        .iter()
-        .enumerate()
-        .filter_map(|(column, column_plan)| {
-            let domain = column_domain(column)?;
-            if !column_plan.ty.is_integral()
-                || table.sequences.iter().any(|sequence| sequence.column == column)
-                || domain.sequenced
-                || !domain.single_column_indexed
-                || !domain.single_column_unique
-            {
-                return None;
-            }
-
-            domain
-                .integral_values()
-                .filter_map(|max_value| SequencePlan::with_existing_value_as_max(column, column_plan.ty, max_value))
-                .find(|sequence| !added_sequence_precheck_range_is_clear(&domain, sequence))
-        })
-        .collect()
-}
-
-fn added_sequence_precheck_range_is_clear(domain: &ColumnDomain, sequence: &SequencePlan) -> bool {
-    let min = sequence.min_value.unwrap_or(1);
-    let max = sequence.max_value.unwrap_or(i128::MAX);
-
-    // The engine's add-sequence precheck rejects existing values in `min..max`.
-    // The boundary probe intentionally places an existing value at `max`, so
-    // only values below the exclusive upper bound make the migration invalid.
-    domain.integral_values().all(|value| value < min || value >= max)
-}
-
-fn column_domain(model: &Model, table: &TablePlan, column: usize) -> Option<ColumnDomain> {
-    let column_name = &table.columns.get(column)?.name;
-    model.column_domain_by_name(&table.name, column_name)
 }
 
 fn removable_sequence_columns(table: &TablePlan) -> Vec<usize> {
@@ -1698,8 +1603,6 @@ fn widen_sum_column(table: &mut TablePlan, column: Option<usize>) -> anyhow::Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::workload::Interaction;
-    use spacetimedb_sats::product;
 
     fn i64_table(name: impl Into<String>, is_event: bool) -> TablePlan {
         TablePlan {
@@ -1744,6 +1647,40 @@ mod tests {
     }
 
     #[test]
+    fn rejected_case_pool_uses_registered_rule_invalidations() {
+        let schema = indexed_unique_i64_schema();
+        let model = Model::new(schema.clone());
+        let cases = rejected_cases_for_weights(
+            &Rng::new(0),
+            RuleCtx {
+                schema: &schema,
+                model: &model,
+            },
+            DEFAULT_RULE_WEIGHTS.rules,
+        );
+
+        assert!(!cases.is_empty(), "expected at least one rejected migration candidate");
+        assert!(cases.iter().all(|case| rule_by_id(case.rule).is_some()));
+    }
+
+    #[test]
+    fn rejected_batch_contains_one_invalid_case() {
+        let schema = indexed_unique_i64_schema();
+        let model = Model::new(schema.clone());
+        let ctx = RuleCtx {
+            schema: &schema,
+            model: &model,
+        };
+        let rejected = pick_rejected_case(&Rng::new(0), ctx, &DEFAULT_RULE_WEIGHTS)
+            .expect("schema should have duplicate-index or duplicate-constraint invalidation");
+
+        let migration = build_validated_rejected_batch(ctx, Vec::new(), rejected).expect("rejected batch should build");
+
+        assert_eq!(migration.expectation(), MigrationExpectation::Rejected);
+        assert_ne!(migration.target_schema(), &schema);
+    }
+
+    #[test]
     fn accepted_batch_rejects_write_to_protected_table() {
         let schema = indexed_unique_i64_schema();
         let model = Model::new(schema.clone());
@@ -1770,87 +1707,6 @@ mod tests {
         .expect_err("protected table write should be rejected before emission");
 
         assert!(err.to_string().contains("conflicting resources"));
-    }
-
-    #[test]
-    fn add_sequence_boundary_rule_emits_rejected_counterexamples() {
-        let schema = indexed_unique_i64_schema();
-        let mut model = Model::new(schema.clone());
-        model.apply(&Interaction::BeginMutTx);
-        model.apply(&Interaction::Insert {
-            table: 0,
-            row: product![4i64],
-        });
-        model.apply(&Interaction::Insert {
-            table: 0,
-            row: product![5i64],
-        });
-        model.apply(&Interaction::CommitTx);
-
-        let cases = AddSequenceBoundaryProbeRule.rejected_cases(
-            &Rng::new(0),
-            RuleCtx {
-                schema: &schema,
-                model: &model,
-            },
-            RuleId::AddSequenceBoundaryProbe,
-        );
-
-        assert!(!cases.is_empty(), "expected at least one rejected counterexample");
-        for case in cases {
-            assert_eq!(case.rule, RuleId::AddSequenceBoundaryProbe);
-            let SchemaRewrite::AlterTable { ops, .. } = &case.rewrite else {
-                panic!("sequence rejection should alter one table");
-            };
-            assert_eq!(ops.len(), 1);
-            assert!(matches!(ops[0], TableMigrationOp::AddSequence { .. }));
-            let mut target = schema.clone();
-            case.rewrite
-                .apply_to(&mut target)
-                .expect("rejected case should still be structurally valid");
-            assert_eq!(
-                Migration::rejected(target).expectation(),
-                MigrationExpectation::Rejected
-            );
-        }
-    }
-
-    #[test]
-    fn i64_explicit_max_sequence_rejection_uses_typed_bounds() {
-        let schema = SchemaPlan {
-            tables: vec![i64_table("items", false)],
-        };
-        let mut model = Model::new(schema.clone());
-        model.apply(&Interaction::BeginMutTx);
-        model.apply(&Interaction::Insert {
-            table: 0,
-            row: product![4i64],
-        });
-        model.apply(&Interaction::CommitTx);
-
-        let cases = AddSequenceBoundaryProbeRule.rejected_cases(
-            &Rng::new(0),
-            RuleCtx {
-                schema: &schema,
-                model: &model,
-            },
-            RuleId::AddSequenceBoundaryProbe,
-        );
-
-        assert_eq!(cases.len(), 1);
-        let SchemaRewrite::AlterTable { ops, .. } = &cases[0].rewrite else {
-            panic!("i64 precheck rejection should alter one table");
-        };
-        let TableMigrationOp::AddSequence { sequence } = &ops[0] else {
-            panic!("i64 precheck rejection should add a sequence");
-        };
-        assert_eq!(sequence.start, Some(1));
-        assert_eq!(sequence.min_value, Some(1));
-        assert_eq!(sequence.max_value, Some(i64::MAX as i128));
-        assert!(!added_sequence_precheck_range_is_clear(
-            &model.column_domain(0, sequence.column),
-            sequence
-        ));
     }
 
     #[test]

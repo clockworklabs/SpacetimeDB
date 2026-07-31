@@ -130,11 +130,7 @@ impl WorkloadGen {
     }
 
     fn observe_interaction(&mut self, interaction: &Interaction, observation: &Observation) -> Result<(), Error> {
-        let model_observation = match (interaction, observation) {
-            (Interaction::Insert { .. }, Observation::Inserted { .. }) => self.model.apply(interaction),
-            (Interaction::Insert { .. }, _) => anyhow::bail!("insert produced unexpected observation"),
-            _ => self.model.apply(interaction),
-        };
+        let model_observation = self.model.apply(interaction, observation)?;
 
         self.observe_generation(interaction, &model_observation);
         Ok(())
