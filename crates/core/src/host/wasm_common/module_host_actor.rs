@@ -679,6 +679,7 @@ impl InstanceCommon {
 
         match res {
             Err(e) => {
+                // TODO: Review log level after migration/user errors can be distinguished from internal database failures.
                 log::warn!("Database update failed: {} @ {}", e, stdb.database_identity());
                 system_logger.warn(&format!("Database update failed: {e}"));
                 let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
@@ -1399,6 +1400,7 @@ impl InstanceCommon {
                 match outcome {
                     Ok(outcome) => outcome,
                     Err(err) => {
+                        // TODO: Review log level after guest view errors can be distinguished from materialization failures.
                         log::error!("Error materializing view `{view_name}`: {err:?}");
                         ViewOutcome::Failed(format!("Error materializing view `{view_name}`: {err}"))
                     }

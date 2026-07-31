@@ -1964,6 +1964,7 @@ impl ModuleHost {
                         let result = inst.call_view(cmd);
                         ModuleHost::record_view_command_round_trip(&info, metric);
                         if let Err(err) = result {
+                            // TODO: Review log level after guest view errors can be distinguished from internal database failures.
                             log::warn!("websocket view operation failed: {err:#}");
                         }
                     },

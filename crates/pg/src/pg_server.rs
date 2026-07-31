@@ -136,6 +136,7 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
                 .await
                 .map_err(|err| PgWireError::ApiError(Box::new(err)))?;
             let err = String::from_utf8_lossy(&bytes);
+            // TODO: Review log level after client SQL errors can be distinguished from internal database failures.
             log::error!("PG: Error for database {database}: {err}");
             Err(PgError::Sql(format!("{err}")))
         }
@@ -271,6 +272,7 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 let claims = match validate_token(&self.ctx, &pwd.password).await {
                     Ok(claims) => claims,
                     Err(err) => {
+                        // TODO: Do not log the supplied password/token; then classify credential errors separately from provider failures.
                         log::error!(
                             "PG: Authentication failed for identity `{}` on database {database}: {err}",
                             pwd.password
@@ -378,6 +380,7 @@ where
                         let factory_ref = factory.clone();
                         tokio::spawn(async move {
                             process_socket(stream, None, factory_ref).await.inspect_err(|err|{
+                                // TODO: Review log level after client/disconnect errors can be distinguished from internal failures.
                                 log::error!("PG: Error processing socket: {err:?}");
                             })
                         });

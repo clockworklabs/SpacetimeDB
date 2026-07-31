@@ -385,6 +385,7 @@ where
             {
                 // Will print "durability actor: task was cancelled"
                 // or "durability actor: task panicked [...]"
+                // TODO: Review log level after JoinError exposes panic versus cancellation.
                 warn!("durability actor: {e}");
             }
             // Don't abort if the actor completed.

@@ -516,6 +516,7 @@ fn prepare_scheduled_procedure_call(
         Ok(Some(params)) => params,
         Err(err) => {
             // All we can do here is log an error.
+            // TODO: Review log level after stale/invalid schedules can be distinguished from internal failures.
             log::error!("could not determine scheduled procedure or its parameters: {err:#}");
             let reschedule = id.and_then(|id| {
                 let reschedule_from = (Timestamp::now(), Instant::now());
@@ -552,6 +553,7 @@ fn call_scheduled_reducer_until_done(
         Ok(Some(params)) => params,
         Err(err) => {
             // All we can do here is log an error.
+            // TODO: Review log level after stale/invalid schedules can be distinguished from internal failures.
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
             let reschedule = id.and_then(|id| {
                 let reschedule_from = (Timestamp::now(), Instant::now());
