@@ -1,6 +1,3 @@
-#[cfg(feature = "simulation")]
-extern crate alloc;
-
 use core::{
     fmt,
     future::Future,
@@ -11,7 +8,7 @@ use core::{
 };
 
 #[cfg(feature = "simulation")]
-pub mod sim;
+pub use spacetimedb_runtime_core::sim;
 #[cfg(feature = "simulation")]
 pub mod sim_std;
 
@@ -64,11 +61,6 @@ pub struct AbortHandle {
     inner: AbortHandleInner,
 }
 
-#[must_use = "runtime context exits immediately unless the guard is held"]
-pub struct EnterGuard<'a> {
-    _inner: EnterGuardInner<'a>,
-}
-
 enum JoinHandleInner<T> {
     Tokio(tokio::task::JoinHandle<T>),
     #[cfg(feature = "simulation")]
@@ -92,16 +84,6 @@ enum AbortHandleInner {
     Tokio(tokio::task::AbortHandle),
     #[cfg(feature = "simulation")]
     Simulation(sim::AbortHandle),
-}
-
-enum EnterGuardInner<'a> {
-    Tokio {
-        _guard: tokio::runtime::EnterGuard<'a>,
-    },
-    #[cfg(feature = "simulation")]
-    Simulation {
-        _guard: sim_std::EnterGuard,
-    },
 }
 
 #[derive(Debug)]
@@ -234,18 +216,6 @@ impl fmt::Display for RuntimeTimeout {
 
 impl std::error::Error for RuntimeTimeout {}
 
-pub fn spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
-    Handle::current().spawn(future)
-}
-
-pub async fn spawn_blocking<F, R>(f: F) -> R
-where
-    F: FnOnce() -> R + Send + 'static,
-    R: Send + 'static,
-{
-    Handle::current().spawn_blocking(f).await
-}
-
 impl Handle {
     pub fn tokio(handle: TokioHandle) -> Self {
         Self::Tokio(handle)
@@ -253,15 +223,6 @@ impl Handle {
 
     pub fn tokio_current() -> Self {
         Self::tokio(TokioHandle::current())
-    }
-
-    pub fn current() -> Self {
-        #[cfg(feature = "simulation")]
-        if let Some(handle) = sim_std::try_current() {
-            return Self::Simulation(handle);
-        }
-
-        Self::tokio_current()
     }
 }
 
@@ -273,20 +234,6 @@ impl Handle {
 }
 
 impl Handle {
-    pub fn enter(&self) -> EnterGuard<'_> {
-        match self {
-            Self::Tokio(handle) => EnterGuard {
-                _inner: EnterGuardInner::Tokio { _guard: handle.enter() },
-            },
-            #[cfg(feature = "simulation")]
-            Self::Simulation(handle) => EnterGuard {
-                _inner: EnterGuardInner::Simulation {
-                    _guard: sim_std::enter(handle.clone()),
-                },
-            },
-        }
-    }
-
     pub fn spawn<T: Send + 'static>(&self, future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
         match self {
             Self::Tokio(handle) => JoinHandle {
@@ -407,20 +354,5 @@ mod tests {
             assert!(result.is_err());
             assert!(!flag.load(Ordering::Acquire));
         });
-    }
-
-    #[cfg(feature = "simulation")]
-    #[test]
-    fn free_spawn_apis_use_current_simulation_runtime() {
-        use crate::sim::Runtime;
-        let mut rt = Runtime::new(4);
-
-        let output = rt.block_on(async {
-            let spawned = crate::spawn(async { 31 }).await.unwrap();
-            let blocking = crate::spawn_blocking(|| 41).await;
-            spawned + blocking
-        });
-
-        assert_eq!(output, 72);
     }
 }
