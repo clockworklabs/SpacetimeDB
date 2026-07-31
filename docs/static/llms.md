@@ -105,6 +105,12 @@ A module is a collection of functions and schema definitions, which can be writt
 - [What is SpacetimeDB?](/docs/intro/what-is-spacetimedb): SpacetimeDB is a database that is also a server.
 - [The Zen of SpacetimeDB](/docs/intro/zen): SpacetimeDB is built on 5 core principles. As you embrace these simple principles, you will find your troubles simply melt away. These principles guide both how we develop SpacetimeDB and how you should think about building applications with it.
 
+### migrating-from-convex
+
+This guide is for teams moving an application backend from Convex to a
+
+- [Migrating from Convex](/docs/migrating-from-convex): This guide is for teams moving an application backend from Convex to a
+
 ### quickstarts
 
 - [Angular Quickstart](/docs/quickstarts/angular): Get a SpacetimeDB Angular app running in under 5 minutes.
