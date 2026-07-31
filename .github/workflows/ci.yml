@@ -149,7 +149,7 @@ jobs:
           overwrite: true
 
   smoketest_build_linux:
-    needs: [merge_queue_noop, lints, typescript_sdk_build]
+    needs: [merge_queue_noop, typescript_sdk_build]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build smoketests (Linux)
     runs-on: spacetimedb-new-runner-2
@@ -180,7 +180,7 @@ jobs:
           artifact-name: smoketest-build-Linux
 
   smoketest_build_windows:
-    needs: [merge_queue_noop, lints, typescript_sdk_build]
+    needs: [merge_queue_noop, typescript_sdk_build]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build smoketests (Windows)
     runs-on: spacetimedb-windows-runner
