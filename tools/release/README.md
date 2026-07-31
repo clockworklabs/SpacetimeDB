@@ -79,7 +79,7 @@ You can also perform a dry run to test the build and publish process without act
 cargo release npm 1.2.0 --dry-run
 ```
 
-**Note:** In dry-run mode, `publish-check` and `pnpm pack --dry-run` will be executed to verify the build and packaging process without contacting the npm registry or creating a tarball.
+**Note:** In dry-run mode, `pnpm publish --dry-run` will be executed to verify the build and packaging process works correctly, but the package will NOT be published to npm.
 
 **Prerequisites:**
 - Node.js and npm must be installed

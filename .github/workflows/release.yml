@@ -313,8 +313,7 @@ jobs:
           npm --version
 
       - name: Install pnpm
-        # See tools/release/README.md for version details
-        run: npm install -g pnpm@10.26.0
+        run: npm install -g pnpm
 
       - name: Run NPM release (dry-run)
         if: ${{ inputs.dry_run }}

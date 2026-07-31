@@ -23,7 +23,7 @@ impl NpmRelease {
             .output()
             .map_err(|e| format!("Failed to run pnpm command. Is pnpm installed? Error: {}", e))?;
         if !output.status.success() {
-            return Err("pnpm is not available. Please install pnpm (npm install -g pnpm@10.26.0).".to_string());
+            return Err("pnpm is not available. Please install pnpm (npm install -g pnpm).".to_string());
         }
 
         let version = String::from_utf8_lossy(&output.stdout);
@@ -37,7 +37,7 @@ impl NpmRelease {
 
         let sdk_dir = Path::new("sdks/typescript");
 
-        println!("Running npm release steps in {}...", sdk_dir.display());
+        println!("Running pnpm publish in {}...", sdk_dir.display());
         println!("Note: prepublishOnly script will build, test, and size up the package");
 
         // pnpm install first
@@ -52,48 +52,25 @@ impl NpmRelease {
             return Err("Failed to run pnpm install".to_string());
         }
 
+        let mut cmd = Command::new("pnpm");
+        // The publish step here runs from a directory that doesn't have a clean git worktree
+        // so we disable pnpm's default git cleanliness/branch checks otherwise this will fail.
+        // We need --no-git-checks because otherwise the workflow will complain that we're not
+        // on the main/master branch (we're in a detached HEAD state at this point).
+        // ERR_PNPM_GIT_UNKNOWN_BRANCH The Git HEAD may not attached to any branch, but your "publish-branch" is set to "master|main".
         if self.dry_run {
-            // We unfortunately can't just use `pnpm publish --dry-run` because that does things like
-            // contact the package registry and confirm that the current version isn't already published.
-            // That's somewhat awkward in our workflow, so we run something different-but-close-enough.
-
-            let mut cmd = Command::new("pnpm");
-            cmd.args(["run", "publish-check"]);
-            cmd.current_dir(sdk_dir);
-            util::print_command(&cmd);
-            let status = cmd
-                .status()
-                .map_err(|e| format!("Failed to execute pnpm run publish-check: {}", e))?;
-            if !status.success() {
-                return Err("Failed to run publish checks".to_string());
-            }
-
-            let mut cmd = Command::new("pnpm");
-            cmd.args(["pack", "--dry-run"]);
-            cmd.current_dir(sdk_dir);
-            util::print_command(&cmd);
-            let status = cmd
-                .status()
-                .map_err(|e| format!("Failed to execute pnpm pack --dry-run: {}", e))?;
-            if !status.success() {
-                return Err("Failed to dry-run package packing".to_string());
-            }
+            cmd.args(["publish", "--dry-run", "--force", "--no-git-checks"]);
         } else {
-            let mut cmd = Command::new("pnpm");
-            // The publish step here runs from a directory that doesn't have a clean git worktree
-            // so we disable pnpm's default git cleanliness/branch checks otherwise this will fail.
-            // We need --no-git-checks because otherwise the workflow will complain that we're not
-            // on the main/master branch (we're in a detached HEAD state at this point).
-            // ERR_PNPM_GIT_UNKNOWN_BRANCH The Git HEAD may not attached to any branch, but your "publish-branch" is set to "master|main".
             cmd.args(["publish", "--no-git-checks"]);
-            cmd.current_dir(sdk_dir);
-            util::print_command(&cmd);
-            let status = cmd
-                .status()
-                .map_err(|e| format!("Failed to execute pnpm publish: {}", e))?;
-            if !status.success() {
-                return Err("Failed to publish package to npm".to_string());
-            }
+        }
+        cmd.current_dir(sdk_dir);
+        util::print_command(&cmd);
+        let status = cmd
+            .status()
+            .map_err(|e| format!("Failed to execute pnpm publish: {}", e))?;
+
+        if !status.success() {
+            return Err("Failed to publish package to npm".to_string());
         }
 
         println!(
