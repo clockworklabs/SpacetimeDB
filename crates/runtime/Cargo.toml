@@ -18,4 +18,4 @@ libc = { version = "0.2", optional = true }
 futures.workspace = true
 
 [features]
-simulation = ["dep:spacetimedb-runtime-core", "dep:libc"]
+simulation = ["dep:spacetimedb-runtime-core", "spacetimedb-runtime-core/sim", "dep:libc"]
