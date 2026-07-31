@@ -73,9 +73,7 @@ impl NpmRelease {
         }
         cmd.current_dir(sdk_dir);
         util::print_command(&cmd);
-        let status = cmd
-            .status()
-            .map_err(|e| format!("Failed to execute {}: {}", step, e))?;
+        let status = cmd.status().map_err(|e| format!("Failed to execute {}: {}", step, e))?;
 
         if !status.success() {
             return Err(format!("Failed to {}", step_err));
