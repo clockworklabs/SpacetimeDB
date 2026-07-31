@@ -36,6 +36,21 @@ impl PendingTable {
     fn is_deleted(&self, row: &Row) -> bool {
         self.deletes.iter().any(|deleted| deleted == row)
     }
+
+    fn insert(&mut self, row: Row) {
+        if let Some(index) = self.deletes.iter().position(|deleted| deleted == &row) {
+            self.deletes.remove(index);
+        } else {
+            self.inserts.push(row);
+        }
+    }
+
+    fn delete(&mut self, row: &Row, committed_has_row: bool) {
+        self.inserts.retain(|inserted| inserted != row);
+        if committed_has_row && !self.is_deleted(row) {
+            self.deletes.push(row.clone());
+        }
+    }
 }
 
 impl PendingTx {
@@ -156,7 +171,7 @@ impl Model {
                             "target accepted row that violates a visible unique constraint"
                         );
                         if !already_visible {
-                            self.pending_table_mut(*table).inserts.push(row.clone());
+                            self.pending_table_mut(*table).insert(row.clone());
                         }
                         Ok(Observation::Inserted {
                             outcome: InsertOutcome::Accepted(row.clone()),
@@ -173,11 +188,7 @@ impl Model {
                 debug_assert!(self.pending_tx.is_some());
                 if self.any_visible_row(*table, |visible_row| visible_row == row) {
                     let committed_has_row = self.visible_committed_rows(*table).any(|committed| committed == row);
-                    let pending_table = self.pending_table_mut(*table);
-                    pending_table.inserts.retain(|inserted| inserted != row);
-                    if committed_has_row && !pending_table.is_deleted(row) {
-                        pending_table.deletes.push(row.clone());
-                    }
+                    self.pending_table_mut(*table).delete(row, committed_has_row);
                 }
                 Ok(Observation::Deleted)
             }
@@ -226,22 +237,8 @@ impl Model {
             }
 
             let before_rows = &self.committed_tables[table].rows;
-            let inserts = normalize_rows(
-                pending_table
-                    .inserts
-                    .iter()
-                    .filter(|inserted| !before_rows.contains(inserted))
-                    .cloned()
-                    .collect(),
-            );
-            // A delete followed by the same insert leaves the committed set unchanged.
-            let deletes = normalize_rows(
-                before_rows
-                    .iter()
-                    .filter(|before| pending_table.is_deleted(before) && !pending_table.inserts.contains(before))
-                    .cloned()
-                    .collect(),
-            );
+            let inserts = normalize_rows(pending_table.inserts.clone());
+            let deletes = normalize_rows(pending_table.deletes.clone());
             let after_count = before_rows
                 .iter()
                 .filter(|before| !pending_table.is_deleted(before))
