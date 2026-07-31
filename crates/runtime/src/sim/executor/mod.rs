@@ -150,6 +150,7 @@ impl Runtime {
     /// While the future runs, spawned tasks share the same deterministic
     /// scheduler, timer wheel, and runtime RNG.
     pub fn block_on<F: Future>(&mut self, future: F) -> F::Output {
+        let _guard = crate::sim_std::enter(self.handle());
         self.executor.block_on(future)
     }
 

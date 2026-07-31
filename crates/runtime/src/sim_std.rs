@@ -8,7 +8,7 @@
 #![allow(clippy::disallowed_macros)]
 
 use alloc::boxed::Box;
-use core::{cell::Cell, future::Future};
+use core::{cell::RefCell, future::Future};
 use std::sync::OnceLock;
 
 use crate::sim;
@@ -21,7 +21,6 @@ use crate::sim;
 /// tests that execute inside a hosted process. While the future runs, this
 /// marks the thread as inside simulation so OS thread spawns can be rejected.
 pub fn block_on<F: Future>(runtime: &mut sim::Runtime, future: F) -> F::Output {
-    let _system_thread_context = enter_simulation_thread();
     runtime.block_on(future)
 }
 
@@ -68,34 +67,40 @@ fn panic_with_seed(seed: u64, payload: Box<dyn core::any::Any + Send>) -> ! {
 
 // Simulation thread context.
 
-// Ambient state used only while `sim_std::block_on` is driving a simulation.
+// Ambient state used only while hosted code has entered a simulation runtime.
 //
-// The simulator itself stays explicit-handle based. This thread-local only
-// marks whether the current OS thread is owned by a running simulation so
-// host thread creation can be rejected.
+// The simulator itself stays explicit-handle based. This thread-local stores
+// the current handle for runtime-generic code that uses [`crate::Handle::current`],
+// and its presence marks the current OS thread as simulation-owned so host
+// thread creation can be rejected.
 thread_local! {
-    // Marks the current OS thread as simulation-owned so thread creation hooks
-    // can reject accidental escapes to the host scheduler.
-    static IN_SIMULATION: Cell<bool> = const { Cell::new(false) };
+    static CURRENT_RUNTIME: RefCell<Option<sim::Handle>> = const { RefCell::new(None) };
 }
 
-struct SimulationThreadGuard {
-    previous: bool,
+#[must_use = "simulation runtime context exits immediately unless the guard is held"]
+pub struct EnterGuard {
+    previous_runtime: Option<sim::Handle>,
 }
 
-fn enter_simulation_thread() -> SimulationThreadGuard {
-    let previous = IN_SIMULATION.with(|state| state.replace(true));
-    SimulationThreadGuard { previous }
+/// Enter a simulation runtime on the current OS thread until the returned guard drops.
+pub fn enter(handle: sim::Handle) -> EnterGuard {
+    let previous_runtime = CURRENT_RUNTIME.with(|current| current.replace(Some(handle)));
+    EnterGuard { previous_runtime }
+}
+
+/// Return the simulation runtime entered on this OS thread, if any.
+pub(crate) fn try_current() -> Option<sim::Handle> {
+    CURRENT_RUNTIME.with(|current| current.borrow().clone())
 }
 
 fn in_simulation() -> bool {
-    IN_SIMULATION.with(Cell::get)
+    CURRENT_RUNTIME.with(|current| current.borrow().is_some())
 }
 
-impl Drop for SimulationThreadGuard {
+impl Drop for EnterGuard {
     fn drop(&mut self) {
-        IN_SIMULATION.with(|state| {
-            state.set(self.previous);
+        CURRENT_RUNTIME.with(|current| {
+            current.replace(self.previous_runtime.take());
         });
     }
 }
