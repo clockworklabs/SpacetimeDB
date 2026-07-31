@@ -37,7 +37,7 @@ impl NpmRelease {
 
         let sdk_dir = Path::new("sdks/typescript");
 
-        println!("Running pnpm publish in {}...", sdk_dir.display());
+        println!("Running npm release steps in {}...", sdk_dir.display());
         println!("Note: prepublishOnly script will build, test, and size up the package");
 
         // pnpm install first
@@ -52,6 +52,12 @@ impl NpmRelease {
             return Err("Failed to run pnpm install".to_string());
         }
 
+        let (step, step_err) = if self.dry_run {
+            ("pnpm run prepublishOnly", "run prepublish build/test/size checks")
+        } else {
+            ("pnpm publish", "publish package to npm")
+        };
+
         let mut cmd = Command::new("pnpm");
         // The publish step here runs from a directory that doesn't have a clean git worktree
         // so we disable pnpm's default git cleanliness/branch checks otherwise this will fail.
@@ -59,7 +65,9 @@ impl NpmRelease {
         // on the main/master branch (we're in a detached HEAD state at this point).
         // ERR_PNPM_GIT_UNKNOWN_BRANCH The Git HEAD may not attached to any branch, but your "publish-branch" is set to "master|main".
         if self.dry_run {
-            cmd.args(["publish", "--dry-run", "--no-git-checks"]);
+            // Run the pre-publish build/test/size checks, then pack the tarball
+            // locally instead of uploading it.
+            cmd.args(["run", "prepublishOnly"]);
         } else {
             cmd.args(["publish", "--no-git-checks"]);
         }
@@ -67,10 +75,24 @@ impl NpmRelease {
         util::print_command(&cmd);
         let status = cmd
             .status()
-            .map_err(|e| format!("Failed to execute pnpm publish: {}", e))?;
+            .map_err(|e| format!("Failed to execute {}: {}", step, e))?;
 
         if !status.success() {
-            return Err("Failed to publish package to npm".to_string());
+            return Err(format!("Failed to {}", step_err));
+        }
+
+        if self.dry_run {
+            // Pack the dry-run tarball.
+            cmd = Command::new("pnpm");
+            cmd.arg("pack");
+            cmd.current_dir(sdk_dir);
+            util::print_command(&cmd);
+            let status = cmd
+                .status()
+                .map_err(|e| format!("Failed to execute pnpm pack: {}", e))?;
+            if !status.success() {
+                return Err("Failed to pack package".to_string());
+            }
         }
 
         println!(
