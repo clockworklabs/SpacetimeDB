@@ -240,7 +240,7 @@ where
             Ok(ws) => ws,
             Err(err) => {
                 record_client_rejection(db_identity, ClientRejectCause::WebsocketUpgradeError);
-                log::error!("websocket: WebSocket init error: {err}");
+                log::warn!("websocket: WebSocket init error: {err}");
                 return;
             }
         };
@@ -1001,7 +1001,7 @@ fn ws_recv_queue(
         reason: Utf8Bytes::from_static("too many requests"),
     });
     let on_message_after_close = move |client_id| {
-        log::warn!("client {client_id} sent message after close or error");
+        log::debug!("client {client_id} sent message after close or error");
     };
 
     let max_incoming_queue_length = state.config.incoming_queue_length.get();

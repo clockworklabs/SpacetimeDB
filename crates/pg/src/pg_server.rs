@@ -124,7 +124,7 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
         err => {
             let res = err.into_response();
             if res.status() == StatusCode::NOT_FOUND {
-                log::error!("PG: Database not found: {database}");
+                log::debug!("PG: Database not found: {database}");
                 return Err(PgWireError::UserError(Box::new(ErrorInfo::new(
                     "FATAL".to_string(),
                     "3D000".to_string(),
@@ -383,7 +383,7 @@ where
                         });
                     }
                     Err(e) => {
-                       log::error!("PG: Accept error: {e}");
+                       log::warn!("PG: Accept error: {e}");
                     }
                 }
             }

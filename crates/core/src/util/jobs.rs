@@ -375,7 +375,7 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
                 async move {
                     let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
                     if let Err(Err(_panic)) = tx.send(result) {
-                        tracing::warn!("uncaught panic on `SingleThreadedExecutor`")
+                        tracing::error!("uncaught panic on `SingleThreadedExecutor`")
                     }
                 }
                 .boxed_local()
@@ -400,7 +400,7 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
             .send(ExecutorJob::Async(Box::new(move || {
                 async move {
                     if AssertUnwindSafe(f().instrument(span)).catch_unwind().await.is_err() {
-                        tracing::warn!("uncaught panic on `SingleThreadedExecutor`")
+                        tracing::error!("uncaught panic on `SingleThreadedExecutor`")
                     }
                 }
                 .boxed_local()
@@ -425,7 +425,7 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
                     f(state)
                 }));
                 if let Err(Err(_panic)) = tx.send(result) {
-                    tracing::warn!("uncaught panic on `SingleThreadedExecutor`")
+                    tracing::error!("uncaught panic on `SingleThreadedExecutor`")
                 }
             })))
             .unwrap_or_else(|_| panic!("job thread exited"));
@@ -452,7 +452,7 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
                 }))
                 .is_err()
                 {
-                    tracing::warn!("uncaught panic on `SingleThreadedExecutor`")
+                    tracing::error!("uncaught panic on `SingleThreadedExecutor`")
                 }
             })))
             .unwrap_or_else(|_| panic!("job thread exited"));

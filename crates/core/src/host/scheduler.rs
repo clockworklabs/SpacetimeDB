@@ -401,7 +401,7 @@ impl SchedulerActor {
         let result = match result {
             Ok(result) => result,
             Err(_) => {
-                log::warn!("scheduled function panicked");
+                log::error!("scheduled function panicked");
                 return;
             }
         };

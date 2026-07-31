@@ -335,7 +335,7 @@ where
                 clog.flush_and_sync()
             })
             .await
-            .inspect_err(|e| warn!("error flushing commitlog: {e:#}"))
+            .inspect_err(|e| log::error!("error flushing commitlog: {e:#}"))
             .inspect(|maybe_offset| {
                 if let Some(new_offset) = maybe_offset {
                     trace!("synced to offset {new_offset}");

@@ -405,13 +405,13 @@ impl JsInstanceEnv {
 
         let leftover_iters = self.iters.len();
         if leftover_iters > 0 {
-            log::warn!("force-clearing {leftover_iters} row iterator(s) left open by JS call `{func_name}`");
+            log::debug!("force-clearing {leftover_iters} row iterator(s) left open by JS call `{func_name}`");
             self.iters.clear();
         }
 
         let leftover_timing_spans = self.timing_spans.len();
         if leftover_timing_spans > 0 {
-            log::warn!("force-clearing {leftover_timing_spans} timing span(s) left open by JS call `{func_name}`");
+            log::debug!("force-clearing {leftover_timing_spans} timing span(s) left open by JS call `{func_name}`");
             self.timing_spans.clear();
         }
 
@@ -890,13 +890,13 @@ static_assert_size!(CallReducerParams, 192);
 
 fn send_worker_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, value: T) {
     if reply_tx.send(Ok(value)).is_err() {
-        log::error!("should have receiver for `{ctx}` response");
+        log::warn!("should have receiver for `{ctx}` response");
     }
 }
 
 fn send_worker_panic_reply<T>(ctx: &str, reply_tx: JsReplyTx<T>, panic: JsPanicPayload) {
     if reply_tx.send(Err(panic)).is_err() {
-        log::error!("should have receiver for `{ctx}` response");
+        log::warn!("should have receiver for `{ctx}` response");
     }
 }
 
@@ -950,7 +950,7 @@ fn handle_detached_worker_request(
             }
         }
         Err(_) => {
-            log::warn!("detached JS worker request `{ctx}` panicked");
+            log::error!("detached JS worker request `{ctx}` panicked");
             on_panic();
             WorkerRequestOutcome::Fatal
         }
@@ -1641,7 +1641,7 @@ where
                                 .send(Err(anyhow::anyhow!("JS worker panicked during startup")))
                                 .is_err()
                             {
-                                log::error!("startup result receiver disconnected");
+                                log::warn!("startup result receiver disconnected");
                             }
                         } else {
                             log::error!("JS worker panicked while recreating isolate");
@@ -1651,7 +1651,7 @@ where
                     Ok(Err(err)) => {
                         if let Some(result_tx) = startup_result_tx.take() {
                             if result_tx.send(Err(err)).is_err() {
-                                log::error!("startup result receiver disconnected");
+                                log::warn!("startup result receiver disconnected");
                             }
                         } else {
                             log::error!("failed to restart JS worker: {err:#}");
@@ -1664,7 +1664,7 @@ where
                         if let Some(result_tx) = startup_result_tx.take()
                             && result_tx.send(Ok(module_common.clone())).is_err()
                         {
-                            log::error!("startup result receiver disconnected");
+                            log::warn!("startup result receiver disconnected");
                             return;
                         }
 

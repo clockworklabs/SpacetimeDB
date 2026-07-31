@@ -747,7 +747,7 @@ pub fn spawn_bsatn_rlb_pool_stats(node_id: String, pool: BsatnRowListBuilderPool
 // but it is simpler to just skip all the tokio metrics if they aren't set.
 #[cfg(not(all(target_has_atomic = "64", tokio_unstable)))]
 pub fn spawn_tokio_stats(node_id: String, _: String, _: tokio::runtime::Handle) {
-    log::warn!("Skipping tokio metrics for {node_id}, as they are not enabled in this build.");
+    log::info!("Skipping tokio metrics for {node_id}, as they are not enabled in this build.");
 }
 
 #[cfg(all(target_has_atomic = "64", tokio_unstable))]

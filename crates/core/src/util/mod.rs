@@ -26,7 +26,7 @@ pub fn spawn_rayon<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) ->
         let _entered = span.entered();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
         if let Err(Err(_panic)) = tx.send(result) {
-            tracing::warn!("uncaught panic on threadpool")
+            tracing::error!("uncaught panic on threadpool")
         }
     });
     rx.map(|res| res.unwrap().unwrap_or_else(|err| std::panic::resume_unwind(err)))
