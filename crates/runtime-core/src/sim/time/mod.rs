@@ -207,10 +207,11 @@ impl fmt::Display for TimeoutElapsed {
     }
 }
 
-impl std::error::Error for TimeoutElapsed {}
+impl core::error::Error for TimeoutElapsed {}
 
 #[cfg(test)]
 mod tests {
+    use alloc::{vec, vec::Vec};
     use std::{sync::Arc, time::Duration};
 
     use crate::sim;

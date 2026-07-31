@@ -1,4 +1,4 @@
-use crate::sim::Runtime;
+use super::Runtime;
 
 /// Probabilistic fault-injection helpers for simulation code.
 ///

@@ -11,12 +11,11 @@ workspace = true
 
 [dependencies]
 tokio.workspace = true
-async-task = { version = "4.4", default-features = false, optional = true }
-spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"], optional = true }
+spacetimedb-runtime-core = { workspace = true, optional = true }
 libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
 futures.workspace = true
 
 [features]
-simulation = ["dep:async-task", "dep:spin", "dep:libc"]
+simulation = ["dep:spacetimedb-runtime-core", "dep:libc"]

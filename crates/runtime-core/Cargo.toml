@@ -1,0 +1,14 @@
+[package]
+name = "spacetimedb-runtime-core"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "Portable no_std runtime core utilities for SpacetimeDB"
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+async-task = { version = "4.4", default-features = false }
+spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"] }
