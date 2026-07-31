@@ -103,10 +103,10 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: Checkout specific tag
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
 
       - name: Set up Rust
@@ -145,10 +145,10 @@ jobs:
       NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
 
     steps:
-      - name: Checkout specific tag
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
 
       - name: Set up Rust
@@ -223,10 +223,10 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: Checkout specific tag
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
 
       - name: Set up Rust
@@ -284,10 +284,10 @@ jobs:
       packages: write
 
     steps:
-      - name: Checkout specific tag
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
 
       - name: Download cargo-release
@@ -332,10 +332,10 @@ jobs:
     if: ${{ inputs.release_docker }}
 
     steps:
-      - name: Checkout specific tag
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
 
       - name: Download cargo-release
