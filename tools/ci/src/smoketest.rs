@@ -76,6 +76,7 @@ fn build_binaries() -> Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.args([
         "build",
+        "--timings",
         "--release",
         "-p",
         "spacetimedb-cli",
@@ -120,6 +121,7 @@ fn build_precompiled_modules() -> Result<()> {
     let status = Command::new("cargo")
         .args([
             "build",
+            "--timings",
             "--workspace",
             "--release",
             "--target",
