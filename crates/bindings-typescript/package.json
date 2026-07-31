@@ -40,7 +40,8 @@
     "generate:examples:react-ts": "pnpm --filter @clockworklabs/react-ts generate",
     "generate:examples:empty": "pnpm --filter @clockworklabs/empty-client generate",
     "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:chat-react-ts && pnpm generate:examples:react-ts && pnpm generate:examples:empty",
-    "prepublishOnly": "pnpm run build && pnpm run test && pnpm run size"
+    "publish-check": "pnpm run build && pnpm run test && pnpm run size",
+    "prepublishOnly": "pnpm run publish-check"
   },
   "main": "dist/index.cjs",
   "module": "dist/index.mjs",
