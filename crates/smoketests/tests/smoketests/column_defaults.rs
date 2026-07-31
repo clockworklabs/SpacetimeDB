@@ -5,41 +5,17 @@ use spacetimedb_smoketests::{
 const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     ("bool_value", "true"),
     ("u8_value", "8"),
-    // TODO: uncomment this once negative defaults are fixed in Rust
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
-    //("i8_value", "-8"),
+    ("i8_value", "-8"),
     ("u16_value", "16"),
-    // TODO: uncomment this once negative defaults are fixed in Rust
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
-    //("i16_value", "-16"),
+    ("i16_value", "-16"),
     ("u32_value", "32"),
-    // TODO: uncomment this once negative defaults are fixed in Rust
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
-    //("i32_value", "-32"),
-
-    // TODO: uncomment once u64s are fixed.
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5623
-    //("u64_value", "64"),
-
-    // TODO: uncomment this once negative defaults are fixed in Rust
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
-    //("i64_value", "-64"),
-
-    // TODO: uncomment once floats are fixed in C# and f32s are fixed in Rust
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5624
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5627
-    //("f32_positive_value", "32.5"),
-
-    // TODO: uncomment once floats are fixed in C#, f32s are fixed in Rust, and negative defaults are fixed in Rust
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5624
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5627
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
-    //("f32_negative_value", "-32.5"),
+    ("i32_value", "-32"),
+    ("u64_value", "64"),
+    ("i64_value", "-64"),
+    ("f32_positive_value", "32.5"),
+    ("f32_negative_value", "-32.5"),
     ("f64_positive_value", "64.25"),
-    // TODO: uncomment once negative defaults are fixed in Rust
-    // https://github.com/clockworklabs/SpacetimeDB/issues/5622
-    //("f64_negative_value", "-64.25"),
-
+    ("f64_negative_value", "-64.25"),
     // TODO: uncomment this once string default values are fixed in Rust
     //("string_value", r#""default string""#),
 ];
@@ -134,30 +110,30 @@ pub struct DefaultsTestTable {
     pub id: u32,
     #[default(true)]
     pub bool_value: bool,
-//    #[default(-8)]
-//    pub i8_value: i8,
+    #[default(-8)]
+    pub i8_value: i8,
     #[default(8)]
     pub u8_value: u8,
-//    #[default(-16)]
-//    pub i16_value: i16,
+    #[default(-16)]
+    pub i16_value: i16,
     #[default(16)]
     pub u16_value: u16,
-//    #[default(-32)]
-//    pub i32_value: i32,
+    #[default(-32)]
+    pub i32_value: i32,
     #[default(32)]
     pub u32_value: u32,
-//    #[default(-64)]
-//    pub i64_value: i64,
-//    #[default(64)]
-//    pub u64_value: u64,
+    #[default(-64)]
+    pub i64_value: i64,
+    #[default(64)]
+    pub u64_value: u64,
     #[default(32.5)]
     pub f32_positive_value: f32,
-//    #[default(-32.5)]
-//    pub f32_negative_value: f32,
+    #[default(-32.5)]
+    pub f32_negative_value: f32,
     #[default(64.25)]
     pub f64_positive_value: f64,
-//    #[default(-64.25)]
-//    pub f64_negative_value: f64,
+    #[default(-64.25)]
+    pub f64_negative_value: f64,
 //    #[default("default string")]
 //    pub string_value: String,
 }
@@ -232,8 +208,8 @@ public static partial class Module
         [Default(32U)] public uint u32_value;
         [Default(-64L)] public long i64_value;
         [Default(64UL)] public ulong u64_value;
-        //[Default(32.5f)] public float f32_positive_value;
-        //[Default(-32.5f)] public float f32_negative_value;
+        [Default(32.5f)] public float f32_positive_value;
+        [Default(-32.5f)] public float f32_negative_value;
         [Default(64.25)] public double f64_positive_value;
         [Default(-64.25)] public double f64_negative_value;
         [Default("default string")] public string string_value;
