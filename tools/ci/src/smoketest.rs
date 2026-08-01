@@ -3,8 +3,7 @@ use anyhow::{bail, ensure, Context, Result};
 use clap::{Args, Subcommand};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
-use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::{env, fs};
 use tempfile::TempDir;
@@ -37,6 +36,7 @@ pub struct SmoketestsArgs {
     #[arg(long, num_args = 0..=1, require_equals = true, default_missing_value = "")]
     auth_host: Option<String>,
 
+    /// Whether to run smoketests that require .NET.
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     dotnet: bool,
 
@@ -51,22 +51,50 @@ enum SmoketestCmd {
     ///
     /// Use this before running `cargo test --all` to ensure binaries are built.
     Prepare,
+    /// Build the smoketest dependencies and create a nextest archive.
+    Archive {
+        /// Path to the nextest archive to create.
+        #[arg(long)]
+        archive_file: PathBuf,
+    },
+    /// Run smoketests from an existing nextest archive without rebuilding.
+    RunArchive {
+        /// Path to the nextest archive to run.
+        #[arg(long)]
+        archive_file: PathBuf,
+
+        /// Additional arguments to pass to nextest.
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     CheckModList,
 }
 
 pub fn run(args: SmoketestsArgs) -> Result<()> {
-    match args.cmd {
+    let SmoketestsArgs {
+        cmd,
+        server,
+        auth_host,
+        dotnet,
+        args,
+    } = args;
+
+    match cmd {
         Some(SmoketestCmd::Prepare) => {
             build_binaries()?;
             eprintln!("Binaries ready. You can now run `cargo test --all`.");
             Ok(())
+        }
+        Some(SmoketestCmd::Archive { archive_file }) => archive_smoketests(&archive_file),
+        Some(SmoketestCmd::RunArchive { archive_file, args }) => {
+            run_smoketest_archive(server, dotnet, auth_host.as_deref(), &archive_file, args)
         }
         Some(SmoketestCmd::CheckModList) => {
             check_smoketests_mod_rs_complete()?;
             eprintln!("smoketests/mod.rs is up to date.");
             Ok(())
         }
-        None => run_smoketest(args.server, args.dotnet, args.auth_host.as_deref(), args.args),
+        None => run_smoketest(server, dotnet, auth_host.as_deref(), args),
     }
 }
 
@@ -87,10 +115,16 @@ fn build_binaries() -> Result<()> {
     ]);
 
     // Remove cargo/rust env vars that could cause fingerprint mismatches
-    // when the test later runs cargo build from a different environment
+    // when the test later runs cargo build from a different environment.
+    // CI intentionally overrides release LTO on Windows and supplies a cached
+    // V8 archive, so preserve those settings across every build performed by
+    // the smoketest build job.
     for (key, _) in env::vars() {
-        let should_remove = (key.starts_with("CARGO") && key != "CARGO_HOME" && key != "CARGO_TARGET_DIR")
-            || key.starts_with("RUST")
+        let should_remove = (key.starts_with("CARGO")
+            && key != "CARGO_HOME"
+            && key != "CARGO_TARGET_DIR"
+            && key != "CARGO_PROFILE_RELEASE_LTO")
+            || (key.starts_with("RUST") && key != "RUSTY_V8_ARCHIVE")
             // > The environment variable `__CARGO_FIX_YOLO` is an undocumented, internal-use-only feature
             // > for the Rust cargo fix command (and cargo clippy --fix) that forces the application of all
             // > available suggestions, including those that are marked as potentially incorrect or dangerous.
@@ -138,6 +172,31 @@ fn build_precompiled_modules() -> Result<()> {
 /// Default parallelism for smoketests.
 /// 16 was found to be optimal - higher values cause OS scheduler overhead.
 const DEFAULT_PARALLELISM: &str = "16";
+
+fn archive_smoketests(archive_file: &Path) -> Result<()> {
+    // Validate the source module list before doing any expensive compilation.
+    check_smoketests_mod_rs_complete()?;
+    build_binaries()?;
+    build_precompiled_modules()?;
+
+    eprintln!("Building and archiving smoketest binaries...");
+    let status = Command::new("cargo")
+        .args([
+            "nextest",
+            "archive",
+            "--release",
+            "-p",
+            "spacetimedb-smoketests",
+            "--archive-file",
+        ])
+        .arg(archive_file)
+        .status()
+        .context("failed to run cargo nextest archive")?;
+
+    ensure!(status.success(), "Failed to archive smoketest binaries");
+    eprintln!("Smoketest archive written to {}.\n", archive_file.display());
+    Ok(())
+}
 
 fn run_smoketest(server: Option<String>, dotnet: bool, auth_host: Option<&str>, args: Vec<String>) -> Result<()> {
     // 1. Build binaries first (single process, no race)
@@ -196,6 +255,53 @@ fn run_smoketest(server: Option<String>, dotnet: bool, auth_host: Option<&str>, 
     let status = cmd.args(&args).status()?;
 
     ensure!(status.success(), "Tests failed");
+    let diff_status = cmd!("bash", "tools/check-diff.sh", "crates/smoketests").run()?;
+    ensure!(
+        diff_status.status.success(),
+        "There is a diff in the smoketests directory."
+    );
+    Ok(())
+}
+
+fn run_smoketest_archive(
+    server: Option<String>,
+    dotnet: bool,
+    auth_host: Option<&str>,
+    archive_file: &Path,
+    args: Vec<String>,
+) -> Result<()> {
+    let cli_path = ensure_binaries_built();
+    let base_config_dir = prepare_base_config(&cli_path, server.as_deref(), auth_host)?;
+    let base_config_path = base_config_dir.path().join("config.toml");
+    let workspace_root = env::current_dir().context("failed to resolve workspace root")?;
+
+    if let Some(ref server_url) = server {
+        eprintln!("Running archived smoketests against remote server {server_url}...\n");
+    } else {
+        eprintln!("Running smoketests from archive {}...\n", archive_file.display());
+    }
+
+    let mut cmd = Command::new("cargo");
+    set_env(&mut cmd, server, dotnet, auth_host.is_some(), &base_config_path);
+    cmd.args(["nextest", "run", "--archive-file"])
+        .arg(archive_file)
+        .arg("--workspace-remap")
+        .arg(workspace_root)
+        .arg("--no-fail-fast");
+
+    if !args
+        .iter()
+        .any(|a| a.starts_with("-j") || a.starts_with("--jobs") || a.starts_with("--test-threads"))
+    {
+        cmd.args(["-j", DEFAULT_PARALLELISM]);
+    }
+
+    let status = cmd
+        .args(&args)
+        .status()
+        .context("failed to run smoketests from nextest archive")?;
+    ensure!(status.success(), "Tests failed");
+
     let diff_status = cmd!("bash", "tools/check-diff.sh", "crates/smoketests").run()?;
     ensure!(
         diff_status.status.success(),
@@ -298,27 +404,21 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
         let ft = entry.file_type()?;
         if ft.is_dir() {
             expected.insert(name.to_string());
-        } else if ft.is_file()
-            && path.extension() == Some(OsStr::new("rs"))
-            && let Some(stem) = path.file_stem()
-        {
+        } else if ft.is_file() && path.extension().is_some_and(|extension| extension == "rs") {
+            let stem = path.file_stem().context("Rust smoketest module has no file stem")?;
             expected.insert(stem.to_string_lossy().to_string());
         }
     }
 
-    let out = cmd!("cargo", "test", "-p", "spacetimedb-smoketests", "--", "--list",).read()?;
-
     let mut present = std::collections::BTreeSet::<String>::new();
-    for line in out.lines() {
-        let line = line.trim();
-        let parts: Vec<&str> = line.split("::").collect();
-        if parts.len() < 2 {
-            continue;
+    let mod_rs = fs::read_to_string(expected_dir.join("mod.rs"))?;
+    for line in mod_rs.lines() {
+        let line = line.split_once("//").map_or(line, |(code, _)| code).trim();
+        let declaration = line.strip_prefix("mod ").or_else(|| line.strip_prefix("pub mod "));
+        if let Some(module) = declaration.and_then(|declaration| declaration.strip_suffix(';')) {
+            let module = module.trim();
+            present.insert(module.strip_prefix("r#").unwrap_or(module).to_string());
         }
-        if parts[0] != "smoketests" {
-            continue;
-        }
-        present.insert(parts[1].to_string());
     }
 
     let missing = expected
@@ -328,7 +428,7 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
 
     if !missing.is_empty() {
         bail!(
-            "crates/smoketests/tests/smoketests/mod.rs appears incomplete; missing modules (not present in `cargo test -- --list`):\n{}",
+            "crates/smoketests/tests/smoketests/mod.rs appears incomplete; missing modules:\n{}",
             missing
                 .iter()
                 .map(|m| format!("- mod {m};"))

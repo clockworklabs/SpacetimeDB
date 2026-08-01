@@ -58,9 +58,174 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # This job runs before all of our release jobs. If there is a release problem we should
+  release-dry-run:
+    name: release-dry-run
+    if: >-
+      ${{
+        inputs.dry_run
+        && (inputs.release_crates
+          || inputs.release_csharp
+          || inputs.release_cpp
+          || inputs.release_npm
+          || inputs.release_docker)
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write
+      packages: write
+    env:
+      CARGO_TERM_COLOR: always
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # Build the release tool from the dispatched ref, matching the live release path.
+      - name: Checkout release tooling
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Rust
+        uses: dsherret/rust-toolchain-file@v1
+
+      - name: Set default Rust toolchain
+        run: rustup default "$(rustup show active-toolchain | cut -d' ' -f1)"
+
+      - name: Install cargo-release
+        run: cargo install --path tools/release
+
+      # Keep the release sources separate from the tooling checkout so each target
+      # can be reset without removing the cargo-release sources or executable.
+      - name: Checkout release sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.release_tag }}
+          path: release-source
+          submodules: recursive
+
+      - name: Set up Node.js
+        if: inputs.release_npm
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+
+      - name: Install NPM release tools
+        if: inputs.release_npm
+        run: |
+          # This is the minimum npm version required to use trusted publishing.
+          npm install --global npm@11.5.1
+          npm install --global pnpm
+          npm --version
+          pnpm --version
+
+      - name: Set up .NET
+        if: inputs.release_csharp
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: release-source/global.json
+
+      - name: Install NuGet
+        if: inputs.release_csharp
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mono-complete
+
+          nuget_bin="$RUNNER_TEMP/release-tools"
+          mkdir -p "$nuget_bin"
+          wget -q https://dist.nuget.org/win-x86-commandline/latest/nuget.exe \
+            -O "$nuget_bin/nuget-mono.exe"
+          cat >"$nuget_bin/nuget" <<'EOF'
+          #!/bin/bash
+          exec mono "$(dirname "$(readlink -f "$0")")/nuget-mono.exe" "$@"
+          EOF
+          chmod +x "$nuget_bin/nuget"
+          echo "$nuget_bin" >>"$GITHUB_PATH"
+
+      - name: Set up SDK repository SSH keys
+        if: inputs.release_csharp || inputs.release_cpp
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: |
+            ${{ inputs.release_csharp && secrets.UNITY_SDK_DEPLOY_KEY || '' }}
+            ${{ inputs.release_cpp && secrets.CPP_SDK_DEPLOY_KEY || '' }}
+
+      - name: Configure git
+        if: inputs.release_csharp || inputs.release_cpp
+        run: |
+          git config --global user.name "Release Bot"
+          git config --global user.email "no-reply@clockworklabs.io"
+          git config --global --unset-all url.https://github.com/.insteadOf || true
+          git config --global url."git@github.com:".insteadOf "https://github.com/"
+
+      - name: Set up Docker Buildx
+        if: inputs.release_docker
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+
+      - name: Run release dry-runs
+        working-directory: release-source
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+          RELEASE_CRATES: ${{ github.event.inputs.release_crates }}
+          RELEASE_CSHARP: ${{ github.event.inputs.release_csharp }}
+          RELEASE_CPP: ${{ github.event.inputs.release_cpp }}
+          RELEASE_NPM: ${{ github.event.inputs.release_npm }}
+          RELEASE_DOCKER: ${{ github.event.inputs.release_docker }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -uo pipefail
+
+          failures=()
+
+          reset_release_sources() {
+            git reset --hard "$RELEASE_TAG"
+            git clean -ffdx
+            git submodule sync --recursive
+            git submodule update --init --recursive --force
+            git submodule foreach --recursive 'git reset --hard HEAD && git clean -ffdx'
+          }
+
+          run_dry_run() {
+            local enabled="$1"
+            local target="$2"
+
+            if [[ "$enabled" != "true" ]]; then
+              return
+            fi
+
+            echo "::group::$target dry-run"
+            if cargo-release release "$target" "$RELEASE_TAG" --dry-run; then
+              echo "$target: success" >>"$GITHUB_STEP_SUMMARY"
+            else
+              failures+=("$target")
+              echo "$target: failure" >>"$GITHUB_STEP_SUMMARY"
+              echo "::error title=$target release dry-run failed::See the $target log group for details."
+            fi
+            echo "::endgroup::"
+
+            if ! reset_release_sources; then
+              failures+=("$target workspace reset")
+              echo "::error title=Release source reset failed::Could not clean the checkout after $target."
+            fi
+          }
+
+          run_dry_run "$RELEASE_CRATES" crates
+          run_dry_run "$RELEASE_CSHARP" csharp
+          run_dry_run "$RELEASE_CPP" cpp
+          run_dry_run "$RELEASE_NPM" npm
+          run_dry_run "$RELEASE_DOCKER" docker
+
+          if (( ${#failures[@]} > 0 )); then
+            printf 'Release dry-run failures: %s\n' "${failures[*]}" >&2
+            exit 1
+          fi
+
+  # This job runs before all of our live release jobs. If there is a release problem we should
   # try to fail during this step to prevent partial releases.
   build-cargo-release:
+    if: ${{ !inputs.dry_run }}
     runs-on: spacetimedb-new-runner-2
     steps:
       - name: Checkout
@@ -96,7 +261,7 @@ jobs:
   release-crates:
     needs: build-cargo-release
     runs-on: spacetimedb-new-runner-2
-    if: ${{ inputs.release_crates }}
+    if: ${{ !inputs.dry_run && inputs.release_crates }}
     env:
       CARGO_TERM_COLOR: always
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -125,20 +290,13 @@ jobs:
           chmod +x ./shared-bin/cargo-release
           echo "$PWD/shared-bin" >> "$GITHUB_PATH"
 
-      # TODO: dry-run via publishing to a local registry: https://doc.rust-lang.org/cargo/reference/registries.html
-      - name: Run release (dry-run)
-        if: ${{ inputs.dry_run }}
-        # NOTE: This will print a warning that `cargo-release release crates` dry runs are not supported
-        run: cargo-release release crates ${{ github.event.inputs.release_tag }} --dry-run
-
       - name: Run release
-        if: ${{ !inputs.dry_run }}
         run: cargo-release release crates ${{ github.event.inputs.release_tag }}
 
   release-csharp:
     needs: build-cargo-release
     runs-on: spacetimedb-new-runner-2
-    if: ${{ inputs.release_csharp }}
+    if: ${{ !inputs.dry_run && inputs.release_csharp }}
     env:
       CARGO_TERM_COLOR: always
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -170,7 +328,7 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
-          global-json-path: global.json
+          global-json-file: global.json
 
       - name: Install NuGet
         shell: bash
@@ -206,18 +364,13 @@ jobs:
           echo "Git URL rewrite config:"
           git config --global --get-regexp url
 
-      - name: Run C# SDK release (dry-run)
-        if: ${{ inputs.dry_run }}
-        run: cargo-release release csharp ${{ github.event.inputs.release_tag }} --dry-run
-
       - name: Run C# SDK release
-        if: ${{ !inputs.dry_run }}
         run: cargo-release release csharp ${{ github.event.inputs.release_tag }}
 
   release-cpp:
     needs: build-cargo-release
     runs-on: spacetimedb-new-runner-2
-    if: ${{ inputs.release_cpp }}
+    if: ${{ !inputs.dry_run && inputs.release_cpp }}
     env:
       CARGO_TERM_COLOR: always
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -262,18 +415,13 @@ jobs:
           echo "Git URL rewrite config:"
           git config --global --get-regexp url
 
-      - name: Run C++ SDK release (dry-run)
-        if: ${{ inputs.dry_run }}
-        run: cargo-release release cpp ${{ github.event.inputs.release_tag }} --dry-run
-
       - name: Run C++ SDK release
-        if: ${{ !inputs.dry_run }}
         run: cargo-release release cpp ${{ github.event.inputs.release_tag }}
 
   release-npm:
     needs: build-cargo-release
     runs-on: ubuntu-latest
-    if: ${{ inputs.release_npm }}
+    if: ${{ !inputs.dry_run && inputs.release_npm }}
     env:
       CARGO_TERM_COLOR: always
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -315,12 +463,7 @@ jobs:
       - name: Install pnpm
         run: npm install -g pnpm
 
-      - name: Run NPM release (dry-run)
-        if: ${{ inputs.dry_run }}
-        run: cargo-release release npm ${{ github.event.inputs.release_tag }} --dry-run
-
       - name: Run NPM release
-        if: ${{ !inputs.dry_run }}
         run: cargo-release release npm ${{ github.event.inputs.release_tag }}
 
   release-docker:
@@ -329,7 +472,7 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    if: ${{ inputs.release_docker }}
+    if: ${{ !inputs.dry_run && inputs.release_docker }}
 
     steps:
       - name: Checkout release source
@@ -362,7 +505,7 @@ jobs:
           # Docker Hub access tokens are passed to docker/login-action via the password input.
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Run Docker release
-        run: cargo-release release docker ${{ github.event.inputs.release_tag }} ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: cargo-release release docker ${{ github.event.inputs.release_tag }}
 
   update-mirror-latest-version:
     runs-on: ubuntu-latest

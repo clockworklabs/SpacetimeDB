@@ -27,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       skip: ${{ steps.compare.outputs.skip }}
+      source_sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Checkout merge queue commit
         uses: actions/checkout@v4
@@ -70,175 +71,260 @@ jobs:
             echo "Merge queue commit ${GITHUB_SHA} differs from PR #${pr_number} head ${pr_head_sha}; running CI normally."
           fi
 
-  smoketests:
-    needs: [merge_queue_noop, lints]
+      - name: Resolve source revision
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pr_number="${{ github.event.inputs.pr_number || null }}"
+          if [[ -n "${pr_number}" ]]; then
+            source_sha="$(gh pr view --repo clockworklabs/SpacetimeDB "${pr_number}" --json headRefOid --jq .headRefOid)"
+          else
+            source_sha="${GITHUB_SHA}"
+          fi
+
+          if [[ -z "${source_sha}" || "${source_sha}" == "null" ]]; then
+            echo "Could not resolve the source revision."
+            exit 1
+          fi
+
+          echo "sha=${source_sha}" >>"$GITHUB_OUTPUT"
+
+  typescript_sdk_build:
+    needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: Smoketests (${{ matrix.name }})
-    strategy:
-      matrix:
-        include:
-          - name: Linux
-            runner: spacetimedb-new-runner-2
-          - name: Windows
-            runner: spacetimedb-windows-runner
-    runs-on: ${{ matrix.runner }}
+    name: Build TypeScript SDK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
+
+      - name: Restore TypeScript SDK build
+        id: typescript-sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: crates/bindings-typescript/dist
+          key: typescript-sdk-v1-node22-pnpm10.16.0-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json', '.npmrc', 'crates/bindings-typescript/package.json', 'crates/bindings-typescript/.npmrc', 'crates/bindings-typescript/tsconfig*.json', 'crates/bindings-typescript/tsup.config.ts', 'crates/bindings-typescript/src/**') }}
+
+      - name: Set up pnpm for TypeScript SDK build
+        if: steps.typescript-sdk-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/setup-pnpm
+        with:
+          node_version: 22
+
+      - name: Build TypeScript SDK
+        if: steps.typescript-sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          pnpm --filter spacetimedb... install --frozen-lockfile
+          pnpm --filter spacetimedb build
+
+      - name: Validate TypeScript SDK build
+        shell: bash
+        run: |
+          typescript_sdk_dist=crates/bindings-typescript/dist
+          for typescript_sdk_artifact in \
+            "$typescript_sdk_dist/index.mjs" \
+            "$typescript_sdk_dist/index.d.ts" \
+            "$typescript_sdk_dist/server/index.mjs" \
+            "$typescript_sdk_dist/server/index.d.ts"
+          do
+            if [[ ! -f "$typescript_sdk_artifact" ]]; then
+              echo "Prebuilt TypeScript SDK artifact is missing: $typescript_sdk_artifact"
+              exit 1
+            fi
+          done
+
+      - name: Upload TypeScript SDK build
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-sdk-dist
+          path: crates/bindings-typescript/dist
+          if-no-files-found: error
+          overwrite: true
+
+  smoketest_build_linux:
+    needs: [merge_queue_noop, typescript_sdk_build]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Build smoketests (Linux)
+    runs-on: spacetimedb-new-runner-2
     timeout-minutes: 120
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
     steps:
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.GIT_REF }}
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - name: Download TypeScript SDK build
+        uses: actions/download-artifact@v4
+        with:
+          name: typescript-sdk-dist
+          path: crates/bindings-typescript/dist
 
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.10
+      - uses: ./.github/actions/smoketest-setup
+        with:
+          runtime-dependencies: "false"
+          rust-cache-enabled: "false"
 
-      - name: Enable sccache
+      - uses: ./.github/actions/smoketest-build
+        with:
+          artifact-name: smoketest-build-Linux
+
+  smoketest_build_windows:
+    needs: [merge_queue_noop, typescript_sdk_build]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Build smoketests (Windows)
+    runs-on: spacetimedb-windows-runner
+    timeout-minutes: 120
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      # Keep cross-crate ThinLTO for the Linux build consumed by benchmarks, but
+      # skip it for Windows smoketest binaries where build latency matters more.
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      RUST_BACKTRACE: full
+      SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
+
+      - name: Download TypeScript SDK build
+        uses: actions/download-artifact@v4
+        with:
+          name: typescript-sdk-dist
+          path: crates/bindings-typescript/dist
+
+      - uses: ./.github/actions/smoketest-setup
+        with:
+          runtime-dependencies: "false"
+          rust-cache-enabled: "true"
+          rust-cache-shared-key: smoketest-build-dependencies
+
+      - name: Resolve V8 version
+        id: v8-version
         shell: bash
         run: |
-          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
+          v8_version="$(sed -n 's/^v8 = "=\([^"]*\)"$/\1/p' Cargo.toml)"
+          test -n "${v8_version}"
+          echo "v8=${v8_version}" >> "${GITHUB_OUTPUT}"
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      - name: Restore native V8 library
+        uses: actions/cache@v4
         with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          cache-on-failure: false
-          cache-all-crates: true
-          cache-workspace-crates: true
-          prefix-key: v1
+          path: ${{ runner.temp }}/spacetimedb-native-cache/rusty-v8/rusty_v8.lib.gz
+          key: native-v1-rusty-v8-${{ steps.v8-version.outputs.v8 }}
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-
-      # nodejs and pnpm are required for the typescript quickstart smoketest
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
-      - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
-
-      # Install emscripten for C++ module compilation tests.
-      - name: Install emscripten (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-          cd ~/emsdk
-          ./emsdk install 4.0.21
-          ./emsdk activate 4.0.21
-
-      - name: Install emscripten (Windows)
-        if: runner.os == 'Windows'
+      - name: Prepare native V8 library
         shell: pwsh
+        env:
+          V8_VERSION: ${{ steps.v8-version.outputs.v8 }}
         run: |
-          git clone https://github.com/emscripten-core/emsdk.git $env:USERPROFILE\emsdk
-          cd $env:USERPROFILE\emsdk
-          .\emsdk install 4.0.21
-          .\emsdk activate 4.0.21
-
-      - name: Install psql (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # Fail properly if any individual command fails
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          choco install psql -y --no-progress
-          # Check for existence, since `choco` doesn't seem to fail the step if it fails to install..
-          # See https://github.com/clockworklabs/SpacetimeDB/pull/4399 for more background.
-          Get-Command psql
+          $cacheDir = Join-Path '${{ runner.temp }}' 'spacetimedb-native-cache/rusty-v8'
+          $archive = Join-Path $cacheDir 'rusty_v8.lib.gz'
+          New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
 
-      - name: Update dotnet workloads
-        if: runner.os == 'Windows'
-        run: |
-          # Fail properly if any individual command fails
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-
-          cd modules
-          # the sdk-manifests on windows-latest are messed up, so we need to update them
-          dotnet workload config --update-mode manifests
-          dotnet workload update --from-previous-sdk
-          # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
-          # Create temp global.json to target .NET 8 SDK for workload install
-          $sdk8Json = '{"sdk":{"version":"8.0.400","rollForward":"latestFeature"}}'
-          $sdk8Json | Out-File -FilePath global.json -Encoding utf8
-          dotnet workload install wasi-experimental
-          Remove-Item global.json
-
-      - name: Override NuGet packages
-        shell: bash
-        run: |
-          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
-          dotnet pack -c Release crates/bindings-csharp/Runtime
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
-
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        shell: bash
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
-
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@nextest
-
-      # --test-threads=1 eliminates contention in the C# tests where they fight over bindings
-      # build artifacts.
-      # It also seemed to improve performance a fair amount (11m -> 6m)
-      - name: Run smoketests (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          if [ -f ~/emsdk/emsdk_env.sh ]; then
-            source ~/emsdk/emsdk_env.sh
-          fi
-          cargo ci smoketests -- --test-threads=1
-
-      # Due to Emscripten PATH issues this was separated to make sure OpenSSL still builds correctly
-      - name: Run smoketests (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
-            & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
+          if (-not (Test-Path $archive)) {
+            $url = "https://github.com/denoland/rusty_v8/releases/download/v$env:V8_VERSION/rusty_v8_release_x86_64-pc-windows-msvc.lib.gz"
+            $download = "$archive.tmp"
+            Remove-Item -Force -ErrorAction SilentlyContinue $download
+            & curl.exe --fail --location --retry 3 --output $download $url
+            Move-Item -Force $download $archive
           }
-          cargo ci smoketests -- --test-threads=1          
+
+      - uses: ./.github/actions/smoketest-build
+        env:
+          # rust-cache removes V8's nonstandard target/release/gn_out directory.
+          RUSTY_V8_ARCHIVE: ${{ runner.temp }}/spacetimedb-native-cache/rusty-v8/rusty_v8.lib.gz
+        with:
+          artifact-name: smoketest-build-Windows
+
+  smoketests_linux:
+    needs: [merge_queue_noop, smoketest_build_linux]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Smoketests (Linux, ${{ matrix.partition }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2]
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 120
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
+
+      - uses: ./.github/actions/smoketest-setup
+        with:
+          rust-cache-enabled: "false"
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+        with:
+          node_version: 18
+
+      - name: Install TypeScript SDK runtime dependencies
+        run: pnpm --filter spacetimedb install --prod --frozen-lockfile --prefer-offline
+
+      - uses: ./.github/actions/smoketest-run-partition
+        with:
+          artifact-name: smoketest-build-Linux
+          partition: ${{ matrix.partition }}
+          partition-total: 2
+
+  smoketests_windows:
+    needs: [merge_queue_noop, smoketest_build_windows]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Smoketests (Windows, ${{ matrix.partition }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    runs-on: spacetimedb-windows-runner
+    timeout-minutes: 120
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
+
+      - uses: ./.github/actions/smoketest-setup
+        with:
+          rust-cache-enabled: "false"
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+        with:
+          node_version: 18
+
+      - name: Install TypeScript SDK runtime dependencies
+        run: pnpm --filter spacetimedb install --prod --frozen-lockfile --prefer-offline
+
+      - uses: ./.github/actions/smoketest-run-partition
+        with:
+          artifact-name: smoketest-build-Windows
+          partition: ${{ matrix.partition }}
+          partition-total: 4
 
       - name: Upload Cargo timing reports
         if: always()
@@ -254,12 +340,28 @@ jobs:
   smoketests_noop:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
-    name: Smoketests (${{ matrix.name }})
+    name: Smoketests (${{ matrix.name }}, ${{ matrix.partition }}/${{ matrix.partition-total }})
     strategy:
       matrix:
         include:
           - name: Linux
+            partition: 1
+            partition-total: 2
+          - name: Linux
+            partition: 2
+            partition-total: 2
           - name: Windows
+            partition: 1
+            partition-total: 4
+          - name: Windows
+            partition: 2
+            partition-total: 4
+          - name: Windows
+            partition: 3
+            partition-total: 4
+          - name: Windows
+            partition: 4
+            partition-total: 4
     runs-on: ubuntu-latest
     steps:
       - name: Skip duplicate merge queue smoketest
@@ -295,15 +397,6 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
       - name: Check v8 outputs
         shell: bash
         run: |
@@ -324,8 +417,9 @@ jobs:
           node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
+
+      - name: Install pnpm workspace dependencies
+        run: pnpm install --frozen-lockfile
 
       # Install cmake and emscripten for C++ module compilation tests.
       - name: Install cmake and emscripten
@@ -368,7 +462,7 @@ jobs:
           cargo ci test
 
   keynote_bench:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, smoketest_build_linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Keynote Bench
     runs-on: spacetimedb-benchmark-runner
@@ -380,22 +474,10 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.GIT_REF }}
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
       # Node 24 is the current Active LTS line.
       - name: Set up Node.js
@@ -404,15 +486,15 @@ jobs:
           node-version: 24
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          package_json_file: package.json
-          working_directory: .
-          run_install: "true"
+
+      - name: Install Keynote dependencies
+        run: pnpm --filter spacetime-simulations... install --frozen-lockfile
 
       - uses: ./.github/actions/keynote-bench-setup
+
+      - uses: ./.github/actions/restore-smoketest-build
         with:
-          public_root: .
-          rust_cache_workspaces: ${{ github.workspace }}
+          artifact-name: smoketest-build-Linux
 
       - name: Run keynote-2 benchmark regression check
         run: cargo ci keynote-bench
@@ -451,22 +533,6 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.10
-
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb-index-scan
-          cache-on-failure: false
-          prefix-key: v1
-
       - name: Run index scan benchmark regression check
         run: cargo run --release -p spacetimedb-index-scan-gate
 
@@ -486,15 +552,6 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -535,15 +592,6 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
 
       - name: Run bindgen tests
         run: cargo ci wasm-bindings
@@ -774,8 +822,6 @@ jobs:
           node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
 
       - name: Get pnpm store directory
         shell: bash
@@ -794,21 +840,12 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
       - name: Check for docs change
         run: |
           cargo ci cli-docs
 
   unity-testsuite:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, smoketest_build_linux]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
@@ -825,6 +862,19 @@ jobs:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
+
+      # Key the Library by the inputs Unity imports so unrelated PRs share the same
+      # cache. Keep this before generation/hydration so ignored build outputs do not
+      # affect hashFiles.
+      - name: Restore Unity Library
+        uses: actions/cache@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: Unity-v2-${{ runner.os }}-${{ env.UNITY_VERSION }}-${{ hashFiles('demo/Blackholio/client-unity/**', 'sdks/csharp/**', 'crates/bindings-csharp/BSATN.Runtime/**', 'crates/bindings-csharp/Runtime/**', 'crates/bindings-csharp/Directory.Build.props', 'tools/regen/src/csharp.rs', 'global.json') }}
+          restore-keys: |
+            Unity-v2-${{ runner.os }}-${{ env.UNITY_VERSION }}-
 
       # Keep this before generation/hydration so ignored build outputs do not affect hashFiles.
       - name: Restore Unity Library
@@ -873,37 +923,9 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/restore-smoketest-build
         with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
-
-      - name: Install SpacetimeDB CLI from the local checkout
-        run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+          artifact-name: smoketest-build-Linux
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
@@ -966,7 +988,7 @@ jobs:
           key: ${{ steps.restore-unity-library.outputs.cache-primary-key }}
 
   godot-testsuite:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, smoketest_build_linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     permissions:
       contents: read
@@ -978,6 +1000,8 @@ jobs:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -1014,37 +1038,9 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/restore-smoketest-build
         with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
-
-      - name: Install SpacetimeDB CLI from the local checkout
-        run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+          artifact-name: smoketest-build-Linux
 
       - name: Generate client bindings
         working-directory: demo/Blackholio/server-rust
@@ -1094,7 +1090,7 @@ jobs:
         run: godot --headless --scene res://tests/GodotPlayModeTests.tscn
 
   csharp-testsuite:
-    needs: [merge_queue_noop, lints]
+    needs: [merge_queue_noop, lints, smoketest_build_linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
@@ -1105,6 +1101,8 @@ jobs:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.merge_queue_noop.outputs.source_sha }}
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v3
@@ -1152,43 +1150,9 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      - uses: ./.github/actions/restore-smoketest-build
         with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean -p v8 || true
-            cargo build -p v8
-          fi
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
-
-      - name: Install SpacetimeDB CLI from the local checkout
-        run: |
-          export CARGO_HOME="$HOME/.cargo"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --features allow_loopback_http_for_tests --locked --message-format=short
-          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+          artifact-name: smoketest-build-Linux
 
       - name: Check quickstart-chat bindings are up to date
         run: |
@@ -1268,75 +1232,8 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          save-if: false
-          prefix-key: v1
-
       - name: Check global.json policy
         run: cargo ci global-json-policy
-
-  smoketests_mod_rs_complete:
-    needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: Check smoketests/mod.rs is complete
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
-      RUST_BACKTRACE: full
-    steps:
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          cache-on-failure: false
-          cache-all-crates: true
-          cache-workspace-crates: true
-          prefix-key: v1
-
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        shell: bash
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean -p v8 || true
-            cargo build -p v8
-          fi
-
-      - name: Verify crates/smoketests/tests/smoketests/mod.rs lists all entries
-        run: |
-          cargo ci smoketests check-mod-list
 
   docs-build:
     needs: [merge_queue_noop]
@@ -1355,8 +1252,6 @@ jobs:
           node-version: '22'
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
 
       - name: Get pnpm store directory
         working-directory: sdks/typescript
@@ -1396,8 +1291,6 @@ jobs:
           node-version: 22
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
 
       - name: Get pnpm store directory
         shell: bash
@@ -1412,6 +1305,9 @@ jobs:
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
+
+      - name: Install TypeScript test dependencies
+        run: pnpm install --frozen-lockfile
 
       # - name: Extract SpacetimeDB branch name from file
       #   id: extract-branch
@@ -1442,15 +1338,6 @@ jobs:
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
 
       # # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
       # # ChatGPT suspects that this could be due to different build invocations using the same target dir,

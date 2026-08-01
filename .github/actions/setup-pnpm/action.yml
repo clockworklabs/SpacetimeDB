@@ -1,14 +1,30 @@
 name: Set up pnpm
 description: Install pnpm and configure repository package-age policy before any install
 inputs:
+  version:
+    description: pnpm version to install. If omitted, package_json_file determines the version.
+    required: false
+    default: ""
   package_json_file:
     description: package.json file used to determine the pnpm version
     required: false
     default: package.json
+  node_version:
+    description: Node.js version to install with pnpm dependency caching; omitted when Node.js is already configured
+    required: false
+    default: ""
+  cache_dependency_path:
+    description: Lockfile used by setup-node's pnpm store cache
+    required: false
+    default: pnpm-lock.yaml
   run_install:
     description: Run pnpm install after configuring pnpm
     required: false
     default: "false"
+  install_args:
+    description: Additional arguments passed to pnpm install
+    required: false
+    default: ""
   working_directory:
     description: Directory to run pnpm install in
     required: false
@@ -17,8 +33,23 @@ runs:
   using: composite
   steps:
     - uses: pnpm/action-setup@v4
+      if: inputs.version != ''
+      with:
+        version: ${{ inputs.version }}
+
+    - uses: pnpm/action-setup@v4
+      if: inputs.version == ''
       with:
         package_json_file: ${{ inputs.package_json_file }}
+
+    # setup-node's pnpm cache requires the pnpm executable to exist first.
+    - name: Set up Node.js
+      if: inputs.node_version != ''
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node_version }}
+        cache: pnpm
+        cache-dependency-path: ${{ inputs.cache_dependency_path }}
 
     - name: Configure pnpm package age policy
       shell: bash
@@ -28,4 +59,4 @@ runs:
       if: inputs.run_install == 'true'
       shell: bash
       working-directory: ${{ inputs.working_directory }}
-      run: pnpm install
+      run: pnpm install ${{ inputs.install_args }}

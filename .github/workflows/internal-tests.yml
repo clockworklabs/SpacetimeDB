@@ -53,15 +53,70 @@ jobs:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
           script: |
             const workflowId = 'ci.yml';
-            const targetRef = 'master';
             const targetOwner = process.env.TARGET_OWNER;
             const targetRepo = process.env.TARGET_REPO;
             // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
             const publicPrNumber = context.payload.pull_request?.number;
             const inputs = { public_ref: publicRef };
+            let targetRef = 'master';
+
             if (publicPrNumber) {
-              inputs.public_pr_number = String(publicPrNumber);
+              // GitHub constructs the job graph from the dispatched ref before
+              // ci-setup can check out related sources. Dispatch the companion
+              // branch itself so workflow changes in that PR are exercised too.
+              const timeline = await github.paginate(github.rest.issues.listEventsForTimeline, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: publicPrNumber,
+                per_page: 100,
+              });
+              const privatePrNumbers = [
+                ...new Set(
+                  timeline
+                    .filter(event => event.event === 'cross-referenced')
+                    .map(event => event.source?.issue)
+                    .filter(issue =>
+                      issue?.repository?.full_name === `${targetOwner}/${targetRepo}`
+                      && issue.pull_request
+                      && issue.state === 'open'
+                    )
+                    .map(issue => issue.number)
+                ),
+              ];
+
+              if (privatePrNumbers.length > 1) {
+                core.setFailed(
+                  `Multiple open ${targetOwner}/${targetRepo} PRs reference public PR #${publicPrNumber}: `
+                  + privatePrNumbers.map(number => `#${number}`).join(', ')
+                );
+                return;
+              }
+
+              if (privatePrNumbers.length === 1) {
+                const privatePrNumber = privatePrNumbers[0];
+                const privatePr = await github.rest.pulls.get({
+                  owner: targetOwner,
+                  repo: targetRepo,
+                  pull_number: privatePrNumber,
+                });
+                const privateHeadRepo = privatePr.data.head.repo?.full_name;
+                if (privateHeadRepo !== `${targetOwner}/${targetRepo}`) {
+                  core.setFailed(
+                    `Refusing to run a workflow from related private PR #${privatePrNumber}: `
+                    + `expected head repository ${targetOwner}/${targetRepo}, got ${privateHeadRepo || 'unknown'}`
+                  );
+                  return;
+                }
+
+                targetRef = privatePr.data.head.ref;
+                inputs.public_pr_number = String(publicPrNumber);
+                core.info(`Using related private PR #${privatePrNumber} workflow from ${targetRef}.`);
+              } else {
+                // No private companion exists, so run the private master workflow
+                // and let setup use the public PR with the private master sources.
+                inputs.public_pr_number = String(publicPrNumber);
+              }
             }
 
             // Dispatch the workflow in the target repository

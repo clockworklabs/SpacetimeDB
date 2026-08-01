@@ -1,0 +1,46 @@
+name: Restore smoketest build
+description: Restore prebuilt Linux smoketest support binaries from a build artifact.
+
+inputs:
+  artifact-name:
+    description: Name of the smoketest build artifact to download.
+    required: true
+  require-standalone:
+    description: Require the artifact to contain the standalone server.
+    required: false
+    default: "true"
+  schema-extractor-path:
+    description: Optional schema extractor executable used instead of standalone.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Download smoketest build
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/smoketest-build
+
+    - name: Extract smoketest support files
+      shell: bash
+      run: tar -xzf "${RUNNER_TEMP}/smoketest-build/smoketest-support.tar.gz"
+
+    - name: Configure prebuilt SpacetimeDB binaries
+      shell: bash
+      env:
+        REQUIRE_STANDALONE: ${{ inputs.require-standalone }}
+        SCHEMA_EXTRACTOR_PATH: ${{ inputs.schema-extractor-path }}
+      run: |
+        test -x "${CARGO_TARGET_DIR}/release/spacetimedb-cli"
+        if [[ "${REQUIRE_STANDALONE}" == "true" ]]; then
+          test -x "${CARGO_TARGET_DIR}/release/spacetimedb-standalone"
+        fi
+        if [[ -n "${SCHEMA_EXTRACTOR_PATH}" ]]; then
+          test -x "${SCHEMA_EXTRACTOR_PATH}"
+          echo "SPACETIMEDB_SCHEMA_EXTRACTOR=${SCHEMA_EXTRACTOR_PATH}" >>"$GITHUB_ENV"
+        fi
+        ln -sf spacetimedb-cli "${CARGO_TARGET_DIR}/release/spacetime"
+        echo "${CARGO_TARGET_DIR}/release" >>"$GITHUB_PATH"
+        echo "SPACETIME_PREBUILT_BINARIES=1" >>"$GITHUB_ENV"

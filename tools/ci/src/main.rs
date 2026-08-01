@@ -457,7 +457,7 @@ fn run_typescript_tests() -> Result<()> {
 }
 
 fn run_docs_build() -> Result<()> {
-    pnpm(["install"]).dir("docs").run()?;
+    pnpm(["--filter", "docs...", "install", "--frozen-lockfile"]).run()?;
     pnpm(["build"]).dir("docs").run()?;
     Ok(())
 }
@@ -749,7 +749,7 @@ fn main() -> Result<()> {
                 );
             }
 
-            pnpm(["install", "--recursive"]).run()?;
+            pnpm(["--filter", "docs...", "install", "--frozen-lockfile"]).run()?;
             pnpm(["generate-cli-docs"]).dir("docs").run()?;
             let out = cmd!("git", "status", "--porcelain", "--", "docs").read()?;
             if out.is_empty() {

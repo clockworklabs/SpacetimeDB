@@ -56,7 +56,6 @@ pub mod modules;
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
-use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -181,7 +180,16 @@ macro_rules! timed {
 
 /// Returns the workspace root directory.
 pub fn workspace_root() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Archived tests may execute in a different checkout from the build, so
+    // prefer the workspace root explicitly supplied by the runner.
+    if let Ok(workspace_root) = std::env::var("SPACETIMEDB_WORKSPACE_ROOT") {
+        return PathBuf::from(workspace_root);
+    }
+
+    // Cargo and nextest set this at runtime, including nextest's remapped path.
+    let manifest_dir = PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set when running smoketests"),
+    );
     manifest_dir
         .parent()
         .and_then(|p| p.parent())
@@ -393,8 +401,29 @@ pub fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
 pub fn build_typescript_sdk() -> Result<()> {
     let workspace = workspace_root();
     let ts_bindings = workspace.join("crates/bindings-typescript");
-    pnpm(&["install"], &ts_bindings)?;
-    pnpm(&["build"], &ts_bindings)?;
+    if std::env::var("SPACETIME_PREBUILT_TYPESCRIPT_SDK").ok().as_deref() == Some("1") {
+        for relative_path in [
+            "dist/index.mjs",
+            "dist/index.d.ts",
+            "dist/server/index.mjs",
+            "dist/server/index.d.ts",
+        ] {
+            let artifact = ts_bindings.join(relative_path);
+            if !artifact.is_file() {
+                bail!(
+                    "SPACETIME_PREBUILT_TYPESCRIPT_SDK is set, but the TypeScript SDK artifact is missing: {}",
+                    artifact.display()
+                );
+            }
+        }
+        return Ok(());
+    }
+
+    pnpm(
+        &["--filter", "spacetimedb...", "install", "--frozen-lockfile"],
+        &workspace,
+    )?;
+    pnpm(&["--filter", "spacetimedb", "build"], &workspace)?;
     Ok(())
 }
 

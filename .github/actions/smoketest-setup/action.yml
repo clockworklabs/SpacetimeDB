@@ -1,0 +1,102 @@
+name: Set up smoketests
+description: Set up Rust and the language toolchains used by the smoketests.
+
+inputs:
+  runtime-dependencies:
+    description: Install dependencies needed while executing smoketests.
+    required: false
+    default: "true"
+  rust-cache-enabled:
+    description: Restore and save the Rust cache.
+    required: false
+    default: "true"
+  rust-cache-shared-key:
+    description: Shared key used for the Rust cache.
+    required: false
+    default: spacetimedb
+
+runs:
+  using: composite
+  steps:
+    - uses: dsherret/rust-toolchain-file@v1
+
+    - name: Set default Rust toolchain
+      shell: bash
+      run: rustup default "$(rustup show active-toolchain | cut -d' ' -f1)"
+
+    - name: Cache Rust dependencies
+      if: inputs.rust-cache-enabled == 'true'
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: ${{ github.workspace }}
+        shared-key: ${{ inputs.rust-cache-shared-key }}
+        cache-targets: true
+        cache-bin: false
+        cache-on-failure: false
+        cache-all-crates: false
+        cache-workspace-crates: false
+        prefix-key: v1
+
+    - name: Set up .NET
+      if: inputs.runtime-dependencies == 'true'
+      uses: actions/setup-dotnet@v4
+      with:
+        global-json-file: global.json
+
+    # Install Emscripten for C++ module compilation tests.
+    - name: Install Emscripten (Linux)
+      if: inputs.runtime-dependencies == 'true' && runner.os == 'Linux'
+      shell: bash
+      run: |
+        git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+        cd ~/emsdk
+        ./emsdk install 4.0.21
+        ./emsdk activate 4.0.21
+
+    - name: Install Emscripten (Windows)
+      if: inputs.runtime-dependencies == 'true' && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        git clone https://github.com/emscripten-core/emsdk.git $env:USERPROFILE\emsdk
+        cd $env:USERPROFILE\emsdk
+        .\emsdk install 4.0.21
+        .\emsdk activate 4.0.21
+
+    - name: Install psql (Windows)
+      if: inputs.runtime-dependencies == 'true' && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $true
+        choco install psql -y --no-progress
+        # Chocolatey does not reliably fail the step when installation fails.
+        Get-Command psql
+
+    - name: Update .NET workloads (Windows)
+      if: inputs.runtime-dependencies == 'true' && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $true
+
+        cd modules
+        # The sdk-manifests on windows-latest need to be updated before installing workloads.
+        dotnet workload config --update-mode manifests
+        dotnet workload update --from-previous-sdk
+        # Explicitly install wasi-experimental for .NET 8 SDK.
+        $sdk8Json = '{"sdk":{"version":"8.0.400","rollForward":"latestFeature"}}'
+        $sdk8Json | Out-File -FilePath global.json -Encoding utf8
+        dotnet workload install wasi-experimental
+        Remove-Item global.json
+
+    - name: Override NuGet packages
+      if: inputs.runtime-dependencies == 'true'
+      shell: bash
+      run: |
+        dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
+        dotnet pack -c Release crates/bindings-csharp/Runtime
+        cd sdks/csharp
+        ./tools~/write-nuget-config.sh ../..
+
+    - name: Install cargo-nextest
+      uses: taiki-e/install-action@nextest

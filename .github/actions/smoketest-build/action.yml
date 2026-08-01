@@ -1,0 +1,54 @@
+name: Build smoketest artifacts
+description: Build and upload the nextest archive and smoketest runtime artifacts.
+
+inputs:
+  artifact-name:
+    description: Name of the workflow artifact to upload.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Build smoketest dependencies and archive test binaries
+      shell: bash
+      run: |
+        cargo ci smoketests archive --archive-file smoketest-nextest.tar.zst
+
+        if [[ "${RUNNER_OS}" == "Windows" ]]; then
+          executable_suffix=".exe"
+        else
+          executable_suffix=""
+        fi
+
+        shopt -s nullglob
+        precompiled_modules=(target/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
+        if (( ${#precompiled_modules[@]} == 0 )); then
+          echo "No precompiled smoketest modules were produced."
+          exit 1
+        fi
+
+        tar -czf smoketest-support.tar.gz \
+          crates/bindings-typescript/dist \
+          "target/debug/ci${executable_suffix}" \
+          "target/release/spacetimedb-cli${executable_suffix}" \
+          "target/release/spacetimedb-standalone${executable_suffix}" \
+          "${precompiled_modules[@]}"
+
+    - name: Upload Cargo timings
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}-cargo-timings
+        path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings
+        if-no-files-found: warn
+        overwrite: true
+
+    - name: Upload smoketest build
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          smoketest-nextest.tar.zst
+          smoketest-support.tar.gz
+        if-no-files-found: error
+        overwrite: true

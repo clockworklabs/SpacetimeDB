@@ -1,14 +1,4 @@
-use spacetimedb_smoketests::Smoketest;
-use std::path::PathBuf;
-
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
+use spacetimedb_smoketests::{workspace_root, Smoketest};
 
 /// Ensure that anyone has the permission to call any standard reducer
 #[test]

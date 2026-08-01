@@ -24,7 +24,16 @@ fn next_spawn_id() -> u64 {
 /// Returns the workspace root directory.
 // TODO: Should this use something like `git rev-parse --show-toplevel` to avoid being directory-relative? Or perhaps `CARGO_WORKSPACE_DIR` is set?
 fn workspace_root() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // Archived binaries may execute in a different checkout from the build, so
+    // prefer the workspace root explicitly supplied by the runner.
+    if let Ok(workspace_root) = env::var("SPACETIMEDB_WORKSPACE_ROOT") {
+        return PathBuf::from(workspace_root);
+    }
+
+    // Cargo and nextest set this at runtime, including nextest's remapped path.
+    let manifest_dir = PathBuf::from(
+        std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set when running smoketests"),
+    );
     manifest_dir
         .parent() // crates/
         .and_then(|p| p.parent()) // workspace root
@@ -34,10 +43,9 @@ fn workspace_root() -> PathBuf {
 
 /// Returns the target directory.
 fn target_dir() -> PathBuf {
-    let workspace_root = workspace_root();
     env::var("CARGO_TARGET_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| workspace_root.join("target"))
+        .unwrap_or_else(|_| workspace_root().join("target"))
 }
 
 /// Returns the expected CLI binary path.
