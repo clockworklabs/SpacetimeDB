@@ -14,7 +14,7 @@ members = [
 
     # Views tests
     "views-basic",
-    # "views-broken-namespace" cannot compile: the table and view accessors collide in Rust's type namespace.
+    # "views-broken-namespace" - intentionally broken, uses runtime compilation
     "views-broken-return-type",
     "views-sql",
     "views-auto-migrate",

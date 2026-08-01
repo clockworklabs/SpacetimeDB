@@ -295,7 +295,7 @@ fn test_st_view_tables() {
 #[test]
 fn test_fail_publish_namespace_collision() {
     let mut test = Smoketest::builder()
-        // The duplicate accessor names are rejected by rustc, so warmup cannot produce WASM.
+        // Can't be precompiled because the code is intentionally broken
         .module_code(include_str!("../../modules/views-broken-namespace/src/lib.rs"))
         .autopublish(false)
         .build();
