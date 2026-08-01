@@ -240,6 +240,14 @@ jobs:
           }
           cargo ci smoketests -- --test-threads=1          
 
+      - name: Upload Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-smoketests-${{ matrix.name }}
+          path: ${{ github.workspace }}/target/cargo-timings/
+          retention-days: 30
+
   # this is a no-op version of the above check with a trivially-passing body.
   # we can't just let the check be entirely skipped because each matrix target is a required check,
   # and skipping this check means that the matrix isn't "populated" so the required checks wouldn't be met.
@@ -503,6 +511,14 @@ jobs:
 
       - name: Run ci lint
         run: cargo ci lint
+
+      - name: Upload public lint Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-public-lints
+          path: ${{ github.workspace }}/target/cargo-timings/
+          retention-days: 30
 
   wasm_bindings:
     needs: [merge_queue_noop]
