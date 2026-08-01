@@ -110,15 +110,6 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.10
-
-      - name: Enable sccache
-        shell: bash
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
-
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -239,6 +230,14 @@ jobs:
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
           cargo ci smoketests -- --test-threads=1          
+
+      - name: Upload Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-smoketests-${{ matrix.name }}
+          path: ${{ github.workspace }}/target/cargo-timings/
+          retention-days: 30
 
   # this is a no-op version of the above check with a trivially-passing body.
   # we can't just let the check be entirely skipped because each matrix target is a required check,
@@ -443,14 +442,6 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.10
-
-      - name: Enable sccache
-        run: |
-          echo "SCCACHE_GHA_ENABLED=true" >>"$GITHUB_ENV"
-          echo "RUSTC_WRAPPER=sccache" >>"$GITHUB_ENV"
-
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -503,6 +494,14 @@ jobs:
 
       - name: Run ci lint
         run: cargo ci lint
+
+      - name: Upload public lint Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-public-lints
+          path: ${{ github.workspace }}/target/cargo-timings/
+          retention-days: 30
 
   wasm_bindings:
     needs: [merge_queue_noop]
@@ -804,10 +803,21 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      UNITY_VERSION: 2022.3.32f1
     steps:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
+
+      # Keep this before generation/hydration so ignored build outputs do not affect hashFiles.
+      - name: Restore Unity Library
+        id: restore-unity-library
+        uses: actions/cache/restore@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: Unity-v2-${{ runner.os }}-${{ env.UNITY_VERSION }}-${{ hashFiles('demo/Blackholio/client-unity/**', 'sdks/csharp/**', 'crates/bindings-csharp/BSATN.Runtime/**', 'crates/bindings-csharp/Runtime/**', 'crates/bindings-csharp/Directory.Build.props', 'tools/regen/src/csharp.rs', 'global.json') }}
+          restore-keys: |
+            Unity-v2-${{ runner.os }}-${{ env.UNITY_VERSION }}-
 
       # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
@@ -917,16 +927,10 @@ jobs:
           yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "file:../../../../sdks/csharp"' manifest.json
           cat manifest.json
 
-      - uses: actions/cache@v3
-        with:
-          path: demo/Blackholio/client-unity/Library
-          key: Unity-${{ github.head_ref }}
-          restore-keys: Unity-
-
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
-          unityVersion: 2022.3.32f1 # Adjust Unity version to a valid tag
+          unityVersion: ${{ env.UNITY_VERSION }}
           projectPath: demo/Blackholio/client-unity # Path to the Unity project subdirectory
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           testMode: playmode
@@ -936,6 +940,13 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+
+      - name: Save Unity Library
+        if: ${{ github.ref == 'refs/heads/master' && steps.restore-unity-library.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: ${{ steps.restore-unity-library.outputs.cache-primary-key }}
 
   godot-testsuite:
     needs: [merge_queue_noop, lints]
