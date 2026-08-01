@@ -568,7 +568,7 @@ Use views to return a custom type that omits sensitive columns. The view reads f
 import {schema, t, table} from 'spacetimedb/server';
 
 // Private table with sensitive data
-const userAccount = table(
+const user_account = table(
   { name: 'user_account' },  // Private by default
   {
     id: t.u64().primaryKey().autoInc(),
@@ -581,7 +581,7 @@ const userAccount = table(
   }
 );
 
-const spacetimedb = schema({ userAccount });
+const spacetimedb = schema({ user_account });
 export default spacetimedb;
 
 // Public type without sensitive columns
@@ -597,7 +597,7 @@ export const my_profile = spacetimedb.view(
   t.option(publicUserProfile),
   (ctx) => {
     // Look up the caller's account by their identity (unique index)
-    const user = ctx.db.userAccount.identity.find(ctx.sender);
+    const user = ctx.db.user_account.identity.find(ctx.sender);
     if (!user) return null;
     return {
       id: user.id,
