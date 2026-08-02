@@ -439,4 +439,9 @@ jobs:
           echo "$PWD/shared-bin" >> "$GITHUB_PATH"
 
       - name: Publish GitHub release
+        id: publish-github-release
         run: cargo-release release github-release ${{ github.event.inputs.release_tag }}
+
+      - name: Cancel attached artifact workflow if cancelled
+        if: ${{ cancelled() && steps.publish-github-release.outputs.attach_artifacts_run_id }}
+        run: gh run cancel "${{ steps.publish-github-release.outputs.attach_artifacts_run_id }}" --repo clockworklabs/SpacetimeDB

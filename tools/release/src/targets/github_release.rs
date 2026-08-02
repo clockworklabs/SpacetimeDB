@@ -1,11 +1,7 @@
 use crate::targets::ReleaseTarget;
 use duct::cmd;
 use serde::Deserialize;
-use signal_hook::consts::signal::{SIGINT, SIGTERM};
-use signal_hook::iterator::Signals;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
+use std::io::Write;
 
 const REPO: &str = "clockworklabs/SpacetimeDB";
 
@@ -75,47 +71,22 @@ impl GithubRelease {
     }
 
     fn wait_for_workflow(&self, run_id: &str) -> Result<(), String> {
-        let done = Self::cancel_workflow_on_signal(run_id)?;
         let cmd = cmd!("gh", "run", "watch", run_id, "--repo", REPO, "--exit-status");
-        println!("$> {:?}", cmd);
-        let result = cmd
-            .run()
-            .map(|_| ())
-            .map_err(|e| format!("Failed to execute watch workflow: {e}"));
-        done.store(true, Ordering::SeqCst);
-        result
-    }
-
-    fn cancel_workflow_on_signal(run_id: &str) -> Result<Arc<AtomicBool>, String> {
-        let done = Arc::new(AtomicBool::new(false));
-        let done_for_signal = done.clone();
-        let run_id = run_id.to_owned();
-        let mut signals =
-            Signals::new([SIGINT, SIGTERM]).map_err(|e| format!("Failed to register signal handlers: {e}"))?;
-
-        thread::spawn(move || {
-            if let Some(signal) = signals.forever().next() {
-                if !done_for_signal.load(Ordering::SeqCst) {
-                    eprintln!(
-                        "Received signal {signal}; cancelling attach-artifacts.yml workflow run {run_id} before exiting"
-                    );
-                    if let Err(err) = Self::cancel_workflow(&run_id) {
-                        eprintln!("Failed to cancel attach-artifacts.yml workflow run {run_id}: {err}");
-                    }
-                }
-                std::process::exit(128 + signal);
-            }
-        });
-
-        Ok(done)
-    }
-
-    fn cancel_workflow(run_id: &str) -> Result<(), String> {
-        let cmd = cmd!("gh", "run", "cancel", run_id, "--repo", REPO);
         println!("$> {:?}", cmd);
         cmd.run()
             .map(|_| ())
-            .map_err(|e| format!("Failed to cancel workflow run {run_id}: {e}"))
+            .map_err(|e| format!("Failed to execute watch workflow: {e}"))
+    }
+
+    fn write_github_output(name: &str, value: &str) -> Result<(), String> {
+        let Ok(output_path) = std::env::var("GITHUB_OUTPUT") else {
+            return Ok(());
+        };
+        let mut output = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&output_path)
+            .map_err(|e| format!("Failed to open GITHUB_OUTPUT at {output_path}: {e}"))?;
+        writeln!(output, "{name}={value}").map_err(|e| format!("Failed to write GITHUB_OUTPUT: {e}"))
     }
 
     fn publish_release(&self) -> Result<(), String> {
@@ -138,6 +109,7 @@ impl ReleaseTarget for GithubRelease {
 
         println!("Found draft GitHub release {}: {}", self.version, release.url);
         let run_id = self.dispatch_attach_artifacts()?;
+        Self::write_github_output("attach_artifacts_run_id", &run_id)?;
         self.wait_for_workflow(&run_id)?;
         self.publish_release()?;
         println!("Published GitHub release {}.", self.version);
