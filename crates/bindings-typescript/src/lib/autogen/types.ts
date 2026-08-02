@@ -155,6 +155,7 @@ export const Lifecycle = __t.enum('Lifecycle', {
   Init: __t.unit(),
   OnConnect: __t.unit(),
   OnDisconnect: __t.unit(),
+  Stop: __t.unit(),
 });
 export type Lifecycle = __Infer<typeof Lifecycle>;
 

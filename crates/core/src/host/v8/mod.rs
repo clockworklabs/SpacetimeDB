@@ -535,6 +535,10 @@ impl JsMainInstance {
         self.request(DisconnectClientRequest { client_id }).await
     }
 
+    pub async fn call_module_stop(&self) {
+        self.request(CallModuleStopRequest).await
+    }
+
     pub async fn init_database(&self, program: Program) -> anyhow::Result<InitDatabaseResult> {
         self.request(InitDatabaseRequest { program }).await
     }
@@ -657,6 +661,10 @@ js_main_request! {
     DisconnectClientRequest {
         client_id: ClientActorId,
     } => "disconnect_client", Result<(), ReducerCallError>, DisconnectClient
+}
+
+js_main_request! {
+    CallModuleStopRequest => "call_module_stop", (), CallModuleStop
 }
 
 js_main_request! {
@@ -860,6 +868,8 @@ enum JsMainWorkerRequest {
         reply_tx: JsReplyTx<Result<(), ReducerCallError>>,
         client_id: ClientActorId,
     },
+    /// See [`JsMainInstance::call_module_stop`].
+    CallModuleStop(JsReplyTx<()>),
     /// See [`JsMainInstance::init_database`].
     InitDatabase {
         reply_tx: JsReplyTx<anyhow::Result<InitDatabaseResult>>,
@@ -1487,6 +1497,12 @@ fn handle_main_worker_request(
                 (res, trapped)
             })
         }
+        JsMainWorkerRequest::CallModuleStop(reply_tx) => handle_worker_request("call_module_stop", reply_tx, || {
+            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let mut trapped = false;
+            ModuleHost::call_module_stop_inner(&info, call_reducer, &mut trapped);
+            ((), trapped)
+        }),
         JsMainWorkerRequest::InitDatabase { reply_tx, program } => {
             handle_worker_request("init_database", reply_tx, || {
                 let call_reducer = |tx, params| instance_common.call_reducer_with_tx_offset(tx, params, inst);

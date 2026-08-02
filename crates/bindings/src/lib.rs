@@ -585,6 +585,16 @@ pub use spacetimedb_bindings_macro::table;
 /// If an error occurs in the disconnect reducer,
 /// the client is still recorded as disconnected.
 ///
+/// ### The `stop` reducer
+///
+/// This reducer is marked with `#[spacetimedb::reducer(stop)]`. It is run exactly once,
+/// immediately before the database is permanently destroyed - e.g. via `spacetime delete`,
+/// or a database reset.
+///
+/// It does **not** run when a module is updated or hot-reloaded (the database's data
+/// survives those), nor when a replica is scaled down or evicted while the database
+/// lives on elsewhere.
+///
 // TODO(docs): Move these docs to be on `table`, rather than `reducer`. This will reduce duplication with procedure docs.
 /// # Scheduled reducers
 ///
