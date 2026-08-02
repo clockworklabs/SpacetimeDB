@@ -36,6 +36,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use prometheus::{Histogram, HistogramTimer, IntGauge};
+use rustc_hash::FxHashMap;
 use scopeguard::ScopeGuard;
 use smallvec::SmallVec;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
@@ -254,6 +255,45 @@ pub struct ModuleMetrics {
     pub request_round_trip_subscribe: Histogram,
     pub request_round_trip_unsubscribe: Histogram,
     pub request_round_trip_sql: Histogram,
+    scheduled_function_delay: ScheduledFunctionDelayMetrics,
+}
+
+#[derive(Debug)]
+struct ScheduledFunctionDelayMetrics {
+    database_identity: Identity,
+    metrics_by_function: Mutex<FxHashMap<Box<str>, Histogram>>,
+}
+
+impl ScheduledFunctionDelayMetrics {
+    fn new(database_identity: &Identity) -> Self {
+        Self {
+            database_identity: *database_identity,
+            metrics_by_function: Mutex::new(FxHashMap::default()),
+        }
+    }
+
+    fn observe(&self, function_name: &str, delay: Duration) {
+        let mut metrics_by_function = self.metrics_by_function.lock();
+        let metric = metrics_by_function
+            .entry(Box::<str>::from(function_name))
+            .or_insert_with(|| {
+                WORKER_METRICS
+                    .scheduled_function_delay
+                    .with_label_values(&self.database_identity, function_name)
+            });
+        metric.observe(delay.as_secs_f64());
+    }
+}
+
+impl Drop for ScheduledFunctionDelayMetrics {
+    fn drop(&mut self) {
+        let metrics_by_function = std::mem::take(self.metrics_by_function.get_mut());
+        for function_name in metrics_by_function.keys() {
+            let _ = WORKER_METRICS
+                .scheduled_function_delay
+                .remove_label_values(&self.database_identity, function_name);
+        }
+    }
 }
 
 impl ModuleMetrics {
@@ -272,6 +312,7 @@ impl ModuleMetrics {
         let request_round_trip_sql = WORKER_METRICS
             .request_round_trip
             .with_label_values(&WorkloadType::Sql, db, "");
+        let scheduled_function_delay = ScheduledFunctionDelayMetrics::new(db);
         Self {
             connected_clients,
             ws_clients_spawned,
@@ -279,7 +320,12 @@ impl ModuleMetrics {
             request_round_trip_subscribe,
             request_round_trip_unsubscribe,
             request_round_trip_sql,
+            scheduled_function_delay,
         }
+    }
+
+    pub(in crate::host) fn observe_scheduled_function_delay(&self, function_name: &str, delay: Duration) {
+        self.scheduled_function_delay.observe(function_name, delay);
     }
 }
 
