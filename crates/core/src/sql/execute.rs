@@ -1,14 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::ast::SchemaViewer;
-use crate::db::relational_db::RelationalDB;
+use crate::db::sql::ast::SchemaViewer;
 use crate::energy::FunctionBudget;
 use crate::error::DBError;
 use crate::estimation::{check_row_limit, estimate_rows_scanned};
 use crate::host::module_host::{
-    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallError, ViewCallResult,
-    ViewOutcome, WasmInstance,
+    DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallResult, ViewOutcome,
+    WasmInstance,
 };
 use crate::host::{ArgsTuple, ModuleHost};
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
@@ -17,6 +16,7 @@ use crate::subscription::tx::DeltaTx;
 use anyhow::anyhow;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_engine::relational_db::RelationalDB;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -154,16 +154,16 @@ fn run_inner<I: WasmInstance>(
             tx.metrics.merge(metrics);
 
             // Update views
-            let (result, trapped) = match instance {
+            let (result, _num_views_evaluated, trapped) = match instance {
                 Some(instance) => ModuleHost::call_views_with_tx(tx, instance, auth.caller()),
-                None => (ViewCallResult::default(tx), false),
+                None => (ViewCallResult::default(tx), 0, false),
             };
 
             // Rollback transaction and report metrics if view execution failed
             if let ViewOutcome::Failed(err) = result.outcome {
                 let (_, metrics, reducer) = db.rollback_mut_tx(result.tx);
                 db.report_mut_tx_metrics(reducer, metrics, None);
-                return Err(DBError::View(ViewCallError::InternalError(err)));
+                return Err(DBError::View(spacetimedb_engine::error::ViewError::InternalError(err)));
             }
 
             let tx = result.tx;

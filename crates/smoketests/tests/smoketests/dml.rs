@@ -9,7 +9,11 @@ fn test_subscribe() {
     let test = Smoketest::builder().precompiled_module("dml").build();
 
     // Start subscription FIRST (in background), matching Python semantics
-    let sub = test.subscribe_background(&["SELECT * FROM t"], 2).unwrap();
+    let sub = test
+        .subscribe(&["SELECT * FROM t"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
 
     // Small delay to ensure subscription is connected before inserts
     thread::sleep(Duration::from_millis(500));

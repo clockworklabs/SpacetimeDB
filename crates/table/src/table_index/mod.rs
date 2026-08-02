@@ -45,6 +45,7 @@ use core::{fmt, iter};
 use enum_as_inner::EnumAsInner;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
+use spacetimedb_sats::algebraic_value::Packed;
 use spacetimedb_sats::bsatn::{decode, from_reader};
 use spacetimedb_sats::buffer::{DecodeError, DecodeResult};
 use spacetimedb_sats::de::{self, DeserializeSeed, Error, ProductVisitor};
@@ -1023,6 +1024,58 @@ macro_rules! same_for_all_types {
     };
 }
 
+/// Defines `try_make_unique`, `into_non_unique`, and `iter_duplicates`
+/// for all non-unique ↔ unique variant pairs on `TypedIndex`.
+macro_rules! define_uniqueness_conversions {
+    (
+        btree {
+            $($bt_non:ident <=> $bt_uni:ident : $bt_conv:expr),* $(,)?
+        }
+        hash {
+            $($h_non:ident <=> $h_uni:ident : $h_conv:expr),* $(,)?
+        }
+    ) => {
+        /// Consuming: try to convert a non-unique index to unique.
+        /// Returns the original on error.
+        fn try_make_unique(self) -> Result<Self, (Self, RowPointer)> {
+            match self {
+                $(Self::$bt_non(mm) => mm.check_and_into_unique()
+                    .map(|m| Self::$bt_uni(UniqueBTreeIndex::from_non_unique(m)))
+                    .map_err(|(mm, p)| (Self::$bt_non(mm), p)),)*
+                $(Self::$h_non(hi) => hi.check_and_into_unique()
+                    .map(|m| Self::$h_uni(UniqueHashIndex::from_non_unique(m)))
+                    .map_err(|(hi, p)| (Self::$h_non(hi), p)),)*
+                other => Ok(other),
+            }
+        }
+
+        /// Consuming: convert a unique index back to non-unique.
+        /// Non-unique and direct indices are returned as-is.
+        fn into_non_unique(self) -> Self {
+            match self {
+                $(Self::$bt_uni(um) => Self::$bt_non(um.into_non_unique()),)*
+                $(Self::$h_uni(uh) => Self::$h_non(uh.into_non_unique()),)*
+                other => other,
+            }
+        }
+
+        /// Returns all duplicate keys (count > 1) in this non-unique index,
+        /// with keys converted to [`AlgebraicValue`] via `key_type`.
+        /// Returns an empty vec for unique indices.
+        fn iter_duplicates(&self, key_type: &AlgebraicType) -> Vec<(AlgebraicValue, usize)> {
+            match self {
+                $(Self::$bt_non(mm) => mm.iter_duplicates()
+                    .map(|(k, c)| ($bt_conv(k, key_type), c))
+                    .collect(),)*
+                $(Self::$h_non(hi) => hi.iter_duplicates()
+                    .map(|(k, c)| ($h_conv(k, key_type), c))
+                    .collect(),)*
+                _ => Vec::new(),
+            }
+        }
+    };
+}
+
 impl MemoryUsage for TypedIndex {
     fn heap_usage(&self) -> usize {
         same_for_all_types!(self, this => this.heap_usage())
@@ -1799,6 +1852,108 @@ impl TypedIndex {
     pub fn num_key_bytes(&self) -> u64 {
         same_for_all_types!(self, this => this.num_key_bytes())
     }
+
+    define_uniqueness_conversions! {
+        btree {
+            BTreeBool <=> UniqueBTreeBool : |k: &bool, _: &AlgebraicType| AlgebraicValue::Bool(*k),
+            BTreeU8 <=> UniqueBTreeU8 : |k: &u8, _: &AlgebraicType| AlgebraicValue::U8(*k),
+            BTreeSumTag <=> UniqueBTreeSumTag : |k: &SumTag, _: &AlgebraicType| AlgebraicValue::U8(k.0),
+            BTreeI8 <=> UniqueBTreeI8 : |k: &i8, _: &AlgebraicType| AlgebraicValue::I8(*k),
+            BTreeU16 <=> UniqueBTreeU16 : |k: &u16, _: &AlgebraicType| AlgebraicValue::U16(*k),
+            BTreeI16 <=> UniqueBTreeI16 : |k: &i16, _: &AlgebraicType| AlgebraicValue::I16(*k),
+            BTreeU32 <=> UniqueBTreeU32 : |k: &u32, _: &AlgebraicType| AlgebraicValue::U32(*k),
+            BTreeI32 <=> UniqueBTreeI32 : |k: &i32, _: &AlgebraicType| AlgebraicValue::I32(*k),
+            BTreeU64 <=> UniqueBTreeU64 : |k: &u64, _: &AlgebraicType| AlgebraicValue::U64(*k),
+            BTreeI64 <=> UniqueBTreeI64 : |k: &i64, _: &AlgebraicType| AlgebraicValue::I64(*k),
+            BTreeU128 <=> UniqueBTreeU128 : |k: &u128, _: &AlgebraicType| AlgebraicValue::U128(Packed(*k)),
+            BTreeI128 <=> UniqueBTreeI128 : |k: &i128, _: &AlgebraicType| AlgebraicValue::I128(Packed(*k)),
+            BTreeU256 <=> UniqueBTreeU256 : |k: &u256, _: &AlgebraicType| AlgebraicValue::U256(Box::new(*k)),
+            BTreeI256 <=> UniqueBTreeI256 : |k: &i256, _: &AlgebraicType| AlgebraicValue::I256(Box::new(*k)),
+            BTreeF32 <=> UniqueBTreeF32 : |k: &F32, _: &AlgebraicType| AlgebraicValue::F32(*k),
+            BTreeF64 <=> UniqueBTreeF64 : |k: &F64, _: &AlgebraicType| AlgebraicValue::F64(*k),
+            BTreeString <=> UniqueBTreeString : |k: &str, _: &AlgebraicType| AlgebraicValue::String(k.into()),
+            BTreeAV <=> UniqueBTreeAV : |k: &AlgebraicValue, _: &AlgebraicType| k.clone(),
+            BTreeBytesKey8 <=> UniqueBTreeBytesKey8
+                : |k: &RangeCompatBytesKey<BYTES_KEY_SIZE_8_B>, ty: &AlgebraicType|
+                    TypedIndexKey::BytesKey8B(*k).into_algebraic_value(ty),
+            BTreeBytesKey16 <=> UniqueBTreeBytesKey16
+                : |k: &RangeCompatBytesKey<BYTES_KEY_SIZE_16_B>, ty: &AlgebraicType|
+                    TypedIndexKey::BytesKey16(*k).into_algebraic_value(ty),
+            BTreeBytesKey32 <=> UniqueBTreeBytesKey32
+                : |k: &RangeCompatBytesKey<BYTES_KEY_SIZE_32_B>, ty: &AlgebraicType|
+                    TypedIndexKey::BytesKey32(*k).into_algebraic_value(ty),
+            BTreeBytesKey64 <=> UniqueBTreeBytesKey64
+                : |k: &RangeCompatBytesKey<BYTES_KEY_SIZE_64_B>, ty: &AlgebraicType|
+                    TypedIndexKey::BytesKey64(*k).into_algebraic_value(ty),
+            BTreeBytesKey128 <=> UniqueBTreeBytesKey128
+                : |k: &RangeCompatBytesKey<BYTES_KEY_SIZE_128_B>, ty: &AlgebraicType|
+                    TypedIndexKey::BytesKey128(*k).into_algebraic_value(ty),
+        }
+        hash {
+            HashBool <=> UniqueHashBool : |k: &bool, _: &AlgebraicType| AlgebraicValue::Bool(*k),
+            HashU8 <=> UniqueHashU8 : |k: &u8, _: &AlgebraicType| AlgebraicValue::U8(*k),
+            HashSumTag <=> UniqueHashSumTag : |k: &SumTag, _: &AlgebraicType| AlgebraicValue::U8(k.0),
+            HashI8 <=> UniqueHashI8 : |k: &i8, _: &AlgebraicType| AlgebraicValue::I8(*k),
+            HashU16 <=> UniqueHashU16 : |k: &u16, _: &AlgebraicType| AlgebraicValue::U16(*k),
+            HashI16 <=> UniqueHashI16 : |k: &i16, _: &AlgebraicType| AlgebraicValue::I16(*k),
+            HashU32 <=> UniqueHashU32 : |k: &u32, _: &AlgebraicType| AlgebraicValue::U32(*k),
+            HashI32 <=> UniqueHashI32 : |k: &i32, _: &AlgebraicType| AlgebraicValue::I32(*k),
+            HashU64 <=> UniqueHashU64 : |k: &u64, _: &AlgebraicType| AlgebraicValue::U64(*k),
+            HashI64 <=> UniqueHashI64 : |k: &i64, _: &AlgebraicType| AlgebraicValue::I64(*k),
+            HashU128 <=> UniqueHashU128 : |k: &u128, _: &AlgebraicType| AlgebraicValue::U128(Packed(*k)),
+            HashI128 <=> UniqueHashI128 : |k: &i128, _: &AlgebraicType| AlgebraicValue::I128(Packed(*k)),
+            HashU256 <=> UniqueHashU256 : |k: &u256, _: &AlgebraicType| AlgebraicValue::U256(Box::new(*k)),
+            HashI256 <=> UniqueHashI256 : |k: &i256, _: &AlgebraicType| AlgebraicValue::I256(Box::new(*k)),
+            HashF32 <=> UniqueHashF32 : |k: &F32, _: &AlgebraicType| AlgebraicValue::F32(*k),
+            HashF64 <=> UniqueHashF64 : |k: &F64, _: &AlgebraicType| AlgebraicValue::F64(*k),
+            HashString <=> UniqueHashString : |k: &str, _: &AlgebraicType| AlgebraicValue::String(k.into()),
+            HashAV <=> UniqueHashAV : |k: &AlgebraicValue, _: &AlgebraicType| k.clone(),
+            HashBytesKey8 <=> UniqueHashBytesKey8
+                : |k: &BytesKey<BYTES_KEY_SIZE_8_H>, ty: &AlgebraicType|
+                    TypedIndexKey::BytesKey8H(*k).into_algebraic_value(ty),
+            HashBytesKey24 <=> UniqueHashBytesKey24
+                : |k: &BytesKey<BYTES_KEY_SIZE_24_H>, ty: &AlgebraicType|
+                    TypedIndexKey::BytesKey24(*k).into_algebraic_value(ty),
+            HashBytesKey56 <=> UniqueHashBytesKey56
+                : |k: &BytesKey<BYTES_KEY_SIZE_56_H>, ty: &AlgebraicType|
+                    TypedIndexKey::BytesKey56(*k).into_algebraic_value(ty),
+            HashBytesKey120 <=> UniqueHashBytesKey120
+                : |k: &BytesKey<BYTES_KEY_SIZE_120_H>, ty: &AlgebraicType|
+                    TypedIndexKey::BytesKey120(*k).into_algebraic_value(ty),
+        }
+    }
+
+    /// Convert this non-unique index to a unique index in place.
+    ///
+    /// Returns `Ok(())` if the index was already unique or was successfully converted.
+    /// Returns `Err(ptr)` where `ptr` witnesses a duplicate key, leaving `self` unchanged.
+    fn make_unique(&mut self) -> Result<(), RowPointer> {
+        if self.is_unique() {
+            return Ok(());
+        }
+
+        let dummy = Self::BTreeBool(<_>::default());
+        let old = core::mem::replace(self, dummy);
+        match old.try_make_unique() {
+            Ok(new) => {
+                *self = new;
+                Ok(())
+            }
+            Err((restored, ptr)) => {
+                *self = restored;
+                Err(ptr)
+            }
+        }
+    }
+
+    /// Convert this unique index back to a non-unique index in place.
+    ///
+    /// No-op for already non-unique or direct indices.
+    fn make_non_unique(&mut self) {
+        let dummy = Self::BTreeBool(<_>::default());
+        let old = core::mem::replace(self, dummy);
+        *self = old.into_non_unique();
+    }
 }
 
 /// A key into a [`TableIndex`].
@@ -2548,6 +2703,28 @@ impl TableIndex {
 
             _ => unreachable!("non-matching index kinds"),
         }
+    }
+
+    /// Convert this non-unique index to a unique index in place.
+    ///
+    /// Returns `Ok(())` if the index was already unique or was successfully converted.
+    /// Returns `Err(ptr)` where `ptr` witnesses a duplicate key, leaving `self` unchanged.
+    pub fn make_unique(&mut self) -> Result<(), RowPointer> {
+        self.idx.make_unique()
+    }
+
+    /// Convert this unique index back to a non-unique index in place.
+    ///
+    /// No-op for already non-unique or direct indices.
+    pub fn make_non_unique(&mut self) {
+        self.idx.make_non_unique()
+    }
+
+    /// Returns all duplicate keys (count > 1) in this index,
+    /// with keys converted to [`AlgebraicValue`] via the index's key type.
+    /// Returns an empty vec for unique indices.
+    pub fn iter_duplicates(&self) -> Vec<(AlgebraicValue, usize)> {
+        self.idx.iter_duplicates(&self.key_type)
     }
 
     /// Deletes all entries from the index, leaving it empty.

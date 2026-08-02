@@ -19,6 +19,18 @@ pub struct ResultSimpleEnumI32TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `result_simple_enum_i_32`.
+pub struct ResultSimpleEnumI32TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ResultSimpleEnumI32TableAccessor {
+    type Row = ResultSimpleEnumI32;
+    type Handle<'db> = ResultSimpleEnumI32TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.result_simple_enum_i_32()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `result_simple_enum_i_32`.
 ///
@@ -40,6 +52,18 @@ impl ResultSimpleEnumI32TableAccess for super::RemoteTables {
 
 pub struct ResultSimpleEnumI32InsertCallbackId(__sdk::CallbackId);
 pub struct ResultSimpleEnumI32DeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for ResultSimpleEnumI32TableHandle<'ctx> {
+    type Row = ResultSimpleEnumI32;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ResultSimpleEnumI32> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for ResultSimpleEnumI32TableHandle<'ctx> {
     type Row = ResultSimpleEnumI32;
@@ -65,6 +89,36 @@ impl<'ctx> __sdk::Table for ResultSimpleEnumI32TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = ResultSimpleEnumI32DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ResultSimpleEnumI32DeleteCallbackId {
+        ResultSimpleEnumI32DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ResultSimpleEnumI32DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for ResultSimpleEnumI32TableHandle<'ctx> {
+    type InsertCallbackId = ResultSimpleEnumI32InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ResultSimpleEnumI32InsertCallbackId {
+        ResultSimpleEnumI32InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ResultSimpleEnumI32InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ResultSimpleEnumI32TableHandle<'ctx> {
     type DeleteCallbackId = ResultSimpleEnumI32DeleteCallbackId;
 
     fn on_delete(

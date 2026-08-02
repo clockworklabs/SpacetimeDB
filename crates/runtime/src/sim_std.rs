@@ -159,7 +159,39 @@ fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
     })
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
+    unsafe extern "C" fn macos_getrandom(buf: *mut u8, buflen: usize, flags: u32) -> isize {
+        if flags != 0 {
+            return -1;
+        }
+
+        let mut filled = 0;
+        while filled < buflen {
+            let chunk_len = (buflen - filled).min(256);
+            if unsafe { real_getentropy()(buf.add(filled).cast(), chunk_len) } != 0 {
+                return -1;
+            }
+            filled += chunk_len;
+        }
+        buflen as isize
+    }
+
+    macos_getrandom
+}
+
+#[cfg(target_os = "macos")]
+fn real_getentropy() -> unsafe extern "C" fn(*mut libc::c_void, usize) -> libc::c_int {
+    type GetentropyFn = unsafe extern "C" fn(*mut libc::c_void, usize) -> libc::c_int;
+    static GETENTROPY: OnceLock<GetentropyFn> = OnceLock::new();
+    *GETENTROPY.get_or_init(|| unsafe {
+        let ptr = libc::dlsym(libc::RTLD_NEXT, c"getentropy".as_ptr().cast());
+        assert!(!ptr.is_null(), "failed to resolve original getentropy");
+        std::mem::transmute(ptr)
+    })
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn real_getrandom() -> unsafe extern "C" fn(*mut u8, usize, u32) -> isize {
     compile_error!("unsupported OS for DST getrandom override");
 }

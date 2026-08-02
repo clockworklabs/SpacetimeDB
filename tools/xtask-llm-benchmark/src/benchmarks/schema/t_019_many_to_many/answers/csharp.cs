@@ -16,7 +16,7 @@ public static partial class Module
         public string Title;
     }
 
-    [Table(Accessor = "Membership")]
+    [Table(Accessor = "Membership", Public = true)]
     [SpacetimeDB.Index.BTree(Accessor = "by_user",  Columns = new[] { nameof(UserId) })]
     [SpacetimeDB.Index.BTree(Accessor = "by_group", Columns = new[] { nameof(GroupId) })]
     public partial struct Membership

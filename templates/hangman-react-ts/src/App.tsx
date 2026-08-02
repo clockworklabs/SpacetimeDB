@@ -192,7 +192,7 @@ function App() {
   const { identity, isActive: connected } = useSpacetimeDB();
   const [rounds] = useTable(tables.currentRound);
   const [players] = useTable(tables.player);
-  const [boards] = useTable(tables.my_progress);
+  const [boards] = useTable(tables.myProgress);
   const [results] = useTable(tables.roundResult);
   const setName = useReducer(reducers.setName);
   const guessLetter = useReducer(reducers.guessLetter);

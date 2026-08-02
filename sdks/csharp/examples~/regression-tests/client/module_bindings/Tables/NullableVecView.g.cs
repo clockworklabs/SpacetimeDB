@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class NullableVecViewHandle : RemoteTableHandle<EventContext, NullableVec>
         {
-            protected override string RemoteTableName => "nullable_vec_view";
+            public override string RemoteTableName => "nullable_vec_view";
 
             internal NullableVecViewHandle(DbConnection conn) : base(conn)
             {

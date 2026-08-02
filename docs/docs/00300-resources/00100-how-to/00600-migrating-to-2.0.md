@@ -399,7 +399,11 @@ Conn->Db->DamageEvent->OnInsert.AddDynamic(this, &AMyActor::OnDamageEvent);
 Conn->SubscriptionBuilder()
     ->OnApplied(OnAppliedDelegate)
     ->OnError(OnErrorDelegate)
-    ->Subscribe({ TEXT("SELECT * FROM damage_event") });
+    ->AddQuery([](const FQueryBuilder& Q)
+    {
+        return Q.From.DamageEvent();
+    })
+    ->Subscribe();
 ```
 
 </TabItem>
@@ -585,14 +589,18 @@ ctx.subscription_builder()
 <TabItem value="cpp-unreal" label="Unreal C++">
 
 ```cpp
-// 2.0 -- same as 1.0 today
+// 2.0 -- typed query builder
 Conn->SubscriptionBuilder()
     ->OnApplied(OnAppliedDelegate)
     ->OnError(OnErrorDelegate)
-    ->Subscribe({ TEXT("SELECT * FROM person") });
+    ->AddQuery([](const FQueryBuilder& Q)
+    {
+        return Q.From.Person();
+    })
+    ->Subscribe();
 ```
 
-The Unreal SDK does not expose typed query builders yet. For now, use SQL strings. Typed query builder support is planned.
+Unreal 2.0 now supports typed query-builder subscriptions in C++. Use `AddQuery(...)` as the default for table and event-table subscriptions.
 
 </TabItem>
 </Tabs>
@@ -640,7 +648,11 @@ ctx.subscription_builder()
 Conn->SubscriptionBuilder()
     ->OnApplied(OnAppliedDelegate)
     ->OnError(OnErrorDelegate)
-    ->Subscribe({ TEXT("SELECT * FROM damage_event") });
+    ->AddQuery([](const FQueryBuilder& Q)
+    {
+        return Q.From.DamageEvent();
+    })
+    ->Subscribe();
 ```
 
 </TabItem>
@@ -1782,6 +1794,8 @@ spacetime sql <database> "SELECT * FROM my_table"
   - Replace with `_then()` callbacks for your own reducer calls
   - Unreal: replace with generated `On<Reducer>` delegates on the calling connection
   - Replace with event tables + `on_insert` for cross-client notifications
+- [ ] Migrate Unreal subscription SQL strings to typed queries where appropriate
+  - Use `Conn->SubscriptionBuilder()->AddQuery(...)->Subscribe()` instead of `Subscribe({ TEXT("SELECT ...") })`
 - [ ] Update `Event::UnknownTransaction` matches to `Event::Transaction`
 - [ ] For each reducer whose args you were observing from other clients:
   1. Create an `#[table(..., event)]` on the server

@@ -123,7 +123,8 @@ export class TableCacheImpl<
     const columns = idx.columns;
 
     // Extract the tuple key for this btree index (column order preserved)
-    const getKey = (row: Row): readonly unknown[] => columns.map(c => row[c]);
+    const getKey = (row: Row): readonly unknown[] =>
+      columns.map(c => (row as Record<string, unknown>)[c]);
 
     // The server’s ranged scan fixes all prefix cols to equality and applies
     // the bound only to the *last* term. We mirror that.

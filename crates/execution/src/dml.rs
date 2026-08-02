@@ -1,6 +1,7 @@
 use anyhow::Result;
 use spacetimedb_lib::{metrics::ExecutionMetrics, AlgebraicValue, ProductValue};
 use spacetimedb_physical_plan::dml::{DeletePlan, InsertPlan, MutationPlan, UpdatePlan};
+use spacetimedb_physical_plan::plan::ParamResolver;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::size_of::SizeOf;
 
@@ -30,11 +31,16 @@ impl From<MutationPlan> for MutExecutor {
 }
 
 impl MutExecutor {
-    pub fn execute<Tx: MutDatastore>(&self, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
+    pub fn execute<Tx: MutDatastore>(
+        &self,
+        tx: &mut Tx,
+        params: &impl ParamResolver,
+        metrics: &mut ExecutionMetrics,
+    ) -> Result<()> {
         match self {
             Self::Insert(exec) => exec.execute(tx, metrics),
-            Self::Delete(exec) => exec.execute(tx, metrics),
-            Self::Update(exec) => exec.execute(tx, metrics),
+            Self::Delete(exec) => exec.execute(tx, params, metrics),
+            Self::Update(exec) => exec.execute(tx, params, metrics),
         }
     }
 }
@@ -84,10 +90,15 @@ impl From<DeletePlan> for DeleteExecutor {
 }
 
 impl DeleteExecutor {
-    fn execute<Tx: MutDatastore>(&self, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
+    fn execute<Tx: MutDatastore>(
+        &self,
+        tx: &mut Tx,
+        params: &impl ParamResolver,
+        metrics: &mut ExecutionMetrics,
+    ) -> Result<()> {
         // TODO: Delete by row id instead of product value
         let mut deletes = vec![];
-        self.filter.execute(tx, metrics, &mut |row| {
+        self.filter.execute(tx, params, metrics, &mut |row| {
             deletes.push(row.to_product_value());
             Ok(())
         })?;
@@ -122,9 +133,14 @@ impl From<UpdatePlan> for UpdateExecutor {
 }
 
 impl UpdateExecutor {
-    fn execute<Tx: MutDatastore>(&self, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
+    fn execute<Tx: MutDatastore>(
+        &self,
+        tx: &mut Tx,
+        params: &impl ParamResolver,
+        metrics: &mut ExecutionMetrics,
+    ) -> Result<()> {
         let mut deletes = vec![];
-        self.filter.execute(tx, metrics, &mut |row| {
+        self.filter.execute(tx, params, metrics, &mut |row| {
             deletes.push(row.to_product_value());
             Ok(())
         })?;

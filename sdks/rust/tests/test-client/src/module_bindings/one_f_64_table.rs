@@ -18,6 +18,18 @@ pub struct OneF64TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_f_64`.
+pub struct OneF64TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneF64TableAccessor {
+    type Row = OneF64;
+    type Handle<'db> = OneF64TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_f_64()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_f_64`.
 ///
@@ -39,6 +51,18 @@ impl OneF64TableAccess for super::RemoteTables {
 
 pub struct OneF64InsertCallbackId(__sdk::CallbackId);
 pub struct OneF64DeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for OneF64TableHandle<'ctx> {
+    type Row = OneF64;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OneF64> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for OneF64TableHandle<'ctx> {
     type Row = OneF64;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for OneF64TableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OneF64DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneF64DeleteCallbackId {
+        OneF64DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OneF64DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OneF64TableHandle<'ctx> {
+    type InsertCallbackId = OneF64InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneF64InsertCallbackId {
+        OneF64InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OneF64InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OneF64TableHandle<'ctx> {
     type DeleteCallbackId = OneF64DeleteCallbackId;
 
     fn on_delete(

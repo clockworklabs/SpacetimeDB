@@ -21,7 +21,7 @@ fn interval_row_entry(scheduled_id: u64, duration_micros: u64) -> Value {
 }
 
 fn collect_updates_after_call(test: &Smoketest, queries: &[&str], reducer_or_procedure: &str) -> Vec<Value> {
-    let sub = test.subscribe_background(queries, 2).unwrap();
+    let sub = test.subscribe(queries).expect_rows(2).background().unwrap();
     test.call(reducer_or_procedure, &[]).unwrap();
     sub.collect().unwrap()
 }
@@ -98,7 +98,9 @@ fn test_scheduled_table_subscription_repeated_reducer() {
 
     // Subscribe to empty scheduled_table.
     let sub = test
-        .subscribe_background(&["SELECT * FROM scheduled_table"], 2)
+        .subscribe(&["SELECT * FROM scheduled_table"])
+        .expect_rows(2)
+        .background()
         .unwrap();
 
     // Call a reducer to schedule a repeated reducer
@@ -198,7 +200,9 @@ fn test_scheduled_procedure_table_subscription_repeated_procedure() {
     let test = Smoketest::builder().precompiled_module("schedule-procedure").build();
 
     let sub = test
-        .subscribe_background(&["SELECT * FROM scheduled_table"], 2)
+        .subscribe(&["SELECT * FROM scheduled_table"])
+        .expect_rows(2)
+        .background()
         .unwrap();
 
     test.call("schedule_repeated_procedure", &[]).unwrap();
@@ -232,7 +236,11 @@ fn test_scheduled_procedure_table_subscription_repeated_procedure() {
 fn test_volatile_nonatomic_schedule_immediate() {
     let test = Smoketest::builder().precompiled_module("schedule-volatile").build();
 
-    let sub = test.subscribe_background(&["SELECT * FROM my_table"], 2).unwrap();
+    let sub = test
+        .subscribe(&["SELECT * FROM my_table"])
+        .expect_rows(2)
+        .background()
+        .unwrap();
 
     // Insert directly first
     test.call("do_insert", &[r#""yay!""#]).unwrap();

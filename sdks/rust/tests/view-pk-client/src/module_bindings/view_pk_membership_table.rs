@@ -18,6 +18,18 @@ pub struct ViewPkMembershipTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `view_pk_membership`.
+pub struct ViewPkMembershipTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ViewPkMembershipTableAccessor {
+    type Row = ViewPkMembership;
+    type Handle<'db> = ViewPkMembershipTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.view_pk_membership()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `view_pk_membership`.
 ///
@@ -39,6 +51,18 @@ impl ViewPkMembershipTableAccess for super::RemoteTables {
 
 pub struct ViewPkMembershipInsertCallbackId(__sdk::CallbackId);
 pub struct ViewPkMembershipDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for ViewPkMembershipTableHandle<'ctx> {
+    type Row = ViewPkMembership;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = ViewPkMembership> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for ViewPkMembershipTableHandle<'ctx> {
     type Row = ViewPkMembership;
@@ -78,9 +102,54 @@ impl<'ctx> __sdk::Table for ViewPkMembershipTableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for ViewPkMembershipTableHandle<'ctx> {
+    type InsertCallbackId = ViewPkMembershipInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ViewPkMembershipInsertCallbackId {
+        ViewPkMembershipInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: ViewPkMembershipInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for ViewPkMembershipTableHandle<'ctx> {
+    type DeleteCallbackId = ViewPkMembershipDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> ViewPkMembershipDeleteCallbackId {
+        ViewPkMembershipDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: ViewPkMembershipDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct ViewPkMembershipUpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for ViewPkMembershipTableHandle<'ctx> {
+    type UpdateCallbackId = ViewPkMembershipUpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> ViewPkMembershipUpdateCallbackId {
+        ViewPkMembershipUpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: ViewPkMembershipUpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for ViewPkMembershipTableHandle<'ctx> {
     type UpdateCallbackId = ViewPkMembershipUpdateCallbackId;
 
     fn on_update(

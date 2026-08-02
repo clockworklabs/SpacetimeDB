@@ -50,7 +50,7 @@ fn test_reject_schema_changes() {
 
     // Try to update with incompatible schema (adding column without default)
     test.write_module_code(MODULE_CODE_UPDATED_INCOMPATIBLE).unwrap();
-    let result = test.publish_module_clear(false);
+    let result = test.publish().current_database().unwrap().run();
 
     assert!(
         result.is_err(),
@@ -201,7 +201,11 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
 fn test_add_table_auto_migration() {
     let mut test = Smoketest::builder().module_code(MODULE_CODE_INIT).build();
 
-    let sub = test.subscribe_background(&["select * from person"], 4).unwrap();
+    let sub = test
+        .subscribe(&["select * from person"])
+        .expect_rows(4)
+        .background()
+        .unwrap();
 
     // Add initial data
     test.call("add_person", &["Robert", "Student"]).unwrap();
@@ -228,7 +232,7 @@ fn test_add_table_auto_migration() {
 
     // Update module without clearing database
     test.write_module_code(MODULE_CODE_UPDATED).unwrap();
-    test.publish_module_clear(false).unwrap();
+    test.publish().current_database().unwrap().run().unwrap();
 
     // Add new data with updated schema
     test.call("add_person", &["Husserl", "Student"]).unwrap();
@@ -344,10 +348,7 @@ fn test_add_table_columns() {
     let mut subs = Vec::with_capacity(NUM_SUBSCRIBERS);
     for _ in 0..NUM_SUBSCRIBERS {
         // The migration below should disconnect all existing subscribers.
-        subs.push(
-            test.subscribe_background_until_closed(&["select * from person"])
-                .unwrap(),
-        );
+        subs.push(test.subscribe(&["select * from person"]).background().unwrap());
     }
 
     // Insert under initial schema
@@ -356,7 +357,7 @@ fn test_add_table_columns() {
     // First upgrade: add age & mass columns
     test.write_module_code(MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED).unwrap();
     let identity = test.database_identity.clone().unwrap();
-    test.publish_module_with_options(&identity, false, true).unwrap();
+    test.publish().name(&identity).break_clients(true).run().unwrap();
     test.call("print_persons", &["FIRST_UPDATE"]).unwrap();
 
     let logs1 = test.logs(100).unwrap();
@@ -394,7 +395,7 @@ fn test_add_table_columns() {
     // Second upgrade
     test.write_module_code(MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED_AGAIN)
         .unwrap();
-    test.publish_module_with_options(&identity, false, true).unwrap();
+    test.publish().name(&identity).break_clients(true).run().unwrap();
     test.call("print_persons", &["UPDATE_2"]).unwrap();
 
     let logs2 = test.logs(100).unwrap();
@@ -477,12 +478,18 @@ fn test_remove_primary_key_issue_3934() {
 
     // Step 2: Remove primary key. Should succeed.
     test.write_module_code(MODULE_CODE_WITHOUT_PK).unwrap();
-    test.publish_module_with_options(&identity, false, true)
+    test.publish()
+        .name(&identity)
+        .break_clients(true)
+        .run()
         .expect("Removing primary key should succeed");
 
     // Step 3: Trivial change (add a reducer). This is where #3934 crashes.
     test.write_module_code(MODULE_CODE_WITHOUT_PK_V2).unwrap();
-    test.publish_module_with_options(&identity, false, true)
+    test.publish()
+        .name(&identity)
+        .break_clients(true)
+        .run()
         .expect("Publish after PK removal should succeed (issue #3934)");
 }
 
@@ -532,12 +539,18 @@ fn automigrate_reschema_event_table_arbitrarily() {
 
     // Step 2: Reschema event table. Should work fine, even though we'd reject this change for a non-event table.
     test.write_module_code(MODULE_CODE_WITH_EVENT_TABLE_AFTER).unwrap();
-    test.publish_module_with_options(&identity, false, true)
+    test.publish()
+        .name(&identity)
+        .break_clients(true)
+        .run()
         .expect("Changing schema of event table should succeed");
 
     // Step 3: Reschema event table right back. Should still work fine.
     test.write_module_code(MODULE_CODE_WITH_EVENT_TABLE_BEFORE).unwrap();
-    test.publish_module_with_options(&identity, false, true)
+    test.publish()
+        .name(&identity)
+        .break_clients(true)
+        .run()
         .expect("Changing schema of event table should succeed");
 }
 
@@ -608,7 +621,10 @@ fn automigrate_drop_event_table_replays_after_restart() {
 
     // Drop the event table.
     test.write_module_code(MODULE_CODE_DROP_EVENT_TABLE_AFTER).unwrap();
-    test.publish_module_with_options(&identity, false, true)
+    test.publish()
+        .name(&identity)
+        .break_clients(true)
+        .run()
         .expect("Dropping the event table should succeed");
 
     // Wait until data written after the drop is durable,

@@ -19,6 +19,18 @@ pub struct Person2TableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `person_2`.
+pub struct Person2TableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for Person2TableAccessor {
+    type Row = Person2;
+    type Handle<'db> = Person2TableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.person_2()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `person_2`.
 ///
@@ -40,6 +52,18 @@ impl Person2TableAccess for super::RemoteTables {
 
 pub struct Person2InsertCallbackId(__sdk::CallbackId);
 pub struct Person2DeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for Person2TableHandle<'ctx> {
+    type Row = Person2;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = Person2> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for Person2TableHandle<'ctx> {
     type Row = Person2;
@@ -79,9 +103,54 @@ impl<'ctx> __sdk::Table for Person2TableHandle<'ctx> {
     }
 }
 
+impl<'ctx> __sdk::WithInsert for Person2TableHandle<'ctx> {
+    type InsertCallbackId = Person2InsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> Person2InsertCallbackId {
+        Person2InsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: Person2InsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for Person2TableHandle<'ctx> {
+    type DeleteCallbackId = Person2DeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> Person2DeleteCallbackId {
+        Person2DeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: Person2DeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
 pub struct Person2UpdateCallbackId(__sdk::CallbackId);
 
 impl<'ctx> __sdk::TableWithPrimaryKey for Person2TableHandle<'ctx> {
+    type UpdateCallbackId = Person2UpdateCallbackId;
+
+    fn on_update(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row, &Self::Row) + Send + 'static,
+    ) -> Person2UpdateCallbackId {
+        Person2UpdateCallbackId(self.imp.on_update(Box::new(callback)))
+    }
+
+    fn remove_on_update(&self, callback: Person2UpdateCallbackId) {
+        self.imp.remove_on_update(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithUpdate for Person2TableHandle<'ctx> {
     type UpdateCallbackId = Person2UpdateCallbackId;
 
     fn on_update(

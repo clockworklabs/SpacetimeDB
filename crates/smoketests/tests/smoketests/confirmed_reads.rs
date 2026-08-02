@@ -11,7 +11,10 @@ fn test_confirmed_reads_receive_updates() {
 
     // Start subscription in background with confirmed flag
     let sub = test
-        .subscribe_background_confirmed(&["SELECT * FROM person"], 2)
+        .subscribe(&["SELECT * FROM person"])
+        .expect_rows(2)
+        .confirmed(true)
+        .background()
         .unwrap();
 
     // Insert via reducer

@@ -19,7 +19,7 @@ use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_sats::uuid::Uuid;
 use spacetimedb_schema::schema::ColumnSchema;
-use spacetimedb_sql_parser::ast::{self, BinOp, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
+use spacetimedb_sql_parser::ast::{self, BinOp, Parameter, ProjectElem, SqlExpr, SqlIdent, SqlLiteral};
 use spacetimedb_sql_parser::parser::recursion;
 use std::{ops::Deref, str::FromStr};
 
@@ -99,6 +99,14 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),
+        (SqlExpr::Param(Parameter::Sender), expected) => {
+            let ty = match expected {
+                Some(ty) if ty.is_identity() || ty.is_bytes() => ty.clone(),
+                Some(ty) => return Err(UnexpectedType::new(&AlgebraicType::identity(), ty).into()),
+                None => AlgebraicType::identity(),
+            };
+            Ok(Expr::Param(Parameter::Sender, ty))
+        }
         (SqlExpr::Field(SqlIdent(table), SqlIdent(field)), expected) => {
             let table_type = vars.deref().get(&*table).ok_or_else(|| Unresolved::var(&table))?;
             let ColumnSchema { col_pos, col_type, .. } = table_type
@@ -123,7 +131,9 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             let b = _type_expr(vars, *b, Some(&AlgebraicType::Bool), depth + 1)?;
             Ok(Expr::LogOp(op, Box::new(a), Box::new(b)))
         }
-        (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool)) if matches!(&*a, SqlExpr::Lit(_)) => {
+        (SqlExpr::Bin(a, b, op), None | Some(AlgebraicType::Bool))
+            if matches!(&*a, SqlExpr::Lit(_) | SqlExpr::Param(_)) =>
+        {
             let b = _type_expr(vars, *b, None, depth + 1)?;
             let a = _type_expr(vars, *a, Some(b.ty()), depth + 1)?;
             if !op_supports_type(op, a.ty()) {
@@ -140,9 +150,8 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
             Ok(Expr::BinOp(op, Box::new(a), Box::new(b)))
         }
         (SqlExpr::Bin(..) | SqlExpr::Log(..), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
-        // Both unqualified names as well as parameters are syntactic constructs.
-        // Unqualified names are qualified and parameters are resolved before type checking.
-        (SqlExpr::Var(_) | SqlExpr::Param(_), _) => unreachable!(),
+        // Unqualified names are syntactic constructs and are qualified before type checking.
+        (SqlExpr::Var(_), _) => unreachable!(),
     }
 }
 

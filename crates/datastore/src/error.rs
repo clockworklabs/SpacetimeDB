@@ -57,8 +57,6 @@ pub enum ViewError {
     TypeMismatchOption,
     #[error("expected ProductValue in view result")]
     ExpectedProduct,
-    #[error("failed to serialize view arguments")]
-    SerializeArgs,
 }
 
 #[derive(Error, Debug)]

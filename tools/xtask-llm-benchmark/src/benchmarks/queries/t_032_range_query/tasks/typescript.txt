@@ -7,7 +7,7 @@ TABLES
     - name: string
     - price: number (u32, index btree)
 
-- priceRangeResult
+- price_range_result
   - Fields:
     - productId: number (u64, primary key)
     - name: string
@@ -16,4 +16,4 @@ TABLES
 REDUCERS
 - find_in_price_range(ctx, { minPrice: number (u32), maxPrice: number (u32) })
   - Iterate all products
-  - For each product where price >= minPrice AND price <= maxPrice, insert a priceRangeResult row
+  - For each product where price >= minPrice AND price <= maxPrice, insert a price_range_result row

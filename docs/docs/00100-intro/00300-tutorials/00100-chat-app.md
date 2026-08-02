@@ -68,18 +68,12 @@ No additional installation needed - Node.js/npm will handle dependencies.
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Next we need to [install .NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) so that we can build and publish our module.
+Next we need to [install .NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) so that we can build and publish our module.
 
-You may already have .NET 8 installed:
+You may already have .NET 10 installed:
 
 ```bash
 dotnet --list-sdks
-```
-
-.NET 8.0 is the earliest to have the `wasi-experimental` workload that we rely on, but requires manual activation:
-
-```bash
-dotnet workload install wasi-experimental
 ```
 
 </TabItem>
@@ -1444,6 +1438,10 @@ Here we are configuring our SpacetimeDB connection by specifying the server URI,
 
 We are also using `localStorage` to store our SpacetimeDB credentials. This way, we can reconnect to SpacetimeDB with the same `Identity` and token if we refresh the page. The first time we connect, we won't have any credentials stored, so we pass `undefined` to the `withToken` method. This will cause SpacetimeDB to generate new credentials for us.
 
+:::warning
+With no token, SpacetimeDB issues a server-issued identity and a non-expiring token; persist it and pass it back on reconnect to keep the same identity. A lost token can't be recovered, so self-issued identities are for development. For production, authenticate with an OIDC provider such as SpacetimeAuth, which handles token lifecycle. See [Authentication](../../00200-core-concepts/00500-authentication.md).
+:::
+
 If you chose a different name for your database, replace `quickstart-chat` with that name, or republish your module as `quickstart-chat`.
 
 Our React hooks will subscribe to the data in SpacetimeDB. When we subscribe, SpacetimeDB will run our subscription queries and store the result in a local "client cache". This cache will be updated in real-time as the data in the table changes on the server.
@@ -1532,7 +1530,7 @@ Modify the `onSubmitNewName` callback by adding a call to the `setName` reducer:
 const onSubmitNewName = (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
   setSettingName(false);
-  setName({ name: newName });
+  setName({ name: newName }).catch(console.error);
 };
 ```
 
@@ -1542,11 +1540,11 @@ Next, modify the `onSubmitMessage` callback by adding a call to the `sendMessage
 const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
   setNewMessage('');
-  sendMessage({ text: newMessage });
+  sendMessage({ text: newMessage }).catch(console.error);
 };
 ```
 
-SpacetimeDB generated these functions for us based on the type information provided by our module. Calling these functions will invoke our reducers in our module.
+SpacetimeDB generated these functions for us based on the type information provided by our module. Calling these functions will invoke our reducers in our module. They return a `Promise` that rejects if the reducer fails, so we log any error to the console.
 
 Let's try out our app to see the result of these changes.
 

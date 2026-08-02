@@ -19,7 +19,10 @@
 
 import { DbConnection, tables } from './module_bindings/index.js';
 
-const LOCALHOST = 'http://localhost:3000';
+const SERVER_URL = process.env.SPACETIME_SDK_TEST_SERVER_URL;
+if (!SERVER_URL) {
+  throw new Error('Missing SPACETIME_SDK_TEST_SERVER_URL');
+}
 
 function dbNameOrPanic(): string {
   const name = process.env.SPACETIME_SDK_TEST_DB_NAME;
@@ -53,7 +56,7 @@ function connectThen(callback: (db: DbConnection) => void): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const conn = DbConnection.builder()
       .withDatabaseName(name)
-      .withUri(LOCALHOST)
+      .withUri(SERVER_URL)
       .onConnect((ctx, _identity, _token) => {
         try {
           callback(ctx);

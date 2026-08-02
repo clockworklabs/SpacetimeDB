@@ -1,8 +1,8 @@
 use super::execution_unit::QueryHash;
 use super::module_subscription_manager::Plan;
 use crate::db::relational_db::Tx;
+use crate::db::sql::ast::SchemaViewer;
 use crate::error::{DBError, SubscriptionError};
-use crate::sql::ast::SchemaViewer;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;

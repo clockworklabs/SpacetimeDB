@@ -2,7 +2,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Accessor = "User")]
+    [Table(Accessor = "User", Public = true)]
     public partial struct User
     {
         [PrimaryKey, AutoInc] public ulong Id;

@@ -150,7 +150,7 @@ struct PgSpacetimeDB<T> {
 
 impl<T> PgSpacetimeDB<T>
 where
-    T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone,
+    T: ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone + 'static,
 {
     async fn exe_sql(&self, query: String) -> PgWireResult<Vec<Response>> {
         let params = self.cached.lock().await.clone().unwrap();
@@ -314,7 +314,7 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
 #[async_trait]
 impl<T> SimpleQueryHandler for PgSpacetimeDB<T>
 where
-    T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone,
+    T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone + 'static,
 {
     async fn do_query<C>(&self, _client: &mut C, query: &str) -> PgWireResult<Vec<Response>>
     where
@@ -347,7 +347,7 @@ impl<T> PgSpacetimeDBFactory<T> {
 
 impl<T> PgWireServerHandlers for PgSpacetimeDBFactory<T>
 where
-    T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone,
+    T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDelegate + Authorization + Clone + 'static,
 {
     fn simple_query_handler(&self) -> Arc<impl SimpleQueryHandler> {
         self.handler.clone()

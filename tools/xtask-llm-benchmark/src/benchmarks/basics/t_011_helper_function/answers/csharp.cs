@@ -2,7 +2,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Accessor = "Result")]
+    [Table(Accessor = "Result", Public = true)]
     public partial struct Result
     {
         [PrimaryKey] public int Id;

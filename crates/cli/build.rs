@@ -202,6 +202,7 @@ fn discover_templates(templates_dir: &Path) -> Vec<TemplateInfo> {
         if !metadata_path.exists() {
             continue;
         }
+        println!("cargo:rerun-if-changed={}", metadata_path.display());
 
         let metadata_content = match fs::read_to_string(&metadata_path) {
             Ok(content) => content,
@@ -261,32 +262,7 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
         panic!("Template '{}' has no git-tracked files! Check that the directory exists and contains files tracked by git.", source);
     }
 
-    // Example: /Users/user/SpacetimeDB
     let repo_root = get_repo_root();
-    let repo_root_canonical = std::fs::canonicalize(&repo_root).unwrap();
-    // Example: /Users/user/SpacetimeDB/crates/cli
-    let manifest_canonical = Path::new(manifest_dir).canonicalize().unwrap();
-    // Example: crates/cli
-    let manifest_rel = manifest_canonical.strip_prefix(&repo_root_canonical).unwrap();
-
-    // Example for inside crate: /Users/user/SpacetimeDB/crates/cli/templates/basic-rs/server
-    // Example for outside crate: /Users/user/SpacetimeDB/modules/chat-console-rs
-    let resolved_canonical = repo_root.join(&resolved_base).canonicalize().unwrap();
-
-    // If the files are outside of the cli crate we need to copy them to the crate directory,
-    // so they're included properly even when the crate is published
-    let local_copy_dir = if resolved_canonical.strip_prefix(&manifest_canonical).is_err() {
-        // Example source: "../../modules/quickstart-chat"
-        // Sanitized: "parent_parent_modules_quickstart-chat"
-        let sanitized_source = source.replace("/", "_").replace("\\", "_").replace("..", "parent");
-        // Example: /Users/user/SpacetimeDB/crates/cli/.templates/parent_parent_modules_quickstart-chat
-        let copy_dir = Path::new(manifest_dir).join(".templates").join(&sanitized_source);
-        fs::create_dir_all(&copy_dir).expect("Failed to create .templates directory");
-
-        Some(copy_dir)
-    } else {
-        None
-    };
 
     code.push_str("    {\n");
     code.push_str("        let mut files = HashMap::new();\n");
@@ -313,38 +289,13 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
         // Example: /Users/user/SpacetimeDB/modules/quickstart-chat/src/lib.rs
         let full_path = repo_root.join(&file_path);
         if full_path.exists() && full_path.is_file() {
-            let include_path = if let Some(ref copy_dir) = local_copy_dir {
-                // Outside crate: copy to .templates
-                // Example dest_file: /Users/user/SpacetimeDB/crates/cli/.templates/parent_parent_modules_chat-console-rs/src/lib.rs
-                let dest_file = copy_dir.join(relative_path);
-                fs::create_dir_all(dest_file.parent().unwrap()).expect("Failed to create parent directory");
-                copy_if_changed(&full_path, &dest_file)
-                    .unwrap_or_else(|_| panic!("Failed to copy file {:?} to {:?}", full_path, dest_file));
+            let include_path = file_path.to_str().unwrap().replace("\\", "/");
+            println!("cargo:rerun-if-changed={}", full_path.display());
 
-                // Example relative_to_manifest: .templates/parent_parent_modules_chat-console-rs/src/lib.rs
-                let relative_to_manifest = dest_file.strip_prefix(manifest_dir).unwrap();
-                let path_str = relative_to_manifest.to_str().unwrap().replace("\\", "/");
-                // Watch the original file for changes
-                // Example: modules/chat-console-rs/src/lib.rs
-                println!("cargo:rerun-if-changed={}", full_path.display());
-                path_str
-            } else {
-                // Inside crate: use path relative to CARGO_MANIFEST_DIR
-                // Example file_path: crates/cli/templates/basic-rs/server/src/lib.rs
-                // Example manifest_rel: crates/cli
-                // Result: templates/basic-rs/server/src/lib.rs
-                let relative_to_manifest = file_path.strip_prefix(manifest_rel).unwrap();
-                let path_str = relative_to_manifest.to_str().unwrap().replace("\\", "/");
-                // Example: crates/cli/templates/basic-rs/server/src/lib.rs
-                println!("cargo:rerun-if-changed={}", full_path.display());
-                path_str
-            };
-
-            // Example include_path (inside crate): "templates/basic-rs/server/src/lib.rs"
-            // Example include_path (outside crate): ".templates/parent_parent_modules_chat-console-rs/src/lib.rs"
+            // Example include_path: "templates/basic-rs/src/main.rs"
             // Example relative_str: "src/lib.rs"
             code.push_str(&format!(
-                "        files.insert(\"{}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{}\")));\n",
+                "        files.insert(\"{}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/../../{}\")));\n",
                 relative_str, include_path
             ));
         }
@@ -559,22 +510,6 @@ fn write_if_changed(path: &Path, contents: &[u8]) -> io::Result<()> {
             file.write_all(contents)
         }
     }
-}
-
-fn copy_if_changed(src: &Path, dst: &Path) -> io::Result<()> {
-    let src_bytes = fs::read(src)?;
-    if let Ok(existing) = fs::read(dst)
-        && existing == src_bytes
-    {
-        return Ok(());
-    }
-
-    if let Some(parent) = dst.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let mut file = fs::File::create(dst)?;
-    file.write_all(&src_bytes)
 }
 
 /// Discover skill directories under skills/. Each directory containing a SKILL.md

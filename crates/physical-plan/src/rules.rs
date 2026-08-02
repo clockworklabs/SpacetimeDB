@@ -19,7 +19,6 @@
 //! * [UniqueHashJoinRule]
 //!   Mark hash join as unique
 use anyhow::{bail, Result};
-use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
@@ -269,7 +268,7 @@ impl RewriteRule for PushConstEq {
             !plan.any(&|plan| !matches!(plan, PhysicalPlan::TableScan(..) | PhysicalPlan::Filter(..)))
         };
         if let PhysicalPlan::Filter(input, PhysicalExpr::BinOp(_, expr, value)) = plan
-            && let (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value)
+            && let (PhysicalExpr::Field(TupleField { label, .. }), Some(_)) = (&**expr, runtime_const_expr(value))
         {
             return (input.has_table_scan(Some(label)) && !is_filter(input)).then_some(*label);
         }
@@ -337,7 +336,8 @@ impl RewriteRule for PushConstAnd {
         if let PhysicalPlan::Filter(input, PhysicalExpr::LogOp(LogOp::And, exprs)) = plan {
             return exprs.iter().find_map(|expr| {
                 if let PhysicalExpr::BinOp(_, expr, value) = expr
-                    && let (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) = (&**expr, &**value)
+                    && let (PhysicalExpr::Field(TupleField { label, .. }), Some(_)) =
+                        (&**expr, runtime_const_expr(value))
                 {
                     return (input.has_table_scan(Some(label)) && !is_filter(input)).then_some(*label);
                 }
@@ -354,8 +354,8 @@ impl RewriteRule for PushConstAnd {
                 let mut root_exprs = vec![];
                 for expr in exprs {
                     if let PhysicalExpr::BinOp(_, lhs, value) = &expr
-                        && let (PhysicalExpr::Field(TupleField { label: var, .. }), PhysicalExpr::Value(_)) =
-                            (&**lhs, &**value)
+                        && let (PhysicalExpr::Field(TupleField { label: var, .. }), Some(_)) =
+                            (&**lhs, runtime_const_expr(value))
                         && var == &relvar
                     {
                         leaf_exprs.push(expr);
@@ -412,11 +412,15 @@ fn top_level_filter_exprs(expr: &PhysicalExpr) -> Vec<&PhysicalExpr> {
     }
 }
 
-fn equality_term(expr: &PhysicalExpr, label: Label) -> Option<(ColId, AlgebraicValue)> {
+fn runtime_const_expr(expr: &PhysicalExpr) -> Option<&PhysicalExpr> {
+    matches!(expr, PhysicalExpr::Value(_) | PhysicalExpr::Param(..)).then_some(expr)
+}
+
+fn equality_term(expr: &PhysicalExpr, label: Label) -> Option<(ColId, PhysicalExpr)> {
     let PhysicalExpr::BinOp(BinOp::Eq, lhs, rhs) = expr else {
         return None;
     };
-    let (PhysicalExpr::Field(field), PhysicalExpr::Value(value)) = (&**lhs, &**rhs) else {
+    let (PhysicalExpr::Field(field), value) = (&**lhs, runtime_const_expr(rhs)?) else {
         return None;
     };
     (field.label == label).then(|| (ColId(field.field_pos as u16), value.clone()))
@@ -466,7 +470,7 @@ impl RewriteRule for IxScanFromPredicates {
                     continue;
                 };
                 consumed_exprs.push(*expr_pos);
-                key_parts.push(PhysicalExpr::Value(value.clone()));
+                key_parts.push(value.clone());
             }
 
             if consumed_exprs.len() != cols.len() {
@@ -632,8 +636,8 @@ impl RewriteRule for ReorderDeltaJoinRhs {
 /// Always prefer an index join to a hash join
 pub(crate) struct HashToIxJoin;
 
-/// A filter term of the form `rhs_col = constant`.
-type EqConstFilterTerm = (ColId, AlgebraicValue);
+/// A filter term of the form `rhs_col = runtime_constant`.
+type EqConstFilterTerm = (ColId, PhysicalExpr);
 
 /// Planning metadata derived while proving `HashJoin -> IxJoin` is valid.
 #[derive(Clone)]
@@ -647,7 +651,7 @@ pub(crate) struct HashToIxJoinInfo {
     consumed_filter_terms: Vec<EqConstFilterTerm>,
 }
 
-/// Collect RHS predicates of the form `rhs.col = constant`.
+/// Collect RHS predicates of the form `rhs.col = runtime_constant`.
 ///
 /// This is intentionally narrow: only equality predicates over RHS fields are
 /// useful for building exact prefix probes into multi-column indexes.
@@ -655,12 +659,12 @@ fn rhs_eq_constants(expr: &PhysicalExpr, rhs_label: Label) -> Vec<EqConstFilterT
     match expr {
         PhysicalExpr::BinOp(BinOp::Eq, lhs, rhs)
             if matches!(
-                (&**lhs, &**rhs),
-                (PhysicalExpr::Field(TupleField { label, .. }), PhysicalExpr::Value(_)) if *label == rhs_label
+                (&**lhs, runtime_const_expr(rhs)),
+                (PhysicalExpr::Field(TupleField { label, .. }), Some(_)) if *label == rhs_label
             ) =>
         {
-            match (&**lhs, &**rhs) {
-                (PhysicalExpr::Field(TupleField { field_pos, .. }), PhysicalExpr::Value(value)) => {
+            match (&**lhs, runtime_const_expr(rhs)) {
+                (PhysicalExpr::Field(TupleField { field_pos, .. }), Some(value)) => {
                     vec![(ColId(*field_pos as u16), value.clone())]
                 }
                 _ => vec![],
@@ -735,7 +739,7 @@ fn ix_join_candidate(
         let mut consumed_filter_terms: Vec<EqConstFilterTerm> = vec![];
         for col in cols.iter().take(cols.len().saturating_sub(1).into()) {
             let (_, value) = constants.iter().find(|(candidate, _)| *candidate == col)?;
-            key_parts.push(PhysicalExpr::Value(value.clone()));
+            key_parts.push(value.clone());
             consumed_filter_terms.push((col, value.clone()));
         }
         key_parts.push(PhysicalExpr::Field(lhs_field.clone()));
@@ -755,7 +759,7 @@ fn remove_consumed_filter_terms(
 ) -> Option<PhysicalExpr> {
     // These terms are now represented by the point probe; keeping them in a
     // residual filter is redundant work.
-    let is_consumed = |col_id: ColId, value: &AlgebraicValue| {
+    let is_consumed = |col_id: ColId, value: &PhysicalExpr| {
         consumed_filter_terms
             .iter()
             .any(|(consumed_col, consumed_val)| consumed_col == &col_id && consumed_val == value)
@@ -764,8 +768,8 @@ fn remove_consumed_filter_terms(
     match expr {
         PhysicalExpr::BinOp(BinOp::Eq, lhs, rhs)
             if matches!(
-                (&*lhs, &*rhs),
-                (PhysicalExpr::Field(TupleField { label, field_pos, .. }), PhysicalExpr::Value(value))
+                (&*lhs, runtime_const_expr(&rhs)),
+                (PhysicalExpr::Field(TupleField { label, field_pos, .. }), Some(value))
                     if *label == rhs_label && is_consumed(ColId(*field_pos as u16), value)
             ) =>
         {

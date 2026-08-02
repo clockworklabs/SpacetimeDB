@@ -23,6 +23,19 @@ export default tseslint.config(
       '**/templates/angular-ts/.angular/**',
     ],
   },
+  {
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'Promise',
+          property: 'withResolvers',
+          message:
+            'Use createDeferred() instead; Promise.withResolvers is ES2024 and not supported in all SDK runtimes.',
+        },
+      ],
+    },
+  },
   js.configs.recommended,
   {
     files: ['**/*.{js,cjs,mjs}'],

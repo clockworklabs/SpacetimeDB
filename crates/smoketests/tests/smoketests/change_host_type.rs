@@ -1,5 +1,5 @@
 use spacetimedb::messages::control_db::HostType;
-use spacetimedb_smoketests::{require_local_server, require_pnpm, Smoketest};
+use spacetimedb_smoketests::{require_local_server, require_pnpm, ModuleLanguage, Smoketest};
 
 const TS_MODULE_BASIC: &str = r#"import { schema, t, table } from "spacetimedb/server";
 
@@ -35,11 +35,14 @@ fn test_update_with_different_host_type() {
         .autopublish(false)
         .build();
 
-    let database_identity = test.publish_module().unwrap();
+    let database_identity = test.publish().run().unwrap();
     add_person(&test, PERSON_A, "initial");
 
     // Publish a TS module.
-    test.publish_typescript_module_source_clear("modules-basic-ts", &database_identity, TS_MODULE_BASIC, false)
+    test.publish()
+        .name(&database_identity)
+        .source(ModuleLanguage::TypeScript, "modules-basic-ts", TS_MODULE_BASIC)
+        .run()
         .unwrap();
     add_person(&test, PERSON_B, "post module update");
 
@@ -48,7 +51,7 @@ fn test_update_with_different_host_type() {
     assert_has_rows(&test, &[PERSON_A, PERSON_B], "post restart");
 
     // Change back to original module and assert that the data is still there.
-    test.publish_module_clear(false).unwrap();
+    test.publish().current_database().unwrap().run().unwrap();
     add_person(&test, PERSON_C, "post revert");
 
     // Restart once more and assert that the data is still there.
@@ -99,7 +102,10 @@ fn test_repair_host_type() {
 
     let mut test = Smoketest::builder().autopublish(false).build();
 
-    test.publish_typescript_module_source("modules-basic-ts", "basic-ts-change-host-type", TS_MODULE_BASIC)
+    test.publish()
+        .name("basic-ts-change-host-type")
+        .source(ModuleLanguage::TypeScript, "modules-basic-ts", TS_MODULE_BASIC)
+        .run()
         .unwrap();
     assert_host_type(&test, HostType::Js);
     // Set the program kind to the wrong value.

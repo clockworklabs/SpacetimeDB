@@ -707,3 +707,16 @@ SPACETIMEDB_PROCEDURE(std::string, get_my_schema_via_http, ProcedureContext ctx)
         return result.error();
     }
 }
+
+SPACETIMEDB_HTTP_HANDLER(get_simple, HandlerContext ctx, HttpRequest request) {
+    return HttpResponse{
+        200,
+        HttpVersion::Http11,
+        {},
+        HttpBody::from_string("ok"),
+    };
+}
+
+SPACETIMEDB_HTTP_ROUTER(router) {
+    return Router().get("/get", get_simple);
+}

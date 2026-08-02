@@ -517,22 +517,19 @@ fn prepare_scheduled_procedure_call(
         Err(err) => {
             // All we can do here is log an error.
             log::error!("could not determine scheduled procedure or its parameters: {err:#}");
-            let reschedule = delete_scheduled_function_row(module_info, db, id, Some(tx), None, inst_common, inst);
+            let reschedule = id.and_then(|id| {
+                let reschedule_from = (Timestamp::now(), Instant::now());
+                delete_scheduled_function_row(module_info, db, id, Some(tx), reschedule_from, inst_common, inst)
+            });
             return ScheduledProcedureStep::Done(CallScheduledFunctionResult { reschedule }, false);
         }
     };
 
     // For scheduled procedures, it's incorrect to retry them if execution aborts midway,
     // so we must remove the schedule row before executing.
-    let reschedule = delete_scheduled_function_row(
-        module_info,
-        db,
-        id,
-        Some(tx),
-        Some((timestamp, instant)),
-        inst_common,
-        inst,
-    );
+    let reschedule = id.and_then(|id| {
+        delete_scheduled_function_row(module_info, db, id, Some(tx), (timestamp, instant), inst_common, inst)
+    });
     ScheduledProcedureStep::Procedure { params, reschedule }
 }
 
@@ -548,20 +545,23 @@ fn call_scheduled_reducer_until_done(
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
     let params = reducer_call_params_for_queued_item(module_info, db, &tx, item);
-    let params = match params {
+    let (timestamp, instant, params) = match params {
         // If the function was already deleted, leave the `ScheduledFunction`
         // in the database for when the module restarts.
         Ok(None) => return (CallScheduledFunctionResult { reschedule: None }, false),
-        Ok(Some((_timestamp, _instant, params))) => params,
+        Ok(Some(params)) => params,
         Err(err) => {
             // All we can do here is log an error.
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
-            let reschedule = delete_scheduled_function_row(module_info, db, id, Some(tx), None, inst_common, inst);
+            let reschedule = id.and_then(|id| {
+                let reschedule_from = (Timestamp::now(), Instant::now());
+                delete_scheduled_function_row(module_info, db, id, Some(tx), reschedule_from, inst_common, inst)
+            });
             return (CallScheduledFunctionResult { reschedule }, false);
         }
     };
 
-    call_scheduled_reducer_with_tx(module_info, db, id, tx, params, inst_common, inst)
+    call_scheduled_reducer_with_tx(module_info, db, id, tx, (timestamp, instant), params, inst_common, inst)
 }
 
 fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
@@ -571,11 +571,13 @@ fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn call_scheduled_reducer_with_tx(
     module_info: &ModuleInfo,
     db: &RelationalDB,
     id: Option<ScheduledFunctionId>,
     mut tx: MutTxId,
+    reschedule_from: (Timestamp, Instant),
     params: CallReducerParams,
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
@@ -605,7 +607,8 @@ fn call_scheduled_reducer_with_tx(
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         inst_common.call_reducer_with_tx(Some(tx), params, inst)
     }));
-    let reschedule = delete_scheduled_function_row(module_info, db, id, None, None, inst_common, inst);
+    let reschedule =
+        id.and_then(|id| delete_scheduled_function_row(module_info, db, id, None, reschedule_from, inst_common, inst));
     // Currently, we drop the return value from the function call. In the future,
     // we might want to handle it somehow.
     let trapped = match result {
@@ -624,23 +627,21 @@ fn call_scheduled_reducer_with_tx(
 fn delete_scheduled_function_row(
     module_info: &ModuleInfo,
     db: &RelationalDB,
-    id: Option<ScheduledFunctionId>,
+    id: ScheduledFunctionId,
     tx: Option<MutTxId>,
-    timestamp: Option<(Timestamp, Instant)>,
+    reschedule_from: (Timestamp, Instant),
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
 ) -> Option<Reschedule> {
-    id.and_then(|id| {
-        let (timestamp, instant) = timestamp.unwrap_or_else(|| (Timestamp::now(), Instant::now()));
-        let tx = tx.unwrap_or_else(|| db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
-        let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id, inst_common, inst)?;
-        let ScheduleAt::Interval(dur) = schedule_at else {
-            return None;
-        };
-        Some(Reschedule {
-            at_ts: schedule_at.to_timestamp_from(timestamp),
-            at_real: instant + dur.to_duration_abs(),
-        })
+    let (timestamp, instant) = reschedule_from;
+    let tx = tx.unwrap_or_else(|| db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
+    let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id, inst_common, inst)?;
+    let ScheduleAt::Interval(dur) = schedule_at else {
+        return None;
+    };
+    Some(Reschedule {
+        at_ts: schedule_at.to_timestamp_from(timestamp),
+        at_real: instant + dur.to_duration_abs(),
     })
 }
 
@@ -690,7 +691,8 @@ fn refresh_views_then_commit_and_broadcast(
     inst: &mut impl WasmInstance,
 ) {
     let timestamp = Timestamp::now();
-    let (view_result, trapped) = inst_common.call_views_with_tx(tx, module_info.database_identity, inst, timestamp);
+    let (view_result, _n_evaluated, trapped) =
+        inst_common.call_views_with_tx(tx, module_info.database_identity, inst, timestamp);
     let mut status = match view_result.outcome {
         crate::host::module_host::ViewOutcome::Success => EventStatus::Committed(DatabaseUpdate::default()),
         crate::host::module_host::ViewOutcome::Failed(err) => EventStatus::FailedInternal(err),

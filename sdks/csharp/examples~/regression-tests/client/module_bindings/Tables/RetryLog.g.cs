@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class RetryLogHandle : RemoteTableHandle<EventContext, RetryLog>
         {
-            protected override string RemoteTableName => "retry_log";
+            public override string RemoteTableName => "retry_log";
 
             public sealed class IdUniqueIndex : UniqueIndexBase<uint>
             {

@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that defines a table and these five empty reducers.
 
 TABLES
-- emptyTable
+- empty_table
   - Fields:
     - id: number (i32, primary key)
 

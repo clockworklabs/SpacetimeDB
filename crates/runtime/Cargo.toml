@@ -19,6 +19,4 @@ libc = { version = "0.2", optional = true }
 futures.workspace = true
 
 [features]
-default = ["tokio"]
-tokio = []
 simulation = ["dep:async-task", "dep:spin", "dep:libc"]

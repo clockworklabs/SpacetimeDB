@@ -5,7 +5,7 @@ public static partial class Module
     [Table(Accessor = "Entity")]
     public partial struct Entity { [PrimaryKey, AutoInc] public ulong Id; }
 
-    [Table(Accessor = "Position")]
+    [Table(Accessor = "Position", Public = true)]
     public partial struct Position
     {
         [PrimaryKey] public int EntityId;
@@ -21,7 +21,7 @@ public static partial class Module
         public int VY;
     }
 
-    [Table(Accessor = "NextPosition")]
+    [Table(Accessor = "NextPosition", Public = true)]
     public partial struct NextPosition
     {
         [PrimaryKey] public int EntityId;

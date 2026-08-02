@@ -30,6 +30,6 @@ in
       # copy the detected sha256 from the error message in here, then re-run.
       aarch64-linux = "0000000000000000000000000000000000000000000000000000";
       x86_64-darwin = "0000000000000000000000000000000000000000000000000000";
-      aarch64-darwin = "0000000000000000000000000000000000000000000000000000";
+      aarch64-darwin = "sha256-yHa1eydVCrfYGgrZANbzgmmf25p7ui1VMas2A7BhG6k=";
     };
   }

@@ -15,10 +15,20 @@ namespace SpacetimeDB.Types
     {
         public sealed class WhereTestQueryHandle : RemoteTableHandle<EventContext, WhereTest>
         {
-            protected override string RemoteTableName => "where_test_query";
+            public override string RemoteTableName => "where_test_query";
+
+            public sealed class IdUniqueIndex : UniqueIndexBase<uint>
+            {
+                protected override uint GetKey(WhereTest row) => row.Id;
+
+                public IdUniqueIndex(WhereTestQueryHandle table) : base(table) { }
+            }
+
+            public readonly IdUniqueIndex Id;
 
             internal WhereTestQueryHandle(DbConnection conn) : base(conn)
             {
+                Id = new(this);
             }
 
             protected override object GetPrimaryKey(WhereTest row) => row.Id;

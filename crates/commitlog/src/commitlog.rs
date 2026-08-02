@@ -1,6 +1,6 @@
 use std::{
     fmt::Debug,
-    io,
+    io::{self, Seek},
     marker::PhantomData,
     mem,
     ops::{Range, RangeBounds},
@@ -748,6 +748,8 @@ fn reset_to_internal(repo: &impl Repo, segments: &[u64], offset: u64) -> io::Res
                 }
 
                 file.ftruncate(offset, byte_offset)?;
+                // We should be reopening the log anyway, but just in case.
+                file.seek(io::SeekFrom::End(0))?;
                 // Some filesystems require fsync after ftruncate.
                 file.fsync()?;
                 break;

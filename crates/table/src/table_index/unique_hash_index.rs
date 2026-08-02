@@ -38,6 +38,39 @@ impl<K: KeySize + Eq + Hash + MemoryUsage> MemoryUsage for UniqueHashIndex<K> {
     }
 }
 
+impl<K: KeySize + Eq + Hash> UniqueHashIndex<K> {
+    /// Construct a `UniqueHashIndex` from a `HashMap<K, RowPointer>`.
+    ///
+    /// Each entry is inserted via [`Index::insert`] so that `num_key_bytes`
+    /// is correctly maintained regardless of `K::MemoStorage`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the map contains duplicate keys (should never happen
+    /// since the caller verified uniqueness).
+    pub fn from_non_unique(map: HashMap<K, RowPointer, RandomState>) -> Self {
+        let mut result = Self::default();
+        for (key, ptr) in map {
+            result
+                .insert(key, ptr)
+                .expect("duplicate key in supposedly unique hash map");
+        }
+        result
+    }
+
+    /// Convert this unique hash index back into a non-unique `HashIndex`.
+    ///
+    /// This is lossless: each key maps to exactly one `RowPointer`.
+    pub fn into_non_unique(self) -> super::hash_index::HashIndex<K> {
+        let mut hi = super::hash_index::HashIndex::default();
+        for (key, ptr) in self.map {
+            // HashIndex::insert always succeeds.
+            let _ = <super::hash_index::HashIndex<K> as Index>::insert(&mut hi, key, ptr);
+        }
+        hi
+    }
+}
+
 impl<K: KeySize + Eq + Hash> Index for UniqueHashIndex<K> {
     type Key = K;
 

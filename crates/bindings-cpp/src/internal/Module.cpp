@@ -691,6 +691,10 @@ void Module::RegisterExplicitFunctionName(const std::string& source_name, const 
 void Module::RegisterExplicitIndexName(const std::string& source_name, const std::string& canonical_name) {
     getV10Builder().RegisterExplicitIndexName(source_name, canonical_name);
 }
+
+void Module::RegisterViewPrimaryKey(const std::string& view_source_name, std::vector<std::string> columns) {
+    getV10Builder().RegisterViewPrimaryKey(view_source_name, std::move(columns));
+}
 }
 }
 

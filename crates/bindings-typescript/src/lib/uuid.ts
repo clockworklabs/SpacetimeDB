@@ -1,5 +1,6 @@
 import { Timestamp } from './timestamp';
 import { AlgebraicType } from './algebraic_type.ts';
+import { coerceToBigInt, u128ToHexString } from './util';
 
 export type UuidAlgebraicType = {
   tag: 'Product';
@@ -67,11 +68,15 @@ export class Uuid {
    * @throws {Error} If the value is outside the valid UUID range
    */
   constructor(u: bigint) {
+    // Coerce so callers who arrive via JSON (where bigint precision is
+    // lost) hit the range check rather than a cryptic `Cannot mix
+    // BigInt and other types` error.
+    const v = coerceToBigInt(u, 'Uuid');
     // Must fit in exactly 16 bytes
-    if (u < 0n || u > Uuid.MAX_UUID_BIGINT) {
+    if (v < 0n || v > Uuid.MAX_UUID_BIGINT) {
       throw new Error('Invalid UUID: must be between 0 and `MAX_UUID_BIGINT`');
     }
-    this.__uuid__ = u;
+    this.__uuid__ = v;
   }
 
   /**
@@ -226,10 +231,14 @@ export class Uuid {
     return new Uuid(v);
   }
 
+  /** Convert to hex string without a 0x prefix. */
+  toHexString(): string {
+    return u128ToHexString(this.asBigInt());
+  }
+
   /** Convert to string (hyphenated form). */
   toString(): string {
-    const bytes = Uuid.bigIntToBytes(this.__uuid__);
-    const hex = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+    const hex = this.toHexString();
 
     // Format as 8-4-4-4-12
     return (

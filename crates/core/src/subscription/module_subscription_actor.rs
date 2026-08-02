@@ -20,7 +20,6 @@ use crate::host::{self, ModuleHost};
 use crate::subscription::query::is_subscribe_to_all_tables;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::{collect_table_update, collect_table_update_for_view, execute_plans};
-use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use core::panic;
 use parking_lot::RwLock;
@@ -32,16 +31,17 @@ use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet}
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
-use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_durability::TxOffset;
+use spacetimedb_execution::ExecutionParams;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, identity::AuthCtx};
+use spacetimedb_metrics::utils::IntGaugeExt;
 use spacetimedb_physical_plan::plan::ProjectPlan;
-use spacetimedb_primitives::ArgId;
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_table::static_assert_size;
 use std::{
@@ -467,6 +467,7 @@ impl ModuleSubscriptions {
             .unwrap_or_default();
 
         let tx = DeltaTx::from(tx);
+        let params = ExecutionParams::from_sender(sender.id.identity);
 
         // TODO: See the comment on `collect_table_update_for_view`.
         // The following view and non-view branches should be merged together,
@@ -479,6 +480,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name.clone(),
                 &tx,
+                &params,
                 update_type,
                 &self.bsatn_rlb_pool,
             )
@@ -488,6 +490,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name.clone(),
                 &tx,
+                &params,
                 update_type,
                 &self.bsatn_rlb_pool,
             )
@@ -499,6 +502,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name,
                 &tx,
+                &params,
                 update_type,
                 &JsonRowListBuilderFakePool,
             )
@@ -508,6 +512,7 @@ impl ModuleSubscriptions {
                 table_id,
                 table_name,
                 &tx,
+                &params,
                 update_type,
                 &JsonRowListBuilderFakePool,
             )
@@ -1849,7 +1854,7 @@ impl ModuleSubscriptions {
     /// and subsequently downgrades to a read-only transaction.
     ///
     /// Unlike [`Self::materialize_views_and_downgrade_tx`] which populates the views' backing tables,
-    /// this method just decrements the subscriber count in `st_view_sub`.
+    /// this method just decrements the subscriber count in view lifecycle state.
     /// Views without any subscribers are cleaned up async.
     fn unsubscribe_views_and_downgrade_tx(
         &self,
@@ -1863,7 +1868,7 @@ impl ModuleSubscriptions {
         Ok(self.guard_tx(tx, opts))
     }
 
-    /// We unsubscribe from views by decrementing the subscriber count in `st_view_sub`.
+    /// We unsubscribe from views by decrementing the subscriber count in the view lifecycle state.
     /// Views without any subscribers are cleaned up async.
     fn _unsubscribe_views(
         tx: &mut MutTxId,
@@ -1873,7 +1878,13 @@ impl ModuleSubscriptions {
         let mut view_ids = HashSet::new();
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
-            tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender)?;
+            let is_anonymous = tx.lookup_st_view(view_id)?.is_anonymous;
+            let view_call = if is_anonymous {
+                ViewCallInfo::anonymous(view_id)
+            } else {
+                ViewCallInfo::sender(view_id, sender)
+            };
+            tx.unsubscribe_view(view_call, sender)?;
         }
         Ok(())
     }
@@ -2034,6 +2045,7 @@ mod tests {
     use spacetimedb_client_api_messages::energy::FunctionBudget;
     use spacetimedb_client_api_messages::websocket::{common::RowListLen as _, v1 as ws_v1, v2 as ws_v2};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
+    use spacetimedb_datastore::locking_tx_datastore::MutTxId;
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use spacetimedb_execution::dml::MutDatastore;
     use spacetimedb_lib::bsatn::ToBsatn;
@@ -2530,7 +2542,8 @@ mod tests {
         subs.remove_subscriber(client_id_for_b);
 
         // Delete the backing row and verify the surviving subscriber still receives the view delta.
-        let _ = commit_tx(&db, &subs, [(view_table_id, product![id_for_a, 7_u8])], [])?;
+        let arg_hash = MutTxId::view_arg_hash(id_for_a);
+        let _ = commit_tx(&db, &subs, [(view_table_id, product![arg_hash, 7_u8])], [])?;
 
         let schema = ProductType::from([AlgebraicType::U8]);
         assert_v2_tx_update_for_table(

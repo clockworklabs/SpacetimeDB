@@ -3,7 +3,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { ScheduleAt } from 'spacetimedb';
 import {
+  Router,
   schema,
+  SyncResponse,
   table,
   t,
   type Infer,
@@ -153,6 +155,13 @@ const playerLikeRow = t.row({
   name: t.string().unique(),
 });
 
+const repeatingTestArgTable = table(
+  {
+    name: 'repeating_test_arg',
+  },
+  repeatingTestArg
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEMA (tables + indexes + visibility)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -216,16 +225,10 @@ const spacetimedb = schema({
   // pk_multi_identity with multiple constraints
   pkMultiIdentity: table({ name: 'pk_multi_identity' }, pkMultiIdentityRow),
 
-  // repeating_test_arg table with scheduled(repeating_test)
-  repeatingTestArg: table(
-    {
-      name: 'repeating_test_arg',
-      scheduled: (): any => repeatingTest,
-    },
-    repeatingTestArg
-  ),
+  // repeating_test_arg table scheduled by repeatingTest
+  repeatingTestArg: repeatingTestArgTable,
 
-  // nonrepeating_test_arg table with scheduled(nonrepeating_test)
+  // nonrepeating_test_arg table with legacy scheduled(nonrepeating_test)
   nonrepeatingTestArg: table(
     {
       name: 'nonrepeating_test_arg',
@@ -282,6 +285,7 @@ export const init = spacetimedb.init(ctx => {
 
 // repeating_test
 export const repeatingTest = spacetimedb.reducer(
+  { onSchedule: repeatingTestArgTable },
   { arg: repeatingTestArg },
   (ctx, { arg }) => {
     const delta = ctx.timestamp.since(arg.prev_time); // adjust if API differs
@@ -520,3 +524,11 @@ export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
     throw e;
   }
 });
+
+export const getSimple = spacetimedb.httpHandler(
+  (_ctx, _req) => new SyncResponse('ok')
+);
+
+export const router = spacetimedb.httpRouter(
+  new Router().get('/get', getSimple)
+);
