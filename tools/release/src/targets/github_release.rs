@@ -1,6 +1,11 @@
 use crate::targets::ReleaseTarget;
 use duct::cmd;
 use serde::Deserialize;
+use signal_hook::consts::signal::{SIGINT, SIGTERM};
+use signal_hook::iterator::Signals;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
 
 const REPO: &str = "clockworklabs/SpacetimeDB";
 
@@ -70,11 +75,47 @@ impl GithubRelease {
     }
 
     fn wait_for_workflow(&self, run_id: &str) -> Result<(), String> {
+        let done = Self::cancel_workflow_on_signal(run_id)?;
         let cmd = cmd!("gh", "run", "watch", run_id, "--repo", REPO, "--exit-status");
+        println!("$> {:?}", cmd);
+        let result = cmd
+            .run()
+            .map(|_| ())
+            .map_err(|e| format!("Failed to execute watch workflow: {e}"));
+        done.store(true, Ordering::SeqCst);
+        result
+    }
+
+    fn cancel_workflow_on_signal(run_id: &str) -> Result<Arc<AtomicBool>, String> {
+        let done = Arc::new(AtomicBool::new(false));
+        let done_for_signal = done.clone();
+        let run_id = run_id.to_owned();
+        let mut signals =
+            Signals::new([SIGINT, SIGTERM]).map_err(|e| format!("Failed to register signal handlers: {e}"))?;
+
+        thread::spawn(move || {
+            if let Some(signal) = signals.forever().next() {
+                if !done_for_signal.load(Ordering::SeqCst) {
+                    eprintln!(
+                        "Received signal {signal}; cancelling attach-artifacts.yml workflow run {run_id} before exiting"
+                    );
+                    if let Err(err) = Self::cancel_workflow(&run_id) {
+                        eprintln!("Failed to cancel attach-artifacts.yml workflow run {run_id}: {err}");
+                    }
+                }
+                std::process::exit(128 + signal);
+            }
+        });
+
+        Ok(done)
+    }
+
+    fn cancel_workflow(run_id: &str) -> Result<(), String> {
+        let cmd = cmd!("gh", "run", "cancel", run_id, "--repo", REPO);
         println!("$> {:?}", cmd);
         cmd.run()
             .map(|_| ())
-            .map_err(|e| format!("Failed to execute watch workflow: {e}"))
+            .map_err(|e| format!("Failed to cancel workflow run {run_id}: {e}"))
     }
 
     fn publish_release(&self) -> Result<(), String> {
