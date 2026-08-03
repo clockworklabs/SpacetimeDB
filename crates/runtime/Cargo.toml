@@ -13,6 +13,10 @@ workspace = true
 tokio.workspace = true
 spacetimedb-runtime-core = { workspace = true, optional = true }
 libc = { version = "0.2", optional = true }
+static_assertions = "1.1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 futures.workspace = true
