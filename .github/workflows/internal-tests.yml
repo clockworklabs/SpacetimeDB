@@ -97,7 +97,6 @@ jobs:
           gh run watch "$RUN_ID" \
             --repo "$TARGET_OWNER/$TARGET_REPO" \
             --exit-status \
-            --compact \
             --interval 30
 
       - name: Cancel invoked run if workflow cancelled

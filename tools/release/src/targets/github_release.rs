@@ -70,16 +70,7 @@ impl GithubRelease {
     }
 
     fn wait_for_workflow(&self, run_id: &str) -> Result<(), String> {
-        let cmd = cmd!(
-            "gh",
-            "run",
-            "watch",
-            run_id,
-            "--repo",
-            REPO,
-            "--exit-status",
-            "--compact"
-        );
+        let cmd = cmd!("gh", "run", "watch", run_id, "--repo", REPO, "--exit-status");
         println!("$> {:?}", cmd);
         cmd.run()
             .map(|_| ())
