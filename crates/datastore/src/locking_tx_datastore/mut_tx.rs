@@ -34,7 +34,7 @@ use crate::{
     locking_tx_datastore::state_view::ScanOrIndex,
     traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags},
 };
-use core::{cell::RefCell, iter, mem, ops::RangeBounds};
+use core::{cell::RefCell, iter, ops::RangeBounds};
 use itertools::Either;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
@@ -1316,15 +1316,17 @@ impl MutTxId {
 impl MutTxId {
     /// Set the table access of `table_id` to `access`.
     pub(crate) fn alter_table_access(&mut self, table_id: TableId, access: StAccess) -> Result<()> {
+        let old_access = self.find_st_table_row(table_id)?.table_access;
+
         // Write to the table in the tx state.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.table_access = access);
 
-        // Update system tables.
-        let old_access = self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_access, access))?;
-
-        // Remember the pending change so we can undo if necessary.
+        // Remember the pending change so we can undo it if a later system-table update fails.
         self.push_schema_change(PendingSchemaChange::TableAlterAccess(table_id, old_access));
+
+        // Update system tables.
+        self.update_st_table_row(table_id, |st| st.table_access = access)?;
 
         Ok(())
     }
@@ -1334,17 +1336,18 @@ impl MutTxId {
     /// Updates both the in-memory schema and the `st_table` system table.
     /// See: <https://github.com/clockworklabs/SpacetimeDB/issues/3934>
     pub(crate) fn alter_table_primary_key(&mut self, table_id: TableId, new_primary_key: Option<ColId>) -> Result<()> {
+        let old_pk = self.find_st_table_row(table_id)?.table_primary_key;
+
         // Write to the table in the tx state.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.primary_key = new_primary_key);
 
-        // Update system tables.
+        // Remember the pending change so we can undo it if a later system-table update fails.
         let new_pk_col_list = new_primary_key.map(|col| col.into());
-        let old_pk =
-            self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_primary_key, new_pk_col_list))?;
-
-        // Remember the pending change so we can undo if necessary.
         self.push_schema_change(PendingSchemaChange::TableAlterPrimaryKey(table_id, old_pk));
+
+        // Update system tables.
+        self.update_st_table_row(table_id, |st| st.table_primary_key = new_pk_col_list)?;
 
         Ok(())
     }
@@ -1380,11 +1383,10 @@ impl MutTxId {
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_index, index_id.into()))?;
         index_schema.alias = Some(source_name.clone());
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_index(index_schema));
+        self.push_schema_change(PendingSchemaChange::IndexAlterSourceName(table_id, index_id, old_alias));
 
         self.drop_st_index_accessor(&st_index_row.index_name)?;
         self.insert_st_index_accessor(&st_index_row.index_name, Some(&source_name))?;
-
-        self.push_schema_change(PendingSchemaChange::IndexAlterSourceName(table_id, index_id, old_alias));
 
         Ok(())
     }
@@ -1409,11 +1411,10 @@ impl MutTxId {
 
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.alias = Some(new_alias.clone()));
+        self.push_schema_change(PendingSchemaChange::TableAlterAccessorName(table_id, old_alias));
 
         self.drop_st_table_accessor(&table_name)?;
         self.insert_st_table_accessor(&table_name, Some(&new_alias))?;
-
-        self.push_schema_change(PendingSchemaChange::TableAlterAccessorName(table_id, old_alias));
 
         Ok(())
     }
@@ -1502,6 +1503,8 @@ impl MutTxId {
         // SAFETY: `commit_table` should have a schema identical to that of `tx_table`
         // prior to changing it just now.
         unsafe { commit_table.set_layout_and_schema_to(tx_table) };
+        // Remember the pending change so we can undo it if a later system-table update fails.
+        self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
 
         // Update system tables.
         // We'll simply remove all rows in `st_columns` and then add the new ones.
@@ -1510,9 +1513,6 @@ impl MutTxId {
         self.drop_st_column(table_id)?;
         self.drop_st_column_accessor(&table_name)?;
         self.insert_st_column(&table_name, &column_schemas)?;
-
-        // Remember the pending change so we can undo if necessary.
-        self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
 
         Ok(())
     }
@@ -1542,6 +1542,8 @@ impl MutTxId {
         commit_table
             .change_columns_of_empty_table_to(column_schemas.clone())
             .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+        // Remember the pending change so we can undo it if a later system-table update fails.
+        self.push_schema_change(PendingSchemaChange::ReschemaEventTable(table_id, old_column_schemas));
 
         // Update system tables.
         // We'll simply remove all rows in `st_columns` and then add the new ones.
@@ -1550,9 +1552,6 @@ impl MutTxId {
         self.drop_st_column(table_id)?;
         self.drop_st_column_accessor(&table_name)?;
         self.insert_st_column(&table_name, &column_schemas)?;
-
-        // Remember the pending change so we can undo if necessary.
-        self.push_schema_change(PendingSchemaChange::ReschemaEventTable(table_id, old_column_schemas));
 
         Ok(())
     }
