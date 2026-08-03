@@ -19,11 +19,11 @@ use crate::{
 use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
-        with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields, StColumnAccessorRow, StColumnFields,
-        StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields, StEventTableRow, StFields as _,
-        StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow, StRowLevelSecurityFields,
-        StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow,
-        StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID,
+        table_id_is_reserved, with_sys_table_buf, StClientFields, StClientRow, StColumnAccessorFields,
+        StColumnAccessorRow, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StEventTableFields,
+        StEventTableRow, StFields as _, StIndexAccessorFields, StIndexAccessorRow, StIndexFields, StIndexRow,
+        StRowLevelSecurityFields, StRowLevelSecurityRow, StScheduledFields, StScheduledRow, StSequenceFields,
+        StSequenceRow, StTableAccessorFields, StTableAccessorRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID,
         ST_COLUMN_ACCESSOR_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_EVENT_TABLE_ID, ST_INDEX_ACCESSOR_ID, ST_INDEX_ID,
         ST_ROW_LEVEL_SECURITY_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ACCESSOR_ID, ST_TABLE_ID,
     },
@@ -1986,12 +1986,25 @@ impl MutTxId {
         // Insert the sequence row into st_sequences
         // NOTE: Because st_sequences has a unique index on sequence_name, this will
         // fail if the table already exists.
+
+        // TODO: If this is a reserved ID, (or the table is a reserved id) should we set
+        // allocated to seq.start - 1 to match `bootstrap_system_tables`.
+
+        // This is a hack to match the bootstrapping logic for system tables.
+
+        let allocated = if table_id_is_reserved(table_id) {
+            seq.start - 1
+        } else {
+            seq.start
+        };
+
         let mut sequence_row = StSequenceRow {
             sequence_id,
             sequence_name: seq.sequence_name,
             table_id,
             col_pos: seq.col_pos,
-            allocated: seq.start,
+            // allocated: seq.start,
+            allocated,
             increment: seq.increment,
             start: seq.start,
             min_value: seq.min_value,
