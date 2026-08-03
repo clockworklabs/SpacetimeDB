@@ -11,6 +11,7 @@ use crate::schema::{
     SequencePlan, TablePlan, Type, UniqueConstraintPlan,
 };
 use spacetimedb_runtime::sim::Rng;
+#[cfg(test)]
 use std::collections::HashSet;
 
 const MAX_SUM_VARIANTS: u8 = 32;
@@ -204,32 +205,15 @@ struct RuleCtx<'a> {
 }
 
 /// A positive case emitted by a migration rule.
-///
-/// `writes` are derived from the rewrite and used by the batch validator.
-/// `protects` are rule-owned semantic dependencies such as "this table was
-/// pristine."
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AcceptedCase {
     rule: RuleId,
     rewrite: SchemaRewrite,
-    writes: Vec<Resource>,
-    protects: Vec<Resource>,
 }
 
 impl AcceptedCase {
     fn new(rule: RuleId, rewrite: SchemaRewrite) -> Self {
-        let writes = write_resources(&rewrite);
-        Self {
-            rule,
-            rewrite,
-            writes,
-            protects: Vec::new(),
-        }
-    }
-
-    fn protecting(mut self, protects: impl Into<Vec<Resource>>) -> Self {
-        self.protects = protects.into();
-        self
+        Self { rule, rewrite }
     }
 }
 
@@ -238,30 +222,12 @@ impl AcceptedCase {
 struct RejectedCase {
     rule: RuleId,
     rewrite: SchemaRewrite,
-    writes: Vec<Resource>,
-    protects: Vec<Resource>,
 }
 
 impl RejectedCase {
     fn new(rule: RuleId, rewrite: SchemaRewrite) -> Self {
-        let writes = write_resources(&rewrite);
-        Self {
-            rule,
-            rewrite,
-            writes,
-            protects: Vec::new(),
-        }
+        Self { rule, rewrite }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Resource {
-    Table(String),
-    Column { table: String, column: usize },
-    Index { table: String, columns: Vec<usize> },
-    Sequence { table: String, column: usize },
-    UniqueConstraint { table: String, columns: Vec<usize> },
-    PrimaryKey { table: String },
 }
 
 trait MigrationRule: Sync {
@@ -271,19 +237,6 @@ trait MigrationRule: Sync {
 
     fn invalid_cases(&self, _rng: &Rng, _ctx: RuleCtx<'_>, _rule: RuleId) -> Vec<RejectedCase> {
         Vec::new()
-    }
-
-    /// Rule-owned semantic validation for accepted cases.
-    ///
-    /// Structural validation is shared by applying the rewrite batch to a draft
-    /// schema. Data/model assumptions stay with the rule which made them.
-    fn validate_accepted(
-        &self,
-        _case: &AcceptedCase,
-        _original: RuleCtx<'_>,
-        _final_schema: &SchemaPlan,
-    ) -> anyhow::Result<()> {
-        Ok(())
     }
 }
 
@@ -352,19 +305,40 @@ fn build_accepted_migration(rng: &Rng, ctx: RuleCtx<'_>, mode: AcceptedCompositi
     let max_rules = max_rules.max(1);
 
     for _ in 0..16 {
-        let cases = pick_accepted_cases(rng, ctx, max_rules)?;
-        if let Ok(migration) = build_validated_accepted_batch(ctx, cases) {
+        if let Ok(migration) = build_accepted_from_evolving_draft(rng, ctx, max_rules) {
             return Some(migration);
         }
     }
 
-    let case = pick_accepted_case(rng, ctx, &DEFAULT_RULE_WEIGHTS)?;
-    build_validated_accepted_batch(ctx, vec![case]).ok()
+    build_accepted_from_evolving_draft(rng, ctx, 1).ok()
 }
 
+fn build_accepted_from_evolving_draft(rng: &Rng, ctx: RuleCtx<'_>, max_rules: usize) -> anyhow::Result<Migration> {
+    let mut draft = ctx.schema.clone();
+    let mut applied_any = false;
+
+    for _ in 0..max_rules {
+        let draft_ctx = RuleCtx {
+            schema: &draft,
+            model: ctx.model,
+        };
+        let Some(case) = pick_accepted_case(rng, draft_ctx, &DEFAULT_RULE_WEIGHTS) else {
+            break;
+        };
+        let _rule = case.rule;
+        case.rewrite.apply_to(&mut draft)?;
+        applied_any = true;
+    }
+
+    anyhow::ensure!(applied_any, "empty accepted migration batch");
+    let final_schema = canonical_schema(&draft)?;
+    anyhow::ensure!(final_schema != *ctx.schema, "accepted migration batch was no-op");
+    Migration::accepted(draft)
+}
+
+#[cfg(test)]
 fn build_validated_accepted_batch(ctx: RuleCtx<'_>, cases: Vec<AcceptedCase>) -> anyhow::Result<Migration> {
     anyhow::ensure!(!cases.is_empty(), "empty accepted migration batch");
-    validate_no_resource_conflicts(&cases)?;
 
     let mut draft = ctx.schema.clone();
     for case in &cases {
@@ -372,49 +346,63 @@ fn build_validated_accepted_batch(ctx: RuleCtx<'_>, cases: Vec<AcceptedCase>) ->
     }
 
     let final_schema = canonical_schema(&draft)?;
-
-    validate_accepted_cases(ctx, &cases, &final_schema)?;
-
     anyhow::ensure!(final_schema != *ctx.schema, "accepted migration batch was no-op");
     Migration::accepted(draft)
 }
 
-fn validate_accepted_cases(ctx: RuleCtx<'_>, cases: &[AcceptedCase], final_schema: &SchemaPlan) -> anyhow::Result<()> {
-    for case in cases {
-        let rule = rule_by_id(case.rule)
-            .ok_or_else(|| anyhow::anyhow!("accepted migration case references missing rule {:?}", case.rule))?;
-        rule.rule.validate_accepted(case, ctx, final_schema)?;
-    }
-    Ok(())
-}
-
 fn build_rejected_migration(rng: &Rng, ctx: RuleCtx<'_>) -> Option<Migration> {
     for _ in 0..16 {
-        let rejected = pick_rejected_case(rng, ctx, &DEFAULT_RULE_WEIGHTS)?;
-        let accepted = pick_accepted_cases_around_rejected(rng, ctx, &rejected);
-        if let Ok(migration) = build_validated_rejected_batch(ctx, accepted, rejected) {
+        let max_rules = rng.index(10);
+        if let Ok(migration) = build_rejected_from_evolving_draft(rng, ctx, max_rules) {
             return Some(migration);
         }
     }
 
-    let rejected = pick_rejected_case(rng, ctx, &DEFAULT_RULE_WEIGHTS)?;
-    build_validated_rejected_batch(ctx, Vec::new(), rejected).ok()
+    build_rejected_from_evolving_draft(rng, ctx, 0).ok()
 }
 
+fn build_rejected_from_evolving_draft(
+    rng: &Rng,
+    ctx: RuleCtx<'_>,
+    max_accepted_rules: usize,
+) -> anyhow::Result<Migration> {
+    let mut draft = ctx.schema.clone();
+
+    for _ in 0..max_accepted_rules {
+        let draft_ctx = RuleCtx {
+            schema: &draft,
+            model: ctx.model,
+        };
+        let Some(case) = pick_accepted_case(rng, draft_ctx, &DEFAULT_RULE_WEIGHTS) else {
+            break;
+        };
+        let _rule = case.rule;
+        case.rewrite.apply_to(&mut draft)?;
+    }
+
+    let rejected_ctx = RuleCtx {
+        schema: &draft,
+        model: ctx.model,
+    };
+    let rejected = pick_rejected_case(rng, rejected_ctx, &DEFAULT_RULE_WEIGHTS)
+        .ok_or_else(|| anyhow::anyhow!("no rejected migration candidates"))?;
+    let _rule = rejected.rule;
+    rejected.rewrite.apply_unchecked_to(&mut draft)?;
+    anyhow::ensure!(draft != *ctx.schema, "rejected migration batch was no-op");
+    Ok(Migration::rejected(draft))
+}
+
+#[cfg(test)]
 fn build_validated_rejected_batch(
     ctx: RuleCtx<'_>,
     accepted: Vec<AcceptedCase>,
     rejected: RejectedCase,
 ) -> anyhow::Result<Migration> {
-    validate_no_resource_conflicts(&accepted)?;
-    validate_rejected_case_isolated(&accepted, &rejected)?;
-
     let mut draft = ctx.schema.clone();
     for case in &accepted {
         case.rewrite.apply_to(&mut draft)?;
     }
 
-    validate_accepted_cases(ctx, &accepted, &draft)?;
     rejected.rewrite.apply_unchecked_to(&mut draft)?;
     anyhow::ensure!(draft != *ctx.schema, "rejected migration batch was no-op");
     Ok(Migration::rejected(draft))
@@ -422,41 +410,6 @@ fn build_validated_rejected_batch(
 
 fn rule_by_id(id: RuleId) -> Option<&'static RuleEntry> {
     migration_rules().iter().find(|entry| entry.id == id)
-}
-
-fn pick_accepted_cases(rng: &Rng, ctx: RuleCtx<'_>, max_rules: usize) -> Option<Vec<AcceptedCase>> {
-    let mut cases = Vec::new();
-    for _ in 0..max_rules {
-        let Some(case) = pick_accepted_case(rng, ctx, &DEFAULT_RULE_WEIGHTS) else {
-            break;
-        };
-        cases.push(case);
-    }
-    (!cases.is_empty()).then_some(cases)
-}
-
-fn pick_accepted_cases_around_rejected(rng: &Rng, ctx: RuleCtx<'_>, rejected: &RejectedCase) -> Vec<AcceptedCase> {
-    let mut cases = Vec::new();
-
-    for &(id, weight) in DEFAULT_RULE_WEIGHTS.rules {
-        if weight == 0 || id == rejected.rule {
-            continue;
-        }
-        let Some(entry) = rule_by_id(id) else {
-            continue;
-        };
-        let Some(case) = pick_candidate(rng, entry.rule.accepted_cases(rng, ctx, entry.id)) else {
-            continue;
-        };
-
-        let mut trial = cases.clone();
-        trial.push(case.clone());
-        if validate_no_resource_conflicts(&trial).is_ok() && validate_rejected_case_isolated(&trial, rejected).is_ok() {
-            cases.push(case);
-        }
-    }
-
-    cases
 }
 
 fn pick_accepted_case(rng: &Rng, ctx: RuleCtx<'_>, weights: &RuleWeights) -> Option<AcceptedCase> {
@@ -515,128 +468,6 @@ fn pick_candidate<T>(rng: &Rng, mut candidates: Vec<T>) -> Option<T> {
     Some(candidates.swap_remove(idx))
 }
 
-fn validate_rejected_case_isolated(accepted: &[AcceptedCase], rejected: &RejectedCase) -> anyhow::Result<()> {
-    for case in accepted {
-        validate_resource_set_is_disjoint(&case.writes, &rejected.writes)?;
-        validate_resource_set_is_disjoint(&case.writes, &rejected.protects)?;
-        validate_resource_set_is_disjoint(&case.protects, &rejected.writes)?;
-        validate_resource_set_is_disjoint(&case.protects, &rejected.protects)?;
-    }
-    Ok(())
-}
-
-fn validate_no_resource_conflicts(cases: &[AcceptedCase]) -> anyhow::Result<()> {
-    for (left_idx, left) in cases.iter().enumerate() {
-        for right in &cases[left_idx + 1..] {
-            validate_resource_set_is_disjoint(&left.writes, &right.writes)?;
-            validate_resource_set_is_disjoint(&left.writes, &right.protects)?;
-            validate_resource_set_is_disjoint(&left.protects, &right.writes)?;
-        }
-    }
-    Ok(())
-}
-
-fn validate_resource_set_is_disjoint(left: &[Resource], right: &[Resource]) -> anyhow::Result<()> {
-    for left in left {
-        for right in right {
-            anyhow::ensure!(
-                !resources_conflict(left, right),
-                "accepted migration batch has conflicting resources {left:?} and {right:?}"
-            );
-        }
-    }
-    Ok(())
-}
-
-fn write_resources(rewrite: &SchemaRewrite) -> Vec<Resource> {
-    let mut resources = match rewrite {
-        SchemaRewrite::AddTable { table } => vec![Resource::Table(table.name.clone())],
-        SchemaRewrite::RemoveTable { table } => vec![Resource::Table(table.clone())],
-        SchemaRewrite::AlterTable { table, ops } => ops
-            .iter()
-            .map(|op| match op {
-                TableMigrationOp::ChangeAccess
-                | TableMigrationOp::AddColumn { .. }
-                | TableMigrationOp::ReschemaEventTable => Resource::Table(table.clone()),
-                TableMigrationOp::AddIndex { columns, .. }
-                | TableMigrationOp::RemoveIndex { columns }
-                | TableMigrationOp::ChangeIndex { columns } => Resource::Index {
-                    table: table.clone(),
-                    columns: columns.clone(),
-                },
-                TableMigrationOp::AddSequence { sequence } => Resource::Sequence {
-                    table: table.clone(),
-                    column: sequence.column,
-                },
-                TableMigrationOp::RemoveSequence { column } => Resource::Sequence {
-                    table: table.clone(),
-                    column: *column,
-                },
-                TableMigrationOp::AddUniqueConstraint { columns }
-                | TableMigrationOp::RemoveUniqueConstraint { columns } => Resource::UniqueConstraint {
-                    table: table.clone(),
-                    columns: columns.clone(),
-                },
-                TableMigrationOp::ChangePrimaryKey { .. } => Resource::PrimaryKey { table: table.clone() },
-                TableMigrationOp::ChangeColumnType { column } => Resource::Column {
-                    table: table.clone(),
-                    column: *column,
-                },
-            })
-            .collect(),
-    };
-    dedup_resources(&mut resources);
-    resources
-}
-
-fn dedup_resources(resources: &mut Vec<Resource>) {
-    let mut seen = HashSet::new();
-    resources.retain(|resource| seen.insert(resource.clone()));
-}
-
-fn resources_conflict(left: &Resource, right: &Resource) -> bool {
-    if left == right {
-        return true;
-    }
-
-    match (left, right) {
-        (Resource::Table(left), right) => resource_table(right).is_some_and(|right| right == left),
-        (left, Resource::Table(right)) => resource_table(left).is_some_and(|left| left == right),
-        (
-            Resource::Column {
-                table: left_table,
-                column: left_column,
-            },
-            Resource::Sequence {
-                table: right_table,
-                column: right_column,
-            },
-        )
-        | (
-            Resource::Sequence {
-                table: left_table,
-                column: left_column,
-            },
-            Resource::Column {
-                table: right_table,
-                column: right_column,
-            },
-        ) => left_table == right_table && left_column == right_column,
-        _ => false,
-    }
-}
-
-fn resource_table(resource: &Resource) -> Option<&str> {
-    match resource {
-        Resource::Table(table)
-        | Resource::Column { table, .. }
-        | Resource::Index { table, .. }
-        | Resource::Sequence { table, .. }
-        | Resource::UniqueConstraint { table, .. }
-        | Resource::PrimaryKey { table } => Some(table),
-    }
-}
-
 fn accepted_cases_from_rewrites(rule: RuleId, rewrites: Vec<SchemaRewrite>) -> Vec<AcceptedCase> {
     rewrites
         .into_iter()
@@ -653,27 +484,6 @@ fn rejected_cases_from_rewrites(rule: RuleId, rewrites: Vec<SchemaRewrite>) -> V
 
 fn table_is_pristine(model: &Model, table: &TablePlan) -> bool {
     model.row_count_by_table_name(&table.name) == 0 && !model.ever_inserted_by_table_name(&table.name)
-}
-
-fn original_table<'a>(ctx: RuleCtx<'a>, table: &str) -> anyhow::Result<&'a TablePlan> {
-    ctx.schema
-        .tables
-        .iter()
-        .find(|table_plan| table_plan.name == table)
-        .ok_or_else(|| anyhow::anyhow!("migration rule references missing original table {table}"))
-}
-
-fn alter_table_sequence(case: &AcceptedCase) -> anyhow::Result<(&str, &SequencePlan)> {
-    let SchemaRewrite::AlterTable { table, ops } = &case.rewrite else {
-        anyhow::bail!("add-sequence rule emitted non-table rewrite");
-    };
-    let Some(sequence) = ops.iter().find_map(|op| match op {
-        TableMigrationOp::AddSequence { sequence } => Some(sequence),
-        _ => None,
-    }) else {
-        anyhow::bail!("add-sequence rule emitted rewrite without add-sequence op");
-    };
-    Ok((table, sequence))
 }
 
 struct AddTableRule;
@@ -700,32 +510,8 @@ impl MigrationRule for RemovePristineNonEventTableRule {
                         table: table.name.clone(),
                     },
                 )
-                .protecting(vec![Resource::Table(table.name.clone())])
             })
             .collect()
-    }
-
-    fn validate_accepted(
-        &self,
-        case: &AcceptedCase,
-        original: RuleCtx<'_>,
-        _final_schema: &SchemaPlan,
-    ) -> anyhow::Result<()> {
-        let SchemaRewrite::RemoveTable { table } = &case.rewrite else {
-            anyhow::bail!("remove-pristine-table rule emitted non-remove rewrite");
-        };
-        let table_plan = original_table(original, table)?;
-        let non_event_tables = original.schema.tables.iter().filter(|table| !table.is_event).count();
-        anyhow::ensure!(!table_plan.is_event, "remove-pristine-table rule selected event table");
-        anyhow::ensure!(
-            non_event_tables > 1,
-            "remove-pristine-table rule selected last non-event table"
-        );
-        anyhow::ensure!(
-            table_is_pristine(original.model, table_plan),
-            "remove-pristine-table rule selected non-pristine table"
-        );
-        Ok(())
     }
 }
 
@@ -744,30 +530,8 @@ impl MigrationRule for RemoveEmptyEventTableRule {
                         table: table.name.clone(),
                     },
                 )
-                .protecting(vec![Resource::Table(table.name.clone())])
             })
             .collect()
-    }
-
-    fn validate_accepted(
-        &self,
-        case: &AcceptedCase,
-        original: RuleCtx<'_>,
-        _final_schema: &SchemaPlan,
-    ) -> anyhow::Result<()> {
-        let SchemaRewrite::RemoveTable { table } = &case.rewrite else {
-            anyhow::bail!("remove-empty-event-table rule emitted non-remove rewrite");
-        };
-        let table_plan = original_table(original, table)?;
-        anyhow::ensure!(
-            table_plan.is_event,
-            "remove-empty-event-table rule selected non-event table"
-        );
-        anyhow::ensure!(
-            original.model.row_count_by_table_name(table) == 0,
-            "remove-empty-event-table rule selected non-empty table"
-        );
-        Ok(())
     }
 }
 
@@ -821,7 +585,6 @@ impl MigrationRule for AddSequenceOnPristineTableRule {
                         rule,
                         SchemaRewrite::alter_table(table, [TableMigrationOp::AddSequence { sequence }]),
                     )
-                    .protecting(vec![Resource::Table(table.name.clone())])
                 })
             })
             .collect()
@@ -832,37 +595,6 @@ impl MigrationRule for AddSequenceOnPristineTableRule {
             .into_iter()
             .map(|rewrite| RejectedCase::new(rule, rewrite))
             .collect()
-    }
-
-    fn validate_accepted(
-        &self,
-        case: &AcceptedCase,
-        original: RuleCtx<'_>,
-        _final_schema: &SchemaPlan,
-    ) -> anyhow::Result<()> {
-        let (table, sequence) = alter_table_sequence(case)?;
-        let table_plan = original_table(original, table)?;
-        anyhow::ensure!(!table_plan.is_event, "add-sequence-pristine rule selected event table");
-        anyhow::ensure!(
-            table_is_pristine(original.model, table_plan),
-            "add-sequence-pristine rule selected non-pristine table"
-        );
-        let column_plan = table_plan
-            .columns
-            .get(sequence.column)
-            .ok_or_else(|| anyhow::anyhow!("add-sequence-pristine rule references missing column"))?;
-        anyhow::ensure!(
-            column_plan.ty.is_integral(),
-            "add-sequence-pristine rule selected non-integral column"
-        );
-        anyhow::ensure!(
-            table_plan
-                .sequences
-                .iter()
-                .all(|existing| existing.column != sequence.column),
-            "add-sequence-pristine rule selected already sequenced column"
-        );
-        Ok(())
     }
 }
 
@@ -895,7 +627,6 @@ impl MigrationRule for AddUniqueConstraintOnPristineTableRule {
                         }
                         ops.push(TableMigrationOp::AddUniqueConstraint { columns });
                         AcceptedCase::new(rule, SchemaRewrite::alter_table(table, ops))
-                            .protecting(vec![Resource::Table(table.name.clone())])
                     })
             })
             .collect()
@@ -906,29 +637,6 @@ impl MigrationRule for AddUniqueConstraintOnPristineTableRule {
             .into_iter()
             .map(|rewrite| RejectedCase::new(rule, rewrite))
             .collect()
-    }
-
-    fn validate_accepted(
-        &self,
-        case: &AcceptedCase,
-        original: RuleCtx<'_>,
-        _final_schema: &SchemaPlan,
-    ) -> anyhow::Result<()> {
-        let SchemaRewrite::AlterTable { table, ops } = &case.rewrite else {
-            anyhow::bail!("add-unique-constraint rule emitted non-table rewrite");
-        };
-        let table_plan = original_table(original, table)?;
-        anyhow::ensure!(!table_plan.is_event, "add-unique-constraint rule selected event table");
-        anyhow::ensure!(
-            table_is_pristine(original.model, table_plan),
-            "add-unique-constraint rule selected non-pristine table"
-        );
-        anyhow::ensure!(
-            ops.iter()
-                .any(|op| matches!(op, TableMigrationOp::AddUniqueConstraint { .. })),
-            "add-unique-constraint rule emitted rewrite without unique-constraint op"
-        );
-        Ok(())
     }
 }
 
@@ -961,44 +669,6 @@ struct ReschemaEmptyEventTableRule;
 impl MigrationRule for ReschemaEmptyEventTableRule {
     fn accepted_cases(&self, _rng: &Rng, ctx: RuleCtx<'_>, rule: RuleId) -> Vec<AcceptedCase> {
         accepted_cases_from_rewrites(rule, reschema_event_table_rewrites(ctx.schema, ctx.model))
-            .into_iter()
-            .map(|case| {
-                let protected_table = match &case.rewrite {
-                    SchemaRewrite::AlterTable { table, .. } => Some(table.clone()),
-                    _ => None,
-                };
-                if let Some(table) = protected_table {
-                    case.protecting(vec![Resource::Table(table)])
-                } else {
-                    case
-                }
-            })
-            .collect()
-    }
-
-    fn validate_accepted(
-        &self,
-        case: &AcceptedCase,
-        original: RuleCtx<'_>,
-        _final_schema: &SchemaPlan,
-    ) -> anyhow::Result<()> {
-        let SchemaRewrite::AlterTable { table, .. } = &case.rewrite else {
-            anyhow::bail!("reschema-empty-event-table rule emitted non-table rewrite");
-        };
-        let table_plan = original_table(original, table)?;
-        anyhow::ensure!(
-            table_plan.is_event,
-            "reschema-empty-event-table rule selected non-event table"
-        );
-        anyhow::ensure!(
-            original.model.row_count_by_table_name(table) == 0,
-            "reschema-empty-event-table rule selected non-empty table"
-        );
-        anyhow::ensure!(
-            table_plan.columns.len() < MAX_EVENT_COLUMNS,
-            "reschema-empty-event-table rule selected full event table"
-        );
-        Ok(())
     }
 }
 
@@ -1681,32 +1351,39 @@ mod tests {
     }
 
     #[test]
-    fn accepted_batch_rejects_write_to_protected_table() {
+    fn accepted_batch_can_edit_table_added_earlier_in_same_draft() {
         let schema = indexed_unique_i64_schema();
         let model = Model::new(schema.clone());
-        let table = &schema.tables[0];
-        let sequence = SequencePlan::new(0, Type::I64).expect("i64 sequence");
+        let added = i64_table("new_items", false);
 
-        let add_sequence = AcceptedCase::new(
-            RuleId::AddSequenceOnPristineTable,
-            SchemaRewrite::alter_table(table, [TableMigrationOp::AddSequence { sequence }]),
-        )
-        .protecting(vec![Resource::Table(table.name.clone())]);
-        let add_column = AcceptedCase::new(
-            RuleId::AddColumn,
-            SchemaRewrite::alter_table(table, [TableMigrationOp::AddColumn { ty: Type::U64 }]),
+        let add_table = AcceptedCase::new(RuleId::AddTable, SchemaRewrite::AddTable { table: added.clone() });
+        let add_index = AcceptedCase::new(
+            RuleId::AddIndex,
+            SchemaRewrite::alter_table(
+                &added,
+                [TableMigrationOp::AddIndex {
+                    columns: vec![0],
+                    algorithm: IndexAlgorithm::BTree,
+                }],
+            ),
         );
 
-        let err = build_validated_accepted_batch(
+        let migration = build_validated_accepted_batch(
             RuleCtx {
                 schema: &schema,
                 model: &model,
             },
-            vec![add_sequence, add_column],
+            vec![add_table, add_index],
         )
-        .expect_err("protected table write should be rejected before emission");
+        .expect("later cases should apply to the evolving draft schema");
 
-        assert!(err.to_string().contains("conflicting resources"));
+        let new_table = migration
+            .target_schema()
+            .tables
+            .iter()
+            .find(|table| table.name == "new_items")
+            .expect("added table should be present");
+        assert!(has_index(new_table, &[0]));
     }
 
     #[test]
