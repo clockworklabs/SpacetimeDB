@@ -38,7 +38,8 @@ impl<T> JoinHandle<T> {
     }
 
     /// Poll the underlying async_task::Task for its output.
-    pub(crate) fn poll_join(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<T, JoinError>> {
+    #[doc(hidden)]
+    pub fn poll_join(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<T, JoinError>> {
         // async_task::Task implements Future. Polling it drives the wrapped
         // Abortable future inside the executor.
         Pin::new(&mut self.task).poll(cx)
@@ -96,8 +97,7 @@ impl fmt::Display for JoinError {
     }
 }
 
-#[cfg(feature = "simulation")]
-impl std::error::Error for JoinError {}
+impl core::error::Error for JoinError {}
 
 // Shared state between AbortHandle and Abortable.
 struct AbortState {

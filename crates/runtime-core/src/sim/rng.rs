@@ -9,7 +9,7 @@ pub type Rng = GlobalRng;
 /// The simulator owns one runtime-wide RNG handle and uses it for scheduler
 /// choices, probabilistic fault injection, and determinism checks. Hosted
 /// conveniences such as thread-local current-RNG access and libc random hooks
-/// live in `crate::sim_std`, not here.
+/// live in the hosted runtime facade, not here.
 #[derive(Clone, Debug)]
 pub struct GlobalRng {
     inner: Arc<Mutex<Inner>>,
@@ -143,21 +143,24 @@ impl GlobalRng {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn enable_determinism_log(&self) {
+    #[doc(hidden)]
+    pub fn enable_determinism_log(&self) {
         let mut inner = self.inner.lock();
         inner.log = Some(Vec::new());
         inner.check = None;
     }
 
     #[allow(dead_code)]
-    pub(crate) fn enable_determinism_check(&self, log: DeterminismLog) {
+    #[doc(hidden)]
+    pub fn enable_determinism_check(&self, log: DeterminismLog) {
         let mut inner = self.inner.lock();
         inner.check = Some((log.0, 0));
         inner.log = None;
     }
 
     #[allow(dead_code)]
-    pub(crate) fn take_determinism_log(&self) -> Option<DeterminismLog> {
+    #[doc(hidden)]
+    pub fn take_determinism_log(&self) -> Option<DeterminismLog> {
         let mut inner = self.inner.lock();
         inner
             .log
@@ -167,7 +170,8 @@ impl GlobalRng {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn finish_determinism_check(&self) -> Result<(), String> {
+    #[doc(hidden)]
+    pub fn finish_determinism_check(&self) -> Result<(), String> {
         let inner = self.inner.lock();
         if let Some((log, consumed)) = &inner.check
             && *consumed != log.len()
@@ -183,7 +187,7 @@ impl GlobalRng {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub(crate) struct DeterminismLog(Vec<u8>);
+pub struct DeterminismLog(Vec<u8>);
 
 fn probability_sample(value: u64, probability: f64) -> bool {
     if probability <= 0.0 {
