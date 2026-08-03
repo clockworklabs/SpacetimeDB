@@ -103,15 +103,7 @@ have.
 ## Maintaining
 
 The skills are a copy of the repository's `skills/`, because a plugin must be self-contained (a
-symlink installs empty). After changing `skills/`, re-sync:
-
-```bash
-# from SpacetimeDB/codex-plugin/
-rm -rf plugins/spacetimedb/skills && cp -R ../skills plugins/spacetimedb/skills
-```
-
-Then bump `version` in `plugin.json`, since installs are cached by version. Keep the two catalogs
-identical apart from `source.path`, which must never point at `./`.
+symlink installs empty). See `DEVELOPMENT.md` for the sync workflow, the drift check script, and the release checklist.
 
 ## License
 
