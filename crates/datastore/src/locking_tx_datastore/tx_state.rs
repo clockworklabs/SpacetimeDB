@@ -3,7 +3,8 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
+use spacetimedb_schema::identifier::{Identifier, NamespacedIdentifier};
 use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
@@ -114,14 +115,10 @@ pub enum PendingSchemaChange {
     IndexAdded(TableId, IndexId, Option<PointerMap>),
     /// The source-name alias of the index with [`IndexId`] changed.
     /// The old alias is stored for rollback.
-    IndexAlterSourceName(
-        TableId,
-        IndexId,
-        Option<spacetimedb_sats::raw_identifier::RawIdentifier>,
-    ),
+    IndexAlterSourceName(TableId, IndexId, Option<RawNamespacedIdentifier>),
     /// The accessor name alias of the table with [`TableId`] changed.
     /// The old alias is stored for rollback.
-    TableAlterAccessorName(TableId, Option<Identifier>),
+    TableAlterAccessorName(TableId, Option<NamespacedIdentifier>),
     /// The accessor name alias of the column with [`ColId`] in the table with [`TableId`] changed.
     /// The old alias is stored for rollback.
     ColumnAlterAccessorName(TableId, ColId, Option<Identifier>),
@@ -168,7 +165,7 @@ impl MemoryUsage for PendingSchemaChange {
                 table_id.heap_usage() + index_id.heap_usage() + pointer_map.heap_usage()
             }
             Self::IndexAlterSourceName(table_id, index_id, alias) => {
-                table_id.heap_usage() + index_id.heap_usage() + alias.heap_usage()
+                table_id.heap_usage() + index_id.heap_usage() + alias.as_ref().map(|a| a.as_ref().len()).unwrap_or(0)
             }
             Self::TableRemoved(table_id, table) => table_id.heap_usage() + table.heap_usage(),
             Self::TableAdded(table_id) => table_id.heap_usage(),
@@ -186,7 +183,7 @@ impl MemoryUsage for PendingSchemaChange {
             }
             Self::SequenceAdded(table_id, sequence_id) => table_id.heap_usage() + sequence_id.heap_usage(),
             Self::TableAlterAccessorName(table_id, alias) => {
-                table_id.heap_usage() + alias.as_ref().map(|a| a.as_raw().heap_usage()).unwrap_or(0)
+                table_id.heap_usage() + alias.as_ref().map(|a| a.as_ref().len()).unwrap_or(0)
             }
             Self::ColumnAlterAccessorName(table_id, col_id, alias) => {
                 table_id.heap_usage()

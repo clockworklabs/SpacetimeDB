@@ -51,6 +51,7 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
+use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -1062,7 +1063,7 @@ impl RelationalDB {
         &self,
         tx: &mut MutTx,
         index_id: IndexId,
-        source_name: spacetimedb_sats::raw_identifier::RawIdentifier,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
     ) -> Result<(), DBError> {
         Ok(self.inner.alter_index_source_name_mut_tx(tx, index_id, source_name)?)
     }
@@ -1071,7 +1072,7 @@ impl RelationalDB {
         &self,
         tx: &mut MutTx,
         table_id: TableId,
-        new_alias: spacetimedb_schema::identifier::Identifier,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
     ) -> Result<(), DBError> {
         Ok(self.inner.alter_table_accessor_name_mut_tx(tx, table_id, new_alias)?)
     }
@@ -1257,6 +1258,16 @@ impl RelationalDB {
         view_def: &ViewDef,
     ) -> Result<(ViewId, TableId), DBError> {
         Ok(tx.create_view(module_def, view_def)?)
+    }
+
+    pub fn create_view_with_prefix(
+        &self,
+        tx: &mut MutTx,
+        owning_def: &ModuleDef,
+        view_def: &ViewDef,
+        name_prefix: &NamespacePath,
+    ) -> Result<(ViewId, TableId), DBError> {
+        Ok(tx.create_view_with_prefix(owning_def, view_def, name_prefix)?)
     }
 
     pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewId) -> Result<(), DBError> {

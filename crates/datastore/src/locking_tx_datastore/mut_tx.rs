@@ -51,12 +51,15 @@ use spacetimedb_primitives::{
     col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
-    bsatn::to_writer, memory_usage::MemoryUsage, raw_identifier::RawIdentifier, ser::Serialize, AlgebraicValue,
-    ProductType, ProductValue,
+    bsatn::to_writer,
+    memory_usage::MemoryUsage,
+    raw_identifier::{RawIdentifier, RawNamespacedIdentifier},
+    ser::Serialize,
+    AlgebraicValue, ProductType, ProductValue,
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
-    identifier::Identifier,
+    identifier::{Identifier, NamespacePath, NamespacedIdentifier},
     reducer_name::ReducerName,
     schema::{
         ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
@@ -454,7 +457,10 @@ pub struct MutTxId {
     pub(crate) _not_send: PhantomData<std::rc::Rc<()>>,
 }
 
-static_assert_size!(MutTxId, 560);
+// Grew by one word when `ReducerName` became fully qualified: it now holds a
+// `NamespacedIdentifier` (segments + joined rendering) rather than a single `Identifier`.
+// One per transaction, not per row.
+static_assert_size!(MutTxId, 576);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -779,7 +785,7 @@ impl MutTxId {
             ..
         } = view_def;
 
-        let view_name: RawIdentifier = name.clone().into();
+        let view_name: RawNamespacedIdentifier = RawIdentifier::from(name.clone()).into();
 
         // `create_table` inserts into `st_view` and updates the table schema.
         let view_id = self
@@ -788,6 +794,52 @@ impl MutTxId {
 
         self.insert_into_st_view_param(view_id, param_columns)?;
         self.insert_into_st_view_column(view_id, return_columns)?;
+
+        self.committed_state_write_lock.ephemeral_tables.insert(table_id);
+
+        Ok((view_id, table_id))
+    }
+
+    /// Like [`create_view`] but registers the view under `name_prefix + view_def.name`
+    /// (e.g. `"lib.library_view"`), using `owning_def` for type resolution.
+    ///
+    /// The canonical `view_def.name` is used (not `accessor_name`) so that submodule views
+    /// follow the same convention as root views ([`Self::create_view`]) and match the keys
+    /// used by `ModuleDef::view_by_name_with_global_fn_ptr` and the auto-migrate plan.
+    ///
+    /// Used for submodule views whose canonical names are dot-namespaced.
+    pub fn create_view_with_prefix(
+        &mut self,
+        owning_def: &ModuleDef,
+        view_def: &ViewDef,
+        name_prefix: &NamespacePath,
+    ) -> Result<(ViewId, TableId)> {
+        let mut table_schema = TableSchema::from_view_def_for_datastore(owning_def, view_def);
+        let full_view_name = name_prefix.join(view_def.name.clone());
+        table_schema.table_name = TableName::from(full_view_name.clone());
+
+        // Namespace the alias rather than dropping it: a bare accessor name would collide
+        // when two mounts have views with the same local name, but discarding it loses the
+        // mapping codegen needs.
+        table_schema.alias = table_schema.alias.map(|alias| name_prefix.join_namespaced(&alias));
+
+        // Prefix index and constraint names so they remain globally unique across mounts.
+        for index in &mut table_schema.indexes {
+            index.index_name = name_prefix.join_raw(&index.index_name);
+        }
+        for constraint in &mut table_schema.constraints {
+            constraint.constraint_name = name_prefix.join_raw(&constraint.constraint_name);
+        }
+
+        let table_id = self.create_table(table_schema)?;
+
+        let view_name = RawNamespacedIdentifier::from(full_view_name);
+        let view_id = self
+            .view_id_from_name(&view_name)?
+            .ok_or(ViewError::NotFound(view_name))?;
+
+        self.insert_into_st_view_param(view_id, &view_def.param_columns)?;
+        self.insert_into_st_view_column(view_id, &view_def.return_columns)?;
 
         self.committed_state_write_lock.ephemeral_tables.insert(table_id);
 
@@ -943,7 +995,7 @@ impl MutTxId {
     }
 
     /// Insert a row into `st_table_accessor` for `table_name`, if an alias is present.
-    fn insert_st_table_accessor(&mut self, table_name: &TableName, alias: Option<&Identifier>) -> Result<()> {
+    fn insert_st_table_accessor(&mut self, table_name: &TableName, alias: Option<&NamespacedIdentifier>) -> Result<()> {
         let Some(accessor_name) = alias.cloned() else {
             return Ok(());
         };
@@ -975,7 +1027,11 @@ impl MutTxId {
     }
 
     /// Insert a row into `st_index_accessor` for `index_name`, if an alias is present.
-    fn insert_st_index_accessor(&mut self, index_name: &RawIdentifier, alias: Option<&RawIdentifier>) -> Result<()> {
+    fn insert_st_index_accessor(
+        &mut self,
+        index_name: &RawNamespacedIdentifier,
+        alias: Option<&RawNamespacedIdentifier>,
+    ) -> Result<()> {
         let Some(accessor_name) = alias.cloned() else {
             return Ok(());
         };
@@ -1136,7 +1192,7 @@ impl MutTxId {
     }
 
     /// Drops rows in `st_index_accessor` for this canonical `index_name`.
-    fn drop_st_index_accessor(&mut self, index_name: &RawIdentifier) -> Result<()> {
+    fn drop_st_index_accessor(&mut self, index_name: &RawNamespacedIdentifier) -> Result<()> {
         let value = index_name.as_ref().into();
         self.delete_col_eq(ST_INDEX_ACCESSOR_ID, StIndexAccessorFields::IndexName.col_id(), &value)
     }
@@ -1356,7 +1412,7 @@ impl MutTxId {
     pub(crate) fn alter_index_source_name(
         &mut self,
         index_id: IndexId,
-        source_name: spacetimedb_sats::raw_identifier::RawIdentifier,
+        source_name: RawNamespacedIdentifier,
     ) -> Result<()> {
         let st_index_ref = self
             .iter_by_col_eq(ST_INDEX_ID, StIndexFields::IndexId, &index_id.into())?
@@ -1392,7 +1448,11 @@ impl MutTxId {
     }
 
     /// Change the accessor name alias of the table identified by `table_id`.
-    pub(crate) fn alter_table_accessor_name(&mut self, table_id: TableId, new_alias: Identifier) -> Result<()> {
+    pub(crate) fn alter_table_accessor_name(
+        &mut self,
+        table_id: TableId,
+        new_alias: NamespacedIdentifier,
+    ) -> Result<()> {
         let table_name = self.find_st_table_row(table_id)?.table_name;
 
         let old_alias = self
@@ -1670,7 +1730,7 @@ impl MutTxId {
     fn create_table_and_update_seq(
         &mut self,
         table_schema: TableSchema,
-        seq_values: HashMap<RawIdentifier, (i128, i128)>,
+        seq_values: HashMap<RawNamespacedIdentifier, (i128, i128)>,
     ) -> Result<TableId> {
         let table_id = self.create_table(table_schema)?;
         let table_schema = self.schema_for_table(table_id)?;
