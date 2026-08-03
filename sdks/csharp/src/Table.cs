@@ -408,11 +408,19 @@ namespace SpacetimeDB
 
         public delegate void RowEventHandler(EventContext context, Row row);
         private CustomRowEventHandler OnInsertHandler { get; } = new();
+#if SAPPY
+        public EventListeners<RowEventHandler> OnInsert
+        {
+            get => OnInsertHandler.Listeners;
+            set => OnInsertHandler.Listeners = value;
+        }
+#else
         public event RowEventHandler OnInsert
         {
-            add => OnInsertHandler.AddListener(value);
-            remove => OnInsertHandler.RemoveListener(value);
+            add => OnInsertHandler.Listeners.Add(value);
+            remove => OnInsertHandler.Listeners.Remove(value);
         }
+#endif
         public delegate void UpdateEventHandler(EventContext context, Row oldRow, Row newRow);
 
         public int Count => (int)Entries.CountDistinct;
@@ -577,33 +585,51 @@ namespace SpacetimeDB
 
         protected class CustomRowEventHandler
         {
-            private EventListeners<RowEventHandler> Listeners { get; } = new();
+            private EventListeners<RowEventHandler> _listeners = new();
+            public EventListeners<RowEventHandler> Listeners
+            {
+                get => _listeners;
+                set
+                {
+                    if (_listeners != null && value != _listeners)
+                    {
+                        throw new InvalidOperationException("You can't override the targets of a SapStem.");
+                    }
+                    _listeners = value;
+                }
+            }
 
             public void Invoke(EventContext ctx, Row row)
             {
                 for (var i = Listeners.Count - 1; i >= 0; i--)
                 {
-                    Listeners[i]?.Invoke(ctx, row);
+                    _listeners[i]?.Invoke(ctx, row);
                 }
             }
-
-            public void AddListener(RowEventHandler listener) => Listeners.Add(listener);
-            public void RemoveListener(RowEventHandler listener) => Listeners.Remove(listener);
         }
         protected class CustomUpdateEventHandler
         {
-            private EventListeners<UpdateEventHandler> Listeners { get; } = new();
-
-            public void Invoke(EventContext ctx, Row oldRow, Row newRow)
+            private EventListeners<UpdateEventHandler> _listeners = new();
+            public EventListeners<UpdateEventHandler> Listeners
             {
-                for (var i = Listeners.Count - 1; i >= 0; i--)
+                get => _listeners;
+                set
                 {
-                    Listeners[i]?.Invoke(ctx, oldRow, newRow);
+                    if (_listeners != null && value != _listeners)
+                    {
+                        throw new InvalidOperationException("You can't override the targets of a SapStem.");
+                    }
+                    _listeners = value;
                 }
             }
 
-            public void AddListener(UpdateEventHandler listener) => Listeners.Add(listener);
-            public void RemoveListener(UpdateEventHandler listener) => Listeners.Remove(listener);
+            public void Invoke(EventContext ctx, Row oldRow, Row newRow)
+            {
+                for (var i = _listeners.Count - 1; i >= 0; i--)
+                {
+                    _listeners[i]?.Invoke(ctx, oldRow, newRow);
+                }
+            }
         }
     }
 
@@ -617,23 +643,47 @@ namespace SpacetimeDB
         protected RemoteTableHandle(IDbConnection conn) : base(conn) { }
 
         private CustomRowEventHandler OnDeleteHandler { get; } = new();
+#if SAPPY
+        public EventListeners<RowEventHandler> OnDelete
+        {
+            get => OnDeleteHandler.Listeners;
+            set => OnDeleteHandler.Listeners = value;
+        }
+#else
         public event RowEventHandler OnDelete
         {
-            add => OnDeleteHandler.AddListener(value);
-            remove => OnDeleteHandler.RemoveListener(value);
+            add => OnDeleteHandler.Listeners.Add(value);
+            remove => OnDeleteHandler.Listeners.Remove(value);
         }
+#endif
         private CustomRowEventHandler OnBeforeDeleteHandler { get; } = new();
+#if SAPPY
+        public EventListeners<RowEventHandler> OnBeforeDelete
+        {
+            get => OnBeforeDeleteHandler.Listeners;
+            set => OnBeforeDeleteHandler.Listeners = value;
+        }
+#else
         public event RowEventHandler OnBeforeDelete
         {
-            add => OnBeforeDeleteHandler.AddListener(value);
-            remove => OnBeforeDeleteHandler.RemoveListener(value);
+            add => OnBeforeDeleteHandler.Listeners.Add(value);
+            remove => OnBeforeDeleteHandler.Listeners.Remove(value);
         }
+#endif
         private CustomUpdateEventHandler OnUpdateHandler { get; } = new();
+#if SAPPY
+        public EventListeners<UpdateEventHandler> OnUpdate
+        {
+            get => OnUpdateHandler.Listeners;
+            set => OnUpdateHandler.Listeners = value;
+        }
+#else
         public event UpdateEventHandler OnUpdate
         {
-            add => OnUpdateHandler.AddListener(value);
-            remove => OnUpdateHandler.RemoveListener(value);
+            add => OnUpdateHandler.Listeners.Add(value);
+            remove => OnUpdateHandler.Listeners.Remove(value);
         }
+#endif
 
         protected override void InvokeDelete(IEventContext context, IStructuralReadWrite row)
         {
