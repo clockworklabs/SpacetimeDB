@@ -10,7 +10,7 @@ use core::{
 
 use spin::Mutex;
 
-use crate::sim::{time::TimeHandle, Rng};
+use super::{time::TimeHandle, Rng};
 
 mod task;
 use task::Abortable;
@@ -220,22 +220,26 @@ impl Runtime {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn enable_determinism_log(&self) {
+    #[doc(hidden)]
+    pub fn enable_determinism_log(&self) {
         self.executor.rng.enable_determinism_log();
     }
 
     #[allow(dead_code)]
-    pub(crate) fn enable_determinism_check(&self, log: crate::sim::DeterminismLog) {
+    #[doc(hidden)]
+    pub fn enable_determinism_check(&self, log: super::DeterminismLog) {
         self.executor.rng.enable_determinism_check(log);
     }
 
     #[allow(dead_code)]
-    pub(crate) fn take_determinism_log(&self) -> Option<crate::sim::DeterminismLog> {
+    #[doc(hidden)]
+    pub fn take_determinism_log(&self) -> Option<super::DeterminismLog> {
         self.executor.rng.take_determinism_log()
     }
 
     #[allow(dead_code)]
-    pub(crate) fn finish_determinism_check(&self) -> Result<(), alloc::string::String> {
+    #[doc(hidden)]
+    pub fn finish_determinism_check(&self) -> Result<(), alloc::string::String> {
         self.executor.rng.finish_determinism_check()
     }
 }
@@ -306,7 +310,7 @@ impl Handle {
     }
 
     /// Create a future that becomes ready after `duration` of virtual time.
-    pub fn sleep(&self, duration: Duration) -> crate::sim::time::Sleep {
+    pub fn sleep(&self, duration: Duration) -> super::time::Sleep {
         self.executor.time.sleep(duration)
     }
 
@@ -315,7 +319,7 @@ impl Handle {
         &self,
         duration: Duration,
         future: impl Future<Output = T>,
-    ) -> Result<T, crate::sim::time::TimeoutElapsed> {
+    ) -> Result<T, super::time::TimeoutElapsed> {
         self.executor.time.timeout(duration, future).await
     }
 
@@ -645,7 +649,7 @@ impl Receiver {
 #[cfg(test)]
 mod tests {
     use std::sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc,
     };
 
@@ -734,13 +738,12 @@ mod tests {
         assert_eq!(err, JoinError);
     }
 
-    #[cfg(feature = "simulation")]
     #[test]
-    fn sim_std_block_on_can_spawn_local_task_with_explicit_handle() {
+    fn block_on_can_spawn_local_task_with_explicit_handle() {
         let mut runtime = Runtime::new(5);
         let handle = runtime.handle();
         let node = handle.create_node().name("local").build();
-        let value = crate::sim_std::block_on(&mut runtime, async move {
+        let value = runtime.block_on(async move {
             let captured = std::rc::Rc::new(17);
             node.spawn_local(async move {
                 yield_now().await;
@@ -762,35 +765,5 @@ mod tests {
         assert_eq!(unnamed.name(), None);
         assert_eq!(named.name(), Some("replica-1"));
         assert_ne!(unnamed.id(), named.id());
-    }
-
-    #[cfg(feature = "simulation")]
-    #[test]
-    fn check_determinism_runs_future_twice() {
-        static CALLS: AtomicUsize = AtomicUsize::new(0);
-        CALLS.store(0, Ordering::SeqCst);
-
-        let value = crate::sim_std::check_determinism(3, || async {
-            CALLS.fetch_add(1, Ordering::SeqCst);
-            yield_now().await;
-            13
-        });
-
-        assert_eq!(value, 13);
-        assert_eq!(CALLS.load(Ordering::SeqCst), 2);
-    }
-
-    #[cfg(feature = "simulation")]
-    #[test]
-    #[should_panic(expected = "non-determinism detected")]
-    fn check_determinism_rejects_different_scheduler_sequence() {
-        static FIRST_RUN: AtomicBool = AtomicBool::new(true);
-        FIRST_RUN.store(true, Ordering::SeqCst);
-
-        crate::sim_std::check_determinism(4, || async {
-            if FIRST_RUN.swap(false, Ordering::SeqCst) {
-                yield_now().await;
-            }
-        });
     }
 }

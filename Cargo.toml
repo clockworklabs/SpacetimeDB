@@ -28,6 +28,7 @@ members = [
   "crates/primitives",
   "crates/query",
   "crates/runtime",
+  "crates/runtime-core",
   "crates/sats",
   "crates/schema",
   "crates/smoketests",
