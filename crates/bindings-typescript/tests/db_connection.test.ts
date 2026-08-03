@@ -419,6 +419,38 @@ describe('DbConnection', () => {
     expect(wsAdapter.closed).toBeFalsy();
   });
 
+  test('subscribe() accepts a query-builder callback and sends the built SQL', async () => {
+    const wsAdapter = new WebsocketTestAdapter();
+    const client = DbConnection.builder()
+      .withUri('ws://127.0.0.1:1234')
+      .withDatabaseName('db')
+      .withWSFn(wsAdapter.openWebSocket)
+      .build();
+
+    await client['wsPromise'];
+    wsAdapter.acceptConnection();
+    wsAdapter.sendToClient(
+      ServerMessage.InitialConnection({
+        identity: anIdentity,
+        token: 'a-token',
+        connectionId: ConnectionId.random(),
+      })
+    );
+
+    client.subscriptionBuilder().subscribe(tables => tables.player.build());
+
+    await Promise.resolve();
+    const subscribeMessage = wsAdapter.outgoingMessages.find(
+      message => message.tag === 'Subscribe'
+    );
+    if (subscribeMessage?.tag !== 'Subscribe') {
+      throw new Error('No Subscribe message found in messageQueue.');
+    }
+    expect(subscribeMessage.value.queryStrings).toEqual([
+      'SELECT * FROM "player"',
+    ]);
+  });
+
   test('fires row callbacks after reducer resolution in ReducerResult', async () => {
     const wsAdapter = new WebsocketTestAdapter();
     const onConnectPromise = new Deferred<void>();

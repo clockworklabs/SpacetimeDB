@@ -10,6 +10,8 @@ import {
 import {
   RawModuleDef,
   ViewResultHeader,
+  type RawProcedureDefV10,
+  type RawReducerDefV10,
   type RawTableDefV10,
   type Typespace,
 } from '../lib/autogen/types';
@@ -27,6 +29,8 @@ import {
   type UniqueIndex,
 } from '../lib/indexes';
 import { callProcedure } from './procedures';
+import type { Procedures } from './procedures';
+import type { Reducers } from './reducers';
 import {
   type HandlerContext,
   Request,
@@ -40,21 +44,37 @@ import {
   serializeHeaders,
 } from './http_shared';
 import {
+  type AliasViews,
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
   type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
 import { type UntypedSchemaDef } from '../lib/schema';
-import { type RowType, type Table, type TableMethods } from '../lib/table';
+import {
+  type RowType,
+  type Table,
+  type TableMethods,
+  type UntypedTableDef,
+} from '../lib/table';
 import { bsatnBaseSize, hasOwn } from '../lib/util';
-import { type AnonymousViewCtx, type ViewCtx } from './views';
-import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
-import type { DbView } from './db_view';
+import {
+  type AnonymousViewCtx,
+  type AnonViews,
+  type ViewCtx,
+  type Views,
+} from './views';
+import {
+  isRowTypedQuery,
+  makeQueryBuilder,
+  toSql,
+  type QueryBuilder,
+} from './query';
+import type { DbView, ReadonlyDbView } from './db_view';
 import { getErrorConstructor, SenderError } from './errors';
 import { Range, type Bound } from './range';
 import { makeRandom, type Random } from './rng';
-import type { SchemaInner } from './schema';
+import type { SubmoduleDispatchInfo, SchemaInner } from './schema';
 import { HttpRequest, HttpResponse } from '../lib/autogen/types';
 
 const { freeze } = Object;
@@ -226,18 +246,21 @@ export const ReducerCtxImpl = class ReducerCtx<
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  as: AliasViews<SchemaDef>;
 
   constructor(
     sender: Identity,
     timestamp: Timestamp,
     connectionId: ConnectionId | null,
-    dbView: DbView<any>
+    dbView: DbView<any>,
+    asViews: object = {}
   ) {
     Object.seal(this);
     this.sender = sender;
     this.timestamp = timestamp;
     this.connectionId = connectionId;
-    this.db = dbView;
+    this.db = dbView as unknown as DbView<SchemaDef>;
+    this.as = asViews as AliasViews<SchemaDef>;
   }
 
   /** Reset the `ReducerCtx` to be used for a new transaction */
@@ -245,13 +268,21 @@ export const ReducerCtxImpl = class ReducerCtx<
     me: InstanceType<typeof this>,
     sender: Identity,
     timestamp: Timestamp,
-    connectionId: ConnectionId | null
+    connectionId: ConnectionId | null,
+    dbView?: DbView<any>,
+    asViews?: object
   ) {
     me.sender = sender;
     me.timestamp = timestamp;
     me.connectionId = connectionId;
     me.#uuidCounter = undefined;
     me.#senderAuth = undefined;
+    if (dbView !== undefined) {
+      me.db = dbView;
+    }
+    if (asViews !== undefined) {
+      me.as = asViews as AliasViews<any>;
+    }
   }
 
   get databaseIdentity() {
@@ -337,32 +368,143 @@ export function runWithTx<T, Ctx>(
   }
 }
 
+type FlatSubmoduleDispatch = {
+  reducerFns: Reducers;
+  reducerDefs: RawReducerDefV10[];
+  procedureFns: Procedures;
+  procedureDefs: RawProcedureDefV10[];
+  anonViewFns: AnonViews;
+  viewFns: Views;
+  tables: Array<{ accessorName: string; tableDef: RawTableDefV10 }>;
+  schemaTables: Record<string, UntypedTableDef>;
+  typespace: Typespace;
+  dbView_: DbView<any> | undefined;
+  queryBuilder_: QueryBuilder<any> | undefined;
+  /** e.g. "alias." for a submodule with namespace alias "alias" */
+  namePrefix: string;
+  subDispatches: SubmoduleDispatchInfo[];
+};
+
+function flattenSubmoduleDispatches(
+  dispatches: SubmoduleDispatchInfo[],
+  parentPrefix = ''
+): FlatSubmoduleDispatch[] {
+  const result: FlatSubmoduleDispatch[] = [];
+  for (const d of dispatches) {
+    const namePrefix = parentPrefix + d.namespace + '.';
+    result.push({
+      reducerFns: d.reducerFns,
+      reducerDefs: d.reducerDefs,
+      procedureFns: d.procedureFns,
+      procedureDefs: d.procedureDefs,
+      anonViewFns: d.anonViewFns,
+      viewFns: d.viewFns,
+      tables: d.tables,
+      schemaTables: d.schemaTables,
+      typespace: d.typespace,
+      dbView_: undefined,
+      queryBuilder_: undefined,
+      namePrefix,
+      subDispatches: d.subDispatches,
+    });
+    result.push(...flattenSubmoduleDispatches(d.subDispatches, namePrefix));
+  }
+  return result;
+}
+
 export const makeHooks = (schema: SchemaInner): ModuleHooks =>
   new ModuleHooksImpl(schema);
 
 class ModuleHooksImpl implements ModuleHooks {
   #schema: SchemaInner;
   #dbView_: DbView<any> | undefined;
+  #consumerAs_: object | undefined;
   #reducerArgsDeserializers;
-  /** Cache the `ReducerCtx` object to avoid allocating anew for ever reducer call. */
+  #consumerReducerCount: number;
+  #consumerProcedureCount: number;
+  #flatSubmodules: FlatSubmoduleDispatch[];
+  #consumerAnonViewCount: number;
+  #consumerViewCount: number;
+  /** Cache the `ReducerCtx` object to avoid allocating anew for every reducer call. */
   #reducerCtx_: InstanceType<typeof ReducerCtxImpl> | undefined;
+  /** Per-submodule alias ctx maps, cached lazily (parallel to #flatSubmodules). */
+  #submoduleAsViews_: (object | undefined)[] = [];
 
   constructor(schema: SchemaInner) {
     this.#schema = schema;
-    this.#reducerArgsDeserializers = schema.moduleDef.reducers.map(
-      ({ params }) => ProductType.makeDeserializer(params, schema.typespace)
+    this.#consumerReducerCount = schema.reducers.length;
+    this.#consumerProcedureCount = schema.procedures.length;
+    this.#consumerAnonViewCount = schema.anonViews.length;
+    this.#consumerViewCount = schema.views.length;
+    this.#flatSubmodules = flattenSubmoduleDispatches(
+      schema.submoduleDispatchInfos
     );
+
+    const consumerDeserializers = schema.moduleDef.reducers.map(({ params }) =>
+      ProductType.makeDeserializer(params, schema.typespace)
+    );
+    const submoduleDeserializers = this.#flatSubmodules.flatMap(
+      ({ reducerDefs, typespace }) =>
+        reducerDefs.map(({ params }) =>
+          ProductType.makeDeserializer(params, typespace)
+        )
+    );
+    this.#reducerArgsDeserializers = [
+      ...consumerDeserializers,
+      ...submoduleDeserializers,
+    ];
   }
 
   get #dbView() {
-    return (this.#dbView_ ??= freeze(
+    if (this.#dbView_ !== undefined) return this.#dbView_;
+    const rootTables = Object.values(this.#schema.schemaType.tables).map(
+      table => [
+        table.accessorName,
+        makeTableView(this.#schema.typespace, table.tableDef),
+      ]
+    );
+    const submoduleNs = this.#schema.submoduleDispatchInfos.map(dispatch => [
+      dispatch.namespace,
+      buildDbViewForDispatch(dispatch, dispatch.namespace + '.'),
+    ]);
+    this.#dbView_ = freeze(
+      Object.fromEntries([...rootTables, ...submoduleNs])
+    ) as DbView<any>;
+    return this.#dbView_;
+  }
+
+  #getSubmoduleDbView(submoduleIdx: number): DbView<any> {
+    const m = this.#flatSubmodules[submoduleIdx];
+    return (m.dbView_ ??= freeze(
       Object.fromEntries(
-        Object.values(this.#schema.schemaType.tables).map(table => [
-          table.accessorName,
-          makeTableView(this.#schema.typespace, table.tableDef),
+        m.tables.map(({ accessorName, tableDef }) => [
+          accessorName,
+          makeTableView(m.typespace, tableDef, m.namePrefix),
         ])
-      )
+      ) as DbView<any>
     ));
+  }
+
+  #getSubmoduleAsViews(submoduleIdx: number): object {
+    return (this.#submoduleAsViews_[submoduleIdx] ??= buildAliasCtxMap(
+      this.#reducerCtx,
+      this.#flatSubmodules[submoduleIdx].subDispatches,
+      this.#flatSubmodules[submoduleIdx].namePrefix
+    ));
+  }
+
+  /** Query builder scoped to the submodule's own tables, with namespace-prefixed
+   *  source names so generated SQL targets the mounted table names. */
+  #getSubmoduleQueryBuilder(submoduleIdx: number): QueryBuilder<any> {
+    const m = this.#flatSubmodules[submoduleIdx];
+    return (m.queryBuilder_ ??= makeQueryBuilder({
+      tables: Object.fromEntries(
+        Object.entries(m.schemaTables).map(([key, def]) => [
+          key,
+          { ...def, sourceName: m.namePrefix + def.sourceName },
+        ])
+      ),
+    }));
   }
 
   get #reducerCtx() {
@@ -371,6 +513,14 @@ class ModuleHooksImpl implements ModuleHooks {
       Timestamp.UNIX_EPOCH,
       null,
       this.#dbView
+    ));
+  }
+
+  get #consumerAs() {
+    return (this.#consumerAs_ ??= buildAliasCtxMap(
+      this.#reducerCtx,
+      this.#schema.submoduleDispatchInfos,
+      ''
     ));
   }
 
@@ -398,19 +548,46 @@ class ModuleHooksImpl implements ModuleHooks {
     timestamp: bigint,
     argsBuf: DataView
   ): void {
-    const moduleCtx = this.#schema;
     const deserializeArgs = this.#reducerArgsDeserializers[reducerId];
     BINARY_READER.reset(argsBuf);
     const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
+
+    let fn: ((...args: any[]) => any) | undefined;
+    let dbView: DbView<any>;
+    let asViews: object;
+
+    if (reducerId < this.#consumerReducerCount) {
+      fn = this.#schema.reducers[reducerId];
+      dbView = this.#dbView;
+      asViews = this.#consumerAs;
+    } else {
+      let offset = this.#consumerReducerCount;
+      for (let i = 0; i < this.#flatSubmodules.length; i++) {
+        const m = this.#flatSubmodules[i];
+        if (reducerId < offset + m.reducerFns.length) {
+          fn = m.reducerFns[reducerId - offset];
+          dbView = this.#getSubmoduleDbView(i);
+          asViews = this.#getSubmoduleAsViews(i);
+          break;
+        }
+        offset += m.reducerFns.length;
+      }
+      if (fn === undefined) {
+        throw new RangeError(`unknown reducerId ${reducerId}`);
+      }
+    }
+
     const ctx = this.#reducerCtx;
     ReducerCtxImpl.reset(
       ctx,
       senderIdentity,
       new Timestamp(timestamp),
-      ConnectionId.nullIfZero(new ConnectionId(connId))
+      ConnectionId.nullIfZero(new ConnectionId(connId)),
+      dbView!,
+      asViews!
     );
-    callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
+    callUserFunction(fn, ctx, args);
   }
 
   __call_view__(
@@ -419,15 +596,40 @@ class ModuleHooksImpl implements ModuleHooks {
     argsBuf: Uint8Array
   ): { data: Uint8Array } {
     const moduleCtx = this.#schema;
+    let viewFns: Views;
+    let localId: number;
+    let dbView: ReadonlyDbView<any>;
+    let from: QueryBuilder<any>;
+
+    if (id < this.#consumerViewCount) {
+      viewFns = moduleCtx.views;
+      localId = id;
+      dbView = this.#dbView as ReadonlyDbView<any>;
+      from = makeQueryBuilder(moduleCtx.schemaType);
+    } else {
+      let offset = this.#consumerViewCount;
+      let found = false;
+      for (let i = 0; i < this.#flatSubmodules.length; i++) {
+        const m = this.#flatSubmodules[i];
+        if (id < offset + m.viewFns.length) {
+          viewFns = m.viewFns;
+          localId = id - offset;
+          dbView = this.#getSubmoduleDbView(i) as ReadonlyDbView<any>;
+          from = this.#getSubmoduleQueryBuilder(i);
+          found = true;
+          break;
+        }
+        offset += m.viewFns.length;
+      }
+      if (!found) throw new RangeError(`unknown viewId ${id}`);
+    }
+
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
-      moduleCtx.views[id];
+      viewFns![localId!];
     const ctx: ViewCtx<any> = freeze({
       sender: new Identity(sender),
-      // this is the non-readonly DbView, but the typing for the user will be
-      // the readonly one, and if they do call mutating functions it will fail
-      // at runtime
-      db: this.#dbView,
-      from: makeQueryBuilder(moduleCtx.schemaType),
+      db: dbView!,
+      from: from!,
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
     const ret = callUserFunction(fn, ctx, args);
@@ -444,14 +646,39 @@ class ModuleHooksImpl implements ModuleHooks {
 
   __call_view_anon__(id: u32, argsBuf: Uint8Array): { data: Uint8Array } {
     const moduleCtx = this.#schema;
+    let anonViewFns: AnonViews;
+    let localId: number;
+    let dbView: ReadonlyDbView<any>;
+    let from: QueryBuilder<any>;
+
+    if (id < this.#consumerAnonViewCount) {
+      anonViewFns = moduleCtx.anonViews;
+      localId = id;
+      dbView = this.#dbView as ReadonlyDbView<any>;
+      from = makeQueryBuilder(moduleCtx.schemaType);
+    } else {
+      let offset = this.#consumerAnonViewCount;
+      let found = false;
+      for (let i = 0; i < this.#flatSubmodules.length; i++) {
+        const m = this.#flatSubmodules[i];
+        if (id < offset + m.anonViewFns.length) {
+          anonViewFns = m.anonViewFns;
+          localId = id - offset;
+          dbView = this.#getSubmoduleDbView(i) as ReadonlyDbView<any>;
+          from = this.#getSubmoduleQueryBuilder(i);
+          found = true;
+          break;
+        }
+        offset += m.anonViewFns.length;
+      }
+      if (!found) throw new RangeError(`unknown anonViewId ${id}`);
+    }
+
     const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
-      moduleCtx.anonViews[id];
+      anonViewFns![localId!];
     const ctx: AnonymousViewCtx<any> = freeze({
-      // this is the non-readonly DbView, but the typing for the user will be
-      // the readonly one, and if they do call mutating functions it will fail
-      // at runtime
-      db: this.#dbView,
-      from: makeQueryBuilder(moduleCtx.schemaType),
+      db: dbView!,
+      from: from!,
     });
     const args = deserializeParams(new BinaryReader(argsBuf));
     const ret = callUserFunction(fn, ctx, args);
@@ -473,15 +700,43 @@ class ModuleHooksImpl implements ModuleHooks {
     timestamp: bigint,
     args: Uint8Array
   ): Uint8Array {
-    return callProcedure(
-      this.#schema,
-      id,
-      new Identity(sender),
-      ConnectionId.nullIfZero(new ConnectionId(connection_id)),
-      new Timestamp(timestamp),
-      args,
-      () => this.#dbView
-    );
+    const senderIdentity = new Identity(sender);
+    const connId = ConnectionId.nullIfZero(new ConnectionId(connection_id));
+    const ts = new Timestamp(timestamp);
+
+    if (id < this.#consumerProcedureCount) {
+      return callProcedure(
+        this.#schema.procedures,
+        id,
+        senderIdentity,
+        connId,
+        ts,
+        args,
+        () => this.#dbView as DbView<any>,
+        this.#schema.submoduleDispatchInfos
+      );
+    }
+
+    let offset = this.#consumerProcedureCount;
+    for (let i = 0; i < this.#flatSubmodules.length; i++) {
+      const m = this.#flatSubmodules[i];
+      if (id < offset + m.procedureFns.length) {
+        return callProcedure(
+          m.procedureFns,
+          id - offset,
+          senderIdentity,
+          connId,
+          ts,
+          args,
+          () => this.#getSubmoduleDbView(i),
+          m.subDispatches,
+          m.namePrefix
+        );
+      }
+      offset += m.procedureFns.length;
+    }
+
+    throw new RangeError(`unknown procedureId ${id}`);
   }
 
   __call_http_handler__(
@@ -494,7 +749,8 @@ class ModuleHooksImpl implements ModuleHooks {
     const handler = moduleCtx.httpHandlers[id];
     const ctx = new HandlerContextImpl(
       new Timestamp(timestamp),
-      () => this.#dbView
+      () => this.#dbView,
+      this.#schema.submoduleDispatchInfos
     );
     const requestMetadata = HttpRequest.deserialize(new BinaryReader(request));
     const response = callUserFunction(
@@ -521,14 +777,18 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   #uuidCounter: { value: number } | undefined;
   #random: Random | undefined;
   #dbView: () => DbView<any>;
+  #dispatches: SubmoduleDispatchInfo[];
+  #asViews: object | undefined;
 
   readonly http = httpClient;
 
   constructor(
     readonly timestamp: Timestamp,
-    dbView: () => DbView<any>
+    dbView: () => DbView<any>,
+    dispatches: SubmoduleDispatchInfo[] = []
   ) {
     this.#dbView = dbView;
+    this.#dispatches = dispatches;
   }
 
   get identity() {
@@ -539,12 +799,28 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
     return (this.#random ??= makeRandom(this.timestamp));
   }
 
+  get as() {
+    return (this.#asViews ??= buildHandlerAliasCtxMap(
+      this,
+      this.#dispatches,
+      ''
+    )) as any;
+  }
+
   withTx<T>(body: (ctx: any) => T): T {
-    return runWithTx(
-      timestamp =>
-        new ReducerCtxImpl(Identity.zero(), timestamp, null, this.#dbView()),
-      body
-    );
+    const dispatches = this.#dispatches;
+    return runWithTx(timestamp => {
+      const tx = new ReducerCtxImpl(
+        Identity.zero(),
+        timestamp,
+        null,
+        this.#dbView()
+      );
+      if (dispatches.length > 0) {
+        tx.as = buildAliasCtxMap(tx, dispatches, '') as any;
+      }
+      return tx;
+    }, body);
   }
 
   newUuidV4(): Uuid {
@@ -559,11 +835,247 @@ class HandlerContextImpl<S extends UntypedSchemaDef = UntypedSchemaDef>
   }
 }
 
+function buildDbViewForDispatch(
+  dispatch: SubmoduleDispatchInfo,
+  namePrefix: string
+): object {
+  const tableEntries = dispatch.tables.map(({ accessorName, tableDef }) => [
+    accessorName,
+    makeTableView(dispatch.typespace, tableDef, namePrefix),
+  ]);
+  const subNsEntries = dispatch.subDispatches.map(sub => [
+    sub.namespace,
+    buildDbViewForDispatch(sub, namePrefix + sub.namespace + '.'),
+  ]);
+  return freeze(Object.fromEntries([...tableEntries, ...subNsEntries]));
+}
+
+function buildAliasCtx(
+  parent: InstanceType<typeof ReducerCtxImpl>,
+  dispatch: SubmoduleDispatchInfo,
+  namePrefix: string
+): object {
+  const nsDb = buildDbViewForDispatch(dispatch, namePrefix);
+  const subAs = buildAliasCtxMap(parent, dispatch.subDispatches, namePrefix);
+  return {
+    get sender() {
+      return parent.sender;
+    },
+    get databaseIdentity() {
+      return parent.databaseIdentity;
+    },
+    get identity() {
+      return parent.identity;
+    },
+    get timestamp() {
+      return parent.timestamp;
+    },
+    get connectionId() {
+      return parent.connectionId;
+    },
+    get senderAuth() {
+      return parent.senderAuth;
+    },
+    get random() {
+      return parent.random;
+    },
+    newUuidV4() {
+      return parent.newUuidV4();
+    },
+    newUuidV7() {
+      return parent.newUuidV7();
+    },
+    db: nsDb,
+    as: subAs,
+  };
+}
+
+function buildAliasCtxMap(
+  parent: InstanceType<typeof ReducerCtxImpl>,
+  dispatches: SubmoduleDispatchInfo[],
+  parentPrefix: string
+): object {
+  return freeze(
+    Object.fromEntries(
+      dispatches.map(d => [
+        d.namespace,
+        buildAliasCtx(parent, d, parentPrefix + d.namespace + '.'),
+      ])
+    )
+  );
+}
+
+function buildHandlerAliasCtx(
+  parent: HandlerContextImpl,
+  dispatch: SubmoduleDispatchInfo,
+  namePrefix: string
+): object {
+  // nsDb is built lazily inside withTx so that sys.table_id_from_name is called
+  // only after a transaction has been started (sys.procedure_start_mut_tx).
+  let nsDb_: DbView<any> | undefined;
+  const subAs = buildHandlerAliasCtxMap(
+    parent,
+    dispatch.subDispatches,
+    namePrefix
+  );
+  return {
+    get timestamp() {
+      return parent.timestamp;
+    },
+    get http() {
+      return parent.http;
+    },
+    get identity() {
+      return parent.identity;
+    },
+    get random() {
+      return parent.random;
+    },
+    as: subAs,
+    withTx(body: any) {
+      return runWithTx((ts: Timestamp) => {
+        const tx = new ReducerCtxImpl(
+          Identity.zero(),
+          ts,
+          null,
+          (nsDb_ ??= buildDbViewForDispatch(
+            dispatch,
+            namePrefix
+          ) as DbView<any>)
+        );
+        assignTxAliasViews(tx, dispatch.subDispatches, namePrefix);
+        return tx;
+      }, body);
+    },
+    newUuidV4() {
+      return parent.newUuidV4();
+    },
+    newUuidV7() {
+      return parent.newUuidV7();
+    },
+  };
+}
+
+function buildHandlerAliasCtxMap(
+  parent: HandlerContextImpl,
+  dispatches: SubmoduleDispatchInfo[],
+  parentPrefix: string
+): object {
+  return freeze(
+    Object.fromEntries(
+      dispatches.map(d => [
+        d.namespace,
+        buildHandlerAliasCtx(parent, d, parentPrefix + d.namespace + '.'),
+      ])
+    )
+  );
+}
+
+type ProcCtxRef = {
+  sender: Identity;
+  connectionId: ConnectionId | null;
+  timestamp: Timestamp;
+  get databaseIdentity(): Identity;
+  get identity(): Identity;
+  get http(): typeof httpClient;
+  get random(): Random;
+  newUuidV4(): Uuid;
+  newUuidV7(): Uuid;
+};
+
+function buildProcedureAliasCtx(
+  parent: ProcCtxRef,
+  dispatch: SubmoduleDispatchInfo,
+  namePrefix: string
+): object {
+  // nsDb is built lazily inside withTx so that sys.table_id_from_name is called
+  // only after a transaction has been started (sys.procedure_start_mut_tx).
+  let nsDb_: DbView<any> | undefined;
+  const subAs = buildProcedureAliasCtxMap(
+    parent,
+    dispatch.subDispatches,
+    namePrefix
+  );
+  return {
+    get sender() {
+      return parent.sender;
+    },
+    get databaseIdentity() {
+      return parent.databaseIdentity;
+    },
+    get identity() {
+      return parent.identity;
+    },
+    get timestamp() {
+      return parent.timestamp;
+    },
+    get connectionId() {
+      return parent.connectionId;
+    },
+    get http() {
+      return parent.http;
+    },
+    get random() {
+      return parent.random;
+    },
+    as: subAs,
+    withTx(body: any) {
+      return runWithTx((ts: Timestamp) => {
+        const tx = new ReducerCtxImpl(
+          parent.sender,
+          ts,
+          parent.connectionId,
+          (nsDb_ ??= buildDbViewForDispatch(
+            dispatch,
+            namePrefix
+          ) as DbView<any>)
+        );
+        assignTxAliasViews(tx, dispatch.subDispatches, namePrefix);
+        return tx;
+      }, body);
+    },
+    newUuidV4() {
+      return parent.newUuidV4();
+    },
+    newUuidV7() {
+      return parent.newUuidV7();
+    },
+  };
+}
+
+export function buildProcedureAliasCtxMap(
+  parent: ProcCtxRef,
+  dispatches: SubmoduleDispatchInfo[],
+  parentPrefix: string
+): object {
+  return freeze(
+    Object.fromEntries(
+      dispatches.map(d => [
+        d.namespace,
+        buildProcedureAliasCtx(parent, d, parentPrefix + d.namespace + '.'),
+      ])
+    )
+  );
+}
+
+/** Builds and assigns reducer-style alias views onto a freshly created TransactionCtx.
+ *  Must be called while inside a transaction (after sys.procedure_start_mut_tx). */
+export function assignTxAliasViews(
+  tx: InstanceType<typeof ReducerCtxImpl>,
+  dispatches: SubmoduleDispatchInfo[],
+  parentPrefix = ''
+): void {
+  if (dispatches.length > 0) {
+    tx.as = buildAliasCtxMap(tx, dispatches, parentPrefix) as any;
+  }
+}
+
 export function makeTableView(
   typespace: Typespace,
-  table: RawTableDefV10
+  table: RawTableDefV10,
+  namePrefix = ''
 ): Table<any> {
-  const table_id = sys.table_id_from_name(table.sourceName);
+  const table_id = sys.table_id_from_name(namePrefix + table.sourceName);
   const rowType = typespace.types[table.productTypeRef];
   if (rowType.tag !== 'Product') {
     throw 'impossible';
@@ -659,7 +1171,7 @@ export function makeTableView(
 
   for (const indexDef of table.indexes) {
     const accessorName = indexDef.accessorName!;
-    const index_id = sys.index_id_from_name(indexDef.sourceName!);
+    const index_id = sys.index_id_from_name(namePrefix + indexDef.sourceName!);
 
     let column_ids: number[];
     let isHashIndex = false;

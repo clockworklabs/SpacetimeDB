@@ -3,6 +3,11 @@ import {
   CaseConversionPolicy,
   Lifecycle,
   type MethodOrAny,
+  type RawModuleDefV10,
+  type RawProcedureDefV10,
+  type RawReducerDefV10,
+  type RawTableDefV10,
+  type Typespace,
 } from '../lib/autogen/types';
 import {
   type ParamsAsObject,
@@ -18,6 +23,7 @@ import {
 } from '../lib/schema';
 import type { UntypedTableSchema } from '../lib/table_schema';
 import { TypeBuilder, type ColumnBuilder } from '../lib/type_builders';
+import { hasOwn } from '../lib/util';
 import {
   Router,
   type HandlerFn,
@@ -68,10 +74,27 @@ type UntypedScheduledFunctionExport =
   | ReducerExport<any, any>
   | ProcedureExport<any, any, any>;
 
+export type SubmoduleDispatchInfo = {
+  namespace: string;
+  reducerFns: Reducers;
+  reducerDefs: RawReducerDefV10[];
+  procedureFns: Procedures;
+  procedureDefs: RawProcedureDefV10[];
+  anonViewFns: AnonViews;
+  viewFns: Views;
+  typespace: Typespace;
+  tables: Array<{ accessorName: string; tableDef: RawTableDefV10 }>;
+  /** The submodule's own schemaType tables, used to build namespace-scoped query builders. */
+  schemaTables: Record<string, UntypedTableDef>;
+  subDispatches: SubmoduleDispatchInfo[];
+};
+
 export class SchemaInner<
   S extends UntypedSchemaDef = UntypedSchemaDef,
 > extends ModuleContext {
   schemaType: S;
+  exportsRegistered = false;
+  schedulesResolved = false;
   existingFunctions = new Set<string>();
   existingHttpHandlers = new Set<string>();
   reducers: Reducers = [];
@@ -89,6 +112,7 @@ export class SchemaInner<
     new Map();
   pendingSchedules: PendingSchedule[] = [];
   pendingHttpRoutes: PendingHttpRoute[] = [];
+  submoduleDispatchInfos: SubmoduleDispatchInfo[] = [];
 
   constructor(getSchemaType: (ctx: SchemaInner<S>) => S) {
     super();
@@ -114,6 +138,10 @@ export class SchemaInner<
   }
 
   resolveSchedules() {
+    if (this.schedulesResolved) {
+      return;
+    }
+    this.schedulesResolved = true;
     // Pending schedules come from two API paths:
     // - legacy table({ scheduled }) schedules already know their tableName and
     //   scheduleAtCol because schema() resolves them while iterating table keys
@@ -249,23 +277,9 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
   }
 
   [moduleHooks](exports: object) {
-    // if (!(hasOwn(exports, 'default') && exports.default instanceof Schema)) {
-    //   throw new TypeError('must export schema as default export');
-    // }
-    const registeredSchema = this.#ctx;
-    for (const [name, moduleExport] of Object.entries(exports)) {
-      if (name === 'default') continue;
-      if (!isModuleExport(moduleExport)) {
-        throw new TypeError(
-          'exporting something that is not a spacetime export'
-        );
-      }
-      checkExportContext(moduleExport, registeredSchema);
-      moduleExport[registerExport](registeredSchema, name);
-    }
-    registeredSchema.resolveSchedules();
-    registeredSchema.resolveHttpRoutes();
-    return makeHooks(registeredSchema);
+    this.buildRawModuleDefV10(exports);
+    this.#ctx.resolveHttpRoutes();
+    return makeHooks(this.#ctx);
   }
 
   get schemaType(): S {
@@ -278,6 +292,56 @@ export class Schema<S extends UntypedSchemaDef> implements ModuleDefaultExport {
 
   get typespace() {
     return this.#ctx.typespace;
+  }
+
+  get submoduleDispatchInfos(): SubmoduleDispatchInfo[] {
+    return this.#ctx.submoduleDispatchInfos;
+  }
+
+  /** Internal: register exports and materialize the RawModuleDefV10 for upload. */
+  buildRawModuleDefV10(
+    exports: object,
+    opts?: { ignoreNonModuleExports?: boolean }
+  ): RawModuleDefV10 {
+    registerModuleExports(this.#ctx, exports, {
+      ignoreNonModuleExports: opts?.ignoreNonModuleExports ?? false,
+    });
+    this.#ctx.resolveSchedules();
+    return this.#ctx.rawModuleDefV10();
+  }
+
+  /**
+   * @internal – called by schema() when processing a submodule namespace entry.
+   * Registers the library's exports and returns both the serialized module def
+   * and the runtime dispatch info needed by ModuleHooksImpl for __call_reducer__.
+   */
+  buildSubmoduleDispatch(exports: object): {
+    rawDef: RawModuleDefV10;
+    dispatch: SubmoduleDispatchInfo;
+  } {
+    const rawDef = this.buildRawModuleDefV10(exports, {
+      ignoreNonModuleExports: true,
+    });
+    this.#ctx.resolveHttpRoutes();
+    return {
+      rawDef,
+      dispatch: {
+        namespace: '',
+        reducerFns: [...this.#ctx.reducers],
+        reducerDefs: [...this.#ctx.moduleDef.reducers],
+        procedureFns: [...this.#ctx.procedures],
+        procedureDefs: [...this.#ctx.moduleDef.procedures],
+        anonViewFns: [...this.#ctx.anonViews],
+        viewFns: [...this.#ctx.views],
+        typespace: this.#ctx.moduleDef.typespace,
+        tables: Object.values(this.#ctx.schemaType.tables).map(t => ({
+          accessorName: t.accessorName,
+          tableDef: t.tableDef,
+        })),
+        schemaTables: this.#ctx.schemaType.tables,
+        subDispatches: [...this.#ctx.submoduleDispatchInfos],
+      },
+    };
   }
 
   /**
@@ -698,18 +762,101 @@ export interface ModuleSettings {
   CASE_CONVERSION_POLICY?: CaseConversionPolicy;
 }
 
-export function schema<const H extends Record<string, UntypedTableSchema>>(
-  tables: H,
+type SubmoduleNamespace = {
+  default: Schema<any>;
+  [key: string]: unknown;
+};
+
+type SchemaEntry = UntypedTableSchema | SubmoduleNamespace;
+
+type ExtractTableEntries<H extends Record<string, SchemaEntry>> = {
+  [K in keyof H as H[K] extends UntypedTableSchema ? K : never]: Extract<
+    H[K],
+    UntypedTableSchema
+  >;
+};
+
+type ExtractSubmoduleSchemas<H extends Record<string, SchemaEntry>> = {
+  [K in keyof H as H[K] extends { default: Schema<any> }
+    ? K
+    : never]: H[K] extends { default: Schema<infer S extends UntypedSchemaDef> }
+    ? S
+    : never;
+};
+
+type SchemaDefForEntries<H extends Record<string, SchemaEntry>> =
+  TablesToSchema<ExtractTableEntries<H>> & {
+    namespaces: ExtractSubmoduleSchemas<H>;
+  };
+
+function isUntypedTableSchema(x: unknown): x is UntypedTableSchema {
+  return typeof x === 'object' && x !== null && hasOwn(x, 'tableDef');
+}
+
+function isSubmoduleNamespace(x: unknown): x is SubmoduleNamespace {
+  return (
+    typeof x === 'object' &&
+    x !== null &&
+    hasOwn(x, 'default') &&
+    x.default instanceof Schema
+  );
+}
+
+function registerModuleExports(
+  schema: SchemaInner,
+  exports: object,
+  opts?: { ignoreNonModuleExports?: boolean }
+) {
+  if (schema.exportsRegistered) {
+    return;
+  }
+  schema.exportsRegistered = true;
+
+  for (const [name, moduleExport] of Object.entries(exports)) {
+    if (name === 'default') continue;
+    if (!isModuleExport(moduleExport)) {
+      if (opts?.ignoreNonModuleExports) {
+        continue;
+      }
+      throw new TypeError('exporting something that is not a spacetime export');
+    }
+    checkExportContext(moduleExport, schema);
+    moduleExport[registerExport](schema, name);
+  }
+}
+
+export function schema<const H extends Record<string, SchemaEntry>>(
+  entries: H,
   moduleSettings?: ModuleSettings
-): Schema<TablesToSchema<H>> {
-  const ctx = new SchemaInner<TablesToSchema<H>>(ctx => {
+): Schema<SchemaDefForEntries<H>> {
+  const ctx = new SchemaInner<SchemaDefForEntries<H>>(ctx => {
     // Apply module settings.
     if (moduleSettings?.CASE_CONVERSION_POLICY != null) {
       ctx.setCaseConversionPolicy(moduleSettings.CASE_CONVERSION_POLICY);
     }
 
     const tableSchemas: Record<string, UntypedTableDef> = {};
-    for (const [accName, table] of Object.entries(tables)) {
+    for (const [accName, entry] of Object.entries(entries)) {
+      if (entry instanceof Schema) {
+        throw new TypeError(
+          `schema entry '${accName}' looks like a default import; use \`import * as ${accName} from '...'\` so the submodule can see the library's named reducer exports.`
+        );
+      }
+      if (isSubmoduleNamespace(entry)) {
+        const { rawDef, dispatch } =
+          entry.default.buildSubmoduleDispatch(entry);
+        dispatch.namespace = accName;
+        ctx.addSubmodule({ namespace: accName, module: rawDef });
+        ctx.submoduleDispatchInfos.push(dispatch);
+        continue;
+      }
+      if (!isUntypedTableSchema(entry)) {
+        throw new TypeError(
+          `schema entry '${accName}' must be a table or a submodule namespace object`
+        );
+      }
+
+      const table = entry;
       const tableDef = table.tableDef(ctx, accName);
       tableSchemas[accName] = tableToSchema(accName, table, tableDef);
       const tableSourceNames = ctx.tableSourceNames.get(table);
@@ -737,7 +884,7 @@ export function schema<const H extends Record<string, UntypedTableSchema>>(
         });
       }
     }
-    return { tables: tableSchemas } as TablesToSchema<H>;
+    return { tables: tableSchemas } as SchemaDefForEntries<H>;
   });
 
   return new Schema(ctx);

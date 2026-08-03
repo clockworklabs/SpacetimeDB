@@ -34,7 +34,7 @@ impl FunctionDef for ReducerDef {
         &self.params
     }
     fn name(&self) -> &Identifier {
-        self.name.as_identifier()
+        self.name.local()
     }
 }
 
