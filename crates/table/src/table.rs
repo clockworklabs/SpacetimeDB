@@ -44,7 +44,7 @@ use spacetimedb_sats::{
     layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size},
     Typespace,
 };
-use spacetimedb_sats::{memory_usage::MemoryUsage, raw_identifier::RawIdentifier};
+use spacetimedb_sats::{memory_usage::MemoryUsage, raw_identifier::RawNamespacedIdentifier};
 use spacetimedb_schema::{
     def::IndexAlgorithm,
     identifier::Identifier,
@@ -2328,7 +2328,7 @@ impl<'a> Iterator for IndexScanRangeIter<'a> {
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
-    pub constraint_name: RawIdentifier,
+    pub constraint_name: RawNamespacedIdentifier,
     pub table_name: TableName,
     pub cols: Vec<Identifier>,
     pub value: AlgebraicValue,

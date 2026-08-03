@@ -3,11 +3,42 @@
 use serial_test::serial;
 use spacetimedb_schema::auto_migrate::{ponder_auto_migrate, AutoMigrateStep};
 use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 
 fn get_normalized_schema(module_name: &str) -> ModuleDef {
     let module = CompiledModule::compile(module_name, CompilationMode::Debug);
     module.extract_schema_blocking()
+}
+
+/// The namespace a step's item lives in, if the step refers to a named item.
+///
+/// Returns `None` for steps whose payload is not an item key (row-level security, which is
+/// keyed by SQL text, and `DisconnectAllUsers`, which has no payload).
+fn step_namespace<'a, 'def>(step: &'a AutoMigrateStep<'def>) -> Option<&'a NamespacePath> {
+    match step {
+        AutoMigrateStep::RemoveSchedule((ns, _))
+        | AutoMigrateStep::RemoveView((ns, _))
+        | AutoMigrateStep::RemoveTable((ns, _))
+        | AutoMigrateStep::ChangeColumns((ns, _))
+        | AutoMigrateStep::ReschemaEventTable((ns, _))
+        | AutoMigrateStep::AddColumns((ns, _))
+        | AutoMigrateStep::AddTable((ns, _))
+        | AutoMigrateStep::AddSchedule((ns, _))
+        | AutoMigrateStep::AddView((ns, _))
+        | AutoMigrateStep::ChangeAccess((ns, _))
+        | AutoMigrateStep::ChangePrimaryKey((ns, _))
+        | AutoMigrateStep::UpdateView((ns, _))
+        | AutoMigrateStep::RemoveIndex((ns, _))
+        | AutoMigrateStep::RemoveConstraint((ns, _))
+        | AutoMigrateStep::RemoveSequence((ns, _))
+        | AutoMigrateStep::AddIndex((ns, _))
+        | AutoMigrateStep::AddConstraint((ns, _))
+        | AutoMigrateStep::AddSequence((ns, _)) => Some(ns),
+        AutoMigrateStep::AddRowLevelSecurity(_)
+        | AutoMigrateStep::RemoveRowLevelSecurity(_)
+        | AutoMigrateStep::DisconnectAllUsers => None,
+    }
 }
 
 fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &str) {
@@ -38,6 +69,12 @@ fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &
                 | AutoMigrateStep::UpdateView(_)
         )
     });
+
+    // TODO: Remove this once Rust and C# support submodules.
+    // Only TypeScript can mount submodules today, so its modules emit items in a namespace
+    // that the other languages cannot produce. Ignoring those steps keeps the root-level
+    // schema comparison meaningful instead of disabling it wholesale.
+    diff.retain(|step| step_namespace(step).is_none_or(|ns| ns.is_empty()));
 
     assert!(
         diff.is_empty(),
