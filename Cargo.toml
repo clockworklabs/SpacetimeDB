@@ -153,6 +153,7 @@ spacetimedb-primitives = { path = "crates/primitives", version = "=2.8.0" }
 spacetimedb-query = { path = "crates/query", version = "=2.8.0" }
 spacetimedb-query-builder = { path = "crates/query-builder", version = "=2.8.0" }
 spacetimedb-runtime = { path = "crates/runtime", version = "=2.8.0" }
+spacetimedb-runtime-core = { path = "crates/runtime-core", version = "=2.8.0" }
 spacetimedb-sats = { path = "crates/sats", version = "=2.8.0" }
 spacetimedb-schema = { path = "crates/schema", version = "=2.8.0" }
 spacetimedb-snapshot = { path = "crates/snapshot", version = "=2.8.0" }
