@@ -3,7 +3,10 @@ use spacetimedb_smoketests::Smoketest;
 /// Tests the functionality of the rename command
 #[test]
 fn test_set_name() {
-    let mut test = Smoketest::builder().autopublish(false).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("noop")
+        .autopublish(false)
+        .build();
 
     let orig_name = format!("domains-set-name-{}", std::process::id());
     test.publish().name(&orig_name).run().unwrap();
@@ -31,7 +34,10 @@ fn test_set_name() {
 /// Test how we treat the / character in published names
 #[test]
 fn test_subdomain_behavior() {
-    let mut test = Smoketest::builder().autopublish(false).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("noop")
+        .autopublish(false)
+        .build();
 
     let root_name = format!("domains-subdomain-behavior-{}", std::process::id());
     test.publish().name(&root_name).run().unwrap();
@@ -50,7 +56,10 @@ fn test_subdomain_behavior() {
 /// Test that we can't rename to a name already in use
 #[test]
 fn test_set_to_existing_name() {
-    let mut test = Smoketest::builder().autopublish(false).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("noop")
+        .autopublish(false)
+        .build();
 
     // Publish first database (no name)
     test.publish().run().unwrap();
@@ -78,7 +87,10 @@ fn test_set_to_existing_name() {
 /// Test that we can rename to a list of names via the API
 #[test]
 fn test_replace_names() {
-    let mut test = Smoketest::builder().autopublish(false).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("noop")
+        .autopublish(false)
+        .build();
 
     let orig_name = format!("domains-replace-names-{}", std::process::id());
     let alt_name1 = format!("domains-replace-names-{}-alt1", std::process::id());
