@@ -8561,7 +8561,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-runtime-core"
-version = "2.7.1"
+version = "2.8.0"
 dependencies = [
  "async-task",
  "spin",
