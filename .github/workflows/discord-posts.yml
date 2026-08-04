@@ -207,24 +207,12 @@ jobs:
         with:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
           script: |
-            const targetOwner = 'clockworklabs';
-            const targetRepo = 'SpacetimeDBPrivate';
-            const dispatchResp = await github.rest.actions.createWorkflowDispatch({
-              owner: targetOwner,
-              repo: targetRepo,
+            await github.rest.actions.createWorkflowDispatch({
+              owner: 'clockworklabs',
+              repo: 'SpacetimeDBPrivate',
               workflow_id: 'public-pr-merge.yml',
               ref: 'master',
               inputs: {
                 public_pr_number: '${{ needs.resolvePush.outputs.pr_number }}',
-              },
-              return_run_details: true,
+              }
             });
-
-            const runId = dispatchResp.data.workflow_run_id;
-            if (!runId) {
-              core.setFailed(`Dispatch response did not include run details: ${JSON.stringify(dispatchResp.data)}`);
-              return;
-            }
-
-            const runUrl = dispatchResp.data.html_url || `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
-            core.notice(`View run: ${runUrl}`);
