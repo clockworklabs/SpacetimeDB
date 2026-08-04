@@ -1,14 +1,16 @@
 #![cfg(feature = "simulation")]
 #![allow(clippy::disallowed_macros)]
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use futures::{
     channel::{mpsc, oneshot},
     StreamExt,
 };
 use spacetimedb_runtime::sim::{buggify, Rng, Runtime};
-use spin::Mutex;
 
 /// One reply produced by the simulated server.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -156,7 +158,7 @@ fn run_buggified_client_server(seed: u64) -> ClientServerRun {
             // Receive all 5 requests before processing any replies
             for _ in 0..5 {
                 let request = request_rx.next().await.expect("client should send request");
-                server_events_for_server.lock().push(ServerEvent::Received {
+                server_events_for_server.lock().unwrap().push(ServerEvent::Received {
                     id: request.id,
                     at: server_handle.now(),
                 });
@@ -169,7 +171,7 @@ fn run_buggified_client_server(seed: u64) -> ClientServerRun {
                     worker_handle.sleep(Duration::from_millis(request.id + 1)).await;
                     // buggify decides whether to drop this request (40% probability)
                     if worker_handle.buggify_with_prob(0.4) {
-                        worker_events.lock().push(ServerEvent::Dropped {
+                        worker_events.lock().unwrap().push(ServerEvent::Dropped {
                             id: request.id,
                             at: worker_handle.now(),
                         });
@@ -182,7 +184,7 @@ fn run_buggified_client_server(seed: u64) -> ClientServerRun {
                         value: request.input * 10,
                         at: worker_handle.now(),
                     };
-                    worker_events.lock().push(ServerEvent::Replied {
+                    worker_events.lock().unwrap().push(ServerEvent::Replied {
                         id: request.id,
                         at: response.at,
                     });
@@ -230,7 +232,7 @@ fn run_buggified_client_server(seed: u64) -> ClientServerRun {
         // Drive both client and server to completion
         let responses = client.await.expect("client task should complete");
         server.await.expect("server task should complete");
-        (responses, server_events.lock().clone())
+        (responses, server_events.lock().unwrap().clone())
     });
 
     // --- package the results: client responses, server trace, and total virtual time ---
@@ -260,21 +262,21 @@ fn multi_node_runtime_coordinates_pause_resume_and_virtual_time() {
             let a_handle = handle.clone();
             let a_events = Arc::clone(&events);
             let a = node_a.spawn(async move {
-                a_events.lock().push(("a_started", a_handle.now()));
+                a_events.lock().unwrap().push(("a_started", a_handle.now()));
                 a_handle.sleep(Duration::from_millis(3)).await;
-                a_events.lock().push(("a_finished", a_handle.now()));
+                a_events.lock().unwrap().push(("a_finished", a_handle.now()));
             });
 
             let b_handle = handle.clone();
             let b_events = Arc::clone(&events);
             let b = node_b.spawn(async move {
-                b_events.lock().push(("b_started", b_handle.now()));
+                b_events.lock().unwrap().push(("b_started", b_handle.now()));
                 b_handle.sleep(Duration::from_millis(2)).await;
-                b_events.lock().push(("b_finished", b_handle.now()));
+                b_events.lock().unwrap().push(("b_finished", b_handle.now()));
             });
 
             handle.sleep(Duration::from_millis(1)).await;
-            events.lock().push(("main_resumed_b", handle.now()));
+            events.lock().unwrap().push(("main_resumed_b", handle.now()));
             node_b.resume();
 
             a.await.expect("node a task should complete");
@@ -282,7 +284,7 @@ fn multi_node_runtime_coordinates_pause_resume_and_virtual_time() {
         }
     });
 
-    let events = events.lock();
+    let events = events.lock().unwrap();
     let get = |name: &str| events.iter().find(|(n, _)| *n == name).map(|(_, t)| *t).unwrap();
 
     // a starts with only per-task overhead accumulated before its first poll

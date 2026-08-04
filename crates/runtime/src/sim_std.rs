@@ -1,14 +1,14 @@
 //! Std-hosted entry points for running the deterministic simulator in tests.
 //!
 //! The portable simulator lives in [`crate::sim`]. This module is deliberately
-//! host-specific: it installs thread-local context while a simulation is
-//! running, checks determinism by replaying a seed in fresh OS threads, and
-//! intercepts a few libc calls so std code cannot silently escape determinism.
+//! host-specific: it marks a thread as simulation-owned while hosted tests run,
+//! checks determinism by replaying a seed in fresh OS threads, and intercepts a
+//! few libc calls so std code cannot silently escape determinism.
 
 #![allow(clippy::disallowed_macros)]
 
-use alloc::boxed::Box;
 use core::{cell::Cell, future::Future};
+use std::boxed::Box;
 use std::sync::OnceLock;
 
 use crate::sim;
@@ -21,7 +21,7 @@ use crate::sim;
 /// tests that execute inside a hosted process. While the future runs, this
 /// marks the thread as inside simulation so OS thread spawns can be rejected.
 pub fn block_on<F: Future>(runtime: &mut sim::Runtime, future: F) -> F::Output {
-    let _system_thread_context = enter_simulation_thread();
+    let _guard = enter();
     runtime.block_on(future)
 }
 
@@ -68,34 +68,33 @@ fn panic_with_seed(seed: u64, payload: Box<dyn core::any::Any + Send>) -> ! {
 
 // Simulation thread context.
 
-// Ambient state used only while `sim_std::block_on` is driving a simulation.
+// Ambient hosted state used only while sim_std is driving a simulation runtime.
 //
-// The simulator itself stays explicit-handle based. This thread-local only
-// marks whether the current OS thread is owned by a running simulation so
-// host thread creation can be rejected.
+// The simulator itself stays explicit-handle based. This flag only marks the
+// current OS thread as simulation-owned so host thread creation and randomness
+// hooks can reject accidental escapes from deterministic simulation.
 thread_local! {
-    // Marks the current OS thread as simulation-owned so thread creation hooks
-    // can reject accidental escapes to the host scheduler.
     static IN_SIMULATION: Cell<bool> = const { Cell::new(false) };
 }
 
-struct SimulationThreadGuard {
-    previous: bool,
-}
+#[must_use = "simulation runtime context exits immediately unless the guard is held"]
+struct EnterGuard;
 
-fn enter_simulation_thread() -> SimulationThreadGuard {
-    let previous = IN_SIMULATION.with(|state| state.replace(true));
-    SimulationThreadGuard { previous }
+fn enter() -> EnterGuard {
+    IN_SIMULATION.with(|current| {
+        assert!(!current.replace(true), "nested hosted simulation block_on");
+    });
+    EnterGuard
 }
 
 fn in_simulation() -> bool {
     IN_SIMULATION.with(Cell::get)
 }
 
-impl Drop for SimulationThreadGuard {
+impl Drop for EnterGuard {
     fn drop(&mut self) {
-        IN_SIMULATION.with(|state| {
-            state.set(self.previous);
+        IN_SIMULATION.with(|current| {
+            assert!(current.replace(false), "simulation context guard dropped without enter");
         });
     }
 }
