@@ -184,6 +184,20 @@ pub fn record_client_rejection(database_identity: Identity, cause: ClientRejectC
         .inc();
 }
 
+pub fn record_module_host_init_attempt(database_identity: Identity) {
+    WORKER_METRICS
+        .module_host_init_attempts
+        .with_label_values(&database_identity)
+        .inc();
+}
+
+pub fn record_module_host_init_failure(database_identity: Identity) {
+    WORKER_METRICS
+        .module_host_init_failures
+        .with_label_values(&database_identity)
+        .inc();
+}
+
 /// Records at most one disconnect cause for a single accepted websocket client.
 #[derive(Clone, Debug)]
 pub struct ClientDisconnectRecorder {
@@ -497,6 +511,16 @@ metrics_group!(
         #[labels(database_identity: Identity, module_type: HostType)]
         pub module_instances: IntGaugeVec,
 
+        #[name = spacetime_module_host_init_attempts_total]
+        #[help = "The cumulative number of module host initialization attempts"]
+        #[labels(database_identity: Identity)]
+        pub module_host_init_attempts: IntCounterVec,
+
+        #[name = spacetime_module_host_init_failures_total]
+        #[help = "The cumulative number of failed module host initialization attempts"]
+        #[labels(database_identity: Identity)]
+        pub module_host_init_failures: IntCounterVec,
+
         #[name = spacetime_reducer_wait_time_sec]
         #[help = "The amount of time (in seconds) a reducer spends in the queue waiting to run"]
         #[labels(db: Identity, reducer: str)]
@@ -509,6 +533,12 @@ metrics_group!(
         // But we expect many wait times to be on the order of microseconds.
         #[buckets(100e-6, 500e-6, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10)]
         pub reducer_wait_time: HistogramVec,
+
+        #[name = spacetime_scheduled_function_delay_seconds]
+        #[help = "The amount of time (in seconds) between when a scheduled function was due and when the scheduler began invoking it"]
+        #[labels(db: Identity, function: str)]
+        #[buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 300)]
+        pub scheduled_function_delay: HistogramVec,
 
         #[name = spacetime_worker_wasm_instance_errors_total]
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]

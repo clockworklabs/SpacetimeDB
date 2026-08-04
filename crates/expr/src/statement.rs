@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_sql_parser::{
@@ -67,13 +67,13 @@ pub struct TableInsert {
 
 pub struct TableDelete {
     pub table: Arc<TableOrViewSchema>,
-    pub alias: RawIdentifier,
+    pub alias: RawNamespacedIdentifier,
     pub filter: Option<Expr>,
 }
 
 pub struct TableUpdate {
     pub table: Arc<TableOrViewSchema>,
-    pub alias: RawIdentifier,
+    pub alias: RawNamespacedIdentifier,
     pub columns: Box<[(ColId, AlgebraicValue)]>,
     pub filter: Option<Expr>,
 }
@@ -255,7 +255,7 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
 #[derive(Error, Debug)]
 #[error("{name} is not a valid system variable")]
 pub struct InvalidVar {
-    pub name: RawIdentifier,
+    pub name: RawNamespacedIdentifier,
 }
 
 const VAR_ROW_LIMIT: &str = "row_limit";
