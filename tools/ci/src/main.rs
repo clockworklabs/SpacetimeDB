@@ -20,8 +20,6 @@ mod util;
 
 use util::ensure_repo_root;
 
-const OTHER_WORKFLOWS_SUBCOMMAND: &str = "other-workflows";
-
 /// On Windows, `pnpm` is installed as a `.cmd` shim which `CreateProcess` cannot
 /// find without going through the shell.  Wrapping with `cmd /c` fixes this.
 /// On Unix, we invoke `pnpm` directly.
@@ -58,7 +56,7 @@ struct Cli {
     /// When no subcommand is specified, all subcommands are run in sequence. This option allows
     /// specifying subcommands to skip when running all. For example, to skip the `unreal-tests`
     /// subcommand, use `--skip unreal-tests`.
-    #[arg(long, default_value = OTHER_WORKFLOWS_SUBCOMMAND)]
+    #[arg(long, default_value = "other-workflows")]
     skip: Vec<String>,
 }
 
