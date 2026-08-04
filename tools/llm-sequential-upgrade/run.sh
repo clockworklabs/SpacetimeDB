@@ -11,6 +11,7 @@
 #   ./run.sh --rules standard --backend spacetime   # standard: SDK rules only, no templates
 #   ./run.sh --model claude-sonnet-4-6 --backend mongodb  # pin the model (parity)
 #   ./run.sh --run-index 1 --backend spacetime      # parallel run with offset ports
+#   ./run.sh --track spec --level 1 --backend spacetime  # property-ordered sequence (accounts first)
 #   ./run.sh --fix <app-dir>                    # fix bugs in existing app (reads BUG_REPORT.md)
 #   ./run.sh --upgrade <app-dir> --level 3      # add level 3 features to existing level 2 app (incremental feature file)
 #   ./run.sh --upgrade <app-dir> --level 3 --composed-prompt  # use the full cumulative composed spec instead
@@ -62,6 +63,7 @@ UPGRADE_MODE=""
 UPGRADE_APP_DIR=""
 RESUME_SESSION=""
 COMPOSED_UPGRADE_PROMPT=""
+TRACK="legacy"
 while [[ $# -gt 0 ]]; do
   case $1 in
     --level) LEVEL="$2"; LEVEL_EXPLICIT=1; shift 2 ;;
@@ -69,6 +71,8 @@ while [[ $# -gt 0 ]]; do
     --variant) VARIANT="$2"; shift 2 ;;
     --rules) RULES="$2"; shift 2 ;;
     --model) MODEL="$2"; shift 2 ;;
+    --track)
+      TRACK="$2"; shift 2 ;;
     --run-index) RUN_INDEX="$2"; shift 2 ;;
     --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
     --upgrade) UPGRADE_MODE=1; UPGRADE_APP_DIR="$2"; shift 2 ;;
@@ -275,7 +279,12 @@ else
   exit 1
 fi
 
-COMPOSED_PROMPT="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/composed/$(printf '%02d' "$LEVEL")_"*".md"
+if [[ "${TRACK:-legacy}" == "spec" ]]; then
+  # Property-ordered sequence (accounts first). See stack-bench/spec/LEVELS.md.
+  COMPOSED_PROMPT="$SCRIPT_DIR/../stack-bench/spec/prompts/$(printf '%02d' "$LEVEL")-"*".md"
+else
+  COMPOSED_PROMPT="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/composed/$(printf '%02d' "$LEVEL")_"*".md"
+fi
 # shellcheck disable=SC2086
 if ls $COMPOSED_PROMPT &>/dev/null; then
   PROMPT_FILE=$(ls $COMPOSED_PROMPT 2>/dev/null | head -1)
@@ -296,7 +305,11 @@ echo "[OK] UI contracts stripped"
 # Stack Bench: append the data-testid hook appendix for this level (if authored),
 # replacing the prose contracts with mechanically lintable ones. The linter path
 # is handed to the session so it can self-check before DEPLOY_COMPLETE.
-STACKBENCH_APPENDIX="$SCRIPT_DIR/../stack-bench/contracts/appendix-level-$(printf '%02d' "$LEVEL").md"
+if [[ "${TRACK:-legacy}" == "spec" ]]; then
+  STACKBENCH_APPENDIX="$SCRIPT_DIR/../stack-bench/spec/contracts/appendix-$(printf '%02d' "$LEVEL").md"
+else
+  STACKBENCH_APPENDIX="$SCRIPT_DIR/../stack-bench/contracts/appendix-level-$(printf '%02d' "$LEVEL").md"
+fi
 STACKBENCH_LINT=""
 if [[ -f "$STACKBENCH_APPENDIX" ]]; then
   cat "$STACKBENCH_APPENDIX" >> "$STRIPPED_PROMPT"

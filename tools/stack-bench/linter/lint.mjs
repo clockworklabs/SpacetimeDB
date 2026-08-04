@@ -14,7 +14,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const CONTRACTS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'contracts');
+const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CHECK_TIMEOUT = 5000;
 
 function parseArgs(argv) {
@@ -26,6 +26,7 @@ function parseArgs(argv) {
       case '--json': args.json = true; break;
       case '--out': args.out = argv[++i]; break;
       case '--label': args.label = argv[++i]; break;
+      case '--track': args.track = argv[++i]; break;
       case '--headed': args.headed = true; break;
       default:
         console.error(`Unknown argument: ${argv[i]}`);
@@ -39,8 +40,12 @@ function parseArgs(argv) {
   return args;
 }
 
-function loadHooks(level) {
-  const files = readdirSync(CONTRACTS_DIR).filter(f => /^level-\d+\.json$/.test(f)).sort();
+function loadHooks(level, track = 'legacy') {
+  const CONTRACTS_DIR = track === 'spec'
+    ? join(ROOT_DIR, 'spec', 'contracts')
+    : join(ROOT_DIR, 'contracts');
+  const re = track === 'spec' ? /^\d+-[a-z-]+\.json$/ : /^level-\d+\.json$/;
+  const files = readdirSync(CONTRACTS_DIR).filter(f => re.test(f)).sort();
   const hooks = [];
   for (const f of files) {
     const contract = JSON.parse(readFileSync(join(CONTRACTS_DIR, f), 'utf8'));
@@ -82,7 +87,7 @@ async function checkHook(page, hook, results) {
 
 async function run() {
   const args = parseArgs(process.argv);
-  const hooks = loadHooks(args.level);
+  const hooks = loadHooks(args.level, args.track);
   const byStage = stage => hooks.filter(h => h.stage === stage);
   const results = [];
   const blocked = stage => {

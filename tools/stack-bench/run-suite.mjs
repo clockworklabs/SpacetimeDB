@@ -22,14 +22,23 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(ROOT, '..', '..');
 const RESET = join(REPO, 'tools', 'llm-sequential-upgrade', 'reset-app.sh');
 
-const SUITES = [
-  { id: 'features', spec: null, key: 'level' },
-  { id: 'invariants', spec: 'scenarios/level-01-invariants.json' },
-  { id: 'delivery', spec: 'scenarios/level-01-delivery.json' },
-];
+// Two sequences: the legacy chat ladder, and the property-ordered one in spec/
+// (see spec/LEVELS.md). Selected with --track.
+const SUITES = {
+  legacy: [
+    { id: 'features', spec: null },
+    { id: 'invariants', spec: 'scenarios/level-01-invariants.json' },
+    { id: 'delivery', spec: 'scenarios/level-01-delivery.json' },
+  ],
+  spec: [
+    { id: 'features', spec: 'spec/scenarios/01-accounts.json' },
+    { id: 'invariants', spec: 'spec/scenarios/01-accounts-invariants.json' },
+    { id: 'delivery', spec: 'scenarios/level-01-delivery.json' },
+  ],
+};
 
 function parseArgs(argv) {
-  const a = { level: '1', reset: true, media: false };
+  const a = { level: '1', reset: true, media: false, track: 'legacy' };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--app': a.app = argv[++i]; break;
@@ -39,6 +48,8 @@ function parseArgs(argv) {
       case '--out': a.out = argv[++i]; break;
       case '--level': a.level = argv[++i]; break;
       case '--media': a.media = true; break;
+      case '--track': a.track = argv[++i]; break;
+      case '--restart-cmd': a.restartCmd = argv[++i]; break;
       case '--no-reset': a.reset = false; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
@@ -121,7 +132,7 @@ function lint(args) {
   const out = join(args.out, 'contract-lint.json');
   try {
     run('node', [join(ROOT, 'linter', 'lint.mjs'), '--url', args.url, '--level', args.level,
-      '--label', args.label, '--out', out]);
+      '--label', args.label, '--out', out, ...(args.track === 'spec' ? ['--track', 'spec'] : [])]);
   } catch { /* non-zero exit means hooks failed; the report still lands */ }
   if (!existsSync(out)) { console.log('NO REPORT'); return null; }
   const r = JSON.parse(readFileSync(out, 'utf8'));
@@ -135,6 +146,7 @@ function gradeSuite(args, suite) {
   const argv = [join(ROOT, 'grader', 'grade.mjs'), '--url', args.url, '--level', args.level,
     '--label', `${args.label}-${suite.id}`, '--out', out];
   if (suite.spec) argv.push('--spec', join(ROOT, suite.spec));
+  if (args.restartCmd) argv.push('--restart-cmd', args.restartCmd);
   if (args.media) argv.push('--media', join(args.out, 'media'));
   let stdout = '';
   try {
@@ -201,7 +213,7 @@ async function main() {
   bundle.suites.lint = lint(args);
 
   let total = 0, max = 0, dirty = false;
-  for (const suite of SUITES) {
+  for (const suite of SUITES[args.track] ?? SUITES.legacy) {
     if (!(await freshen())) { console.log(`  ${suite.id}: SKIPPED (reset failed)`); continue; }
     const r = gradeSuite(args, suite);
     bundle.suites[suite.id] = r;
