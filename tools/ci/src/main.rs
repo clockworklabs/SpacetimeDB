@@ -363,7 +363,7 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
-    /// Workflows that are not part of ci.yml should live here.
+    /// Workflows that are not part of ci.yml should live here. They will not be run as part of a no-subcommand invocation of `cargo ci`.
     OtherWorkflows {
         #[command(subcommand)]
         cmd: OtherWorkflowsCmd,
