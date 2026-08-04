@@ -16,8 +16,7 @@ const EXPECTED_DEFAULTS: &[(&str, &str)] = &[
     ("f32_negative_value", "-32.5"),
     ("f64_positive_value", "64.25"),
     ("f64_negative_value", "-64.25"),
-    // TODO: uncomment this once string default values are fixed in Rust
-    //("string_value", r#""default string""#),
+    ("string_value", r#""default string""#),
 ];
 
 fn test_defaults(test: &mut Smoketest, publish_updated: impl FnOnce(&mut Smoketest)) {
@@ -134,8 +133,8 @@ pub struct DefaultsTestTable {
     pub f64_positive_value: f64,
     #[default(-64.25)]
     pub f64_negative_value: f64,
-//    #[default("default string")]
-//    pub string_value: String,
+    #[default("default string")]
+    pub string_value: String,
 }
 "#;
 
