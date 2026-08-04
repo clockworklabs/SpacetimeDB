@@ -602,6 +602,17 @@ private:
                                              row_buffer_.data(),
                                              &buffer_len);
         }
+
+        // A retry can consume the iterator's final batch, so it must handle the
+        // exhaustion sentinel just like the initial advance above.
+        if (ret == ITER_EXHAUSTED) {
+            ffi_exhausted_ = true;
+            if (buffer_len > 0) {
+                row_buffer_.resize(buffer_len);
+                deserialize_batch(buffer_len);
+            }
+            return;
+        }
         
         if (ret > 0) {
             std::abort(); // IndexIterator: row_iter_bsatn_advance failed
