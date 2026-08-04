@@ -362,15 +362,6 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
-    /// Workflows that are not part of ci.yml should live here. They will not be run as part of a no-subcommand invocation of `cargo ci`.
-    OtherWorkflows {
-        #[command(subcommand)]
-        cmd: OtherWorkflowsCmd,
-    },
-}
-
-#[derive(Subcommand)]
-enum OtherWorkflowsCmd {
     /// Generates this cargo ci README and checks for changes.
     SelfDocs {
         #[arg(
@@ -380,6 +371,15 @@ enum OtherWorkflowsCmd {
         )]
         check: bool,
     },
+    /// Workflows should leave here if they should not be run as part of a no-subcommand invocation of `cargo ci`.
+    OtherWorkflows {
+        #[command(subcommand)]
+        cmd: OtherWorkflowsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OtherWorkflowsCmd {
     /// Checks that sensitive CODEOWNERS-controlled files have the required approvals.
     CodeownersCheck {
         /// Git ref to compare against, usually origin/<pull request base branch>.
@@ -787,16 +787,14 @@ fn main() -> Result<()> {
             }
         }
 
-        Some(CiCmd::OtherWorkflows {
-            cmd: OtherWorkflowsCmd::SelfDocs { check },
-        }) => {
+        Some(CiCmd::SelfDocs { check }) => {
             let readme_content = ci_docs::generate_cli_docs();
             let path = Path::new(README_PATH);
 
             if check {
                 let existing = fs::read_to_string(path).unwrap_or_default();
                 if existing != readme_content {
-                    bail!("README.md is out of date. Please run `cargo ci other-workflows self-docs` to update it.");
+                    bail!("README.md is out of date. Please run `cargo ci self-docs` to update it.");
                 } else {
                     log::info!("README.md is up to date.");
                 }

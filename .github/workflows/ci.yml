@@ -760,7 +760,7 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Check for docs change
-        run: cargo ci other-workflows self-docs --check
+        run: cargo ci self-docs --check
 
   cli_docs:
     needs: [merge_queue_noop]
