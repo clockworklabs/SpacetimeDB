@@ -108,8 +108,14 @@ async function run() {
     for (const h of byStage('landing')) ok = (await checkHook(page, h, results)) && ok;
 
     if (ok) {
-      await page.locator(tid('name-input')).first().fill(`lint-${uniq}`);
-      await page.locator(tid('name-submit')).first().click();
+      if (args.track === 'spec') {
+        await page.locator(tid('signup-username')).first().fill(`lint-${uniq}`);
+        await page.locator(tid('signup-password')).first().fill(`pw-lint-${uniq}`);
+        await page.locator(tid('signup-submit')).first().click();
+      } else {
+        await page.locator(tid('name-input')).first().fill(`lint-${uniq}`);
+        await page.locator(tid('name-submit')).first().click();
+      }
     }
 
     // Stage: main (registered -> rooms + online users)
