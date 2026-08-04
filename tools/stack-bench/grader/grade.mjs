@@ -132,6 +132,21 @@ async function enterRoom(actor, roomName) {
 async function runStep(step, actors, ctx) {
   // Cross-actor steps act on several actors at once, so they resolve first.
   if (step.do === 'expectOrderMatches') return expectOrderMatches(step, actors);
+  if (step.do === 'restartBackend') {
+    if (!ctx.restartCmd) throw new Error('INCONCLUSIVE: no --restart-cmd supplied, backend was never restarted');
+    const { execFileSync } = await import('node:child_process');
+    try {
+      // stdio 'ignore': the restarted server is a backgrounded descendant that
+      // keeps an inherited pipe open, so 'pipe' never returns even though the
+      // script exits cleanly. The script does its own readiness wait.
+      execFileSync('bash', ['-c', ctx.restartCmd], { stdio: 'ignore', timeout: 300000 });
+    } catch (err) {
+      throw new Error(`backend restart failed: ${(err.stdout || err.message || '').toString().trim().slice(-200)}`);
+    }
+    const any = actors.values().next().value;
+    await any.page.waitForTimeout(step.settleMs ?? 10000);
+    return;
+  }
   if (step.do === 'sendConcurrently') {
     // Genuine concurrency: all senders fire without waiting for each other.
     // Apps legitimately rate-limit (the L1 spec requires spam prevention), so
@@ -209,7 +224,10 @@ async function runStep(step, actors, ctx) {
       return;
     }
     case 'click': {
-      await actor.loc(step.testid).click({ timeout: step.within ?? DEFAULT_WITHIN });
+      const scope = step.in
+        ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) }
+        : undefined;
+      await actor.loc(step.testid, { scope }).click({ timeout: step.within ?? DEFAULT_WITHIN });
       return;
     }
     case 'reload': {
@@ -291,6 +309,9 @@ async function runStep(step, actors, ctx) {
       if (await toggle.count()) await toggle.click({ timeout: DEFAULT_WITHIN }).catch(() => {});
       const when = actor.loc('schedule-time');
       await when.waitFor({ state: 'visible', timeout: DEFAULT_WITHIN });
+      // A dedicated compose field inside the scheduling UI takes precedence.
+      const schedInput = actor.page.locator('[data-testid="schedule-message-input"], [data-testid="schedule-text"]').first();
+      if (await schedInput.count()) await schedInput.fill(step.text);
 
       const type = (await when.getAttribute('type')) ?? 'text';
       const at = new Date(Date.now() + step.secondsAhead * 1000);
@@ -318,6 +339,19 @@ async function runStep(step, actors, ctx) {
         throw new Error(`backend restart command failed: ${(err.stdout || err.message || '').toString().trim().slice(-200)}`);
       }
       await page.waitForTimeout(step.settleMs ?? 10000);
+      return;
+    }
+    case 'ensureRegistered': {
+      // Some apps drop the session on reload (scored separately as an
+      // invariant). Re-register so THIS test measures scheduling durability
+      // rather than re-measuring session persistence.
+      const nameInput = page.locator(tid('name-input')).first();
+      if (await nameInput.isVisible().catch(() => false)) {
+        await nameInput.fill(`${step.name}-${ctx.scope}`);
+        await page.locator(tid('name-submit')).first().click();
+        await page.locator(tid('room-list')).first().waitFor({ state: 'attached', timeout: DEFAULT_WITHIN });
+        await page.waitForTimeout(step.settleMs ?? 1500);
+      }
       return;
     }
     case 'wait': return page.waitForTimeout(step.ms);

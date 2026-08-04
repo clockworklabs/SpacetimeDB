@@ -1,31 +1,91 @@
 {
   "level": 2,
-  "note": "Durability of scheduled work across a backend restart. This is the sharpest structural difference available at L2: an Express app schedules with in-process setTimeout, so restarting the process silently discards every pending message, while a SpacetimeDB scheduled reducer is a row in the database and survives. Matching SpacetimeDB here requires the model to build a persistent job queue with recovery on boot, unprompted. Restarts are an ordinary event — every deploy is one — so losing scheduled work to a restart is a real defect, not a contrived one.",
+  "note": "Durability of scheduled work across a backend restart. This is the sharpest structural difference available at L2: an Express app schedules with in-process setTimeout, so restarting the process silently discards every pending message, while a SpacetimeDB scheduled reducer is a row in the database and survives. Matching SpacetimeDB here requires the model to build a persistent job queue with recovery on boot, unprompted. Restarts are an ordinary event \u2014 every deploy is one \u2014 so losing scheduled work to a restart is a real defect, not a contrived one.",
   "features": [
     {
       "id": 301,
       "name": "Scheduled Delivery Survives Restart",
       "max": 2,
-      "actors": ["alice", "bob"],
+      "actors": [
+        "alice",
+        "bob"
+      ],
       "setup": [
-        { "do": "register", "actor": "alice", "name": "Alice" },
-        { "do": "register", "actor": "bob", "name": "Bob" },
-        { "do": "createRoom", "actor": "alice", "room": "durable" },
-        { "do": "enterRoom", "actor": "alice", "room": "durable" },
-        { "do": "enterRoom", "actor": "bob", "room": "durable" }
+        {
+          "do": "register",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "register",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "durable"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "durable"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "durable"
+        }
       ],
       "criteria": [
         {
           "id": "pending-survives-restart",
           "points": 1,
-          "desc": "A message scheduled before a backend restart is still listed as pending afterwards — the schedule is persisted, not held in process memory",
+          "desc": "A message scheduled before a backend restart is still listed as pending afterwards \u2014 the schedule is persisted, not held in process memory (the actor re-registers if the app dropped the session on reload, so this measures scheduling durability rather than session persistence, which invariant 103 scores separately) The scheduling panel is re-opened after the reload because several apps keep the pending list inside a collapsible panel that defaults to closed.",
           "steps": [
-            { "do": "scheduleMessage", "actor": "alice", "text": "DURABLE alpha", "secondsAhead": 75 },
-            { "do": "expect", "actor": "alice", "testid": "scheduled-item", "within": 6000 },
-            { "do": "restartBackend", "settleMs": 12000 },
-            { "do": "reload", "actor": "alice", "settleMs": 4000 },
-            { "do": "enterRoom", "actor": "alice", "room": "durable" },
-            { "do": "expect", "actor": "alice", "testid": "scheduled-item", "within": 10000 }
+            {
+              "do": "scheduleMessage",
+              "actor": "alice",
+              "text": "DURABLE alpha",
+              "secondsAhead": 200
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "scheduled-item",
+              "within": 6000
+            },
+            {
+              "do": "restartBackend",
+              "settleMs": 12000
+            },
+            {
+              "do": "reload",
+              "actor": "alice",
+              "settleMs": 4000
+            },
+            {
+              "do": "ensureRegistered",
+              "actor": "alice",
+              "name": "Alice"
+            },
+            {
+              "do": "enterRoom",
+              "actor": "alice",
+              "room": "durable"
+            },
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "schedule-toggle",
+              "within": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "scheduled-item",
+              "within": 12000
+            }
           ]
         },
         {
@@ -33,10 +93,27 @@
           "points": 1,
           "desc": "The scheduled message actually sends at its appointed time despite the restart. In-process timers are gone after a restart, so the message never arrives.",
           "steps": [
-            { "do": "expect", "actor": "alice", "testid": "message-item", "contains": "DURABLE alpha", "within": 90000 }
+            {
+              "do": "ensureRegistered",
+              "actor": "bob",
+              "name": "Bob"
+            },
+            {
+              "do": "enterRoom",
+              "actor": "bob",
+              "room": "durable"
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "DURABLE alpha",
+              "within": 230000
+            }
           ]
         }
-      ]
+      ],
+      "note": "Scheduling window is 200s because a SpacetimeDB host restart takes appreciably longer than an Express process restart; a shorter window let the message send before the pending list could be checked, which looked like a failure but was the schedule working."
     }
   ]
 }

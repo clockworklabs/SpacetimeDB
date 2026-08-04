@@ -5,13 +5,36 @@
     {
       "id": 5,
       "name": "Scheduled Messages",
-      "actors": ["alice", "bob"],
+      "actors": [
+        "alice",
+        "bob"
+      ],
       "setup": [
-        { "do": "register", "actor": "alice", "name": "Alice" },
-        { "do": "register", "actor": "bob", "name": "Bob" },
-        { "do": "createRoom", "actor": "alice", "room": "sched" },
-        { "do": "enterRoom", "actor": "alice", "room": "sched" },
-        { "do": "enterRoom", "actor": "bob", "room": "sched" }
+        {
+          "do": "register",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "register",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "sched"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "sched"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "sched"
+        }
       ],
       "criteria": [
         {
@@ -19,8 +42,18 @@
           "points": 1,
           "desc": "After scheduling, the author sees the message listed as pending",
           "steps": [
-            { "do": "scheduleMessage", "actor": "alice", "text": "SCHEDULED alpha", "secondsAhead": 70 },
-            { "do": "expect", "actor": "alice", "testid": "scheduled-item", "within": 6000 }
+            {
+              "do": "scheduleMessage",
+              "actor": "alice",
+              "text": "SCHEDULED alpha",
+              "secondsAhead": 70
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "scheduled-item",
+              "within": 6000
+            }
           ]
         },
         {
@@ -28,7 +61,14 @@
           "points": 1,
           "desc": "A scheduled message must not appear in the room before its send time",
           "steps": [
-            { "do": "expect", "actor": "bob", "testid": "message-item", "contains": "SCHEDULED alpha", "absent": true, "within": 5000 }
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "SCHEDULED alpha",
+              "absent": true,
+              "within": 5000
+            }
           ]
         },
         {
@@ -36,9 +76,29 @@
           "points": 1,
           "desc": "Cancelling a pending scheduled message removes it, and it never sends",
           "steps": [
-            { "do": "scheduleMessage", "actor": "alice", "text": "SCHEDULED cancelme", "secondsAhead": 70 },
-            { "do": "click", "actor": "alice", "testid": "schedule-cancel" },
-            { "do": "expect", "actor": "alice", "testid": "scheduled-item", "contains": "cancelme", "absent": true, "within": 5000 }
+            {
+              "do": "scheduleMessage",
+              "actor": "alice",
+              "text": "SCHEDULED cancelme",
+              "secondsAhead": 70
+            },
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "schedule-cancel",
+              "in": {
+                "testid": "scheduled-item",
+                "contains": "cancelme"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "scheduled-item",
+              "contains": "cancelme",
+              "absent": true,
+              "within": 5000
+            }
           ]
         }
       ]

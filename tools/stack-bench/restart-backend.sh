@@ -29,8 +29,8 @@ case "$BACKEND" in
     echo "stopping Express on :$PORT"
     npx --yes kill-port "$PORT" >/dev/null 2>&1 || true
     sleep 3
-    ( cd "$APP_DIR/server" && PORT="$PORT" nohup npm run dev > "/tmp/restart-$BACKEND-$PORT.log" 2>&1 & )
-    wait_for "http://localhost:$PORT/api/rooms" 90
+    ( cd "$APP_DIR/server" && PORT="$PORT" nohup npm run dev < /dev/null > "/tmp/restart-$BACKEND-$PORT.log" 2>&1 & )
+    wait_for "http://localhost:$PORT/api/rooms" 180
     echo "Express on :$PORT is back"
     ;;
 
@@ -44,8 +44,8 @@ case "$BACKEND" in
       pkill -f spacetimedb-standalone || true
     fi
     sleep 4
-    nohup spacetime start > /tmp/restart-spacetime.log 2>&1 &
-    wait_for "http://localhost:3000/v1/ping" 120
+    nohup spacetime start < /dev/null > /tmp/restart-spacetime.log 2>&1 &
+    wait_for "http://localhost:3000/v1/ping" 240
     echo "SpacetimeDB host is back"
     ;;
 

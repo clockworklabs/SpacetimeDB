@@ -671,6 +671,18 @@ Only add the NEW feature(s) that appear in the feature spec below but not in lev
 
 Do NOT do browser testing — that happens in a separate grading session.
 Cost tracking is automatic via OpenTelemetry — do NOT estimate tokens.
+$(if [[ -n "$STACKBENCH_LINT" ]]; then cat <<LINT_EOF
+
+**UI contract lint (required):** the Testing Hooks appendix below lists test IDs
+for the new level's elements as well as earlier ones. After deploying, verify:
+
+    node "$STACKBENCH_LINT" --url http://localhost:$VITE_PORT --level $LEVEL
+
+Fix any FAIL or BLOCKED hooks and re-run until it prints CONTRACT LINT PASS.
+Use the exact test IDs listed — near-miss names (schedule-time-input for
+schedule-time) fail the lint. Do not output UPGRADE_COMPLETE until it passes.
+LINT_EOF
+fi)
 
 When done, output: UPGRADE_COMPLETE
 
