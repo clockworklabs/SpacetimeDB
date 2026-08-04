@@ -21,10 +21,8 @@ pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
 }
 
 fn file_review_requirements(base_ref: &str, path: &Path, review: &ReviewStatus) -> Result<()> {
-    if license::is_file(path) {
-        if !license::is_trivial_change(base_ref, path)? {
-            review.require("cloutiertyler")?;
-        }
+    if license::is_file(path) && !license::is_trivial_change(base_ref, path)? {
+        review.require("cloutiertyler")?;
     }
 
     Ok(())
@@ -55,7 +53,6 @@ fn changed_files(base_ref: &str) -> Result<Vec<PathBuf>> {
 }
 
 struct ReviewStatus {
-    pr_number: u64,
     latest_by_author: HashMap<String, String>,
 }
 
@@ -84,10 +81,7 @@ impl ReviewStatus {
             latest_by_author.insert(login.to_string(), state.to_string());
         }
 
-        Ok(Self {
-            pr_number,
-            latest_by_author,
-        })
+        Ok(Self { latest_by_author })
     }
 
     fn require(&self, reviewer: &str) -> Result<()> {

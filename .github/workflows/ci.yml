@@ -516,6 +516,8 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
