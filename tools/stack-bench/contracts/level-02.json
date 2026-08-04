@@ -1,0 +1,30 @@
+{
+  "level": 2,
+  "hooks": [
+    {
+      "id": "schedule-toggle",
+      "element": "control in the compose area that opens the message-scheduling UI",
+      "stage": "room",
+      "check": "attached"
+    },
+    {
+      "id": "schedule-time",
+      "element": "input for choosing the send time; must allow scheduling as little as 60 seconds ahead",
+      "stage": "room",
+      "check": "attached",
+      "revealedBy": "schedule-toggle"
+    },
+    {
+      "id": "scheduled-item",
+      "element": "one entry per pending scheduled message (repeated testid), visible to its author",
+      "stage": "scenario",
+      "note": "appears after the author schedules a message, until it sends or is cancelled"
+    },
+    {
+      "id": "schedule-cancel",
+      "element": "button on a pending scheduled message that cancels it",
+      "stage": "scenario",
+      "note": "present on each scheduled-item"
+    }
+  ]
+}

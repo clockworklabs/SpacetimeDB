@@ -293,6 +293,21 @@ sed '/^\*\*UI contract:\*\*/,/^$/d; /^\*\*Important:\*\* Each feature below incl
 PROMPT_FILE="$STRIPPED_PROMPT"
 echo "[OK] UI contracts stripped"
 
+# Stack Bench: append the data-testid hook appendix for this level (if authored),
+# replacing the prose contracts with mechanically lintable ones. The linter path
+# is handed to the session so it can self-check before DEPLOY_COMPLETE.
+STACKBENCH_APPENDIX="$SCRIPT_DIR/../stack-bench/contracts/appendix-level-$(printf '%02d' "$LEVEL").md"
+STACKBENCH_LINT=""
+if [[ -f "$STACKBENCH_APPENDIX" ]]; then
+  cat "$STACKBENCH_APPENDIX" >> "$STRIPPED_PROMPT"
+  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    STACKBENCH_LINT=$(cygpath -w "$SCRIPT_DIR/../stack-bench/linter/lint.mjs")
+  else
+    STACKBENCH_LINT="$SCRIPT_DIR/../stack-bench/linter/lint.mjs"
+  fi
+  echo "[OK] Stack Bench testing-hooks appendix appended (level $LEVEL)"
+fi
+
 echo ""
 
 # ─── Create run directories ─────────────────────────────────────────────────
@@ -489,6 +504,14 @@ snapshot_inputs() {
   local PROMPTS_SRC="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts"
   cp "$PROMPTS_SRC/composed/"*.md "$INPUTS_DIR/prompts/composed/" 2>/dev/null || true
   cp "$PROMPTS_SRC/language/typescript-$BACKEND.md" "$INPUTS_DIR/prompts/language/" 2>/dev/null || true
+
+  # Effective feature prompt (post contract-strip / Stack Bench appendix) — what
+  # the model actually receives; plus the contracts it was linted against.
+  cp "$PROMPT_FILE" "$INPUTS_DIR/prompts/effective-$(basename "$PROMPT_FILE" | sed 's/^seq-upgrade-prompt-[0-9]*-//')" 2>/dev/null || true
+  if [[ -n "${STACKBENCH_LINT:-}" ]]; then
+    mkdir -p "$INPUTS_DIR/stack-bench-contracts"
+    cp "$SCRIPT_DIR/../stack-bench/contracts/"level-*.json "$INPUTS_DIR/stack-bench-contracts/" 2>/dev/null || true
+  fi
 
   echo "  Inputs snapshotted to $INPUTS_DIR"
 }
@@ -693,6 +716,17 @@ Run the sequential upgrade benchmark — GENERATE AND DEPLOY ONLY.
 
 If the build fails, fix and retry (up to 3 times per phase).
 Write an ITERATION_LOG.md tracking any build reprompts.
+$(if [[ -n "$STACKBENCH_LINT" ]]; then cat <<LINT_EOF
+
+**UI contract lint (required):** after the app is deployed and the dev server is
+running, verify the Testing Hooks appendix is satisfied:
+
+    node "$STACKBENCH_LINT" --url http://localhost:$VITE_PORT --level $LEVEL
+
+Fix any FAIL or BLOCKED hooks and re-run until it prints CONTRACT LINT PASS.
+Do not output DEPLOY_COMPLETE until the lint passes.
+LINT_EOF
+fi)
 
 Do NOT do browser testing — that happens in a separate grading session.
 Cost tracking is automatic via OpenTelemetry — do NOT estimate tokens.
@@ -803,6 +837,10 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
       -e "s/6373/$VITE_PORT_MONGO/g" \
       -e "s/:6001/:$EXPRESS_PORT/g" \
       -e "s/localhost:6001/localhost:$EXPRESS_PORT/g" \
+      -e "s/PORT=6001/PORT=$EXPRESS_PORT/g" \
+      -e "s/kill-port 6001/kill-port $EXPRESS_PORT/g" \
+      -e "s/| 6001 |/| $EXPRESS_PORT |/g" \
+      -e "s/port 6001/port $EXPRESS_PORT/g" \
       -e "s|localhost:6432/spacetime|localhost:6432/$PG_DATABASE|g" \
       -e "s|spacetime:spacetime@localhost:6432/spacetime|spacetime:spacetime@localhost:6432/$PG_DATABASE|g" \
       -e "s|localhost:6437/chat-app|localhost:6437/$MONGO_DATABASE|g" \
@@ -939,6 +977,19 @@ echo ""
 LOGS_FILE_NATIVE="$SHARED_TELEMETRY_DIR/logs.jsonl"
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
   LOGS_FILE_NATIVE=$(cygpath -w "$SHARED_TELEMETRY_DIR/logs.jsonl")
+fi
+
+# Stack Bench: independent post-session contract lint. The grader never trusts
+# the session's own claim — this is the record of record, saved with the run.
+if [[ -n "${STACKBENCH_LINT:-}" ]]; then
+  echo "Running independent contract lint..."
+  STACKBENCH_REPORT="$RUN_DIR/contract-lint.json"
+  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    STACKBENCH_REPORT=$(cygpath -w "$RUN_DIR/contract-lint.json")
+  fi
+  node "$STACKBENCH_LINT" --url "http://localhost:$VITE_PORT" --level "$LEVEL" \
+    --label "$RUN_ID" --out "$STACKBENCH_REPORT" || true
+  echo ""
 fi
 
 echo "Parsing telemetry..."

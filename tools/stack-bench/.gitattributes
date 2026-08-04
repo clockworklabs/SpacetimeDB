@@ -1,0 +1,5 @@
+# Harness scripts and contract data are consumed by Node and by Linux CI runners.
+# Force LF so checkouts on Windows don't introduce CRLF into JSON/JS the graders parse.
+*.sh text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
