@@ -14,7 +14,7 @@ pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
 
     for path in changed_files(base_ref)? {
         file_review_requirements(base_ref, &path, &review)
-            .with_context(|| format!("failed to check review requirements for {}", path.display()))?;
+            .with_context(|| format!("review requirements failed for {}", path.display()))?;
     }
 
     Ok(())
