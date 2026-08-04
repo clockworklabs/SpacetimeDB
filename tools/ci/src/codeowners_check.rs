@@ -15,7 +15,9 @@ pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
 
     for path in changed_files(base_ref)? {
         if is_license_file(&path) {
-            require_review_from(base_ref, &path, pr_number, REQUIRED_LICENSE_REVIEWER)?;
+            if !is_trivial_license_change(base_ref, &path)? {
+                require_review_from(&path, pr_number, REQUIRED_LICENSE_REVIEWER)?;
+            }
         }
     }
 
@@ -46,7 +48,7 @@ fn changed_files(base_ref: &str) -> Result<Vec<PathBuf>> {
     Ok(output.lines().map(Path::new).map(Path::to_path_buf).collect())
 }
 
-fn require_review_from(base_ref: &str, path: &Path, pr_number: u64, reviewer: &str) -> Result<()> {
+fn is_trivial_license_change(base_ref: &str, path: &Path) -> Result<bool> {
     let diff = cmd!(
         "git",
         "diff",
@@ -58,10 +60,10 @@ fn require_review_from(base_ref: &str, path: &Path, pr_number: u64, reviewer: &s
     )
     .read()
     .with_context(|| format!("failed to read diff for {}", path.display()))?;
-    if diff_only_changes_license_version_or_date(&diff) {
-        return Ok(());
-    }
+    Ok(diff_only_changes_license_version_or_date(&diff))
+}
 
+fn require_review_from(path: &Path, pr_number: u64, reviewer: &str) -> Result<()> {
     if approved_by(pr_number, reviewer)? {
         return Ok(());
     }
