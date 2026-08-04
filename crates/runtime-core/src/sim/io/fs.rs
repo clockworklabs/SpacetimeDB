@@ -1,7 +1,7 @@
-use alloc::{collections::BTreeMap, rc::Rc};
+use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
-    cell::{Cell, RefCell},
     cmp,
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 pub const PAGE_SIZE: usize = 4096;
@@ -27,13 +27,13 @@ impl PageIndex {
 }
 
 struct Page {
-    bytes: RefCell<[u8; PAGE_SIZE]>,
+    bytes: spin::Mutex<[u8; PAGE_SIZE]>,
 }
 
 impl Page {
     fn zeroed() -> Self {
         Self {
-            bytes: RefCell::new([0; PAGE_SIZE]),
+            bytes: spin::Mutex::new([0; PAGE_SIZE]),
         }
     }
 }
@@ -47,25 +47,25 @@ impl Page {
 /// or written. Writing a page is atomic.
 #[derive(Clone)]
 pub struct File {
-    pages: RefCell<BTreeMap<PageIndex, Rc<Page>>>,
-    len: Cell<u64>,
+    pages: Arc<spin::Mutex<BTreeMap<PageIndex, Arc<Page>>>>,
+    len: Arc<AtomicU64>,
 }
 
 impl File {
-    pub(super) const fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            pages: RefCell::new(BTreeMap::new()),
-            len: Cell::new(0),
+            pages: Arc::new(spin::Mutex::new(BTreeMap::new())),
+            len: Arc::new(AtomicU64::new(0)),
         }
     }
 
-    pub(super) const fn len(&self) -> u64 {
-        self.len.get()
+    pub(super) fn len(&self) -> u64 {
+        self.len.load(Ordering::Relaxed)
     }
 
     #[allow(unused)]
-    pub(super) const fn is_empty(&self) -> bool {
-        self.len.get() == 0
+    pub(super) fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Change the file length.
@@ -80,7 +80,7 @@ impl File {
         if !new_len.is_multiple_of(PAGE_SIZE_U64) {
             return Err(Error::UnalignedOffset);
         }
-        let old_len = self.len.get();
+        let old_len = self.len();
 
         match new_len.cmp(&old_len) {
             Equal => {}
@@ -92,13 +92,13 @@ impl File {
                     self.get_or_allocate_page(PageIndex(index));
                 }
 
-                self.len.set(new_len);
+                self.len.store(new_len, Ordering::Relaxed);
             }
             Less => {
-                self.len.set(new_len);
+                self.len.store(new_len, Ordering::Relaxed);
 
                 let first_removed = PageIndex::from_offset(new_len);
-                let removed = self.pages.borrow_mut().split_off(&first_removed);
+                let removed = self.pages.lock().split_off(&first_removed);
                 drop(removed);
             }
         }
@@ -114,7 +114,7 @@ impl File {
 
         match self.get_page(PageIndex(index)) {
             Some(page) => {
-                dst.copy_from_slice(&*page.bytes.borrow());
+                dst.copy_from_slice(&*page.bytes.lock());
             }
             None => {
                 dst.fill(0);
@@ -131,24 +131,24 @@ impl File {
         }
 
         let page = self.get_or_allocate_page(PageIndex(index));
-        page.bytes.borrow_mut().copy_from_slice(src);
+        page.bytes.lock().copy_from_slice(src);
 
         let end = index
             .checked_add(1)
             .and_then(|pages| pages.checked_mul(PAGE_SIZE_U64))
             .ok_or(Error::OffsetOverflow)?;
 
-        self.len.set(cmp::max(self.len.get(), end));
+        self.len.fetch_max(end, Ordering::Relaxed);
 
         Ok(())
     }
 
-    fn get_page(&self, index: PageIndex) -> Option<Rc<Page>> {
-        self.pages.borrow().get(&index).cloned()
+    fn get_page(&self, index: PageIndex) -> Option<Arc<Page>> {
+        self.pages.lock().get(&index).cloned()
     }
 
-    fn get_or_allocate_page(&self, index: PageIndex) -> Rc<Page> {
-        let mut pages = self.pages.borrow_mut();
-        Rc::clone(pages.entry(index).or_insert_with(|| Rc::new(Page::zeroed())))
+    fn get_or_allocate_page(&self, index: PageIndex) -> Arc<Page> {
+        let mut pages = self.pages.lock();
+        Arc::clone(pages.entry(index).or_insert_with(|| Arc::new(Page::zeroed())))
     }
 }
