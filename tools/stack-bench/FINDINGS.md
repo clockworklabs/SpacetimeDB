@@ -64,8 +64,14 @@ works and hides the problem.
   an anonymous session for a signed-in one. Silently reusing the last-seen token
   would break exactly that flow, and would make logout unexpressible.
 
-**Suggested fix — in the skill, not the SDK.** Teach the pattern that re-supplies
-the token when it changes, so the connection that gets rebuilt carries it:
+**Deliberately NOT fixed in the skill.** A workaround was written, verified, and
+then reverted. Patching benchmark inputs in response to a failing test the same
+harness defines is teaching to the test, and it would have improved a score
+without improving the product. The gap belongs in the React integration — see
+below — and the benchmark should keep reporting the failure until that lands.
+
+**The workaround that was verified** (kept here as evidence the diagnosis is
+correct, not as guidance to ship):
 
 ```ts
 useEffect(() => {
@@ -78,6 +84,14 @@ useEffect(() => {
     .withToken(token));
 }, [token]);
 ```
+
+**The real fix, in the SDK.** `ConnectionManager.rebuild()` is documented as the
+supported "reconnect with a fresh token" path, but `ConnectionManager` is not
+exported from the public index and the React layer does not surface it, so an app
+using `SpacetimeDBProvider` cannot reach it. Exposing token updates through the
+React integration — a `rebuild`/`setToken` on the context, or having the provider
+honour a changed builder — would let apps do this properly and make the
+workaround unnecessary.
 
 **Why it matters.** Every deploy restarts the host. Any user who signed up during
 the current session and has not reloaded since silently becomes a different user
