@@ -75,12 +75,12 @@ jobs:
             });
 
             const runId = dispatchResp.data.workflow_run_id;
-            if (!runId) {
+            const runUrl = dispatchResp.data.html_url;
+            if (!runId || !runUrl) {
               core.setFailed(`Dispatch response did not include run details: ${JSON.stringify(dispatchResp.data)}`);
               return;
             }
 
-            const runUrl = dispatchResp.data.html_url || `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
             core.notice(`View run: ${runUrl}`);
             core.setOutput('run_id', String(runId));
             core.setOutput('run_url', runUrl);
@@ -93,9 +93,6 @@ jobs:
           RUN_URL: ${{ steps.dispatch.outputs.run_url }}
         run: |
           set -euo pipefail
-          if [[ -z "${RUN_URL}" ]]; then
-            RUN_URL="https://github.com/${TARGET_OWNER}/${TARGET_REPO}/actions/runs/${RUN_ID}"
-          fi
           echo "Waiting for workflow result... ${RUN_URL}"
           gh run watch "$RUN_ID" \
             --repo "$TARGET_OWNER/$TARGET_REPO" \
