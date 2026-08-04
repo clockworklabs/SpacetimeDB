@@ -21,7 +21,7 @@ pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
 }
 
 fn file_review_requirements(base_ref: &str, path: &Path, review: &ReviewStatus) -> Result<()> {
-    if license::is_file(path) && !license::is_trivial_change(base_ref, path)? {
+    if license::is_license(path) && !license::is_trivial_change(base_ref, path)? {
         review.require("cloutiertyler")?;
     }
 
@@ -119,7 +119,7 @@ mod license {
         Ok(diff_only_changes_version_or_date(&diff))
     }
 
-    pub(super) fn is_file(path: &Path) -> bool {
+    pub(super) fn is_license(path: &Path) -> bool {
         let path_str = path.to_string_lossy();
         if path_str.starts_with("licenses/") {
             return true;
@@ -244,10 +244,10 @@ diff --git a/LICENSE.txt b/LICENSE.txt
 
         #[test]
         fn detects_license_files() {
-            assert!(is_file(Path::new("LICENSE.txt")));
-            assert!(is_file(Path::new("crates/cli/LICENSE")));
-            assert!(is_file(Path::new("licenses/BSL.txt")));
-            assert!(!is_file(Path::new("crates/cli/Cargo.toml")));
+            assert!(is_license(Path::new("LICENSE.txt")));
+            assert!(is_license(Path::new("crates/cli/LICENSE")));
+            assert!(is_license(Path::new("licenses/BSL.txt")));
+            assert!(!is_license(Path::new("crates/cli/Cargo.toml")));
         }
     }
 }
