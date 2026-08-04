@@ -10,6 +10,8 @@ use core::{
 
 use spin::Mutex;
 
+use crate::sim::io::SimulatorIO;
+
 use super::{time::TimeHandle, Rng};
 
 mod task;
@@ -21,11 +23,12 @@ type Runnable = async_task::Runnable<NodeId>;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuntimeConfig {
     pub seed: u64,
+    pub enable_io: bool,
 }
 
 impl RuntimeConfig {
     pub const fn new(seed: u64) -> Self {
-        Self { seed }
+        Self { seed, enable_io: false }
     }
 }
 
@@ -143,6 +146,12 @@ impl Runtime {
         Self {
             executor: Arc::new(Executor::new(config)),
         }
+    }
+
+    // TODO: This is a stopgap to allow submission of I/O tasks. We probably
+    // want the user-facing API to hide this.
+    pub fn io(&self) -> &Option<SimulatorIO> {
+        &self.executor.io
     }
 
     /// Drive a top-level future to completion on the simulation executor.
@@ -360,6 +369,7 @@ struct Executor {
     next_node: AtomicU64,
     rng: Rng,
     time: TimeHandle,
+    io: Option<SimulatorIO>,
 }
 
 impl Executor {
@@ -375,6 +385,7 @@ impl Executor {
             next_node: AtomicU64::new(1),
             rng: Rng::new(config.seed),
             time: TimeHandle::new(),
+            io: config.enable_io.then(SimulatorIO::default),
         }
     }
 
@@ -499,6 +510,10 @@ impl Executor {
                 };
             }
 
+            if self.run_pending_io() {
+                continue;
+            }
+
             if self.time.wake_next_timer() {
                 continue;
             }
@@ -524,6 +539,15 @@ impl Executor {
             // Using the runtime RNG keeps overhead deterministic by seed.
             let nanos = 100 + (self.rng.next_u64() % 901);
             self.time.advance(Duration::from_nanos(nanos));
+        }
+    }
+
+    fn run_pending_io(&self) -> bool {
+        // TODO: Inject faults (reorder, delay, drop, ..) when buggify is enabled.
+        // Also, should this run more than one queue entry?
+        match &self.io {
+            Some(io) => io.tick(),
+            None => false,
         }
     }
 

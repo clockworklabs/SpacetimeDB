@@ -1,9 +1,8 @@
 use alloc::{
     boxed::Box,
     collections::{btree_map, BTreeMap, VecDeque},
-    rc::Rc,
+    sync::Arc,
 };
-use core::cell::RefCell;
 use futures_channel::oneshot;
 
 use super::{fs, Completion, Error, Submission};
@@ -12,7 +11,7 @@ use crate::io::{AlignedBytes, ErrorWith, SECTOR_SIZE};
 pub type WriteAtResult<B> = Result<B, ErrorWith<Error, B>>;
 pub type ReadAtResult<B> = Result<B, ErrorWith<Error, B>>;
 
-pub fn write_at<B: AlignedBytes + 'static>(
+pub fn write_at<B: AlignedBytes + Send + 'static>(
     fd: fs::File,
     buf: B,
     offset: u64,
@@ -21,7 +20,7 @@ pub fn write_at<B: AlignedBytes + 'static>(
     let first_page = (offset / SECTOR_SIZE as u64) as usize;
     let page_count = buf.as_bytes().len() / SECTOR_SIZE;
 
-    let state = Rc::new(RefCell::new(PagedOpState {
+    let state = Arc::new(spin::Mutex::new(PagedOpState {
         buf: Some(buf),
         notify: Some(notify),
         remaining: page_count,
@@ -40,7 +39,7 @@ pub fn write_at<B: AlignedBytes + 'static>(
     })
 }
 
-pub fn read_at<B: AlignedBytes + 'static>(
+pub fn read_at<B: AlignedBytes + Send + 'static>(
     fd: fs::File,
     buf: B,
     offset: u64,
@@ -49,7 +48,7 @@ pub fn read_at<B: AlignedBytes + 'static>(
     let first_page = (offset / SECTOR_SIZE as u64) as usize;
     let page_count = buf.as_bytes().len() / SECTOR_SIZE;
 
-    let state = Rc::new(RefCell::new(PagedOpState {
+    let state = Arc::new(spin::Mutex::new(PagedOpState {
         buf: Some(buf),
         notify: Some(notify),
         remaining: page_count,
@@ -96,11 +95,11 @@ struct GenericCompletion<T> {
     notify: oneshot::Sender<T>,
 }
 
-fn completion<T: 'static>(result: T, notify: oneshot::Sender<T>) -> Box<dyn Completion> {
+fn completion<T: Send + 'static>(result: T, notify: oneshot::Sender<T>) -> Box<dyn Completion> {
     Box::new(GenericCompletion { result, notify })
 }
 
-impl<T> Completion for GenericCompletion<T> {
+impl<T: Send> Completion for GenericCompletion<T> {
     fn complete(self: Box<Self>) {
         let Self { result, notify } = *self;
         let _ = notify.send(result);
@@ -120,7 +119,7 @@ impl Submission for Ready {
     }
 }
 
-pub fn ready<T: 'static>(result: T, notify: oneshot::Sender<T>) -> Box<dyn Submission> {
+pub fn ready<T: Send + 'static>(result: T, notify: oneshot::Sender<T>) -> Box<dyn Submission> {
     Box::new(Ready(completion(result, notify)))
 }
 
@@ -208,13 +207,13 @@ struct PagedOpState<B> {
     first_error: Option<Error>,
 }
 
-fn complete_page_op<B: 'static>(
-    state: &Rc<RefCell<PagedOpState<B>>>,
+fn complete_page_op<B: Send + 'static>(
+    state: &Arc<spin::Mutex<PagedOpState<B>>>,
     result: Result<(), fs::Error>,
     completions: &mut VecDeque<Box<dyn Completion>>,
 ) {
     let complete = {
-        let mut state = state.borrow_mut();
+        let mut state = state.lock();
         if let Err(e) = result
             && state.first_error.is_none()
         {
@@ -232,13 +231,13 @@ fn complete_page_op<B: 'static>(
 }
 
 struct WriteCompletion<B> {
-    state: Rc<RefCell<PagedOpState<B>>>,
+    state: Arc<spin::Mutex<PagedOpState<B>>>,
 }
 
-impl<B: 'static> Completion for WriteCompletion<B> {
+impl<B: Send + 'static> Completion for WriteCompletion<B> {
     fn complete(self: Box<Self>) {
         let (notify, result) = {
-            let mut state = self.state.borrow_mut();
+            let mut state = self.state.lock();
 
             assert_eq!(state.remaining, 0);
 
@@ -261,10 +260,10 @@ struct WritePage<B> {
     fd: fs::File,
     file_page: usize,
     buf_page: usize,
-    state: Rc<RefCell<PagedOpState<B>>>,
+    state: Arc<spin::Mutex<PagedOpState<B>>>,
 }
 
-impl<B: AlignedBytes + 'static> Submission for WritePage<B> {
+impl<B: AlignedBytes + Send + 'static> Submission for WritePage<B> {
     fn execute(
         self: Box<Self>,
         _files: &mut BTreeMap<Box<str>, fs::File>,
@@ -278,7 +277,7 @@ impl<B: AlignedBytes + 'static> Submission for WritePage<B> {
         } = *self;
 
         let result = {
-            let state_ref = state.borrow();
+            let state_ref = state.lock();
             let buf = state_ref.buf.as_ref().expect("buffer went away");
 
             let start = buf_page * SECTOR_SIZE;
@@ -293,10 +292,10 @@ struct ReadPage<B> {
     fd: fs::File,
     file_page: usize,
     buf_page: usize,
-    state: Rc<RefCell<PagedOpState<B>>>,
+    state: Arc<spin::Mutex<PagedOpState<B>>>,
 }
 
-impl<B: AlignedBytes + 'static> Submission for ReadPage<B> {
+impl<B: AlignedBytes + Send + 'static> Submission for ReadPage<B> {
     fn execute(
         self: Box<Self>,
         _files: &mut BTreeMap<Box<str>, fs::File>,
@@ -310,7 +309,7 @@ impl<B: AlignedBytes + 'static> Submission for ReadPage<B> {
         } = *self;
 
         let result = {
-            let mut state_ref = state.borrow_mut();
+            let mut state_ref = state.lock();
             let buf = state_ref.buf.as_mut().expect("buffer went away");
 
             let start = buf_page * SECTOR_SIZE;

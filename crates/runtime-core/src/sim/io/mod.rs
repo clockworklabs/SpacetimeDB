@@ -1,15 +1,9 @@
 use alloc::{
     boxed::Box,
     collections::{BTreeMap, VecDeque},
-    rc::Rc,
+    sync::Arc,
 };
-use core::{
-    cell::RefCell,
-    future::{poll_fn, Future},
-    pin::Pin,
-    result::Result,
-    task::Poll,
-};
+use core::result::Result;
 use futures_channel::oneshot;
 
 use crate::io::{AlignedBytes, ErrorWith, SpacetimeIO};
@@ -35,42 +29,23 @@ impl From<fs::Error> for Error {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct SimulatorIO {
-    inner: Rc<RefCell<SimulatorIOInner>>,
+    inner: Arc<spin::Mutex<SimulatorIOInner>>,
 }
 
 impl SimulatorIO {
-    pub fn tick(&self) {
-        self.inner.borrow_mut().tick();
-    }
-
-    fn submit<T>(&self, op: impl FnOnce(oneshot::Sender<T>) -> Box<dyn Submission>) -> oneshot::Receiver<T> {
-        let (tx, rx) = oneshot::channel();
-        self.inner.borrow_mut().submit(op(tx));
-        rx
-    }
-
-    // TODO: The sim runtime should be advancing I/O. Until it does, `tick()`
-    // whenever a result future is polled and returns pending.
-    async fn wait_for<T>(&self, mut rx: oneshot::Receiver<T>) -> Result<T, oneshot::Canceled> {
-        poll_fn(|cx| match Pin::new(&mut rx).poll(cx) {
-            Poll::Ready(result) => Poll::Ready(result),
-            Poll::Pending => {
-                self.tick();
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            }
-        })
-        .await
+    pub fn tick(&self) -> bool {
+        self.inner.lock().tick()
     }
 
     async fn submit_and_wait<T>(
         &self,
         op: impl FnOnce(oneshot::Sender<T>) -> Box<dyn Submission>,
     ) -> Result<T, oneshot::Canceled> {
-        let rx = self.submit(op);
-        self.wait_for(rx).await
+        let (tx, rx) = oneshot::channel();
+        self.inner.lock().submit(op(tx));
+        rx.await
     }
 }
 
@@ -90,7 +65,7 @@ impl SpacetimeIO for SimulatorIO {
             .expect("`create_file` future cancelled")
     }
 
-    async fn write_all_at<B: AlignedBytes + 'static>(
+    async fn write_all_at<B: AlignedBytes + Send + 'static>(
         &self,
         fd: Self::Fd,
         buf: B,
@@ -113,13 +88,13 @@ impl SpacetimeIO for SimulatorIO {
         } else {
             let (tx, rx) = oneshot::channel();
             for op in op::write_at(fd, buf, offset, tx) {
-                self.inner.borrow_mut().submit(op);
+                self.inner.lock().submit(op);
             }
-            self.wait_for(rx).await.expect("`write_all_at` future cancelled")
+            rx.await.expect("`write_all_at` future cancelled")
         }
     }
 
-    async fn read_exact_at<B: AlignedBytes + 'static>(
+    async fn read_exact_at<B: AlignedBytes + Send + 'static>(
         &self,
         fd: Self::Fd,
         buf: B,
@@ -142,9 +117,9 @@ impl SpacetimeIO for SimulatorIO {
         } else {
             let (tx, rx) = oneshot::channel();
             for op in op::read_at(fd, buf, offset, tx) {
-                self.inner.borrow_mut().submit(op);
+                self.inner.lock().submit(op);
             }
-            self.wait_for(rx).await.expect("`read_exact_at` future cancelled")
+            rx.await.expect("`read_exact_at` future cancelled")
         }
     }
 
@@ -175,13 +150,28 @@ struct SimulatorIOInner {
 }
 
 impl SimulatorIOInner {
-    fn tick(&mut self) {
+    // TODO: Allow runtime to inject faults via:
+    //
+    // - pick random entries from the submission queue
+    // - drop queue entries
+    // - delay `execute` (somehow)
+    // - delay `complete`
+    // - make a submission fail without performing its effect
+    // - execute an arbitrary number of (random) SQEs
+    // - complete an arbitrary number of CQEs
+
+    fn tick(&mut self) -> bool {
+        let mut progress = false;
         if let Some(sqe) = self.submissions.pop_front() {
             sqe.execute(&mut self.files, &mut self.completions);
+            progress = true;
         }
         if let Some(cqe) = self.completions.pop_front() {
             cqe.complete();
+            progress = true;
         }
+
+        progress
     }
 
     fn submit(&mut self, op: Box<dyn Submission>) {
@@ -189,7 +179,7 @@ impl SimulatorIOInner {
     }
 }
 
-trait Submission {
+trait Submission: Send {
     fn execute(
         self: Box<Self>,
         files: &mut BTreeMap<Box<str>, fs::File>,
@@ -197,20 +187,23 @@ trait Submission {
     );
 }
 
-trait Completion {
+trait Completion: Send {
     fn complete(self: Box<Self>);
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::sim::Runtime;
+    use crate::sim::{Runtime, RuntimeConfig};
 
     use super::*;
 
     #[test]
     fn create_file() {
-        let mut rt = Runtime::new(1);
-        let io = SimulatorIO::default();
+        let mut rt = Runtime::with_config(RuntimeConfig {
+            enable_io: true,
+            ..<_>::default()
+        });
+        let io = rt.io().clone().unwrap();
 
         let fd = rt
             .block_on(io.create_file("/data/test", 2 * SECTOR_SIZE as u64))
@@ -240,8 +233,11 @@ mod tests {
 
     #[test]
     fn write_read_roundtrip() {
-        let mut rt = Runtime::new(1);
-        let io = SimulatorIO::default();
+        let mut rt = Runtime::with_config(RuntimeConfig {
+            enable_io: true,
+            ..<_>::default()
+        });
+        let io = rt.io().clone().unwrap();
 
         let fd = rt
             .block_on(io.create_file("/data/test", 2 * SECTOR_SIZE as u64))
