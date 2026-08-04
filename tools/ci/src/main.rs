@@ -351,7 +351,6 @@ enum CiCmd {
         )]
         spacetime_path: Option<String>,
     },
-    /// Generates this cargo ci README and checks for changes.
     SelfDocs {
         #[arg(
             long,
