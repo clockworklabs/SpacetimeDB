@@ -33,6 +33,7 @@ function parseArgs(argv) {
       case '--out': args.out = argv[++i]; break;
       case '--label': args.label = argv[++i]; break;
       case '--feature': args.feature = parseInt(argv[++i], 10); break;
+      case '--spec': args.spec = argv[++i]; break;
       case '--media': args.media = argv[++i]; break;
       case '--trace': args.trace = true; break;
       case '--headed': args.headed = true; break;
@@ -99,7 +100,7 @@ async function runStep(step, actors, ctx) {
 
   switch (step.do) {
     case 'register': {
-      await page.locator(tid('name-input')).first().fill(`${step.name}-${ctx.runId}`);
+      await page.locator(tid('name-input')).first().fill(`${step.name}-${ctx.scope}`);
       await page.locator(tid('name-submit')).first().click();
       await page.locator(tid('room-list')).first()
         .waitFor({ state: 'attached', timeout: DEFAULT_WITHIN });
@@ -139,6 +140,11 @@ async function runStep(step, actors, ctx) {
       await actor.loc(step.testid).click({ timeout: step.within ?? DEFAULT_WITHIN });
       return;
     }
+    case 'reload': {
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(step.settleMs ?? 2500);
+      return;
+    }
     case 'wait': return page.waitForTimeout(step.ms);
     case 'expect': return runExpect(actor, step, ctx);
     default: throw new Error(`unknown action "${step.do}"`);
@@ -169,6 +175,19 @@ async function runExpect(actor, step, ctx = { roomName: x => x }) {
     throw new Error(`${tid(step.testid)}${contains ? ` containing "${contains}"` : ''}${where} not visible within ${within}ms`);
   });
 
+  if (step.count !== undefined || step.maxCount !== undefined) {
+    const all = scope
+      ? actor.page.locator(tid(scope.testid), { hasText: scope.contains }).first().locator(tid(step.testid))
+      : (contains ? actor.page.locator(tid(step.testid), { hasText: contains }) : actor.page.locator(tid(step.testid)));
+    const n = await all.count();
+    if (step.count !== undefined && n !== step.count) {
+      throw new Error(`expected exactly ${step.count} ${tid(step.testid)}${contains ? ` containing "${contains}"` : ''}, found ${n}`);
+    }
+    if (step.maxCount !== undefined && n > step.maxCount) {
+      throw new Error(`expected at most ${step.maxCount} ${tid(step.testid)}${contains ? ` containing "${contains}"` : ''}, found ${n}`);
+    }
+  }
+
   if (step.notContains) {
     const text = (await loc.innerText().catch(() => '')) || '';
     if (text.includes(step.notContains)) {
@@ -179,7 +198,12 @@ async function runExpect(actor, step, ctx = { roomName: x => x }) {
 
 // ─── Feature grading ─────────────────────────────────────────────────────────
 
-async function gradeFeature(browser, feature, args, ctx) {
+async function gradeFeature(browser, feature, args, runCtx) {
+  // Features share the app's DATABASE even though each gets fresh browser
+  // contexts, so user and room names are scoped per feature — otherwise a
+  // defect in one feature (e.g. a hijacked account) corrupts later setups.
+  const scope = `${runCtx.runId}f${feature.id}`;
+  const ctx = { ...runCtx, scope, roomName: base => `${base}-${scope}` };
   const actors = new Map();
   const contexts = [];
   const slug = `${args.label ?? 'run'}-f${feature.id}`;
@@ -211,8 +235,9 @@ async function gradeFeature(browser, feature, args, ctx) {
     }
   };
 
+  const featureMax = feature.max ?? MAX_PER_FEATURE;
   const result = {
-    id: feature.id, name: feature.name, score: 0, max: MAX_PER_FEATURE,
+    id: feature.id, name: feature.name, score: 0, max: featureMax,
     criteria: [], caps: [], consoleErrors: [],
   };
 
@@ -268,11 +293,11 @@ async function gradeFeature(browser, feature, args, ctx) {
   }
 
   // Caps, applied in severity order.
-  if (refreshDependent && result.score > 1) {
+  if (feature.max === undefined && refreshDependent && result.score > 1) {
     result.caps.push('refresh-dependent → capped at 1');
     result.score = 1;
   }
-  if (result.consoleErrors.length && result.score > 2) {
+  if (feature.max === undefined && result.consoleErrors.length && result.score > 2) {
     result.caps.push('console errors → capped at 2');
     result.score = 2;
   }
@@ -304,7 +329,7 @@ async function countExistingRooms(browser, args, runId) {
 
 async function main() {
   const args = parseArgs(process.argv);
-  const specPath = join(ROOT, 'scenarios', `level-${String(args.level).padStart(2, '0')}.json`);
+  const specPath = args.spec ? args.spec : join(ROOT, 'scenarios', `level-${String(args.level).padStart(2, '0')}.json`);
   let spec;
   try {
     spec = JSON.parse(readFileSync(specPath, 'utf8'));
@@ -320,7 +345,7 @@ async function main() {
   const browser = await chromium.launch({ headless: !args.headed });
   const report = {
     label: args.label ?? null, url: args.url, level: args.level, runId,
-    total: 0, max: features.length * MAX_PER_FEATURE, features: [],
+    total: 0, max: features.reduce((n, f) => n + (f.max ?? MAX_PER_FEATURE), 0), features: [],
   };
 
   // Preflight: grading a dirty database silently biases scores downward (a long
