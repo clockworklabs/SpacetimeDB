@@ -1,67 +1,97 @@
 # Stack Bench findings
 
-Product issues surfaced by the benchmark harness, with reproduction steps.
+Issues surfaced by the benchmark harness, with reproduction steps.
 
 ---
 
-## 1. TypeScript SDK: auto-reconnect silently changes a client's identity
+## 1. Client skill doc: token is read once, so a first-session user loses identity on reconnect
 
-**Severity:** high — affects any browser client that first connects anonymously,
-which is the default for a new user.
+**Classification:** documentation / guidance gap. **Not** an SDK or host defect —
+see "Why this is not a bug" below.
 
-**Symptom.** After the SpacetimeDB host restarts, a connected client is issued a
-**new Identity**. Rows owned by the previous identity (its user record, its
-scheduled messages, anything filtered by `ctx.sender`) become invisible to it,
-and an app that gates on "do I have a user row" shows its registration screen
-again. No error is raised; the client appears to reconnect normally.
+**Severity:** medium — affects every app generated from the current client skill,
+but only users who obtained their identity in the current page session.
 
-**Evidence.** Probing the same app, with and without a host restart. The JWT
+**Symptom.** After the SpacetimeDB host restarts, a browser client that first
+connected anonymously is issued a **new Identity** on reconnect. Rows owned by
+the previous identity — its user record, its scheduled messages, anything
+filtered by `ctx.sender` — become invisible, and an app that gates on "do I have
+a user row" shows its registration screen again. No error is raised.
+
+**Evidence.** Probing the same app with and without a host restart; the JWT
 subject is the identity:
 
 ```
 plain reload, no restart
   BEFORE sub: 613e49b0-389d-4dc0-852a-257dcf321625
-  AFTER  sub: 613e49b0-389d-4dc0-852a-257dcf321625   identical, app stays logged in
+  AFTER  sub: 613e49b0-389d-4dc0-852a-257dcf321625   identical, stays logged in
 
 reload after `spacetimedb-standalone` restart
   BEFORE sub: 828b7285-7681-4278-b715-b582fa8c854f
-  AFTER  sub: 6c0761cf-5ea4-4dcd-ba42-ef5f9c73b2eb   DIFFERENT, app shows registration
+  AFTER  sub: 6c0761cf-5ea4-4dcd-ba42-ef5f9c73b2eb   DIFFERENT, shows registration
 ```
 
-The new token's `iat` falls inside the restart window, before the page reload —
-so the new identity is minted on the SDK's automatic reconnect, not on reload.
-The signing key (`config/id_ecdsa`) is untouched by the restart, so this is not
-key rotation.
+The new token's `iat` falls inside the restart window, before the page reload, so
+the new identity is minted on the SDK's automatic reconnect. The signing key
+(`config/id_ecdsa`) is untouched, so it is not key rotation.
 
-**Mechanism.** `ConnectionManager` reconnects by rebuilding from the *original*
-builder:
-
-- `connection_manager.ts:352` — `this.#buildManagedConnection(managed, managed.builder)`
-- The builder holds whatever `withToken()` was given at page load
-  (`db_connection_builder.ts:81`). For a first-time visitor that is `undefined`.
-- The token the server issues during the session is recorded on the connection
-  and in managed state (`connection_manager.ts:243`, `db_connection_impl.ts:908`)
-  but is **never written back to the builder**.
-
-So the reconnect presents no token and the server mints a fresh anonymous
-identity. A returning visitor is unaffected, because by then the app has stored a
-token and passes it to `withToken()` at load — which is why a plain reload works
-and masks the bug.
-
-**Suggested fix.** Carry the acquired token into the rebuilt connection, e.g. in
-`#scheduleReconnect` before rebuilding:
+**Mechanism.** The canonical pattern in `skills/typescript-client/SKILL.md` reads
+the token exactly once, when the builder is constructed:
 
 ```ts
-const token = managed.state?.token;
-if (token) managed.builder.withToken(token);
-this.#buildManagedConnection(managed, managed.builder);
+// SKILL.md:33 — evaluated once, at page load
+.withToken(localStorage.getItem('auth_token') || undefined)
+
+// SKILL.md:57 — stores the token, but never feeds it back to the builder
+useEffect(() => { if (token) localStorage.setItem('auth_token', token); }, [token]);
 ```
 
-**Why it matters beyond this benchmark.** Every deploy restarts the host. Any
-user who signed up in the current session and has not reloaded since silently
-becomes a different user, losing access to their own data. This likely explains
-the `identity-lost-on-refresh` defect recorded against SpacetimeDB apps in the
-historical benchmark grading taxonomy.
+For a first-time visitor that first read yields `undefined`. The server issues an
+identity and token, the app stores it, but the *builder* still carries
+`undefined`. `ConnectionManager` reconnects by rebuilding from that same builder
+(`connection_manager.ts:352`), so the reconnect presents no token and the server
+correctly mints a fresh anonymous identity. A returning visitor is unaffected,
+because by then the stored token is present at load — which is why a plain reload
+works and hides the problem.
+
+**Why this is not a bug.**
+
+- A connection that presents no token is anonymous; issuing it a new identity is
+  the only correct behaviour.
+- The SDK deliberately treats the builder as the source of truth for auth.
+  `connection_manager.ts:392` documents this and offers `rebuild()` as the
+  supported escape hatch for "reconnect with a fresh token" flows, e.g. swapping
+  an anonymous session for a signed-in one. Silently reusing the last-seen token
+  would break exactly that flow, and would make logout unexpressible.
+
+**Suggested fix — in the skill, not the SDK.** Teach the pattern that re-supplies
+the token when it changes, so the connection that gets rebuilt carries it:
+
+```ts
+useEffect(() => {
+  if (!token) return;
+  localStorage.setItem('auth_token', token);
+  // Ensure a later reconnect authenticates as the same identity.
+  rebuild(DbConnection.builder()
+    .withUri(SPACETIMEDB_URI)
+    .withDatabaseName(MODULE_NAME)
+    .withToken(token));
+}, [token]);
+```
+
+**Why it matters.** Every deploy restarts the host. Any user who signed up during
+the current session and has not reloaded since silently becomes a different user
+and loses access to their own data. Because the guidance is ours, every generated
+SpacetimeDB app inherits it — this very likely explains the
+`identity-lost-on-refresh` defect recorded against SpacetimeDB apps in the
+historical benchmark grading taxonomy, which was previously attributed to the
+generated apps themselves.
+
+**Benchmark impact.** The SpacetimeDB app scored 1/2 rather than 2/2 on
+`scenarios/level-02-durability.json` for this reason. The scheduled message did
+deliver — the schedule survived the restart — but the author's pending list read
+empty because the author was, by then, a different identity. That is a legitimate
+app-level failure, and it originates in our own documentation.
 
 **Reproduce.**
 
@@ -75,5 +105,4 @@ node tools/stack-bench/grader/probe-identity.mjs http://localhost:6173
 
 **Caveat.** Reproduced on one machine (Windows, host launched with
 `--data-dir ...\SpacetimeDB\data --jwt-key-dir ...\SpacetimeDB\config`, restarted
-via `spacetime start`). Worth confirming on Linux and against a host restarted by
-whatever mechanism production uses before treating the mechanism above as final.
+via `spacetime start`). Worth confirming on Linux.
