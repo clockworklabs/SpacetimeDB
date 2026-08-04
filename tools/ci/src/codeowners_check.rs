@@ -19,7 +19,6 @@ pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
         }
     }
 
-    println!("CODEOWNERS-controlled file changes are allowed.");
     Ok(())
 }
 
