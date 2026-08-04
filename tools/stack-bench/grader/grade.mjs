@@ -52,11 +52,46 @@ const uniq = () => Math.random().toString(36).slice(2, 7);
 
 // ─── Actor: an isolated browser context with its own identity ────────────────
 
+const IDENTITY_FIELD = /^(user_?id|sender_?id|author_?id|from_?user|identity)$/i;
+const CONTENT_FIELD = /^(content|text|message|body|msg)$/i;
+const ROOM_FIELD = /^(room_?id|channel_?id|conversation_?id)$/i;
+
 class Actor {
   constructor(name, page) {
     this.name = name;
     this.page = page;
     this.consoleErrors = [];
+    // Record the app's own write requests so a test can replay one with a
+    // tampered field. This adapts to whatever API the app happens to expose,
+    // instead of the harness having to know its shape.
+    this.lastWrite = null;
+    this.lastWsWrite = null;
+    // Apps write over WebSocket as often as over HTTP (socket.io emits a text
+    // frame like 42["send_message",{...}]). We cannot replay those as easily,
+    // but we can see whether the payload carries a client-supplied identity at
+    // all — if it does not, the server must be deriving identity from the
+    // connection, which is the property being tested.
+    page.on('websocket', ws => {
+      ws.on('framesent', f => {
+        const p = typeof f.payload === 'string' ? f.payload : '';
+        const m = p.match(/^\d+(\[.*\])$/s);
+        if (!m) return;
+        try {
+          const [event, arg] = JSON.parse(m[1]);
+          if (arg && typeof arg === 'object') this.lastWsWrite = { event, body: arg };
+        } catch { /* not a socket.io event frame */ }
+      });
+    });
+    page.on('request', req => {
+      if (req.method() === 'GET' || req.method() === 'OPTIONS') return;
+      const url = req.url();
+      if (!/\/api\/|\/rooms|\/messages/.test(url)) return;
+      let body = null;
+      try { body = JSON.parse(req.postData() ?? ''); } catch { return; }
+      if (body && typeof body === 'object') {
+        this.lastWrite = { url, method: req.method(), headers: req.headers(), body };
+      }
+    });
     page.on('console', m => {
       if (m.type() === 'error') this.consoleErrors.push(m.text().slice(0, 200));
     });
@@ -179,6 +214,71 @@ async function runStep(step, actors, ctx) {
     case 'reload': {
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(step.settleMs ?? 2500);
+      return;
+    }
+    case 'forgeWrite': {
+      // Replay this actor's own write request with a field tampered. If the
+      // app's write path carries no client-supplied identity at all (a
+      // SpacetimeDB reducer call takes its identity from the connection), there
+      // is nothing to forge and the step records `skipped`.
+      const write = actor.lastWrite;
+      if (!write) {
+        // Nothing replayable over HTTP. If the app writes over WebSocket, judge
+        // by whether that payload carries a client-supplied identity.
+        const ws = actor.lastWsWrite;
+        if (ws) {
+          const idKey = Object.keys(ws.body).find(k => IDENTITY_FIELD.test(k));
+          actor.forge = idKey
+            ? { inconclusive: true, reason: `writes over WebSocket ("${ws.event}") carrying a client-supplied "${idKey}" — replay not attempted, treat as unverified` }
+            : { structurallySafe: true, reason: `writes over WebSocket ("${ws.event}") with no client-supplied identity — the server must derive it from the connection` };
+        } else {
+          actor.forge = { inconclusive: true, reason: 'no write request observed at all — the test did not exercise anything' };
+        }
+        return;
+      }
+
+      const body = { ...write.body };
+      const key = Object.keys(body).find(k => (step.field === 'room' ? ROOM_FIELD : IDENTITY_FIELD).test(k));
+      if (!key) {
+        actor.forge = { structurallySafe: true, reason: `write body carries no identity field (${Object.keys(body).join(',') || 'empty'}) — nothing to forge` };
+        return;
+      }
+
+      let value = step.value;
+      if (step.fromActor) {
+        const victim = actors.get(step.fromActor);
+        const vkey = Object.keys(victim.lastWrite?.body ?? {}).find(k => IDENTITY_FIELD.test(k));
+        if (!vkey) {
+          const vws = victim.lastWsWrite;
+          const vwsKey = vws && Object.keys(vws.body).find(k => IDENTITY_FIELD.test(k));
+          if (!vwsKey) { actor.forge = { structurallySafe: true, reason: `${step.fromActor} never exposes an identity to steal` }; return; }
+          value = vws.body[vwsKey];
+        } else value = victim.lastWrite.body[vkey];
+      }
+      body[key] = value;
+
+      const contentKey = Object.keys(body).find(k => CONTENT_FIELD.test(k));
+      if (contentKey && step.text) body[contentKey] = step.text;
+
+      const res = await page.request.fetch(write.url, {
+        method: write.method,
+        headers: { 'content-type': 'application/json' },
+        data: JSON.stringify(body),
+      });
+      actor.forge = { skipped: false, status: res.status(), accepted: res.ok(), tamperedField: key, value };
+      await page.waitForTimeout(step.settleMs ?? 2000);
+      return;
+    }
+    case 'expectForgeryRejected': {
+      const f = actor.forge;
+      if (!f) throw new Error('no forgeWrite ran before this assertion');
+      // Only an ACCEPTED forgery is a failure here. "Could not replay" is not
+      // evidence of safety, so it never scores a point on its own — the
+      // universal DOM assertion that follows is what actually earns it.
+      if (f.inconclusive || f.structurallySafe) return;
+      if (f.accepted) {
+        throw new Error(`server ACCEPTED a write with a tampered "${f.tamperedField}" (HTTP ${f.status}) — the client chooses who it is`);
+      }
       return;
     }
     case 'wait': return page.waitForTimeout(step.ms);

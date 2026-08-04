@@ -240,6 +240,86 @@
           ]
         }
       ]
+    },
+    {
+      "id": 104,
+      "name": "Write Path Integrity",
+      "max": 1,
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "setup": [
+        {
+          "do": "register",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "register",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "writepath"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "writepath"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "writepath"
+        },
+        {
+          "do": "send",
+          "actor": "bob",
+          "text": "bob establishing identity"
+        },
+        {
+          "do": "wait",
+          "actor": "alice",
+          "ms": 900
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "alice establishing identity"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "no-impersonated-message",
+          "points": 1,
+          "desc": "A client must not be able to cause a message attributed to another user. Verified vulnerable on the Sonnet 4.6 Express app, whose handler read the author from req.body.userId with no token; the Sonnet 5 apps bind identity to the socket session instead, and SpacetimeDB derives it from ctx.sender on the connection.",
+          "steps": [
+            {
+              "do": "forgeWrite",
+              "actor": "alice",
+              "fromActor": "bob",
+              "text": "FORGED as bob",
+              "settleMs": 2500
+            },
+            {
+              "do": "expectForgeryRejected",
+              "actor": "alice"
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "FORGED as bob",
+              "absent": true,
+              "within": 4000
+            }
+          ]
+        }
+      ],
+      "note": "Scored on the universal, observable outcome \u2014 no message may render attributed to a user who did not send it \u2014 because the replay itself is protocol-dependent: an HTTP JSON body can be tampered and replayed, a socket.io payload can be inspected for a client-supplied identity, and SpacetimeDB's binary reducer frames cannot be read by the harness at all. Crediting a backend for being unreadable would be a thumb on the scale, so the replay outcome is recorded as metadata and only an ACCEPTED forgery fails on its own."
     }
   ]
 }
