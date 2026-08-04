@@ -3,7 +3,9 @@ use crate::util::find_module_path;
 use crate::Config;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
+use colored::Colorize;
 use std::ffi::OsString;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 pub fn cli() -> clap::Command {
@@ -98,6 +100,25 @@ pub fn run_build(
         native_aot,
         dotnet_version,
     )?;
+
+    // For TypeScript modules, extract the schema from the bundle and emit
+    // advisory warnings (e.g. HTTP handlers in mounted sub-modules are unsupported).
+    // If the standalone binary is unavailable or extraction fails, skip silently.
+    if result.1 == "Js"
+        && let Ok(module_def) = crate::subcommands::generate::extract_descriptions(&result.0)
+    {
+        let tty = std::io::stderr().is_terminal();
+        for warning in module_def.collect_warnings() {
+            let prefix = if tty {
+                "warning:".yellow().to_string()
+            } else {
+                "warning:".to_string()
+            };
+            eprintln!("{prefix} {warning}");
+            println!();
+        }
+    }
+
     println!("Build finished successfully.");
 
     Ok(result)

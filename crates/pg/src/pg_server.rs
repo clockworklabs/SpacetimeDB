@@ -381,7 +381,7 @@ where
                         tokio::spawn(async move {
                             process_socket(stream, None, factory_ref).await.inspect_err(|err|{
                                 // TODO: Review log level after client/disconnect errors can be distinguished from internal failures.
-                                log::error!("PG: Error processing socket: {err:?}");
+                                log::warn!("PG: Error processing socket: {err:?}");
                             })
                         });
                     }

@@ -9,7 +9,10 @@ fn test_timestamp_route() {
     // which is not available when smoketests use SpacetimeAuth login.
     require_server_issued_login!();
 
-    let mut test = Smoketest::builder().autopublish(false).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("noop")
+        .autopublish(false)
+        .build();
 
     let name = random_string();
 
