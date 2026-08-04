@@ -136,8 +136,8 @@ impl AbortState {
 pub(crate) struct Abortable<F> {
     future: F,
     abort: AbortHandle,
-    node: NodeId,
-    task_panics: Arc<Mutex<Vec<TaskPanic>>>,
+    _node: NodeId,
+    _task_panics: Arc<Mutex<Vec<TaskPanic>>>,
 }
 
 impl<F> Abortable<F> {
@@ -145,8 +145,8 @@ impl<F> Abortable<F> {
         Self {
             future,
             abort,
-            node,
-            task_panics,
+            _node: node,
+            _task_panics: task_panics,
         }
     }
 }
@@ -172,15 +172,7 @@ impl<F: Future> Future for Abortable<F> {
         //      address of `future` relative to `self`.
         //   3. The caller guarantees `self` stays pinned for the lifetime of the
         //      future.
-        let node = self.node;
-        let task_panics = Arc::clone(&self.task_panics);
         let mut future = unsafe { self.map_unchecked_mut(|this| &mut this.future) };
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| future.as_mut().poll(cx))) {
-            Ok(poll) => poll.map(Ok),
-            Err(_) => {
-                task_panics.lock().push(TaskPanic { node });
-                Poll::Ready(Err(JoinError::Panicked))
-            }
-        }
+        future.as_mut().poll(cx).map(Ok)
     }
 }
