@@ -1,13 +1,10 @@
 use anyhow::{anyhow, bail, Context, Result};
 use duct::cmd;
-use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 const REPO: &str = "clockworklabs/SpacetimeDB";
-const REQUIRED_LICENSE_REVIEWER: &str = "cloutiertyler";
 
 pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
     super::ensure_repo_root()?;
@@ -16,11 +13,7 @@ pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
 
     let mut review_statuses = ReviewStatuses::new(pr_number);
     for path in changed_files(base_ref)? {
-        if is_license_file(&path) {
-            if !is_trivial_license_change(base_ref, &path)? {
-                require_review_from(&path, &mut review_statuses, REQUIRED_LICENSE_REVIEWER)?;
-            }
-        }
+        license::check(base_ref, &path, &mut review_statuses)?;
     }
 
     Ok(())
@@ -48,21 +41,6 @@ fn changed_files(base_ref: &str) -> Result<Vec<PathBuf>> {
         .read()
         .with_context(|| format!("failed to list changed files against {base_ref}"))?;
     Ok(output.lines().map(Path::new).map(Path::to_path_buf).collect())
-}
-
-fn is_trivial_license_change(base_ref: &str, path: &Path) -> Result<bool> {
-    let diff = cmd!(
-        "git",
-        "diff",
-        "--unified=0",
-        "--no-ext-diff",
-        &format!("{base_ref}...HEAD"),
-        "--",
-        path
-    )
-    .read()
-    .with_context(|| format!("failed to read diff for {}", path.display()))?;
-    Ok(diff_only_changes_license_version_or_date(&diff))
 }
 
 struct ReviewStatuses {
@@ -104,81 +82,6 @@ fn require_review_from(path: &Path, review_statuses: &mut ReviewStatuses, review
     );
 }
 
-fn is_license_file(path: &Path) -> bool {
-    let path_str = path.to_string_lossy();
-    if path_str.starts_with("licenses/") {
-        return true;
-    }
-
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.to_ascii_lowercase().starts_with("license"))
-}
-
-fn diff_only_changes_license_version_or_date(diff: &str) -> bool {
-    let mut pending_removal: Option<&str> = None;
-    let mut saw_change = false;
-
-    for line in diff.lines() {
-        if line.starts_with("diff --git ")
-            || line.starts_with("index ")
-            || line.starts_with("--- ")
-            || line.starts_with("+++ ")
-            || line.starts_with("@@")
-        {
-            continue;
-        }
-
-        if let Some(removed) = line.strip_prefix('-') {
-            if pending_removal.replace(removed).is_some() {
-                return false;
-            }
-            saw_change = true;
-            continue;
-        }
-
-        if let Some(added) = line.strip_prefix('+') {
-            let Some(removed) = pending_removal.take() else {
-                return false;
-            };
-            if !allowed_license_line_change(removed, added) {
-                return false;
-            }
-            saw_change = true;
-            continue;
-        }
-
-        if pending_removal.is_some() {
-            return false;
-        }
-    }
-
-    pending_removal.is_none() && saw_change
-}
-
-fn allowed_license_line_change(old: &str, new: &str) -> bool {
-    normalized_license_version_line(old) == normalized_license_version_line(new)
-        && normalized_license_version_line(old) != old
-        || normalized_change_date_line(old) == normalized_change_date_line(new)
-            && normalized_change_date_line(old) != old
-}
-
-fn normalized_license_version_line(line: &str) -> String {
-    static VERSION: OnceLock<Regex> = OnceLock::new();
-    VERSION
-        .get_or_init(|| Regex::new(r"\bSpacetimeDB \d+\.\d+\.\d+\b").unwrap())
-        .replace_all(line, "SpacetimeDB <version>")
-        .into_owned()
-}
-
-fn normalized_change_date_line(line: &str) -> String {
-    static CHANGE_DATE: OnceLock<Regex> = OnceLock::new();
-    CHANGE_DATE
-        .get_or_init(|| Regex::new(r"\bChange Date:\s+\d{4}-\d{2}-\d{2}\b").unwrap())
-        .replace_all(line, "Change Date: <date>")
-        .into_owned()
-}
-
 fn latest_review_status_by_author(pr_number: u64) -> Result<HashMap<String, String>> {
     let reviews_json = cmd!(
         "gh",
@@ -206,13 +109,119 @@ fn latest_review_status_by_author(pr_number: u64) -> Result<HashMap<String, Stri
     Ok(latest_by_author)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+mod license {
+    use super::{require_review_from, ReviewStatuses};
+    use anyhow::{Context, Result};
+    use duct::cmd;
+    use regex::Regex;
+    use std::path::Path;
+    use std::sync::OnceLock;
 
-    #[test]
-    fn allows_version_and_change_date_updates() {
-        let diff = "\
+    const REQUIRED_REVIEWER: &str = "cloutiertyler";
+
+    pub(super) fn check(base_ref: &str, path: &Path, review_statuses: &mut ReviewStatuses) -> Result<()> {
+        if is_license_file(path) && !is_trivial_change(base_ref, path)? {
+            require_review_from(path, review_statuses, REQUIRED_REVIEWER)?;
+        }
+        Ok(())
+    }
+
+    fn is_trivial_change(base_ref: &str, path: &Path) -> Result<bool> {
+        let diff = cmd!(
+            "git",
+            "diff",
+            "--unified=0",
+            "--no-ext-diff",
+            &format!("{base_ref}...HEAD"),
+            "--",
+            path
+        )
+        .read()
+        .with_context(|| format!("failed to read diff for {}", path.display()))?;
+        Ok(diff_only_changes_version_or_date(&diff))
+    }
+
+    fn is_license_file(path: &Path) -> bool {
+        let path_str = path.to_string_lossy();
+        if path_str.starts_with("licenses/") {
+            return true;
+        }
+
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.to_ascii_lowercase().starts_with("license"))
+    }
+
+    fn diff_only_changes_version_or_date(diff: &str) -> bool {
+        let mut pending_removal: Option<&str> = None;
+        let mut saw_change = false;
+
+        for line in diff.lines() {
+            if line.starts_with("diff --git ")
+                || line.starts_with("index ")
+                || line.starts_with("--- ")
+                || line.starts_with("+++ ")
+                || line.starts_with("@@")
+            {
+                continue;
+            }
+
+            if let Some(removed) = line.strip_prefix('-') {
+                if pending_removal.replace(removed).is_some() {
+                    return false;
+                }
+                saw_change = true;
+                continue;
+            }
+
+            if let Some(added) = line.strip_prefix('+') {
+                let Some(removed) = pending_removal.take() else {
+                    return false;
+                };
+                if !allowed_line_change(removed, added) {
+                    return false;
+                }
+                saw_change = true;
+                continue;
+            }
+
+            if pending_removal.is_some() {
+                return false;
+            }
+        }
+
+        pending_removal.is_none() && saw_change
+    }
+
+    fn allowed_line_change(old: &str, new: &str) -> bool {
+        normalized_version_line(old) == normalized_version_line(new) && normalized_version_line(old) != old
+            || normalized_change_date_line(old) == normalized_change_date_line(new)
+                && normalized_change_date_line(old) != old
+    }
+
+    fn normalized_version_line(line: &str) -> String {
+        static VERSION: OnceLock<Regex> = OnceLock::new();
+        VERSION
+            .get_or_init(|| Regex::new(r"\bSpacetimeDB \d+\.\d+\.\d+\b").unwrap())
+            .replace_all(line, "SpacetimeDB <version>")
+            .into_owned()
+    }
+
+    fn normalized_change_date_line(line: &str) -> String {
+        static CHANGE_DATE: OnceLock<Regex> = OnceLock::new();
+        CHANGE_DATE
+            .get_or_init(|| Regex::new(r"\bChange Date:\s+\d{4}-\d{2}-\d{2}\b").unwrap())
+            .replace_all(line, "Change Date: <date>")
+            .into_owned()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn allows_version_and_change_date_updates() {
+            let diff = "\
 diff --git a/LICENSE.txt b/LICENSE.txt
 index 111..222 100644
 --- a/LICENSE.txt
@@ -225,12 +234,12 @@ index 111..222 100644
 +Change Date:          2031-06-01
 ";
 
-        assert!(diff_only_changes_license_version_or_date(diff));
-    }
+            assert!(diff_only_changes_version_or_date(diff));
+        }
 
-    #[test]
-    fn rejects_unpaired_license_addition() {
-        let diff = "\
+        #[test]
+        fn rejects_unpaired_license_addition() {
+            let diff = "\
 diff --git a/LICENSE.txt b/LICENSE.txt
 --- a/LICENSE.txt
 +++ b/LICENSE.txt
@@ -238,12 +247,12 @@ diff --git a/LICENSE.txt b/LICENSE.txt
 +New license term
 ";
 
-        assert!(!diff_only_changes_license_version_or_date(diff));
-    }
+            assert!(!diff_only_changes_version_or_date(diff));
+        }
 
-    #[test]
-    fn rejects_non_version_license_edit() {
-        let diff = "\
+        #[test]
+        fn rejects_non_version_license_edit() {
+            let diff = "\
 diff --git a/LICENSE.txt b/LICENSE.txt
 --- a/LICENSE.txt
 +++ b/LICENSE.txt
@@ -252,14 +261,15 @@ diff --git a/LICENSE.txt b/LICENSE.txt
 +New license term
 ";
 
-        assert!(!diff_only_changes_license_version_or_date(diff));
-    }
+            assert!(!diff_only_changes_version_or_date(diff));
+        }
 
-    #[test]
-    fn detects_license_files() {
-        assert!(is_license_file(Path::new("LICENSE.txt")));
-        assert!(is_license_file(Path::new("crates/cli/LICENSE")));
-        assert!(is_license_file(Path::new("licenses/BSL.txt")));
-        assert!(!is_license_file(Path::new("crates/cli/Cargo.toml")));
+        #[test]
+        fn detects_license_files() {
+            assert!(is_license_file(Path::new("LICENSE.txt")));
+            assert!(is_license_file(Path::new("crates/cli/LICENSE")));
+            assert!(is_license_file(Path::new("licenses/BSL.txt")));
+            assert!(!is_license_file(Path::new("crates/cli/Cargo.toml")));
+        }
     }
 }
