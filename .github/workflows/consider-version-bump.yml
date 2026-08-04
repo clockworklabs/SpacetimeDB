@@ -1,0 +1,50 @@
+name: Consider Version Bump
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Commit SHA to evaluate. Defaults to the workflow SHA.
+        required: false
+      dry_run:
+        description: Print the intended action without dispatching the bump workflow.
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  consider-version-bump:
+    name: Consider version bump
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.93.0
+
+      - name: Consider version bump
+        env:
+          GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          COMMIT: ${{ inputs.commit || github.sha }}
+        run: |
+          set -euo pipefail
+
+          args=(consider-version-bump --commit "$COMMIT")
+          if [[ "${{ inputs.dry_run || 'false' }}" == "true" ]]; then
+            args+=(--dry-run)
+          fi
+
+          cargo ci "${args[@]}"
