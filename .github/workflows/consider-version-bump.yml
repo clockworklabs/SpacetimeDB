@@ -26,25 +26,71 @@ jobs:
   consider-version-bump:
     name: Consider version bump
     runs-on: ubuntu-latest
+    env:
+      TARGET_OWNER: clockworklabs
+      TARGET_REPO: SpacetimeDBPrivate
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
+      - id: dispatch
+        name: Trigger version bump consideration
+        uses: actions/github-script@v7
         with:
-          toolchain: 1.93.0
+          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          script: |
+            const workflowId = 'consider-version-bump.yml';
+            const targetRef = 'master';
+            const targetOwner = process.env.TARGET_OWNER;
+            const targetRepo = process.env.TARGET_REPO;
+            const publicRef = `${{ inputs.commit || github.sha }}`;
+            const inputs = { public_ref: publicRef };
+            if (`${{ inputs.dry_run || 'false' }}` === 'true') {
+              inputs.dry_run = 'true';
+            }
 
-      - name: Consider version bump
+            const dispatchResp = await github.rest.actions.createWorkflowDispatch({
+              owner: targetOwner,
+              repo: targetRepo,
+              workflow_id: workflowId,
+              ref: targetRef,
+              inputs,
+              return_run_details: true,
+            });
+
+            const runId = dispatchResp.data.workflow_run_id;
+            const runUrl = dispatchResp.data.html_url;
+            if (!runId || !runUrl) {
+              core.setFailed(`Dispatch response did not include run details: ${JSON.stringify(dispatchResp.data)}`);
+              return;
+            }
+
+            core.info(`View run: ${runUrl}`);
+            core.setOutput('run_id', String(runId));
+            core.setOutput('run_url', runUrl);
+
+      - name: Wait for version bump consideration to complete
         env:
           GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          COMMIT: ${{ inputs.commit || github.sha }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
         run: |
           set -euo pipefail
+          echo "Waiting for workflow result... ${RUN_URL}"
+          gh run watch "$RUN_ID" \
+            --repo "$TARGET_OWNER/$TARGET_REPO" \
+            --exit-status \
+            --interval 30
 
-          args=(consider-version-bump --commit "$COMMIT")
-          if [[ "${{ inputs.dry_run || 'false' }}" == "true" ]]; then
-            args+=(--dry-run)
-          fi
-
-          cargo ci "${args[@]}"
+      - name: Cancel invoked run if workflow cancelled
+        if: ${{ cancelled() && steps.dispatch.outputs.run_id }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          script: |
+            const targetOwner = process.env.TARGET_OWNER;
+            const targetRepo = process.env.TARGET_REPO;
+            const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
+            if (!runId) return;
+            await github.rest.actions.cancelWorkflowRun({
+              owner: targetOwner,
+              repo: targetRepo,
+              run_id: runId,
+            });

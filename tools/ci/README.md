@@ -309,25 +309,6 @@ Usage: help [COMMAND]...
 
 - `subcommand <COMMAND>`: Print help for the subcommand(s)
 
-### `consider-version-bump`
-
-**Usage:**
-```bash
-Usage: consider-version-bump [OPTIONS]
-```
-
-**Options:**
-
-- `--commit <COMMIT>`: Commit SHA to evaluate. Defaults to GITHUB_SHA, then HEAD
-- `--target-owner <TARGET_OWNER>`: Repository owner for the downstream version-bump workflow
-- `--target-repo <TARGET_REPO>`: Repository name for the downstream version-bump workflow
-- `--target-workflow <TARGET_WORKFLOW>`: Workflow file or workflow id to dispatch when a bump is needed
-- `--target-ref <TARGET_REF>`: Ref to use when dispatching the downstream workflow
-- `--max-attempts <MAX_ATTEMPTS>`: Number of attempts to find the PR associated with the commit
-- `--retry-delay-seconds <RETRY_DELAY_SECONDS>`: Delay between associated-PR lookup attempts
-- `--dry-run`: Print the intended action without dispatching a downstream workflow
-- `--help`: Print help
-
 ### `help`
 
 **Usage:**

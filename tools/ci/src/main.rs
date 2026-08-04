@@ -13,7 +13,6 @@ const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
 mod cla_assistant;
-mod consider_version_bump;
 mod keynote_bench;
 mod smoketest;
 mod util;
@@ -376,8 +375,6 @@ enum CiCmd {
         #[command(subcommand)]
         cmd: cla_assistant::ClaAssistantCmd,
     },
-    /// Considers whether a master commit needs a version bump.
-    ConsiderVersionBump(consider_version_bump::ConsiderVersionBumpArgs),
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -810,10 +807,6 @@ fn main() -> Result<()> {
 
         Some(CiCmd::ClaAssistant { cmd }) => {
             cla_assistant::run(cmd)?;
-        }
-
-        Some(CiCmd::ConsiderVersionBump(args)) => {
-            consider_version_bump::run(args)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

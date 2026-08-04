@@ -10,7 +10,6 @@ chrono = { workspace = true, features=["clock"] }
 clap.workspace = true
 regex.workspace = true
 reqwest = { workspace = true, features = ["blocking", "json"] }
-semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 duct.workspace = true
