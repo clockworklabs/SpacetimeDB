@@ -10,7 +10,7 @@ pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
     super::ensure_repo_root()?;
 
     fetch_base_ref(base_ref)?;
-    let review = ReviewStatuses::fetch(pr_number)?;
+    let review = ReviewStatus::fetch(pr_number)?;
 
     for path in changed_files(base_ref)? {
         file_review_requirements(base_ref, &path, &review)
@@ -20,7 +20,7 @@ pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
     Ok(())
 }
 
-fn file_review_requirements(base_ref: &str, path: &Path, review: &ReviewStatuses) -> Result<()> {
+fn file_review_requirements(base_ref: &str, path: &Path, review: &ReviewStatus) -> Result<()> {
     if license::is_file(path) {
         if !license::is_trivial_change(base_ref, path)? {
             review.require("cloutiertyler")?;
@@ -54,12 +54,12 @@ fn changed_files(base_ref: &str) -> Result<Vec<PathBuf>> {
     Ok(output.lines().map(Path::new).map(Path::to_path_buf).collect())
 }
 
-struct ReviewStatuses {
+struct ReviewStatus {
     pr_number: u64,
     latest_by_author: HashMap<String, String>,
 }
 
-impl ReviewStatuses {
+impl ReviewStatus {
     fn fetch(pr_number: u64) -> Result<Self> {
         let reviews_json = cmd!(
             "gh",
