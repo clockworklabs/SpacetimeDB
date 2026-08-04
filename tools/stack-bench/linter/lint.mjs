@@ -26,7 +26,6 @@ function parseArgs(argv) {
       case '--json': args.json = true; break;
       case '--out': args.out = argv[++i]; break;
       case '--label': args.label = argv[++i]; break;
-      case '--track': args.track = argv[++i]; break;
       case '--headed': args.headed = true; break;
       default:
         console.error(`Unknown argument: ${argv[i]}`);
@@ -40,12 +39,9 @@ function parseArgs(argv) {
   return args;
 }
 
-function loadHooks(level, track = 'legacy') {
-  const CONTRACTS_DIR = track === 'spec'
-    ? join(ROOT_DIR, 'spec', 'contracts')
-    : join(ROOT_DIR, 'contracts');
-  const re = track === 'spec' ? /^\d+-[a-z-]+\.json$/ : /^level-\d+\.json$/;
-  const files = readdirSync(CONTRACTS_DIR).filter(f => re.test(f)).sort();
+function loadHooks(level) {
+  const CONTRACTS_DIR = join(ROOT_DIR, 'levels', 'contracts');
+  const files = readdirSync(CONTRACTS_DIR).filter(f => /^\d+-[a-z-]+\.json$/.test(f)).sort();
   const hooks = [];
   for (const f of files) {
     const contract = JSON.parse(readFileSync(join(CONTRACTS_DIR, f), 'utf8'));
@@ -87,7 +83,7 @@ async function checkHook(page, hook, results) {
 
 async function run() {
   const args = parseArgs(process.argv);
-  const hooks = loadHooks(args.level, args.track);
+  const hooks = loadHooks(args.level);
   const byStage = stage => hooks.filter(h => h.stage === stage);
   const results = [];
   const blocked = stage => {
@@ -108,14 +104,9 @@ async function run() {
     for (const h of byStage('landing')) ok = (await checkHook(page, h, results)) && ok;
 
     if (ok) {
-      if (args.track === 'spec') {
-        await page.locator(tid('signup-username')).first().fill(`lint-${uniq}`);
-        await page.locator(tid('signup-password')).first().fill(`pw-lint-${uniq}`);
-        await page.locator(tid('signup-submit')).first().click();
-      } else {
-        await page.locator(tid('name-input')).first().fill(`lint-${uniq}`);
-        await page.locator(tid('name-submit')).first().click();
-      }
+      await page.locator(tid('signup-username')).first().fill(`lint-${uniq}`);
+      await page.locator(tid('signup-password')).first().fill(`pw-lint-${uniq}`);
+      await page.locator(tid('signup-submit')).first().click();
     }
 
     // Stage: main (registered -> rooms + online users)

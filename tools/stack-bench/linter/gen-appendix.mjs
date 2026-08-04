@@ -9,13 +9,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-// Two tracks: the legacy chat ladder in contracts/, and the property-ordered
-// sequence in spec/contracts/. Both generate cumulative per-level appendices.
-const TRACK = process.argv.includes('--track')
-  ? process.argv[process.argv.indexOf('--track') + 1]
-  : 'legacy';
-const CONTRACTS_DIR = TRACK === 'spec' ? join(ROOT, 'spec', 'contracts') : join(ROOT, 'contracts');
-const FILE_RE = TRACK === 'spec' ? /^\d+-[a-z-]+\.json$/ : /^level-\d+\.json$/;
+const CONTRACTS_DIR = join(ROOT, 'levels', 'contracts');
+const FILE_RE = /^\d+-[a-z-]+\.json$/;
 
 const files = readdirSync(CONTRACTS_DIR).filter(f => FILE_RE.test(f)).sort();
 const contracts = files.map(f => JSON.parse(readFileSync(join(CONTRACTS_DIR, f), 'utf8')));
@@ -48,8 +43,7 @@ ${rows.join('\n')}
 Before declaring DEPLOY_COMPLETE, verify the hooks by running the contract
 linter (command provided in your build instructions) and fix any failures.
 `;
-  const prefix = TRACK === 'spec' ? 'appendix-' : 'appendix-level-';
-  const out = join(CONTRACTS_DIR, `${prefix}${String(level).padStart(2, '0')}.md`);
+  const out = join(CONTRACTS_DIR, `appendix-${String(level).padStart(2, '0')}.md`);
   writeFileSync(out, md);
   console.log(`wrote ${out} (${hooks.length} hooks)`);
 }

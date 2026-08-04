@@ -11,7 +11,6 @@
 #   ./run.sh --rules standard --backend spacetime   # standard: SDK rules only, no templates
 #   ./run.sh --model claude-sonnet-4-6 --backend mongodb  # pin the model (parity)
 #   ./run.sh --run-index 1 --backend spacetime      # parallel run with offset ports
-#   ./run.sh --track spec --level 1 --backend spacetime  # property-ordered sequence (accounts first)
 #   ./run.sh --fix <app-dir>                    # fix bugs in existing app (reads BUG_REPORT.md)
 #   ./run.sh --upgrade <app-dir> --level 3      # add level 3 features to existing level 2 app (incremental feature file)
 #   ./run.sh --upgrade <app-dir> --level 3 --composed-prompt  # use the full cumulative composed spec instead
@@ -63,7 +62,6 @@ UPGRADE_MODE=""
 UPGRADE_APP_DIR=""
 RESUME_SESSION=""
 COMPOSED_UPGRADE_PROMPT=""
-TRACK="legacy"
 while [[ $# -gt 0 ]]; do
   case $1 in
     --level) LEVEL="$2"; LEVEL_EXPLICIT=1; shift 2 ;;
@@ -71,8 +69,6 @@ while [[ $# -gt 0 ]]; do
     --variant) VARIANT="$2"; shift 2 ;;
     --rules) RULES="$2"; shift 2 ;;
     --model) MODEL="$2"; shift 2 ;;
-    --track)
-      TRACK="$2"; shift 2 ;;
     --run-index) RUN_INDEX="$2"; shift 2 ;;
     --fix) FIX_MODE=1; FIX_APP_DIR="$2"; shift 2 ;;
     --upgrade) UPGRADE_MODE=1; UPGRADE_APP_DIR="$2"; shift 2 ;;
@@ -279,12 +275,7 @@ else
   exit 1
 fi
 
-if [[ "${TRACK:-legacy}" == "spec" ]]; then
-  # Property-ordered sequence (accounts first). See stack-bench/spec/LEVELS.md.
-  COMPOSED_PROMPT="$SCRIPT_DIR/../stack-bench/spec/prompts/$(printf '%02d' "$LEVEL")-"*".md"
-else
-  COMPOSED_PROMPT="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/composed/$(printf '%02d' "$LEVEL")_"*".md"
-fi
+COMPOSED_PROMPT="$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts/composed/$(printf '%02d' "$LEVEL")_"*".md"
 # shellcheck disable=SC2086
 if ls $COMPOSED_PROMPT &>/dev/null; then
   PROMPT_FILE=$(ls $COMPOSED_PROMPT 2>/dev/null | head -1)
@@ -301,25 +292,6 @@ STRIPPED_PROMPT="/tmp/seq-upgrade-prompt-${RUN_INDEX}-$(basename "$PROMPT_FILE")
 sed '/^\*\*UI contract:\*\*/,/^$/d; /^\*\*Important:\*\* Each feature below includes/d' "$PROMPT_FILE" > "$STRIPPED_PROMPT"
 PROMPT_FILE="$STRIPPED_PROMPT"
 echo "[OK] UI contracts stripped"
-
-# Stack Bench: append the data-testid hook appendix for this level (if authored),
-# replacing the prose contracts with mechanically lintable ones. The linter path
-# is handed to the session so it can self-check before DEPLOY_COMPLETE.
-if [[ "${TRACK:-legacy}" == "spec" ]]; then
-  STACKBENCH_APPENDIX="$SCRIPT_DIR/../stack-bench/spec/contracts/appendix-$(printf '%02d' "$LEVEL").md"
-else
-  STACKBENCH_APPENDIX="$SCRIPT_DIR/../stack-bench/contracts/appendix-level-$(printf '%02d' "$LEVEL").md"
-fi
-STACKBENCH_LINT=""
-if [[ -f "$STACKBENCH_APPENDIX" ]]; then
-  cat "$STACKBENCH_APPENDIX" >> "$STRIPPED_PROMPT"
-  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-    STACKBENCH_LINT=$(cygpath -w "$SCRIPT_DIR/../stack-bench/linter/lint.mjs")
-  else
-    STACKBENCH_LINT="$SCRIPT_DIR/../stack-bench/linter/lint.mjs"
-  fi
-  echo "[OK] Stack Bench testing-hooks appendix appended (level $LEVEL)"
-fi
 
 echo ""
 
@@ -518,14 +490,6 @@ snapshot_inputs() {
   cp "$PROMPTS_SRC/composed/"*.md "$INPUTS_DIR/prompts/composed/" 2>/dev/null || true
   cp "$PROMPTS_SRC/language/typescript-$BACKEND.md" "$INPUTS_DIR/prompts/language/" 2>/dev/null || true
 
-  # Effective feature prompt (post contract-strip / Stack Bench appendix) — what
-  # the model actually receives; plus the contracts it was linted against.
-  cp "$PROMPT_FILE" "$INPUTS_DIR/prompts/effective-$(basename "$PROMPT_FILE" | sed 's/^seq-upgrade-prompt-[0-9]*-//')" 2>/dev/null || true
-  if [[ -n "${STACKBENCH_LINT:-}" ]]; then
-    mkdir -p "$INPUTS_DIR/stack-bench-contracts"
-    cp "$SCRIPT_DIR/../stack-bench/contracts/"level-*.json "$INPUTS_DIR/stack-bench-contracts/" 2>/dev/null || true
-  fi
-
   echo "  Inputs snapshotted to $INPUTS_DIR"
 }
 
@@ -684,18 +648,6 @@ Only add the NEW feature(s) that appear in the feature spec below but not in lev
 
 Do NOT do browser testing — that happens in a separate grading session.
 Cost tracking is automatic via OpenTelemetry — do NOT estimate tokens.
-$(if [[ -n "$STACKBENCH_LINT" ]]; then cat <<LINT_EOF
-
-**UI contract lint (required):** the Testing Hooks appendix below lists test IDs
-for the new level's elements as well as earlier ones. After deploying, verify:
-
-    node "$STACKBENCH_LINT" --url http://localhost:$VITE_PORT --level $LEVEL
-
-Fix any FAIL or BLOCKED hooks and re-run until it prints CONTRACT LINT PASS.
-Use the exact test IDs listed — near-miss names (schedule-time-input for
-schedule-time) fail the lint. Do not output UPGRADE_COMPLETE until it passes.
-LINT_EOF
-fi)
 
 When done, output: UPGRADE_COMPLETE
 
@@ -741,17 +693,6 @@ Run the sequential upgrade benchmark — GENERATE AND DEPLOY ONLY.
 
 If the build fails, fix and retry (up to 3 times per phase).
 Write an ITERATION_LOG.md tracking any build reprompts.
-$(if [[ -n "$STACKBENCH_LINT" ]]; then cat <<LINT_EOF
-
-**UI contract lint (required):** after the app is deployed and the dev server is
-running, verify the Testing Hooks appendix is satisfied:
-
-    node "$STACKBENCH_LINT" --url http://localhost:$VITE_PORT --level $LEVEL
-
-Fix any FAIL or BLOCKED hooks and re-run until it prints CONTRACT LINT PASS.
-Do not output DEPLOY_COMPLETE until the lint passes.
-LINT_EOF
-fi)
 
 Do NOT do browser testing — that happens in a separate grading session.
 Cost tracking is automatic via OpenTelemetry — do NOT estimate tokens.
@@ -862,12 +803,8 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
       -e "s/6373/$VITE_PORT_MONGO/g" \
       -e "s/:6001/:$EXPRESS_PORT/g" \
       -e "s/localhost:6001/localhost:$EXPRESS_PORT/g" \
-      -e "s/PORT=6001/PORT=$EXPRESS_PORT/g" \
-      -e "s/kill-port 6001/kill-port $EXPRESS_PORT/g" \
-      -e "s/| 6001 |/| $EXPRESS_PORT |/g" \
-      -e "s/port 6001/port $EXPRESS_PORT/g" \
-      -e "s|localhost:6432/spacetime\([^_a-zA-Z0-9]\)|localhost:6432/$PG_DATABASE\1|g" \
-      -e "s|localhost:6432/spacetime$|localhost:6432/$PG_DATABASE|g" \
+      -e "s|localhost:6432/spacetime|localhost:6432/$PG_DATABASE|g" \
+      -e "s|spacetime:spacetime@localhost:6432/spacetime|spacetime:spacetime@localhost:6432/$PG_DATABASE|g" \
       -e "s|localhost:6437/chat-app|localhost:6437/$MONGO_DATABASE|g" \
       "$APP_DIR/CLAUDE.md"
     if [[ "$BACKEND" == "mongodb" ]]; then _DB_LABEL="$MONGO_DATABASE"; else _DB_LABEL="$PG_DATABASE"; fi
@@ -1002,19 +939,6 @@ echo ""
 LOGS_FILE_NATIVE="$SHARED_TELEMETRY_DIR/logs.jsonl"
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
   LOGS_FILE_NATIVE=$(cygpath -w "$SHARED_TELEMETRY_DIR/logs.jsonl")
-fi
-
-# Stack Bench: independent post-session contract lint. The grader never trusts
-# the session's own claim — this is the record of record, saved with the run.
-if [[ -n "${STACKBENCH_LINT:-}" ]]; then
-  echo "Running independent contract lint..."
-  STACKBENCH_REPORT="$RUN_DIR/contract-lint.json"
-  if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-    STACKBENCH_REPORT=$(cygpath -w "$RUN_DIR/contract-lint.json")
-  fi
-  node "$STACKBENCH_LINT" --url "http://localhost:$VITE_PORT" --level "$LEVEL" \
-    --label "$RUN_ID" --out "$STACKBENCH_REPORT" || true
-  echo ""
 fi
 
 echo "Parsing telemetry..."

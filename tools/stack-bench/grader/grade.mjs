@@ -655,7 +655,7 @@ async function main() {
   if (report.environment.preexistingRooms > 0) {
     console.log(`WARNING: app already has ${report.environment.preexistingRooms} room(s) — ` +
       `scores are not comparable. Reset the database first ` +
-      `(llm-sequential-upgrade/reset-app.sh <app-dir>).\n`);
+      `(stack-bench/reset-db.sh <backend> <app-dir>).\n`);
   }
 
   for (const feature of features) {

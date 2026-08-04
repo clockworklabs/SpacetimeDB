@@ -19,21 +19,15 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const REPO = resolve(ROOT, '..', '..');
-const RESET = join(REPO, 'tools', 'llm-sequential-upgrade', 'reset-app.sh');
+const RESET = join(ROOT, 'reset-db.sh');
 
-// Two sequences: the legacy chat ladder, and the property-ordered one in spec/
-// (see spec/LEVELS.md). Selected with --track.
+// Suites per level. Features and invariants come from that level's scenarios;
+// delivery applies from the level that introduces it onward.
 const SUITES = {
-  legacy: [
-    { id: 'features', spec: null },
-    { id: 'invariants', spec: 'scenarios/level-01-invariants.json' },
-    { id: 'delivery', spec: 'scenarios/level-01-delivery.json' },
-  ],
-  spec: [
-    { id: 'features', spec: 'spec/scenarios/01-accounts.json' },
-    { id: 'invariants', spec: 'spec/scenarios/01-accounts-invariants.json' },
-    { id: 'delivery', spec: 'scenarios/level-01-delivery.json' },
+  1: [
+    { id: 'features', spec: 'levels/scenarios/01-accounts.json' },
+    { id: 'invariants', spec: 'levels/scenarios/01-accounts-invariants.json' },
+    { id: 'delivery', spec: 'levels/scenarios/01-delivery.json' },
   ],
 };
 
@@ -50,6 +44,7 @@ function parseArgs(argv) {
       case '--media': a.media = true; break;
       case '--track': a.track = argv[++i]; break;
       case '--restart-cmd': a.restartCmd = argv[++i]; break;
+      case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--no-reset': a.reset = false; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
@@ -117,7 +112,7 @@ function codeMetrics(args) {
 function resetDatabase(args) {
   process.stdout.write('  reset database ... ');
   try {
-    run('bash', [RESET, args.app]);
+    run('bash', [RESET, args.backend, args.app, String(args.runIndex ?? 0)]);
     console.log('ok');
   } catch (err) {
     console.log('FAILED');
