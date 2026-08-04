@@ -214,6 +214,12 @@ mod tests {
     #[repr(C, align(4096))]
     struct Buf([u8; 2 * SECTOR_SIZE]);
 
+    impl Buf {
+        fn clear(&mut self) {
+            self.0.fill(0);
+        }
+    }
+
     impl AlignedBytes for Buf {
         fn as_bytes(&self) -> &[u8] {
             &self.0
@@ -246,7 +252,7 @@ mod tests {
             .block_on(io.write_all_at(fd.clone(), Buf([22; 2 * SECTOR_SIZE]), 0))
             .map_err(|ErrorWith { error, .. }| error)
             .unwrap();
-        buf.0.fill(0);
+        buf.clear();
         let buf = rt
             .block_on(io.read_exact_at(fd, buf, 0))
             .map_err(|ErrorWith { error, .. }| error)
