@@ -12,10 +12,9 @@ use tempfile::TempDir;
 use crate::util;
 
 #[derive(Args)]
-/// This command first builds the spacetimedb-cli and spacetimedb-standalone binaries,
-/// then runs the smoketests. This prevents race conditions when running tests in parallel
-/// with nextest, where multiple test processes might try to build the same binaries
-/// simultaneously.
+/// This command builds the binaries needed by the smoketests, then runs them. This prevents
+/// race conditions when running tests in parallel with nextest, where multiple test processes
+/// might try to build the same binaries simultaneously.
 pub struct SmoketestsArgs {
     #[command(subcommand)]
     cmd: Option<SmoketestCmd>,
@@ -57,7 +56,8 @@ enum SmoketestCmd {
 pub fn run(args: SmoketestsArgs) -> Result<()> {
     match args.cmd {
         Some(SmoketestCmd::Prepare) => {
-            build_binaries()?;
+            build_cli()?;
+            build_standalone()?;
             eprintln!("Binaries ready. You can now run `cargo test --all`.");
             Ok(())
         }
@@ -70,21 +70,28 @@ pub fn run(args: SmoketestsArgs) -> Result<()> {
     }
 }
 
-fn build_binaries() -> Result<()> {
-    eprintln!("Building spacetimedb-cli and spacetimedb-standalone (release)...");
+fn build_cli() -> Result<()> {
+    let mut cmd = Command::new("cargo");
+    cmd.args(["build", "--timings", "--release", "-p", "spacetimedb-cli"]);
+    run_binary_build(cmd, "Failed to build CLI")
+}
 
+fn build_standalone() -> Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.args([
         "build",
         "--timings",
         "--release",
         "-p",
-        "spacetimedb-cli",
-        "-p",
         "spacetimedb-standalone",
         "--features",
         "spacetimedb-standalone/allow_loopback_http_for_tests",
     ]);
+    run_binary_build(cmd, "Failed to build standalone")
+}
+
+fn run_binary_build(mut cmd: Command, failure_message: &str) -> Result<()> {
+    eprintln!("Building smoketest binaries...");
 
     // Remove cargo/rust env vars that could cause fingerprint mismatches
     // when the test later runs cargo build from a different environment
@@ -101,7 +108,7 @@ fn build_binaries() -> Result<()> {
     }
 
     let status = cmd.status()?;
-    ensure!(status.success(), "Failed to build binaries");
+    ensure!(status.success(), "{failure_message}");
     eprintln!("Binaries built successfully.\n");
     Ok(())
 }
@@ -140,8 +147,14 @@ fn build_precompiled_modules() -> Result<()> {
 const DEFAULT_PARALLELISM: &str = "16";
 
 fn run_smoketest(server: Option<String>, dotnet: bool, auth_host: Option<&str>, args: Vec<String>) -> Result<()> {
-    // 1. Build binaries first (single process, no race)
-    build_binaries()?;
+    // 1. Build binaries first (single process, no race). Remote tests only need the CLI;
+    // local tests also need standalone to spawn their test servers.
+    build_cli()?;
+    if server.is_none() {
+        build_standalone()?;
+    } else {
+        eprintln!("Skipping standalone build for remote smoketests.");
+    }
 
     // 2. Build pre-compiled modules (this also warms the WASM dependency cache)
     build_precompiled_modules()?;
