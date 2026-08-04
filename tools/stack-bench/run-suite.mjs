@@ -54,6 +54,22 @@ function parseArgs(argv) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: 'pipe', cwd: ROOT });
 
+// The benchmark's own database containers. A generated app that connects
+// somewhere else is not measuring what we think it is: one Postgres app pointed
+// at an unrelated project's container on 5433 and graded "fine" while writing to
+// a database the harness could not reset.
+const EXPECTED_DB_PORT = { postgres: '6432', mongodb: '6437' };
+
+function checkDatabaseProvenance(args) {
+  const expected = EXPECTED_DB_PORT[args.backend];
+  if (!expected) return { ok: true, reason: 'spacetime module — no external database' };
+  const envPath = join(args.app, 'server', '.env');
+  if (!existsSync(envPath)) return { ok: false, reason: 'server/.env not found' };
+  const url = (readFileSync(envPath, 'utf8').match(/DATABASE_URL=(.*)/) || [])[1]?.trim() ?? '';
+  const ok = url.includes(`:${expected}/`);
+  return { ok, url, reason: ok ? 'ok' : `app targets ${url} but the benchmark database is on port ${expected}` };
+}
+
 function resetDatabase(args) {
   process.stdout.write('  reset database ... ');
   try {
@@ -127,6 +143,16 @@ async function main() {
     await sleep(8000);                       // let the app reconnect / republish
     return true;
   };
+
+  const prov = checkDatabaseProvenance(args);
+  bundle.provenance = prov;
+  console.log(`  database    ... ${prov.ok ? 'benchmark-owned' : `WRONG DATABASE — ${prov.reason}`}`);
+  if (!prov.ok) {
+    bundle.error = `app is not using the benchmark database: ${prov.reason}`;
+    writeFileSync(join(args.out, 'bundle.json'), JSON.stringify(bundle, null, 2));
+    console.log('\nABORTED: results would not describe the benchmark environment.');
+    process.exit(1);
+  }
 
   if (!(await freshen())) {
     bundle.error = 'database reset failed — scores would not be comparable';

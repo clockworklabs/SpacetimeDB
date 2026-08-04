@@ -98,7 +98,10 @@ async function runStep(step, actors, ctx) {
   if (step.do === 'expectOrderMatches') return expectOrderMatches(step, actors);
   if (step.do === 'sendConcurrently') {
     // Genuine concurrency: all senders fire without waiting for each other.
-    await Promise.all(step.senders.map(s => sendMany(actors.get(s.actor), s.prefix, s.count, 0)));
+    // Apps legitimately rate-limit (the L1 spec requires spam prevention), so
+    // each sender paces itself; concurrency comes from senders overlapping.
+    await Promise.all(step.senders.map(s =>
+      sendMany(actors.get(s.actor), s.prefix, s.count, s.delayMs ?? step.delayMs ?? 0)));
     return;
   }
 

@@ -841,8 +841,8 @@ if [[ -z "$FIX_MODE" && -z "$UPGRADE_MODE" ]]; then
       -e "s/kill-port 6001/kill-port $EXPRESS_PORT/g" \
       -e "s/| 6001 |/| $EXPRESS_PORT |/g" \
       -e "s/port 6001/port $EXPRESS_PORT/g" \
-      -e "s|localhost:6432/spacetime|localhost:6432/$PG_DATABASE|g" \
-      -e "s|spacetime:spacetime@localhost:6432/spacetime|spacetime:spacetime@localhost:6432/$PG_DATABASE|g" \
+      -e "s|localhost:6432/spacetime\([^_a-zA-Z0-9]\)|localhost:6432/$PG_DATABASE\1|g" \
+      -e "s|localhost:6432/spacetime$|localhost:6432/$PG_DATABASE|g" \
       -e "s|localhost:6437/chat-app|localhost:6437/$MONGO_DATABASE|g" \
       "$APP_DIR/CLAUDE.md"
     if [[ "$BACKEND" == "mongodb" ]]; then _DB_LABEL="$MONGO_DATABASE"; else _DB_LABEL="$PG_DATABASE"; fi
