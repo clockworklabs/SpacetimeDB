@@ -1,0 +1,114 @@
+{
+  "level": 1,
+  "track": "stack-bench",
+  "note": "Cross-cutting properties, scored on a separate axis from features. A feature-only score cannot see these: an app can implement every listed feature and still let one user take over another's account. Each invariant is its own feature with fresh contexts, so one root defect cannot cascade into several apparent problems.",
+  "features": [
+    {
+      "id": 101,
+      "name": "Account Integrity",
+      "max": 2,
+      "actors": ["victim", "impostor"],
+      "setup": [
+        { "do": "signUp", "actor": "victim", "name": "Victim" },
+        { "do": "createRoom", "actor": "victim", "room": "private-notes" },
+        { "do": "enterRoom", "actor": "victim", "room": "private-notes" },
+        { "do": "send", "actor": "victim", "text": "victim private message" }
+      ],
+      "criteria": [
+        {
+          "id": "username-is-not-a-credential",
+          "points": 1,
+          "desc": "Knowing a username must not grant access to that account. Signing up with a taken username, or signing in with the wrong password, must be rejected — not silently resolved to the existing account.",
+          "steps": [
+            { "do": "signUp", "actor": "impostor", "name": "Victim", "expectFailure": true },
+            { "do": "expect", "actor": "impostor", "testid": "current-user", "contains": "Victim", "absent": true, "within": 5000 }
+          ]
+        },
+        {
+          "id": "wrong-password-rejected",
+          "points": 1,
+          "desc": "Signing in with a wrong password is rejected and grants nothing",
+          "steps": [
+            { "do": "signIn", "actor": "impostor", "name": "Victim", "password": "not-the-password", "expectFailure": true },
+            { "do": "expect", "actor": "impostor", "testid": "auth-error", "within": 6000 },
+            { "do": "expect", "actor": "impostor", "testid": "message-item", "contains": "victim private message", "absent": true, "within": 4000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "name": "Session Durability",
+      "max": 3,
+      "actors": ["alice"],
+      "setup": [
+        { "do": "signUp", "actor": "alice", "name": "Alice" },
+        { "do": "createRoom", "actor": "alice", "room": "mine" },
+        { "do": "enterRoom", "actor": "alice", "room": "mine" },
+        { "do": "send", "actor": "alice", "text": "alice message" }
+      ],
+      "criteria": [
+        {
+          "id": "session-survives-reload",
+          "points": 1,
+          "desc": "Reloading keeps the user signed in as the same account",
+          "steps": [
+            { "do": "reload", "actor": "alice", "settleMs": 3000 },
+            { "do": "expect", "actor": "alice", "testid": "current-user", "contains": "Alice", "within": 8000 }
+          ]
+        },
+        {
+          "id": "session-survives-restart-watching",
+          "points": 1,
+          "desc": "A user sitting on the page through a backend restart remains the same account. The connection drops and re-establishes on its own; re-identifying the client here would orphan everything it owns.",
+          "steps": [
+            { "do": "restartBackend", "settleMs": 20000 },
+            { "do": "expect", "actor": "alice", "testid": "current-user", "contains": "Alice", "within": 25000 }
+          ]
+        },
+        {
+          "id": "own-content-still-owned-after-restart",
+          "points": 1,
+          "desc": "After the restart the user still owns what they created — their room and their message are still theirs",
+          "steps": [
+            { "do": "enterRoom", "actor": "alice", "room": "mine" },
+            { "do": "expect", "actor": "alice", "testid": "message-item", "contains": "alice message", "within": 15000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "name": "Data Isolation",
+      "max": 2,
+      "actors": ["alice", "bob"],
+      "setup": [
+        { "do": "signUp", "actor": "alice", "name": "Alice" },
+        { "do": "signUp", "actor": "bob", "name": "Bob" },
+        { "do": "createRoom", "actor": "alice", "room": "room-a" },
+        { "do": "createRoom", "actor": "bob", "room": "room-b" },
+        { "do": "enterRoom", "actor": "alice", "room": "room-a" },
+        { "do": "enterRoom", "actor": "bob", "room": "room-b" },
+        { "do": "send", "actor": "alice", "text": "message for room a" }
+      ],
+      "criteria": [
+        {
+          "id": "messages-scoped-to-room",
+          "points": 1,
+          "desc": "A message sent in one room never appears in another",
+          "steps": [
+            { "do": "expect", "actor": "bob", "testid": "message-item", "contains": "message for room a", "absent": true, "within": 5000 }
+          ]
+        },
+        {
+          "id": "no-duplicate-rooms",
+          "points": 1,
+          "desc": "A room renders exactly once in the list — an optimistic insert plus a broadcast echo duplicates it",
+          "steps": [
+            { "do": "expect", "actor": "alice", "testid": "room-item", "contains": "{room:room-a}", "count": 1, "within": 5000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

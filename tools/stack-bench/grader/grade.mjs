@@ -58,10 +58,14 @@ const CONTENT_FIELD = /^(content|text|message|body|msg)$/i;
 const ROOM_FIELD = /^(room_?id|channel_?id|conversation_?id)$/i;
 
 class Actor {
-  constructor(name, page) {
+  constructor(name, page, context) {
     this.name = name;
-    this.page = page;
+    this.context = context;
     this.consoleErrors = [];
+    this.attach(page);
+  }
+  attach(page) {
+    this.page = page;
     // Record the app's own write requests so a test can replay one with a
     // tampered field. This adapts to whatever API the app happens to expose,
     // instead of the harness having to know its shape.
@@ -143,8 +147,8 @@ async function runStep(step, actors, ctx) {
     } catch (err) {
       throw new Error(`backend restart failed: ${(err.stdout || err.message || '').toString().trim().slice(-200)}`);
     }
-    const any = actors.values().next().value;
-    await any.page.waitForTimeout(step.settleMs ?? 10000);
+    // Not page-bound: clients may be closed across the restart.
+    await new Promise(r => setTimeout(r, step.settleMs ?? 10000));
     return;
   }
   if (step.do === 'sendConcurrently') {
@@ -185,6 +189,38 @@ async function runStep(step, actors, ctx) {
         }
         await actor.page.waitForTimeout(500);
       }
+    }
+    case 'signUp': {
+      // Passwords are derived from the scoped name so a later signIn can
+      // reproduce them without the scenario restating the credential.
+      const user = `${step.name}-${ctx.scope}`;
+      const pass = step.password ?? `pw-${user}`;
+      await page.locator(tid('signup-username')).first().fill(user);
+      await page.locator(tid('signup-password')).first().fill(pass);
+      await page.locator(tid('signup-submit')).first().click();
+      if (step.expectFailure) {
+        await page.waitForTimeout(step.settleMs ?? 2000);
+        return;
+      }
+      await page.locator(tid('current-user')).first()
+        .waitFor({ state: 'visible', timeout: DEFAULT_WITHIN * 2 });
+      return;
+    }
+    case 'signIn': {
+      const user = `${step.name}-${ctx.scope}`;
+      const pass = step.password ?? `pw-${user}`;
+      const toggle = actor.loc('signin-toggle');
+      if (await toggle.count()) await toggle.click({ timeout: DEFAULT_WITHIN }).catch(() => {});
+      await page.locator(tid('signin-username')).first().fill(user);
+      await page.locator(tid('signin-password')).first().fill(pass);
+      await page.locator(tid('signin-submit')).first().click();
+      if (step.expectFailure) {
+        await page.waitForTimeout(step.settleMs ?? 2000);
+        return;
+      }
+      await page.locator(tid('current-user')).first()
+        .waitFor({ state: 'visible', timeout: DEFAULT_WITHIN * 2 });
+      return;
     }
     case 'register': {
       await page.locator(tid('name-input')).first().fill(`${step.name}-${ctx.scope}`);
@@ -354,6 +390,23 @@ async function runStep(step, actors, ctx) {
       }
       return;
     }
+    case 'closeClient': {
+      // A client that stays connected through a backend restart auto-reconnects
+      // before anything else can happen. Closing it first models the ordinary
+      // case — the user is not sitting on the page while you deploy — and keeps
+      // this test about scheduling rather than reconnect behaviour, which
+      // invariant 103 scores separately.
+      await page.close();
+      return;
+    }
+    case 'openClient': {
+      const fresh = await actor.context.newPage();
+      fresh.setDefaultTimeout(DEFAULT_WITHIN);
+      actor.attach(fresh);
+      await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await fresh.waitForTimeout(step.settleMs ?? 4000);
+      return;
+    }
     case 'wait': return page.waitForTimeout(step.ms);
     case 'expect': return runExpect(actor, step, ctx);
     default: throw new Error(`unknown action "${step.do}"`);
@@ -464,7 +517,7 @@ async function gradeFeature(browser, feature, args, runCtx) {
     const page = await context.newPage();
     page.setDefaultTimeout(DEFAULT_WITHIN);
     await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    actors.set(name, new Actor(name, page));
+    actors.set(name, new Actor(name, page, context));
     contexts.push({ context, name, page });
   }
 
@@ -587,7 +640,7 @@ async function main() {
 
   const features = args.feature ? spec.features.filter(f => f.id === args.feature) : spec.features;
   const runId = uniq();
-  const ctx = { runId, roomName: base => `${base}-${runId}`, restartCmd: args.restartCmd };
+  const ctx = { runId, roomName: base => `${base}-${runId}`, restartCmd: args.restartCmd, url: args.url };
 
   const browser = await chromium.launch({ headless: !args.headed });
   const report = {

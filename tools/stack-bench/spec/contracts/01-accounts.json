@@ -1,0 +1,137 @@
+{
+  "level": 1,
+  "track": "stack-bench",
+  "hooks": [
+    {
+      "id": "signup-username",
+      "element": "username input on the sign-up form",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signup-password",
+      "element": "password input on the sign-up form",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signup-submit",
+      "element": "button that creates the account",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signin-toggle",
+      "element": "control that switches from the sign-up form to the sign-in form",
+      "stage": "landing",
+      "check": "attached"
+    },
+    {
+      "id": "signin-username",
+      "element": "username input on the sign-in form",
+      "stage": "landing",
+      "check": "attached",
+      "revealedBy": "signin-toggle"
+    },
+    {
+      "id": "signin-password",
+      "element": "password input on the sign-in form",
+      "stage": "landing",
+      "check": "attached",
+      "revealedBy": "signin-toggle"
+    },
+    {
+      "id": "signin-submit",
+      "element": "button that signs the user in with existing credentials",
+      "stage": "landing",
+      "check": "attached",
+      "revealedBy": "signin-toggle"
+    },
+    {
+      "id": "auth-error",
+      "element": "error message shown when sign-up or sign-in is rejected (taken username, wrong password)",
+      "stage": "scenario",
+      "note": "visible after a rejected sign-up or sign-in; must not appear on success"
+    },
+    {
+      "id": "current-user",
+      "element": "element displaying the signed-in account's username",
+      "stage": "main",
+      "check": "visible"
+    },
+    {
+      "id": "signout",
+      "element": "button that signs the current user out",
+      "stage": "main",
+      "check": "attached"
+    },
+    {
+      "id": "room-create",
+      "element": "control that starts creating a new room",
+      "stage": "main",
+      "check": "visible"
+    },
+    {
+      "id": "room-name-input",
+      "element": "text input for the new room's name",
+      "stage": "main",
+      "check": "attached",
+      "revealedBy": "room-create"
+    },
+    {
+      "id": "room-name-submit",
+      "element": "button that confirms room creation",
+      "stage": "main",
+      "check": "attached",
+      "revealedBy": "room-create"
+    },
+    {
+      "id": "room-list",
+      "element": "container listing the rooms",
+      "stage": "main",
+      "check": "attached"
+    },
+    {
+      "id": "room-item",
+      "element": "one entry per room inside the room list (repeated testid), containing the room name",
+      "stage": "main-after-create",
+      "check": "visible"
+    },
+    {
+      "id": "online-users",
+      "element": "container listing the usernames of users currently online",
+      "stage": "main",
+      "check": "attached"
+    },
+    {
+      "id": "message-input",
+      "element": "text input for composing a message; pressing Enter sends it",
+      "stage": "room",
+      "check": "visible"
+    },
+    {
+      "id": "message-list",
+      "element": "scrollable container holding the room's messages",
+      "stage": "room",
+      "check": "attached"
+    },
+    {
+      "id": "message-item",
+      "element": "one entry per message (repeated testid), containing the message text and its author's username",
+      "stage": "room-after-send",
+      "check": "visible"
+    },
+    {
+      "id": "leave-room",
+      "element": "button that leaves the current room",
+      "stage": "room",
+      "check": "attached"
+    },
+    {
+      "id": "send-error",
+      "element": "error shown when a message is rejected (empty, too long, or rate limited)",
+      "stage": "scenario",
+      "note": "visible after a rejected send; must not appear on a successful send"
+    }
+  ]
+}

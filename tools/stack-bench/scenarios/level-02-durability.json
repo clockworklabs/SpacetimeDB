@@ -1,10 +1,10 @@
 {
   "level": 2,
-  "note": "Durability of scheduled work across a backend restart. This is the sharpest structural difference available at L2: an Express app schedules with in-process setTimeout, so restarting the process silently discards every pending message, while a SpacetimeDB scheduled reducer is a row in the database and survives. Matching SpacetimeDB here requires the model to build a persistent job queue with recovery on boot, unprompted. Restarts are an ordinary event \u2014 every deploy is one \u2014 so losing scheduled work to a restart is a real defect, not a contrived one.",
+  "note": "Durability of scheduled work across a backend restart, measured in BOTH conditions a real deploy produces: users who are away (tab closed) and users who are sitting on the page watching. Chat users are frequently the latter, so testing only the closed-tab case would assume away the harder half.",
   "features": [
     {
       "id": 301,
-      "name": "Scheduled Delivery Survives Restart",
+      "name": "Scheduled Delivery Survives Restart (client away)",
       "max": 2,
       "actors": [
         "alice",
@@ -41,7 +41,7 @@
         {
           "id": "pending-survives-restart",
           "points": 1,
-          "desc": "A message scheduled before a backend restart is still listed as pending afterwards \u2014 the schedule is persisted, not held in process memory (the actor re-registers if the app dropped the session on reload, so this measures scheduling durability rather than session persistence, which invariant 103 scores separately) The scheduling panel is re-opened after the reload because several apps keep the pending list inside a collapsible panel that defaults to closed.",
+          "desc": "A message scheduled before a backend restart is still listed as pending afterwards \u2014 the schedule is persisted, not held in process memory",
           "steps": [
             {
               "do": "scheduleMessage",
@@ -56,13 +56,21 @@
               "within": 6000
             },
             {
-              "do": "restartBackend",
-              "settleMs": 12000
+              "do": "closeClient",
+              "actor": "alice"
             },
             {
-              "do": "reload",
+              "do": "closeClient",
+              "actor": "bob"
+            },
+            {
+              "do": "restartBackend",
+              "settleMs": 8000
+            },
+            {
+              "do": "openClient",
               "actor": "alice",
-              "settleMs": 4000
+              "settleMs": 5000
             },
             {
               "do": "ensureRegistered",
@@ -94,6 +102,11 @@
           "desc": "The scheduled message actually sends at its appointed time despite the restart. In-process timers are gone after a restart, so the message never arrives.",
           "steps": [
             {
+              "do": "openClient",
+              "actor": "bob",
+              "settleMs": 4000
+            },
+            {
               "do": "ensureRegistered",
               "actor": "bob",
               "name": "Bob"
@@ -113,7 +126,95 @@
           ]
         }
       ],
-      "note": "Scheduling window is 200s because a SpacetimeDB host restart takes appreciably longer than an Express process restart; a shorter window let the message send before the pending list could be checked, which looked like a failure but was the schedule working."
+      "note": "Restarts are modelled the way a deploy actually happens: the user is not sitting on the page while it restarts. A client left connected auto-reconnects mid-restart, which is a different property (scored as invariant 103 Session Persistence) and would otherwise decide this test. Closing the client first keeps this about whether the SCHEDULE survives. Storage \u2014 and therefore any stored credential \u2014 persists across the close, exactly as a returning user's browser would."
+    },
+    {
+      "id": 302,
+      "name": "Scheduled Delivery Survives Restart (client watching)",
+      "max": 2,
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "note": "The client stays connected through the restart, as a user watching the page would. The socket drops and the SDK reconnects on its own \u2014 the app must come back as the SAME user and still show its own pending work.",
+      "setup": [
+        {
+          "do": "register",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "register",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "watching"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "watching"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "watching"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "pending-visible-to-watching-author",
+          "points": 1,
+          "desc": "A user who stayed on the page through the restart still sees their own pending scheduled message. If the automatic reconnect re-identifies the client, its own work becomes invisible to it.",
+          "steps": [
+            {
+              "do": "scheduleMessage",
+              "actor": "alice",
+              "text": "WATCHING alpha",
+              "secondsAhead": 200
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "scheduled-item",
+              "within": 6000
+            },
+            {
+              "do": "restartBackend",
+              "settleMs": 20000
+            },
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "schedule-toggle",
+              "within": 10000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "scheduled-item",
+              "within": 20000
+            }
+          ]
+        },
+        {
+          "id": "delivers-to-watching-client",
+          "points": 1,
+          "desc": "The scheduled message still arrives for a client that stayed connected across the restart",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "WATCHING alpha",
+              "within": 230000
+            }
+          ]
+        }
+      ]
     }
   ]
 }
