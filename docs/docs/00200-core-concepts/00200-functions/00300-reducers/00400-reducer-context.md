@@ -327,8 +327,8 @@ import { schema, table, t } from 'spacetimedb/server';
 const scheduled_task = table(
   { name: 'scheduled_task', scheduled: (): any => send_reminder },
   {
-    taskId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
+    task_id: t.u64().primaryKey().autoInc(),
+    scheduled_at: t.scheduleAt(),
     message: t.string(),
   }
 );
