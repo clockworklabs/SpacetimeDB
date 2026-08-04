@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ConnectionId } from '../src';
-import { connectionManagerReconnectDelayMs } from '../src/sdk/connection_manager.ts';
+import {
+  connectionManagerReconnectDelayMs,
+  type ReconnectOptions,
+} from '../src/sdk/connection_manager.ts';
 
 // These tests exercise the page-resume + zombie-socket liveness recovery in the
 // ConnectionManager. That logic wires itself to `document`/`window` events in
@@ -75,6 +78,10 @@ class MockConnection {
 class MockBuilder {
   buildCount = 0;
   connections: MockConnection[] = [];
+
+  getReconnectOptions(): ReconnectOptions | undefined {
+    return undefined;
+  }
 
   #onConnect = new Set<(conn: MockConnection) => void>();
   #onDisconnect = new Set<
