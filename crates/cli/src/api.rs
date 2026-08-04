@@ -4,9 +4,11 @@ use std::ops::Add;
 use reqwest::{header, Client, RequestBuilder};
 use serde::Deserialize;
 
+use spacetimedb_lib::db::raw_def::v10::RawModuleDefV10;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::Identity;
+use spacetimedb_schema::def::ModuleDef;
 
 use crate::util::{AuthHeader, ResponseExt};
 
@@ -61,13 +63,30 @@ impl ClientApi {
     }
 
     /// Reads the `ModuleDef` from the `schema` endpoint.
-    pub async fn module_def(&self) -> anyhow::Result<RawModuleDefV9> {
+    ///
+    /// Requests schema version 10 (required to see submodules). If the server rejects
+    /// that with a client error (e.g. servers predating V10 don't recognize the version)
+    /// we fall back to version 9 and upgrade the result.
+    pub async fn module_def(&self) -> anyhow::Result<RawModuleDefV10> {
         let res = self
             .client
             .get(self.con.db_uri("schema"))
-            .query(&[("version", "9")])
+            .query(&[("version", "10")])
             .send()
             .await?;
+        if res.status().is_client_error() {
+            let res9 = self
+                .client
+                .get(self.con.db_uri("schema"))
+                .query(&[("version", "9")])
+                .send()
+                .await?;
+            if res9.status().is_success() {
+                let DeserializeWrapper::<RawModuleDefV9>(module_def) = res9.json_or_error().await?;
+                let module_def: ModuleDef = module_def.try_into()?;
+                return Ok(module_def.into());
+            }
+        }
         let DeserializeWrapper(module_def) = res.json_or_error().await?;
         Ok(module_def)
     }

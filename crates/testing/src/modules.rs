@@ -9,11 +9,14 @@ use std::time::Instant;
 use bytes::{Bytes, BytesMut};
 use futures::{FutureExt as _, TryStreamExt as _};
 use spacetimedb::config::CertificateAuthority;
+use spacetimedb::host::ModuleHost;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::Identity;
 use spacetimedb_client_api::auth::SpacetimeAuth;
 use spacetimedb_client_api::routes::subscribe::{generate_random_connection_id, WebSocketOptions};
+use spacetimedb_lib::http as st_http;
+use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_paths::{RootDir, SpacetimePaths};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
@@ -165,6 +168,56 @@ impl ModuleHandle {
             .await
             .expect("failed to collect log stream");
         String::from_utf8(bytes.into()).unwrap()
+    }
+
+    async fn module_host(&self) -> ModuleHost {
+        let database = self
+            .env
+            .get_database_by_identity(&self.db_identity)
+            .await
+            .unwrap()
+            .unwrap();
+        let host = self.env.leader(database.id).await.expect("host should be running");
+        host.module().await.expect("module should be running")
+    }
+
+    /// Call a procedure by name with JSON-encoded args, returning the raw `AlgebraicValue` on success.
+    pub async fn call_procedure_with_args(&self, procedure: &str, args_json: &str) -> anyhow::Result<AlgebraicValue> {
+        let module = self.module_host().await;
+        let ret = module
+            .call_procedure(
+                Identity::ZERO,
+                None,
+                None,
+                procedure,
+                FunctionArgs::Json(args_json.into()),
+            )
+            .await;
+        ret.result
+            .map(|r| r.return_val)
+            .map_err(|e| anyhow::anyhow!("procedure {procedure} failed: {e:#}"))
+    }
+
+    /// Dispatch a GET request to a module HTTP route by path, returning the response body on success.
+    pub async fn call_http_route_get(&self, path: &str) -> anyhow::Result<Bytes> {
+        let module = self.module_host().await;
+        let (handler_id, _, _) = module
+            .info()
+            .module_def
+            .match_http_route(&st_http::Method::Get, path)
+            .ok_or_else(|| anyhow::anyhow!("no GET route registered for {path}"))?;
+        let request = st_http::Request {
+            method: st_http::Method::Get,
+            headers: std::iter::empty::<(Option<Box<str>>, Box<[u8]>)>().collect(),
+            timeout: None,
+            uri: format!("http://localhost{path}"),
+            version: st_http::Version::Http11,
+        };
+        let (_response, body) = module
+            .call_http_handler(handler_id, request, Bytes::new())
+            .await
+            .map_err(|e| anyhow::anyhow!("HTTP handler error: {e}"))?;
+        Ok(body)
     }
 }
 
