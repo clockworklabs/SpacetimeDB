@@ -19,6 +19,8 @@ mod util;
 
 use util::ensure_repo_root;
 
+const OTHER_WORKFLOWS_SUBCOMMAND: &str = "other-workflows";
+
 /// On Windows, `pnpm` is installed as a `.cmd` shim which `CreateProcess` cannot
 /// find without going through the shell.  Wrapping with `cmd /c` fixes this.
 /// On Unix, we invoke `pnpm` directly.
@@ -351,15 +353,6 @@ enum CiCmd {
         )]
         spacetime_path: Option<String>,
     },
-    SelfDocs {
-        #[arg(
-            long,
-            default_value_t = false,
-            long_help = "Only check for changes, do not generate the docs"
-        )]
-        check: bool,
-    },
-
     /// Verify that any non-root global.json files are symlinks to the root global.json.
     GlobalJsonPolicy,
     /// Checks that publishable crates satisfy publish constraints.
@@ -370,6 +363,24 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
+    /// Workflows that are not part of ci.yml should live here.
+    OtherWorkflows {
+        #[command(subcommand)]
+        cmd: OtherWorkflowsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OtherWorkflowsCmd {
+    /// Generates this cargo ci README and checks for changes.
+    SelfDocs {
+        #[arg(
+            long,
+            default_value_t = false,
+            long_help = "Only check for changes, do not generate the docs"
+        )]
+        check: bool,
+    },
     /// Interacts with CLA Assistant.
     ClaAssistant {
         #[command(subcommand)]
@@ -384,6 +395,10 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
         .collect::<Vec<_>>();
 
     for subcmd in subcmds {
+        if subcmd == OTHER_WORKFLOWS_SUBCOMMAND {
+            log::info!("skipping {subcmd} because it is not part of ci.yml");
+            continue;
+        }
         if skips.contains(&subcmd) {
             log::info!("skipping {subcmd} as requested");
             continue;
@@ -768,14 +783,16 @@ fn main() -> Result<()> {
             }
         }
 
-        Some(CiCmd::SelfDocs { check }) => {
+        Some(CiCmd::OtherWorkflows {
+            cmd: OtherWorkflowsCmd::SelfDocs { check },
+        }) => {
             let readme_content = ci_docs::generate_cli_docs();
             let path = Path::new(README_PATH);
 
             if check {
                 let existing = fs::read_to_string(path).unwrap_or_default();
                 if existing != readme_content {
-                    bail!("README.md is out of date. Please run `cargo ci self-docs` to update it.");
+                    bail!("README.md is out of date. Please run `cargo ci other-workflows self-docs` to update it.");
                 } else {
                     log::info!("README.md is up to date.");
                 }
@@ -805,7 +822,9 @@ fn main() -> Result<()> {
             run_docs_build()?;
         }
 
-        Some(CiCmd::ClaAssistant { cmd }) => {
+        Some(CiCmd::OtherWorkflows {
+            cmd: OtherWorkflowsCmd::ClaAssistant { cmd },
+        }) => {
             cla_assistant::run(cmd)?;
         }
 
