@@ -58,7 +58,7 @@ struct Cli {
     /// When no subcommand is specified, all subcommands are run in sequence. This option allows
     /// specifying subcommands to skip when running all. For example, to skip the `unreal-tests`
     /// subcommand, use `--skip unreal-tests`.
-    #[arg(long)]
+    #[arg(long, default_value = OTHER_WORKFLOWS_SUBCOMMAND)]
     skip: Vec<String>,
 }
 
@@ -364,7 +364,7 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
-    /// Workflows that are not part of ci.yml should live here.
+    /// Workflows that are not part of ci.yml should live here. They will not be run as part of a no-subcommand invocation of `cargo ci`.
     OtherWorkflows {
         #[command(subcommand)]
         cmd: OtherWorkflowsCmd,
@@ -405,10 +405,6 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
         .collect::<Vec<_>>();
 
     for subcmd in subcmds {
-        if subcmd == OTHER_WORKFLOWS_SUBCOMMAND {
-            log::info!("skipping {subcmd} because it is not part of ci.yml");
-            continue;
-        }
         if skips.contains(&subcmd) {
             log::info!("skipping {subcmd} as requested");
             continue;
