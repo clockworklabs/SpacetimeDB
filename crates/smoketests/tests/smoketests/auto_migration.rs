@@ -1,55 +1,12 @@
 use spacetimedb_smoketests::{require_local_server, Smoketest};
 
-const MODULE_CODE_SIMPLE: &str = r#"
-use spacetimedb::{log, ReducerContext, Table};
-
-#[spacetimedb::table(accessor = person)]
-pub struct Person {
-    name: String,
-}
-
-#[spacetimedb::reducer]
-pub fn add_person(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name });
-}
-
-#[spacetimedb::reducer]
-pub fn print_persons(ctx: &ReducerContext, prefix: String) {
-    for person in ctx.db.person().iter() {
-        log::info!("{}: {}", prefix, person.name);
-    }
-}
-"#;
-
-const MODULE_CODE_UPDATED_INCOMPATIBLE: &str = r#"
-use spacetimedb::{log, ReducerContext, Table};
-
-#[spacetimedb::table(accessor = person)]
-pub struct Person {
-    name: String,
-    age: u128,
-}
-
-#[spacetimedb::reducer]
-pub fn add_person(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name, age: 70 });
-}
-
-#[spacetimedb::reducer]
-pub fn print_persons(ctx: &ReducerContext, prefix: String) {
-    for person in ctx.db.person().iter() {
-        log::info!("{}: {}", prefix, person.name);
-    }
-}
-"#;
-
 /// Tests that a module with invalid schema changes cannot be published without -c or a migration.
 #[test]
 fn test_reject_schema_changes() {
-    let mut test = Smoketest::builder().module_code(MODULE_CODE_SIMPLE).build();
+    let mut test = Smoketest::builder().precompiled_module("auto-migration-simple").build();
 
     // Try to update with incompatible schema (adding column without default)
-    test.write_module_code(MODULE_CODE_UPDATED_INCOMPATIBLE).unwrap();
+    test.use_precompiled_module("auto-migration-incompatible");
     let result = test.publish().current_database().unwrap().run();
 
     assert!(
@@ -58,148 +15,12 @@ fn test_reject_schema_changes() {
     );
 }
 
-const MODULE_CODE_INIT: &str = r#"
-use spacetimedb::{log, ReducerContext, Table, SpacetimeType};
-use PersonKind::*;
-
-#[spacetimedb::table(accessor = person, public)]
-pub struct Person {
-    name: String,
-    kind: PersonKind,
-}
-
-#[spacetimedb::reducer]
-pub fn add_person(ctx: &ReducerContext, name: String, kind: String) {
-    let kind = kind_from_string(kind);
-    ctx.db.person().insert(Person { name, kind });
-}
-
-#[spacetimedb::reducer]
-pub fn print_persons(ctx: &ReducerContext, prefix: String) {
-    for person in ctx.db.person().iter() {
-        let kind = kind_to_string(person.kind);
-        log::info!("{prefix}: {} - {kind}", person.name);
-    }
-}
-
-#[spacetimedb::table(accessor = point_mass)]
-pub struct PointMass {
-    mass: f64,
-    position: Vector2,
-}
-
-#[derive(SpacetimeType, Clone, Copy)]
-pub struct Vector2 {
-    x: f64,
-    y: f64,
-}
-
-#[spacetimedb::table(accessor = person_info)]
-pub struct PersonInfo {
-    #[primary_key]
-    id: u64,
-}
-
-#[derive(SpacetimeType, Clone, Copy, PartialEq, Eq)]
-pub enum PersonKind {
-    Student,
-}
-
-fn kind_from_string(_: String) -> PersonKind {
-    Student
-}
-
-fn kind_to_string(Student: PersonKind) -> &'static str {
-    "Student"
-}
-"#;
-
-const MODULE_CODE_UPDATED: &str = r#"
-use spacetimedb::{log, ReducerContext, Table, SpacetimeType};
-use PersonKind::*;
-
-#[spacetimedb::table(accessor = person, public)]
-pub struct Person {
-    name: String,
-    kind: PersonKind,
-}
-
-#[spacetimedb::reducer]
-pub fn add_person(ctx: &ReducerContext, name: String, kind: String) {
-    let kind = kind_from_string(kind);
-    ctx.db.person().insert(Person { name, kind });
-}
-
-#[spacetimedb::reducer]
-pub fn print_persons(ctx: &ReducerContext, prefix: String) {
-    for person in ctx.db.person().iter() {
-        let kind = kind_to_string(person.kind);
-        log::info!("{prefix}: {} - {kind}", person.name);
-    }
-}
-
-#[spacetimedb::table(accessor = point_mass)]
-pub struct PointMass {
-    mass: f64,
-    position: Vector2,
-}
-
-#[derive(SpacetimeType, Clone, Copy)]
-pub struct Vector2 {
-    x: f64,
-    y: f64,
-}
-
-#[spacetimedb::table(accessor = person_info)]
-pub struct PersonInfo {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-}
-
-#[derive(SpacetimeType, Clone, Copy, PartialEq, Eq)]
-pub enum PersonKind {
-    Student,
-    Professor,
-}
-
-fn kind_from_string(kind: String) -> PersonKind {
-    match &*kind {
-        "Student" => Student,
-        "Professor" => Professor,
-        _ => panic!(),
-    }
-}
-
-fn kind_to_string(kind: PersonKind) -> &'static str {
-    match kind {
-        Student => "Student",
-        Professor => "Professor",
-    }
-}
-
-#[spacetimedb::table(accessor = book, public)]
-pub struct Book {
-    isbn: String,
-}
-
-#[spacetimedb::reducer]
-pub fn add_book(ctx: &ReducerContext, isbn: String) {
-    ctx.db.book().insert(Book { isbn });
-}
-
-#[spacetimedb::reducer]
-pub fn print_books(ctx: &ReducerContext, prefix: String) {
-    for book in ctx.db.book().iter() {
-        log::info!("{}: {}", prefix, book.isbn);
-    }
-}
-"#;
-
 /// Tests uploading a module with a schema change that should not require clearing the database.
 #[test]
 fn test_add_table_auto_migration() {
-    let mut test = Smoketest::builder().module_code(MODULE_CODE_INIT).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("auto-migration-add-table-initial")
+        .build();
 
     let sub = test
         .subscribe(&["select * from person"])
@@ -231,7 +52,7 @@ fn test_add_table_auto_migration() {
     );
 
     // Update module without clearing database
-    test.write_module_code(MODULE_CODE_UPDATED).unwrap();
+    test.use_precompiled_module("auto-migration-add-table-updated");
     test.publish().current_database().unwrap().run().unwrap();
 
     // Add new data with updated schema
@@ -278,71 +99,12 @@ fn test_add_table_auto_migration() {
     );
 }
 
-const MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED: &str = r#"
-use spacetimedb::{log, ReducerContext, Table};
-
-#[derive(Debug)]
-#[spacetimedb::table(accessor = person)]
-pub struct Person {
-    #[index(btree)]
-    name: String,
-    #[default(0)]
-    age: u16,
-    #[default(19)]
-    mass: u16,
-}
-
-#[spacetimedb::reducer]
-pub fn add_person(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name, age: 70, mass: 180 });
-}
-
-#[spacetimedb::reducer]
-pub fn print_persons(ctx: &ReducerContext, prefix: String) {
-    for person in ctx.db.person().iter() {
-        log::info!("{}: {:?}", prefix, person);
-    }
-}
-
-#[spacetimedb::reducer(client_disconnected)]
-pub fn identity_disconnected(_ctx: &ReducerContext) {
-    log::info!("FIRST_UPDATE: client disconnected");
-}
-"#;
-
-const MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED_AGAIN: &str = r#"
-use spacetimedb::{log, ReducerContext, Table};
-
-#[derive(Debug)]
-#[spacetimedb::table(accessor = person)]
-pub struct Person {
-    name: String,
-    age: u16,
-    #[default(19)]
-    mass: u16,
-    #[default(160)]
-    height: u32,
-}
-
-#[spacetimedb::reducer]
-pub fn add_person(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name, age: 70, mass: 180, height: 72 });
-}
-
-#[spacetimedb::reducer]
-pub fn print_persons(ctx: &ReducerContext, prefix: String) {
-    for person in ctx.db.person().iter() {
-        log::info!("{}: {:?}", prefix, person);
-    }
-}
-"#;
-
 /// Verify schema upgrades that add columns with defaults (twice).
 #[test]
 fn test_add_table_columns() {
     const NUM_SUBSCRIBERS: usize = 20;
 
-    let mut test = Smoketest::builder().module_code(MODULE_CODE_SIMPLE).build();
+    let mut test = Smoketest::builder().precompiled_module("auto-migration-simple").build();
 
     // Subscribe to person table changes multiple times to simulate active clients
     let mut subs = Vec::with_capacity(NUM_SUBSCRIBERS);
@@ -355,7 +117,7 @@ fn test_add_table_columns() {
     test.call("add_person", &["Robert"]).unwrap();
 
     // First upgrade: add age & mass columns
-    test.write_module_code(MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED).unwrap();
+    test.use_precompiled_module("auto-migration-add-columns");
     let identity = test.database_identity.clone().unwrap();
     test.publish().name(&identity).break_clients(true).run().unwrap();
     test.call("print_persons", &["FIRST_UPDATE"]).unwrap();
@@ -393,8 +155,7 @@ fn test_add_table_columns() {
     }
 
     // Second upgrade
-    test.write_module_code(MODULE_CODE_ADD_TABLE_COLUMNS_UPDATED_AGAIN)
-        .unwrap();
+    test.use_precompiled_module("auto-migration-add-columns-again");
     test.publish().name(&identity).break_clients(true).run().unwrap();
     test.call("print_persons", &["UPDATE_2"]).unwrap();
 
@@ -410,52 +171,6 @@ fn test_add_table_columns() {
 
 // --- Issue #3934: Removing a primary key breaks subsequent publishes ---
 
-const MODULE_CODE_WITH_PK: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(accessor = person, public)]
-pub struct Person {
-    #[primary_key]
-    name: String,
-}
-
-#[spacetimedb::reducer]
-pub fn add(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name });
-}
-"#;
-
-const MODULE_CODE_WITHOUT_PK: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(accessor = person, public)]
-pub struct Person {
-    name: String,
-}
-
-#[spacetimedb::reducer]
-pub fn add(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name });
-}
-"#;
-
-const MODULE_CODE_WITHOUT_PK_V2: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(accessor = person, public)]
-pub struct Person {
-    name: String,
-}
-
-#[spacetimedb::reducer]
-pub fn add(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name });
-}
-
-#[spacetimedb::reducer]
-pub fn noop(_ctx: &ReducerContext) {}
-"#;
-
 /// Regression test for <https://github.com/clockworklabs/SpacetimeDB/issues/3934>.
 ///
 /// Removing a `#[primary_key]` annotation and re-publishing succeeds,
@@ -468,7 +183,9 @@ pub fn noop(_ctx: &ReducerContext) {}
 /// `table_primary_key` in `st_table`.
 #[test]
 fn test_remove_primary_key_issue_3934() {
-    let mut test = Smoketest::builder().module_code(MODULE_CODE_WITH_PK).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("auto-migration-with-primary-key")
+        .build();
 
     // Step 1: Publish with primary key.
     let identity = test
@@ -477,7 +194,7 @@ fn test_remove_primary_key_issue_3934() {
         .expect("database should be published after build");
 
     // Step 2: Remove primary key. Should succeed.
-    test.write_module_code(MODULE_CODE_WITHOUT_PK).unwrap();
+    test.use_precompiled_module("auto-migration-without-primary-key");
     test.publish()
         .name(&identity)
         .break_clients(true)
@@ -485,7 +202,7 @@ fn test_remove_primary_key_issue_3934() {
         .expect("Removing primary key should succeed");
 
     // Step 3: Trivial change (add a reducer). This is where #3934 crashes.
-    test.write_module_code(MODULE_CODE_WITHOUT_PK_V2).unwrap();
+    test.use_precompiled_module("auto-migration-without-primary-key-v2");
     test.publish()
         .name(&identity)
         .break_clients(true)
@@ -493,42 +210,10 @@ fn test_remove_primary_key_issue_3934() {
         .expect("Publish after PK removal should succeed (issue #3934)");
 }
 
-const MODULE_CODE_WITH_EVENT_TABLE_BEFORE: &str = r#"
-use spacetimedb::{table, SpacetimeType};
-
-#[derive(SpacetimeType)]
-struct SomeProduct {
-    a: u32,
-    b: u64,
-}
-
-#[table(accessor = some_event, public, event)]
-struct SomeEvent {
-    foo: String,
-    prod: SomeProduct,
-}
-"#;
-
-const MODULE_CODE_WITH_EVENT_TABLE_AFTER: &str = r#"
-use spacetimedb::{table, SpacetimeType};
-
-#[derive(SpacetimeType)]
-struct SomeProduct {
-    a: u32,
-    b: u64,
-    c: u128,
-}
-
-#[table(accessor = some_event, public, event)]
-struct SomeEvent {
-    prod: SomeProduct,
-}
-"#;
-
 #[test]
 fn automigrate_reschema_event_table_arbitrarily() {
     let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE_WITH_EVENT_TABLE_BEFORE)
+        .precompiled_module("auto-migration-event-table-before")
         .build();
 
     // Step 1: publish with event table.
@@ -538,7 +223,7 @@ fn automigrate_reschema_event_table_arbitrarily() {
         .expect("database should be published after build");
 
     // Step 2: Reschema event table. Should work fine, even though we'd reject this change for a non-event table.
-    test.write_module_code(MODULE_CODE_WITH_EVENT_TABLE_AFTER).unwrap();
+    test.use_precompiled_module("auto-migration-event-table-after");
     test.publish()
         .name(&identity)
         .break_clients(true)
@@ -546,52 +231,13 @@ fn automigrate_reschema_event_table_arbitrarily() {
         .expect("Changing schema of event table should succeed");
 
     // Step 3: Reschema event table right back. Should still work fine.
-    test.write_module_code(MODULE_CODE_WITH_EVENT_TABLE_BEFORE).unwrap();
+    test.use_precompiled_module("auto-migration-event-table-before");
     test.publish()
         .name(&identity)
         .break_clients(true)
         .run()
         .expect("Changing schema of event table should succeed");
 }
-
-const MODULE_CODE_DROP_EVENT_TABLE_BEFORE: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(accessor = person, public)]
-pub struct Person {
-    name: String,
-}
-
-#[spacetimedb::table(accessor = some_event, public, event)]
-pub struct SomeEvent {
-    account_id: u32,
-    name: String,
-}
-
-#[spacetimedb::reducer]
-pub fn add_person(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name });
-}
-
-#[spacetimedb::reducer]
-pub fn emit_event(ctx: &ReducerContext) {
-    ctx.db.some_event().insert(SomeEvent { account_id: 7, name: "alpha".to_string() });
-}
-"#;
-
-const MODULE_CODE_DROP_EVENT_TABLE_AFTER: &str = r#"
-use spacetimedb::{ReducerContext, Table};
-
-#[spacetimedb::table(accessor = person, public)]
-pub struct Person {
-    name: String,
-}
-
-#[spacetimedb::reducer]
-pub fn add_person(ctx: &ReducerContext, name: String) {
-    ctx.db.person().insert(Person { name });
-}
-"#;
 
 /// Regression test: dropping an event table must not brick commitlog replay.
 ///
@@ -607,7 +253,7 @@ pub fn add_person(ctx: &ReducerContext, name: String) {
 fn automigrate_drop_event_table_replays_after_restart() {
     require_local_server!();
     let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE_DROP_EVENT_TABLE_BEFORE)
+        .precompiled_module("auto-migration-drop-event-table-before")
         .build();
 
     let identity = test
@@ -620,7 +266,7 @@ fn automigrate_drop_event_table_replays_after_restart() {
     test.call("emit_event", &[]).unwrap();
 
     // Drop the event table.
-    test.write_module_code(MODULE_CODE_DROP_EVENT_TABLE_AFTER).unwrap();
+    test.use_precompiled_module("auto-migration-drop-event-table-after");
     test.publish()
         .name(&identity)
         .break_clients(true)
