@@ -13,26 +13,14 @@ pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
 
     fetch_base_ref(base_ref)?;
 
-    let disallowed_files = disallowed_changes(base_ref)?;
-    if disallowed_files.is_empty() {
-        println!("CODEOWNERS-controlled file changes are allowed.");
-        return Ok(());
+    for path in changed_files(base_ref)? {
+        if is_license_file(&path) {
+            require_review_from(base_ref, &path, pr_number, REQUIRED_LICENSE_REVIEWER)?;
+        }
     }
 
-    if approved_by(pr_number, REQUIRED_LICENSE_REVIEWER)? {
-        println!("LICENSE changes approved by {REQUIRED_LICENSE_REVIEWER} on PR #{pr_number}.");
-        return Ok(());
-    }
-
-    bail!(
-        "LICENSE files have changes beyond version numbers and change dates, and PR #{pr_number} \
-         does not have an approval from {REQUIRED_LICENSE_REVIEWER}: {}",
-        disallowed_files
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+    println!("CODEOWNERS-controlled file changes are allowed.");
+    Ok(())
 }
 
 fn fetch_base_ref(base_ref: &str) -> Result<()> {
@@ -59,19 +47,7 @@ fn changed_files(base_ref: &str) -> Result<Vec<PathBuf>> {
     Ok(output.lines().map(Path::new).map(Path::to_path_buf).collect())
 }
 
-fn disallowed_changes(base_ref: &str) -> Result<Vec<PathBuf>> {
-    let mut disallowed = Vec::new();
-
-    for path in changed_files(base_ref)? {
-        if is_license_file(&path) {
-            check_license_file_changes(base_ref, &path, &mut disallowed)?;
-        }
-    }
-
-    Ok(disallowed)
-}
-
-fn check_license_file_changes(base_ref: &str, path: &Path, disallowed: &mut Vec<PathBuf>) -> Result<()> {
+fn require_review_from(base_ref: &str, path: &Path, pr_number: u64, reviewer: &str) -> Result<()> {
     let diff = cmd!(
         "git",
         "diff",
@@ -83,10 +59,19 @@ fn check_license_file_changes(base_ref: &str, path: &Path, disallowed: &mut Vec<
     )
     .read()
     .with_context(|| format!("failed to read diff for {}", path.display()))?;
-    if !diff_only_changes_license_version_or_date(&diff) {
-        disallowed.push(path.to_path_buf());
+    if diff_only_changes_license_version_or_date(&diff) {
+        return Ok(());
     }
-    Ok(())
+
+    if approved_by(pr_number, reviewer)? {
+        return Ok(());
+    }
+
+    bail!(
+        "{} has changes beyond version numbers and change dates, and PR #{pr_number} \
+         does not have an approval from {reviewer}",
+        path.display()
+    );
 }
 
 fn is_license_file(path: &Path) -> bool {
