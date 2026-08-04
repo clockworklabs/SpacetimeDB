@@ -29,24 +29,11 @@ fn test_rls_rules() {
     );
 }
 
-/// Module code with RLS on a private table (intentionally broken)
-const MODULE_CODE_BROKEN_RLS: &str = r#"
-use spacetimedb::{client_visibility_filter, Filter, Identity};
-
-#[spacetimedb::table(accessor = user)]
-pub struct User {
-    identity: Identity,
-}
-
-#[client_visibility_filter]
-const PERSON_FILTER: Filter = Filter::Sql("SELECT * FROM \"user\" WHERE identity = :sender");
-"#;
-
 /// Tests that publishing an RLS rule on a private table fails
 #[test]
 fn test_publish_fails_for_rls_on_private_table() {
     let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE_BROKEN_RLS)
+        .precompiled_module("rls-broken-private-table")
         .autopublish(false)
         .build();
 
