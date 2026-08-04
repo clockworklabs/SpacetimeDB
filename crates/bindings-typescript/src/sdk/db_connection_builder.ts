@@ -11,7 +11,10 @@ import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
 import type { WebSocketFactory } from './ws';
 import {
   CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS,
+  CONNECTION_MANAGER_RECONNECT_MAX_ALLOWED_DELAY_MS,
   CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS,
+  CONNECTION_MANAGER_RECONNECT_MIN_BASE_DELAY_MS,
+  CONNECTION_MANAGER_RECONNECT_MIN_MAX_DELAY_MS,
   type ReconnectOptions,
 } from './connection_manager';
 
@@ -98,7 +101,8 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
    * Configure the auto-reconnect backoff. `baseDelayMs` is the delay before the
    * first retry (the minimum backoff); it doubles on each consecutive failure
    * up to `maxDelayMs`. Unset fields keep the defaults (1000 ms base, 30000 ms
-   * max).
+   * max). `baseDelayMs` must be between 500 ms and 5 minutes, and
+   * `maxDelayMs` must be between 10 seconds and 5 minutes.
    *
    * Auto-reconnect is performed by the `ConnectionManager`, so these options
    * apply to any connection retained through it. That currently means the
@@ -118,18 +122,22 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
     const { baseDelayMs, maxDelayMs } = options;
     if (
       baseDelayMs !== undefined &&
-      (!Number.isFinite(baseDelayMs) || baseDelayMs <= 0)
+      (!Number.isSafeInteger(baseDelayMs) ||
+        baseDelayMs < CONNECTION_MANAGER_RECONNECT_MIN_BASE_DELAY_MS ||
+        baseDelayMs > CONNECTION_MANAGER_RECONNECT_MAX_ALLOWED_DELAY_MS)
     ) {
       throw new TypeError(
-        'withReconnectOptions: baseDelayMs must be a positive number'
+        `withReconnectOptions: baseDelayMs must be a safe integer between ${CONNECTION_MANAGER_RECONNECT_MIN_BASE_DELAY_MS} and ${CONNECTION_MANAGER_RECONNECT_MAX_ALLOWED_DELAY_MS} milliseconds`
       );
     }
     if (
       maxDelayMs !== undefined &&
-      (!Number.isFinite(maxDelayMs) || maxDelayMs <= 0)
+      (!Number.isSafeInteger(maxDelayMs) ||
+        maxDelayMs < CONNECTION_MANAGER_RECONNECT_MIN_MAX_DELAY_MS ||
+        maxDelayMs > CONNECTION_MANAGER_RECONNECT_MAX_ALLOWED_DELAY_MS)
     ) {
       throw new TypeError(
-        'withReconnectOptions: maxDelayMs must be a positive number'
+        `withReconnectOptions: maxDelayMs must be a safe integer between ${CONNECTION_MANAGER_RECONNECT_MIN_MAX_DELAY_MS} and ${CONNECTION_MANAGER_RECONNECT_MAX_ALLOWED_DELAY_MS} milliseconds`
       );
     }
     // Resolve against the defaults the ConnectionManager will apply, so that

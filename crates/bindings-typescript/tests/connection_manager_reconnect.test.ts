@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ConnectionId } from '../src';
 import {
   CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS,
+  CONNECTION_MANAGER_RECONNECT_MAX_ALLOWED_DELAY_MS,
   CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS,
+  CONNECTION_MANAGER_RECONNECT_MIN_BASE_DELAY_MS,
+  CONNECTION_MANAGER_RECONNECT_MIN_MAX_DELAY_MS,
   connectionManagerReconnectDelayMs,
   ConnectionManager,
 } from '../src/sdk/connection_manager.ts';
@@ -428,35 +431,52 @@ describe('ConnectionManager retained reconnect behavior', () => {
   });
 
   test('reconnect delay honors baseDelayMs and maxDelayMs overrides', () => {
-    const options = { baseDelayMs: 200, maxDelayMs: 1000 };
-    expect(connectionManagerReconnectDelayMs(0, options)).toBe(200);
-    expect(connectionManagerReconnectDelayMs(1, options)).toBe(400);
-    expect(connectionManagerReconnectDelayMs(2, options)).toBe(800);
+    const options = { baseDelayMs: 500, maxDelayMs: 10_000 };
+    expect(connectionManagerReconnectDelayMs(0, options)).toBe(500);
+    expect(connectionManagerReconnectDelayMs(1, options)).toBe(1000);
+    expect(connectionManagerReconnectDelayMs(2, options)).toBe(2000);
+    expect(connectionManagerReconnectDelayMs(3, options)).toBe(4000);
+    expect(connectionManagerReconnectDelayMs(4, options)).toBe(8000);
     // Capped at maxDelayMs.
-    expect(connectionManagerReconnectDelayMs(3, options)).toBe(1000);
+    expect(connectionManagerReconnectDelayMs(5, options)).toBe(10_000);
     // An unset field falls back to the module default.
-    expect(connectionManagerReconnectDelayMs(0, { maxDelayMs: 5000 })).toBe(
+    expect(connectionManagerReconnectDelayMs(0, { maxDelayMs: 10_000 })).toBe(
       CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS
+    );
+  });
+
+  test('reconnect delay normalizes malformed options to safe bounds', () => {
+    expect(connectionManagerReconnectDelayMs(0, { baseDelayMs: 0 })).toBe(
+      CONNECTION_MANAGER_RECONNECT_MIN_BASE_DELAY_MS
+    );
+    expect(
+      connectionManagerReconnectDelayMs(0, { baseDelayMs: Infinity })
+    ).toBe(CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS);
+    expect(
+      connectionManagerReconnectDelayMs(100, { maxDelayMs: 999_999 })
+    ).toBe(CONNECTION_MANAGER_RECONNECT_MAX_ALLOWED_DELAY_MS);
+    expect(connectionManagerReconnectDelayMs(100, { maxDelayMs: -1 })).toBe(
+      CONNECTION_MANAGER_RECONNECT_MIN_MAX_DELAY_MS
     );
   });
 
   test('retained reconnect uses the builder reconnect options for backoff', () => {
     const key = nextKey();
     const builder = new MockBuilder();
-    builder.reconnectOptions = { baseDelayMs: 200, maxDelayMs: 1000 };
+    builder.reconnectOptions = { baseDelayMs: 500, maxDelayMs: 10_000 };
 
     const first = retainMock(key, builder);
     first.simulateDisconnect();
 
     // First retry fires after the configured base delay, not the 1000 ms default.
-    vi.advanceTimersByTime(199);
+    vi.advanceTimersByTime(499);
     expect(builder.buildCount).toBe(1);
     vi.advanceTimersByTime(1);
     expect(builder.buildCount).toBe(2);
 
-    // Second failure doubles to 400 ms.
+    // Second failure doubles to 1000 ms.
     builder.connections[1].simulateConnectError(new Error('still down'));
-    vi.advanceTimersByTime(399);
+    vi.advanceTimersByTime(999);
     expect(builder.buildCount).toBe(2);
     vi.advanceTimersByTime(1);
     expect(builder.buildCount).toBe(3);
