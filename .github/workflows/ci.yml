@@ -504,8 +504,7 @@ jobs:
           retention-days: 30
 
   codeowners_check:
-    needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' }}
     name: CODEOWNERS check
     runs-on: ubuntu-latest
     permissions:
