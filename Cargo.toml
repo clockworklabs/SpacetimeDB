@@ -75,6 +75,7 @@ members = [
   "tools/release",
   "tools/regen",
   "tools/xtask-llm-benchmark",
+  "tools/stack-bench/xtask",
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",
   "crates/bindings-typescript/test-solid-router/server",
