@@ -3,30 +3,30 @@ use duct::cmd;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 
 const REPO: &str = "clockworklabs/SpacetimeDB";
-static REVIEW_STATUSES: OnceLock<ReviewStatuses> = OnceLock::new();
 
 pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
     super::ensure_repo_root()?;
 
     fetch_base_ref(base_ref)?;
-    initialize_review_statuses(pr_number)?;
+    let review = ReviewStatuses::fetch(pr_number)?;
 
     for path in changed_files(base_ref)? {
-        if license::is_file(&path) && !license::is_trivial_change(base_ref, &path)? {
-            require_review_from(&path, "cloutiertyler")?;
-        }
+        file_review_requirements(base_ref, &path, &review)
+            .with_context(|| format!("failed to check review requirements for {}", path.display()))?;
     }
 
     Ok(())
 }
 
-fn initialize_review_statuses(pr_number: u64) -> Result<()> {
-    if REVIEW_STATUSES.set(ReviewStatuses::new(pr_number)).is_err() {
-        bail!("CODEOWNERS review status cache was already initialized");
+fn file_review_requirements(base_ref: &str, path: &Path, review: &ReviewStatuses) -> Result<()> {
+    if license::is_file(path) {
+        if !license::is_trivial_change(base_ref, path)? {
+            review.require("cloutiertyler")?;
+        }
     }
+
     Ok(())
 }
 
@@ -56,38 +56,18 @@ fn changed_files(base_ref: &str) -> Result<Vec<PathBuf>> {
 
 struct ReviewStatuses {
     pr_number: u64,
-    latest_by_author: OnceLock<HashMap<String, String>>,
+    latest_by_author: HashMap<String, String>,
 }
 
 impl ReviewStatuses {
-    fn new(pr_number: u64) -> Self {
-        Self {
-            pr_number,
-            latest_by_author: OnceLock::new(),
-        }
-    }
-
-    fn approved_by(&self, reviewer: &str) -> Result<bool> {
-        if self.latest_by_author.get().is_none() {
-            let latest_by_author = self.latest_review_status_by_author()?;
-            let _ = self.latest_by_author.set(latest_by_author);
-        }
-
-        Ok(self
-            .latest_by_author
-            .get()
-            .and_then(|statuses| statuses.get(reviewer))
-            .is_some_and(|state| state == "APPROVED"))
-    }
-
-    fn latest_review_status_by_author(&self) -> Result<HashMap<String, String>> {
+    fn fetch(pr_number: u64) -> Result<Self> {
         let reviews_json = cmd!(
             "gh",
             "api",
-            &format!("repos/{REPO}/pulls/{}/reviews?per_page=100", self.pr_number)
+            &format!("repos/{REPO}/pulls/{pr_number}/reviews?per_page=100")
         )
         .read()
-        .with_context(|| format!("failed to read reviews for PR #{}", self.pr_number))?;
+        .with_context(|| format!("failed to read reviews for PR #{pr_number}"))?;
         let reviews: Value = serde_json::from_str(&reviews_json)?;
         let reviews = reviews
             .as_array()
@@ -104,27 +84,23 @@ impl ReviewStatuses {
             latest_by_author.insert(login.to_string(), state.to_string());
         }
 
-        Ok(latest_by_author)
-    }
-}
-
-fn review_statuses() -> &'static ReviewStatuses {
-    REVIEW_STATUSES
-        .get()
-        .expect("CODEOWNERS review status cache was not initialized")
-}
-
-fn require_review_from(path: &Path, reviewer: &str) -> Result<()> {
-    let review_statuses = review_statuses();
-    if review_statuses.approved_by(reviewer)? {
-        return Ok(());
+        Ok(Self {
+            pr_number,
+            latest_by_author,
+        })
     }
 
-    bail!(
-        "{} requires approval from {reviewer} on PR #{}",
-        path.display(),
-        review_statuses.pr_number
-    );
+    fn require(&self, reviewer: &str) -> Result<()> {
+        if self
+            .latest_by_author
+            .get(reviewer)
+            .is_some_and(|state| state == "APPROVED")
+        {
+            return Ok(());
+        }
+
+        bail!("PR #{} does not have approval from {reviewer}", self.pr_number);
+    }
 }
 
 mod license {
