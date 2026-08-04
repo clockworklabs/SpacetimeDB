@@ -20,21 +20,7 @@ mod util;
 
 use util::ensure_repo_root;
 
-const DEFAULT_CI_SUBCOMMANDS: &[&str] = &[
-    "test",
-    "lint",
-    "wasm-bindings",
-    "dlls",
-    "smoketests",
-    "keynote-bench",
-    "update-flow",
-    "cli-docs",
-    "global-json-policy",
-    "publish-checks",
-    "typescript-test",
-    "version-upgrade-check",
-    "docs",
-];
+const OTHER_WORKFLOWS_SUBCOMMAND: &str = "other-workflows";
 
 /// On Windows, `pnpm` is installed as a `.cmd` shim which `CreateProcess` cannot
 /// find without going through the shell.  Wrapping with `cmd /c` fixes this.
@@ -368,23 +354,8 @@ enum CiCmd {
         )]
         spacetime_path: Option<String>,
     },
-    SelfDocs {
-        #[arg(
-            long,
-            default_value_t = false,
-            long_help = "Only check for changes, do not generate the docs"
-        )]
-        check: bool,
-    },
-
     /// Verify that any non-root global.json files are symlinks to the root global.json.
     GlobalJsonPolicy,
-    /// Checks that sensitive CODEOWNERS-controlled files have the required approvals.
-    CodeownersCheck {
-        /// Pull request number to inspect for approval state.
-        #[arg(long)]
-        pr_number: u64,
-    },
     /// Checks that publishable crates satisfy publish constraints.
     PublishChecks,
     /// Runs TypeScript workspace tests and template build checks.
@@ -393,6 +364,30 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
+    /// Workflows that are not part of ci.yml should live here.
+    OtherWorkflows {
+        #[command(subcommand)]
+        cmd: OtherWorkflowsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OtherWorkflowsCmd {
+    /// Generates this cargo ci README and checks for changes.
+    SelfDocs {
+        #[arg(
+            long,
+            default_value_t = false,
+            long_help = "Only check for changes, do not generate the docs"
+        )]
+        check: bool,
+    },
+    /// Checks that sensitive CODEOWNERS-controlled files have the required approvals.
+    CodeownersCheck {
+        /// Pull request number to inspect for approval state.
+        #[arg(long)]
+        pr_number: u64,
+    },
     /// Interacts with CLA Assistant.
     ClaAssistant {
         #[command(subcommand)]
@@ -401,22 +396,16 @@ enum CiCmd {
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
-    let known_subcommands = Cli::command()
+    let subcmds = Cli::command()
         .get_subcommands()
         .map(|sc| sc.get_name().to_string())
         .collect::<Vec<_>>();
-    let subcmds = DEFAULT_CI_SUBCOMMANDS
-        .iter()
-        .map(|subcmd| subcmd.to_string())
-        .collect::<Vec<_>>();
-
-    for subcmd in &subcmds {
-        if !known_subcommands.contains(subcmd) {
-            bail!("default CI subcommand {subcmd:?} is not registered");
-        }
-    }
 
     for subcmd in subcmds {
+        if subcmd == OTHER_WORKFLOWS_SUBCOMMAND {
+            log::info!("skipping {subcmd} because it is not part of ci.yml");
+            continue;
+        }
         if skips.contains(&subcmd) {
             log::info!("skipping {subcmd} as requested");
             continue;
@@ -801,14 +790,16 @@ fn main() -> Result<()> {
             }
         }
 
-        Some(CiCmd::SelfDocs { check }) => {
+        Some(CiCmd::OtherWorkflows {
+            cmd: OtherWorkflowsCmd::SelfDocs { check },
+        }) => {
             let readme_content = ci_docs::generate_cli_docs();
             let path = Path::new(README_PATH);
 
             if check {
                 let existing = fs::read_to_string(path).unwrap_or_default();
                 if existing != readme_content {
-                    bail!("README.md is out of date. Please run `cargo ci self-docs` to update it.");
+                    bail!("README.md is out of date. Please run `cargo ci other-workflows self-docs` to update it.");
                 } else {
                     log::info!("README.md is up to date.");
                 }
@@ -822,7 +813,9 @@ fn main() -> Result<()> {
             check_global_json_policy()?;
         }
 
-        Some(CiCmd::CodeownersCheck { pr_number }) => {
+        Some(CiCmd::OtherWorkflows {
+            cmd: OtherWorkflowsCmd::CodeownersCheck { pr_number },
+        }) => {
             codeowners_check::run(pr_number)?;
         }
 
@@ -842,7 +835,9 @@ fn main() -> Result<()> {
             run_docs_build()?;
         }
 
-        Some(CiCmd::ClaAssistant { cmd }) => {
+        Some(CiCmd::OtherWorkflows {
+            cmd: OtherWorkflowsCmd::ClaAssistant { cmd },
+        }) => {
             cla_assistant::run(cmd)?;
         }
 

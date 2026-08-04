@@ -545,7 +545,7 @@ jobs:
             exit 1
           fi
 
-          cargo ci codeowners-check --pr-number "${PR_NUMBER}"
+          cargo ci other-workflows codeowners-check --pr-number "${PR_NUMBER}"
 
   wasm_bindings:
     needs: [merge_queue_noop]
@@ -772,7 +772,7 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Check for docs change
-        run: cargo ci self-docs --check
+        run: cargo ci other-workflows self-docs --check
 
   cli_docs:
     needs: [merge_queue_noop]
