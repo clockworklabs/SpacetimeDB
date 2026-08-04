@@ -34,6 +34,7 @@ function parseArgs(argv) {
       case '--label': args.label = argv[++i]; break;
       case '--feature': args.feature = parseInt(argv[++i], 10); break;
       case '--spec': args.spec = argv[++i]; break;
+      case '--restart-cmd': args.restartCmd = argv[++i]; break;
       case '--media': args.media = argv[++i]; break;
       case '--trace': args.trace = true; break;
       case '--headed': args.headed = true; break;
@@ -281,6 +282,44 @@ async function runStep(step, actors, ctx) {
       }
       return;
     }
+    case 'scheduleMessage': {
+      // The L2 contract names the toggle and the time input but not the submit
+      // control, so fall back to a labelled button when no hook is present.
+      const input = actor.loc('message-input');
+      if (await input.count()) await input.fill(step.text);
+      const toggle = actor.loc('schedule-toggle');
+      if (await toggle.count()) await toggle.click({ timeout: DEFAULT_WITHIN }).catch(() => {});
+      const when = actor.loc('schedule-time');
+      await when.waitFor({ state: 'visible', timeout: DEFAULT_WITHIN });
+
+      const type = (await when.getAttribute('type')) ?? 'text';
+      const at = new Date(Date.now() + step.secondsAhead * 1000);
+      const local = new Date(at.getTime() - at.getTimezoneOffset() * 60000).toISOString();
+      if (type === 'datetime-local') await when.fill(local.slice(0, 16));
+      else if (type === 'time') await when.fill(local.slice(11, 16));
+      else await when.fill(String(step.secondsAhead));
+
+      const submit = actor.loc('schedule-submit');
+      if (await submit.count()) { await submit.click(); return; }
+      const labelled = page.getByRole('button', { name: /schedule|send later|confirm/i }).first();
+      if (await labelled.count()) { await labelled.click(); return; }
+      await when.press('Enter');
+      return;
+    }
+    case 'restartBackend': {
+      // Restarts the app's backend process — the Express server, or the
+      // SpacetimeDB host. Supplied by the caller because it is environment
+      // specific; without it the step fails loudly rather than passing.
+      if (!ctx.restartCmd) throw new Error('INCONCLUSIVE: no --restart-cmd supplied, backend was never restarted');
+      const { execFileSync } = await import('node:child_process');
+      try {
+        execFileSync('bash', ['-c', ctx.restartCmd], { encoding: 'utf8', stdio: 'pipe', timeout: 120000 });
+      } catch (err) {
+        throw new Error(`backend restart command failed: ${(err.stdout || err.message || '').toString().trim().slice(-200)}`);
+      }
+      await page.waitForTimeout(step.settleMs ?? 10000);
+      return;
+    }
     case 'wait': return page.waitForTimeout(step.ms);
     case 'expect': return runExpect(actor, step, ctx);
     default: throw new Error(`unknown action "${step.do}"`);
@@ -514,7 +553,7 @@ async function main() {
 
   const features = args.feature ? spec.features.filter(f => f.id === args.feature) : spec.features;
   const runId = uniq();
-  const ctx = { runId, roomName: base => `${base}-${runId}` };
+  const ctx = { runId, roomName: base => `${base}-${runId}`, restartCmd: args.restartCmd };
 
   const browser = await chromium.launch({ headless: !args.headed });
   const report = {

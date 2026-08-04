@@ -15,6 +15,13 @@
       "revealedBy": "schedule-toggle"
     },
     {
+      "id": "schedule-submit",
+      "element": "button that confirms scheduling the composed message for the chosen time",
+      "stage": "room",
+      "check": "attached",
+      "revealedBy": "schedule-toggle"
+    },
+    {
       "id": "scheduled-item",
       "element": "one entry per pending scheduled message (repeated testid), visible to its author",
       "stage": "scenario",

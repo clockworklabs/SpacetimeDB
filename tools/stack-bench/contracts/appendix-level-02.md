@@ -32,6 +32,7 @@ Rules:
 | `read-receipt` | appears under a message after another user has viewed it |
 | `schedule-toggle` | control in the compose area that opens the message-scheduling UI |
 | `schedule-time` | input for choosing the send time; must allow scheduling as little as 60 seconds ahead |
+| `schedule-submit` | button that confirms scheduling the composed message for the chosen time |
 | `scheduled-item` | appears after the author schedules a message, until it sends or is cancelled |
 | `schedule-cancel` | present on each scheduled-item |
 
