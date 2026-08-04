@@ -53,3 +53,26 @@ leftover rows from earlier runs are the main source of spurious passes.
 
 Validate new scenarios against a known-broken app before trusting them. `../linter/fixtures/mock-chat.html`
 is a useful negative control: it has no backend, so it should score 1/12.
+
+## Validating the grader itself
+
+A grader that passes everything is worthless; one that fails the wrong thing is worse.
+`mutation-test.mjs` injects known defects into a known-good app and checks the grader
+notices, in the right feature:
+
+```bash
+node mutation-test.mjs --app <app-dir> --url <url> --mutations mutations/spacetime-l1.json
+```
+
+A mutation that SURVIVES (score unchanged) is a hole in the oracle. Watch for *equivalent
+mutants* — a defect that changes no observable behavior. One here removed a receipt's
+sender filter, but a second filter still excluded the same user, so nothing changed and
+the survival was meaningless. Confirm a mutation actually alters what a user would see
+before treating its survival as a grader bug.
+
+## Clean state is a precondition, not a nicety
+
+Grading a dirty database silently biases scores DOWNWARD: an accumulated room/user list
+breaks assertions that pass on a clean app. Feature 1 scored 3/3 on a fresh database and
+2/3 on a dirty one, repeatably. The grader records `environment.preexistingRooms` and
+warns when it is non-zero — treat any such run as non-comparable.

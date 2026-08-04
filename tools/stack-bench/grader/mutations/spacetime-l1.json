@@ -1,0 +1,37 @@
+{
+  "note": "Client-side defects injected into a known-good SpacetimeDB L1 app. Each mimics a real failure mode seen in historical graded runs. Anchors are app-specific; regenerate for a different app.",
+  "mutations": [
+    {
+      "id": "unread-always-zero",
+      "desc": "Unread counts computed as 0, so the badge never renders (mimics 'unread never updates')",
+      "file": "client/src/App.tsx",
+      "find": "      const unread = messages.filter((m) => m.roomId === room.id && m.id > lastReadId).length;",
+      "replace": "      const unread = 0;",
+      "breaks": 4
+    },
+    {
+      "id": "typing-unscoped",
+      "desc": "Typing indicator ignores the room filter, so it leaks across rooms",
+      "file": "client/src/App.tsx",
+      "find": "        if (ti.roomId !== currentRoomId) return false;",
+      "replace": "        if (false) return false;",
+      "breaks": 2
+    },
+    {
+      "id": "receipts-include-sender",
+      "desc": "Read receipts list the sender as a reader of their own message (both exclusion filters removed \u2014 removing only one is an equivalent mutant)",
+      "file": "client/src/App.tsx",
+      "breaks": 3,
+      "edits": [
+        {
+          "find": "            lr.userIdentity.toHexString() !== senderHex &&\n",
+          "replace": ""
+        },
+        {
+          "find": "            lr.userIdentity.toHexString() !== myHex\n",
+          "replace": "            true\n"
+        }
+      ]
+    }
+  ]
+}
