@@ -1,0 +1,87 @@
+{
+  "level": 1,
+  "note": "Delivery and resilience invariants — properties of the transport, not of any feature. These are the ones a human grader cannot test at all (you cannot generate concurrency or simulate a network drop by clicking), and where the asymmetry is structural: Express stacks broadcast with io.emit() AFTER awaiting the write, so delivery is not atomic with the commit; a SpacetimeDB subscription update IS the commit.",
+  "features": [
+    {
+      "id": 201,
+      "name": "Delivery Integrity",
+      "max": 3,
+      "actors": ["alice", "bob"],
+      "setup": [
+        { "do": "register", "actor": "alice", "name": "Alice" },
+        { "do": "register", "actor": "bob", "name": "Bob" },
+        { "do": "createRoom", "actor": "alice", "room": "storm" },
+        { "do": "enterRoom", "actor": "alice", "room": "storm" },
+        { "do": "enterRoom", "actor": "bob", "room": "storm" }
+      ],
+      "criteria": [
+        {
+          "id": "no-loss-no-duplication-sender",
+          "points": 1,
+          "desc": "Under a concurrent write storm from two clients, the sender sees every message exactly once — no drops, no double-render from optimistic insert plus broadcast echo",
+          "steps": [
+            { "do": "sendConcurrently", "senders": [
+              { "actor": "alice", "prefix": "AA", "count": 8 },
+              { "actor": "bob", "prefix": "BB", "count": 8 }
+            ] },
+            { "do": "expectAllPresent", "actor": "alice", "prefix": "AA", "count": 8, "within": 12000 }
+          ]
+        },
+        {
+          "id": "no-loss-no-duplication-receiver",
+          "points": 1,
+          "desc": "The receiving client also observes every message from the other sender exactly once",
+          "steps": [
+            { "do": "expectAllPresent", "actor": "alice", "prefix": "BB", "count": 8, "within": 12000 },
+            { "do": "expectAllPresent", "actor": "bob", "prefix": "AA", "count": 8, "within": 12000 }
+          ]
+        },
+        {
+          "id": "consistent-order-across-clients",
+          "points": 1,
+          "desc": "Both clients observe the interleaved messages in the SAME order. Non-atomic broadcast lets concurrent senders interleave differently per client.",
+          "steps": [
+            { "do": "expectOrderMatches", "actors": ["alice", "bob"], "prefix": "AA" },
+            { "do": "expectOrderMatches", "actors": ["alice", "bob"], "prefix": "BB" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "name": "Connection Resilience",
+      "max": 2,
+      "actors": ["alice", "bob"],
+      "setup": [
+        { "do": "register", "actor": "alice", "name": "Alice" },
+        { "do": "register", "actor": "bob", "name": "Bob" },
+        { "do": "createRoom", "actor": "alice", "room": "resilience" },
+        { "do": "enterRoom", "actor": "alice", "room": "resilience" },
+        { "do": "enterRoom", "actor": "bob", "room": "resilience" }
+      ],
+      "criteria": [
+        {
+          "id": "resync-after-disconnect",
+          "points": 1,
+          "desc": "A client that loses its connection and regains it must catch up on everything it missed, WITHOUT a reload. Reconnect handling is something an Express app has to implement; a SpacetimeDB subscription re-delivers state on reconnect.",
+          "steps": [
+            { "do": "setOffline", "actor": "alice", "offline": true, "settleMs": 1500 },
+            { "do": "sendMany", "actor": "bob", "prefix": "OFFLINE", "count": 3, "delayMs": 300 },
+            { "do": "setOffline", "actor": "alice", "offline": false, "settleMs": 3000 },
+            { "do": "expectAllPresent", "actor": "alice", "prefix": "OFFLINE", "count": 3, "within": 15000 }
+          ]
+        },
+        {
+          "id": "no-duplication-after-resync",
+          "points": 1,
+          "desc": "Catching up must not double-deliver messages the client already had (resubscribe replaying history on top of existing state)",
+          "steps": [
+            { "do": "sendMany", "actor": "bob", "prefix": "AFTER", "count": 2, "delayMs": 300 },
+            { "do": "expectAllPresent", "actor": "alice", "prefix": "AFTER", "count": 2, "within": 10000 },
+            { "do": "expectAllPresent", "actor": "alice", "prefix": "OFFLINE", "count": 3, "within": 5000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

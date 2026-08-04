@@ -100,3 +100,23 @@ the other app's client silently proxies into it — producing confident scores f
 system. This has happened twice. Before grading an Express app, confirm the API is the one
 you think: `curl -s localhost:6001/api/rooms` returns integer ids for Postgres and 24-char
 hex ObjectIds for MongoDB.
+
+## Identical failures across backends mean the grader is wrong
+
+Three false-positive classes have been caught this way, and the tell was always the same:
+every backend failing the same criterion in the same way. Architectures this different do
+not break identically — when they appear to, suspect the oracle first.
+
+The third instance: a delivery-integrity check reported "3 of 30 messages duplicated" on
+BOTH SpacetimeDB and Postgres. `hasText: "AA-1"` substring-matches `AA-10`…`AA-19`, `AA-2`
+matches `AA-20`…`AA-29`, and `AA-3` matches `AA-30` — exactly three apparent duplicates on
+any app. Indices are zero-padded now. Prefer exact or delimited matching for anything
+generated in a sequence.
+
+## Negative results are results
+
+Both backends pass Delivery Integrity and Connection Resilience at 8 concurrent messages
+and at 30. socket.io has reconnection and buffering built in, so the Express stack handles
+these correctly — the hypothesis that it would drop or reorder messages did not hold.
+Record findings like this rather than escalating the workload until the desired backend
+wins; the credibility of the differences we DO report depends on it.

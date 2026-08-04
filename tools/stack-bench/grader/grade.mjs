@@ -94,11 +94,44 @@ async function enterRoom(actor, roomName) {
 }
 
 async function runStep(step, actors, ctx) {
+  // Cross-actor steps act on several actors at once, so they resolve first.
+  if (step.do === 'expectOrderMatches') return expectOrderMatches(step, actors);
+  if (step.do === 'sendConcurrently') {
+    // Genuine concurrency: all senders fire without waiting for each other.
+    await Promise.all(step.senders.map(s => sendMany(actors.get(s.actor), s.prefix, s.count, 0)));
+    return;
+  }
+
   const actor = actors.get(step.actor);
   if (!actor) throw new Error(`unknown actor "${step.actor}"`);
   const page = actor.page;
 
   switch (step.do) {
+    case 'setOffline': {
+      await page.context().setOffline(step.offline !== false);
+      await page.waitForTimeout(step.settleMs ?? 500);
+      return;
+    }
+    case 'sendMany': return sendMany(actor, step.prefix, step.count, step.delayMs ?? 0);
+    case 'expectAllPresent': {
+      // Every message must be present exactly once: catches both loss and
+      // duplication (optimistic insert plus broadcast echo renders twice).
+      const within = step.within ?? 10000;
+      const deadline = Date.now() + within;
+      for (;;) {
+        const counts = [];
+        for (let i = 1; i <= step.count; i++) {
+          counts.push(await actor.page.locator(tid('message-item'), { hasText: `${step.prefix}-${pad(i, step.count)}` }).count());
+        }
+        const missing = counts.filter(c => c === 0).length;
+        const duplicated = counts.filter(c => c > 1).length;
+        if (!missing && !duplicated) return;
+        if (Date.now() > deadline) {
+          throw new Error(`of ${step.count} "${step.prefix}" messages: ${missing} missing, ${duplicated} duplicated (after ${within}ms)`);
+        }
+        await actor.page.waitForTimeout(500);
+      }
+    }
     case 'register': {
       await page.locator(tid('name-input')).first().fill(`${step.name}-${ctx.scope}`);
       await page.locator(tid('name-submit')).first().click();
@@ -192,6 +225,44 @@ async function runExpect(actor, step, ctx = { roomName: x => x }) {
     const text = (await loc.innerText().catch(() => '')) || '';
     if (text.includes(step.notContains)) {
       throw new Error(`${tid(step.testid)} unexpectedly contains "${step.notContains}" (text: "${text.trim().slice(0, 80)}")`);
+    }
+  }
+}
+
+// Indices are zero-padded so "AA-1" cannot substring-match "AA-10".
+const pad = (i, count) => String(i).padStart(String(count).length, '0');
+
+async function sendMany(actor, prefix, count, delayMs) {
+  const input = actor.loc('message-input');
+  for (let i = 1; i <= count; i++) {
+    await input.fill(`${prefix}-${pad(i, count)}`);
+    await input.press('Enter');
+    if (delayMs) await actor.page.waitForTimeout(delayMs);
+  }
+}
+
+// Every client must observe the same messages in the same order. Express stacks
+// broadcast with io.emit() AFTER awaiting the write, so the broadcast is not
+// atomic with the commit and concurrent senders can interleave differently per
+// client. A SpacetimeDB subscription update IS the commit, so it cannot diverge.
+async function expectOrderMatches(step, actors) {
+  const seqs = {};
+  for (const name of step.actors) {
+    const actor = actors.get(name);
+    const texts = await actor.page.locator(tid('message-item')).allInnerTexts();
+    seqs[name] = texts
+      .map(t => (t.match(new RegExp(`${step.prefix}-\\d+`)) || [])[0])
+      .filter(Boolean);
+  }
+  const [first, ...rest] = step.actors;
+  for (const other of rest) {
+    if (seqs[first].join('|') !== seqs[other].join('|')) {
+      const diffAt = seqs[first].findIndex((v, i) => v !== seqs[other][i]);
+      throw new Error(
+        `message order differs between ${first} and ${other} at position ${diffAt}: ` +
+        `${first} saw ${seqs[first].slice(Math.max(0, diffAt - 1), diffAt + 2).join(',')} / ` +
+        `${other} saw ${seqs[other].slice(Math.max(0, diffAt - 1), diffAt + 2).join(',')}`
+      );
     }
   }
 }
