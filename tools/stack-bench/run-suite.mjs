@@ -14,7 +14,7 @@
 //                      --label <id> [--out <dir>] [--media] [--level 1] [--no-reset]
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -68,6 +68,39 @@ function checkDatabaseProvenance(args) {
   const url = (readFileSync(envPath, 'utf8').match(/DATABASE_URL=(.*)/) || [])[1]?.trim() ?? '';
   const ok = url.includes(`:${expected}/`);
   return { ok, url, reason: ok ? 'ok' : `app targets ${url} but the benchmark database is on port ${expected}` };
+}
+
+// Same features for less code is a structural property of the platform, not a
+// property of the model that happened to write it — unlike build cost, which
+// inverted between Sonnet 4.6 and Sonnet 5.
+function codeMetrics(args) {
+  const SERVER_DIR = { spacetime: 'backend', postgres: 'server', mongodb: 'server' }[args.backend] ?? 'server';
+  const walk = (dir, out = []) => {
+    if (!existsSync(dir)) return out;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (/^(node_modules|dist|\.vite|module_bindings|drizzle)$/.test(e.name)) continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p, out);
+      else if (/\.(ts|tsx)$/.test(e.name)) out.push(p);
+    }
+    return out;
+  };
+  const count = files => files.reduce((n, f) => n + readFileSync(f, 'utf8').split('\n').length, 0);
+  const serverFiles = walk(join(args.app, SERVER_DIR));
+  const allFiles = walk(args.app);
+
+  let deps = 0;
+  for (const pj of ['package.json', join(SERVER_DIR, 'package.json'), 'client/package.json']) {
+    const p = join(args.app, pj);
+    if (!existsSync(p)) continue;
+    try { deps += Object.keys(JSON.parse(readFileSync(p, 'utf8')).dependencies ?? {}).length; } catch { /* ignore */ }
+  }
+
+  return {
+    serverLoc: count(serverFiles), serverFiles: serverFiles.length,
+    totalLoc: count(allFiles), totalFiles: allFiles.length,
+    runtimeDeps: deps,
+  };
 }
 
 function resetDatabase(args) {
@@ -143,6 +176,10 @@ async function main() {
     await sleep(8000);                       // let the app reconnect / republish
     return true;
   };
+
+  bundle.code = codeMetrics(args);
+  console.log(`  code        ... ${bundle.code.serverLoc} server LOC in ${bundle.code.serverFiles} files, ` +
+    `${bundle.code.totalLoc} total LOC, ${bundle.code.runtimeDeps} runtime deps`);
 
   const prov = checkDatabaseProvenance(args);
   bundle.provenance = prov;
