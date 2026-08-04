@@ -18,7 +18,7 @@ Generated bindings convert snake_case names to camelCase, including row fields: 
 ## React: main.tsx
 
 ```typescript
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection } from './module_bindings';
@@ -26,15 +26,31 @@ import { MODULE_NAME, SPACETIMEDB_URI } from './config';
 import App from './App';
 
 function Root() {
+  const [authToken, setAuthToken] = useState(
+    () => localStorage.getItem('auth_token') || undefined
+  );
+
+  // A new visitor connects without a token and the server issues one. Reconnects
+  // rebuild from this builder, so it has to carry that token — otherwise the
+  // reconnect is anonymous and the server issues a different Identity, orphaning
+  // everything the user owns.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const t = localStorage.getItem('auth_token') || undefined;
+      setAuthToken(prev => (prev === t ? prev : t));
+    }, 500);
+    return () => clearInterval(id);
+  }, []);
+
   const connectionBuilder = useMemo(() =>
     DbConnection.builder()
       .withUri(SPACETIMEDB_URI)
       .withDatabaseName(MODULE_NAME)
-      .withToken(localStorage.getItem('auth_token') || undefined),
-    []
+      .withToken(authToken),
+    [authToken]
   );
   return (
-    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
+    <SpacetimeDBProvider key={authToken ?? 'anonymous'} connectionBuilder={connectionBuilder}>
       <App />
     </SpacetimeDBProvider>
   );
