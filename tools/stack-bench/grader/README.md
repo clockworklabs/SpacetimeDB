@@ -76,3 +76,27 @@ Grading a dirty database silently biases scores DOWNWARD: an accumulated room/us
 breaks assertions that pass on a clean app. Feature 1 scored 3/3 on a fresh database and
 2/3 on a dirty one, repeatably. The grader records `environment.preexistingRooms` and
 warns when it is non-zero — treat any such run as non-comparable.
+
+## Watching a run
+
+`--media <dir>` records one video per actor plus a full-page screenshot at the exact
+moment any assertion fails. `--trace` additionally writes a Playwright trace per actor,
+steppable with DOM snapshots and network:
+
+```bash
+node grade.mjs --url http://localhost:6273 --level 1 --feature 4 --label postgres --media ../media
+npx playwright show-trace ../media/postgres-f4-bob.trace.zip
+```
+
+Videos are `<label>-f<feature>-<actor>.webm`, screenshots `<label>-f<feature>-<criterion>.png`.
+Watching Bob's video for a failing feature is the fastest way to confirm a verdict is real
+before reporting it, and the recordings double as the evidence artifact published with results.
+`media/` is gitignored — recordings belong with the run output, not the repo.
+
+## Verify which backend answered
+
+Both Express backends default to port 6001, so whichever server started last owns it and
+the other app's client silently proxies into it — producing confident scores for the wrong
+system. This has happened twice. Before grading an Express app, confirm the API is the one
+you think: `curl -s localhost:6001/api/rooms` returns integer ids for Postgres and 24-char
+hex ObjectIds for MongoDB.

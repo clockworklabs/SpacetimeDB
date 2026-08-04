@@ -33,6 +33,8 @@ function parseArgs(argv) {
       case '--out': args.out = argv[++i]; break;
       case '--label': args.label = argv[++i]; break;
       case '--feature': args.feature = parseInt(argv[++i], 10); break;
+      case '--media': args.media = argv[++i]; break;
+      case '--trace': args.trace = true; break;
       case '--headed': args.headed = true; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
@@ -180,14 +182,34 @@ async function runExpect(actor, step, ctx = { roomName: x => x }) {
 async function gradeFeature(browser, feature, args, ctx) {
   const actors = new Map();
   const contexts = [];
+  const slug = `${args.label ?? 'run'}-f${feature.id}`;
   for (const name of feature.actors) {
-    const context = await browser.newContext();          // isolated storage per actor
+    // Isolated storage per actor. Video is per-context, so each actor gets its
+    // own recording — you can watch what every participant saw, side by side.
+    const context = await browser.newContext(
+      args.media ? { recordVideo: { dir: args.media, size: { width: 1280, height: 800 } } } : {}
+    );
+    if (args.trace) await context.tracing.start({ screenshots: true, snapshots: true });
     const page = await context.newPage();
     page.setDefaultTimeout(DEFAULT_WITHIN);
     await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
     actors.set(name, new Actor(name, page));
-    contexts.push(context);
+    contexts.push({ context, name, page });
   }
+
+  const closeAll = async () => {
+    for (const { context, name, page } of contexts) {
+      if (args.trace) {
+        await context.tracing.stop({ path: join(args.media ?? '.', `${slug}-${name}.trace.zip`) }).catch(() => {});
+      }
+      const video = args.media ? page.video() : null;
+      await context.close();                     // video is only finalized on close
+      if (video) {
+        await video.saveAs(join(args.media, `${slug}-${name}.webm`)).catch(() => {});
+        await video.delete().catch(() => {});     // drop Playwright's hashed original
+      }
+    }
+  };
 
   const result = {
     id: feature.id, name: feature.name, score: 0, max: MAX_PER_FEATURE,
@@ -205,7 +227,7 @@ async function gradeFeature(browser, feature, args, ctx) {
     for (const c of feature.criteria) {
       result.criteria.push({ id: c.id, points: c.points, passed: false, detail: 'setup failed' });
     }
-    for (const c of contexts) await c.close();
+    await closeAll();
     return result;
   }
 
@@ -217,6 +239,12 @@ async function gradeFeature(browser, feature, args, ctx) {
     } catch (err) {
       passed = false;
       detail = err.message;
+      if (args.media) {
+        const shotActor = actors.get(criterion.steps[criterion.steps.length - 1]?.actor) ?? actors.values().next().value;
+        const shot = join(args.media, `${slug}-${criterion.id}.png`);
+        await shotActor.page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+        result.screenshots = [...(result.screenshots ?? []), shot];
+      }
       // Refresh probe: does the assertion pass once the page is reloaded?
       // If so the feature is refresh-dependent, not realtime.
       const failing = criterion.steps[criterion.steps.length - 1];
@@ -249,7 +277,8 @@ async function gradeFeature(browser, feature, args, ctx) {
     result.score = 2;
   }
 
-  for (const c of contexts) await c.close();
+  await closeAll();
+  if (args.media) result.videos = contexts.map(c => join(args.media, `${slug}-${c.name}.webm`));
   return result;
 }
 
