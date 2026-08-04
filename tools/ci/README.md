@@ -216,6 +216,18 @@ Usage: global-json-policy
 
 - `--help`: Print help
 
+### `codeowners-check`
+
+**Usage:**
+```bash
+Usage: codeowners-check [OPTIONS]
+```
+
+**Options:**
+
+- `--pr-number <PR_NUMBER>`: Pull request number to inspect for approval state
+- `--help`: Print help
+
 ### `publish-checks`
 
 **Usage:**

@@ -13,6 +13,7 @@ const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
 mod cla_assistant;
+mod codeowners_check;
 mod keynote_bench;
 mod smoketest;
 mod util;
@@ -362,6 +363,12 @@ enum CiCmd {
 
     /// Verify that any non-root global.json files are symlinks to the root global.json.
     GlobalJsonPolicy,
+    /// Checks that sensitive CODEOWNERS-controlled files have the required approvals.
+    CodeownersCheck {
+        /// Pull request number to inspect for approval state.
+        #[arg(long)]
+        pr_number: Option<u64>,
+    },
     /// Checks that publishable crates satisfy publish constraints.
     PublishChecks,
     /// Runs TypeScript workspace tests and template build checks.
@@ -787,6 +794,10 @@ fn main() -> Result<()> {
 
         Some(CiCmd::GlobalJsonPolicy) => {
             check_global_json_policy()?;
+        }
+
+        Some(CiCmd::CodeownersCheck { pr_number }) => {
+            codeowners_check::run(pr_number)?;
         }
 
         Some(CiCmd::PublishChecks) => {
