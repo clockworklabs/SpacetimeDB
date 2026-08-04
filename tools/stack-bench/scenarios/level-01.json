@@ -1,0 +1,429 @@
+{
+  "level": 1,
+  "features": [
+    {
+      "id": 1,
+      "name": "Basic Chat",
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "setup": [
+        {
+          "do": "register",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "register",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "general"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "general"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "own-message-appears",
+          "points": 1,
+          "desc": "A sent message appears in the sender's own message list",
+          "steps": [
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "hello from alice"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "message-item",
+              "contains": "hello from alice",
+              "within": 5000
+            }
+          ]
+        },
+        {
+          "id": "cross-user-realtime",
+          "points": 1,
+          "desc": "A second user in the same room receives messages live, with no reload",
+          "steps": [
+            {
+              "do": "enterRoom",
+              "actor": "bob",
+              "room": "general"
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "hello from alice",
+              "within": 5000
+            },
+            {
+              "do": "send",
+              "actor": "bob",
+              "text": "hello from bob"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "message-item",
+              "contains": "hello from bob",
+              "within": 3000
+            }
+          ]
+        },
+        {
+          "id": "presence-and-leave",
+          "points": 1,
+          "desc": "Online users lists both participants; leaving a room works",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "online-users",
+              "contains": "Bob",
+              "within": 5000
+            },
+            {
+              "do": "click",
+              "actor": "bob",
+              "testid": "leave-room"
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-input",
+              "absent": true,
+              "within": 5000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Typing Indicators",
+      "actors": [
+        "alice",
+        "bob",
+        "carol"
+      ],
+      "setup": [
+        {
+          "do": "register",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "register",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "register",
+          "actor": "carol",
+          "name": "Carol"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "typing-a"
+        },
+        {
+          "do": "createRoom",
+          "actor": "carol",
+          "room": "typing-b"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "typing-a"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "typing-a"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "carol",
+          "room": "typing-b"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "indicator-appears",
+          "points": 1,
+          "desc": "Typing by another user in the same room shows an indicator live",
+          "steps": [
+            {
+              "do": "typeInto",
+              "actor": "bob",
+              "text": "composing a reply"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "typing-indicator",
+              "within": 4000,
+              "contains": "typing"
+            }
+          ]
+        },
+        {
+          "id": "indicator-expires",
+          "points": 1,
+          "desc": "Indicator disappears within 6s once typing stops",
+          "steps": [
+            {
+              "do": "clearInput",
+              "actor": "bob"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "typing-indicator",
+              "absent": true,
+              "within": 6500,
+              "contains": "typing"
+            }
+          ]
+        },
+        {
+          "id": "scoped-to-room",
+          "points": 1,
+          "desc": "Typing is scoped to the room \u2014 a user in another room sees nothing",
+          "steps": [
+            {
+              "do": "typeInto",
+              "actor": "bob",
+              "text": "still typing here"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "typing-indicator",
+              "within": 4000,
+              "contains": "typing"
+            },
+            {
+              "do": "expect",
+              "actor": "carol",
+              "testid": "typing-indicator",
+              "absent": true,
+              "within": 2000,
+              "contains": "typing"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Read Receipts",
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "setup": [
+        {
+          "do": "register",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "register",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "receipts"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "receipts"
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "did you see this"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "receipt-appears",
+          "points": 1,
+          "desc": "Receipt appears for the sender once another user views the message",
+          "steps": [
+            {
+              "do": "enterRoom",
+              "actor": "bob",
+              "room": "receipts"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "read-receipt",
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "receipt-names-reader",
+          "points": 1,
+          "desc": "Receipt names the user who read it",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "read-receipt",
+              "contains": "Bob",
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "sender-excluded",
+          "points": 1,
+          "desc": "The sender is not listed as a reader of their own message",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "read-receipt",
+              "notContains": "Alice",
+              "within": 6000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Unread Message Counts",
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "setup": [
+        {
+          "do": "register",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "register",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "unread-main"
+        },
+        {
+          "do": "createRoom",
+          "actor": "bob",
+          "room": "unread-side"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "unread-main"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "unread-main"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "unread-side"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "badge-appears",
+          "points": 1,
+          "desc": "A badge appears live on a room with unread messages",
+          "steps": [
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "unread one"
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "unread-badge",
+              "in": {
+                "testid": "room-item",
+                "contains": "{room:unread-main}"
+              },
+              "within": 5000
+            }
+          ]
+        },
+        {
+          "id": "badge-counts",
+          "points": 1,
+          "desc": "The badge reflects the number of unread messages",
+          "steps": [
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "unread two"
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "unread-badge",
+              "contains": "2",
+              "in": {
+                "testid": "room-item",
+                "contains": "{room:unread-main}"
+              },
+              "within": 5000
+            }
+          ]
+        },
+        {
+          "id": "badge-clears",
+          "points": 1,
+          "desc": "The badge clears when the room is opened",
+          "steps": [
+            {
+              "do": "enterRoom",
+              "actor": "bob",
+              "room": "unread-main"
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "unread-badge",
+              "in": {
+                "testid": "room-item",
+                "contains": "{room:unread-main}"
+              },
+              "absent": true,
+              "within": 5000
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
