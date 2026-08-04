@@ -47,145 +47,29 @@ jobs:
             non_docs:
               - '!docs/**'
 
-      # TODO(rollout): Remove this bootstrap checkout and the private-tools
-      # resolver below once both rollout PRs have merged. At that point the
-      # private CI tools checkout can always use `ref: master` directly.
-      # Private master already has find-related-pr, so it can bootstrap the
-      # coordinator from a linked private PR before that PR has merged.
-      - name: Checkout private lookup tools
-        if: steps.filter.outputs.non_docs == 'true' && github.event.pull_request.number
-        uses: actions/checkout@v4
-        with:
-          repository: clockworklabs/SpacetimeDBPrivate
-          ref: master
-          path: .private-ci-bootstrap
-          token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          submodules: true
-
-      - id: private-tools
-        name: Resolve private CI tools ref
-        if: steps.filter.outputs.non_docs == 'true'
-        working-directory: ${{ github.event.pull_request.number && '.private-ci-bootstrap' || '.' }}
-        env:
-          CARGO_TARGET_DIR: ${{ runner.temp }}/internal-tests-cargo-target
-          GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          PUBLIC_PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          private_ref=master
-          if [[ -n "$PUBLIC_PR_NUMBER" ]]; then
-            related="$(
-              cargo run --quiet \
-                --manifest-path tools/find-related-pr/Cargo.toml \
-                -- prs-mentioning \
-                --pr "$PUBLIC_PR_NUMBER" \
-                --in clockworklabs/SpacetimeDB \
-                --from clockworklabs/SpacetimeDBPrivate
-            )"
-            if [[ -n "$related" ]]; then
-              private_pr_number="$(jq -r '.number' <<<"$related")"
-              private_ref="$(
-                gh api "/repos/clockworklabs/SpacetimeDBPrivate/pulls/$private_pr_number" \
-                  --jq '.head.sha'
-              )"
-              echo "Using private PR #$private_pr_number CI tools at $private_ref."
-            fi
-          fi
-          echo "ref=$private_ref" >>"$GITHUB_OUTPUT"
-
-      - name: Checkout private CI tools
-        if: steps.filter.outputs.non_docs == 'true'
-        uses: actions/checkout@v4
-        with:
-          repository: clockworklabs/SpacetimeDBPrivate
-          # TODO(rollout): Change this to `master` after removing private-tools.
-          ref: ${{ steps.private-tools.outputs.ref }}
-          path: .private-ci
-          token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          submodules: true
-
-      # TODO(rollout): Remove this detection step once the coordinator is on
-      # private master, and remove its condition from the dispatch step.
-      - id: coordinator
-        name: Detect Rust coordinator
-        if: steps.filter.outputs.non_docs == 'true'
-        run: |
-          if [[ -f .private-ci/private/crates/ci/src/internal_tests.rs ]]; then
-            echo 'available=true' >>"$GITHUB_OUTPUT"
-          else
-            echo 'available=false' >>"$GITHUB_OUTPUT"
-          fi
-
+      # ROLLOUT CLEANUP: Once this workflow is on public master and
+      # `cargo ci coordinate-internal-tests` is available on private master:
+      # 1. Change `internal-tests-rollout` below to `internal-tests-coordinate`.
+      # 2. Delete `.github/actions/internal-tests-rollout`.
+      # The two actions intentionally have identical inputs and outputs, so no
+      # other workflow changes are required.
       - id: dispatch
         name: Select or trigger tests
-        if: steps.filter.outputs.non_docs == 'true' && steps.coordinator.outputs.available == 'true'
-        working-directory: .private-ci
-        env:
-          CARGO_TARGET_DIR: ${{ runner.temp }}/internal-tests-cargo-target
-          GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          PUBLIC_PR_NUMBER: ${{ github.event.pull_request.number }}
-          PUBLIC_RUN_ATTEMPT: ${{ github.run_attempt }}
-          PUBLIC_RUN_ID: ${{ github.run_id }}
-          PUBLIC_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: |
-          set -euo pipefail
-          args=(
-            --public-run-id "$PUBLIC_RUN_ID"
-            --public-run-attempt "$PUBLIC_RUN_ATTEMPT"
-            --public-sha "$PUBLIC_SHA"
-          )
-          if [[ -n "$PUBLIC_PR_NUMBER" ]]; then
-            args+=(--public-pr-number "$PUBLIC_PR_NUMBER")
-          fi
-          cargo run --quiet \
-            --manifest-path private/crates/ci/Cargo.toml \
-            -- coordinate-internal-tests "${args[@]}"
-
-      # TODO(rollout): Remove this entire compatibility path once both rollout
-      # PRs have merged. It is used after the public workflow merges but before
-      # the Rust coordinator reaches private master.
-      - id: legacy-dispatch
-        name: Trigger tests with legacy private CI
-        if: steps.filter.outputs.non_docs == 'true' && steps.coordinator.outputs.available != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          PUBLIC_PR_NUMBER: ${{ github.event.pull_request.number }}
-          PUBLIC_REF: ${{ github.event.pull_request.head.ref || github.sha }}
-        run: |
-          set -euo pipefail
-          request="$(
-            jq --null-input --compact-output \
-              --arg public_ref "$PUBLIC_REF" \
-              --arg public_pr_number "$PUBLIC_PR_NUMBER" \
-              '{
-                ref: "master",
-                inputs: {public_ref: $public_ref},
-                return_run_details: true
-              }
-              | if $public_pr_number == ""
-                then .
-                else .inputs.public_pr_number = $public_pr_number
-                end'
-          )"
-          response="$(
-            gh api --method POST --input - \
-              "/repos/$TARGET_OWNER/$TARGET_REPO/actions/workflows/ci.yml/dispatches" \
-              <<<"$request"
-          )"
-          run_id="$(jq -er '.workflow_run_id' <<<"$response")"
-          run_url="$(jq -er '.html_url' <<<"$response")"
-          echo "View run: $run_url"
-          echo "run_id=$run_id" >>"$GITHUB_OUTPUT"
-          echo "run_url=$run_url" >>"$GITHUB_OUTPUT"
+        if: steps.filter.outputs.non_docs == 'true'
+        uses: ./.github/actions/internal-tests-rollout
+        with:
+          github_token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          public_run_id: ${{ github.run_id }}
+          public_run_attempt: ${{ github.run_attempt }}
+          public_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+          public_pr_number: ${{ github.event.pull_request.number }}
 
       - name: Wait for Internal Tests to complete
         if: steps.filter.outputs.non_docs == 'true'
         env:
           GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          # TODO(rollout): Use only steps.dispatch.outputs after removing the
-          # legacy-dispatch step.
-          RUN_ID: ${{ steps.dispatch.outputs.run_id || steps.legacy-dispatch.outputs.run_id }}
-          RUN_URL: ${{ steps.dispatch.outputs.run_url || steps.legacy-dispatch.outputs.run_url }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
         run: |
           set -euo pipefail
           echo "Waiting for workflow result... ${RUN_URL}"
@@ -200,17 +84,9 @@ jobs:
           set -e
           exit "$watch_status"
 
-      - name: Cancel coordinated run if workflow cancelled
+      - name: Cancel invoked run if workflow cancelled
         if: ${{ cancelled() && steps.dispatch.outputs.run_id && steps.dispatch.outputs.cancel_on_cancel == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
           RUN_ID: ${{ steps.dispatch.outputs.run_id }}
-        run: gh run cancel "$RUN_ID" --repo "$TARGET_OWNER/$TARGET_REPO"
-
-      # TODO(rollout): Remove with the legacy-dispatch step.
-      - name: Cancel legacy run if workflow cancelled
-        if: ${{ cancelled() && steps.legacy-dispatch.outputs.run_id }}
-        env:
-          GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          RUN_ID: ${{ steps.legacy-dispatch.outputs.run_id }}
         run: gh run cancel "$RUN_ID" --repo "$TARGET_OWNER/$TARGET_REPO"

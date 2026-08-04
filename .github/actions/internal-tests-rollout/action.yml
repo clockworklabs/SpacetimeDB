@@ -1,0 +1,164 @@
+# ROLLOUT CLEANUP: Once this workflow is on public master and `cargo ci
+# coordinate-internal-tests` is available on private master, change the workflow
+# call to internal-tests-coordinate and delete this directory.
+name: Coordinate Internal Tests During Rollout
+description: Compatibility wrapper used until the Rust coordinator reaches private master.
+
+inputs:
+  github_token:
+    description: Token with access to SpacetimeDBPrivate Actions, contents, and pull requests.
+    required: true
+  public_run_id:
+    description: Public Internal Tests workflow run ID.
+    required: true
+  public_run_attempt:
+    description: Public Internal Tests workflow run attempt.
+    required: true
+  public_sha:
+    description: Immutable public commit to test.
+    required: true
+  public_pr_number:
+    description: Public pull request number, when this is a pull_request event.
+    required: false
+    default: ''
+  private_ref:
+    description: Ref containing the Rust coordinator.
+    required: false
+    default: master
+  private_workflow_ref:
+    description: Branch or tag containing the private workflow definition to dispatch.
+    required: false
+    default: master
+
+outputs:
+  run_id:
+    description: Selected private workflow run ID.
+    value: ${{ steps.coordinate.outputs.run_id || steps.legacy.outputs.run_id }}
+  run_url:
+    description: Selected private workflow run URL.
+    value: ${{ steps.coordinate.outputs.run_url || steps.legacy.outputs.run_url }}
+  cancel_on_cancel:
+    description: Whether cancellation of the public run should cancel the private run.
+    value: ${{ steps.coordinate.outputs.cancel_on_cancel || steps.legacy.outputs.cancel_on_cancel }}
+
+runs:
+  using: composite
+  steps:
+    # Private master already contains find-related-pr, so it can locate a
+    # coordinator that only exists on a linked private PR during rollout.
+    - name: Checkout private lookup tools
+      if: ${{ inputs.public_pr_number != '' }}
+      uses: actions/checkout@v4
+      with:
+        repository: clockworklabs/SpacetimeDBPrivate
+        ref: master
+        path: .private-ci-bootstrap
+        token: ${{ inputs.github_token }}
+        submodules: true
+
+    - id: related
+      name: Resolve linked private PR
+      if: ${{ inputs.public_pr_number != '' }}
+      shell: bash
+      working-directory: .private-ci-bootstrap
+      env:
+        CARGO_TARGET_DIR: ${{ runner.temp }}/internal-tests-cargo-target
+        GH_TOKEN: ${{ inputs.github_token }}
+        PUBLIC_PR_NUMBER: ${{ inputs.public_pr_number }}
+      run: |
+        set -euo pipefail
+        related="$(
+          cargo run --quiet \
+            --manifest-path tools/find-related-pr/Cargo.toml \
+            -- prs-mentioning \
+            --pr "$PUBLIC_PR_NUMBER" \
+            --in clockworklabs/SpacetimeDB \
+            --from clockworklabs/SpacetimeDBPrivate
+        )"
+        if [[ -z "$related" ]]; then
+          exit 0
+        fi
+
+        private_pr_number="$(jq -r '.number' <<<"$related")"
+        pull="$(gh api "/repos/clockworklabs/SpacetimeDBPrivate/pulls/$private_pr_number")"
+        private_ref="$(jq -r '.head.sha' <<<"$pull")"
+        private_workflow_ref="$(jq -r '.head.ref' <<<"$pull")"
+        echo "Using private PR #$private_pr_number CI tools at $private_ref."
+        echo "private_ref=$private_ref" >>"$GITHUB_OUTPUT"
+        echo "private_workflow_ref=$private_workflow_ref" >>"$GITHUB_OUTPUT"
+
+    - id: refs
+      name: Select private refs
+      shell: bash
+      env:
+        DEFAULT_PRIVATE_REF: ${{ inputs.private_ref }}
+        DEFAULT_WORKFLOW_REF: ${{ inputs.private_workflow_ref }}
+        RELATED_PRIVATE_REF: ${{ steps.related.outputs.private_ref }}
+        RELATED_WORKFLOW_REF: ${{ steps.related.outputs.private_workflow_ref }}
+      run: |
+        echo "private_ref=${RELATED_PRIVATE_REF:-$DEFAULT_PRIVATE_REF}" >>"$GITHUB_OUTPUT"
+        echo "private_workflow_ref=${RELATED_WORKFLOW_REF:-$DEFAULT_WORKFLOW_REF}" >>"$GITHUB_OUTPUT"
+
+    - id: capability
+      name: Detect Rust coordinator
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        PRIVATE_REF: ${{ steps.refs.outputs.private_ref }}
+      run: |
+        if gh api --silent \
+          "/repos/clockworklabs/SpacetimeDBPrivate/contents/private/crates/ci/src/internal_tests.rs?ref=$PRIVATE_REF"
+        then
+          echo 'available=true' >>"$GITHUB_OUTPUT"
+        else
+          echo 'available=false' >>"$GITHUB_OUTPUT"
+        fi
+
+    - id: coordinate
+      name: Use Rust coordinator
+      if: ${{ steps.capability.outputs.available == 'true' }}
+      uses: ./.github/actions/internal-tests-coordinate
+      with:
+        github_token: ${{ inputs.github_token }}
+        private_ref: ${{ steps.refs.outputs.private_ref }}
+        private_workflow_ref: ${{ steps.refs.outputs.private_workflow_ref }}
+        public_run_id: ${{ inputs.public_run_id }}
+        public_run_attempt: ${{ inputs.public_run_attempt }}
+        public_sha: ${{ inputs.public_sha }}
+        public_pr_number: ${{ inputs.public_pr_number }}
+
+    - id: legacy
+      name: Trigger tests with legacy private CI
+      if: ${{ steps.capability.outputs.available != 'true' }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        PUBLIC_PR_NUMBER: ${{ inputs.public_pr_number }}
+        PUBLIC_REF: ${{ inputs.public_sha }}
+      run: |
+        set -euo pipefail
+        request="$(
+          jq --null-input --compact-output \
+            --arg public_ref "$PUBLIC_REF" \
+            --arg public_pr_number "$PUBLIC_PR_NUMBER" \
+            '{
+              ref: "master",
+              inputs: {public_ref: $public_ref},
+              return_run_details: true
+            }
+            | if $public_pr_number == ""
+              then .
+              else .inputs.public_pr_number = $public_pr_number
+              end'
+        )"
+        response="$(
+          gh api --method POST --input - \
+            /repos/clockworklabs/SpacetimeDBPrivate/actions/workflows/ci.yml/dispatches \
+            <<<"$request"
+        )"
+        run_id="$(jq -er '.workflow_run_id' <<<"$response")"
+        run_url="$(jq -er '.html_url' <<<"$response")"
+        echo "View run: $run_url"
+        echo "run_id=$run_id" >>"$GITHUB_OUTPUT"
+        echo "run_url=$run_url" >>"$GITHUB_OUTPUT"
+        echo "cancel_on_cancel=true" >>"$GITHUB_OUTPUT"
