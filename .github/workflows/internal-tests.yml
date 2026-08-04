@@ -47,19 +47,12 @@ jobs:
             non_docs:
               - '!docs/**'
 
-      # ROLLOUT CLEANUP: Once this workflow is on public master and
-      # `cargo ci coordinate-internal-tests` is available on private master:
-      # 1. Change `internal-tests-rollout` below to `internal-tests-coordinate`.
-      # 2. Delete `.github/actions/internal-tests-rollout`.
-      # The two actions intentionally have identical inputs and outputs, so no
-      # other workflow changes are required.
       - id: dispatch
         name: Select or trigger tests
         if: steps.filter.outputs.non_docs == 'true'
-        uses: ./.github/actions/internal-tests-rollout
+        uses: ./.github/actions/internal-tests-coordinate
         with:
           github_token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          public_run_id: ${{ github.run_id }}
           public_run_attempt: ${{ github.run_attempt }}
           public_sha: ${{ github.event.pull_request.head.sha || github.sha }}
           public_pr_number: ${{ github.event.pull_request.number }}
