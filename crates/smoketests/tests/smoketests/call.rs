@@ -163,38 +163,10 @@ The database has no procedures."
     );
 }
 
-/// Generate module code with many reducers and procedures
-fn generate_many_module_code() -> String {
-    let mut code = String::from(
-        r#"
-use spacetimedb::{log, ProcedureContext, ReducerContext};
-"#,
-    );
-
-    for i in 0..11 {
-        code.push_str(&format!(
-            r#"
-#[spacetimedb::reducer]
-pub fn say_reducer_{i}(_ctx: &ReducerContext) {{
-    log::info!("Hello from reducer {i}!");
-}}
-
-#[spacetimedb::procedure]
-pub fn say_procedure_{i}(_ctx: &mut ProcedureContext) {{
-    log::info!("Hello from procedure {i}!");
-}}
-"#
-        ));
-    }
-
-    code
-}
-
 /// Check calling into a database with many reducers/procedures raises error with listing
 #[test]
 fn test_call_many_errors() {
-    let module_code = generate_many_module_code();
-    let test = Smoketest::builder().module_code(&module_code).build();
+    let test = Smoketest::builder().precompiled_module("call-many").build();
 
     let identity = test.database_identity.as_ref().unwrap();
 
