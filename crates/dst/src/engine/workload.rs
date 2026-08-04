@@ -2,13 +2,13 @@
 
 use std::fmt::{Debug, Error as FmtError, Formatter};
 
-use super::generation::{GenCtx, GenerationState};
-use super::migrations::Migration;
+use super::generation::{GenerationCaseWeights, GenCtx, GenerationState};
+use super::migrations::{EngineMigrationConfig, Migration};
 use super::model::Model;
 use super::row::Row;
 use super::state::{CommitDelta, CountState};
 use crate::rng::{choice, pick_choice, Choice};
-use crate::schema::SchemaPlan;
+use crate::schema::{SchemaPlan, SchemaProfile};
 use crate::traits::InteractionGen;
 use anyhow::Error;
 use spacetimedb_runtime::sim::Rng;
@@ -70,7 +70,7 @@ pub enum InsertOutcome {
 }
 
 /// Runtime-tunable weights for top-level workload actions.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InteractionWeights {
     pub insert: u64,
     pub delete: u64,
@@ -102,11 +102,25 @@ pub struct WorkloadGen {
 
 impl WorkloadGen {
     pub fn new(rng: Rng, model: Model) -> Self {
-        Self::with_weights(rng, model, InteractionWeights::default())
+        Self::with_config(
+            rng,
+            model,
+            SchemaProfile::engine_dst(),
+            InteractionWeights::default(),
+            EngineMigrationConfig::default(),
+            GenerationCaseWeights::default(),
+        )
     }
 
-    pub fn with_weights(rng: Rng, model: Model, weights: InteractionWeights) -> Self {
-        let generation = GenerationState::seeded(model.schema());
+    pub fn with_config(
+        rng: Rng,
+        model: Model,
+        schema_profile: SchemaProfile,
+        weights: InteractionWeights,
+        migrations: EngineMigrationConfig,
+        generation_config: GenerationCaseWeights,
+    ) -> Self {
+        let generation = GenerationState::seeded(model.schema(), schema_profile, migrations, generation_config);
         Self {
             rng,
             model,
@@ -217,21 +231,13 @@ impl WorkloadGen {
         match choice {
             InteractionChoice::Replay => Interaction::Replay,
 
-            InteractionChoice::Migrate => Interaction::CommitTx,
+            InteractionChoice::Migrate => self.commit_or_keep_writing(),
 
-            InteractionChoice::Insert => {
-                let table = self.insert_table_idx();
-
-                let mut ctx = GenCtx::new(&self.rng, &self.model, &mut self.generation);
-                Interaction::Insert {
-                    table,
-                    row: ctx.gen_insert_row(table),
-                }
-            }
+            InteractionChoice::Insert => self.gen_insert_interaction(),
 
             InteractionChoice::Delete => {
                 let Some(table) = self.deletable_table_idx() else {
-                    return Interaction::CommitTx;
+                    return self.commit_or_keep_writing();
                 };
 
                 let row_index = self.rng.index(self.model.row_count(table));
@@ -246,7 +252,7 @@ impl WorkloadGen {
                 }
             }
 
-            InteractionChoice::CommitTx => Interaction::CommitTx,
+            InteractionChoice::CommitTx => self.commit_or_keep_writing(),
         }
     }
 
@@ -255,23 +261,41 @@ impl WorkloadGen {
         pick_choice(&self.rng, &choices)
     }
 
+    fn gen_insert_interaction(&mut self) -> Interaction {
+        let table = self.insert_table_idx();
+
+        let mut ctx = GenCtx::new(&self.rng, &self.model, &mut self.generation);
+        Interaction::Insert {
+            table,
+            row: ctx.gen_insert_row(table),
+        }
+    }
+
+    fn commit_or_keep_writing(&mut self) -> Interaction {
+        if self.model.pending_has_effective_writes() || self.rng.next_u64().is_multiple_of(20) {
+            Interaction::CommitTx
+        } else {
+            self.gen_insert_interaction()
+        }
+    }
+
     fn insert_table_idx(&self) -> usize {
-        let sequenced_tables = self.sequenced_table_indices();
+        let plain_tables = self.plain_data_table_indices();
         let data_tables = self.data_table_indices();
 
-        if !sequenced_tables.is_empty() && !self.rng.next_u64().is_multiple_of(3) {
-            sequenced_tables[self.rng.index(sequenced_tables.len())]
+        if !plain_tables.is_empty() && !self.rng.next_u64().is_multiple_of(10) {
+            plain_tables[self.rng.index(plain_tables.len())]
         } else {
             data_tables[self.rng.index(data_tables.len())]
         }
     }
 
-    fn sequenced_table_indices(&self) -> Vec<usize> {
+    fn plain_data_table_indices(&self) -> Vec<usize> {
         self.schema()
             .tables
             .iter()
             .enumerate()
-            .filter_map(|(table_idx, table)| (!table.is_event && !table.sequences.is_empty()).then_some(table_idx))
+            .filter_map(|(table_idx, table)| (!table.is_event && table.sequences.is_empty()).then_some(table_idx))
             .collect()
     }
 

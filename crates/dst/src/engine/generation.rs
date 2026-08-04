@@ -14,11 +14,11 @@ use spacetimedb_lib::{AlgebraicValue, ProductValue};
 use spacetimedb_runtime::sim::Rng;
 use spacetimedb_sats::ArrayValue;
 
-use super::migrations::Migration;
+use super::migrations::{EngineMigrationConfig, Migration};
 use super::model::Model;
 use super::row::Row;
 use crate::rng::{choice, Choice, WeightedChoice};
-use crate::schema::{SchemaPlan, TablePlan, Type};
+use crate::schema::{SchemaPlan, SchemaProfile, TablePlan, Type};
 
 // Bound the valid-insert search: random generation may collide with existing
 // unique constraints, but a failed search must not stall the workload.
@@ -42,56 +42,73 @@ impl<'a> GenCtx<'a> {
     }
 
     pub(crate) fn gen_migration(&self) -> Option<Migration> {
-        MigrationGen::new(self.rng, self.model).choose()
+        MigrationGen::new(
+            self.rng,
+            self.model,
+            &self.generation.schema_profile,
+            &self.generation.migrations,
+        )
+        .choose()
     }
 }
 
-// Row-level insert cases choose what kind of insert operation to try.
-#[derive(Clone, Copy)]
-enum InsertRowCase {
-    Valid,
-    AnyCandidate,
-    ExistingRow,
-    UniqueConflict,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenerationCaseWeights {
+    pub fresh: u64,
+    pub pooled: u64,
+    pub near: u64,
 }
 
-impl InsertRowCase {
-    const CHOICES: [Choice<Self>; 4] = [
-        choice(80, Self::Valid),
-        choice(10, Self::AnyCandidate),
-        choice(5, Self::ExistingRow),
-        choice(5, Self::UniqueConflict),
-    ];
+impl Default for GenerationCaseWeights {
+    fn default() -> Self {
+        Self {
+            fresh: 92,
+            pooled: 3,
+            near: 5,
+        }
+    }
 }
 
-impl WeightedChoice for InsertRowCase {}
+impl GenerationCaseWeights {
+    fn choices(&self) -> [Choice<GenerationCase>; 3] {
+        [
+            choice(self.fresh, GenerationCase::Fresh),
+            choice(self.pooled, GenerationCase::Pooled),
+            choice(self.near, GenerationCase::Near),
+        ]
+    }
+}
 
-// Column-level cases choose how to synthesize each non-sequence column value.
+// Generation cases are interpreted at the level where they are used: row
+// generation and column-value generation both consume the same policy.
 #[derive(Clone, Copy)]
-enum ColumnValueCase {
-    Random,
+enum GenerationCase {
+    Fresh,
     Pooled,
     Near,
 }
 
-impl ColumnValueCase {
-    const CHOICES: [Choice<Self>; 3] = [
-        choice(50, Self::Random),
-        choice(30, Self::Pooled),
-        choice(20, Self::Near),
-    ];
-}
-
-impl WeightedChoice for ColumnValueCase {}
+impl WeightedChoice for GenerationCase {}
 
 pub(crate) struct GenerationState {
     generators: BTreeMap<TypeKey, Box<dyn TypeValueGen>>,
+    schema_profile: SchemaProfile,
+    migrations: EngineMigrationConfig,
+    config: GenerationCaseWeights,
 }
 
 impl GenerationState {
-    pub(crate) fn seeded(schema: &SchemaPlan) -> Self {
+    pub(crate) fn seeded(
+        schema: &SchemaPlan,
+        schema_profile: SchemaProfile,
+        migrations: EngineMigrationConfig,
+        config: GenerationCaseWeights,
+    ) -> Self {
         let mut state = Self {
             generators: BTreeMap::new(),
+            schema_profile,
+            migrations,
+            config,
         };
         state.seed_schema(schema);
         state
@@ -524,15 +541,14 @@ impl<'a> ValueGen<'a> {
     fn gen_insert_row(&mut self, table: usize) -> Row {
         // Start here when tuning insert behavior; everything below materializes
         // one arm of this match.
-        match InsertRowCase::pick(self.rng, &InsertRowCase::CHOICES) {
-            InsertRowCase::Valid => self.gen_valid_insert_row(table),
-            InsertRowCase::AnyCandidate => self.gen_row_candidate(table),
-            InsertRowCase::ExistingRow => self
-                .existing_row(table)
-                .unwrap_or_else(|| self.gen_valid_insert_row(table)),
-            InsertRowCase::UniqueConflict => self
+        let choices = self.generation.config.choices();
+        match GenerationCase::pick(self.rng, &choices) {
+            GenerationCase::Fresh => self.gen_valid_insert_row(table),
+            GenerationCase::Pooled => self
                 .unique_conflict_row(table)
+                .or_else(|| self.existing_row(table))
                 .unwrap_or_else(|| self.gen_valid_insert_row(table)),
+            GenerationCase::Near => self.gen_row_candidate(table),
         }
     }
 
@@ -574,20 +590,21 @@ impl<'a> ValueGen<'a> {
     }
 
     fn gen_value(&mut self, ty: Type) -> AlgebraicValue {
-        let case = ColumnValueCase::pick(self.rng, &ColumnValueCase::CHOICES);
+        let choices = self.generation.config.choices();
+        let case = GenerationCase::pick(self.rng, &choices);
         if let Some(value) = self.gen_value_for_case(ty, case) {
             return value;
         }
 
-        self.gen_value_for_case(ty, ColumnValueCase::Random)
-            .expect("random value generation cannot fail")
+        self.gen_value_for_case(ty, GenerationCase::Fresh)
+            .expect("fresh value generation cannot fail")
     }
 
-    fn gen_value_for_case(&mut self, ty: Type, case: ColumnValueCase) -> Option<AlgebraicValue> {
+    fn gen_value_for_case(&mut self, ty: Type, case: GenerationCase) -> Option<AlgebraicValue> {
         match case {
-            ColumnValueCase::Random => Some(self.generation.generator_mut(ty).random(self.rng)),
-            ColumnValueCase::Pooled => self.pooled_value(ty),
-            ColumnValueCase::Near => Some(self.near_value(ty)),
+            GenerationCase::Fresh => Some(self.generation.generator_mut(ty).random(self.rng)),
+            GenerationCase::Pooled => self.pooled_value(ty),
+            GenerationCase::Near => Some(self.near_value(ty)),
         }
     }
 
@@ -675,10 +692,6 @@ enum MigrationCase {
     Rejected,
 }
 
-impl MigrationCase {
-    const CHOICES: [Choice<Self>; 2] = [choice(95, Self::Accepted), choice(5, Self::Rejected)];
-}
-
 impl WeightedChoice for MigrationCase {}
 
 // Migration generation is intentionally shallow here: accepted migrations are
@@ -687,23 +700,50 @@ impl WeightedChoice for MigrationCase {}
 struct MigrationGen<'a> {
     rng: &'a Rng,
     model: &'a Model,
+    schema_profile: &'a SchemaProfile,
+    config: &'a EngineMigrationConfig,
 }
 
 impl<'a> MigrationGen<'a> {
-    fn new(rng: &'a Rng, model: &'a Model) -> Self {
-        Self { rng, model }
+    fn new(
+        rng: &'a Rng,
+        model: &'a Model,
+        schema_profile: &'a SchemaProfile,
+        config: &'a EngineMigrationConfig,
+    ) -> Self {
+        Self {
+            rng,
+            model,
+            schema_profile,
+            config,
+        }
     }
 
     fn choose(&self) -> Option<Migration> {
-        match MigrationCase::pick(self.rng, &MigrationCase::CHOICES) {
+        let choices = [
+            choice(self.config.accepted_weight, MigrationCase::Accepted),
+            choice(self.config.rejected_weight, MigrationCase::Rejected),
+        ];
+        match MigrationCase::pick(self.rng, &choices) {
             MigrationCase::Accepted => self.choose_accepted(),
-            MigrationCase::Rejected => {
-                Migration::choose_rejected(self.rng, self.model.schema(), self.model).or_else(|| self.choose_accepted())
-            }
+            MigrationCase::Rejected => Migration::choose_rejected(
+                self.rng,
+                self.model.schema(),
+                self.model,
+                self.schema_profile,
+                self.config,
+            )
+            .or_else(|| self.choose_accepted()),
         }
     }
 
     fn choose_accepted(&self) -> Option<Migration> {
-        Migration::choose_accepted(self.rng, self.model.schema(), self.model)
+        Migration::choose_accepted(
+            self.rng,
+            self.model.schema(),
+            self.model,
+            self.schema_profile,
+            self.config,
+        )
     }
 }

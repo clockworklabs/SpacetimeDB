@@ -35,6 +35,8 @@ struct Inner {
     retention: usize,
     created_snapshots: u64,
     deleted_snapshots: u64,
+    requested_snapshots: u64,
+    last_requested_tx_offset: Option<TxOffset>,
     last_created_tx_offset: Option<TxOffset>,
     snapshots: BTreeMap<TxOffset, StoredSnapshot>,
 }
@@ -43,6 +45,9 @@ struct Inner {
 pub struct SnapshotStats {
     pub created: u64,
     pub deleted: u64,
+    pub requested: u64,
+    pub queue_len: u64,
+    pub last_requested_tx_offset: Option<TxOffset>,
     pub last_created_tx_offset: Option<TxOffset>,
     pub live_offsets: Vec<TxOffset>,
 }
@@ -51,9 +56,14 @@ impl fmt::Display for SnapshotStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "snapshots: created={}, deleted={}, last_created=",
-            self.created, self.deleted
+            "snapshots: requested={}, queued={}, created={}, deleted={}, last_requested=",
+            self.requested, self.queue_len, self.created, self.deleted
         )?;
+        match self.last_requested_tx_offset {
+            Some(offset) => write!(f, "{offset}")?,
+            None => f.write_str("none")?,
+        }
+        f.write_str(", last_created=")?;
         match self.last_created_tx_offset {
             Some(offset) => write!(f, "{offset}")?,
             None => f.write_str("none")?,
@@ -109,6 +119,8 @@ impl InMemorySnapshotRepo {
                 retention: retention.max(1),
                 created_snapshots: 0,
                 deleted_snapshots: 0,
+                requested_snapshots: 0,
+                last_requested_tx_offset: None,
                 last_created_tx_offset: None,
                 snapshots: BTreeMap::new(),
             })),
@@ -120,9 +132,18 @@ impl InMemorySnapshotRepo {
         SnapshotStats {
             created: inner.created_snapshots,
             deleted: inner.deleted_snapshots,
+            requested: inner.requested_snapshots,
+            queue_len: inner.requested_snapshots.saturating_sub(inner.created_snapshots),
+            last_requested_tx_offset: inner.last_requested_tx_offset,
             last_created_tx_offset: inner.last_created_tx_offset,
             live_offsets: inner.snapshots.keys().copied().collect(),
         }
+    }
+
+    pub fn observe_snapshot_request(&self, requested_at: Option<TxOffset>) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.requested_snapshots += 1;
+        inner.last_requested_tx_offset = requested_at;
     }
 
     fn missing_snapshot(tx_offset: TxOffset) -> SnapshotError {

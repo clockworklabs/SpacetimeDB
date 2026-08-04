@@ -94,13 +94,13 @@ pub trait TestSuite {
 
                     let completed = step + 1;
                     if completed % PROGRESS_INTERVAL == 0 {
-                        if let Some(status) = target.progress_status() {
-                            eprintln!(
-                                "interaction progress: completed {completed} interactions: {interactions:?}; {status}"
-                            );
-                        } else {
-                            eprintln!("interaction progress: completed {completed} interactions: {interactions:?}");
-                        }
+                        let progress_status = target.progress_status();
+                        tracing::info!(
+                            completed,
+                            interactions = ?interactions,
+                            progress_status = ?progress_status,
+                            "interaction progress"
+                        );
                     }
                 }
 
@@ -110,11 +110,6 @@ pub trait TestSuite {
             .await;
 
             let final_status = target.progress_status();
-            if let Some(status) = &final_status {
-                eprintln!("final interaction counts: {interactions:?}; {status}");
-            } else {
-                eprintln!("final interaction counts: {interactions:?}");
-            }
             tracing::info!(interaction_counts = ?interactions, progress_status = ?final_status, "final interaction counts");
 
             match result {

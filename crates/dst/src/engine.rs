@@ -37,10 +37,14 @@ use self::workload::{InsertOutcome, Interaction, Observation};
 use crate::engine::model::Model;
 use crate::engine::properties::EngineProperties;
 use crate::engine::workload::WorkloadGen;
-use crate::schema::{canonical_schema, default_schema, to_module_def, SchemaPlan};
+use crate::schema::{canonical_schema, schema_with_profile, to_module_def, SchemaPlan, SchemaProfile};
 use crate::sim::commitlog::{InMemoryCommitlog, InMemoryCommitlogHandle};
 use crate::sim::snapshot::InMemorySnapshotRepo;
 use crate::traits::{TargetDriver, TestSuite};
+
+pub use self::generation::GenerationCaseWeights;
+pub use self::migrations::EngineMigrationConfig;
+pub use self::workload::InteractionWeights;
 
 pub struct EngineTarget {
     db: Option<RelationalDB>,
@@ -78,6 +82,7 @@ impl EngineTarget {
         snapshot_repo: Arc<InMemorySnapshotRepo>,
         runtime_handle: Handle,
     ) -> anyhow::Result<RelationalDB> {
+        let snapshot_stats = snapshot_repo.clone();
         let snapshot_repo: Arc<DynSnapshotRepo> = snapshot_repo;
         let snapshot_worker = SnapshotWorker::new(snapshot_repo, Compression::Disabled, runtime_handle.clone());
         let snapshot_requester = snapshot_worker.clone();
@@ -92,7 +97,8 @@ impl EngineTarget {
             PagePool::new_for_test(),
         )?;
         anyhow::ensure!(connected_clients.is_empty(), "replay produced connected clients");
-        commitlog.set_on_new_segment(Some(Arc::new(move || {
+        commitlog.set_on_new_segment(Some(Arc::new(move |requested_at| {
+            snapshot_stats.observe_snapshot_request(Some(requested_at));
             snapshot_requester.request_snapshot_ignore_closed();
         })));
         Ok(db)
@@ -420,7 +426,17 @@ impl TargetDriver<Interaction> for EngineTarget {
     type Observation = Observation;
 
     fn progress_status(&self) -> Option<String> {
-        Some(self.snapshot_repo.stats().to_string())
+        let snapshot_stats = self.snapshot_repo.stats();
+        let commitlog_head = self.commitlog.max_committed_offset();
+        let snapshot_lag = commitlog_head
+            .zip(snapshot_stats.last_created_tx_offset)
+            .map(|(head, snapshot)| head.saturating_sub(snapshot));
+
+        Some(format!(
+            "commitlog_head={}, snapshot_lag={}",
+            commitlog_head.map_or_else(|| "none".to_string(), |head| head.to_string()),
+            snapshot_lag.map_or_else(|| "unknown".to_string(), |lag| lag.to_string())
+        ))
     }
 
     async fn execute<'a>(&'a mut self, interaction: &'a Interaction) -> Result<Self::Observation, anyhow::Error> {
@@ -433,7 +449,40 @@ impl TargetDriver<Interaction> for EngineTarget {
     }
 }
 
-pub struct EngineTest;
+#[derive(Clone, Debug, PartialEq)]
+pub struct EngineConfig {
+    pub schema: SchemaProfile,
+    pub workload: InteractionWeights,
+    pub migrations: EngineMigrationConfig,
+    pub generation: GenerationCaseWeights,
+}
+
+impl Default for EngineConfig {
+    fn default() -> Self {
+        Self {
+            schema: SchemaProfile::engine_dst(),
+            workload: InteractionWeights::default(),
+            migrations: EngineMigrationConfig::default(),
+            generation: GenerationCaseWeights::default(),
+        }
+    }
+}
+
+pub struct EngineTest {
+    config: EngineConfig,
+}
+
+impl EngineTest {
+    pub fn new(config: EngineConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl Default for EngineTest {
+    fn default() -> Self {
+        Self::new(EngineConfig::default())
+    }
+}
 
 impl TestSuite for EngineTest {
     type Interaction = Interaction;
@@ -449,13 +498,20 @@ impl TestSuite for EngineTest {
         rng: Rng,
         runtime: Handle,
     ) -> Result<(Self::Interactions, Self::Target, Self::Properties), anyhow::Error> {
-        let schema = default_schema(rng.clone());
+        let schema = schema_with_profile(rng.clone(), self.config.schema.clone());
         let target = EngineTarget::init(schema, runtime)?;
         let schema = target.schema.clone();
         let properties = EngineProperties::new(schema.clone());
 
         let model = Model::new(schema);
-        let interactions = WorkloadGen::new(rng, model);
+        let interactions = WorkloadGen::with_config(
+            rng,
+            model,
+            self.config.schema.clone(),
+            self.config.workload,
+            self.config.migrations.clone(),
+            self.config.generation.clone(),
+        );
 
         Ok((interactions, target, properties))
     }
@@ -574,7 +630,7 @@ mod tests {
     fn engine_dst_smoke_runs_random_workload() -> anyhow::Result<()> {
         let mut runtime = SimRuntime::new(0);
         let runtime_handle = Handle::simulation(runtime.handle());
-        runtime.block_on(EngineTest.run(Rng::new(0), runtime_handle, 1_000))?;
+        runtime.block_on(EngineTest::default().run(Rng::new(0), runtime_handle, 1_000))?;
         Ok(())
     }
 
@@ -612,8 +668,14 @@ mod tests {
             Handle::simulation(SimRuntime::new(0).handle()),
         )?;
         let model = Model::new(target.schema.clone());
-        let migration = Migration::choose_rejected(&Rng::new(0), &target.schema, &model)
-            .expect("schema should produce a duplicate-object rejected migration");
+        let migration = Migration::choose_rejected(
+            &Rng::new(0),
+            &target.schema,
+            &model,
+            &SchemaProfile::engine_dst(),
+            &EngineMigrationConfig::default(),
+        )
+        .expect("schema should produce a duplicate-object rejected migration");
 
         assert_eq!(migration.expectation(), MigrationExpectation::Rejected);
         assert_eq!(

@@ -16,7 +16,11 @@ use spacetimedb_schema::def::ModuleDef;
 /// fixed coverage fixture. Long runs are expected to discover more surfaces via
 /// migrations.
 pub fn default_schema(rng: Rng) -> SchemaPlan {
-    SchemaGenerator::new(rng, SchemaProfile::engine_dst()).gen_schema()
+    schema_with_profile(rng, SchemaProfile::engine_dst())
+}
+
+pub fn schema_with_profile(rng: Rng, profile: SchemaProfile) -> SchemaPlan {
+    SchemaGenerator::new(rng, profile).gen_schema()
 }
 
 /// Lower a generated schema plan into the raw module format used by the engine.
@@ -246,7 +250,7 @@ impl SequencePlan {
 }
 
 /// Controls the shape of generated schemas.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SchemaProfile {
     pub table_count: (usize, usize),
     pub columns: (usize, usize),
@@ -285,7 +289,7 @@ impl Default for SchemaProfile {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TableKindWeights {
     pub data: u64,
     pub event: u64,
@@ -297,7 +301,7 @@ impl Default for TableKindWeights {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TypeWeights {
     pub bool_: u64,
     pub i64_: u64,

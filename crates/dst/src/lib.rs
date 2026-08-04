@@ -1,3 +1,4 @@
+pub mod config;
 pub mod engine;
 mod rng;
 pub mod schema;

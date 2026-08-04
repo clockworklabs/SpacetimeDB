@@ -267,6 +267,15 @@ impl Model {
         self.pending_tx.is_some()
     }
 
+    pub(crate) fn pending_has_effective_writes(&self) -> bool {
+        self.pending_tx.as_ref().is_some_and(|pending_tx| {
+            pending_tx
+                .tables
+                .iter()
+                .any(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
+        })
+    }
+
     pub fn row_count(&self, table: usize) -> usize {
         self.visible_count(table) as usize
     }

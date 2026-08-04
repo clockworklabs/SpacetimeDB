@@ -19,7 +19,7 @@ use spacetimedb_runtime::sync::watch;
 pub const DST_COMMITLOG_SEGMENT_SIZE_MB: u64 = 32;
 const BYTES_PER_MB: u64 = 1024 * 1024;
 
-pub type OnNewSegment = Arc<dyn Fn() + Send + Sync + 'static>;
+pub type OnNewSegment = Arc<dyn Fn(TxOffset) + Send + Sync + 'static>;
 
 #[derive(Clone)]
 pub struct InMemoryCommitlog {
@@ -51,6 +51,10 @@ impl InMemoryCommitlog {
     pub fn set_on_new_segment(&self, callback: Option<OnNewSegment>) {
         self.repo.set_on_new_segment(callback);
     }
+
+    pub fn max_committed_offset(&self) -> Option<TxOffset> {
+        self.open_handle().ok().and_then(|handle| handle.max_committed_offset())
+    }
 }
 
 #[derive(Clone)]
@@ -75,6 +79,10 @@ impl InMemoryCommitlogHandle {
                 closed: AtomicBool::new(false),
             }),
         })
+    }
+
+    fn max_committed_offset(&self) -> Option<TxOffset> {
+        self.inner.log.max_committed_offset()
     }
 }
 
@@ -204,8 +212,9 @@ impl Repo for Memory {
         };
         header.write(&mut segment)?;
 
-        if let Some(callback) = self.on_new_segment.read().unwrap().clone() {
-            callback();
+        let callback = self.on_new_segment.read().unwrap().clone();
+        if let Some(callback) = callback {
+            callback(offset);
         }
 
         Ok(segment)

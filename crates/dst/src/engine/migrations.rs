@@ -38,6 +38,64 @@ pub enum MigrationExpectation {
     Rejected,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EngineMigrationConfig {
+    pub accepted_weight: u64,
+    pub rejected_weight: u64,
+    pub max_accepted_rules: usize,
+    pub rule_weights: MigrationRuleWeights,
+}
+
+impl Default for EngineMigrationConfig {
+    fn default() -> Self {
+        Self {
+            accepted_weight: 4,
+            rejected_weight: 1,
+            max_accepted_rules: 10,
+            rule_weights: MigrationRuleWeights::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MigrationRuleWeights {
+    pub add_table: u32,
+    pub remove_pristine_non_event_table: u32,
+    pub remove_empty_event_table: u32,
+    pub add_column: u32,
+    pub add_index: u32,
+    pub remove_index: u32,
+    pub change_index: u32,
+    pub add_sequence_on_pristine_table: u32,
+    pub remove_sequence: u32,
+    pub add_unique_constraint_on_pristine_table: u32,
+    pub remove_unique_constraint: u32,
+    pub drop_primary_key_and_widen_sum: u32,
+    pub widen_sum_column: u32,
+    pub reschema_empty_event_table: u32,
+}
+
+impl Default for MigrationRuleWeights {
+    fn default() -> Self {
+        Self {
+            add_table: 2,
+            remove_pristine_non_event_table: 1,
+            remove_empty_event_table: 1,
+            add_column: 14,
+            add_index: 10,
+            remove_index: 8,
+            change_index: 10,
+            add_sequence_on_pristine_table: 8,
+            remove_sequence: 8,
+            add_unique_constraint_on_pristine_table: 12,
+            remove_unique_constraint: 8,
+            drop_primary_key_and_widen_sum: 6,
+            widen_sum_column: 12,
+            reschema_empty_event_table: 8,
+        }
+    }
+}
+
 /// A deterministic schema edit used while building a migration candidate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SchemaRewrite {
@@ -112,8 +170,27 @@ struct RuleEntry {
     rule: &'static dyn MigrationRule,
 }
 
-struct RuleWeights {
-    rules: &'static [(RuleId, u32)],
+type RuleWeightEntries = Vec<(RuleId, u32)>;
+
+impl MigrationRuleWeights {
+    fn entries(&self) -> RuleWeightEntries {
+        vec![
+            (RuleId::AddTable, self.add_table),
+            (RuleId::RemovePristineNonEventTable, self.remove_pristine_non_event_table),
+            (RuleId::RemoveEmptyEventTable, self.remove_empty_event_table),
+            (RuleId::AddColumn, self.add_column),
+            (RuleId::AddIndex, self.add_index),
+            (RuleId::RemoveIndex, self.remove_index),
+            (RuleId::ChangeIndex, self.change_index),
+            (RuleId::AddSequenceOnPristineTable, self.add_sequence_on_pristine_table),
+            (RuleId::RemoveSequence, self.remove_sequence),
+            (RuleId::AddUniqueConstraintOnPristineTable, self.add_unique_constraint_on_pristine_table),
+            (RuleId::RemoveUniqueConstraint, self.remove_unique_constraint),
+            (RuleId::DropPrimaryKeyAndWidenSum, self.drop_primary_key_and_widen_sum),
+            (RuleId::WidenSumColumn, self.widen_sum_column),
+            (RuleId::ReschemaEmptyEventTable, self.reschema_empty_event_table),
+        ]
+    }
 }
 
 static MIGRATION_RULES: &[RuleEntry] = &[
@@ -175,24 +252,6 @@ static MIGRATION_RULES: &[RuleEntry] = &[
     },
 ];
 
-static DEFAULT_RULE_WEIGHTS: RuleWeights = RuleWeights {
-    rules: &[
-        (RuleId::AddTable, 2),
-        (RuleId::RemovePristineNonEventTable, 1),
-        (RuleId::RemoveEmptyEventTable, 1),
-        (RuleId::AddColumn, 14),
-        (RuleId::AddIndex, 10),
-        (RuleId::RemoveIndex, 8),
-        (RuleId::ChangeIndex, 10),
-        (RuleId::AddSequenceOnPristineTable, 8),
-        (RuleId::RemoveSequence, 8),
-        (RuleId::AddUniqueConstraintOnPristineTable, 12),
-        (RuleId::RemoveUniqueConstraint, 8),
-        (RuleId::DropPrimaryKeyAndWidenSum, 6),
-        (RuleId::WidenSumColumn, 12),
-        (RuleId::ReschemaEmptyEventTable, 8),
-    ],
-};
 
 fn migration_rules() -> &'static [RuleEntry] {
     MIGRATION_RULES
@@ -202,6 +261,7 @@ fn migration_rules() -> &'static [RuleEntry] {
 struct RuleCtx<'a> {
     schema: &'a SchemaPlan,
     model: &'a Model,
+    schema_profile: &'a SchemaProfile,
 }
 
 /// A positive case emitted by a migration rule.
@@ -286,34 +346,70 @@ impl Migration {
         self.expectation
     }
 
-    pub(crate) fn choose_accepted(rng: &Rng, schema: &SchemaPlan, model: &Model) -> Option<Self> {
-        let max_rules = 1 + rng.index(10);
+    pub(crate) fn choose_accepted(
+        rng: &Rng,
+        schema: &SchemaPlan,
+        model: &Model,
+        schema_profile: &SchemaProfile,
+        config: &EngineMigrationConfig,
+    ) -> Option<Self> {
+        let max_rules = 1 + rng.index(config.max_accepted_rules.max(1));
         build_accepted_migration(
             rng,
-            RuleCtx { schema, model },
+            RuleCtx {
+                schema,
+                model,
+                schema_profile,
+            },
             AcceptedComposition::Capped { max_rules },
+            &config.rule_weights.entries(),
         )
     }
 
-    pub(crate) fn choose_rejected(rng: &Rng, schema: &SchemaPlan, model: &Model) -> Option<Self> {
-        build_rejected_migration(rng, RuleCtx { schema, model })
+    pub(crate) fn choose_rejected(
+        rng: &Rng,
+        schema: &SchemaPlan,
+        model: &Model,
+        schema_profile: &SchemaProfile,
+        config: &EngineMigrationConfig,
+    ) -> Option<Self> {
+        build_rejected_migration(
+            rng,
+            RuleCtx {
+                schema,
+                model,
+                schema_profile,
+            },
+            config,
+            &config.rule_weights.entries(),
+        )
     }
 }
 
-fn build_accepted_migration(rng: &Rng, ctx: RuleCtx<'_>, mode: AcceptedComposition) -> Option<Migration> {
+fn build_accepted_migration(
+    rng: &Rng,
+    ctx: RuleCtx<'_>,
+    mode: AcceptedComposition,
+    rule_weights: &[(RuleId, u32)],
+) -> Option<Migration> {
     let AcceptedComposition::Capped { max_rules } = mode;
     let max_rules = max_rules.max(1);
 
     for _ in 0..16 {
-        if let Ok(migration) = build_accepted_from_evolving_draft(rng, ctx, max_rules) {
+        if let Ok(migration) = build_accepted_from_evolving_draft(rng, ctx, max_rules, rule_weights) {
             return Some(migration);
         }
     }
 
-    build_accepted_from_evolving_draft(rng, ctx, 1).ok()
+    build_accepted_from_evolving_draft(rng, ctx, 1, rule_weights).ok()
 }
 
-fn build_accepted_from_evolving_draft(rng: &Rng, ctx: RuleCtx<'_>, max_rules: usize) -> anyhow::Result<Migration> {
+fn build_accepted_from_evolving_draft(
+    rng: &Rng,
+    ctx: RuleCtx<'_>,
+    max_rules: usize,
+    rule_weights: &[(RuleId, u32)],
+) -> anyhow::Result<Migration> {
     let mut draft = ctx.schema.clone();
     let mut applied_any = false;
 
@@ -321,8 +417,9 @@ fn build_accepted_from_evolving_draft(rng: &Rng, ctx: RuleCtx<'_>, max_rules: us
         let draft_ctx = RuleCtx {
             schema: &draft,
             model: ctx.model,
+            schema_profile: ctx.schema_profile,
         };
-        let Some(case) = pick_accepted_case(rng, draft_ctx, &DEFAULT_RULE_WEIGHTS) else {
+        let Some(case) = pick_accepted_case(rng, draft_ctx, rule_weights) else {
             break;
         };
         let _rule = case.rule;
@@ -350,21 +447,27 @@ fn build_validated_accepted_batch(ctx: RuleCtx<'_>, cases: Vec<AcceptedCase>) ->
     Migration::accepted(draft)
 }
 
-fn build_rejected_migration(rng: &Rng, ctx: RuleCtx<'_>) -> Option<Migration> {
+fn build_rejected_migration(
+    rng: &Rng,
+    ctx: RuleCtx<'_>,
+    config: &EngineMigrationConfig,
+    rule_weights: &[(RuleId, u32)],
+) -> Option<Migration> {
     for _ in 0..16 {
-        let max_rules = rng.index(10);
-        if let Ok(migration) = build_rejected_from_evolving_draft(rng, ctx, max_rules) {
+        let max_rules = rng.index(config.max_accepted_rules.max(1));
+        if let Ok(migration) = build_rejected_from_evolving_draft(rng, ctx, max_rules, rule_weights) {
             return Some(migration);
         }
     }
 
-    build_rejected_from_evolving_draft(rng, ctx, 0).ok()
+    build_rejected_from_evolving_draft(rng, ctx, 0, rule_weights).ok()
 }
 
 fn build_rejected_from_evolving_draft(
     rng: &Rng,
     ctx: RuleCtx<'_>,
     max_accepted_rules: usize,
+    rule_weights: &[(RuleId, u32)],
 ) -> anyhow::Result<Migration> {
     let mut draft = ctx.schema.clone();
 
@@ -372,8 +475,9 @@ fn build_rejected_from_evolving_draft(
         let draft_ctx = RuleCtx {
             schema: &draft,
             model: ctx.model,
+            schema_profile: ctx.schema_profile,
         };
-        let Some(case) = pick_accepted_case(rng, draft_ctx, &DEFAULT_RULE_WEIGHTS) else {
+        let Some(case) = pick_accepted_case(rng, draft_ctx, rule_weights) else {
             break;
         };
         let _rule = case.rule;
@@ -383,8 +487,9 @@ fn build_rejected_from_evolving_draft(
     let rejected_ctx = RuleCtx {
         schema: &draft,
         model: ctx.model,
+        schema_profile: ctx.schema_profile,
     };
-    let rejected = pick_rejected_case(rng, rejected_ctx, &DEFAULT_RULE_WEIGHTS)
+    let rejected = pick_rejected_case(rng, rejected_ctx, rule_weights)
         .ok_or_else(|| anyhow::anyhow!("no rejected migration candidates"))?;
     let _rule = rejected.rule;
     rejected.rewrite.apply_unchecked_to(&mut draft)?;
@@ -412,20 +517,20 @@ fn rule_by_id(id: RuleId) -> Option<&'static RuleEntry> {
     migration_rules().iter().find(|entry| entry.id == id)
 }
 
-fn pick_accepted_case(rng: &Rng, ctx: RuleCtx<'_>, weights: &RuleWeights) -> Option<AcceptedCase> {
+fn pick_accepted_case(rng: &Rng, ctx: RuleCtx<'_>, weights: &[(RuleId, u32)]) -> Option<AcceptedCase> {
     for _ in 0..16 {
-        let entry = pick_weighted_rule(rng, weights.rules)?;
+        let entry = pick_weighted_rule(rng, weights)?;
         if let Some(case) = pick_candidate(rng, entry.rule.accepted_cases(rng, ctx, entry.id)) {
             return Some(case);
         }
     }
 
-    pick_candidate(rng, accepted_cases_for_weights(rng, ctx, weights.rules))
+    pick_candidate(rng, accepted_cases_for_weights(rng, ctx, weights))
 }
 
-fn pick_rejected_case(rng: &Rng, ctx: RuleCtx<'_>, weights: &RuleWeights) -> Option<RejectedCase> {
+fn pick_rejected_case(rng: &Rng, ctx: RuleCtx<'_>, weights: &[(RuleId, u32)]) -> Option<RejectedCase> {
     // Enumerate first so rules with no invalidation hook do not consume weighted retries.
-    pick_candidate(rng, rejected_cases_for_weights(rng, ctx, weights.rules))
+    pick_candidate(rng, rejected_cases_for_weights(rng, ctx, weights))
 }
 
 fn pick_weighted_rule(rng: &Rng, weights: &[(RuleId, u32)]) -> Option<&'static RuleEntry> {
@@ -490,7 +595,7 @@ struct AddTableRule;
 
 impl MigrationRule for AddTableRule {
     fn accepted_cases(&self, rng: &Rng, ctx: RuleCtx<'_>, rule: RuleId) -> Vec<AcceptedCase> {
-        accepted_cases_from_rewrites(rule, add_table_rewrites(rng, ctx.schema))
+        accepted_cases_from_rewrites(rule, add_table_rewrites(rng, ctx.schema, ctx.schema_profile))
     }
 }
 
@@ -672,12 +777,12 @@ impl MigrationRule for ReschemaEmptyEventTableRule {
     }
 }
 
-fn add_table_rewrites(rng: &Rng, schema: &SchemaPlan) -> Vec<SchemaRewrite> {
+fn add_table_rewrites(rng: &Rng, schema: &SchemaPlan, schema_profile: &SchemaProfile) -> Vec<SchemaRewrite> {
     if schema.tables.len() >= MAX_TABLES {
         return Vec::new();
     }
 
-    let generator = SchemaGenerator::new(rng.clone(), SchemaProfile::engine_dst());
+    let generator = SchemaGenerator::new(rng.clone(), schema_profile.clone());
     [false, true]
         .into_iter()
         .map(|is_event| SchemaRewrite::AddTable {
@@ -1307,7 +1412,7 @@ mod tests {
             assert!(seen.insert(entry.id), "duplicate registered RuleId: {:?}", entry.id);
         }
 
-        for &(id, weight) in DEFAULT_RULE_WEIGHTS.rules {
+        for &(id, weight) in MigrationRuleWeights::default().entries().as_slice() {
             assert!(weight > 0, "default rule weights should not contain zero entries");
             assert!(
                 rule_by_id(id).is_some(),
@@ -1325,8 +1430,9 @@ mod tests {
             RuleCtx {
                 schema: &schema,
                 model: &model,
+                schema_profile: &SchemaProfile::engine_dst(),
             },
-            DEFAULT_RULE_WEIGHTS.rules,
+            MigrationRuleWeights::default().entries().as_slice(),
         );
 
         assert!(!cases.is_empty(), "expected at least one rejected migration candidate");
@@ -1340,8 +1446,10 @@ mod tests {
         let ctx = RuleCtx {
             schema: &schema,
             model: &model,
+            schema_profile: &SchemaProfile::engine_dst(),
         };
-        let rejected = pick_rejected_case(&Rng::new(0), ctx, &DEFAULT_RULE_WEIGHTS)
+        let rule_weights = MigrationRuleWeights::default().entries();
+        let rejected = pick_rejected_case(&Rng::new(0), ctx, &rule_weights)
             .expect("schema should have duplicate-index or duplicate-constraint invalidation");
 
         let migration = build_validated_rejected_batch(ctx, Vec::new(), rejected).expect("rejected batch should build");
@@ -1372,6 +1480,7 @@ mod tests {
             RuleCtx {
                 schema: &schema,
                 model: &model,
+                schema_profile: &SchemaProfile::engine_dst(),
             },
             vec![add_table, add_index],
         )
@@ -1406,6 +1515,7 @@ mod tests {
             RuleCtx {
                 schema: &schema,
                 model: &model,
+                schema_profile: &SchemaProfile::engine_dst(),
             },
             vec![remove_left, remove_right],
         )
@@ -1440,6 +1550,7 @@ mod tests {
             RuleCtx {
                 schema: &schema,
                 model: &model,
+                schema_profile: &SchemaProfile::engine_dst(),
             },
             vec![add_first, add_second],
         )
@@ -1478,6 +1589,7 @@ mod tests {
             RuleCtx {
                 schema: &schema,
                 model: &model,
+                schema_profile: &SchemaProfile::engine_dst(),
             },
             vec![add_left_sum, add_right_sum],
         )
