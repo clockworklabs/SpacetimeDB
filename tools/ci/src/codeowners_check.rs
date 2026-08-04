@@ -2,39 +2,25 @@ use anyhow::{anyhow, bail, Context, Result};
 use duct::cmd;
 use regex::Regex;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 const REQUIRED_LICENSE_REVIEWER: &str = "cloutiertyler";
 
-pub fn run(pr_number: Option<u64>) -> Result<()> {
+pub fn run(pr_number: u64) -> Result<()> {
     super::ensure_repo_root()?;
 
     let base_ref = base_ref()?;
     fetch_base_ref(&base_ref)?;
 
-    let license_files = changed_license_files(&base_ref)?;
-    if license_files.is_empty() {
-        println!("No LICENSE files changed.");
-        return Ok(());
-    }
-
-    let disallowed_files = disallowed_license_changes(&base_ref, &license_files)?;
+    let disallowed_files = disallowed_changes(&base_ref)?;
     if disallowed_files.is_empty() {
-        println!("LICENSE changes are limited to version numbers and change dates.");
+        println!("CODEOWNERS-controlled file changes are allowed.");
         return Ok(());
     }
 
-    let pr_number = pr_number.or_else(pr_number_from_env).ok_or_else(|| {
-        anyhow!(
-            "LICENSE files have non-version/date changes, but no pull request number was provided. \
-             Re-run with --pr-number <number> or set GitHub Actions pull request context."
-        )
-    })?;
-
-    if has_required_approval(pr_number)? {
+    if approved_by(pr_number, REQUIRED_LICENSE_REVIEWER)? {
         println!("LICENSE changes approved by {REQUIRED_LICENSE_REVIEWER} on PR #{pr_number}.");
         return Ok(());
     }
@@ -89,37 +75,41 @@ fn fetch_base_ref(base_ref: &str) -> Result<()> {
     Ok(())
 }
 
-fn changed_license_files(base_ref: &str) -> Result<Vec<std::path::PathBuf>> {
+fn changed_files(base_ref: &str) -> Result<Vec<PathBuf>> {
     let output = cmd!("git", "diff", "--name-only", &format!("{base_ref}...HEAD"))
         .read()
         .with_context(|| format!("failed to list changed files against {base_ref}"))?;
-    Ok(output
-        .lines()
-        .map(Path::new)
-        .filter(|path| is_license_file(path))
-        .map(Path::to_path_buf)
-        .collect())
+    Ok(output.lines().map(Path::new).map(Path::to_path_buf).collect())
 }
 
-fn disallowed_license_changes(base_ref: &str, license_files: &[std::path::PathBuf]) -> Result<Vec<std::path::PathBuf>> {
+fn disallowed_changes(base_ref: &str) -> Result<Vec<PathBuf>> {
     let mut disallowed = Vec::new();
-    for path in license_files {
-        let diff = cmd!(
-            "git",
-            "diff",
-            "--unified=0",
-            "--no-ext-diff",
-            &format!("{base_ref}...HEAD"),
-            "--",
-            path
-        )
-        .read()
-        .with_context(|| format!("failed to read diff for {}", path.display()))?;
-        if !diff_only_changes_license_version_or_date(&diff) {
-            disallowed.push(path.clone());
+
+    for path in changed_files(base_ref)? {
+        if is_license_file(&path) {
+            check_license_file_changes(base_ref, &path, &mut disallowed)?;
         }
     }
+
     Ok(disallowed)
+}
+
+fn check_license_file_changes(base_ref: &str, path: &Path, disallowed: &mut Vec<PathBuf>) -> Result<()> {
+    let diff = cmd!(
+        "git",
+        "diff",
+        "--unified=0",
+        "--no-ext-diff",
+        &format!("{base_ref}...HEAD"),
+        "--",
+        path
+    )
+    .read()
+    .with_context(|| format!("failed to read diff for {}", path.display()))?;
+    if !diff_only_changes_license_version_or_date(&diff) {
+        disallowed.push(path.to_path_buf());
+    }
+    Ok(())
 }
 
 fn is_license_file(path: &Path) -> bool {
@@ -197,63 +187,7 @@ fn normalized_change_date_line(line: &str) -> String {
         .into_owned()
 }
 
-fn pr_number_from_env() -> Option<u64> {
-    if let Ok(event_path) = env::var("GITHUB_EVENT_PATH") {
-        let event = std::fs::read_to_string(event_path).ok()?;
-        let event: Value = serde_json::from_str(&event).ok()?;
-        if let Some(number) = event.pointer("/pull_request/number").and_then(Value::as_u64) {
-            return Some(number);
-        }
-        if let Some(number) = event.pointer("/number").and_then(Value::as_u64) {
-            return Some(number);
-        }
-        if let Some(number) = event
-            .pointer("/inputs/pr_number")
-            .and_then(Value::as_str)
-            .and_then(|number| number.parse().ok())
-        {
-            return Some(number);
-        }
-        if let Some(number) = event
-            .pointer("/merge_group/head_ref")
-            .and_then(Value::as_str)
-            .and_then(parse_pr_number_from_merge_group_ref)
-        {
-            return Some(number);
-        }
-    }
-
-    for env_var in ["GITHUB_REF_NAME", "GITHUB_REF"] {
-        let Ok(value) = env::var(env_var) else {
-            continue;
-        };
-        if let Some(number) = parse_pr_number_from_ref(&value) {
-            return Some(number);
-        }
-    }
-
-    None
-}
-
-fn parse_pr_number_from_ref(value: &str) -> Option<u64> {
-    static PR_REF: OnceLock<Regex> = OnceLock::new();
-    PR_REF
-        .get_or_init(|| Regex::new(r"(?:refs/pull/|^)(\d+)/(?:merge|head)$").unwrap())
-        .captures(value)
-        .and_then(|captures| captures.get(1))
-        .and_then(|number| number.as_str().parse().ok())
-}
-
-fn parse_pr_number_from_merge_group_ref(value: &str) -> Option<u64> {
-    static MERGE_GROUP_PR_REF: OnceLock<Regex> = OnceLock::new();
-    MERGE_GROUP_PR_REF
-        .get_or_init(|| Regex::new(r"/pr-(\d+)-").unwrap())
-        .captures(value)
-        .and_then(|captures| captures.get(1))
-        .and_then(|number| number.as_str().parse().ok())
-}
-
-fn has_required_approval(pr_number: u64) -> Result<bool> {
+fn approved_by(pr_number: u64, reviewer: &str) -> Result<bool> {
     let repo = env::var("GITHUB_REPOSITORY").unwrap_or_else(|_| "clockworklabs/SpacetimeDB".to_string());
     let reviews_json = cmd!(
         "gh",
@@ -267,20 +201,21 @@ fn has_required_approval(pr_number: u64) -> Result<bool> {
         .as_array()
         .ok_or_else(|| anyhow!("GitHub reviews response was not an array"))?;
 
-    let mut latest_review_by_user = HashMap::new();
+    let mut latest_approval = false;
     for review in reviews {
         let Some(login) = review.pointer("/user/login").and_then(Value::as_str) else {
             continue;
         };
+        if login != reviewer {
+            continue;
+        }
         let Some(state) = review.get("state").and_then(Value::as_str) else {
             continue;
         };
-        latest_review_by_user.insert(login, state);
+        latest_approval = state == "APPROVED";
     }
 
-    Ok(latest_review_by_user
-        .get(REQUIRED_LICENSE_REVIEWER)
-        .is_some_and(|state| *state == "APPROVED"))
+    Ok(latest_approval)
 }
 
 #[cfg(test)]
@@ -338,16 +273,5 @@ diff --git a/LICENSE.txt b/LICENSE.txt
         assert!(is_license_file(Path::new("crates/cli/LICENSE")));
         assert!(is_license_file(Path::new("licenses/BSL.txt")));
         assert!(!is_license_file(Path::new("crates/cli/Cargo.toml")));
-    }
-
-    #[test]
-    fn parses_pr_refs() {
-        assert_eq!(parse_pr_number_from_ref("refs/pull/123/merge"), Some(123));
-        assert_eq!(parse_pr_number_from_ref("456/head"), Some(456));
-        assert_eq!(parse_pr_number_from_ref("master"), None);
-        assert_eq!(
-            parse_pr_number_from_merge_group_ref("gh-readonly-queue/master/pr-789-abcdef"),
-            Some(789)
-        );
     }
 }

@@ -220,7 +220,7 @@ Usage: global-json-policy
 
 **Usage:**
 ```bash
-Usage: codeowners-check [OPTIONS]
+Usage: codeowners-check --pr-number <PR_NUMBER>
 ```
 
 **Options:**

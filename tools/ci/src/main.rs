@@ -20,6 +20,22 @@ mod util;
 
 use util::ensure_repo_root;
 
+const DEFAULT_CI_SUBCOMMANDS: &[&str] = &[
+    "test",
+    "lint",
+    "wasm-bindings",
+    "dlls",
+    "smoketests",
+    "keynote-bench",
+    "update-flow",
+    "cli-docs",
+    "global-json-policy",
+    "publish-checks",
+    "typescript-test",
+    "version-upgrade-check",
+    "docs",
+];
+
 /// On Windows, `pnpm` is installed as a `.cmd` shim which `CreateProcess` cannot
 /// find without going through the shell.  Wrapping with `cmd /c` fixes this.
 /// On Unix, we invoke `pnpm` directly.
@@ -367,7 +383,7 @@ enum CiCmd {
     CodeownersCheck {
         /// Pull request number to inspect for approval state.
         #[arg(long)]
-        pr_number: Option<u64>,
+        pr_number: u64,
     },
     /// Checks that publishable crates satisfy publish constraints.
     PublishChecks,
@@ -385,10 +401,20 @@ enum CiCmd {
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
-    let subcmds = Cli::command()
+    let known_subcommands = Cli::command()
         .get_subcommands()
         .map(|sc| sc.get_name().to_string())
         .collect::<Vec<_>>();
+    let subcmds = DEFAULT_CI_SUBCOMMANDS
+        .iter()
+        .map(|subcmd| subcmd.to_string())
+        .collect::<Vec<_>>();
+
+    for subcmd in &subcmds {
+        if !known_subcommands.contains(subcmd) {
+            bail!("default CI subcommand {subcmd:?} is not registered");
+        }
+    }
 
     for subcmd in subcmds {
         if skips.contains(&subcmd) {
