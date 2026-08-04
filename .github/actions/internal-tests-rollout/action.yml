@@ -71,6 +71,7 @@ runs:
           cargo run --quiet \
             --manifest-path tools/find-related-pr/Cargo.toml \
             -- prs-mentioning \
+            --include-drafts \
             --pr "$PUBLIC_PR_NUMBER" \
             --in clockworklabs/SpacetimeDB \
             --from clockworklabs/SpacetimeDBPrivate
