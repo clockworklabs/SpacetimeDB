@@ -560,6 +560,110 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-auto-migration-add-columns"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-add-columns-again"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-add-table-initial"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-add-table-updated"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-drop-event-table-after"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-drop-event-table-before"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-event-table-after"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-event-table-before"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-incompatible"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-simple"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-with-primary-key"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-without-primary-key"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-auto-migration-without-primary-key-v2"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-autoinc-basic"
 version = "0.1.0"
 dependencies = [
@@ -579,6 +683,14 @@ dependencies = [
 
 [[package]]
 name = "smoketest-module-call-empty"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-call-many"
 version = "0.1.0"
 dependencies = [
  "log",
@@ -666,6 +778,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-fail-initial-publish-broken"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-fail-initial-publish-fixed"
 version = "0.1.0"
 dependencies = [
@@ -691,6 +811,62 @@ dependencies = [
 
 [[package]]
 name = "smoketest-module-hotswap-updated"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-http-egress"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-http-routes"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-http-routes-example"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-http-routes-full-uri"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-http-routes-request-body"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-http-routes-strict-non-root"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-http-routes-strict-root"
 version = "0.1.0"
 dependencies = [
  "log",
@@ -747,6 +923,14 @@ dependencies = [
 
 [[package]]
 name = "smoketest-module-new-user-flow"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-noop"
 version = "0.1.0"
 dependencies = [
  "log",
@@ -811,6 +995,14 @@ dependencies = [
 
 [[package]]
 name = "smoketest-module-rls"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
+name = "smoketest-module-rls-broken-private-table"
 version = "0.1.0"
 dependencies = [
  "log",
@@ -942,6 +1134,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "smoketest-module-views-broken-return-type"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb",
+]
+
+[[package]]
 name = "smoketest-module-views-callable"
 version = "0.1.0"
 dependencies = [
@@ -1015,7 +1215,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "2.7.0"
+version = "2.8.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1036,7 +1236,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "2.7.0"
+version = "2.8.0"
 dependencies = [
  "heck 0.4.1",
  "humantime",
@@ -1048,14 +1248,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "2.7.0"
+version = "2.8.0"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-lib"
-version = "2.7.0"
+version = "2.8.0"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -1075,7 +1275,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "2.7.0"
+version = "2.8.0"
 dependencies = [
  "bitflags",
  "either",
@@ -1086,14 +1286,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query-builder"
-version = "2.7.0"
+version = "2.8.0"
 dependencies = [
  "spacetimedb-lib",
 ]
 
 [[package]]
 name = "spacetimedb-sats"
-version = "2.7.0"
+version = "2.8.0"
 dependencies = [
  "anyhow",
  "arrayvec",

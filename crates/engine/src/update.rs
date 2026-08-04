@@ -6,14 +6,25 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{StViewFields, StViewRow, ST_VIEW_ID};
 use spacetimedb_lib::db::auth::StTableType;
+use spacetimedb_lib::db::raw_def::v9::{RawRowLevelSecurityDefV9, TableAccess};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicValue;
-use spacetimedb_primitives::{ColSet, TableId};
+use spacetimedb_primitives::{ColSet, ConstraintId, TableId};
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, AutoMigrateStep, ManualMigratePlan, MigratePlan};
-use spacetimedb_schema::def::{ModuleDef, ModuleDefLookup, TableDef, ViewDef};
+use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ModuleDefLookup, SequenceDef, TableDef, ViewDef};
+use spacetimedb_schema::identifier::{Identifier, NamespacePath, NamespacedIdentifier};
 use spacetimedb_schema::schema::{
     column_schemas_from_defs, ConstraintSchema, IndexSchema, Schema, SequenceSchema, TableSchema,
 };
+use spacetimedb_schema::table_name::TableName;
+
+/// The joined, qualified name a `(namespace, name)` key refers to.
+///
+/// The database stores names joined, so migration steps build the joined form here rather
+/// than every def carrying a pre-joined copy. These are per-step, not per-row.
+fn joined(namespace: &NamespacePath, name: &Identifier) -> NamespacedIdentifier {
+    namespace.join(name.clone())
+}
 
 /// The logger used for by [`update_database`] and friends.
 pub trait UpdateLogger {
@@ -55,8 +66,12 @@ fn stale_view_backing_table_recreate_steps<'def>(
     stdb.with_read_only(Workload::Internal, |tx| -> anyhow::Result<_> {
         let mut steps = Vec::new();
 
-        for view in module_def.views() {
-            if view_backing_table_needs_recreate(stdb, tx, module_def, view)? {
+        // Submodule views are registered in `st_view` under their full namespaced name,
+        // so they must be walked with their prefix and checked against the typespace of
+        // the submodule that owns them.
+        for (_, owning_def, view) in module_def.all_views_with_prefix() {
+            let full_name = joined(&view.namespace, &view.name);
+            if view_backing_table_needs_recreate(stdb, tx, owning_def, view, &full_name)? {
                 steps.extend([
                     AutoMigrateStep::RemoveView(view.key()),
                     AutoMigrateStep::AddView(view.key()),
@@ -76,21 +91,22 @@ fn stale_view_backing_table_recreate_steps<'def>(
 fn view_backing_table_needs_recreate(
     stdb: &RelationalDB,
     tx: &mut TxId,
-    module_def: &ModuleDef,
+    owning_def: &ModuleDef,
     view: &ViewDef,
+    full_name: &NamespacedIdentifier,
 ) -> anyhow::Result<bool> {
-    let Some(table_id) = view_backing_table_id(tx, view)? else {
+    let Some(table_id) = view_backing_table_id(tx, full_name)? else {
         return Ok(false);
     };
 
     let actual = stdb.schema_for_table(tx, table_id)?;
-    let expected = TableSchema::from_view_def_for_datastore(module_def, view);
+    let expected = TableSchema::from_view_def_for_datastore(owning_def, view);
 
     Ok(view_backing_row_layout_changed(&actual, &expected))
 }
 
-fn view_backing_table_id(tx: &mut TxId, view: &ViewDef) -> anyhow::Result<Option<TableId>> {
-    let view_name = AlgebraicValue::from(<Box<str>>::from(&*view.name));
+fn view_backing_table_id(tx: &mut TxId, full_name: &NamespacedIdentifier) -> anyhow::Result<Option<TableId>> {
+    let view_name = AlgebraicValue::from(<Box<str>>::from(&**full_name));
     let Some(row) = tx
         .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, &view_name)?
         .next()
@@ -135,15 +151,28 @@ pub fn update_database(
 
     // TODO: consider using `ErrorStream` here.
     let old_module_def = plan.old_def();
+
+    // Build a map from full-name (namespaced) -> (owning_def, table_def) covering root and all
+    // submodule tables. Submodule tables are stored in the DB with prefixed names like
+    // "lib.library_procedure_timer", but `ModuleDef::table()` only has the current level.
+    // `all_tables_with_prefix()` returns the owning submodule alongside each def, which is also
+    // needed so that `check_compatible` resolves column type refs against the correct
+    // (sub)module typespace.
+    let old_tables_by_name: std::collections::HashMap<String, _> = old_module_def
+        .all_tables_with_prefix()
+        .into_iter()
+        .map(|(prefix, owning_def, table_def)| (format!("{}{}", prefix, &table_def.name[..]), (owning_def, table_def)))
+        .collect();
+
     for table in existing_tables
         .iter()
         .filter(|table| table.table_type != StTableType::System && !table.is_view())
     {
-        let old_def = old_module_def
-            .table(&table.table_name[..])
+        let (owning_def, old_def) = old_tables_by_name
+            .get(table.table_name.as_ref())
             .ok_or_else(|| anyhow::anyhow!("table {} not found in old_module_def", table.table_name))?;
 
-        table.check_compatible(old_module_def, old_def)?;
+        table.check_compatible(owning_def, old_def)?;
     }
 
     match plan {
@@ -185,10 +214,16 @@ fn auto_migrate_database(
 
     for precheck in plan.prechecks {
         match precheck {
-            spacetimedb_schema::auto_migrate::AutoMigratePrecheck::CheckAddSequenceRangeValid(sequence_name) => {
-                let table_def = plan.new.stored_in_table_def(sequence_name).unwrap();
-                let sequence_def = &table_def.sequences[sequence_name];
-                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+            spacetimedb_schema::auto_migrate::AutoMigratePrecheck::CheckAddSequenceRangeValid(key) => {
+                let (namespace, sequence_name) = key;
+                let (_, table_def) = plan.new.find_storing_table(namespace, sequence_name).ok_or_else(|| {
+                    anyhow::anyhow!("Precheck: sequence `{sequence_name}` not found in new module def")
+                })?;
+                let sequence_def: &SequenceDef = plan.new.lookup(key).ok_or_else(|| {
+                    anyhow::anyhow!("Precheck: sequence `{sequence_name}` not found in new module def")
+                })?;
+                let table_full_name = joined(namespace, &table_def.name);
+                let table_id = stdb.table_id_from_name_mut(tx, &table_full_name)?.unwrap();
 
                 let ty = table_def
                     .get_column(sequence_def.column)
@@ -199,16 +234,21 @@ fn auto_migrate_database(
                     .clone();
 
                 // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
-                let min = AlgebraicValue::from_i128(&ty, sequence_def.min_value.unwrap_or(1)).ok_or_else(|| {
-                    anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
-                })?;
-
-                let max =
-                    AlgebraicValue::from_i128(&ty, sequence_def.max_value.unwrap_or(i128::MAX)).ok_or_else(|| {
-                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
+                let min = ty
+                    .saturating_value_from_i128(sequence_def.min_value.unwrap_or(1))
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
                     })?;
 
-                let range = min..max;
+                let max = match sequence_def.max_value {
+                    Some(max) => ty.saturating_value_from_i128(max),
+                    None => ty.saturating_value_from_i128(i128::MAX),
+                }
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
+                })?;
+
+                let range = min..=max;
                 if stdb
                     .iter_by_col_range_mut(tx, table_id, sequence_def.column, range)?
                     .next()
@@ -225,8 +265,10 @@ fn auto_migrate_database(
 
     for step in plan.steps {
         match step {
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveTable(table_name) => {
-                let table_id = stdb.table_id_from_name_mut(tx, table_name)?.unwrap();
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveTable(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
 
                 if stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0 {
                     anyhow::bail!(
@@ -238,23 +280,31 @@ fn auto_migrate_database(
                 log!(logger, "Dropping table `{table_name}`");
                 stdb.drop_table(tx, table_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddTable(table_name) => {
-                let table_def: &TableDef = plan.new.expect_lookup(table_name);
-
-                // Recursively sets IDs to 0.
-                // They will be initialized by the database when the table is created.
-                let table_schema = TableSchema::from_module_def(plan.new, table_def, (), TableId::SENTINEL);
-
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddTable(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (owning_def, table_def) = plan
+                    .new
+                    .find_table(table_name_key)
+                    .ok_or_else(|| anyhow::anyhow!("AddTable: table `{table_name}` not found in new module def"))?;
                 log!(logger, "Creating table `{table_name}`");
-
-                stdb.create_table(tx, table_schema)?;
+                create_table_from_def_with_prefix(stdb, tx, owning_def, table_def, namespace)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddView(view_name) => {
-                let view_def: &ViewDef = plan.new.expect_lookup(view_name);
-                stdb.create_view(tx, plan.new, view_def)?;
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddView(view_name_key) => {
+                let (namespace, local) = view_name_key;
+                let view_name = joined(namespace, local);
+                let (owning_def, view_def) = plan
+                    .new
+                    .find_view(view_name_key)
+                    .ok_or_else(|| anyhow::anyhow!("AddView: view `{view_name}` not found in new module def"))?;
+                create_table_from_view_def_with_prefix(stdb, tx, owning_def, view_def, namespace)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveView(view_name) => {
-                let view_id = stdb.view_id_from_name_mut(tx, view_name)?.unwrap();
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveView(view_name_key) => {
+                let (namespace, local) = view_name_key;
+                let view_name = joined(namespace, local);
+                let view_id = stdb
+                    .view_id_from_name_mut(tx, &view_name)?
+                    .ok_or_else(|| anyhow::anyhow!("RemoveView: view `{view_name}` not found in database"))?;
                 stdb.drop_view(tx, view_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::UpdateView(_) => {
@@ -264,10 +314,18 @@ fn auto_migrate_database(
                     res = UpdateResult::EvaluateSubscribedViews;
                 }
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddIndex(index_name) => {
-                let table_def = plan.new.stored_in_table_def(index_name).unwrap();
-                let index_def = table_def.indexes.get(index_name).unwrap();
-                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddIndex(key) => {
+                let (namespace, index_name) = key;
+                let (owning_def, table_def) = plan
+                    .new
+                    .find_storing_table(namespace, index_name)
+                    .ok_or_else(|| anyhow::anyhow!("AddIndex: `{index_name}` not found in new module def"))?;
+                let table_full_name = joined(namespace, &table_def.name);
+                let index_def: &IndexDef = plan
+                    .new
+                    .lookup(key)
+                    .ok_or_else(|| anyhow::anyhow!("AddIndex: index `{index_name}` not found in new module def"))?;
+                let table_id = stdb.table_id_from_name_mut(tx, &table_full_name)?.unwrap();
 
                 let index_cols = ColSet::from(index_def.algorithm.columns());
 
@@ -277,131 +335,177 @@ fn auto_migrate_database(
                     .filter_map(|(_, c)| c.data.unique_columns())
                     .any(|unique_cols| unique_cols == &index_cols);
 
-                log!(logger, "Creating index `{}` on table `{}`", index_name, table_def.name);
+                log!(logger, "Creating index `{index_name}` on table `{table_full_name}`");
 
-                let index_schema = IndexSchema::from_module_def(plan.new, index_def, table_id, 0.into());
+                let mut index_schema = IndexSchema::from_module_def(owning_def, index_def, table_id, 0.into());
+
+                // Apply namespace prefix for submodule indexes
+                index_schema.index_name = namespace.join_raw(&index_schema.index_name);
+                index_schema.alias = index_schema.alias.as_ref().map(|alias| namespace.join_raw(alias));
 
                 stdb.create_index(tx, index_schema, is_unique)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveIndex(index_name) => {
-                let table_def = plan.old.stored_in_table_def(index_name).unwrap();
-
-                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveIndex(key) => {
+                let (namespace, index_name) = key;
+                let (_owning_def, table_def) = plan
+                    .old
+                    .find_storing_table(namespace, index_name)
+                    .ok_or_else(|| anyhow::anyhow!("RemoveIndex: `{index_name}` not found in old module def"))?;
+                let table_full_name = joined(namespace, &table_def.name);
+                let stored_name = namespace.join_raw(&index_name.clone().into());
+                let table_id = stdb.table_id_from_name_mut(tx, &table_full_name)?.unwrap();
                 let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
 
                 let index_schema = table_schema
                     .indexes
                     .iter()
-                    .find(|index| index.index_name[..] == index_name[..])
+                    .find(|index| index.index_name == stored_name)
                     .unwrap();
 
-                log!(logger, "Dropping index `{}` on table `{}`", index_name, table_def.name);
+                log!(logger, "Dropping index `{index_name}` on table `{table_full_name}`");
                 stdb.drop_index(tx, index_schema.index_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveConstraint(constraint_name) => {
-                let table_def = plan.old.stored_in_table_def(constraint_name).unwrap();
-
-                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveConstraint(key) => {
+                let (namespace, constraint_name) = key;
+                let (_owning_def, table_def) =
+                    plan.old.find_storing_table(namespace, constraint_name).ok_or_else(|| {
+                        anyhow::anyhow!("RemoveConstraint: `{constraint_name}` not found in old module def")
+                    })?;
+                let table_full_name = joined(namespace, &table_def.name);
+                let stored_name = namespace.join_raw(&constraint_name.clone().into());
+                let table_id = stdb.table_id_from_name_mut(tx, &table_full_name)?.unwrap();
                 let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
+
                 let constraint_schema = table_schema
                     .constraints
                     .iter()
-                    .find(|constraint| constraint.constraint_name[..] == constraint_name[..])
+                    .find(|constraint| constraint.constraint_name == stored_name)
                     .unwrap();
 
                 log!(
                     logger,
-                    "Dropping constraint `{}` on table `{}`",
-                    constraint_name,
-                    table_def.name
+                    "Dropping constraint `{constraint_name}` on table `{table_full_name}`"
                 );
                 stdb.drop_constraint(tx, constraint_schema.constraint_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddConstraint(constraint_name) => {
-                let table_def = plan
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddConstraint(key) => {
+                let (namespace, constraint_name) = key;
+                let (owning_def, table_def) = plan
                     .new
-                    .stored_in_table_def(constraint_name)
-                    .expect("AddConstraint references a table that should exist in the new module def");
-                let constraint_def = &table_def.constraints[constraint_name];
+                    .find_storing_table(namespace, constraint_name)
+                    .ok_or_else(|| anyhow::anyhow!("AddConstraint: `{constraint_name}` not found in new module def"))?;
+                let table_full_name = joined(namespace, &table_def.name);
+                let constraint_def: &ConstraintDef = plan.new.lookup(key).ok_or_else(|| {
+                    anyhow::anyhow!("AddConstraint: constraint `{constraint_name}` not found in new module def")
+                })?;
                 let table_id = stdb
-                    .table_id_from_name_mut(tx, &table_def.name)?
+                    .table_id_from_name_mut(tx, &table_full_name)?
                     .expect("table should exist in the database for AddConstraint");
-                let constraint_schema = ConstraintSchema::from_module_def(
-                    plan.new,
-                    constraint_def,
-                    table_id,
-                    spacetimedb_primitives::ConstraintId::SENTINEL,
-                );
+                let mut constraint_schema =
+                    ConstraintSchema::from_module_def(owning_def, constraint_def, table_id, ConstraintId::SENTINEL);
+
+                // Apply namespace prefix for submodule constraints
+                constraint_schema.constraint_name = namespace.join_raw(&constraint_schema.constraint_name);
                 log!(
                     logger,
-                    "Adding constraint `{}` on table `{}`",
-                    constraint_name,
-                    table_def.name
+                    "Adding constraint `{constraint_name}` on table `{table_full_name}`"
                 );
                 stdb.create_constraint(tx, constraint_schema)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSequence(sequence_name) => {
-                let table_def = plan.new.stored_in_table_def(sequence_name).unwrap();
-                let sequence_def = table_def.sequences.get(sequence_name).unwrap();
-
-                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSequence(key) => {
+                let (namespace, sequence_name) = key;
+                let (owning_def, table_def) = plan
+                    .new
+                    .find_storing_table(namespace, sequence_name)
+                    .ok_or_else(|| anyhow::anyhow!("AddSequence: `{sequence_name}` not found in new module def"))?;
+                let table_full_name = joined(namespace, &table_def.name);
+                let sequence_def: &SequenceDef = plan.new.lookup(key).ok_or_else(|| {
+                    anyhow::anyhow!("AddSequence: sequence `{sequence_name}` not found in new module def")
+                })?;
+                let table_id = stdb.table_id_from_name_mut(tx, &table_full_name)?.unwrap();
                 let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
 
-                log!(
-                    logger,
-                    "Adding sequence `{}` to table `{}`",
-                    sequence_name,
-                    table_def.name
-                );
-                let sequence_schema =
-                    SequenceSchema::from_module_def(plan.new, sequence_def, table_schema.table_id, 0.into());
+                log!(logger, "Adding sequence `{sequence_name}` to table `{table_full_name}`");
+                let mut sequence_schema =
+                    SequenceSchema::from_module_def(owning_def, sequence_def, table_schema.table_id, 0.into());
+
+                // Apply namespace prefix for submodule sequences
+                sequence_schema.sequence_name = namespace.join_raw(&sequence_schema.sequence_name);
                 stdb.create_sequence(tx, sequence_schema)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveSequence(sequence_name) => {
-                let table_def = plan.old.stored_in_table_def(sequence_name).unwrap();
-
-                let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveSequence(key) => {
+                let (namespace, sequence_name) = key;
+                let (_owning_def, table_def) = plan
+                    .old
+                    .find_storing_table(namespace, sequence_name)
+                    .ok_or_else(|| anyhow::anyhow!("RemoveSequence: `{sequence_name}` not found in old module def"))?;
+                let table_full_name = joined(namespace, &table_def.name);
+                let stored_name = namespace.join_raw(&sequence_name.clone().into());
+                let table_id = stdb.table_id_from_name_mut(tx, &table_full_name)?.unwrap();
                 let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
                 let sequence_schema = table_schema
                     .sequences
                     .iter()
-                    .find(|sequence| sequence.sequence_name[..] == sequence_name[..])
+                    .find(|sequence| sequence.sequence_name == stored_name)
                     .unwrap();
 
                 log!(
                     logger,
-                    "Dropping sequence `{}` from table `{}`",
-                    sequence_name,
-                    table_def.name
+                    "Dropping sequence `{sequence_name}` from table `{table_full_name}`"
                 );
                 stdb.drop_sequence(tx, sequence_schema.sequence_id)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumns(table_name) => {
-                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
-                let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
-                let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumns(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (owning_def, table_def) = plan.new.find_table(table_name_key).ok_or_else(|| {
+                    anyhow::anyhow!("ChangeColumns: table `{table_name}` not found in new module def")
+                })?;
+                let table_id = stdb.table_id_from_name_mut(tx, &table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(owning_def, &table_def.columns, table_id);
 
-                log!(logger, "Changing columns of table `{}`", table_name);
+                log!(logger, "Changing columns of table `{table_name}`");
 
                 stdb.alter_table_row_type(tx, table_id, column_schemas)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::ReschemaEventTable(table_name) => {
-                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
-                let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
-                let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ReschemaEventTable(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (owning_def, table_def) = plan.new.find_table(table_name_key).ok_or_else(|| {
+                    anyhow::anyhow!("ReschemaEventTable: table `{table_name}` not found in new module def")
+                })?;
+                let table_id = stdb.table_id_from_name_mut(tx, &table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(owning_def, &table_def.columns, table_id);
 
                 log!(logger, "Changing schema of event table `{}`", table_name);
 
                 stdb.alter_event_table_row_type(tx, table_id, column_schemas)?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
-                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
-                stdb.alter_table_access(tx, table_name, table_def.table_access.into())?;
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let access = if let Some((_owning_def, table_def)) = plan.new.find_table(table_name_key) {
+                    table_def.table_access
+                } else {
+                    let (_owning_def, view_def) = plan.new.find_view(table_name_key).ok_or_else(|| {
+                        anyhow::anyhow!("ChangeAccess: `{table_name}` not found as a table or view in new module def")
+                    })?;
+                    if view_def.is_public {
+                        TableAccess::Public
+                    } else {
+                        TableAccess::Private
+                    }
+                };
+                stdb.alter_table_access(tx, &table_name, access.into())?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangePrimaryKey(table_name) => {
-                let table_def = plan.new.stored_in_table_def(&table_name.clone().into()).unwrap();
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangePrimaryKey(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (_owning_def, table_def) = plan.new.find_table(table_name_key).ok_or_else(|| {
+                    anyhow::anyhow!("ChangePrimaryKey: table `{table_name}` not found in new module def")
+                })?;
                 log!(logger, "Changing primary key for table `{table_name}`");
-                stdb.alter_table_primary_key(tx, table_name, table_def.primary_key)?;
+                stdb.alter_table_primary_key(tx, &table_name, table_def.primary_key)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSchedule(_) => {
                 anyhow::bail!("Adding schedules is not yet implemented");
@@ -411,22 +515,26 @@ fn auto_migrate_database(
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddRowLevelSecurity(sql_rls) => {
                 log!(logger, "Adding row-level security `{sql_rls}`");
-                let rls = plan.new.lookup_expect(sql_rls);
+                let rls = plan.new.lookup::<RawRowLevelSecurityDefV9>(sql_rls).ok_or_else(|| {
+                    anyhow::anyhow!("AddRowLevelSecurity: RLS `{sql_rls}` not found in new module def")
+                })?;
                 let rls = RowLevelExpr::build_row_level_expr(tx, &auth_ctx, rls)?;
 
                 stdb.create_row_level_security(tx, rls.def)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveRowLevelSecurity(sql_rls) => {
-                log!(logger, "Removing-row level security `{sql_rls}`");
+                log!(logger, "Removing row-level security `{sql_rls}`");
                 stdb.drop_row_level_security(tx, sql_rls.clone())?;
             }
-            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddColumns(table_name) => {
-                let table_def = plan
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::AddColumns(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (owning_def, table_def) = plan
                     .new
-                    .stored_in_table_def(&table_name.clone().into())
-                    .expect("table must exist");
-                let table_id = stdb.table_id_from_name_mut(tx, table_name).unwrap().unwrap();
-                let column_schemas = column_schemas_from_defs(plan.new, &table_def.columns, table_id);
+                    .find_table(table_name_key)
+                    .ok_or_else(|| anyhow::anyhow!("AddColumns: table `{table_name}` not found in new module def"))?;
+                let table_id = stdb.table_id_from_name_mut(tx, &table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(owning_def, &table_def.columns, table_id);
 
                 let default_values: Vec<AlgebraicValue> = table_def
                     .columns
@@ -455,9 +563,80 @@ pub fn create_table_from_def(
     module_def: &ModuleDef,
     table_def: &TableDef,
 ) -> anyhow::Result<()> {
-    let schema = TableSchema::from_module_def(module_def, table_def, (), TableId::SENTINEL);
+    create_table_from_def_with_prefix(stdb, tx, module_def, table_def, &NamespacePath::root())
+}
+
+/// Creates a submodule table in `stdb`, applying the namespace to its canonical name.
+/// `name_prefix` is the dot-terminated namespace string (e.g. `"alias."`).
+pub fn create_table_from_def_with_prefix(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    owning_def: &ModuleDef,
+    table_def: &TableDef,
+    name_prefix: &NamespacePath,
+) -> anyhow::Result<()> {
+    let mut schema = TableSchema::from_module_def(owning_def, table_def, (), TableId::SENTINEL);
+    if !name_prefix.is_empty() {
+        // Store submodule tables under their namespaced *canonical* name, exactly as root
+        // tables are stored. The accessor name is a codegen concern and lives on as a
+        // namespaced alias in `st_table_accessor`; it must not become the host's identity
+        // for the table, and it must not be dropped (namespacing it keeps it unique across
+        // mounts that share a local name).
+        schema.table_name = TableName::from(name_prefix.join(table_def.name.clone()));
+        schema.alias = Some(name_prefix.join(table_def.accessor_name.clone()));
+
+        // Apply the namespace to the scheduled reducer/procedure name so the scheduler can
+        // resolve it via the namespaced reducer_by_name / procedure_by_name.
+        if let Some(schedule) = &mut schema.schedule {
+            // `ScheduleSchema::from_module_def` builds this from a `ScheduleDef`'s single
+            // `Identifier`, so it has exactly one segment here; take the last rather than
+            // asserting, so a nested mount can never panic mid-migration.
+            let local_fn = schedule.function_name.local_name().clone();
+            schedule.function_name = name_prefix.join(local_fn);
+        }
+
+        // Apply the namespace to index canonical names and aliases for global uniqueness.
+        for index in &mut schema.indexes {
+            index.index_name = name_prefix.join_raw(&index.index_name);
+            index.alias = index.alias.as_ref().map(|alias| name_prefix.join_raw(alias));
+        }
+
+        // Same for constraint and sequence names.
+        for constraint in &mut schema.constraints {
+            constraint.constraint_name = name_prefix.join_raw(&constraint.constraint_name);
+        }
+        for sequence in &mut schema.sequences {
+            sequence.sequence_name = name_prefix.join_raw(&sequence.sequence_name);
+        }
+    }
     stdb.create_table(tx, schema)
-        .with_context(|| format!("failed to create table {}", &table_def.name))?;
+        .with_context(|| format!("failed to create table {}", name_prefix.join(table_def.name.clone())))?;
+    Ok(())
+}
+
+/// Creates the table for `view_def` in `stdb`.
+pub fn create_table_from_view_def(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    module_def: &ModuleDef,
+    view_def: &ViewDef,
+) -> anyhow::Result<()> {
+    stdb.create_view(tx, module_def, view_def)
+        .with_context(|| format!("failed to create table for view {}", &view_def.name))?;
+    Ok(())
+}
+
+/// Creates the table for a submodule `view_def` in `stdb`, applying the namespace prefix.
+/// `name_prefix` is the dot-terminated namespace string (e.g. `"lib."`).
+pub fn create_table_from_view_def_with_prefix(
+    stdb: &RelationalDB,
+    tx: &mut MutTxId,
+    owning_def: &ModuleDef,
+    view_def: &ViewDef,
+    name_prefix: &NamespacePath,
+) -> anyhow::Result<()> {
+    stdb.create_view_with_prefix(tx, owning_def, view_def, name_prefix)
+        .with_context(|| format!("failed to create table for view {}{}", name_prefix, &view_def.name))?;
     Ok(())
 }
 
@@ -472,7 +651,7 @@ mod test {
     use spacetimedb_datastore::system_tables::ST_EVENT_TABLE_ID;
     use spacetimedb_lib::{
         db::raw_def::{
-            v10::RawModuleDefV10Builder,
+            v10::{RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10},
             v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess},
         },
         Identity,
@@ -663,6 +842,143 @@ mod test {
             .expect("should be a valid module definition")
     }
 
+    fn submodule_table_module(with_sub_objects: bool) -> ModuleDef {
+        let mut sub = RawModuleDefV10Builder::new();
+        let table = sub.build_table_with_new_type("sessions", ProductType::from([("id", U64)]), true);
+        if with_sub_objects {
+            table
+                .with_index(btree(0), "sessions_id_idx", "sessions_id_idx")
+                .with_unique_constraint(0)
+                .with_column_sequence(0)
+                .finish();
+        } else {
+            table.finish();
+        }
+        let mut root = RawModuleDefV10Builder::new().finish();
+        root.sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "lib".to_string(),
+                module: sub.finish(),
+            }]));
+        root.try_into().expect("should be a valid module definition")
+    }
+
+    /// A submodule table whose source name differs from its canonical name.
+    ///
+    /// Under the V10 snake_case policy, source `"FruitBasket"` canonicalizes to
+    /// `fruit_basket` while `accessor_name` keeps the raw `FruitBasket`.
+    fn submodule_case_converted_module() -> ModuleDef {
+        let mut sub = RawModuleDefV10Builder::new();
+        sub.build_table_with_new_type("FruitBasket", ProductType::from([("id", U64)]), true)
+            .finish();
+        let mut root = RawModuleDefV10Builder::new().finish();
+        root.sections
+            .push(RawModuleDefV10Section::Submodules(vec![RawSubmoduleV10 {
+                namespace: "lib".to_string(),
+                module: sub.finish(),
+            }]));
+        root.try_into().expect("should be a valid module definition")
+    }
+
+    /// Submodule tables must be stored under their namespaced *canonical* name, with the
+    /// accessor name kept as a namespaced alias -- exactly as root tables are.
+    ///
+    /// Storing the accessor name as the canonical name makes the host resolve tables by a
+    /// name that only exists for client codegen, and discarding the alias loses the mapping
+    /// codegen needs. Neither shows up when accessor == canonical, which is why this uses a
+    /// case-converted name.
+    #[test]
+    fn submodule_table_is_stored_under_canonical_name() -> anyhow::Result<()> {
+        let stdb = TestDB::durable()?;
+        let module_def = submodule_case_converted_module();
+
+        // Precondition: the two names really do differ, or this test proves nothing.
+        let (prefix, owning_def, table_def) = module_def
+            .all_tables_with_prefix()
+            .into_iter()
+            .next()
+            .expect("submodule table should exist");
+        assert_eq!(&*table_def.name, "fruit_basket", "canonical name");
+        assert_eq!(&*table_def.accessor_name, "FruitBasket", "accessor name");
+
+        let mut tx = begin_mut_tx(&stdb);
+        create_table_from_def_with_prefix(&stdb, &mut tx, owning_def, table_def, &prefix)?;
+
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "lib.fruit_basket")?
+            .expect("submodule table should be stored under its namespaced canonical name");
+
+        // And the accessor name survives as a namespaced alias, so codegen can still resolve it.
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert_eq!(
+            schema.alias.as_deref(),
+            Some("lib.FruitBasket"),
+            "accessor name should be kept as a namespaced alias, not discarded"
+        );
+
+        stdb.commit_tx(tx)?;
+        Ok(())
+    }
+
+    #[test]
+    fn submodule_constraint_and_sequence_migration() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = submodule_table_module(true);
+        let new = submodule_table_module(false);
+
+        let mut tx = begin_mut_tx(&stdb);
+        for (prefix, owning_def, def) in old.all_tables_with_prefix() {
+            create_table_from_def_with_prefix(&stdb, &mut tx, owning_def, def, &prefix)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "lib.sessions")?
+            .expect("submodule table should exist");
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert!(!schema.constraints.is_empty());
+        assert!(!schema.sequences.is_empty());
+        assert!(
+            schema.constraints.iter().all(|c| c.constraint_name.starts_with("lib.")),
+            "constraint names should be namespace-prefixed: {:?}",
+            schema.constraints
+        );
+        assert!(
+            schema.sequences.iter().all(|s| s.sequence_name.starts_with("lib.")),
+            "sequence names should be namespace-prefixed: {:?}",
+            schema.sequences
+        );
+
+        // Removing the constraint and sequence must resolve them by their prefixed names.
+        let plan = ponder_migrate(&old, &new)?;
+        let _ = update_database(&stdb, &mut tx, auth_ctx.clone(), plan, &TestLogger)?;
+
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert!(schema.constraints.is_empty(), "{:?}", schema.constraints);
+        assert!(schema.sequences.is_empty(), "{:?}", schema.sequences);
+
+        // And adding them back must store prefixed names again.
+        let plan = ponder_migrate(&new, &old)?;
+        let _ = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+
+        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert!(
+            !schema.constraints.is_empty() && schema.constraints.iter().all(|c| c.constraint_name.starts_with("lib.")),
+            "{:?}",
+            schema.constraints
+        );
+        assert!(
+            !schema.sequences.is_empty() && schema.sequences.iter().all(|s| s.sequence_name.starts_with("lib.")),
+            "{:?}",
+            schema.sequences
+        );
+
+        Ok(())
+    }
+
     fn view_module() -> ModuleDef {
         let mut builder = RawModuleDefV10Builder::new();
         let return_type_ref = builder.add_algebraic_type(
@@ -719,7 +1035,7 @@ mod test {
         let MigratePlan::Auto(plan) = &plan else {
             panic!("expected auto migration");
         };
-        let my_view = module_def.view("my_view").unwrap().key();
+        let my_view = module_def.view("my_view").expect("view should exist").key();
         assert!(plan.steps.contains(&AutoMigrateStep::RemoveView(my_view)));
         assert!(plan.steps.contains(&AutoMigrateStep::AddView(my_view)));
         assert!(plan.steps.contains(&AutoMigrateStep::DisconnectAllUsers));
@@ -985,6 +1301,51 @@ mod test {
             "failed migration should leave no pending schema changes: {:?}",
             tx.pending_schema_changes()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn add_sequence_precheck_rejects_existing_column_max_value() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let module_v1: ModuleDef = {
+            let mut b = RawModuleDefV9Builder::new();
+            b.build_table_with_new_type("seq_t", [("id", AlgebraicType::U8)], true)
+                .with_access(TableAccess::Public)
+                .finish();
+            b.finish().try_into().expect("valid module v1")
+        };
+
+        let module_v2: ModuleDef = {
+            let mut b = RawModuleDefV9Builder::new();
+            b.build_table_with_new_type("seq_t", [("id", AlgebraicType::U8)], true)
+                .with_column_sequence(0)
+                .with_access(TableAccess::Public)
+                .finish();
+            b.finish().try_into().expect("valid module v2")
+        };
+
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            for def in module_v1.tables() {
+                create_table_from_def(&stdb, &mut tx, &module_v1, def)?;
+            }
+            let table_id = stdb.table_id_from_name_mut(&tx, "seq_t")?.expect("seq_t should exist");
+            insert(&stdb, &mut tx, table_id, &product![u8::MAX])?;
+            stdb.commit_tx(tx)?;
+        }
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&module_v1, &module_v2)?;
+        let err = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)
+            .err()
+            .expect("adding a sequence over an existing max value should fail");
+        assert!(
+            err.to_string().contains("already has values in range"),
+            "error should mention existing values in range, got: {err}"
+        );
+
         Ok(())
     }
 

@@ -51,6 +51,7 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
+use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -467,6 +468,19 @@ impl RelationalDB {
     /// Note that a `Some` result may yield an empty slice.
     pub fn program(&self) -> Result<Option<Program>, DBError> {
         Ok(self.with_read_only(Workload::Internal, |tx| self.inner.program(tx))?)
+    }
+
+    /// Obtain the module associated with this database and the transaction
+    /// offset visible to the read.
+    ///
+    /// Waiting for the returned offset to become durable proves that the
+    /// `st_module` row observed by this read is durable.
+    pub fn program_with_tx_offset(&self) -> Result<(Option<Program>, TxOffset), DBError> {
+        self.with_read_only(Workload::Internal, |tx| {
+            let program = self.inner.program(tx)?;
+            let tx_offset = tx.tx_offset().into_inner().saturating_sub(1);
+            Ok((program, tx_offset))
+        })
     }
 
     /// Read the set of clients currently connected to the database.
@@ -1227,6 +1241,16 @@ impl RelationalDB {
         view_def: &ViewDef,
     ) -> Result<(ViewId, TableId), DBError> {
         Ok(tx.create_view(module_def, view_def)?)
+    }
+
+    pub fn create_view_with_prefix(
+        &self,
+        tx: &mut MutTx,
+        owning_def: &ModuleDef,
+        view_def: &ViewDef,
+        name_prefix: &NamespacePath,
+    ) -> Result<(ViewId, TableId), DBError> {
+        Ok(tx.create_view_with_prefix(owning_def, view_def, name_prefix)?)
     }
 
     pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewId) -> Result<(), DBError> {
