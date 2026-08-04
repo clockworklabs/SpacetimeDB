@@ -99,7 +99,7 @@ impl ReviewStatus {
             return Ok(());
         }
 
-        bail!("PR #{} does not have approval from {reviewer}", self.pr_number);
+        bail!("needs approval from {reviewer}");
     }
 }
 
