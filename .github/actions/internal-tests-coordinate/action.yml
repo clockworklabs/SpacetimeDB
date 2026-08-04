@@ -1,0 +1,78 @@
+name: Coordinate Internal Tests
+description: Select, rerun, or dispatch the private CI run for a public commit.
+
+inputs:
+  github_token:
+    description: Token with access to SpacetimeDBPrivate Actions, contents, and pull requests.
+    required: true
+  public_run_id:
+    description: Public Internal Tests workflow run ID.
+    required: true
+  public_run_attempt:
+    description: Public Internal Tests workflow run attempt.
+    required: true
+  public_sha:
+    description: Immutable public commit to test.
+    required: true
+  public_pr_number:
+    description: Public pull request number, when this is a pull_request event.
+    required: false
+    default: ''
+  private_ref:
+    description: Ref containing the Rust coordinator.
+    required: false
+    default: master
+  private_workflow_ref:
+    description: Branch or tag containing the private workflow definition to dispatch.
+    required: false
+    default: master
+
+outputs:
+  run_id:
+    description: Selected private workflow run ID.
+    value: ${{ steps.coordinate.outputs.run_id }}
+  run_url:
+    description: Selected private workflow run URL.
+    value: ${{ steps.coordinate.outputs.run_url }}
+  cancel_on_cancel:
+    description: Whether cancellation of the public run should cancel the private run.
+    value: ${{ steps.coordinate.outputs.cancel_on_cancel }}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout private CI tools
+      uses: actions/checkout@v4
+      with:
+        repository: clockworklabs/SpacetimeDBPrivate
+        ref: ${{ inputs.private_ref }}
+        path: .private-ci
+        token: ${{ inputs.github_token }}
+        submodules: true
+
+    - id: coordinate
+      name: Select or trigger tests
+      shell: bash
+      working-directory: .private-ci
+      env:
+        CARGO_TARGET_DIR: ${{ runner.temp }}/internal-tests-cargo-target
+        GH_TOKEN: ${{ inputs.github_token }}
+        PRIVATE_WORKFLOW_REF: ${{ inputs.private_workflow_ref }}
+        PUBLIC_PR_NUMBER: ${{ inputs.public_pr_number }}
+        PUBLIC_RUN_ATTEMPT: ${{ inputs.public_run_attempt }}
+        PUBLIC_RUN_ID: ${{ inputs.public_run_id }}
+        PUBLIC_SHA: ${{ inputs.public_sha }}
+      run: |
+        set -euo pipefail
+        args=(
+          --private-workflow-ref "$PRIVATE_WORKFLOW_REF"
+          --public-run-id "$PUBLIC_RUN_ID"
+          --public-run-attempt "$PUBLIC_RUN_ATTEMPT"
+          --public-sha "$PUBLIC_SHA"
+        )
+        if [[ -n "$PUBLIC_PR_NUMBER" ]]; then
+          args+=(--public-pr-number "$PUBLIC_PR_NUMBER")
+        fi
+        cargo run --quiet \
+          --manifest-path private/crates/ci/Cargo.toml \
+          -- coordinate-internal-tests "${args[@]}"
