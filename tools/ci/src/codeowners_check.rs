@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use duct::cmd;
 use regex::Regex;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -13,10 +14,11 @@ pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
 
     fetch_base_ref(base_ref)?;
 
+    let mut review_statuses = ReviewStatuses::new(pr_number);
     for path in changed_files(base_ref)? {
         if is_license_file(&path) {
             if !is_trivial_license_change(base_ref, &path)? {
-                require_review_from(&path, pr_number, REQUIRED_LICENSE_REVIEWER)?;
+                require_review_from(&path, &mut review_statuses, REQUIRED_LICENSE_REVIEWER)?;
             }
         }
     }
@@ -63,15 +65,42 @@ fn is_trivial_license_change(base_ref: &str, path: &Path) -> Result<bool> {
     Ok(diff_only_changes_license_version_or_date(&diff))
 }
 
-fn require_review_from(path: &Path, pr_number: u64, reviewer: &str) -> Result<()> {
-    if approved_by(pr_number, reviewer)? {
+struct ReviewStatuses {
+    pr_number: u64,
+    latest_by_author: Option<HashMap<String, String>>,
+}
+
+impl ReviewStatuses {
+    fn new(pr_number: u64) -> Self {
+        Self {
+            pr_number,
+            latest_by_author: None,
+        }
+    }
+
+    fn approved_by(&mut self, reviewer: &str) -> Result<bool> {
+        if self.latest_by_author.is_none() {
+            self.latest_by_author = Some(latest_review_status_by_author(self.pr_number)?);
+        }
+
+        Ok(self
+            .latest_by_author
+            .as_ref()
+            .and_then(|statuses| statuses.get(reviewer))
+            .is_some_and(|state| state == "APPROVED"))
+    }
+}
+
+fn require_review_from(path: &Path, review_statuses: &mut ReviewStatuses, reviewer: &str) -> Result<()> {
+    if review_statuses.approved_by(reviewer)? {
         return Ok(());
     }
 
     bail!(
-        "{} has changes beyond version numbers and change dates, and PR #{pr_number} \
+        "{} has changes beyond version numbers and change dates, and PR #{} \
          does not have an approval from {reviewer}",
-        path.display()
+        path.display(),
+        review_statuses.pr_number
     );
 }
 
@@ -150,7 +179,7 @@ fn normalized_change_date_line(line: &str) -> String {
         .into_owned()
 }
 
-fn approved_by(pr_number: u64, reviewer: &str) -> Result<bool> {
+fn latest_review_status_by_author(pr_number: u64) -> Result<HashMap<String, String>> {
     let reviews_json = cmd!(
         "gh",
         "api",
@@ -163,21 +192,18 @@ fn approved_by(pr_number: u64, reviewer: &str) -> Result<bool> {
         .as_array()
         .ok_or_else(|| anyhow!("GitHub reviews response was not an array"))?;
 
-    let mut latest_approval = false;
+    let mut latest_by_author = HashMap::new();
     for review in reviews {
         let Some(login) = review.pointer("/user/login").and_then(Value::as_str) else {
             continue;
         };
-        if login != reviewer {
-            continue;
-        }
         let Some(state) = review.get("state").and_then(Value::as_str) else {
             continue;
         };
-        latest_approval = state == "APPROVED";
+        latest_by_author.insert(login.to_string(), state.to_string());
     }
 
-    Ok(latest_approval)
+    Ok(latest_by_author)
 }
 
 #[cfg(test)]
