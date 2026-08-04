@@ -2,19 +2,18 @@ use anyhow::{anyhow, bail, Context, Result};
 use duct::cmd;
 use regex::Regex;
 use serde_json::Value;
-use std::env;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+const REPO: &str = "clockworklabs/SpacetimeDB";
 const REQUIRED_LICENSE_REVIEWER: &str = "cloutiertyler";
 
-pub fn run(pr_number: u64) -> Result<()> {
+pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
     super::ensure_repo_root()?;
 
-    let base_ref = base_ref()?;
-    fetch_base_ref(&base_ref)?;
+    fetch_base_ref(base_ref)?;
 
-    let disallowed_files = disallowed_changes(&base_ref)?;
+    let disallowed_files = disallowed_changes(base_ref)?;
     if disallowed_files.is_empty() {
         println!("CODEOWNERS-controlled file changes are allowed.");
         return Ok(());
@@ -34,28 +33,6 @@ pub fn run(pr_number: u64) -> Result<()> {
             .collect::<Vec<_>>()
             .join(", ")
     );
-}
-
-fn base_ref() -> Result<String> {
-    if let Ok(base_ref) = env::var("GITHUB_BASE_REF") {
-        if !base_ref.is_empty() {
-            return Ok(format!("origin/{base_ref}"));
-        }
-    }
-
-    if let Ok(event_path) = env::var("GITHUB_EVENT_PATH") {
-        let event = std::fs::read_to_string(event_path)?;
-        let event: Value = serde_json::from_str(&event)?;
-        if let Some(base_ref) = event
-            .pointer("/pull_request/base/ref")
-            .and_then(Value::as_str)
-            .filter(|base_ref| !base_ref.is_empty())
-        {
-            return Ok(format!("origin/{base_ref}"));
-        }
-    }
-
-    Ok("origin/master".to_string())
 }
 
 fn fetch_base_ref(base_ref: &str) -> Result<()> {
@@ -188,11 +165,10 @@ fn normalized_change_date_line(line: &str) -> String {
 }
 
 fn approved_by(pr_number: u64, reviewer: &str) -> Result<bool> {
-    let repo = env::var("GITHUB_REPOSITORY").unwrap_or_else(|_| "clockworklabs/SpacetimeDB".to_string());
     let reviews_json = cmd!(
         "gh",
         "api",
-        &format!("repos/{repo}/pulls/{pr_number}/reviews?per_page=100")
+        &format!("repos/{REPO}/pulls/{pr_number}/reviews?per_page=100")
     )
     .read()
     .with_context(|| format!("failed to read reviews for PR #{pr_number}"))?;

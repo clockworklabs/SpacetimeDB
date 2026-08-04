@@ -384,6 +384,9 @@ enum OtherWorkflowsCmd {
     },
     /// Checks that sensitive CODEOWNERS-controlled files have the required approvals.
     CodeownersCheck {
+        /// Git ref to compare against, usually origin/<pull request base branch>.
+        #[arg(long)]
+        base_ref: String,
         /// Pull request number to inspect for approval state.
         #[arg(long)]
         pr_number: u64,
@@ -814,9 +817,9 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::OtherWorkflows {
-            cmd: OtherWorkflowsCmd::CodeownersCheck { pr_number },
+            cmd: OtherWorkflowsCmd::CodeownersCheck { base_ref, pr_number },
         }) => {
-            codeowners_check::run(pr_number)?;
+            codeowners_check::run(&base_ref, pr_number)?;
         }
 
         Some(CiCmd::PublishChecks) => {

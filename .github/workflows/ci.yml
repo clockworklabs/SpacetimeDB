@@ -505,7 +505,7 @@ jobs:
 
   codeowners_check:
     needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && github.event_name != 'push' }}
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' && github.event_name == 'pull_request' }}
     name: CODEOWNERS check
     runs-on: ubuntu-latest
     permissions:
@@ -531,21 +531,10 @@ jobs:
           prefix-key: v1
 
       - name: Run CODEOWNERS check
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
-          MERGE_GROUP_HEAD_REF: ${{ github.event.merge_group.head_ref }}
         run: |
-          set -euo pipefail
-
-          if [ -z "${PR_NUMBER}" ] && [[ "${MERGE_GROUP_HEAD_REF}" =~ /pr-([0-9]+)- ]]; then
-            PR_NUMBER="${BASH_REMATCH[1]}"
-          fi
-          if [ -z "${PR_NUMBER}" ]; then
-            echo "Could not resolve pull request number for CODEOWNERS check." >&2
-            exit 1
-          fi
-
-          cargo ci other-workflows codeowners-check --pr-number "${PR_NUMBER}"
+          cargo ci other-workflows codeowners-check \
+            --base-ref "origin/${{ github.event.pull_request.base.ref }}" \
+            --pr-number "${{ github.event.pull_request.number }}"
 
   wasm_bindings:
     needs: [merge_queue_noop]
