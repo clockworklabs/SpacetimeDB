@@ -380,8 +380,13 @@
         {
           "id": "badge-counts",
           "points": 1,
-          "desc": "The badge reflects the number of unread messages",
+          "desc": "The badge reflects the number of unread messages (paced above the app's send rate limit)",
           "steps": [
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 900
+            },
             {
               "do": "send",
               "actor": "alice",
