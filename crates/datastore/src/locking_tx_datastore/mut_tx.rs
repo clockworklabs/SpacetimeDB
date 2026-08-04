@@ -51,12 +51,15 @@ use spacetimedb_primitives::{
     col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
-    bsatn::to_writer, memory_usage::MemoryUsage, raw_identifier::RawIdentifier, ser::Serialize, AlgebraicValue,
-    ProductType, ProductValue,
+    bsatn::to_writer,
+    memory_usage::MemoryUsage,
+    raw_identifier::{RawIdentifier, RawNamespacedIdentifier},
+    ser::Serialize,
+    AlgebraicValue, ProductType, ProductValue,
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
-    identifier::Identifier,
+    identifier::{Identifier, NamespacePath, NamespacedIdentifier},
     reducer_name::ReducerName,
     schema::{
         ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
@@ -143,6 +146,11 @@ impl MemoryUsage for ViewInstanceState {
     fn heap_usage(&self) -> usize {
         self.active_subscribers.capacity() * std::mem::size_of::<(Identity, u64)>()
     }
+}
+
+pub struct ViewCleanupResult {
+    pub cleaned: usize,
+    pub backlog: bool,
 }
 
 impl ViewInstanceState {
@@ -449,7 +457,10 @@ pub struct MutTxId {
     pub(crate) _not_send: PhantomData<std::rc::Rc<()>>,
 }
 
-static_assert_size!(MutTxId, 560);
+// Grew by one word when `ReducerName` became fully qualified: it now holds a
+// `NamespacedIdentifier` (segments + joined rendering) rather than a single `Identifier`.
+// One per transaction, not per row.
+static_assert_size!(MutTxId, 576);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -774,7 +785,7 @@ impl MutTxId {
             ..
         } = view_def;
 
-        let view_name: RawIdentifier = name.clone().into();
+        let view_name: RawNamespacedIdentifier = RawIdentifier::from(name.clone()).into();
 
         // `create_table` inserts into `st_view` and updates the table schema.
         let view_id = self
@@ -789,6 +800,52 @@ impl MutTxId {
         Ok((view_id, table_id))
     }
 
+    /// Like [`create_view`] but registers the view under `name_prefix + view_def.name`
+    /// (e.g. `"lib.library_view"`), using `owning_def` for type resolution.
+    ///
+    /// The canonical `view_def.name` is used (not `accessor_name`) so that submodule views
+    /// follow the same convention as root views ([`Self::create_view`]) and match the keys
+    /// used by `ModuleDef::view_by_name_with_global_fn_ptr` and the auto-migrate plan.
+    ///
+    /// Used for submodule views whose canonical names are dot-namespaced.
+    pub fn create_view_with_prefix(
+        &mut self,
+        owning_def: &ModuleDef,
+        view_def: &ViewDef,
+        name_prefix: &NamespacePath,
+    ) -> Result<(ViewId, TableId)> {
+        let mut table_schema = TableSchema::from_view_def_for_datastore(owning_def, view_def);
+        let full_view_name = name_prefix.join(view_def.name.clone());
+        table_schema.table_name = TableName::from(full_view_name.clone());
+
+        // Namespace the alias rather than dropping it: a bare accessor name would collide
+        // when two mounts have views with the same local name, but discarding it loses the
+        // mapping codegen needs.
+        table_schema.alias = table_schema.alias.map(|alias| name_prefix.join_namespaced(&alias));
+
+        // Prefix index and constraint names so they remain globally unique across mounts.
+        for index in &mut table_schema.indexes {
+            index.index_name = name_prefix.join_raw(&index.index_name);
+        }
+        for constraint in &mut table_schema.constraints {
+            constraint.constraint_name = name_prefix.join_raw(&constraint.constraint_name);
+        }
+
+        let table_id = self.create_table(table_schema)?;
+
+        let view_name = RawNamespacedIdentifier::from(full_view_name);
+        let view_id = self
+            .view_id_from_name(&view_name)?
+            .ok_or(ViewError::NotFound(view_name))?;
+
+        self.insert_into_st_view_param(view_id, &view_def.param_columns)?;
+        self.insert_into_st_view_column(view_id, &view_def.return_columns)?;
+
+        self.committed_state_write_lock.ephemeral_tables.insert(table_id);
+
+        Ok((view_id, table_id))
+    }
+
     /// Drop the backing table of a view and update the system tables.
     pub fn drop_view(&mut self, view_id: ViewId) -> Result<()> {
         let st_view_row = self.lookup_st_view(view_id)?;
@@ -797,7 +854,11 @@ impl MutTxId {
         self.drop_st_view_param(view_id)?;
         self.drop_st_view_column(view_id)?;
         self.drop_st_view_sub(view_id)?;
-        for call in self.effective_view_instances_for_view(view_id).into_keys() {
+        let calls = self
+            .effective_view_instances_for_view(view_id)
+            .map(|(call, _)| call.clone())
+            .collect::<Vec<_>>();
+        for call in calls {
             self.view_instances.remove(call);
         }
         self.drop_view_from_committed_read_set(view_id);
@@ -934,7 +995,7 @@ impl MutTxId {
     }
 
     /// Insert a row into `st_table_accessor` for `table_name`, if an alias is present.
-    fn insert_st_table_accessor(&mut self, table_name: &TableName, alias: Option<&Identifier>) -> Result<()> {
+    fn insert_st_table_accessor(&mut self, table_name: &TableName, alias: Option<&NamespacedIdentifier>) -> Result<()> {
         let Some(accessor_name) = alias.cloned() else {
             return Ok(());
         };
@@ -966,7 +1027,11 @@ impl MutTxId {
     }
 
     /// Insert a row into `st_index_accessor` for `index_name`, if an alias is present.
-    fn insert_st_index_accessor(&mut self, index_name: &RawIdentifier, alias: Option<&RawIdentifier>) -> Result<()> {
+    fn insert_st_index_accessor(
+        &mut self,
+        index_name: &RawNamespacedIdentifier,
+        alias: Option<&RawNamespacedIdentifier>,
+    ) -> Result<()> {
         let Some(accessor_name) = alias.cloned() else {
             return Ok(());
         };
@@ -1127,7 +1192,7 @@ impl MutTxId {
     }
 
     /// Drops rows in `st_index_accessor` for this canonical `index_name`.
-    fn drop_st_index_accessor(&mut self, index_name: &RawIdentifier) -> Result<()> {
+    fn drop_st_index_accessor(&mut self, index_name: &RawNamespacedIdentifier) -> Result<()> {
         let value = index_name.as_ref().into();
         self.delete_col_eq(ST_INDEX_ACCESSOR_ID, StIndexAccessorFields::IndexName.col_id(), &value)
     }
@@ -1541,7 +1606,7 @@ impl MutTxId {
     fn create_table_and_update_seq(
         &mut self,
         table_schema: TableSchema,
-        seq_values: HashMap<RawIdentifier, (i128, i128)>,
+        seq_values: HashMap<RawNamespacedIdentifier, (i128, i128)>,
     ) -> Result<TableId> {
         let table_id = self.create_table(table_schema)?;
         let table_schema = self.schema_for_table(table_id)?;
@@ -2771,32 +2836,38 @@ impl MutTxId {
         self.view_instances.get_cloned(&self.committed_state_write_lock, call)
     }
 
-    fn effective_view_instances(&self) -> HashMap<ViewCallInfo, ViewInstanceState> {
-        let mut instances = self
+    fn effective_view_instances(&self) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> + '_ {
+        let committed = self
             .committed_state_write_lock
             .view_instances()
-            .map(|(call, state)| (call.clone(), state.clone()))
-            .collect::<HashMap<_, _>>();
+            .filter_map(|(call, state)| match self.view_instances.changes.get(call) {
+                Some(Some(tx_state)) => Some((call, tx_state)),
+                Some(None) => None,
+                None => Some((call, state)),
+            });
 
-        for (call, state) in &self.view_instances.changes {
-            match state {
-                Some(state) => {
-                    instances.insert(call.clone(), state.clone());
-                }
-                None => {
-                    instances.remove(call);
-                }
+        // The committed iterator above already applies tx-local overrides and
+        // removals for committed calls. This second half yields only tx-local
+        // inserts whose calls do not exist in committed state.
+        let tx_only = self.view_instances.changes.iter().filter_map(|(call, state)| {
+            if self.committed_state_write_lock.view_instance(call).is_some() {
+                None
+            } else {
+                state.as_ref().map(|state| (call, state))
             }
-        }
+        });
 
-        instances
+        committed.chain(tx_only)
     }
 
-    fn effective_view_instances_for_view(&self, view_id: ViewId) -> HashMap<ViewCallInfo, ViewInstanceState> {
+    fn effective_view_instances_for_view(
+        &self,
+        view_id: ViewId,
+    ) -> impl Iterator<Item = (&ViewCallInfo, &ViewInstanceState)> + '_ {
         self.effective_view_instances()
-            .into_iter()
-            .filter(|(call, _)| call.view_id == view_id)
-            .collect()
+            // FIXME: use a better data structure to store view instances in `CommittedState` and `MutTxId`,
+            // so that this can behave like an index scan rather than a full scan and filter.
+            .filter(move |(call, _)| call.view_id == view_id)
     }
 
     /// Is this view argument currently materialized?
@@ -2812,8 +2883,7 @@ impl MutTxId {
     /// Returns all materialized view instances for `view_id`.
     pub fn materialized_view_instances_for_view(&self, view_id: ViewId) -> Vec<ViewInstanceArgs> {
         self.effective_view_instances_for_view(view_id)
-            .into_values()
-            .map(|state| state.args)
+            .map(|(_, state)| state.args)
             .collect()
     }
 
@@ -2821,8 +2891,12 @@ impl MutTxId {
     #[cfg(any(test, feature = "test"))]
     pub fn active_subscribers_for_view(&self, view_id: ViewId) -> Vec<(Identity, u64)> {
         self.effective_view_instances_for_view(view_id)
-            .into_values()
-            .flat_map(|state| state.active_subscribers.into_iter())
+            .flat_map(|(_, state)| {
+                state
+                    .active_subscribers
+                    .iter()
+                    .map(|(identity, count)| (*identity, *count))
+            })
             .collect()
     }
 
@@ -2895,50 +2969,77 @@ impl MutTxId {
 
     /// Clean up materialized view arguments that have no subscribers and haven’t been used recently.
     ///
-    /// Returns a tuple `(cleaned, total_expired)`:
-    /// - `cleaned`: Number of expired materialized view arguments deleted in this run.
-    /// - `total_expired`: Total number of expired materialized view arguments found.
+    /// Expired views are cleared in batches. Each loop iteration selects up to
+    /// `batch_size` expired view calls and deletes their materialized rows.
+    ///
+    /// `max_duration` is checked between batches, so cleanup always finishes at
+    /// least one batch once it starts, even if that batch takes longer than
+    /// `max_duration`.
+    ///
+    /// Returns the number of calls cleaned and whether more expired work is
+    /// likely pending.
     pub fn clear_expired_views(
         &mut self,
         expiration_duration: Duration,
         max_duration: Duration,
-    ) -> Result<(usize, usize)> {
+        batch_size: usize,
+    ) -> Result<ViewCleanupResult> {
         let start = std::time::Instant::now();
         let expiration_threshold = Timestamp::now() - expiration_duration;
-        let mut cleaned_count = 0;
+        let is_expired = |state: &ViewInstanceState| !state.has_subscribers() && state.last_used < expiration_threshold;
+        let mut cleaned = 0;
+        let batch_size = batch_size.max(1);
 
-        let expired_items = self
-            .effective_view_instances()
-            .into_iter()
-            .filter_map(|(call, state)| {
-                (!state.has_subscribers() && state.last_used < expiration_threshold).then_some(call)
-            })
-            .collect::<Vec<_>>();
+        loop {
+            let mut unexpired_visited_building_batch = 0;
+            let filter_and_count_view_instance = |(call, state): (&ViewCallInfo, &ViewInstanceState)| {
+                if is_expired(state) {
+                    Some(call.clone())
+                } else {
+                    unexpired_visited_building_batch += 1;
+                    None
+                }
+            };
+            // FIXME: Use a better datastructure for `view_instances` in `CommittedState` and `MutTxId`
+            // to avoid having to traverse live or recently-expired views to delete stale ones.
 
-        let total_expired = expired_items.len();
-
-        for call in expired_items {
-            if start.elapsed() >= max_duration {
-                break;
-            }
-
-            let StViewRow { table_id, .. } = self.lookup_st_view(call.view_id)?;
-            let table_id = table_id.expect("views have backing table");
-            let rows_to_delete = self
-                .iter_by_col_eq(table_id, VIEW_ARG_HASH_COL, &call.arg_hash)?
-                .map(|res| res.pointer())
+            let mut batch = self
+                .effective_view_instances()
+                .filter_map(filter_and_count_view_instance)
+                .take(batch_size + 1)
                 .collect::<Vec<_>>();
 
-            for row_ptr in rows_to_delete {
-                self.delete(table_id, row_ptr)?;
+            log::info!(
+                "[{}]: Traversed {} unexpired views to collect and delete a batch of {} expired views",
+                self.ctx.database_identity,
+                unexpired_visited_building_batch,
+                batch.len()
+            );
+
+            let backlog = batch.len() > batch_size;
+            batch.truncate(batch_size);
+
+            for call in batch {
+                let StViewRow { table_id, .. } = self.lookup_st_view(call.view_id)?;
+                let table_id = table_id.expect("views have backing table");
+                let rows_to_delete = self
+                    .iter_by_col_eq(table_id, VIEW_ARG_HASH_COL, &call.arg_hash)?
+                    .map(|res| res.pointer())
+                    .collect::<Vec<_>>();
+
+                for row_ptr in rows_to_delete {
+                    self.delete(table_id, row_ptr)?;
+                }
+
+                self.drop_view_call_from_committed_read_set(call.clone());
+                self.view_instances.remove(call);
+                cleaned += 1;
             }
 
-            self.drop_view_call_from_committed_read_set(call.clone());
-            self.view_instances.remove(call);
-            cleaned_count += 1;
+            if start.elapsed() >= max_duration || !backlog {
+                return Ok(ViewCleanupResult { cleaned, backlog });
+            }
         }
-
-        Ok((cleaned_count, total_expired))
     }
 
     /// Clear all rows from all view tables without dropping them.

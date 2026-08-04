@@ -19,6 +19,18 @@ pub struct OneSimpleEnumTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_simple_enum`.
+pub struct OneSimpleEnumTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneSimpleEnumTableAccessor {
+    type Row = OneSimpleEnum;
+    type Handle<'db> = OneSimpleEnumTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_simple_enum()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_simple_enum`.
 ///

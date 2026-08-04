@@ -97,6 +97,27 @@ export function u256ToHexString(data: bigint): string {
 }
 
 /**
+ * Coerces a value that should be a `bigint` — but may arrive as a `number`
+ * or decimal string after passing through JSON — into a `bigint`.
+ *
+ * Every other type is rejected up front: bare `BigInt()` would silently
+ * accept booleans (`true` → `1n`), arrays (`[42]` → `42n`) and empty
+ * strings (`'' ` → `0n`), turning malformed payloads into valid-looking
+ * ids instead of failing early.
+ *
+ * @param value The value to coerce
+ * @param what Type name used in the error message (e.g. `'ConnectionId'`)
+ */
+export function coerceToBigInt(value: unknown, what: string): bigint {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number') return BigInt(value);
+  if (typeof value === 'string' && value.trim() !== '') return BigInt(value);
+  throw new TypeError(
+    `Cannot convert ${typeof value} to ${what}: expected bigint, integer number, or decimal string`
+  );
+}
+
+/**
  * Converts a string to PascalCase (UpperCamelCase).
  * @param str The string to convert
  * @returns The converted string

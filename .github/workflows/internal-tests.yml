@@ -59,94 +59,45 @@ jobs:
             // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
             const publicPrNumber = context.payload.pull_request?.number;
-            const preDispatch = new Date().toISOString();
             const inputs = { public_ref: publicRef };
             if (publicPrNumber) {
               inputs.public_pr_number = String(publicPrNumber);
             }
 
             // Dispatch the workflow in the target repository
-            await github.rest.actions.createWorkflowDispatch({
+            const dispatchResp = await github.rest.actions.createWorkflowDispatch({
               owner: targetOwner,
               repo: targetRepo,
               workflow_id: workflowId,
               ref: targetRef,
               inputs,
+              return_run_details: true,
             });
 
-            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-            // Find the dispatched run by name
-            let runId = null;
-            for (let attempt = 0; attempt < 20 && !runId; attempt++) { // up to ~10 minutes to locate the run
-              await sleep(5000);
-              const runsResp = await github.rest.actions.listWorkflowRuns({
-                owner: targetOwner,
-                repo: targetRepo,
-                workflow_id: workflowId,
-                event: 'workflow_dispatch',
-                branch: targetRef,
-                per_page: 50,
-              });
-
-              const expectedName = `CI [public_ref=${publicRef}]`;
-              const candidates = runsResp.data.workflow_runs
-                .filter(r => r.name === expectedName && new Date(r.created_at) >= new Date(preDispatch))
-                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-              if (candidates.length > 0) {
-                runId = candidates[0].id;
-                break;
-              }
-            }
-
-            if (!runId) {
-              core.setFailed('Failed to locate dispatched run in the private repository.');
+            const runId = dispatchResp.data.workflow_run_id;
+            const runUrl = dispatchResp.data.html_url;
+            if (!runId || !runUrl) {
+              core.setFailed(`Dispatch response did not include run details: ${JSON.stringify(dispatchResp.data)}`);
               return;
             }
 
-            const runUrl = `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
             core.info(`View run: ${runUrl}`);
             core.setOutput('run_id', String(runId));
             core.setOutput('run_url', runUrl);
 
       - name: Wait for Internal Tests to complete
         if: steps.filter.outputs.non_docs == 'true'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          script: |
-            const targetOwner = process.env.TARGET_OWNER;
-            const targetRepo = process.env.TARGET_REPO;
-            const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
-            const runUrl = `${{ steps.dispatch.outputs.run_url }}`;
-            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-            core.info(`Waiting for workflow result... ${runUrl}`);
-
-            let conclusion = null;
-            for (let attempt = 0; attempt < 240; attempt++) { // up to ~2 hours
-              const runResp = await github.rest.actions.getWorkflowRun({
-                owner: targetOwner,
-                repo: targetRepo,
-                run_id: runId
-              });
-              const { status, conclusion: c } = runResp.data;
-              if (status === 'completed') {
-                conclusion = c || 'success';
-                break;
-              }
-              await sleep(30000);
-            }
-
-            if (!conclusion) {
-              core.setFailed('Timed out waiting for private workflow to complete.');
-              return;
-            }
-
-            if (conclusion !== 'success') {
-              core.setFailed(`Private workflow failed with conclusion: ${conclusion}`);
-            }
+        env:
+          GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
+        run: |
+          set -euo pipefail
+          echo "Waiting for workflow result... ${RUN_URL}"
+          gh run watch "$RUN_ID" \
+            --repo "$TARGET_OWNER/$TARGET_REPO" \
+            --exit-status \
+            --interval 30
 
       - name: Cancel invoked run if workflow cancelled
         if: ${{ cancelled() && steps.dispatch.outputs.run_id }}

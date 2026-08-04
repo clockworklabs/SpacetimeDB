@@ -18,6 +18,18 @@ pub struct ResultIdentityStringTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `result_identity_string`.
+pub struct ResultIdentityStringTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ResultIdentityStringTableAccessor {
+    type Row = ResultIdentityString;
+    type Handle<'db> = ResultIdentityStringTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.result_identity_string()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `result_identity_string`.
 ///

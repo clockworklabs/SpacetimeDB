@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class FindWhereTestHandle : RemoteTableHandle<EventContext, WhereTest>
         {
-            protected override string RemoteTableName => "find_where_test";
+            public override string RemoteTableName => "find_where_test";
 
             internal FindWhereTestHandle(DbConnection conn) : base(conn)
             {

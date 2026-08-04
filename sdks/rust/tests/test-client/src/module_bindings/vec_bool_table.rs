@@ -18,6 +18,18 @@ pub struct VecBoolTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `vec_bool`.
+pub struct VecBoolTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for VecBoolTableAccessor {
+    type Row = VecBool;
+    type Handle<'db> = VecBoolTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.vec_bool()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `vec_bool`.
 ///

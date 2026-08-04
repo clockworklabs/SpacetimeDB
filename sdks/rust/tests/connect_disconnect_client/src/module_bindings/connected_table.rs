@@ -18,6 +18,18 @@ pub struct ConnectedTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `connected`.
+pub struct ConnectedTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for ConnectedTableAccessor {
+    type Row = Connected;
+    type Handle<'db> = ConnectedTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.connected()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `connected`.
 ///

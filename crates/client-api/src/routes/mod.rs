@@ -8,10 +8,12 @@ pub mod energy;
 pub mod health;
 pub mod identity;
 mod internal;
+pub mod mcp;
 pub mod metrics;
 pub mod prometheus;
 pub mod subscribe;
 
+pub use self::internal::TaskDumpRegistry;
 use self::{database::DatabaseRoutes, identity::IdentityRoutes};
 
 /// This API call is just designed to allow clients to determine whether or not they can

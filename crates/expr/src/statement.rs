@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::raw_identifier::RawIdentifier;
+use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_sql_parser::{
@@ -67,11 +67,13 @@ pub struct TableInsert {
 
 pub struct TableDelete {
     pub table: Arc<TableOrViewSchema>,
+    pub alias: RawNamespacedIdentifier,
     pub filter: Option<Expr>,
 }
 
 pub struct TableUpdate {
     pub table: Arc<TableOrViewSchema>,
+    pub alias: RawNamespacedIdentifier,
     pub columns: Box<[(ColId, AlgebraicValue)]>,
     pub filter: Option<Expr>,
 }
@@ -176,16 +178,13 @@ pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<Tabl
         }));
     }
     let mut vars = Relvars::default();
-    vars.insert(query_table_name, from.clone());
-    vars.insert(table_name.clone().into(), from.clone());
-    if let Some(alias) = from.inner().alias.as_ref() {
-        vars.insert(alias.clone().into(), from.clone());
-    }
+    vars.insert(query_table_name.clone(), from.clone());
     let expr = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
     Ok(TableDelete {
         table: from,
+        alias: query_table_name,
         filter: expr,
     })
 }
@@ -240,17 +239,14 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
         }
     }
     let mut vars = Relvars::default();
-    vars.insert(query_table_name, schema.clone());
-    vars.insert(table_name.clone().into(), schema.clone());
-    if let Some(alias) = schema.inner().alias.as_ref() {
-        vars.insert(alias.clone().into(), schema.clone());
-    }
+    vars.insert(query_table_name.clone(), schema.clone());
     let values = values.into_boxed_slice();
     let filter = filter
         .map(|expr| type_expr(&vars, expr, Some(&AlgebraicType::Bool)))
         .transpose()?;
     Ok(TableUpdate {
         table: schema,
+        alias: query_table_name,
         columns: values,
         filter,
     })
@@ -259,7 +255,7 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
 #[derive(Error, Debug)]
 #[error("{name} is not a valid system variable")]
 pub struct InvalidVar {
-    pub name: RawIdentifier,
+    pub name: RawNamespacedIdentifier,
 }
 
 const VAR_ROW_LIMIT: &str = "row_limit";

@@ -812,6 +812,18 @@ pub struct LoggedOutPlayerTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `logged_out_player`.
+pub struct LoggedOutPlayerTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for LoggedOutPlayerTableAccessor {
+    type Row = Player;
+    type Handle<'db> = LoggedOutPlayerTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.logged_out_player()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `logged_out_player`.
 ///
@@ -2091,6 +2103,18 @@ pub struct MyPlayerTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `my_player`.
+pub struct MyPlayerTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for MyPlayerTableAccessor {
+    type Row = Player;
+    type Handle<'db> = MyPlayerTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.my_player()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `my_player`.
 ///
@@ -2372,6 +2396,18 @@ use super::person_type::Person;
 pub struct PersonTableHandle<'ctx> {
     imp: __sdk::TableHandle<Person>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
+
+/// Lifetime-aware accessor marker for the table `person`.
+pub struct PersonTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PersonTableAccessor {
+    type Row = Person;
+    type Handle<'db> = PersonTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.person()
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -2727,6 +2763,18 @@ use super::player_type::Player;
 pub struct PlayerTableHandle<'ctx> {
     imp: __sdk::TableHandle<Player>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
+
+/// Lifetime-aware accessor marker for the table `player`.
+pub struct PlayerTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for PlayerTableAccessor {
+    type Row = Player;
+    type Handle<'db> = PlayerTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.player()
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -3752,6 +3800,18 @@ pub struct TestDTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `test_d`.
+pub struct TestDTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for TestDTableAccessor {
+    type Row = TestD;
+    type Handle<'db> = TestDTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.test_d()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `test_d`.
 ///
@@ -4037,6 +4097,18 @@ use super::foobar_type::Foobar;
 pub struct TestFTableHandle<'ctx> {
     imp: __sdk::TableHandle<TestFoobar>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
+}
+
+/// Lifetime-aware accessor marker for the table `test_f`.
+pub struct TestFTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for TestFTableAccessor {
+    type Row = TestFoobar;
+    type Handle<'db> = TestFTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.test_f()
+    }
 }
 
 #[allow(non_camel_case_types)]

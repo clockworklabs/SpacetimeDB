@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in TypeScript that defines one table and seeds two rows.
 
 TABLE
-- account
+- account (public)
   - Fields:
     - id: number (u64, primary key, autoInc)
     - email: string (unique)
