@@ -193,6 +193,18 @@ Usage: cli-docs [OPTIONS]
 - `--spacetime-path <SPACETIME_PATH>`: specify a custom path to the SpacetimeDB repository root (where the main Cargo.toml is located)
 - `--help`: Print help (see a summary with '-h')
 
+### `self-docs`
+
+**Usage:**
+```bash
+Usage: self-docs [OPTIONS]
+```
+
+**Options:**
+
+- `--check`: Only check for changes, do not generate the docs
+- `--help`: Print help (see a summary with '-h')
+
 ### `global-json-policy`
 
 **Usage:**
@@ -247,18 +259,6 @@ Usage: docs
 **Options:**
 
 - `--help`: Print help
-
-### `self-docs`
-
-**Usage:**
-```bash
-Usage: self-docs [OPTIONS]
-```
-
-**Options:**
-
-- `--check`: Only check for changes, do not generate the docs
-- `--help`: Print help (see a summary with '-h')
 
 ### `other-workflows`
 

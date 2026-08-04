@@ -352,6 +352,16 @@ enum CiCmd {
         )]
         spacetime_path: Option<String>,
     },
+    /// Generates this cargo ci README and checks for changes.
+    SelfDocs {
+        #[arg(
+            long,
+            default_value_t = false,
+            long_help = "Only check for changes, do not generate the docs"
+        )]
+        check: bool,
+    },
+
     /// Verify that any non-root global.json files are symlinks to the root global.json.
     GlobalJsonPolicy,
     /// Checks that publishable crates satisfy publish constraints.
@@ -362,15 +372,6 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
-    /// Generates this cargo ci README and checks for changes.
-    SelfDocs {
-        #[arg(
-            long,
-            default_value_t = false,
-            long_help = "Only check for changes, do not generate the docs"
-        )]
-        check: bool,
-    },
     /// Workflows should leave here if they should not be run as part of a no-subcommand invocation of `cargo ci`.
     OtherWorkflows {
         #[command(subcommand)]
