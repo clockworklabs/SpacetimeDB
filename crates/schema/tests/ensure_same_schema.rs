@@ -32,6 +32,9 @@ fn step_namespace<'a, 'def>(step: &'a AutoMigrateStep<'def>) -> Option<&'a Names
         | AutoMigrateStep::RemoveIndex((ns, _))
         | AutoMigrateStep::RemoveConstraint((ns, _))
         | AutoMigrateStep::RemoveSequence((ns, _))
+        | AutoMigrateStep::ChangeIndexSourceName((ns, _))
+        | AutoMigrateStep::ChangeTableAccessorName((ns, _))
+        | AutoMigrateStep::ChangeColumnAccessorName((ns, _), _)
         | AutoMigrateStep::AddIndex((ns, _))
         | AutoMigrateStep::AddConstraint((ns, _))
         | AutoMigrateStep::AddSequence((ns, _)) => Some(ns),

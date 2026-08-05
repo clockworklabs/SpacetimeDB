@@ -2296,21 +2296,22 @@ mod tests {
 
         let old_def = module_def("OldBasketLookup");
         let new_def = module_def("NewBasketLookup");
+        let root = NamespacePath::root();
         let index_name = RawIdentifier::new("fruit_basket_basket_id_fruit_name_idx_btree");
 
         let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
         let steps = &plan.steps[..];
 
         assert!(
-            steps.contains(&AutoMigrateStep::ChangeIndexSourceName(&index_name)),
+            steps.contains(&AutoMigrateStep::ChangeIndexSourceName((&root, &index_name))),
             "steps: {steps:?}"
         );
         assert!(
-            !steps.contains(&AutoMigrateStep::RemoveIndex(&index_name)),
+            !steps.contains(&AutoMigrateStep::RemoveIndex((&root, &index_name))),
             "steps: {steps:?}"
         );
         assert!(
-            !steps.contains(&AutoMigrateStep::AddIndex(&index_name)),
+            !steps.contains(&AutoMigrateStep::AddIndex((&root, &index_name))),
             "steps: {steps:?}"
         );
     }
@@ -2334,18 +2335,19 @@ mod tests {
 
         let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
         let steps = &plan.steps[..];
+        let root = NamespacePath::root();
         let table_name = expect_identifier("my_table");
 
         assert!(
-            steps.contains(&AutoMigrateStep::ChangeTableAccessorName(&table_name)),
+            steps.contains(&AutoMigrateStep::ChangeTableAccessorName((&root, &table_name))),
             "steps: {steps:?}"
         );
         assert!(
-            !steps.contains(&AutoMigrateStep::RemoveTable(&table_name)),
+            !steps.contains(&AutoMigrateStep::RemoveTable((&root, &table_name))),
             "steps: {steps:?}"
         );
         assert!(
-            !steps.contains(&AutoMigrateStep::AddTable(&table_name)),
+            !steps.contains(&AutoMigrateStep::AddTable((&root, &table_name))),
             "steps: {steps:?}"
         );
     }
@@ -2366,11 +2368,15 @@ mod tests {
 
         let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
         let steps = &plan.steps[..];
+        let root = NamespacePath::root();
         let table_name = expect_identifier("my_table");
         let col_name = expect_identifier("my_field");
 
         assert!(
-            steps.contains(&AutoMigrateStep::ChangeColumnAccessorName(&table_name, &col_name)),
+            steps.contains(&AutoMigrateStep::ChangeColumnAccessorName(
+                (&root, &table_name),
+                &col_name
+            )),
             "steps: {steps:?}"
         );
     }
