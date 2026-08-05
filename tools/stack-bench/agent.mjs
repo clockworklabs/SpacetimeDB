@@ -27,7 +27,7 @@ const PORTS = {
 };
 
 function parseArgs(argv) {
-  const a = { level: 1, runIndex: 0, model: 'claude-sonnet-5' };
+  const a = { level: 1, runIndex: 0, model: 'claude-sonnet-5', guidance: 'prescribed' };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--mode': a.mode = argv[++i]; break;
@@ -36,6 +36,7 @@ function parseArgs(argv) {
       case '--app': a.app = argv[++i]; break;
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--model': a.model = argv[++i]; break;
+      case '--guidance': a.guidance = argv[++i]; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
   }
@@ -91,8 +92,15 @@ function moduleName(runIndex) {
   return `stackbench-run${runIndex}`;
 }
 
+// prescribed: the stack is chosen for them (Express, socket.io, an ORM, a layout).
+// minimal: only the database, the ports the harness needs, and branding — how to
+// build it is the model's call. Prescribing a stack means measuring the stack we
+// picked, not the database.
 function backendDoc(args, p) {
-  const raw = readFileSync(join(ROOT, 'backends', `${args.backend}.md`), 'utf8');
+  const rel = args.guidance === 'minimal'
+    ? join('backends', 'minimal', `${args.backend}.md`)
+    : join('backends', `${args.backend}.md`);
+  const raw = readFileSync(join(ROOT, rel), 'utf8');
   return raw
     .replaceAll('<VITE_PORT>', String(p.vite))
     .replaceAll('<EXPRESS_PORT>', String(p.express ?? ''))

@@ -26,7 +26,8 @@ const AGENT = join(ROOT, 'agent.mjs');
 const VITE_BASE = { spacetime: 6173, postgres: 6273, mongodb: 6373 };
 
 function parseArgs(argv) {
-  const a = { model: 'claude-sonnet-5', fixRounds: 3, runIndex: 0, levels: '1', media: true };
+  const a = { model: 'claude-sonnet-5', fixRounds: 3, runIndex: 0, levels: '1', media: true,
+    guidance: 'prescribed' };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--backend': a.backend = argv[++i]; break;
@@ -40,6 +41,7 @@ function parseArgs(argv) {
       case '--agent': a.agent = argv[++i]; break;
       case '--no-media': a.media = false; break;
       case '--keep-spacetime': a.keepSpacetime = true; break;
+      case '--guidance': a.guidance = argv[++i]; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
   }
@@ -145,7 +147,8 @@ const sh = (cmd, args, opts = {}) =>
 function runAgent(args, mode, level, appDir) {
   const out = sh('node', [args.agent ?? AGENT, '--mode', mode, '--backend', args.backend,
     '--level', String(level), '--app', appDir,
-    '--run-index', String(args.runIndex), '--model', args.model], { stdio: 'pipe' });
+    '--run-index', String(args.runIndex), '--model', args.model,
+    '--guidance', args.guidance], { stdio: 'pipe' });
   return JSON.parse(out.trim().split('\n').pop());
 }
 
@@ -180,7 +183,7 @@ async function main() {
   process.on('SIGTERM', () => { teardown(); process.exit(143); });
 
   const started = Date.now();
-  const run = { backend: args.backend, model: args.model, levels: [] };
+  const run = { backend: args.backend, model: args.model, guidance: args.guidance, levels: [] };
   // One app, grown level by level — the same app the earlier levels built.
   const appDir = args.app ?? join(ROOT, 'results', `${args.backend}-run${args.runIndex}`, 'app');
 
