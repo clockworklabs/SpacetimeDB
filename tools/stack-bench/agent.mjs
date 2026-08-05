@@ -183,7 +183,18 @@ function main() {
   // `build` means from scratch. Leaving a previous app in place lets the agent
   // inherit code — and a stale BUG_REPORT.md — from a run that has nothing to do
   // with this one.
-  if (args.mode === 'build') rmSync(args.app, { recursive: true, force: true });
+  if (args.mode === 'build') {
+    // A dev server from a previous run can still hold the directory open, so
+    // give the filesystem a moment rather than failing the whole build.
+    for (let attempt = 0; ; attempt++) {
+      try { rmSync(args.app, { recursive: true, force: true }); break; }
+      catch (err) {
+        if (attempt >= 5) throw err;
+        execFileSync(process.platform === 'win32' ? 'timeout' : 'sleep',
+          process.platform === 'win32' ? ['/T', '3', '/NOBREAK'] : ['3'], { stdio: 'ignore' });
+      }
+    }
+  }
   mkdirSync(args.app, { recursive: true });
   writeFileSync(join(args.app, '.stack-bench-backend'), args.backend);
 
