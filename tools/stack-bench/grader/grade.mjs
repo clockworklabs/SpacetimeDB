@@ -70,6 +70,8 @@ class Actor {
     // tampered field. This adapts to whatever API the app happens to expose,
     // instead of the harness having to know its shape.
     this.lastWrite = null;
+    this.lastWrites = {};   // by method: a toggle adds with POST and removes with DELETE,
+                            // so replaying "the last write" can undo instead of redo
     this.lastWsWrite = null;
     // Apps write over WebSocket as often as over HTTP (socket.io emits a text
     // frame like 42["send_message",{...}]). We cannot replay those as easily,
@@ -94,7 +96,9 @@ class Actor {
       let body = null;
       try { body = JSON.parse(req.postData() ?? ''); } catch { return; }
       if (body && typeof body === 'object') {
-        this.lastWrite = { url, method: req.method(), headers: req.headers(), body };
+        const write = { url, method: req.method(), headers: req.headers(), body };
+        this.lastWrite = write;
+        this.lastWrites[req.method()] = write;
       }
     });
     page.on('console', m => {
@@ -210,6 +214,30 @@ async function runStep(step, actors, ctx) {
   // Cross-actor steps act on several actors at once, so they resolve first.
   if (step.do === 'expectOrderMatches') return expectOrderMatches(step, actors);
   if (step.do === 'expectAgreement') return expectAgreement(step, actors, ctx);
+  if (step.do === 'replayConcurrently') {
+    // Browser clicks arrive milliseconds apart and each request finishes in
+    // less, so a race never happens. Replaying each actor's own captured write
+    // through Promise.all issues them together and actually overlaps them.
+    const method = step.method ?? 'POST';
+    const pending = step.actors
+      .map(name => {
+        const a = actors.get(name);
+        return { actor: a, write: a?.lastWrites?.[method] ?? a?.lastWrite };
+      })
+      .filter(x => x.write);
+    if (pending.length < 2) {
+      throw new Error('INCONCLUSIVE: fewer than two write requests were captured, so nothing was contended. ' +
+        'This backend may not write over HTTP.');
+    }
+    await Promise.all(pending.map(({ actor, write }) =>
+      actor.page.request.fetch(write.url, {
+        method: write.method,
+        headers: { 'content-type': 'application/json' },
+        data: JSON.stringify(write.body),
+      }).catch(() => {})));
+    await pending[0].actor.page.waitForTimeout(step.settleMs ?? 3000);
+    return;
+  }
   if (step.do === 'clickConcurrently') {
     // Genuine simultaneity: every actor clicks without waiting for the others.
     // `targets` gives each actor its own element, so they compete for a shared

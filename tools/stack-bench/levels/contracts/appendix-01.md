@@ -45,6 +45,7 @@ Rules:
 | `pin-button` | present on each message |
 | `pinned-item` | the room's pinned messages, capped at three |
 | `pin-error` | visible after a rejected pin; must not appear on a successful one |
+| `pinned-unpin` | present on each pinned-item |
 
 Before declaring DEPLOY_COMPLETE, verify the hooks by running the contract
 linter (command provided in your build instructions) and fix any failures.

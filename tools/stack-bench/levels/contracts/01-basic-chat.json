@@ -186,6 +186,12 @@
       "element": "error shown when pinning is refused because the room already has three pinned messages",
       "stage": "scenario",
       "note": "visible after a rejected pin; must not appear on a successful one"
+    },
+    {
+      "id": "pinned-unpin",
+      "element": "control on a pinned entry that unpins it",
+      "stage": "scenario",
+      "note": "present on each pinned-item"
     }
   ],
   "note": "Level 1 is sequential's basic chat with accounts added. Hooks cover the sign-up and sign-in forms, rooms and messages, plus typing indicators, read receipts and unread counts."

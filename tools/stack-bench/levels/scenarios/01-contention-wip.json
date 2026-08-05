@@ -1,0 +1,278 @@
+{
+  "level": 1,
+  "status": "under development \u2014 NOT part of the scored suite",
+  "note": "Contention criteria, withheld from scoring until they can demonstrably fail. Clicking through the UI never overlaps: four clicks arrive milliseconds apart and each request finishes in less, so no race occurs \u2014 proven by a mutation that removed the advisory lock from the Postgres pin cap and changed nothing. Replaying captured writes in parallel is the intended mechanism and is written but not yet working: against an app verified correct (it serialises reactions and pins with pg_advisory_xact_lock, with comments explaining the race) the criterion still fails, so it would report a defect that is not there. Acceptance gate: grader/mutations/postgres-l1.json must go from SURVIVED to CAUGHT, and these criteria must pass on the unmutated app.",
+  "features": [
+    {
+      "id": 106,
+      "name": "Concurrent State Integrity",
+      "max": 4,
+      "actors": [
+        "alice",
+        "bob",
+        "carol",
+        "dave"
+      ],
+      "note": "Counters and capacity limits that several people touch at once. Read-modify-write loses updates and check-then-insert overshoots a cap; a serializable transaction cannot do either. Every assertion here also checks the clients AGREE, because one client showing the right number while another shows a different one is the defect non-atomic broadcast actually produces.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "signUp",
+          "actor": "carol",
+          "name": "Carol"
+        },
+        {
+          "do": "signUp",
+          "actor": "dave",
+          "name": "Dave"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "busy"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "busy"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "busy"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "carol",
+          "room": "busy"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "dave",
+          "room": "busy"
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "react to this"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "reaction-count-is-exact",
+          "points": 1,
+          "desc": "Four users reacting to the same message at the same instant leave a count of exactly four. The reactions are issued together rather than clicked in sequence: clicks arrive milliseconds apart and each request finishes in less, so they never overlap and no race occurs.",
+          "steps": [
+            {
+              "do": "clickConcurrently",
+              "actors": [
+                "alice",
+                "bob",
+                "carol",
+                "dave"
+              ],
+              "testid": "react-button",
+              "settleMs": 3500
+            },
+            {
+              "do": "clickConcurrently",
+              "actors": [
+                "alice",
+                "bob",
+                "carol",
+                "dave"
+              ],
+              "testid": "react-button",
+              "settleMs": 3500
+            },
+            {
+              "do": "replayConcurrently",
+              "actors": [
+                "alice",
+                "bob",
+                "carol",
+                "dave"
+              ],
+              "settleMs": 4000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "reaction-count",
+              "contains": "4",
+              "within": 12000
+            }
+          ]
+        },
+        {
+          "id": "reaction-count-agrees-across-clients",
+          "points": 1,
+          "desc": "Every client shows the same count. One client being right while another is wrong is what a broadcast that is not atomic with the write produces.",
+          "steps": [
+            {
+              "do": "expectAgreement",
+              "actors": [
+                "alice",
+                "bob",
+                "carol",
+                "dave"
+              ],
+              "testid": "reaction-count",
+              "within": 10000
+            }
+          ]
+        },
+        {
+          "id": "removing-a-reaction-decrements-once",
+          "points": 1,
+          "desc": "A user removing their reaction takes exactly one off the count, and every client agrees on the new total. One user contributes at most one either way.",
+          "steps": [
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "react-button"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 3000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "reaction-count",
+              "contains": "3",
+              "within": 8000
+            },
+            {
+              "do": "expectAgreement",
+              "actors": [
+                "alice",
+                "bob",
+                "carol",
+                "dave"
+              ],
+              "testid": "reaction-count",
+              "within": 10000
+            }
+          ]
+        },
+        {
+          "id": "pin-cap-holds-under-concurrency",
+          "points": 1,
+          "desc": "Four users pinning four different messages at the same instant, against a cap of three, must leave exactly three. The pins are issued together rather than clicked in sequence, because clicks arrive milliseconds apart and never contend.",
+          "steps": [
+            {
+              "do": "sendMany",
+              "actor": "alice",
+              "prefix": "PIN",
+              "count": 4,
+              "delayMs": 1400
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 2000
+            },
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "pin-button",
+              "in": {
+                "testid": "message-item",
+                "contains": "PIN-1"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "bob",
+              "testid": "pin-button",
+              "in": {
+                "testid": "message-item",
+                "contains": "PIN-2"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "carol",
+              "testid": "pin-button",
+              "in": {
+                "testid": "message-item",
+                "contains": "PIN-3"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 2500
+            },
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "pinned-unpin",
+              "in": {
+                "testid": "pinned-item",
+                "contains": "PIN-1"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "bob",
+              "testid": "pinned-unpin",
+              "in": {
+                "testid": "pinned-item",
+                "contains": "PIN-2"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "carol",
+              "testid": "pinned-unpin",
+              "in": {
+                "testid": "pinned-item",
+                "contains": "PIN-3"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 2500
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "pinned-item",
+              "count": 0,
+              "within": 8000
+            },
+            {
+              "do": "replayConcurrently",
+              "actors": [
+                "alice",
+                "bob",
+                "carol"
+              ],
+              "settleMs": 4000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "pinned-item",
+              "count": 3,
+              "within": 12000
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
