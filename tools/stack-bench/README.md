@@ -121,3 +121,14 @@ Everything needed to audit a verdict afterwards, under `<app>/stack-bench/`:
 Recording is on by default; `--no-media` turns it off for a quick check. Watching
 the failing actor's video is the fastest way to confirm a verdict is real before
 reporting it, and the recordings are the evidence published alongside results.
+
+## Watching a run
+
+Recorded videos carry an annotation banner showing which actor is being driven,
+the feature and criterion under test, and the step in progress — so a recording
+explains itself rather than needing the log beside it. The banner turns green on
+a passing criterion and red on a failure, with the failure message, immediately
+before the screenshot is captured.
+
+It is injected outside the app's root and carries no test id, so scoped
+assertions cannot see it and it cannot affect a score.

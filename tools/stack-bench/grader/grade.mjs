@@ -118,6 +118,71 @@ class Actor {
 const expand = (s, ctx) =>
   typeof s === 'string' ? s.replace(/\{room:([^}]+)\}/g, (_, b) => ctx.roomName(b)) : s;
 
+
+// ─── On-screen annotation ────────────────────────────────────────────────────
+// Recording a run is only half useful if you cannot tell what it was doing. This
+// paints the current feature, criterion and step onto each actor's page, so the
+// video explains itself. The banner carries no test id and lives outside the app
+// root, so scoped assertions cannot see it.
+
+const OVERLAY_ID = '__stackbench_overlay';
+
+async function annotate(actor, { feature, criterion, step, status } = {}) {
+  if (!actor?.annotate) return;
+  await actor.page.evaluate(({ id, feature, criterion, step, status, who }) => {
+    let el = document.getElementById(id);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = id;
+      el.style.cssText = [
+        'position:fixed', 'inset:0 0 auto 0', 'z-index:2147483647',
+        'font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace',
+        'padding:6px 10px', 'pointer-events:none', 'white-space:pre',
+        'background:rgba(12,12,16,.92)', 'color:#e8e8ef',
+        'border-bottom:2px solid #4c8dff',
+      ].join(';');
+      document.documentElement.appendChild(el);
+    }
+    const colour = status === 'fail' ? '#ff5c5c' : status === 'pass' ? '#3ddc84' : '#4c8dff';
+    el.style.borderBottomColor = colour;
+    el.textContent = [
+      `${who}   ${feature ?? ''}`,
+      criterion ? `  ${status === 'fail' ? 'FAILED' : 'checking'}: ${criterion}` : '',
+      step ? `  > ${step}` : '',
+    ].filter(Boolean).join(String.fromCharCode(10));
+  }, { id: OVERLAY_ID, feature, criterion, step, status, who: actor.name }).catch(() => {});
+}
+
+// A one-line description of a step, for the banner and the timeline.
+function describeStep(step) {
+  switch (step.do) {
+    case 'signUp': return `sign up as ${step.name}${step.expectFailure ? ' (expected to fail)' : ''}`;
+    case 'signIn': return `sign in as ${step.name}${step.expectFailure ? ' (expected to fail)' : ''}`;
+    case 'register': return `register as ${step.name}`;
+    case 'createRoom': return `create room "${step.room}"`;
+    case 'enterRoom': return `enter room "${step.room}"`;
+    case 'send': return `send "${step.text}"`;
+    case 'sendMany': return `send ${step.count} messages`;
+    case 'sendConcurrently': return `${step.senders.length} clients send at once`;
+    case 'typeInto': return 'start typing';
+    case 'clearInput': return 'stop typing';
+    case 'click': return `click ${step.testid}`;
+    case 'reload': return 'reload the page';
+    case 'closeClient': return 'close the browser';
+    case 'openClient': return 'reopen the browser';
+    case 'setOffline': return step.offline === false ? 'reconnect' : 'go offline';
+    case 'restartBackend': return 'restart the backend';
+    case 'ensureRegistered': return 'sign back in if needed';
+    case 'scheduleMessage': return `schedule "${step.text}" for ${step.secondsAhead}s ahead`;
+    case 'wait': return `wait ${step.ms}ms`;
+    case 'expect': return `expect ${step.absent ? 'no ' : ''}${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`;
+    case 'expectAllPresent': return `expect all ${step.count} "${step.prefix}" messages exactly once`;
+    case 'expectOrderMatches': return 'expect both clients agree on order';
+    case 'expectForgeryRejected': return 'expect the forged write to be rejected';
+    default: return step.do;
+  }
+}
+
 // ─── Step execution ──────────────────────────────────────────────────────────
 
 async function enterRoom(actor, roomName) {
@@ -517,7 +582,9 @@ async function gradeFeature(browser, feature, args, runCtx) {
     const page = await context.newPage();
     page.setDefaultTimeout(DEFAULT_WITHIN);
     await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    actors.set(name, new Actor(name, page, context));
+    const actor = new Actor(name, page, context);
+    actor.annotate = Boolean(args.media);
+    actors.set(name, actor);
     contexts.push({ context, name, page });
   }
 
@@ -544,6 +611,7 @@ async function gradeFeature(browser, feature, args, runCtx) {
   try {
     // Setup is not scored, but a failure makes the feature untestable (0).
     for (const step of feature.setup) {
+      await annotate(actors.get(step.actor), { feature: feature.name, criterion: 'setup', step: describeStep(step) });
       await runStep(step, actors, ctx);
     }
   } catch (err) {
@@ -560,11 +628,21 @@ async function gradeFeature(browser, feature, args, runCtx) {
   for (const criterion of feature.criteria) {
     let passed = true, detail = null;
     try {
-      for (const step of criterion.steps) await runStep(step, actors, ctx);
+      for (const step of criterion.steps) {
+        await annotate(actors.get(step.actor) ?? actors.values().next().value,
+          { feature: feature.name, criterion: criterion.id, step: describeStep(step) });
+        await runStep(step, actors, ctx);
+      }
+      for (const a of actors.values()) {
+        await annotate(a, { feature: feature.name, criterion: criterion.id, step: 'passed', status: 'pass' });
+      }
     } catch (err) {
       passed = false;
       detail = err.message;
       if (args.media) {
+        for (const a of actors.values()) {
+          await annotate(a, { feature: feature.name, criterion: criterion.id, step: err.message.slice(0, 120), status: 'fail' });
+        }
         const shotActor = actors.get(criterion.steps[criterion.steps.length - 1]?.actor) ?? actors.values().next().value;
         const shot = join(args.media, `${slug}-${criterion.id}.png`);
         await shotActor.page.screenshot({ path: shot, fullPage: true }).catch(() => {});
