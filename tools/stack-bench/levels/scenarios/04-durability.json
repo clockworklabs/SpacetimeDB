@@ -12,12 +12,12 @@
       ],
       "setup": [
         {
-          "do": "register",
+          "do": "signUp",
           "actor": "alice",
           "name": "Alice"
         },
         {
-          "do": "register",
+          "do": "signUp",
           "actor": "bob",
           "name": "Bob"
         },
@@ -73,7 +73,7 @@
               "settleMs": 5000
             },
             {
-              "do": "ensureRegistered",
+              "do": "ensureSignedIn",
               "actor": "alice",
               "name": "Alice"
             },
@@ -107,7 +107,7 @@
               "settleMs": 4000
             },
             {
-              "do": "ensureRegistered",
+              "do": "ensureSignedIn",
               "actor": "bob",
               "name": "Bob"
             },
@@ -139,12 +139,12 @@
       "note": "The client stays connected through the restart, as a user watching the page would. The socket drops and the SDK reconnects on its own \u2014 the app must come back as the SAME user and still show its own pending work.",
       "setup": [
         {
-          "do": "register",
+          "do": "signUp",
           "actor": "alice",
           "name": "Alice"
         },
         {
-          "do": "register",
+          "do": "signUp",
           "actor": "bob",
           "name": "Bob"
         },

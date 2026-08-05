@@ -11,12 +11,12 @@
       ],
       "setup": [
         {
-          "do": "register",
+          "do": "signUp",
           "actor": "alice",
           "name": "Alice"
         },
         {
-          "do": "register",
+          "do": "signUp",
           "actor": "bob",
           "name": "Bob"
         },

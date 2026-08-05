@@ -138,6 +138,25 @@
       "element": "error shown when a message is rejected (empty, too long, or rate limited)",
       "stage": "scenario",
       "note": "visible after a rejected send; must not appear on a successful send"
+    },
+    {
+      "id": "typing-indicator",
+      "element": "the \"User is typing...\" text element",
+      "stage": "scenario",
+      "note": "visible while another user in the SAME room is typing; gone within 6s of inactivity"
+    },
+    {
+      "id": "read-receipt",
+      "element": "the \"Seen by ...\" element under a message, listing the account names that have seen it (never the sender)",
+      "stage": "scenario",
+      "note": "appears under a message after another user has viewed it"
+    },
+    {
+      "id": "unread-badge",
+      "element": "numeric unread-count badge on a room entry in the sidebar",
+      "stage": "scenario",
+      "note": "appears on a room entry that has unread messages for the current user; clears when that room is opened"
     }
-  ]
+  ],
+  "note": "Level 1 is sequential's basic chat with accounts added. Hooks cover the sign-up and sign-in forms, rooms and messages, plus typing indicators, read receipts and unread counts."
 }

@@ -14,19 +14,26 @@ Only the progression changed.
 
 ---
 
-## L1 — Accounts and a live shared resource
+## L1 — Basic chat, with accounts
 
-**Unlocks:** identity integrity, write durability, real-time propagation.
+**Unlocks:** identity, durable shared state, ephemeral state, per-user state.
 
-Sign up, sign in, sign out. Credentials persist. The same person stays the same person
-across reload, reconnect, and a backend restart. A durable shared resource (rooms and
-messages) with changes appearing live for other clients.
+Sequential's basic chat, with accounts added in place of its display-name stub.
+Rooms, messages, presence, typing indicators, read receipts and unread counts.
 
-Nothing above this is verifiable without it. Ownership, attribution, authorization and
-per-user state all presuppose that "who is this" has a stable answer. The previous sequence
-had no authentication anywhere, so identity was whatever ephemeral token a connection
-happened to hold — which is not an account, and produced failures that said more about the
-harness than the backend.
+Each feature contributes a different class of state for the harness to verify.
+Accounts give stable identity, without which ownership and attribution mean
+nothing. Rooms and messages give durable shared state. Typing indicators give
+ephemeral, room-scoped state that has to expire on its own. Read receipts give
+per-user-per-message state driven by other people's actions. Unread counts give
+per-user derived counters, which is where the historical grading data shows the
+most bugs.
+
+The chat app is sequential's, unchanged: it is the app the team has history and
+human grades for, and its feature set was well chosen. Accounts are the only
+addition — "set a display name" is not authentication, and standing it in for one
+made identity untestable.
+
 
 ## L2 — Authorization
 

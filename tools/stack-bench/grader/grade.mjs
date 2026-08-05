@@ -453,14 +453,17 @@ async function runStep(step, actors, ctx) {
       await page.waitForTimeout(step.settleMs ?? 10000);
       return;
     }
+    case 'ensureSignedIn':
     case 'ensureRegistered': {
       // Some apps drop the session on reload (scored separately as an
       // invariant). Re-register so THIS test measures scheduling durability
       // rather than re-measuring session persistence.
-      const nameInput = page.locator(tid('name-input')).first();
+      const nameInput = page.locator(tid('signup-username')).first();
       if (await nameInput.isVisible().catch(() => false)) {
-        await nameInput.fill(`${step.name}-${ctx.scope}`);
-        await page.locator(tid('name-submit')).first().click();
+        const user = `${step.name}-${ctx.scope}`;
+        await nameInput.fill(user);
+        await page.locator(tid('signup-password')).first().fill(`pw-${user}`);
+        await page.locator(tid('signup-submit')).first().click();
         await page.locator(tid('room-list')).first().waitFor({ state: 'attached', timeout: DEFAULT_WITHIN });
         await page.waitForTimeout(step.settleMs ?? 1500);
       }

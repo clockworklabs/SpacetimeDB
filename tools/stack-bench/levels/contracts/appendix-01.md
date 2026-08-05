@@ -37,6 +37,9 @@ Rules:
 | `message-item` | one entry per message (repeated testid), containing the message text and its author's username |
 | `leave-room` | button that leaves the current room |
 | `send-error` | visible after a rejected send; must not appear on a successful send |
+| `typing-indicator` | visible while another user in the SAME room is typing; gone within 6s of inactivity |
+| `read-receipt` | appears under a message after another user has viewed it |
+| `unread-badge` | appears on a room entry that has unread messages for the current user; clears when that room is opened |
 
 Before declaring DEPLOY_COMPLETE, verify the hooks by running the contract
 linter (command provided in your build instructions) and fix any failures.

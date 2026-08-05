@@ -29,13 +29,23 @@ cd client && npm install && npm run dev    # on <VITE_PORT>
 
 Mongoose creates collections on first write; there is no migration step.
 
-## Identity
+## Branding & Styling
 
-The app must show **"MongoDB Chat"** as its visible title, in the sidebar or
-header, and use it as the page `<title>`. Several backends are benchmarked with
-the same specification, so an app that does not name itself is impossible to tell
-apart from the others — by a person grading it or by the harness checking it
-reached the right server.
+- App title: **"MongoDB Chat"**
+- Dark theme using official MongoDB brand colors:
+  - Primary: `#00ED64` (MongoDB green)
+  - Primary hover: `#00C957` (darker green)
+  - Secondary: `#00684A` (MongoDB forest green)
+  - Background: `#001E2B` (MongoDB dark slate)
+  - Surface: `#023430` (deep green-slate)
+  - Border: `#1C2D38` (muted slate border)
+  - Text: `#E8EDEB` (light gray)
+  - Text muted: `#889397` (MongoDB gray)
+  - Accent: `#00ED64` (MongoDB green)
+  - Success: `#00ED64` (green for online indicators)
+  - Warning: `#FFC010` (MongoDB amber)
+  - Danger: `#FF4F4F` (MongoDB red)
+
 
 ## Configuration
 

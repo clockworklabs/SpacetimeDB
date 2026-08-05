@@ -25,8 +25,8 @@ const RESET = join(ROOT, 'reset-db.sh');
 // delivery applies from the level that introduces it onward.
 const SUITES = {
   1: [
-    { id: 'features', spec: 'levels/scenarios/01-accounts.json' },
-    { id: 'invariants', spec: 'levels/scenarios/01-accounts-invariants.json' },
+    { id: 'features', spec: 'levels/scenarios/01-basic-chat.json' },
+    { id: 'invariants', spec: 'levels/scenarios/01-invariants.json' },
     { id: 'delivery', spec: 'levels/scenarios/01-delivery.json' },
   ],
 };

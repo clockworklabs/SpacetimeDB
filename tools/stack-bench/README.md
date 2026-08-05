@@ -42,7 +42,7 @@ see `levels/LEVELS.md`.
 
 | Level | Adds | Makes verifiable |
 |---|---|---|
-| 1 | accounts, rooms, messages | identity, durability, real-time |
+| 1 | accounts + basic chat | identity, durable and ephemeral state, real-time |
 | 2 | private rooms, membership | authorization, revocation, isolation |
 | 3 | reactions, polls, capacity | atomicity and isolation under contention |
 | 4 | scheduling, expiry | durability of deferred work |

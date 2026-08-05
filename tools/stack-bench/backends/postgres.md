@@ -30,13 +30,23 @@ cd client && npm install && npm run dev                            # on <VITE_PO
 
 Re-run `npx drizzle-kit push` after any schema change.
 
-## Identity
+## Branding & Styling
 
-The app must show **"PostgreSQL Chat"** as its visible title, in the sidebar or
-header, and use it as the page `<title>`. Several backends are benchmarked with
-the same specification, so an app that does not name itself is impossible to tell
-apart from the others — by a person grading it or by the harness checking it
-reached the right server.
+- App title: **"PostgreSQL Chat"**
+- Dark theme using official PostgreSQL brand colors:
+  - Primary: `#336791` (PostgreSQL blue)
+  - Primary hover: `#008bb9` (lighter PostgreSQL blue)
+  - Secondary: `#0064a5` (dark PostgreSQL blue)
+  - Background: `#1a1a2e` (dark navy)
+  - Surface: `#16213e` (slightly lighter)
+  - Border: `#2a2a4a` (muted border)
+  - Text: `#e8e8e8` (light gray)
+  - Text muted: `#848484` (PostgreSQL light grey)
+  - Accent: `#008bb9` (PostgreSQL light blue)
+  - Success: `#27ae60` (green for online indicators)
+  - Warning: `#f26522` (PostgreSQL light orange)
+  - Danger: `#cc3b03` (PostgreSQL dark orange/red)
+
 
 ## Configuration
 
