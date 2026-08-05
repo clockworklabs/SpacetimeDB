@@ -82,10 +82,6 @@ pub struct Player {
 
 The `#[default(value)]` attribute specifies the default value. The expression must be const-evaluable (usable in a `const` context).
 
-:::note Rust Limitation
-Default values in Rust must be const-evaluable. This means you **cannot** use `String` defaults like `#[default("".to_string())]` because `.to_string()` is not a const fn. Only primitive types, enums, and other const-constructible types can have defaults.
-:::
-
 </TabItem>
 <TabItem value="cpp" label="C++">
 
