@@ -95,6 +95,7 @@ jobs:
           set -euo pipefail
           echo "Waiting for workflow result... ${RUN_URL}"
           set +e
+          # Due to our limited-scope token permissions, `gh run watch` spams errors about not being able to get annotations. They look worrying but they're benign, so we filter them out.
           gh run watch "$RUN_ID" \
             --repo "$TARGET_OWNER/$TARGET_REPO" \
             --exit-status \
