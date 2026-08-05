@@ -94,10 +94,15 @@ jobs:
         run: |
           set -euo pipefail
           echo "Waiting for workflow result... ${RUN_URL}"
+          set +e
           gh run watch "$RUN_ID" \
             --repo "$TARGET_OWNER/$TARGET_REPO" \
             --exit-status \
-            --interval 30
+            --interval 30 2>&1 \
+            | grep -Fv "requesting annotations returned 403 Forbidden as the token does not have sufficient permissions"
+          watch_status="${PIPESTATUS[0]}"
+          set -e
+          exit "$watch_status"
 
       - name: Cancel invoked run if workflow cancelled
         if: ${{ cancelled() && steps.dispatch.outputs.run_id }}
