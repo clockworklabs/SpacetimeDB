@@ -7,7 +7,7 @@ use futures::TryFutureExt;
 use log::{debug, error, info, trace, warn};
 use tokio::{
     io::{AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt},
-    task::spawn_blocking,
+    runtime::Handle,
 };
 
 use crate::{
@@ -210,14 +210,13 @@ where
                         .map(|range| range.end)
                         .unwrap_or_default()
                 );
-                let (segment, index) = spawn_blocking({
+                let (segment, index) = run_blocking({
                     let repo = self.repo.clone();
                     let last_written_tx_range = self.last_written_tx_range.clone();
                     let commitlog_options = self.commitlog_options;
                     move || create_segment(repo, last_written_tx_range, commitlog_options, header)
                 })
                 .await
-                .unwrap()
                 .map(|(segment, index)| (segment.into_async_writer(), index))?;
                 stream.consume(segment::Header::LEN as _);
 
@@ -378,12 +377,27 @@ where
     fn drop(&mut self) {
         if let Some(current_segment) = self.current_segment.take() {
             trace!("closing current segment on writer drop");
-            tokio::spawn(
-                current_segment
-                    .close()
-                    .inspect_err(|e| warn!("error closing segment on drop: {e}")),
-            );
+            if let Ok(handle) = Handle::try_current() {
+                handle.spawn(
+                    current_segment
+                        .close()
+                        .inspect_err(|e| warn!("error closing segment on drop: {e}")),
+                );
+            } else {
+                warn!("dropping StreamWriter with an open segment outside a Tokio runtime; segment will not be closed asynchronously");
+            }
         }
+    }
+}
+
+async fn run_blocking<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    match Handle::try_current() {
+        Ok(handle) => handle.spawn_blocking(f).await.unwrap(),
+        Err(_) => f(),
     }
 }
 
@@ -418,15 +432,14 @@ impl<W: AsyncWriteExt + AsyncFsync + Unpin> CurrentSegment<W> {
         self.segment.flush().await?;
         self.segment.fsync().await;
         if let Some(mut index) = self.offset_index.take() {
-            let index = spawn_blocking(move || {
+            let index = run_blocking(move || {
                 index
                     .fsync()
                     .inspect_err(|e| warn!("offset index fsync failed: {e}"))
                     .ok();
                 index
             })
-            .await
-            .unwrap();
+            .await;
             self.offset_index = Some(index);
         }
 

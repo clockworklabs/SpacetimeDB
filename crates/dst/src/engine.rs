@@ -1,5 +1,6 @@
 use std::{io, sync::Arc};
 
+use serde::{Deserialize, Serialize};
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::{IsolationLevel, TxData};
@@ -449,7 +450,7 @@ impl TargetDriver<Interaction> for EngineTarget {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EngineConfig {
     pub schema: SchemaProfile,
     pub workload: InteractionWeights,
