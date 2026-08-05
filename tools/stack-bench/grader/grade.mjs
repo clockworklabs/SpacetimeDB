@@ -486,6 +486,23 @@ async function runStep(step, actors, ctx) {
       await fresh.waitForTimeout(step.settleMs ?? 4000);
       return;
     }
+    case 'expectStable': {
+      // Read the same element several times: its text must not change while
+      // nothing is happening. Catches unstable sorts and re-render churn that a
+      // single assertion sails straight past.
+      const loc = actor.loc(step.testid, { contains: expand(step.contains, ctx) });
+      await loc.waitFor({ state: 'visible', timeout: step.within ?? DEFAULT_WITHIN });
+      const seen = [];
+      for (let i = 0; i < (step.samples ?? 4); i++) {
+        seen.push(((await loc.innerText().catch(() => '')) || '').trim());
+        await page.waitForTimeout(step.intervalMs ?? 700);
+      }
+      const distinct = [...new Set(seen)];
+      if (distinct.length > 1) {
+        throw new Error(`${tid(step.testid)} changed while idle: ${distinct.map(t => JSON.stringify(t.slice(0, 50))).join(' then ')}`);
+      }
+      return;
+    }
     case 'wait': return page.waitForTimeout(step.ms);
     case 'expect': return runExpect(actor, step, ctx);
     default: throw new Error(`unknown action "${step.do}"`);

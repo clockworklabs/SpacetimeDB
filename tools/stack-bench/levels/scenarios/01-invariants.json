@@ -259,6 +259,245 @@
           ]
         }
       ]
+    },
+    {
+      "id": 104,
+      "name": "Per-User State Integrity",
+      "max": 3,
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "note": "Unread counts and read receipts are per-user state derived from other people's actions. The historical grading data has more defects here than anywhere else in level 1.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "main"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "side"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "main"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "main"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "own-messages-not-unread",
+          "points": 1,
+          "desc": "Your own message must never count as unread for you. (historical: a sender's own badge went to 1 on SpacetimeDB, twice)",
+          "steps": [
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "alice speaking"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 1200
+            },
+            {
+              "do": "enterRoom",
+              "actor": "alice",
+              "room": "side"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "unread-badge",
+              "in": {
+                "testid": "room-item",
+                "contains": "{room:main}"
+              },
+              "absent": true,
+              "within": 5000
+            }
+          ]
+        },
+        {
+          "id": "unread-does-not-resurrect",
+          "points": 1,
+          "desc": "Once a room is open its badge stays clear while new messages arrive in it \u2014 you are looking at them. (historical: badges that never cleared)",
+          "steps": [
+            {
+              "do": "enterRoom",
+              "actor": "alice",
+              "room": "main"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 1000
+            },
+            {
+              "do": "send",
+              "actor": "bob",
+              "text": "bob speaking"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "message-item",
+              "contains": "bob speaking",
+              "within": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "unread-badge",
+              "in": {
+                "testid": "room-item",
+                "contains": "{room:main}"
+              },
+              "absent": true,
+              "within": 4000
+            }
+          ]
+        },
+        {
+          "id": "receipts-keep-updating",
+          "points": 1,
+          "desc": "Receipts stay live for later messages, not just the first one. (historical: 'Seen by' that only appeared after leaving and re-entering the room)",
+          "steps": [
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 1200
+            },
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "second message from alice"
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "second message from alice",
+              "within": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "read-receipt",
+              "contains": "Bob",
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 105,
+      "name": "Presence and Display Stability",
+      "max": 2,
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "note": "Presence was wrong in six of the historically graded runs, and 'Seen by' lists were seen flickering between orderings. Neither is visible to a single assertion.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "lobby"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "lobby"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "lobby"
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "who is here"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "receipt-text-does-not-flicker",
+          "points": 1,
+          "desc": "The 'Seen by' list must not change while nothing is happening. (historical: names flipping order continuously from an unstable sort)",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "read-receipt",
+              "within": 10000
+            },
+            {
+              "do": "expectStable",
+              "actor": "alice",
+              "testid": "read-receipt",
+              "samples": 4,
+              "intervalMs": 700
+            }
+          ]
+        },
+        {
+          "id": "presence-drops-signed-out-user",
+          "points": 1,
+          "desc": "A user who signs out disappears from the online list. (historical: presence lists stale or stuck, six runs)",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "online-users",
+              "contains": "Bob",
+              "within": 8000
+            },
+            {
+              "do": "click",
+              "actor": "bob",
+              "testid": "signout"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "online-users",
+              "contains": "Bob",
+              "absent": true,
+              "within": 12000
+            }
+          ]
+        }
+      ]
     }
   ]
 }
