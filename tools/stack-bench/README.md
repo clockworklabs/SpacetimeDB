@@ -101,3 +101,23 @@ earned their place, mostly by catching this harness being wrong:
   the product, or report the failure.
 - **Negative results are results.** Several predicted advantages did not survive
   contact with a stronger model. Those are recorded, not buried.
+
+## What a run records
+
+Everything needed to audit a verdict afterwards, under `<app>/stack-bench/`:
+
+| Artifact | What it is |
+|---|---|
+| `bundle.json` | scores per suite, code metrics, environment checks |
+| `grading-<suite>.json` | every criterion, pass or fail, with the observed detail |
+| `contract-lint.json` | which test ids resolved |
+| `media/*.webm` | one video per actor per feature — what each user saw |
+| `media/*.png` | full-page screenshot at the exact moment an assertion failed |
+| `media/*.trace.zip` | Playwright trace: steppable, with DOM snapshots and network |
+| `records/bug-report-l<N>-round<M>.md` | what the agent was told each fix round |
+| `.session-<mode>-l<N>.json` | the agent session: cost, tokens, duration, final message |
+| `.prompt-<mode>-l<N>.md` | the exact prompt the agent received |
+
+Recording is on by default; `--no-media` turns it off for a quick check. Watching
+the failing actor's video is the fastest way to confirm a verdict is real before
+reporting it, and the recordings are the evidence published alongside results.

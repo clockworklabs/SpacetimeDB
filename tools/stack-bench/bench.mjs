@@ -21,7 +21,7 @@ const AGENT = join(ROOT, 'agent.mjs');
 const VITE_BASE = { spacetime: 6173, postgres: 6273, mongodb: 6373 };
 
 function parseArgs(argv) {
-  const a = { model: 'claude-sonnet-5', fixRounds: 3, runIndex: 0, levels: '1' };
+  const a = { model: 'claude-sonnet-5', fixRounds: 3, runIndex: 0, levels: '1', media: true };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--backend': a.backend = argv[++i]; break;
@@ -33,6 +33,7 @@ function parseArgs(argv) {
       case '--app': a.app = argv[++i]; break;
       case '--url': a.url = argv[++i]; break;
       case '--agent': a.agent = argv[++i]; break;
+      case '--no-media': a.media = false; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
   }
@@ -59,6 +60,7 @@ function grade(args, appDir, url, label, level) {
   const argv = [join(ROOT, 'run-suite.mjs'), '--app', appDir, '--url', url,
     '--backend', args.backend, '--label', label, '--level', String(level),
     '--run-index', String(args.runIndex),
+    ...(args.media ? [] : ['--no-media']),
     ...(args.backend === 'stub'
       ? ['--no-reset']
       : ['--restart-cmd', `bash ${join(ROOT, 'restart-backend.sh')} ${args.backend} ${appDir} ${6001 + args.runIndex}`])];
@@ -86,23 +88,36 @@ async function main() {
     let bundle = grade(args, appDir, url, `${args.backend}-l${level}`, level);
     let fixRounds = 0;
     let fixCost = 0;
+    let stalled = false;
 
     // Hand back findings and let the agent fix, until clean or out of rounds.
     while (fixRounds < args.fixRounds) {
       let wroteReport = true;
       try {
-        sh('node', [join(ROOT, 'report-bugs.mjs'), '--app', appDir], { stdio: 'pipe' });
+        sh('node', [join(ROOT, 'report-bugs.mjs'), '--app', appDir,
+          '--archive', join(appDir, 'stack-bench', 'records',
+            `bug-report-l${level}-round${fixRounds + 1}.md`)], { stdio: 'pipe' });
       } catch (err) {
         if (err.status === 3) wroteReport = false;      // nothing failed
         else throw err;
       }
       if (!wroteReport) break;
 
+      const before = bundle?.totals?.score ?? 0;
       fixRounds += 1;
       console.log(`--- fix round ${fixRounds}/${args.fixRounds} ---`);
       const fix = runAgent(args, 'fix', level, appDir);
       fixCost += fix.costUsd;
       bundle = grade(args, appDir, url, `${args.backend}-l${level}-fix${fixRounds}`, level);
+
+      // A round that moves nothing usually means the finding is not actionable —
+      // often the harness is wrong, not the app. Stop rather than pay again for
+      // the same result.
+      if ((bundle?.totals?.score ?? 0) <= before) {
+        console.log(`    no improvement (${before} -> ${bundle?.totals?.score ?? 0}); stopping fix rounds`);
+        stalled = true;
+        break;
+      }
     }
 
     run.levels.push({
@@ -115,6 +130,7 @@ async function main() {
       fixCostUsd: Number(fixCost.toFixed(4)),
       tokens: build.tokens,
       fixRounds,
+      stalled,
       durationSec: Math.round((Date.now() - t0) / 1000),
     });
     writeFileSync(join(args.out, 'run.json'), JSON.stringify(run, null, 2));

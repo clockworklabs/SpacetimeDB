@@ -1,6 +1,6 @@
 {
   "level": 1,
-  "note": "Delivery and resilience invariants \u2014 properties of the transport, not of any feature. These are the ones a human grader cannot test at all (you cannot generate concurrency or simulate a network drop by clicking), and where the asymmetry is structural: Express stacks broadcast with io.emit() AFTER awaiting the write, so delivery is not atomic with the commit; a SpacetimeDB subscription update IS the commit. Senders pace themselves above the apps' rate limits (observed: 400ms SpacetimeDB, 350ms Mongo) \u2014 the spec requires spam prevention, so a 0-delay burst is correctly rejected and would test nothing. Concurrency comes from multiple senders overlapping, not from one sender bursting.",
+  "note": "Delivery and resilience invariants \u2014 properties of the transport, not of any feature. These are the ones a human grader cannot test at all (you cannot generate concurrency or simulate a network drop by clicking), and where the asymmetry is structural: Express stacks broadcast with io.emit() AFTER awaiting the write, so delivery is not atomic with the commit; a SpacetimeDB subscription update IS the commit. Senders pace themselves above the apps' rate limits (observed: 400ms SpacetimeDB, 350ms Mongo) \u2014 the spec requires spam prevention, so a 0-delay burst is correctly rejected and would test nothing. Concurrency comes from multiple senders overlapping, not from one sender bursting. Actors sign up with credentials, as level 1 requires.",
   "features": [
     {
       "id": 201,
@@ -12,12 +12,12 @@
       ],
       "setup": [
         {
-          "do": "register",
+          "do": "signUp",
           "actor": "alice",
           "name": "Alice"
         },
         {
-          "do": "register",
+          "do": "signUp",
           "actor": "bob",
           "name": "Bob"
         },
@@ -124,12 +124,12 @@
       ],
       "setup": [
         {
-          "do": "register",
+          "do": "signUp",
           "actor": "alice",
           "name": "Alice"
         },
         {
-          "do": "register",
+          "do": "signUp",
           "actor": "bob",
           "name": "Bob"
         },

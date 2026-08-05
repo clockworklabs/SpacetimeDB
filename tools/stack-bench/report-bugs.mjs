@@ -8,14 +8,15 @@
 // Usage: node report-bugs.mjs --app <app-dir> [--out <file>]
 // Exit: 0 wrote a report, 3 nothing failed (no report written).
 
-import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 
 function parseArgs(argv) {
   const a = {};
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--app') a.app = argv[++i];
     else if (argv[i] === '--out') a.out = argv[++i];
+    else if (argv[i] === '--archive') a.archive = argv[++i];
     else { console.error(`Unknown argument: ${argv[i]}`); process.exit(2); }
   }
   if (!a.app) { console.error('Usage: node report-bugs.mjs --app <dir> [--out <file>]'); process.exit(2); }

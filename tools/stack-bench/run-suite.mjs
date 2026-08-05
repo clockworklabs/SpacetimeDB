@@ -32,7 +32,7 @@ const SUITES = {
 };
 
 function parseArgs(argv) {
-  const a = { level: '1', reset: true, media: false, runIndex: 0 };
+  const a = { level: '1', reset: true, media: true, runIndex: 0 };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--app': a.app = argv[++i]; break;
@@ -41,7 +41,7 @@ function parseArgs(argv) {
       case '--label': a.label = argv[++i]; break;
       case '--out': a.out = argv[++i]; break;
       case '--level': a.level = argv[++i]; break;
-      case '--media': a.media = true; break;
+      case '--no-media': a.media = false; break;
       case '--track': a.track = argv[++i]; break;
       case '--restart-cmd': a.restartCmd = argv[++i]; break;
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
@@ -142,7 +142,7 @@ function gradeSuite(args, suite) {
     '--label', `${args.label}-${suite.id}`, '--out', out];
   if (suite.spec) argv.push('--spec', join(ROOT, suite.spec));
   if (args.restartCmd) argv.push('--restart-cmd', args.restartCmd);
-  if (args.media) argv.push('--media', join(args.out, 'media'));
+  if (args.media) argv.push('--media', join(args.out, 'media'), '--trace');
   let stdout = '';
   try {
     stdout = run('node', argv);
@@ -151,7 +151,7 @@ function gradeSuite(args, suite) {
   }
   if (!existsSync(out)) { console.log('NO REPORT'); return null; }
   const r = JSON.parse(readFileSync(out, 'utf8'));
-  const dirty = r.environment?.preexistingRooms;
+  const dirty = r.environment?.preexistingRooms > 0 ? r.environment.preexistingRooms : 0;
   console.log(`${r.total}/${r.max}${dirty ? `  [DIRTY: ${dirty} rooms — not comparable]` : ''}`);
   for (const f of r.features) {
     for (const c of f.criteria.filter(c => !c.passed)) {
@@ -214,7 +214,7 @@ async function main() {
     bundle.suites[suite.id] = r;
     if (r) {
       total += r.total; max += r.max;
-      if (r.environment?.preexistingRooms) dirty = true;
+      if (r.environment?.preexistingRooms > 0) dirty = true;
     }
   }
 
