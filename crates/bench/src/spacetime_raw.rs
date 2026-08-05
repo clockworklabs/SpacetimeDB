@@ -69,7 +69,7 @@ impl BenchDatabase for SpacetimeRaw {
                             IndexSchema {
                                 index_id: IndexId::SENTINEL,
                                 table_id,
-                                index_name: column.name.clone().unwrap(),
+                                index_name: column.name.clone().unwrap().into(),
                                 index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                                     columns: ColId(i as _).into(),
                                 }),
