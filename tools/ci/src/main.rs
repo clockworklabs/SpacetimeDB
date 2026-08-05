@@ -1,9 +1,10 @@
 #![allow(clippy::disallowed_macros)]
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::{cmd, Expression};
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
@@ -291,6 +292,68 @@ fn check_pnpm_release_age_policy() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Codex plugin ships a copy of `skills/`, because plugin installers do not follow symlinks,
+/// this checks if the copy is in sync
+fn check_codex_plugin_skills_sync() -> Result<()> {
+    let source = Path::new("skills");
+    let copy = Path::new("codex-plugin/plugins/spacetimedb/skills");
+
+    if fs::symlink_metadata(copy)
+        .with_context(|| format!("reading {}", copy.display()))?
+        .file_type()
+        .is_symlink()
+    {
+        bail!(
+            "{} must be a real directory, not a symlink, plugin installers do not follow symlinks",
+            copy.display()
+        );
+    }
+
+    fn walk(root: &Path, dir: &Path, out: &mut BTreeSet<PathBuf>) -> Result<()> {
+        for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                walk(root, &entry.path(), out)?;
+            } else {
+                let rel = entry
+                    .path()
+                    .strip_prefix(root)
+                    .expect("walked path should be under its root")
+                    .to_path_buf();
+                out.insert(rel);
+            }
+        }
+        Ok(())
+    }
+
+    let mut source_files = BTreeSet::new();
+    walk(source, source, &mut source_files)?;
+    let mut copy_files = BTreeSet::new();
+    walk(copy, copy, &mut copy_files)?;
+
+    let mut drift = Vec::new();
+    for rel in &source_files {
+        if !copy_files.contains(rel) {
+            drift.push(format!("missing from copy: {}", rel.display()));
+        } else if fs::read(source.join(rel))? != fs::read(copy.join(rel))? {
+            drift.push(format!("differs: {}", rel.display()));
+        }
+    }
+    for rel in &copy_files {
+        if !source_files.contains(rel) {
+            drift.push(format!("extraneous in copy: {}", rel.display()));
+        }
+    }
+
+    if !drift.is_empty() {
+        bail!(
+            "codex-plugin skills copy is out of sync with skills/:\n  {}\nRun: node codex-plugin/scripts/check-skills-sync.ts --fix",
+            drift.join("\n  ")
+        );
+    }
     Ok(())
 }
 
@@ -597,6 +660,7 @@ fn main() -> Result<()> {
         Some(CiCmd::Lint) => {
             ensure_repo_root()?;
             check_pnpm_release_age_policy()?;
+            check_codex_plugin_skills_sync()?;
             // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
             // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
             // so this approach properly catches all the files, where `cargo fmt` does not.

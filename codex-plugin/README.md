@@ -103,7 +103,7 @@ have.
 ## Maintaining
 
 The skills are a copy of the repository's `skills/`, because a plugin must be self-contained (a
-symlink installs empty). See `DEVELOPMENT.md` for the sync workflow, the drift check script, and the release checklist.
+symlink installs empty). See `DEVELOP.md` for the sync workflow, the drift check script, and the release checklist.
 
 ## License
 
