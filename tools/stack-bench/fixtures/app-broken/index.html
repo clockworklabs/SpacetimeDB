@@ -1,0 +1,37 @@
+<!DOCTYPE html><html><head><title>fixture</title></head><body>
+<div id="landing">
+  <input data-testid="signup-username"><input data-testid="signup-password" type="password">
+  <button data-testid="signup-submit">Create</button>
+  <button data-testid="signin-toggle">Sign in</button>
+  <div id="si" hidden><input data-testid="signin-username"><input data-testid="signin-password" type="password">
+    <button data-testid="signin-submit">Go</button></div>
+  <div data-testid="auth-error" hidden>error</div>
+</div>
+<div id="main" hidden>
+  <span data-broken="current-user"></span><button data-testid="signout">Out</button>
+  <button data-testid="room-create">+</button>
+  <div id="rf" hidden><input data-testid="room-name-input"><button data-broken="room-name-submit">Create</button></div>
+  <ul data-testid="room-list" id="rooms"></ul><ul data-testid="online-users"></ul>
+  <main id="room" hidden><ul data-testid="message-list" id="msgs"></ul>
+    <input data-testid="message-input"><button data-testid="leave-room">Leave</button>
+    <div data-testid="send-error" hidden>too fast</div></main>
+</div>
+<script>
+const $=t=>document.querySelector(`[data-testid="${t}"]`);
+const users=JSON.parse(localStorage.getItem('u')||'{}');
+$('signup-submit').onclick=()=>{const u=$('signup-username').value;
+  if(users[u]){$('auth-error').hidden=false;return}
+  users[u]=$('signup-password').value;localStorage.setItem('u',JSON.stringify(users));
+  $('current-user').textContent=u;landing.hidden=true;main.hidden=false};
+$('signin-toggle').onclick=()=>si.hidden=false;
+$('signin-submit').onclick=()=>{const u=$('signin-username').value;
+  if(users[u]!==$('signin-password').value){$('auth-error').hidden=false;return}
+  $('current-user').textContent=u;landing.hidden=true;main.hidden=false};
+$('signout').onclick=()=>{main.hidden=true;landing.hidden=false};
+$('room-create').onclick=()=>rf.hidden=false;
+$('room-name-submit').onclick=()=>{const li=document.createElement('li');
+  li.setAttribute('data-testid','room-item');li.textContent=$('room-name-input').value;
+  li.onclick=()=>room.hidden=false;rooms.appendChild(li)};
+$('message-input').onkeydown=e=>{if(e.key!=='Enter')return;const li=document.createElement('li');
+  li.setAttribute('data-testid','message-item');li.textContent=e.target.value;msgs.appendChild(li);e.target.value=''};
+</script></body></html>

@@ -32,7 +32,7 @@ const SUITES = {
 };
 
 function parseArgs(argv) {
-  const a = { level: '1', reset: true, media: false, track: 'legacy' };
+  const a = { level: '1', reset: true, media: false, runIndex: 0 };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--app': a.app = argv[++i]; break;
@@ -68,7 +68,7 @@ const EXPECTED_DB_PORT = { postgres: '6532', mongodb: '6537' };
 
 function checkDatabaseProvenance(args) {
   const expected = EXPECTED_DB_PORT[args.backend];
-  if (!expected) return { ok: true, reason: 'spacetime module — no external database' };
+  if (!expected) return { ok: true, reason: 'no external database for this backend' };
   const envPath = join(args.app, 'server', '.env');
   if (!existsSync(envPath)) return { ok: false, reason: 'server/.env not found' };
   const url = (readFileSync(envPath, 'utf8').match(/DATABASE_URL=(.*)/) || [])[1]?.trim() ?? '';
@@ -127,7 +127,7 @@ function lint(args) {
   const out = join(args.out, 'contract-lint.json');
   try {
     run('node', [join(ROOT, 'linter', 'lint.mjs'), '--url', args.url, '--level', args.level,
-      '--label', args.label, '--out', out, ...(args.track === 'spec' ? ['--track', 'spec'] : [])]);
+      '--label', args.label, '--out', out]);
   } catch { /* non-zero exit means hooks failed; the report still lands */ }
   if (!existsSync(out)) { console.log('NO REPORT'); return null; }
   const r = JSON.parse(readFileSync(out, 'utf8'));
@@ -208,7 +208,7 @@ async function main() {
   bundle.suites.lint = lint(args);
 
   let total = 0, max = 0, dirty = false;
-  for (const suite of SUITES[args.track] ?? SUITES.legacy) {
+  for (const suite of SUITES[Number(args.level)] ?? SUITES[1]) {
     if (!(await freshen())) { console.log(`  ${suite.id}: SKIPPED (reset failed)`); continue; }
     const r = gradeSuite(args, suite);
     bundle.suites[suite.id] = r;

@@ -85,24 +85,40 @@ if (bugs.length === 0) {
   process.exit(3);
 }
 
+const behavioural = bugs.filter(b => !b.contract);
+const missingHooks = bugs.filter(b => b.contract);
+
 const lines = [
   '# Bug Report',
   '',
-  'Automated verification found the following problems. Each describes what was',
-  'expected and what actually happened. Fix the app so the behaviour matches, then',
-  'redeploy. Do not change behaviour that is already correct.',
+  'Automated verification found the following problems. Fix the app so the',
+  'behaviour matches, then redeploy. Do not change behaviour that is already',
+  'correct.',
   '',
 ];
-bugs.forEach((b, i) => {
-  lines.push(`## Bug ${i + 1}: ${b.area}`, '');
-  lines.push(`**Expected:** ${b.expected}`, '');
-  lines.push(`**Actual:** ${b.observed}`, '');
-  if (b.consoleErrors?.length) {
-    lines.push('**Browser console errors during this feature:**', '');
-    b.consoleErrors.forEach(e => lines.push(`- \`${e}\``));
-    lines.push('');
-  }
-});
+
+if (behavioural.length) {
+  lines.push('## Behaviour', '');
+  behavioural.forEach((b, i) => {
+    lines.push(`### Bug ${i + 1}: ${b.area}`, '');
+    lines.push(`**Expected:** ${b.expected}`, '');
+    lines.push(`**Actual:** ${b.observed}`, '');
+    if (b.consoleErrors?.length) {
+      lines.push('**Browser console errors during this feature:**', '');
+      b.consoleErrors.forEach(e => lines.push(`- \`${e}\``));
+      lines.push('');
+    }
+  });
+}
+
+// Kept separate: these name a test id because the test id IS the requirement,
+// where a behavioural bug must never mention how it was detected.
+if (missingHooks.length) {
+  lines.push('## Missing testing hooks', '');
+  lines.push('These elements exist in the spec but carry no test id, so they cannot', 'be verified:', '');
+  missingHooks.forEach(b => lines.push(`- ${b.expected}`));
+  lines.push('');
+}
 
 writeFileSync(args.out, lines.join('\n'));
 console.log(`Wrote ${bugs.length} bug(s) to ${args.out}`);

@@ -31,6 +31,8 @@ function parseArgs(argv) {
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--out': a.out = argv[++i]; break;
       case '--app': a.app = argv[++i]; break;
+      case '--url': a.url = argv[++i]; break;
+      case '--agent': a.agent = argv[++i]; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
   }
@@ -47,7 +49,7 @@ const sh = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...opts });
 
 function runAgent(args, mode, level, appDir) {
-  const out = sh('node', [AGENT, '--mode', mode, '--backend', args.backend,
+  const out = sh('node', [args.agent ?? AGENT, '--mode', mode, '--backend', args.backend,
     '--level', String(level), '--app', appDir,
     '--run-index', String(args.runIndex), '--model', args.model], { stdio: 'pipe' });
   return JSON.parse(out.trim().split('\n').pop());
@@ -57,7 +59,9 @@ function grade(args, appDir, url, label, level) {
   const argv = [join(ROOT, 'run-suite.mjs'), '--app', appDir, '--url', url,
     '--backend', args.backend, '--label', label, '--level', String(level),
     '--run-index', String(args.runIndex),
-    '--restart-cmd', `bash ${join(ROOT, 'restart-backend.sh')} ${args.backend} ${appDir} ${6001 + args.runIndex}`];
+    ...(args.backend === 'stub'
+      ? ['--no-reset']
+      : ['--restart-cmd', `bash ${join(ROOT, 'restart-backend.sh')} ${args.backend} ${appDir} ${6001 + args.runIndex}`])];
   try { sh('node', argv, { stdio: 'inherit' }); } catch { /* score is in the bundle */ }
   const bundle = join(appDir, 'stack-bench', 'bundle.json');
   return existsSync(bundle) ? JSON.parse(readFileSync(bundle, 'utf8')) : null;
@@ -65,7 +69,7 @@ function grade(args, appDir, url, label, level) {
 
 async function main() {
   const args = parseArgs(process.argv);
-  const url = `http://localhost:${VITE_BASE[args.backend] + args.runIndex}`;
+  const url = args.url ?? `http://localhost:${VITE_BASE[args.backend] + args.runIndex}`;
   args.out ??= join(ROOT, 'results', `${args.backend}-run${args.runIndex}`);
   mkdirSync(args.out, { recursive: true });
 
