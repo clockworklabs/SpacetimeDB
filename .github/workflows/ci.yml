@@ -175,7 +175,13 @@ jobs:
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
-          dotnet workload update
+          dotnet workload update --from-previous-sdk
+          # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
+          # Create temp global.json to target .NET 8 SDK for workload install
+          $sdk8Json = '{"sdk":{"version":"8.0.400","rollForward":"latestFeature"}}'
+          $sdk8Json | Out-File -FilePath global.json -Encoding utf8
+          dotnet workload install wasi-experimental
+          Remove-Item global.json
 
       - name: Override NuGet packages
         shell: bash
@@ -224,6 +230,14 @@ jobs:
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
           cargo ci smoketests -- --test-threads=1          
+
+      - name: Upload Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-smoketests-${{ matrix.name }}
+          path: ${{ github.workspace }}/target/cargo-timings/
+          retention-days: 30
 
   # this is a no-op version of the above check with a trivially-passing body.
   # we can't just let the check be entirely skipped because each matrix target is a required check,
@@ -338,9 +352,6 @@ jobs:
 
           wasm-bindgen --version
 
-      - name: Check engine simulation build
-        run: cargo check -p spacetimedb-engine --no-default-features --features simulation
-
         # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
         run: |
@@ -377,30 +388,6 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          save-if: false
-          prefix-key: v1
-
-      - name: Check v8 outputs
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
-
-      - name: Build keynote benchmark binaries
-        run: cargo build --release -p spacetimedb-cli -p spacetimedb-standalone
-
       # Node 24 is the current Active LTS line.
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -409,11 +396,14 @@ jobs:
 
       - uses: ./.github/actions/setup-pnpm
         with:
-          run_install: true
+          package_json_file: package.json
+          working_directory: .
+          run_install: "true"
 
-      - name: Build TypeScript SDK
-        run: pnpm build
-        working-directory: crates/bindings-typescript
+      - uses: ./.github/actions/keynote-bench-setup
+        with:
+          public_root: .
+          rust_cache_workspaces: ${{ github.workspace }}
 
       - name: Run keynote-2 benchmark regression check
         run: cargo ci keynote-bench
@@ -456,12 +446,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          save-if: false
+          shared-key: spacetimedb-index-scan
+          cache-on-failure: false
           prefix-key: v1
 
       - name: Run index scan benchmark regression check
-        run: cargo bench -p spacetimedb-bench --bench index_scan_gate
+        run: cargo run --release -p spacetimedb-index-scan-gate
 
   lints:
     needs: [merge_queue_noop]
@@ -505,6 +495,14 @@ jobs:
       - name: Run ci lint
         run: cargo ci lint
 
+      - name: Upload public lint Cargo timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-public-lints
+          path: ${{ github.workspace }}/target/cargo-timings/
+          retention-days: 30
+
   wasm_bindings:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
@@ -529,6 +527,13 @@ jobs:
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
           prefix-key: v1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: ./.github/actions/setup-pnpm
 
       - name: Run bindgen tests
         run: cargo ci wasm-bindings
@@ -805,10 +810,21 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      UNITY_VERSION: 2022.3.32f1
     steps:
       - name: Checkout repository
         id: checkout-stdb
         uses: actions/checkout@v4
+
+      # Keep this before generation/hydration so ignored build outputs do not affect hashFiles.
+      - name: Restore Unity Library
+        id: restore-unity-library
+        uses: actions/cache/restore@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: Unity-v2-${{ runner.os }}-${{ env.UNITY_VERSION }}-${{ hashFiles('demo/Blackholio/client-unity/**', 'sdks/csharp/**', 'crates/bindings-csharp/BSATN.Runtime/**', 'crates/bindings-csharp/Runtime/**', 'crates/bindings-csharp/Directory.Build.props', 'tools/regen/src/csharp.rs', 'global.json') }}
+          restore-keys: |
+            Unity-v2-${{ runner.os }}-${{ env.UNITY_VERSION }}-
 
       # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
 
@@ -918,16 +934,10 @@ jobs:
           yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "file:../../../../sdks/csharp"' manifest.json
           cat manifest.json
 
-      - uses: actions/cache@v3
-        with:
-          path: demo/Blackholio/client-unity/Library
-          key: Unity-${{ github.head_ref }}
-          restore-keys: Unity-
-
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
-          unityVersion: 2022.3.32f1 # Adjust Unity version to a valid tag
+          unityVersion: ${{ env.UNITY_VERSION }}
           projectPath: demo/Blackholio/client-unity # Path to the Unity project subdirectory
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           testMode: playmode
@@ -937,6 +947,13 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+
+      - name: Save Unity Library
+        if: ${{ github.ref == 'refs/heads/master' && steps.restore-unity-library.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: ${{ steps.restore-unity-library.outputs.cache-primary-key }}
 
   godot-testsuite:
     needs: [merge_queue_noop, lints]
@@ -1048,7 +1065,8 @@ jobs:
         run: dotnet restore --configfile ../../../NuGet.Config blackholio.csproj
 
       - name: Build Godot project
-        run: godot --headless --verbose --path demo/Blackholio/client-godot --build-solutions --quit
+        working-directory: demo/Blackholio/client-godot
+        run: godot --headless --verbose --build-solutions --quit
 
       - name: Start SpacetimeDB
         run: |
@@ -1062,7 +1080,8 @@ jobs:
           bash ./publish.sh
 
       - name: Run Godot tests
-        run: godot --headless --path demo/Blackholio/client-godot --scene res://tests/GodotPlayModeTests.tscn
+        working-directory: demo/Blackholio/client-godot
+        run: godot --headless --scene res://tests/GodotPlayModeTests.tscn
 
   csharp-testsuite:
     needs: [merge_queue_noop, lints]
@@ -1081,6 +1100,16 @@ jobs:
         uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
+
+      - name: Install .NET workloads
+        run: |
+          dotnet workload config --update-mode manifests
+          dotnet workload update --from-previous-sdk
+          # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
+          # Create temp global.json to target .NET 8 SDK for workload install
+          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > global.json
+          dotnet workload install wasi-experimental
+          rm global.json
 
       - name: Override NuGet packages
         run: |
@@ -1153,9 +1182,11 @@ jobs:
 
       - name: Check quickstart-chat bindings are up to date
         run: |
-          bash sdks/csharp/tools~/gen-quickstart.sh
+          for dotnet_version in 8 10; do
+            bash sdks/csharp/tools~/gen-quickstart.sh "$dotnet_version"
+          done
           tools/check-diff.sh templates/chat-console-cs/module_bindings || {
-              echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
+              echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh 10`.'
               exit 1
           }
 
@@ -1177,6 +1208,21 @@ jobs:
       - name: Run regression tests
         run: |
           bash sdks/csharp/tools~/run-regression-tests.sh
+          # Restore global.json symlinks (we replaced them with files to work around .NET 10 SDK bug)
+          # server is 5 levels deep from root, republishing dirs are 6 levels deep
+          if [ -f sdks/csharp/examples~/regression-tests/server/global.json ] && [ ! -L sdks/csharp/examples~/regression-tests/server/global.json ]; then
+            echo "Restoring symlink at server/global.json"
+            rm -f sdks/csharp/examples~/regression-tests/server/global.json
+            ln -s ../../../../../global.json sdks/csharp/examples~/regression-tests/server/global.json
+          fi
+          for dir in sdks/csharp/examples~/regression-tests/republishing/server-initial \
+                     sdks/csharp/examples~/regression-tests/republishing/server-republish; do
+            if [ -f "$dir/global.json" ] && [ ! -L "$dir/global.json" ]; then
+              echo "Restoring symlink at $dir/global.json"
+              rm -f "$dir/global.json"
+              ln -s ../../../../../../global.json "$dir/global.json"
+            fi
+          done
           tools/check-diff.sh sdks/csharp/examples~/regression-tests || {
               echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
               exit 1

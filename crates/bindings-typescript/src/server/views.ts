@@ -21,6 +21,7 @@ import {
   type RowObj,
   type TypeBuilder,
 } from '../lib/type_builders';
+import type { IsUnion } from '../lib/type_util';
 import { bsatnBaseSize, toPascalCase } from '../lib/util';
 import type { ReadonlyDbView } from './db_view';
 import { type QueryBuilder, type RowTypedQuery } from './query';
@@ -50,7 +51,7 @@ export function makeViewExport<
     fn.bind() as ViewExport<F>;
   viewExport[exportContext] = ctx;
   viewExport[registerExport] = (ctx, exportName) => {
-    registerView(ctx, opts, exportName, false, params, ret, fn);
+    registerView(ctx, opts, exportName, params, ret, fn);
   };
   return viewExport;
 }
@@ -72,7 +73,7 @@ export function makeAnonViewExport<
     fn.bind() as ViewExport<F>;
   viewExport[exportContext] = ctx;
   viewExport[registerExport] = (ctx, exportName) => {
-    registerView(ctx, opts, exportName, true, params, ret, fn);
+    registerAnonymousView(ctx, opts, exportName, params, ret, fn);
   };
   return viewExport;
 }
@@ -121,18 +122,6 @@ type PrimaryKeyColumnNames<Row extends RowObj> = {
       : never
     : never;
 }[keyof Row & string];
-
-// Standard conditional-type trick for distinguishing a single type from a
-// union. We use it because zero or one primary-key column is valid, but a union
-// of two or more column names means the row builder marked multiple primary
-// keys.
-type IsUnion<T, U = T> = [T] extends [never]
-  ? false
-  : T extends any
-    ? [U] extends [T]
-      ? false
-      : true
-    : false;
 
 // In generic code, row keys may widen from literal names like "id" | "name"
 // to plain `string`. That means "unknown column name", not "multiple primary
@@ -205,27 +194,63 @@ export type ViewReturnTypeBuilder =
 
 export function registerView<
   S extends UntypedSchemaDef,
-  const Anonymous extends boolean,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
 >(
   ctx: SchemaInner,
   opts: ViewOpts,
   exportName: string,
-  anon: Anonymous,
   params: Params,
   ret: Ret,
-  fn: Anonymous extends true
-    ? AnonymousViewFn<S, Params, Ret>
-    : ViewFn<S, Params, Ret>
+  fn: ViewFn<S, Params, Ret>
+) {
+  const described = describeView(ctx, opts, exportName, false, params, ret);
+  // `ctx.views` is schema-erased. `ViewCtx<S>` and `ViewCtx<any>` describe the same
+  // shape, but TypeScript cannot relate two instantiations of the mapped type
+  // `ReadonlyDbView` while the schema is still a type parameter, so erasing `S` here
+  // needs an assertion. It is sound because the runtime builds the context it passes
+  // back in from this very schema.
+  ctx.views.push(buildViewInfo(ctx, described, fn as AnyViewFn));
+}
+
+export function registerAnonymousView<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj,
+  Ret extends ViewReturnTypeBuilder,
+>(
+  ctx: SchemaInner,
+  opts: ViewOpts,
+  exportName: string,
+  params: Params,
+  ret: Ret,
+  fn: AnonymousViewFn<S, Params, Ret>
+) {
+  const described = describeView(ctx, opts, exportName, true, params, ret);
+  // Schema-erased for the same reason as `registerView` above.
+  ctx.anonViews.push(buildViewInfo(ctx, described, fn as AnyAnonymousViewFn));
+}
+
+/**
+ * The flavor-independent part of registering a view: register its types, record
+ * it in the module def, and validate its primary key. Everything here is the
+ * same for regular and anonymous views, so it is factored out of both.
+ */
+function describeView<
+  Params extends ParamsObj,
+  Ret extends ViewReturnTypeBuilder,
+>(
+  ctx: SchemaInner,
+  opts: ViewOpts,
+  exportName: string,
+  anon: boolean,
+  params: Params,
+  ret: Ret
 ) {
   ctx.defineFunction(exportName);
   const paramsBuilder = new RowBuilder(params, toPascalCase(exportName));
 
   // Register return types if they are product types
   let returnType = ctx.registerTypesRecursively(ret).algebraicType;
-
-  const { typespace } = ctx;
 
   const { value: paramType } = ctx.resolveType(
     ctx.registerTypesRecursively(paramsBuilder)
@@ -266,24 +291,39 @@ export function registerView<
     });
   }
 
-  // If it is an option, we wrap the function to make the return look like an array.
+  // An option-returning view is presented to the host as an array of zero or one
+  // rows, so its function needs wrapping and its return type rewriting.
+  const wrapOption = returnType.tag == 'Sum';
+  // Tested directly rather than via `wrapOption` so that TypeScript narrows `returnType`.
   if (returnType.tag == 'Sum') {
-    const originalFn = fn;
-    fn = ((ctx: ViewCtx<S>, args: InferTypeOfRow<Params>) => {
-      const ret = originalFn(ctx, args);
-      return ret == null ? [] : [ret];
-    }) as any;
     returnType = AlgebraicType.Array(
       returnType.value.variants[0].algebraicType
     );
   }
 
-  (anon ? ctx.anonViews : ctx.views).push({
-    fn,
+  return { paramType, returnType, wrapOption };
+}
+
+// Build the stored `ViewInfo` for `fn`. Generic over the stored function type so
+// the regular and anonymous cases each keep their own context shape here, instead
+// of being collapsed into one type by a cast.
+function buildViewInfo<F extends (viewCtx: any, params: any) => any>(
+  ctx: SchemaInner,
+  { paramType, returnType, wrapOption }: ReturnType<typeof describeView>,
+  fn: F
+): ViewInfo<F> {
+  const { typespace } = ctx;
+  return {
+    fn: wrapOption
+      ? (((viewCtx, args) => {
+          const ret = fn(viewCtx, args);
+          return ret == null ? [] : [ret];
+        }) as F)
+      : fn,
     deserializeParams: ProductType.makeDeserializer(paramType, typespace),
     serializeReturn: AlgebraicType.makeSerializer(returnType, typespace),
     returnTypeBaseSize: bsatnBaseSize(typespace, returnType),
-  });
+  };
 }
 
 // Inspect the returned row builder and collect the column property names marked

@@ -8,7 +8,7 @@ use crate::MetricsRecorderQueue;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
-use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
+use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
@@ -35,6 +35,7 @@ use spacetimedb_datastore::{
     },
     traits::TxData,
 };
+use spacetimedb_durability::local::LocalHistory;
 use spacetimedb_durability::{self as durability, History};
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
@@ -50,6 +51,7 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
+use spacetimedb_schema::identifier::NamespacePath;
 use spacetimedb_schema::reducer_name::ReducerName;
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -468,6 +470,19 @@ impl RelationalDB {
         Ok(self.with_read_only(Workload::Internal, |tx| self.inner.program(tx))?)
     }
 
+    /// Obtain the module associated with this database and the transaction
+    /// offset visible to the read.
+    ///
+    /// Waiting for the returned offset to become durable proves that the
+    /// `st_module` row observed by this read is durable.
+    pub fn program_with_tx_offset(&self) -> Result<(Option<Program>, TxOffset), DBError> {
+        self.with_read_only(Workload::Internal, |tx| {
+            let program = self.inner.program(tx)?;
+            let tx_offset = tx.tx_offset().into_inner().saturating_sub(1);
+            Ok((program, tx_offset))
+        })
+    }
+
     /// Read the set of clients currently connected to the database.
     pub fn connected_clients(&self) -> Result<ConnectedClients, DBError> {
         self.with_read_only(Workload::Internal, |tx| {
@@ -506,6 +521,10 @@ impl RelationalDB {
             snapshot_offset: TxOffset,
             page_pool: &PagePool,
         ) -> Result<ReconstructedSnapshot, Box<SnapshotError>> {
+            fn u64_to_i64(value: u64) -> i64 {
+                value.min(i64::MAX as u64) as i64
+            }
+
             log::info!("[{database_identity}] DATABASE: restoring snapshot of tx_offset {snapshot_offset}");
             let start = std::time::Instant::now();
 
@@ -515,10 +534,24 @@ impl RelationalDB {
 
             let elapsed_time = start.elapsed();
 
-            ENGINE_METRICS
-                .replay_snapshot_read_time_seconds
-                .with_label_values(database_identity)
-                .set(elapsed_time.as_secs_f64());
+            for (kind, metrics) in snapshot.read_metrics.iter() {
+                ENGINE_METRICS
+                    .replay_snapshot_read_time_seconds
+                    .with_label_values(database_identity, kind)
+                    .set(metrics.read_time.as_secs_f64());
+                ENGINE_METRICS
+                    .replay_snapshot_num_objects_read
+                    .with_label_values(database_identity, kind)
+                    .set(u64_to_i64(metrics.files));
+                ENGINE_METRICS
+                    .replay_snapshot_bytes_read_from_disk
+                    .with_label_values(database_identity, kind)
+                    .set(u64_to_i64(metrics.disk_bytes));
+                ENGINE_METRICS
+                    .replay_snapshot_read_hash_seconds
+                    .with_label_values(database_identity, kind)
+                    .set(metrics.hash_time.as_secs_f64());
+            }
 
             log::info!(
                 "[{database_identity}] DATABASE: read snapshot of tx_offset {snapshot_offset} in {elapsed_time:?}",
@@ -1108,31 +1141,48 @@ impl RelationalDB {
 /// Value is chosen arbitrarily; can be tuned later if needed.
 const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+/// Normal interval between view cleanup runs.
+const VIEW_CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Lower bound for adaptive cleanup retries when expired views remain.
+const MIN_VIEW_CLEANUP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Duration to budget for each view cleanup job,
-/// so that it doesn't hold transaction lock for to long.
+/// so that it doesn't hold transaction lock for too long.
 //TODO: Make this value configurable
 const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
 
-/// Spawn a background task that periodically cleans up expired views
+/// Number of expired view calls to clean before checking the time budget.
+const VIEW_CLEANUP_BATCH_SIZE: usize = 1024;
+
+/// Spawn a background task that periodically cleans up expired views.
+///
+/// Each cleanup run has a fixed lock-hold budget. If a run leaves expired
+/// views behind, the next run is scheduled sooner, down to
+/// [`MIN_VIEW_CLEANUP_INTERVAL`]. Once cleanup catches up, the interval resets.
 pub fn spawn_view_cleanup_loop(
     db: Arc<RelationalDB>,
     handle: &spacetimedb_runtime::Handle,
 ) -> spacetimedb_runtime::AbortHandle {
-    fn run_view_cleanup(db: &RelationalDB) {
+    fn shorten_cleanup_interval(current: std::time::Duration) -> std::time::Duration {
+        (current / 2).max(MIN_VIEW_CLEANUP_INTERVAL)
+    }
+
+    fn run_view_cleanup(db: &RelationalDB) -> bool {
         match db.with_auto_commit(Workload::Internal, |tx| {
-            tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
+            tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)
                 .map_err(DBError::from)
         }) {
-            Ok((cleared, total_expired)) => {
-                if cleared != total_expired {
+            Ok(result) => {
+                if result.backlog {
                     // TODO: metrics
                     log::info!(
-                        "[{}] DATABASE: cleared {} expired views ({} remaining)",
+                        "[{}] DATABASE: cleared {} expired views (more pending)",
                         db.database_identity(),
-                        cleared,
-                        total_expired - cleared
+                        result.cleaned,
                     );
                 }
+                result.backlog
             }
             Err(e) => {
                 log::error!(
@@ -1140,6 +1190,7 @@ pub fn spawn_view_cleanup_loop(
                     db.database_identity(),
                     e
                 );
+                false
             }
         }
     }
@@ -1147,13 +1198,20 @@ pub fn spawn_view_cleanup_loop(
     let handle_clone = handle.clone();
     handle
         .spawn(async move {
+            let mut interval = VIEW_CLEANUP_INTERVAL;
             loop {
                 // Offload actual cleanup to blocking thread pool, as `VIEW_CLEANUP_BUDGET` is defined
                 // in milliseconds, which may be too long for async tasks.
                 let db = db.clone();
-                handle_clone.spawn_blocking(move || run_view_cleanup(&db)).await;
+                let backlog = handle_clone.spawn_blocking(move || run_view_cleanup(&db)).await;
 
-                handle_clone.sleep(VIEWS_EXPIRATION).await;
+                interval = if backlog {
+                    shorten_cleanup_interval(interval)
+                } else {
+                    VIEW_CLEANUP_INTERVAL
+                };
+
+                handle_clone.sleep(interval).await;
             }
         })
         .abort_handle()
@@ -1183,6 +1241,16 @@ impl RelationalDB {
         view_def: &ViewDef,
     ) -> Result<(ViewId, TableId), DBError> {
         Ok(tx.create_view(module_def, view_def)?)
+    }
+
+    pub fn create_view_with_prefix(
+        &self,
+        tx: &mut MutTx,
+        owning_def: &ModuleDef,
+        view_def: &ViewDef,
+        name_prefix: &NamespacePath,
+    ) -> Result<(ViewId, TableId), DBError> {
+        Ok(tx.create_view_with_prefix(owning_def, view_def, name_prefix)?)
     }
 
     pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewId) -> Result<(), DBError> {
@@ -1639,11 +1707,7 @@ impl RelationalDB {
         view_call: ViewCallInfo,
         rows: Vec<ProductValue>,
     ) -> Result<(), DBError> {
-        let arg_hash = match view_call.sender {
-            Some(sender) => MutTxId::view_arg_hash(sender),
-            None => MutTxId::anonymous_view_arg_hash(),
-        };
-        self.materialize_view_arg_hash(tx, table_id, arg_hash, rows)?;
+        self.materialize_view_arg_hash(tx, table_id, view_call.arg_hash.clone(), rows)?;
         tx.replace_view_read_set(view_call);
 
         Ok(())
@@ -1753,7 +1817,7 @@ pub async fn local_history(
     runtime: &Handle,
 ) -> io::Result<impl History<TxData = Txdata> + use<>> {
     let commitlog_dir = replica_dir.commit_log();
-    asyncify(runtime, move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
+    asyncify(runtime, move || LocalHistory::open(commitlog_dir)).await
 }
 
 /// Watches snapshot creation events and compresses all commitlog segments older
@@ -2351,6 +2415,7 @@ mod tests {
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_datastore::error::{DatastoreError, IndexError};
     use spacetimedb_datastore::execution_context::ReducerContext;
+    use spacetimedb_datastore::locking_tx_datastore::ViewInstanceArgs;
     use spacetimedb_datastore::system_tables::{
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
@@ -2506,7 +2571,8 @@ mod tests {
         let row_pv = |v: u8| product![v];
 
         let mut tx = begin_mut_tx(stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        let args = ViewInstanceArgs::Sender(sender);
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, args), args, sender)?;
         stdb.materialize_view(&mut tx, table_id, sender, vec![row_pv(v)])?;
         stdb.commit_tx(tx)?;
 
@@ -2543,9 +2609,12 @@ mod tests {
             .collect()
     }
 
-    fn update_last_called(stdb: &TestDB, view_id: ViewId, sender: Identity, last_called: Timestamp) -> ResultTest<()> {
+    fn update_last_called(stdb: &TestDB, view_call: ViewCallInfo, last_called: Timestamp) -> ResultTest<()> {
         let mut tx = begin_mut_tx(stdb);
-        tx.update_view_timestamp_at(view_id, ArgId::SENTINEL, sender, last_called)?;
+        let args = tx
+            .view_instance_args(&view_call)
+            .expect("view instance should exist before updating last_called");
+        tx.update_view_timestamp_at(view_call, args, last_called)?;
         stdb.commit_tx(tx)?;
         Ok(())
     }
@@ -2575,10 +2644,10 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        let subscribers = tx.active_subscribers_for_view(view_id);
         assert!(
-            subs_rows.is_empty(),
-            "st_view_subs should be empty after reopening the database"
+            subscribers.is_empty(),
+            "view lifecycle subscribers should be empty after reopening the database"
         );
         Ok(())
     }
@@ -2600,7 +2669,8 @@ mod tests {
         };
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        let args = ViewInstanceArgs::Sender(Identity::ONE);
+        tx.subscribe_view(ViewCallInfo::from_args(view_id, args), args, Identity::ONE)?;
         stdb.materialize_view(&mut tx, table_id, Identity::ONE, vec![product![10u8]])?;
         let (tx_offset_2, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
 
@@ -2642,10 +2712,10 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        let subscribers = tx.active_subscribers_for_view(view_id);
         assert!(
-            subs_rows.is_empty(),
-            "st_view_subs should be empty after reopening the database"
+            subscribers.is_empty(),
+            "view lifecycle subscribers should be empty after reopening the database"
         );
         Ok(())
     }
@@ -2691,8 +2761,11 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st = tx.lookup_st_view_subs(view_id)?;
-        assert!(st.is_empty(), "st_view_subs should also be cleared after restart");
+        let subscribers = tx.active_subscribers_for_view(view_id);
+        assert!(
+            subscribers.is_empty(),
+            "view lifecycle subscribers should also be cleared after restart"
+        );
         stdb.commit_tx(tx)?;
 
         // Reinsert after restart
@@ -2708,6 +2781,7 @@ mod tests {
         tx.clear_expired_views(
             Instant::now().saturating_duration_since(before_sender2),
             VIEW_CLEANUP_BUDGET,
+            VIEW_CLEANUP_BATCH_SIZE,
         )?;
         stdb.commit_tx(tx)?;
 
@@ -2722,11 +2796,11 @@ mod tests {
             "Sender 2 row should remain"
         );
 
-        // And st_view_subs must reflect only sender2
+        // And lifecycle state must reflect only sender2.
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert_eq!(st_after.len(), 1);
-        assert_eq!(st_after[0].identity.0, sender2);
+        let mut subscribers = tx.active_subscribers_for_view(view_id);
+        subscribers.sort_by_key(|(identity, _)| identity.to_u256());
+        assert_eq!(subscribers, vec![(sender2, 1)]);
 
         Ok(())
     }
@@ -2745,31 +2819,27 @@ mod tests {
         let live_sender = Identity::ZERO;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
-        tx.subscribe_view(view_id, ArgId::SENTINEL, live_sender)?;
-        stdb.materialize_view_call(
-            &mut tx,
-            table_id,
-            ViewCallInfo { view_id, sender: None },
-            vec![product![42u8]],
-        )?;
+        let view_call = ViewCallInfo::anonymous(view_id);
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, stale_sender)?;
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, live_sender)?;
+        stdb.materialize_view_call(&mut tx, table_id, view_call, vec![product![42u8]])?;
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.unsubscribe_view(view_id, ArgId::SENTINEL, stale_sender)?;
+        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id), stale_sender)?;
         stdb.commit_tx(tx)?;
 
         // Make one row definitely expired without relying on wall-clock sleeps.
-        update_last_called(&stdb, view_id, stale_sender, Timestamp::UNIX_EPOCH)?;
+        update_last_called(&stdb, ViewCallInfo::anonymous(view_id), Timestamp::UNIX_EPOCH)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.update_view_timestamp(view_id, ArgId::SENTINEL, live_sender)?;
+        tx.update_view_timestamp(ViewCallInfo::anonymous(view_id), ViewInstanceArgs::Anonymous)?;
         stdb.commit_tx(tx)?;
 
         // Cleanup should remove only the stale subscriber row and keep the shared
         // anonymous materialization because another subscriber is still live.
         let mut tx = begin_mut_tx(&stdb);
-        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        let _result = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)?;
         stdb.commit_tx(tx)?;
 
         assert_eq!(
@@ -2779,11 +2849,9 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert_eq!(st_after.len(), 1);
-        assert_eq!(st_after[0].identity.0, live_sender);
-        assert!(st_after[0].has_subscribers);
-        assert_eq!(st_after[0].num_subscribers, 1);
+        let mut subscribers = tx.active_subscribers_for_view(view_id);
+        subscribers.sort_by_key(|(identity, _)| identity.to_u256());
+        assert_eq!(subscribers, vec![(live_sender, 1)]);
 
         Ok(())
     }
@@ -2800,26 +2868,22 @@ mod tests {
         let sender = Identity::ONE;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
-        stdb.materialize_view_call(
-            &mut tx,
-            table_id,
-            ViewCallInfo { view_id, sender: None },
-            vec![product![42u8]],
-        )?;
+        let view_call = ViewCallInfo::anonymous(view_id);
+        tx.subscribe_view(view_call.clone(), ViewInstanceArgs::Anonymous, sender)?;
+        stdb.materialize_view_call(&mut tx, table_id, view_call, vec![product![42u8]])?;
         stdb.commit_tx(tx)?;
 
         let mut tx = begin_mut_tx(&stdb);
-        tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        tx.unsubscribe_view(ViewCallInfo::anonymous(view_id), sender)?;
         stdb.commit_tx(tx)?;
 
         // Mark the unsubscribed row as expired so cleanup can process it immediately.
-        update_last_called(&stdb, view_id, sender, Timestamp::UNIX_EPOCH)?;
+        update_last_called(&stdb, ViewCallInfo::anonymous(view_id), Timestamp::UNIX_EPOCH)?;
 
         // With no remaining subscriber rows, cleanup should drop the shared
         // anonymous materialization and remove the bookkeeping row.
         let mut tx = begin_mut_tx(&stdb);
-        let (_cleaned, _total_expired) = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET)?;
+        let _result = tx.clear_expired_views(Duration::from_secs(1), VIEW_CLEANUP_BUDGET, VIEW_CLEANUP_BATCH_SIZE)?;
         stdb.commit_tx(tx)?;
 
         assert!(
@@ -2828,8 +2892,8 @@ mod tests {
         );
 
         let tx = begin_mut_tx(&stdb);
-        let st_after = tx.lookup_st_view_subs(view_id)?;
-        assert!(st_after.is_empty());
+        let subscribers = tx.active_subscribers_for_view(view_id);
+        assert!(subscribers.is_empty());
 
         Ok(())
     }

@@ -37,6 +37,8 @@ pub struct Database {
     ///
     /// Updating the database's module will **not** change this value.
     pub initial_program: Hash,
+    /// Generation of the current bootstrap requirement for `initial_program`.
+    pub bootstrap_generation: u64,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]

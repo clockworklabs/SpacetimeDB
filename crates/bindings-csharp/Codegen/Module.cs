@@ -774,15 +774,15 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     /// Represents a generated accessor for a table, providing different access patterns
     /// and visibility levels for the underlying table data.
     /// </summary>
-    /// <param name="tableAccessorName">Name of the generated accessor type</param>
-    /// <param name="tableName">Fully qualified name of the table type</param>
-    /// <param name="tableAccessor">C# source code for the accessor implementation</param>
-    /// <param name="getter">C# property getter for accessing the accessor</param>
+    /// <param name="TableAccessorName">Name of the generated accessor type</param>
+    /// <param name="TableName">Fully qualified name of the table type</param>
+    /// <param name="TableAccessor">C# source code for the accessor implementation</param>
+    /// <param name="Getter">C# property getter for accessing the accessor</param>
     public record struct GeneratedTableAccessor(
-        string tableAccessorName,
-        string tableName,
-        string tableAccessor,
-        string getter
+        string TableAccessorName,
+        string TableName,
+        string TableAccessor,
+        string Getter
     );
 
     /// <summary>
@@ -874,10 +874,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     }
 
     public record struct GeneratedReadOnlyAccessor(
-        string tableAccessorName,
-        string tableName,
-        string readOnlyAccessor,
-        string readOnlyGetter
+        string TableAccessorName,
+        string TableName,
+        string ReadOnlyAccessor,
+        string ReadOnlyGetter
     );
 
     public IEnumerable<GeneratedReadOnlyAccessor> GenerateReadOnlyAccessors()
@@ -1035,14 +1035,14 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     /// <summary>
     /// Represents a default value for a table field, used during table creation.
     /// </summary>
-    /// <param name="tableName">Name of the table containing the field</param>
-    /// <param name="columnId">Index of the column in the table</param>
-    /// <param name="value">String representation of the default value</param>
+    /// <param name="TableName">Name of the table containing the field</param>
+    /// <param name="ColumnId">Index of the column in the table</param>
+    /// <param name="Value">String representation of the default value</param>
     /// <param name="BSATNTypeName">BSATN Type name of the default value</param>
     public record struct FieldDefaultValue(
-        string tableName,
-        string columnId,
-        string value,
+        string TableName,
+        string ColumnId,
+        string Value,
         string BSATNTypeName
     );
 
@@ -1072,7 +1072,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             );
 
             var withDefaultValues =
-                fieldsWithDefaultValues as ColumnDeclaration[] ?? fieldsWithDefaultValues.ToArray();
+                fieldsWithDefaultValues as ColumnDeclaration[] ?? [.. fieldsWithDefaultValues];
             foreach (var fieldsWithDefaultValue in withDefaultValues)
             {
                 if (
@@ -1734,49 +1734,48 @@ record ProcedureDeclaration
 
         if (HasWrongSignature)
         {
-            bodyLines = new[]
-            {
+            bodyLines =
+            [
                 "throw new System.InvalidOperationException(\"Invalid procedure signature.\");",
-            };
+            ];
         }
         else if (HasTxWrapper)
         {
-            var successLines = txPayloadIsUnit
-                ? new[] { "return System.Array.Empty<byte>();" }
-                : new[]
-                {
+            string[] successLines = txPayloadIsUnit
+                ? ["return System.Array.Empty<byte>();"]
+                :
+                [
                     "using var output = new MemoryStream();",
                     "using var writer = new BinaryWriter(output);",
                     "__txReturnRW.Write(writer, outcome.Value!);",
                     "return output.ToArray();",
-                };
+                ];
 
-            bodyLines = new[]
-            {
+            bodyLines =
+            [
                 $"var outcome = {invocation};",
                 "if (!outcome.IsSuccess)",
                 "{",
                 "    throw outcome.Error ?? new System.InvalidOperationException(\"Transaction failed.\");",
                 "}",
-            }
-                .Concat(successLines)
-                .ToArray();
+                .. successLines,
+            ];
         }
         else if (ReturnType.Name == "SpacetimeDB.Unit")
         {
-            bodyLines = new[] { $"{invocation};", "return System.Array.Empty<byte>();" };
+            bodyLines = [$"{invocation};", "return System.Array.Empty<byte>();"];
         }
         else
         {
             var serializer = $"new {ReturnType.ToBSATNString()}()";
-            bodyLines = new[]
-            {
+            bodyLines =
+            [
                 $"var result = {invocation};",
                 "using var output = new MemoryStream();",
                 "using var writer = new BinaryWriter(output);",
                 $"{serializer}.Write(writer, result);",
                 "return output.ToArray();",
-            };
+            ];
         }
 
         var invokeBody = string.Join("\n", bodyLines.Select(line => $"                    {line}"));
@@ -2360,8 +2359,8 @@ public class Module : IIncrementalGenerator
             tables
                 .SelectMany((t, ct) => t.GenerateTableAccessors())
                 .WithTrackingName("SpacetimeDB.Table.GenerateTableAccessors"),
-            v => v.tableAccessorName,
-            v => v.tableName
+            v => v.TableAccessorName,
+            v => v.TableName
         );
 
         var readOnlyAccessors = CollectDistinct(
@@ -2370,8 +2369,8 @@ public class Module : IIncrementalGenerator
             tables
                 .SelectMany((t, ct) => t.GenerateReadOnlyAccessors())
                 .WithTrackingName("SpacetimeDB.Table.GenerateReadOnlyAccessors"),
-            v => v.tableAccessorName + "ReadOnly",
-            v => v.tableName
+            v => v.TableAccessorName + "ReadOnly",
+            v => v.TableName
         );
 
         var rlsFilters = context
@@ -2403,8 +2402,8 @@ public class Module : IIncrementalGenerator
             tables
                 .SelectMany((t, ct) => t.GenerateDefaultValues())
                 .WithTrackingName("SpacetimeDB.Table.GenerateDefaultValues"),
-            v => v.tableName + "_" + v.columnId,
-            v => v.tableName + "_" + v.columnId
+            v => v.TableName + "_" + v.ColumnId,
+            v => v.TableName + "_" + v.ColumnId
         );
 
         var moduleOutputInputs = tableAccessors
@@ -2761,7 +2760,7 @@ public class Module : IIncrementalGenerator
                         }
 
                         public sealed class Local : global::SpacetimeDB.LocalBase {
-                            {{string.Join("\n", tableAccessors.Select(v => v.getter))}}
+                            {{string.Join("\n", tableAccessors.Select(v => v.Getter))}}
                         }
                         
                         public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext 
@@ -2787,7 +2786,7 @@ public class Module : IIncrementalGenerator
                     }
                     
                     namespace SpacetimeDB.Internal.TableHandles {
-                        {{string.Join("\n", tableAccessors.Select(v => v.tableAccessor))}}
+                        {{string.Join("\n", tableAccessors.Select(v => v.TableAccessor))}}
                     }
                     
                     {{string.Join("\n",
@@ -2800,12 +2799,12 @@ public class Module : IIncrementalGenerator
                     )}}
                         
                     namespace SpacetimeDB.Internal.ViewHandles {
-                        {{string.Join("\n", readOnlyAccessors.Array.Select(v => v.readOnlyAccessor))}}
+                        {{string.Join("\n", readOnlyAccessors.Array.Select(v => v.ReadOnlyAccessor))}}
                     }
                     
                     namespace SpacetimeDB.Internal {
                         public sealed partial class LocalReadOnly {
-                            {{string.Join("\n", readOnlyAccessors.Select(v => v.readOnlyGetter))}}
+                            {{string.Join("\n", readOnlyAccessors.Select(v => v.ReadOnlyGetter))}}
                         }
                     }
                     
@@ -2822,7 +2821,7 @@ public class Module : IIncrementalGenerator
                         public static List<T> ToListOrEmpty<T>(T? value) where T : class
                                 => value is null ? new List<T>() : new List<T> { value };
 
-                    #if EXPERIMENTAL_WASM_AOT
+                    #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
                         // In AOT mode we're building a library.
                         // Main method won't be called automatically, so we need to export it as a preinit function.
                         [UnmanagedCallersOnly(EntryPoint = "__preinit__10_init_csharp")]
@@ -2877,7 +2876,7 @@ public class Module : IIncrementalGenerator
 
                             {{string.Join(
                                 "\n",
-                                tableAccessors.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{EscapeIdentifier(t.tableAccessorName)}>();")
+                                tableAccessors.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.TableName}, SpacetimeDB.Internal.TableHandles.{EscapeIdentifier(t.TableAccessorName)}>();")
                             )}}
                             {{(
                                 httpRouters.Array.FirstOrDefault(r => r.IsValid) is { } router
@@ -2895,15 +2894,15 @@ public class Module : IIncrementalGenerator
                                          + $"var value = new {d.BSATNTypeName}();\n"
                                          + "__memoryStream.Position = 0;\n"
                                          + "__memoryStream.SetLength(0);\n"
-                                         + $"value.Write(__writer, {d.value});\n"
+                                         + $"value.Write(__writer, {d.Value});\n"
                                          + "var array = __memoryStream.ToArray();\n"
-                                         + $"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, array);"
+                                         + $"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.TableName}\", {d.ColumnId}, array);"
                                          + "\n}\n")
                             )}}
                         }
 
                     // Exports only work from the main assembly, so we need to generate forwarding methods.
-                    #if EXPERIMENTAL_WASM_AOT
+                    #if EXPERIMENTAL_WASM_AOT || NET10_0_OR_GREATER
                         [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
                         public static void __describe_module__(SpacetimeDB.Internal.BytesSink d) => SpacetimeDB.Internal.Module.__describe_module__(d);
 

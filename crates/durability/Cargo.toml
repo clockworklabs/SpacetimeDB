@@ -8,9 +8,6 @@ license-file = "LICENSE"
 description = "Traits and single-node implementation of durability for SpacetimeDB."
 
 [features]
-default = ["tokio"]
-tokio = ["spacetimedb-runtime/tokio"]
-simulation = ["spacetimedb-runtime/simulation"]
 test = []
 fallocate = ["spacetimedb-commitlog/fallocate"]
 
@@ -24,7 +21,7 @@ scopeguard.workspace = true
 spacetimedb-commitlog.workspace = true
 spacetimedb-fs-utils.workspace = true
 spacetimedb-paths.workspace = true
-spacetimedb-runtime = { path = "../runtime", default-features = false }
+spacetimedb-runtime.workspace = true
 spacetimedb-sats.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

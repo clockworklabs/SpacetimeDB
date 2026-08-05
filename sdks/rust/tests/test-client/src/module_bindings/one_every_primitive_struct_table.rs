@@ -19,6 +19,18 @@ pub struct OneEveryPrimitiveStructTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `one_every_primitive_struct`.
+pub struct OneEveryPrimitiveStructTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for OneEveryPrimitiveStructTableAccessor {
+    type Row = OneEveryPrimitiveStruct;
+    type Handle<'db> = OneEveryPrimitiveStructTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.one_every_primitive_struct()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `one_every_primitive_struct`.
 ///
@@ -42,6 +54,18 @@ impl OneEveryPrimitiveStructTableAccess for super::RemoteTables {
 
 pub struct OneEveryPrimitiveStructInsertCallbackId(__sdk::CallbackId);
 pub struct OneEveryPrimitiveStructDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for OneEveryPrimitiveStructTableHandle<'ctx> {
+    type Row = OneEveryPrimitiveStruct;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = OneEveryPrimitiveStruct> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for OneEveryPrimitiveStructTableHandle<'ctx> {
     type Row = OneEveryPrimitiveStruct;
@@ -67,6 +91,36 @@ impl<'ctx> __sdk::Table for OneEveryPrimitiveStructTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = OneEveryPrimitiveStructDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneEveryPrimitiveStructDeleteCallbackId {
+        OneEveryPrimitiveStructDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: OneEveryPrimitiveStructDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for OneEveryPrimitiveStructTableHandle<'ctx> {
+    type InsertCallbackId = OneEveryPrimitiveStructInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> OneEveryPrimitiveStructInsertCallbackId {
+        OneEveryPrimitiveStructInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: OneEveryPrimitiveStructInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for OneEveryPrimitiveStructTableHandle<'ctx> {
     type DeleteCallbackId = OneEveryPrimitiveStructDeleteCallbackId;
 
     fn on_delete(

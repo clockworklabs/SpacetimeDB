@@ -1,236 +1,8 @@
 use regex::Regex;
 use spacetimedb_smoketests::{
-    require_dotnet, require_emscripten, require_pnpm, workspace_root, ModuleLanguage, Smoketest,
+    random_string, require_dotnet, require_emscripten, require_pnpm, workspace_root, ModuleLanguage, Smoketest,
 };
 use std::{fs, path::Path};
-
-const MODULE_CODE: &str = r#"
-use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
-use spacetimedb::Table;
-
-#[spacetimedb::table(accessor = entries, public)]
-pub struct Entry {
-    id: u64,
-    value: String,
-}
-
-#[spacetimedb::http::handler]
-fn get_simple(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::new(Body::from_bytes("ok"))
-}
-
-#[spacetimedb::http::handler]
-fn post_insert(ctx: &mut HandlerContext, _req: Request) -> Response {
-    ctx.with_tx(|tx| {
-        let id = tx.db.entries().iter().count() as u64;
-        tx.db.entries().insert(Entry {
-            id,
-            value: "posted".to_string(),
-        });
-    });
-    Response::new(Body::from_bytes("inserted"))
-}
-
-#[spacetimedb::http::handler]
-fn get_count(ctx: &mut HandlerContext, _req: Request) -> Response {
-    let count = ctx.with_tx(|tx| tx.db.entries().iter().count());
-    Response::new(Body::from_bytes(count.to_string()))
-}
-
-#[spacetimedb::http::handler]
-fn any_handler(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::new(Body::from_bytes("any"))
-}
-
-#[spacetimedb::http::handler]
-fn header_echo(_ctx: &mut HandlerContext, req: Request) -> Response {
-    let value = req
-        .headers()
-        .get("x-echo")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("");
-    Response::new(Body::from_bytes(value.to_string()))
-}
-
-#[spacetimedb::http::handler]
-fn set_response_header(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::builder()
-        .header("x-response", "set")
-        .body(Body::from_bytes("header-set"))
-        .expect("response builder should not fail")
-}
-
-#[spacetimedb::http::handler]
-fn body_handler(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::new(Body::from_bytes("non-empty"))
-}
-
-#[spacetimedb::http::handler]
-fn teapot(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::builder()
-        .status(418)
-        .body(Body::from_bytes("teapot"))
-        .expect("response builder should not fail")
-}
-
-#[spacetimedb::http::router]
-fn router() -> Router {
-    Router::new()
-        .get("/get", get_simple)
-        .post("/post", post_insert)
-        .get("/count", get_count)
-        .any("/any", any_handler)
-        .get("/header", header_echo)
-        .get("/set-header", set_response_header)
-        .get("/body", body_handler)
-        .get("/teapot", teapot)
-}
-"#;
-
-const EXAMPLE_MODULE_CODE: &str = r#"
-use std::str::FromStr;
-
-use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
-use spacetimedb::Table;
-
-#[spacetimedb::table(accessor = data)]
-struct Data {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-    body: Vec<u8>,
-}
-
-#[spacetimedb::http::handler]
-fn insert(ctx: &mut HandlerContext, request: Request) -> Response {
-    let body: Vec<u8> = request.into_body().into_bytes().into();
-    let id = ctx.with_tx(|tx| tx.db.data().insert(Data { id: 0, body: body.clone() }).id);
-    Response::new(Body::from_bytes(format!("{id}")))
-}
-
-#[spacetimedb::http::handler]
-fn retrieve(ctx: &mut HandlerContext, request: Request) -> Response {
-    let id = request
-        .uri()
-        .query()
-        .and_then(|query| query.strip_prefix("id="))
-        .and_then(|id| u64::from_str(id).ok())
-        .unwrap();
-    let body = ctx.with_tx(|tx| tx.db.data().id().find(id).map(|data| data.body));
-    if let Some(body) = body {
-        Response::new(Body::from_bytes(body))
-    } else {
-        Response::builder().status(404).body(Body::empty()).unwrap()
-    }
-}
-
-#[spacetimedb::http::router]
-fn router() -> Router {
-    Router::new().post("/insert", insert).get("/retrieve", retrieve)
-}
-"#;
-
-const STRICT_ROOT_ROUTING_MODULE_CODE: &str = r#"
-use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
-
-#[spacetimedb::http::handler]
-fn empty_root(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::new(Body::from_bytes("empty"))
-}
-
-#[spacetimedb::http::handler]
-fn slash_root(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::new(Body::from_bytes("slash"))
-}
-
-#[spacetimedb::http::handler]
-fn foo(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::new(Body::from_bytes("foo"))
-}
-
-#[spacetimedb::http::handler]
-fn foo_slash(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::new(Body::from_bytes("foo-slash"))
-}
-
-#[spacetimedb::http::router]
-fn router() -> Router {
-    Router::new()
-        .get("", empty_root)
-        .get("/", slash_root)
-        .get("/foo", foo)
-        .get("/foo/", foo_slash)
-}
-"#;
-
-const STRICT_NON_ROOT_ROUTING_MODULE_CODE: &str = r#"
-use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
-
-#[spacetimedb::http::handler]
-fn foo(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::new(Body::from_bytes("foo"))
-}
-
-#[spacetimedb::http::handler]
-fn foo_slash(_ctx: &mut HandlerContext, _req: Request) -> Response {
-    Response::new(Body::from_bytes("foo-slash"))
-}
-
-#[spacetimedb::http::router]
-fn router() -> Router {
-    Router::new()
-        .get("/foo", foo)
-        .get("/foo/", foo_slash)
-}
-"#;
-
-const FULL_URI_MODULE_CODE: &str = r#"
-use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
-
-#[spacetimedb::http::handler]
-fn echo_uri(_ctx: &mut HandlerContext, req: Request) -> Response {
-    Response::new(Body::from_bytes(req.uri().to_string()))
-}
-
-#[spacetimedb::http::router]
-fn router() -> Router {
-    Router::new().get("/echo-uri", echo_uri)
-}
-"#;
-
-const HANDLE_REQUEST_BODY_MODULE_CODE: &str = r#"
-use spacetimedb::http::{Body, HandlerContext, Request, Response, Router};
-
-#[spacetimedb::http::handler]
-fn reverse_bytes(_ctx: &mut HandlerContext, req: Request) -> Response {
-    let mut reversed = req.into_body().into_bytes().to_vec();
-    reversed.reverse();
-    Response::new(Body::from_bytes(reversed))
-}
-
-#[spacetimedb::http::handler]
-fn reverse_words(_ctx: &mut HandlerContext, req: Request) -> Response {
-    let body = match req.into_body().into_string() {
-        Ok(body) => body,
-        Err(_) => {
-            return Response::builder()
-                .status(400)
-                .body(Body::from_bytes("request body must be valid UTF-8"))
-                .expect("response builder should not fail");
-        }
-    };
-
-    let reversed = body.split(' ').rev().collect::<Vec<_>>().join(" ");
-    Response::new(Body::from_bytes(reversed))
-}
-
-#[spacetimedb::http::router]
-fn router() -> Router {
-    Router::new()
-        .post("/reverse-bytes", reverse_bytes)
-        .post("/reverse-words", reverse_words)
-}
-"#;
 
 const CPP_MODULE_CODE: &str = r#"#include "spacetimedb.h"
 
@@ -1084,8 +856,8 @@ fn extract_code_blocks(doc_path: &Path, regex_src: &str, language_name: &str) ->
     blocks.join("\n\n")
 }
 
-fn rust_http_test(module_code: &str) -> (Smoketest, String) {
-    let test = Smoketest::builder().module_code(module_code).build();
+fn rust_http_test(module: &str) -> (Smoketest, String) {
+    let test = Smoketest::builder().precompiled_module(module).build();
     let identity = test
         .database_identity
         .as_ref()
@@ -1109,9 +881,10 @@ fn cpp_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
 fn typescript_http_test(name: &str, module_code: &str) -> (Smoketest, String) {
     require_pnpm!();
     let mut test = Smoketest::builder().autopublish(false).build();
+    let database_name = format!("{name}-{}", random_string());
     let identity = test
         .publish()
-        .name(name)
+        .name(&database_name)
         .source(ModuleLanguage::TypeScript, name, module_code)
         .run()
         .unwrap();
@@ -1353,37 +1126,37 @@ fn assert_handle_request_body(server_url: &str, identity: &str) {
 
 #[test]
 fn http_routes_end_to_end() {
-    let (test, identity) = rust_http_test(MODULE_CODE);
+    let (test, identity) = rust_http_test("http-routes");
     assert_http_routes_end_to_end(&test.server_url, &identity);
 }
 
 #[test]
 fn http_routes_pr_example_round_trip() {
-    let (test, identity) = rust_http_test(EXAMPLE_MODULE_CODE);
+    let (test, identity) = rust_http_test("http-routes-example");
     assert_http_routes_pr_example_round_trip(&test.server_url, &identity);
 }
 
 #[test]
 fn http_routes_are_strict_for_non_root_paths() {
-    let (test, identity) = rust_http_test(STRICT_NON_ROOT_ROUTING_MODULE_CODE);
+    let (test, identity) = rust_http_test("http-routes-strict-non-root");
     assert_http_routes_are_strict_for_non_root_paths(&test.server_url, &identity);
 }
 
 #[test]
 fn http_routes_are_strict_for_root_paths() {
-    let (test, identity) = rust_http_test(STRICT_ROOT_ROUTING_MODULE_CODE);
+    let (test, identity) = rust_http_test("http-routes-strict-root");
     assert_http_routes_are_strict_for_root_paths(&test.server_url, &identity);
 }
 
 #[test]
 fn http_handler_observes_full_external_uri() {
-    let (test, identity) = rust_http_test(FULL_URI_MODULE_CODE);
+    let (test, identity) = rust_http_test("http-routes-full-uri");
     assert_http_handler_observes_full_external_uri(&test.server_url, &identity);
 }
 
 #[test]
 fn handle_request_body() {
-    let (test, identity) = rust_http_test(HANDLE_REQUEST_BODY_MODULE_CODE);
+    let (test, identity) = rust_http_test("http-routes-request-body");
     assert_handle_request_body(&test.server_url, &identity);
 }
 

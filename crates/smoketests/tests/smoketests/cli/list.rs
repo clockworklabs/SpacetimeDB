@@ -23,7 +23,10 @@ fn assert_success(output: &Output, context: &str) {
 #[test]
 fn cli_list_shows_database_names_and_identities() {
     require_local_server!();
-    let mut test = Smoketest::builder().autopublish(false).build();
+    let mut test = Smoketest::builder()
+        .precompiled_module("noop")
+        .autopublish(false)
+        .build();
 
     let primary_name = format!("list-db-{}", std::process::id());
     let alias_name = format!("{primary_name}-alias");

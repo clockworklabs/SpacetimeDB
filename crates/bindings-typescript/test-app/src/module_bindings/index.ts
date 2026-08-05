@@ -66,7 +66,7 @@ const tablesSchema = __schema({
     },
     PlayerRow
   ),
-  unindexed_player: __table(
+  unindexedPlayer: __table(
     {
       name: 'unindexed_player',
       indexes: [
@@ -108,7 +108,7 @@ const tablesSchema = __schema({
     },
     UserRow
   ),
-  my_user_procedural: __table(
+  myUserProcedural: __table(
     {
       name: 'my_user_procedural',
       indexes: [],
@@ -127,23 +127,88 @@ const reducersSchema = __reducers(
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
 const proceduresSchema = __procedures();
 
+type __SchemaWithTableAccessorAliases = Omit<
+  typeof tablesSchema.schemaType,
+  'tables'
+> & {
+  tables: typeof tablesSchema.schemaType.tables & {
+    /** @deprecated Use `unindexedPlayer` instead. This alias will be removed in the next major version. */
+    readonly unindexed_player: Omit<
+      (typeof tablesSchema.schemaType.tables)['unindexedPlayer'],
+      'accessorName'
+    > & { readonly accessorName: 'unindexed_player' };
+    /** @deprecated Use `myUserProcedural` instead. This alias will be removed in the next major version. */
+    readonly my_user_procedural: Omit<
+      (typeof tablesSchema.schemaType.tables)['myUserProcedural'],
+      'accessorName'
+    > & { readonly accessorName: 'my_user_procedural' };
+  };
+};
+
 /** The remote SpacetimeDB module schema, both runtime and type information. */
 const REMOTE_MODULE = {
   versionInfo: {
     cliVersion: '2.6.0' as const,
   },
-  tables: tablesSchema.schemaType.tables,
+  tables: tablesSchema.schemaType
+    .tables as __SchemaWithTableAccessorAliases['tables'],
   reducers: reducersSchema.reducersType.reducers,
   ...proceduresSchema,
 } satisfies __RemoteModule<
-  typeof tablesSchema.schemaType,
+  __SchemaWithTableAccessorAliases,
   typeof reducersSchema.reducersType,
   typeof proceduresSchema
 >;
 
+const tableAccessorAliases = {
+  unindexed_player: 'unindexedPlayer',
+  my_user_procedural: 'myUserProcedural',
+} as const;
+
+function __withTableAccessorAliases<T extends object>(
+  target: T,
+  freeze = false
+): T {
+  const out = Object.create(Object.getPrototypeOf(target)) as T &
+    Record<string, unknown>;
+  Object.defineProperties(out, Object.getOwnPropertyDescriptors(target));
+  for (const [deprecatedAccessor, targetAccessor] of Object.entries(
+    tableAccessorAliases
+  )) {
+    if (deprecatedAccessor in out) {
+      continue;
+    }
+    Object.defineProperty(out, deprecatedAccessor, {
+      enumerable: true,
+      configurable: false,
+      get: () => out[targetAccessor],
+    });
+  }
+  return freeze ? Object.freeze(out) : out;
+}
+
+type __DbViewBase = __DbConnectionImpl<typeof REMOTE_MODULE>['db'];
+export type DbView = __DbViewBase & {
+  /** @deprecated Use `unindexedPlayer` instead. This alias will be removed in the next major version. */
+  readonly unindexed_player: __DbViewBase['unindexedPlayer'];
+  /** @deprecated Use `myUserProcedural` instead. This alias will be removed in the next major version. */
+  readonly my_user_procedural: __DbViewBase['myUserProcedural'];
+};
+
+type __TablesBase = __QueryBuilder<typeof tablesSchema.schemaType>;
+export type Tables = __TablesBase & {
+  /** @deprecated Use `unindexedPlayer` instead. This alias will be removed in the next major version. */
+  readonly unindexed_player: __TablesBase['unindexedPlayer'];
+  /** @deprecated Use `myUserProcedural` instead. This alias will be removed in the next major version. */
+  readonly my_user_procedural: __TablesBase['myUserProcedural'];
+};
+
 /** The tables available in this remote SpacetimeDB module. Each table reference doubles as a query builder. */
-export const tables: __QueryBuilder<typeof tablesSchema.schemaType> =
-  __makeQueryBuilder(tablesSchema.schemaType);
+const tablesBase: __TablesBase = __makeQueryBuilder(tablesSchema.schemaType);
+export const tables: Tables = __withTableAccessorAliases(
+  tablesBase,
+  true
+) as Tables;
 
 /** The reducers available in this remote SpacetimeDB module. */
 export const reducers = __convertToAccessorMap(
@@ -154,17 +219,25 @@ export const reducers = __convertToAccessorMap(
 export const procedures = __convertToAccessorMap(proceduresSchema.procedures);
 
 /** The context type returned in callbacks for all possible events. */
-export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;
+export type EventContext = Omit<
+  __EventContextInterface<typeof REMOTE_MODULE>,
+  'db'
+> & { db: DbView };
 /** The context type returned in callbacks for reducer events. */
-export type ReducerEventContext = __ReducerEventContextInterface<
-  typeof REMOTE_MODULE
->;
+export type ReducerEventContext = Omit<
+  __ReducerEventContextInterface<typeof REMOTE_MODULE>,
+  'db'
+> & { db: DbView };
 /** The context type returned in callbacks for subscription events. */
-export type SubscriptionEventContext = __SubscriptionEventContextInterface<
-  typeof REMOTE_MODULE
->;
+export type SubscriptionEventContext = Omit<
+  __SubscriptionEventContextInterface<typeof REMOTE_MODULE>,
+  'db'
+> & { db: DbView };
 /** The context type returned in callbacks for error events. */
-export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;
+export type ErrorContext = Omit<
+  __ErrorContextInterface<typeof REMOTE_MODULE>,
+  'db'
+> & { db: DbView };
 /** The subscription handle type to manage active subscriptions created from a {@link SubscriptionBuilder}. */
 export type SubscriptionHandle = __SubscriptionHandleImpl<typeof REMOTE_MODULE>;
 
@@ -178,6 +251,13 @@ export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> {}
 
 /** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */
 export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {
+  declare db: DbView;
+
+  constructor(config: __DbConnectionConfig<typeof REMOTE_MODULE>) {
+    super(config);
+    this.db = __withTableAccessorAliases(this.db) as DbView;
+  }
+
   /** Creates a new {@link DbConnectionBuilder} to configure and connect to the remote SpacetimeDB instance. */
   static builder = (): DbConnectionBuilder => {
     return new DbConnectionBuilder(

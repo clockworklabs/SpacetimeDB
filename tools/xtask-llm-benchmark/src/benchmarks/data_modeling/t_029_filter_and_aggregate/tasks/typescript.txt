@@ -8,7 +8,7 @@ TABLES
     - amount: number (u64)
     - fulfilled: boolean
 
-- categoryStats
+- category_stats
   - Fields:
     - category: string (primary key)
     - totalAmount: number (u64)
@@ -18,4 +18,4 @@ REDUCERS
 - compute_stats(ctx, { category: string })
   - Filter all orders matching the given category
   - Count the number of matching orders and sum their amounts
-  - Insert (or update if exists) a categoryStats row with the results
+  - Insert (or update if exists) a category_stats row with the results

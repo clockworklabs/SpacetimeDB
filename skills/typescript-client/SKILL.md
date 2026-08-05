@@ -13,6 +13,8 @@ metadata:
 
 # SpacetimeDB TypeScript Client
 
+Generated bindings convert snake_case names to camelCase, including row fields: a server column `trip_id` is `tripId` on client rows.
+
 ## React: main.tsx
 
 ```typescript
@@ -79,7 +81,7 @@ function App() {
   );
 
   // Call reducers with object syntax
-  conn?.reducers.addRecord({ data });
+  conn?.reducers.addRecord({ data }).catch(console.error);
 
   // Compare identities
   const isMe = row.owner.toHexString() === myIdentity?.toHexString();
@@ -106,3 +108,10 @@ conn.db.user.onInsert((ctx, user) => console.log('Joined:', user.name));
 conn.db.user.onDelete((ctx, user) => console.log('Left:', user.name));
 conn.db.user.onUpdate((ctx, oldUser, newUser) => console.log('Updated:', newUser.name));
 ```
+
+## Gotchas
+
+- **`useTable` rows are `readonly`.** Copy before sorting/mutating, or it fails to type-check:
+  `const [rows] = useTable(tables.message); const sorted = [...rows].sort(...)`.
+- **bigint in JSX.** ids/counts from `t.u64()`/`t.i64()` columns are `bigint`, which React
+  cannot render. Wrap it: `{Number(row.id)}` or `{String(count)}`.

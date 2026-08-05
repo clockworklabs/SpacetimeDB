@@ -104,7 +104,7 @@ export class GameManager {
     connection.db.player.onDelete((_ctx, player) => {
       this.players.delete(player.playerId);
     });
-    connection.db.consume_entity_event.onInsert((_ctx, event) =>
+    connection.db.consumeEntityEvent.onInsert((_ctx, event) =>
       this.consumeEntityEventOnInsert(event)
     );
   }

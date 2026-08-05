@@ -241,7 +241,7 @@ namespace SpacetimeDB
             internal List<Row>? EventRows;
         }
 
-        protected abstract string RemoteTableName { get; }
+        public abstract string RemoteTableName { get; }
         string IRemoteTableHandle.RemoteTableName => RemoteTableName;
 
         /// <summary>

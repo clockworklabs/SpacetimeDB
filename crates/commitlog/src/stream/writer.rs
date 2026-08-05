@@ -132,9 +132,9 @@ where
                                     "failed to truncate offset index for segment {last} containing trailing data: {e}"
                                 )
                             })?;
-                        segment.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)?;
-                        segment.seek(io::SeekFrom::End(0))?;
                     }
+                    segment.ftruncate(sofar.tx_range.end, sofar.size_in_bytes)?;
+                    segment.seek(io::SeekFrom::End(0))?;
                     sofar
                 }
             },

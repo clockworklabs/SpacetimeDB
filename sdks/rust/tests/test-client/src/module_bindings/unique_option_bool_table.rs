@@ -18,6 +18,18 @@ pub struct UniqueOptionBoolTableHandle<'ctx> {
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
+/// Lifetime-aware accessor marker for the table `unique_option_bool`.
+pub struct UniqueOptionBoolTableAccessor;
+
+impl __sdk::TableAccessor<super::RemoteTables> for UniqueOptionBoolTableAccessor {
+    type Row = UniqueOptionBool;
+    type Handle<'db> = UniqueOptionBoolTableHandle<'db>;
+
+    fn get<'db>(db: &'db super::RemoteTables) -> Self::Handle<'db> {
+        db.unique_option_bool()
+    }
+}
+
 #[allow(non_camel_case_types)]
 /// Extension trait for access to the table `unique_option_bool`.
 ///
@@ -39,6 +51,18 @@ impl UniqueOptionBoolTableAccess for super::RemoteTables {
 
 pub struct UniqueOptionBoolInsertCallbackId(__sdk::CallbackId);
 pub struct UniqueOptionBoolDeleteCallbackId(__sdk::CallbackId);
+
+impl<'ctx> __sdk::TableLike for UniqueOptionBoolTableHandle<'ctx> {
+    type Row = UniqueOptionBool;
+    type EventContext = super::EventContext;
+
+    fn count(&self) -> u64 {
+        self.imp.count()
+    }
+    fn iter(&self) -> impl Iterator<Item = UniqueOptionBool> + '_ {
+        self.imp.iter()
+    }
+}
 
 impl<'ctx> __sdk::Table for UniqueOptionBoolTableHandle<'ctx> {
     type Row = UniqueOptionBool;
@@ -64,6 +88,36 @@ impl<'ctx> __sdk::Table for UniqueOptionBoolTableHandle<'ctx> {
         self.imp.remove_on_insert(callback.0)
     }
 
+    type DeleteCallbackId = UniqueOptionBoolDeleteCallbackId;
+
+    fn on_delete(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueOptionBoolDeleteCallbackId {
+        UniqueOptionBoolDeleteCallbackId(self.imp.on_delete(Box::new(callback)))
+    }
+
+    fn remove_on_delete(&self, callback: UniqueOptionBoolDeleteCallbackId) {
+        self.imp.remove_on_delete(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithInsert for UniqueOptionBoolTableHandle<'ctx> {
+    type InsertCallbackId = UniqueOptionBoolInsertCallbackId;
+
+    fn on_insert(
+        &self,
+        callback: impl FnMut(&Self::EventContext, &Self::Row) + Send + 'static,
+    ) -> UniqueOptionBoolInsertCallbackId {
+        UniqueOptionBoolInsertCallbackId(self.imp.on_insert(Box::new(callback)))
+    }
+
+    fn remove_on_insert(&self, callback: UniqueOptionBoolInsertCallbackId) {
+        self.imp.remove_on_insert(callback.0)
+    }
+}
+
+impl<'ctx> __sdk::WithDelete for UniqueOptionBoolTableHandle<'ctx> {
     type DeleteCallbackId = UniqueOptionBoolDeleteCallbackId;
 
     fn on_delete(

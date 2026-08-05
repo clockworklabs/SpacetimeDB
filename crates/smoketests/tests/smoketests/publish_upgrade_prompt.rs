@@ -2,13 +2,6 @@ use std::path::PathBuf;
 
 use spacetimedb_smoketests::{random_string, workspace_root, Smoketest};
 
-const MODULE_CODE: &str = r#"
-use spacetimedb::{reducer, ReducerContext};
-
-#[reducer]
-pub fn noop(_ctx: &ReducerContext) {}
-"#;
-
 fn old_fixture_wasm() -> PathBuf {
     workspace_root()
         .join("crates")
@@ -30,20 +23,28 @@ fn upgrade_prompt_on_publish() {
     let initial_identity = test.publish().name(&db_name).run().unwrap();
     assert_eq!(test.database_identity.as_deref(), Some(initial_identity.as_str()));
 
-    // Switch back to source-built module, which uses current bindings.
-    test.write_module_code(MODULE_CODE).unwrap();
+    // Switch to a module precompiled with the current bindings.
+    test.use_precompiled_module("noop");
 
     let deny_err = test
         .publish()
         .name(&db_name)
-        .force(false)
+        // Needed when running smoketests against a remote server.
+        .force(Some("remote"))
         .run()
         .unwrap_err()
         .to_string();
     assert!(deny_err.contains("major version upgrade from 1.0 to 2.0"));
     assert!(deny_err.contains("Please type 'upgrade' to accept this change:"));
 
-    let accepted_identity = test.publish().name(&db_name).stdin("upgrade\n").run().unwrap();
+    let accepted_identity = test
+        .publish()
+        .name(&db_name)
+        .stdin("upgrade\n")
+        // Needed when running smoketests against a remote server.
+        .force(Some("remote"))
+        .run()
+        .unwrap();
     assert_eq!(accepted_identity, initial_identity);
 }
 
@@ -60,8 +61,8 @@ fn upgrade_prompt_suppressed_by_yes_flag() {
     let initial_identity = test.publish().name(&db_name).run().unwrap();
     assert_eq!(test.database_identity.as_deref(), Some(initial_identity.as_str()));
 
-    // Switch back to source-built module, which uses current bindings.
-    test.write_module_code(MODULE_CODE).unwrap();
+    // Switch to a module precompiled with the current bindings.
+    test.use_precompiled_module("noop");
 
     // With --yes, the upgrade prompt should be suppressed and publish should succeed.
     let accepted_identity = test.publish().name(&db_name).run().unwrap();

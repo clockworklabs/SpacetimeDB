@@ -3,7 +3,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { ScheduleAt } from 'spacetimedb';
 import {
-  Router,
   schema,
   SyncResponse,
   table,
@@ -11,7 +10,9 @@ import {
   type Infer,
   type InferTypeOfRow,
   errors,
+  Router,
 } from 'spacetimedb/server';
+import * as libSubmodule from './lib_submodule';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPE ALIASES
@@ -155,6 +156,13 @@ const playerLikeRow = t.row({
   name: t.string().unique(),
 });
 
+const repeatingTestArgTable = table(
+  {
+    name: 'repeating_test_arg',
+  },
+  repeatingTestArg
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEMA (tables + indexes + visibility)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,16 +226,10 @@ const spacetimedb = schema({
   // pk_multi_identity with multiple constraints
   pkMultiIdentity: table({ name: 'pk_multi_identity' }, pkMultiIdentityRow),
 
-  // repeating_test_arg table with scheduled(repeating_test)
-  repeatingTestArg: table(
-    {
-      name: 'repeating_test_arg',
-      scheduled: (): any => repeatingTest,
-    },
-    repeatingTestArg
-  ),
+  // repeating_test_arg table scheduled by repeatingTest
+  repeatingTestArg: repeatingTestArgTable,
 
-  // nonrepeating_test_arg table with scheduled(nonrepeating_test)
+  // nonrepeating_test_arg table with legacy scheduled(nonrepeating_test)
   nonrepeatingTestArg: table(
     {
       name: 'nonrepeating_test_arg',
@@ -246,6 +248,7 @@ const spacetimedb = schema({
     playerLikeRow
   ),
   tableToRemove: table({ name: 'table_to_remove' }, { id: t.u32() }),
+  lib: libSubmodule,
 });
 export default spacetimedb;
 
@@ -284,6 +287,7 @@ export const init = spacetimedb.init(ctx => {
 
 // repeating_test
 export const repeatingTest = spacetimedb.reducer(
+  { onSchedule: repeatingTestArgTable },
   { arg: repeatingTestArg },
   (ctx, { arg }) => {
     const delta = ctx.timestamp.since(arg.prev_time); // adjust if API differs
@@ -523,10 +527,28 @@ export const getMySchemaViaHttp = spacetimedb.procedure(t.string(), ctx => {
   }
 });
 
+// useSubmodule: calls the lib submodule's libInsert reducer cross-namespace.
+export const useSubmodule = spacetimedb.reducer(
+  { value: t.string() },
+  (ctx, { value }) => {
+    libSubmodule.libInsert(ctx.as.lib, { value });
+  }
+);
+
+// useSubmoduleProcedure: calls the lib submodule's libCount procedure and returns the result.
+export const useSubmoduleProcedure = spacetimedb.procedure(t.u64(), ctx =>
+  libSubmodule.libCount(ctx.as.lib, {})
+);
+
 export const getSimple = spacetimedb.httpHandler(
   (_ctx, _req) => new SyncResponse('ok')
 );
 
+// Delegates to the lib submodule's HTTP handler, demonstrating cross-namespace HTTP dispatch.
+export const libHello = spacetimedb.httpHandler((ctx, req) => {
+  return libSubmodule.libHello(ctx.as.lib, req);
+});
+
 export const router = spacetimedb.httpRouter(
-  new Router().get('/get', getSimple)
+  new Router().get('/get', getSimple).get('/lib-hello', libHello)
 );

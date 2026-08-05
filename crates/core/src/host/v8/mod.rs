@@ -85,7 +85,7 @@ use crate::host::wasm_common::module_host_actor::{
     ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
+use crate::host::{InitDatabaseResult, ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
@@ -104,7 +104,7 @@ use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use spacetimedb_table::static_assert_size;
 use std::cell::Cell;
 use std::num::NonZeroUsize;
@@ -381,7 +381,7 @@ impl JsInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
+    fn start_funcall(&mut self, name: NamespacedIdentifier, ts: Timestamp, func_type: FuncCallType) {
         self.instance_env.start_funcall(name, ts, func_type);
     }
 
@@ -535,7 +535,7 @@ impl JsMainInstance {
         self.request(DisconnectClientRequest { client_id }).await
     }
 
-    pub async fn init_database(&self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+    pub async fn init_database(&self, program: Program) -> anyhow::Result<InitDatabaseResult> {
         self.request(InitDatabaseRequest { program }).await
     }
 
@@ -662,7 +662,7 @@ js_main_request! {
 js_main_request! {
     InitDatabaseRequest {
         program: Program,
-    } => "init_database", anyhow::Result<Option<ReducerCallResult>>, InitDatabase
+    } => "init_database", anyhow::Result<InitDatabaseResult>, InitDatabase
 }
 
 js_main_request! {
@@ -862,7 +862,7 @@ enum JsMainWorkerRequest {
     },
     /// See [`JsMainInstance::init_database`].
     InitDatabase {
-        reply_tx: JsReplyTx<anyhow::Result<Option<ReducerCallResult>>>,
+        reply_tx: JsReplyTx<anyhow::Result<InitDatabaseResult>>,
         program: Program,
     },
 }
@@ -1406,7 +1406,7 @@ fn handle_main_worker_request(
             handle_worker_request("call_reducer", reply_tx, || {
                 let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
                 let (res, trapped) = call_reducer(None, params);
-                (res, trapped)
+                (res.result, trapped)
             })
         }
         JsMainWorkerRequest::CallReducerDetached { params, on_panic } => {
@@ -1458,7 +1458,10 @@ fn handle_main_worker_request(
             caller_auth,
             caller_connection_id,
         } => handle_worker_request("call_identity_connected", reply_tx, || {
-            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let call_reducer = |tx, params| {
+                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                (res.result, trapped)
+            };
             let mut trapped = false;
             let res = call_identity_connected(caller_auth, caller_connection_id, &info, call_reducer, &mut trapped);
             (res, trapped)
@@ -1468,7 +1471,10 @@ fn handle_main_worker_request(
             caller_identity,
             caller_connection_id,
         } => handle_worker_request("call_identity_disconnected", reply_tx, || {
-            let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+            let call_reducer = |tx, params| {
+                let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                (res.result, trapped)
+            };
             let mut trapped = false;
             let res = ModuleHost::call_identity_disconnected_inner(
                 caller_identity,
@@ -1481,7 +1487,10 @@ fn handle_main_worker_request(
         }),
         JsMainWorkerRequest::DisconnectClient { reply_tx, client_id } => {
             handle_worker_request("disconnect_client", reply_tx, || {
-                let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
+                let call_reducer = |tx, params| {
+                    let (res, trapped) = instance_common.call_reducer_with_tx(tx, params, inst);
+                    (res.result, trapped)
+                };
                 let mut trapped = false;
                 let res = ModuleHost::disconnect_client_inner(client_id, &info, call_reducer, &mut trapped);
                 (res, trapped)
@@ -1490,7 +1499,7 @@ fn handle_main_worker_request(
         JsMainWorkerRequest::InitDatabase { reply_tx, program } => {
             handle_worker_request("init_database", reply_tx, || {
                 let call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, inst);
-                let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
+                let (res, trapped): (Result<InitDatabaseResult, anyhow::Error>, bool) =
                     init_database(replica_ctx, &info.module_def, program, call_reducer);
                 (res, trapped)
             })

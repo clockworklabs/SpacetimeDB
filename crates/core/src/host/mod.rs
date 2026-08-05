@@ -25,10 +25,13 @@ mod wasm_common;
 
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
-    extract_schema, CallProcedureReturn, CallResult, ExternalDurability, ExternalStorage, HostController,
-    HostRuntimeConfig, MigratePlanResult, ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerOutcome,
+    extract_schema, BootstrapCompletion, CallProcedureReturn, CallResult, ExternalDurability, ExternalStorage,
+    HostController, HostRuntimeConfig, MigratePlanResult, ModuleHostWithBootstrap, ProcedureCallResult, ProgramStorage,
+    ReducerCallResult, ReducerCallResultWithTxOffset, ReducerOutcome,
 };
-pub use module_host::{ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult};
+pub use module_host::{
+    InitDatabaseResult, ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult,
+};
 pub use scheduler::Scheduler;
 
 /// Encoded arguments to a database function.
@@ -53,7 +56,7 @@ impl FunctionArgs {
     fn into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> Result<ArgsTuple, InvalidFunctionArguments> {
         self._into_tuple(seed).map_err(|err| InvalidFunctionArguments {
             err,
-            function_name: seed.name().clone(),
+            function_name: seed.name().clone().into(),
         })
     }
     fn _into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> anyhow::Result<ArgsTuple> {
@@ -113,7 +116,7 @@ impl Default for ArgsTuple {
 
 // TODO(noa): replace imports from this module with imports straight from primitives.
 pub use spacetimedb_primitives::ReducerId;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 
 /// Inner error type for [`InvalidReducerArguments`] and [`InvalidProcedureArguments`].
 #[derive(thiserror::Error, Debug)]
@@ -121,7 +124,8 @@ use spacetimedb_schema::identifier::Identifier;
 pub struct InvalidFunctionArguments {
     #[source]
     err: anyhow::Error,
-    function_name: Identifier,
+    /// Qualified for a function in a submodule.
+    function_name: NamespacedIdentifier,
 }
 
 /// Newtype over [`InvalidFunctionArguments`] which renders with the word "reducer".

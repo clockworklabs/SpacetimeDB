@@ -122,6 +122,55 @@ fn test_sql_resolves_accessor_and_canonical_names_for_column() {
 }
 
 #[test]
+fn test_sql_dml_uses_target_name_as_implicit_alias() {
+    let test = Smoketest::builder().precompiled_module("sql-format").build();
+
+    test.sql("UPDATE accessor_table SET accessor_value_1 = 8 WHERE id = 1")
+        .unwrap();
+    test.assert_sql(
+        "SELECT accessor_value_1 FROM canonical_table WHERE id = 1",
+        r#" accessor_value_1
+------------------
+ 8"#,
+    );
+
+    test.sql("UPDATE accessor_table SET accessor_value_1 = 9 WHERE accessor_table.id = 1")
+        .unwrap();
+    test.assert_sql(
+        "SELECT accessor_value_1 FROM accessor_table WHERE id = 1",
+        r#" accessor_value_1
+------------------
+ 9"#,
+    );
+
+    test.sql("UPDATE canonical_table SET accessor_value_1 = 10 WHERE canonical_table.id = 1")
+        .unwrap();
+    test.assert_sql(
+        "SELECT accessor_value_1 FROM accessor_table WHERE id = 1",
+        r#" accessor_value_1
+------------------
+ 10"#,
+    );
+
+    test.sql("DELETE FROM accessor_table WHERE id = 1").unwrap();
+    test.assert_sql(
+        "SELECT * FROM canonical_table",
+        r#" id | accessor_value_1
+----+------------------"#,
+    );
+}
+
+#[test]
+fn test_sql_dml_rejects_mixed_target_and_qualifier_names() {
+    let test = Smoketest::builder().precompiled_module("sql-format").build();
+
+    test.sql("UPDATE accessor_table SET accessor_value_1 = 8 WHERE canonical_table.id = 1")
+        .expect_err("qualified DML filters should match the UPDATE target name");
+    test.sql("UPDATE canonical_table SET accessor_value_1 = 8 WHERE accessor_table.id = 1")
+        .expect_err("qualified DML filters should not mix canonical and accessor table names");
+}
+
+#[test]
 fn test_query_builder_resolves_accessor_and_canonical_names() {
     let test = Smoketest::builder().precompiled_module("sql-format").build();
 
