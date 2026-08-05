@@ -11,7 +11,7 @@
 //                  [--fix-rounds 3] [--run-index 0] [--out <dir>]
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,6 +44,30 @@ function parseArgs(argv) {
   const [from, to] = a.levels.split('-').map(Number);
   a.levelList = Array.from({ length: (to ?? from) - from + 1 }, (_, i) => from + i);
   return a;
+}
+
+// Source only — node_modules and build output are large and reproducible.
+const SOURCE_DIRS = ['backend', 'server', 'client/src', 'client/index.html', 'client/vite.config.ts'];
+
+function snapshotSource(appDir, to) {
+  rmSync(to, { recursive: true, force: true });
+  for (const rel of SOURCE_DIRS) {
+    const from = join(appDir, rel);
+    if (!existsSync(from)) continue;
+    cpSync(from, join(to, rel), {
+      recursive: true,
+      filter: src => !/node_modules|[\/]dist([\/]|$)/.test(src),
+    });
+  }
+}
+
+function restoreSource(from, appDir) {
+  for (const rel of SOURCE_DIRS) {
+    const src = join(from, rel);
+    if (!existsSync(src)) continue;
+    rmSync(join(appDir, rel), { recursive: true, force: true });
+    cpSync(src, join(appDir, rel), { recursive: true });
+  }
 }
 
 const sh = (cmd, args, opts = {}) =>
@@ -89,6 +113,7 @@ async function main() {
     let fixRounds = 0;
     let fixCost = 0;
     let stalled = false;
+    let regressed = false;
 
     // Hand back findings and let the agent fix, until clean or out of rounds.
     while (fixRounds < args.fixRounds) {
@@ -104,6 +129,10 @@ async function main() {
       if (!wroteReport) break;
 
       const before = bundle?.totals?.score ?? 0;
+      // A fix can break more than it mends. Keep the source that produced the
+      // best score so far, and roll back to it if a round regresses.
+      const snapshot = join(args.out, `snapshot-l${level}`);
+      snapshotSource(appDir, snapshot);
       fixRounds += 1;
       console.log(`--- fix round ${fixRounds}/${args.fixRounds} ---`);
       const fix = runAgent(args, 'fix', level, appDir);
@@ -113,8 +142,17 @@ async function main() {
       // A round that moves nothing usually means the finding is not actionable —
       // often the harness is wrong, not the app. Stop rather than pay again for
       // the same result.
-      if ((bundle?.totals?.score ?? 0) <= before) {
-        console.log(`    no improvement (${before} -> ${bundle?.totals?.score ?? 0}); stopping fix rounds`);
+      const after = bundle?.totals?.score ?? 0;
+      if (after < before) {
+        console.log(`    regressed (${before} -> ${after}); rolling back and stopping`);
+        restoreSource(snapshot, appDir);
+        bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback`, level);
+        regressed = true;
+        stalled = true;
+        break;
+      }
+      if (after === before) {
+        console.log(`    no improvement (${before}); stopping fix rounds`);
         stalled = true;
         break;
       }
@@ -131,6 +169,7 @@ async function main() {
       tokens: build.tokens,
       fixRounds,
       stalled,
+      regressed,
       durationSec: Math.round((Date.now() - t0) / 1000),
     });
     writeFileSync(join(args.out, 'run.json'), JSON.stringify(run, null, 2));
