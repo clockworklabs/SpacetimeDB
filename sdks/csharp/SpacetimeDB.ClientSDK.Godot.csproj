@@ -17,7 +17,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk</RepositoryUrl>
     <AssemblyVersion>2.10.0</AssemblyVersion>
-    <Version>2.10.0</Version>
+    <Version>2.19.0</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
     <RestorePackagesPath>obj~/godot/packages</RestorePackagesPath>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
