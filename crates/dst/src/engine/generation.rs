@@ -10,6 +10,7 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
 use spacetimedb_lib::{AlgebraicValue, ProductValue};
 use spacetimedb_runtime::sim::Rng;
 use spacetimedb_sats::ArrayValue;
@@ -52,7 +53,7 @@ impl<'a> GenCtx<'a> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GenerationCaseWeights {
     pub fresh: u64,
     pub pooled: u64,

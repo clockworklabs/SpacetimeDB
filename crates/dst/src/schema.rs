@@ -1,6 +1,7 @@
 //! Schema plans and raw module lowering for the engine DST harness.
 
 use crate::rng;
+use serde::{Deserialize, Serialize};
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, TableAccess, TableType};
 use spacetimedb_lib::{db::raw_def::v10::*, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList};
@@ -250,7 +251,7 @@ impl SequencePlan {
 }
 
 /// Controls the shape of generated schemas.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SchemaProfile {
     pub table_count: (usize, usize),
     pub columns: (usize, usize),
@@ -289,7 +290,7 @@ impl Default for SchemaProfile {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableKindWeights {
     pub data: u64,
     pub event: u64,
@@ -301,7 +302,7 @@ impl Default for TableKindWeights {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TypeWeights {
     pub bool_: u64,
     pub i64_: u64,

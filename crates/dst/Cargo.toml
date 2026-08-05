@@ -21,6 +21,7 @@ spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-runtime = { workspace = true, features = ["simulation"] }
 spacetimedb-sats.workspace = true
+serde.workspace = true
 spacetimedb-schema.workspace = true
 spacetimedb-snapshot.workspace = true
 spacetimedb-table.workspace = true

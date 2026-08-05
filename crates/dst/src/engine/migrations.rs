@@ -10,6 +10,7 @@ use crate::schema::{
     canonical_schema, ColumnPlan, IndexAlgorithm, IndexPlan, SchemaGenerator, SchemaNames, SchemaPlan, SchemaProfile,
     SequencePlan, TablePlan, Type, UniqueConstraintPlan,
 };
+use serde::{Deserialize, Serialize};
 use spacetimedb_runtime::sim::Rng;
 #[cfg(test)]
 use std::collections::HashSet;
@@ -38,7 +39,7 @@ pub enum MigrationExpectation {
     Rejected,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EngineMigrationConfig {
     pub accepted_weight: u64,
     pub rejected_weight: u64,
@@ -57,7 +58,7 @@ impl Default for EngineMigrationConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MigrationRuleWeights {
     pub add_table: u32,
     pub remove_pristine_non_event_table: u32,

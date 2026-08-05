@@ -2,6 +2,7 @@
 
 use std::fmt::{Debug, Error as FmtError, Formatter};
 
+use serde::{Deserialize, Serialize};
 use super::generation::{GenerationCaseWeights, GenCtx, GenerationState};
 use super::migrations::{EngineMigrationConfig, Migration};
 use super::model::Model;
@@ -70,7 +71,7 @@ pub enum InsertOutcome {
 }
 
 /// Runtime-tunable weights for top-level workload actions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InteractionWeights {
     pub insert: u64,
     pub delete: u64,
