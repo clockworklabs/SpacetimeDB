@@ -195,6 +195,19 @@ function describeStep(step) {
   }
 }
 
+
+// Replay a captured request as the app itself sent it. Rebuilding the headers
+// from scratch drops whatever carries the session, so the server answers 401 and
+// the test measures nothing. Hop-by-hop and length headers are dropped because
+// they describe the original transfer.
+function replayHeaders(write, overrides = {}) {
+  const out = { ...(write.headers ?? {}), 'content-type': 'application/json', ...overrides };
+  for (const k of Object.keys(out)) {
+    if (/^(content-length|host|connection|transfer-encoding|accept-encoding)$/i.test(k)) delete out[k];
+  }
+  return out;
+}
+
 // ─── Step execution ──────────────────────────────────────────────────────────
 
 async function enterRoom(actor, roomName) {
@@ -232,7 +245,7 @@ async function runStep(step, actors, ctx) {
     await Promise.all(pending.map(({ actor, write }) =>
       actor.page.request.fetch(write.url, {
         method: write.method,
-        headers: { 'content-type': 'application/json' },
+        headers: replayHeaders(write),
         data: JSON.stringify(write.body),
       }).catch(() => {})));
     await pending[0].actor.page.waitForTimeout(step.settleMs ?? 3000);
@@ -436,7 +449,7 @@ async function runStep(step, actors, ctx) {
 
       const res = await page.request.fetch(write.url, {
         method: write.method,
-        headers: { 'content-type': 'application/json' },
+        headers: replayHeaders(write),
         data: JSON.stringify(body),
       });
       actor.forge = { skipped: false, status: res.status(), accepted: res.ok(), tamperedField: key, value };
