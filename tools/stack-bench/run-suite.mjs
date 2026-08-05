@@ -64,7 +64,7 @@ const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: 'p
 // somewhere else is not measuring what we think it is: one Postgres app pointed
 // at an unrelated project's container on 5433 and graded "fine" while writing to
 // a database the harness could not reset.
-const EXPECTED_DB_PORT = { postgres: '6432', mongodb: '6437' };
+const EXPECTED_DB_PORT = { postgres: '6532', mongodb: '6537' };
 
 function checkDatabaseProvenance(args) {
   const expected = EXPECTED_DB_PORT[args.backend];

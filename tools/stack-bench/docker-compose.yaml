@@ -1,0 +1,47 @@
+# Databases for the Postgres and MongoDB backends.
+#
+# Own ports, container names and volumes so a benchmark run never shares state
+# with — or collides with — anything else running on the machine. The SpacetimeDB
+# backend needs no service here; run `spacetime start` for it.
+#
+#   docker compose -f tools/stack-bench/docker-compose.yaml up -d
+#
+name: stack-bench
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: stack-bench-postgres
+    ports:
+      - "6532:5432"
+    environment:
+      POSTGRES_USER: stackbench
+      POSTGRES_PASSWORD: stackbench
+      POSTGRES_DB: stackbench
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stackbench"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Single node, no replica set: change streams would give MongoDB a push
+  # mechanism the Postgres backend does not have, and the comparison is about
+  # what an agent builds on a standard stack.
+  mongodb:
+    image: mongo:7
+    container_name: stack-bench-mongodb
+    ports:
+      - "6537:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  mongodata:

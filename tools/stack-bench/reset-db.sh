@@ -12,8 +12,8 @@ BACKEND="${1:?backend required}"
 APP_DIR="${2:?app dir required}"
 RUN_INDEX="${3:-0}"
 
-POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-llm-sequential-upgrade-postgres-1}"
-MONGO_CONTAINER="${MONGO_CONTAINER:-llm-sequential-upgrade-mongodb-1}"
+POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-stack-bench-postgres}"
+MONGO_CONTAINER="${MONGO_CONTAINER:-stack-bench-mongodb}"
 DB_NAME="stackbench_run${RUN_INDEX}"
 
 case "$BACKEND" in
@@ -27,7 +27,7 @@ case "$BACKEND" in
     ;;
 
   postgres)
-    docker exec "$POSTGRES_CONTAINER" psql -U spacetime -d "$DB_NAME" -c "
+    docker exec "$POSTGRES_CONTAINER" psql -U stackbench -d "$DB_NAME" -c "
       DO \$\$ DECLARE r RECORD;
       BEGIN
         FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP

@@ -22,8 +22,8 @@ const REPO = resolve(ROOT, '..', '..');
 
 const PORTS = {
   spacetime: { vite: 6173 },
-  postgres: { vite: 6273, express: 6001, db: 6432 },
-  mongodb: { vite: 6373, express: 6001, db: 6437 },
+  postgres: { vite: 6273, express: 6001, db: 6532 },
+  mongodb: { vite: 6373, express: 6001, db: 6537 },
 };
 
 function parseArgs(argv) {
@@ -68,7 +68,7 @@ const ports = (backend, runIndex) => {
 
 const dbUrl = (backend, runIndex, dbPort) =>
   backend === 'postgres'
-    ? `postgresql://spacetime:spacetime@localhost:${dbPort}/stackbench_run${runIndex}`
+    ? `postgresql://stackbench:stackbench@localhost:${dbPort}/stackbench_run${runIndex}`
     : `mongodb://localhost:${dbPort}/stackbench_run${runIndex}`;
 
 // Per-run databases must exist before the app connects, or the agent will go
@@ -77,10 +77,10 @@ const dbUrl = (backend, runIndex, dbPort) =>
 function ensureDatabase(backend, runIndex, dbPort) {
   const name = `stackbench_run${runIndex}`;
   if (backend === 'postgres') {
-    const container = process.env.POSTGRES_CONTAINER ?? 'llm-sequential-upgrade-postgres-1';
+    const container = process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres';
     try {
-      execFileSync('docker', ['exec', container, 'psql', '-U', 'spacetime', '-d', 'postgres',
-        '-c', `CREATE DATABASE ${name} OWNER spacetime;`], { stdio: 'pipe' });
+      execFileSync('docker', ['exec', container, 'psql', '-U', 'stackbench', '-d', 'postgres',
+        '-c', `CREATE DATABASE ${name} OWNER stackbench;`], { stdio: 'pipe' });
     } catch { /* already exists */ }
   }
   // Mongo creates databases on first write.

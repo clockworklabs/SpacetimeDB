@@ -19,8 +19,16 @@ node bench.mjs --backend mongodb   --levels 1-5 --run-index 2
 Give concurrent runs distinct `--run-index` values; ports and databases are
 allocated from it. Results land in `results/<backend>-run<N>/run.json`.
 
-Requires the Claude Code CLI, Node, Docker (Postgres and MongoDB containers),
-and `spacetime start` for the SpacetimeDB backend.
+Bring up the databases first; the SpacetimeDB backend needs `spacetime start`
+instead:
+
+```bash
+docker compose -f tools/stack-bench/docker-compose.yaml up -d
+```
+
+Requires the Claude Code CLI, Node and Docker. The services use their own ports
+(6532 Postgres, 6537 MongoDB), container names and volumes, so a run never shares
+state with anything else on the machine.
 
 ## Levels
 
@@ -69,6 +77,7 @@ The grader never reloads except to probe for that, so "real-time" means real-tim
 | `grader/grade.mjs` | executes scenarios against real clients |
 | `grader/mutation-test.mjs` | validates the grader by injecting known defects |
 | `linter/lint.mjs` | checks the app exposes the contract's test ids |
+| `docker-compose.yaml` | the Postgres and MongoDB services |
 | `reset-db.sh`, `restart-backend.sh` | environment control used by the suites |
 | `levels/` | prompts, contracts and scenarios per level |
 | `backends/` | per-backend setup and deploy instructions given to the agent |
