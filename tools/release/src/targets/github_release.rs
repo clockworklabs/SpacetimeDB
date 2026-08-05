@@ -1,4 +1,5 @@
 use crate::targets::ReleaseTarget;
+use anyhow::bail;
 use duct::cmd;
 use serde::Deserialize;
 
