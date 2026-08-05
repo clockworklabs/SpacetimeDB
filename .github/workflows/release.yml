@@ -103,10 +103,10 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: Checkout specific tag
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
 
       - name: Set up Rust
@@ -145,10 +145,10 @@ jobs:
       NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
 
     steps:
-      - name: Checkout specific tag
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
 
       - name: Set up Rust
@@ -223,10 +223,10 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: Checkout specific tag
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
 
       - name: Set up Rust
@@ -284,10 +284,10 @@ jobs:
       packages: write
 
     steps:
-      - name: Checkout specific tag
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
 
       - name: Download cargo-release
@@ -332,10 +332,10 @@ jobs:
     if: ${{ inputs.release_docker }}
 
     steps:
-      - name: Checkout specific tag
+      - name: Checkout release source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.release_tag }}
+          ref: ${{ inputs.dry_run && github.sha || github.event.inputs.release_tag }}
           submodules: recursive
 
       - name: Download cargo-release
@@ -440,3 +440,22 @@ jobs:
 
       - name: Publish GitHub release
         run: cargo-release release github-release ${{ github.event.inputs.release_tag }}
+
+      - name: Trigger release notifications
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          release_json="$(gh release view "$RELEASE_TAG" --repo clockworklabs/SpacetimeDB --json body,url)"
+          body="$(jq -r '.body' <<< "$release_json")"
+          url="$(jq -r '.url' <<< "$release_json")"
+
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg url "$url" \
+            --arg body "$body" \
+            '{release_tag: $tag, release_url: $url, release_body: $body, dry_run: "false"}' \
+          | gh workflow run tag-release.yml --repo clockworklabs/SpacetimeDB --ref master --json

@@ -55,7 +55,7 @@ struct Cli {
     /// When no subcommand is specified, all subcommands are run in sequence. This option allows
     /// specifying subcommands to skip when running all. For example, to skip the `unreal-tests`
     /// subcommand, use `--skip unreal-tests`.
-    #[arg(long)]
+    #[arg(long, default_value = "other-workflows")]
     skip: Vec<String>,
 }
 
@@ -370,6 +370,15 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
+    /// Workflows should leave here if they should not be run as part of a no-subcommand invocation of `cargo ci`.
+    OtherWorkflows {
+        #[command(subcommand)]
+        cmd: OtherWorkflowsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OtherWorkflowsCmd {
     /// Interacts with CLA Assistant.
     ClaAssistant {
         #[command(subcommand)]
@@ -612,6 +621,7 @@ fn main() -> Result<()> {
             cmd!(
                 "cargo",
                 "clippy",
+                "--timings",
                 "--all",
                 "--tests",
                 "--benches",
@@ -623,6 +633,7 @@ fn main() -> Result<()> {
             cmd!(
                 "cargo",
                 "clippy",
+                "--timings",
                 "--no-default-features",
                 "--features=browser",
                 "-pspacetimedb-sdk",
@@ -655,6 +666,15 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::WasmBindings) => {
+            pnpm([
+                "install",
+                "--filter",
+                "./crates/bindings-typescript...",
+                "--filter",
+                "./modules/module-test-ts...",
+            ])
+            .run()?;
+            pnpm(["build"]).dir("crates/bindings-typescript").run()?;
             cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
             // Pre-build the CLI so that it _doesn't_ get `cargo update`d, since that may break the build.
             cmd!("cargo", "build", "-p", "spacetimedb-cli").run()?;
@@ -794,7 +814,9 @@ fn main() -> Result<()> {
             run_docs_build()?;
         }
 
-        Some(CiCmd::ClaAssistant { cmd }) => {
+        Some(CiCmd::OtherWorkflows {
+            cmd: OtherWorkflowsCmd::ClaAssistant { cmd },
+        }) => {
             cla_assistant::run(cmd)?;
         }
 
