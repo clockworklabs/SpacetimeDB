@@ -498,6 +498,312 @@
           ]
         }
       ]
+    },
+    {
+      "id": 106,
+      "name": "Concurrent State Integrity",
+      "max": 4,
+      "actors": [
+        "alice",
+        "bob",
+        "carol",
+        "dave"
+      ],
+      "note": "Counters and capacity limits that several people touch at once. Read-modify-write loses updates and check-then-insert overshoots a cap; a serializable transaction cannot do either. Every assertion here also checks the clients AGREE, because one client showing the right number while another shows a different one is the defect non-atomic broadcast actually produces.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "signUp",
+          "actor": "carol",
+          "name": "Carol"
+        },
+        {
+          "do": "signUp",
+          "actor": "dave",
+          "name": "Dave"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "busy"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "busy"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "busy"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "carol",
+          "room": "busy"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "dave",
+          "room": "busy"
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "react to this"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "reaction-count-is-exact",
+          "points": 1,
+          "desc": "Four users reacting at the same instant leave a count of exactly four. A read-modify-write loses updates under concurrency; a serializable transaction cannot.",
+          "steps": [
+            {
+              "do": "clickConcurrently",
+              "actors": [
+                "alice",
+                "bob",
+                "carol",
+                "dave"
+              ],
+              "testid": "react-button",
+              "settleMs": 4000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "reaction-count",
+              "contains": "4",
+              "within": 10000
+            }
+          ]
+        },
+        {
+          "id": "reaction-count-agrees-across-clients",
+          "points": 1,
+          "desc": "Every client shows the same count. One client being right while another is wrong is what a broadcast that is not atomic with the write produces.",
+          "steps": [
+            {
+              "do": "expectAgreement",
+              "actors": [
+                "alice",
+                "bob",
+                "carol",
+                "dave"
+              ],
+              "testid": "reaction-count",
+              "within": 10000
+            }
+          ]
+        },
+        {
+          "id": "reacting-twice-does-not-double-count",
+          "points": 1,
+          "desc": "A second reaction with the same emoji by the same user must not raise the count",
+          "steps": [
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "react-button"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 2000
+            },
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "react-button"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 2500
+            },
+            {
+              "do": "expectAgreement",
+              "actors": [
+                "alice",
+                "bob"
+              ],
+              "testid": "reaction-count",
+              "within": 8000
+            }
+          ]
+        },
+        {
+          "id": "pin-cap-holds-under-concurrency",
+          "points": 1,
+          "desc": "Four users pinning at once against a cap of three must leave exactly three. Check-then-insert overshoots the cap; the same list must be seen by everyone.",
+          "steps": [
+            {
+              "do": "sendMany",
+              "actor": "alice",
+              "prefix": "PIN",
+              "count": 4,
+              "delayMs": 1200
+            },
+            {
+              "do": "clickConcurrently",
+              "actors": [
+                "alice",
+                "bob",
+                "carol",
+                "dave"
+              ],
+              "testid": "pin-button",
+              "settleMs": 5000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "pinned-item",
+              "count": 3,
+              "within": 10000
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "pinned-item",
+              "count": 3,
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 107,
+      "name": "Server-Side Truth",
+      "max": 2,
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "note": "Whatever the acting client shows must actually exist on the server. Optimistic inserts that were never confirmed, and counts incremented only in one browser, are invisible to any assertion made from that same browser.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "truth"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "truth"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "truth"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "rejected-message-does-not-linger",
+          "points": 1,
+          "desc": "A message the server refused for exceeding the rate limit must not stay visible to its sender. An optimistic insert without rollback leaves the sender believing they said something nobody received.",
+          "steps": [
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "first of a burst"
+            },
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "REJECTED BY RATE LIMIT"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 4000
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "REJECTED BY RATE LIMIT",
+              "absent": true,
+              "within": 4000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "message-item",
+              "contains": "REJECTED BY RATE LIMIT",
+              "absent": true,
+              "within": 4000
+            }
+          ]
+        },
+        {
+          "id": "a-fresh-client-sees-the-same-thing",
+          "points": 1,
+          "desc": "A brand-new browser sees what the acting client claims. Anything visible only to the client that performed the action never reached the server.",
+          "steps": [
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 1500
+            },
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "durable statement"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "message-item",
+              "contains": "durable statement",
+              "within": 6000
+            },
+            {
+              "do": "freshClient",
+              "actor": "bob"
+            },
+            {
+              "do": "signUp",
+              "actor": "bob-fresh",
+              "name": "Observer"
+            },
+            {
+              "do": "enterRoom",
+              "actor": "bob-fresh",
+              "room": "truth"
+            },
+            {
+              "do": "expect",
+              "actor": "bob-fresh",
+              "testid": "message-item",
+              "contains": "durable statement",
+              "within": 10000
+            }
+          ]
+        }
+      ]
     }
   ]
 }

@@ -40,6 +40,11 @@ Rules:
 | `typing-indicator` | visible while another user in the SAME room is typing; gone within 6s of inactivity |
 | `read-receipt` | appears under a message after another user has viewed it |
 | `unread-badge` | appears on a room entry that has unread messages for the current user; clears when that room is opened |
+| `react-button` | present on each message; clicking it adds the current user's reaction |
+| `reaction-count` | shows how many users reacted with that emoji; repeated per emoji per message |
+| `pin-button` | present on each message |
+| `pinned-item` | the room's pinned messages, capped at three |
+| `pin-error` | visible after a rejected pin; must not appear on a successful one |
 
 Before declaring DEPLOY_COMPLETE, verify the hooks by running the contract
 linter (command provided in your build instructions) and fix any failures.

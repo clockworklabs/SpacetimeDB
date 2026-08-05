@@ -156,6 +156,36 @@
       "element": "numeric unread-count badge on a room entry in the sidebar",
       "stage": "scenario",
       "note": "appears on a room entry that has unread messages for the current user; clears when that room is opened"
+    },
+    {
+      "id": "react-button",
+      "element": "control on a message that adds a reaction (an emoji picker trigger or a specific emoji button)",
+      "stage": "scenario",
+      "note": "present on each message; clicking it adds the current user's reaction"
+    },
+    {
+      "id": "reaction-count",
+      "element": "the numeric count shown beside an emoji on a message",
+      "stage": "scenario",
+      "note": "shows how many users reacted with that emoji; repeated per emoji per message"
+    },
+    {
+      "id": "pin-button",
+      "element": "control on a message that pins it",
+      "stage": "scenario",
+      "note": "present on each message"
+    },
+    {
+      "id": "pinned-item",
+      "element": "one entry per pinned message in the room's pinned list (repeated testid)",
+      "stage": "scenario",
+      "note": "the room's pinned messages, capped at three"
+    },
+    {
+      "id": "pin-error",
+      "element": "error shown when pinning is refused because the room already has three pinned messages",
+      "stage": "scenario",
+      "note": "visible after a rejected pin; must not appear on a successful one"
     }
   ],
   "note": "Level 1 is sequential's basic chat with accounts added. Hooks cover the sign-up and sign-in forms, rooms and messages, plus typing indicators, read receipts and unread counts."

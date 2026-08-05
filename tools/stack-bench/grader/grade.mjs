@@ -209,6 +209,17 @@ async function enterRoom(actor, roomName) {
 async function runStep(step, actors, ctx) {
   // Cross-actor steps act on several actors at once, so they resolve first.
   if (step.do === 'expectOrderMatches') return expectOrderMatches(step, actors);
+  if (step.do === 'expectAgreement') return expectAgreement(step, actors, ctx);
+  if (step.do === 'clickConcurrently') {
+    // Genuine simultaneity: every actor clicks without waiting for the others.
+    await Promise.all(step.actors.map(name => {
+      const a = actors.get(name);
+      const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
+      return a.loc(step.testid, { scope }).click({ timeout: step.within ?? DEFAULT_WITHIN }).catch(() => {});
+    }));
+    await actors.values().next().value.page.waitForTimeout(step.settleMs ?? 3000);
+    return;
+  }
   if (step.do === 'restartBackend') {
     if (!ctx.restartCmd) throw new Error('INCONCLUSIVE: no --restart-cmd supplied, backend was never restarted');
     const { execFileSync } = await import('node:child_process');
@@ -503,6 +514,22 @@ async function runStep(step, actors, ctx) {
       }
       return;
     }
+    case 'freshClient': {
+      // Open a brand-new browser and look at the same thing. Anything the acting
+      // client shows but a fresh one cannot see never reached the server —
+      // optimistic inserts that were never confirmed, counts incremented only
+      // locally, state that lives in one browser's memory.
+      const context = await actor.page.context().browser().newContext();
+      const fresh = await context.newPage();
+      fresh.setDefaultTimeout(DEFAULT_WITHIN);
+      await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      const observer = new Actor(`${actor.name}-fresh`, fresh, context);
+      observer.annotate = actor.annotate;
+      actors.set(`${step.actor}-fresh`, observer);
+      // Registered for teardown; it is not one of the feature's declared actors.
+      ctx.extraContexts?.push({ context, name: `${step.actor}-fresh`, page: fresh });
+      return;
+    }
     case 'wait': return page.waitForTimeout(step.ms);
     case 'expect': return runExpect(actor, step, ctx);
     default: throw new Error(`unknown action "${step.do}"`);
@@ -592,6 +619,29 @@ async function expectOrderMatches(step, actors) {
   }
 }
 
+// Every client must end up seeing the same thing. A single-actor assertion says
+// "Alice sees 20" and misses the actual defect, which is Bob seeing 19 — exactly
+// what non-atomic broadcast produces.
+async function expectAgreement(step, actors, ctx) {
+  const contains = expand(step.contains, ctx);
+  const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
+  const deadline = Date.now() + (step.within ?? 10000);
+  let seen = {};
+  for (;;) {
+    seen = {};
+    for (const name of step.actors) {
+      const loc = actors.get(name).loc(step.testid, { contains, scope });
+      seen[name] = ((await loc.innerText().catch(() => '<missing>')) || '<missing>').trim();
+    }
+    if (new Set(Object.values(seen)).size === 1) return;
+    if (Date.now() > deadline) {
+      throw new Error(`clients disagree on ${tid(step.testid)}: ` +
+        Object.entries(seen).map(([k, v]) => `${k} sees ${JSON.stringify(v.slice(0, 40))}`).join(', '));
+    }
+    await actors.get(step.actors[0]).page.waitForTimeout(500);
+  }
+}
+
 // ─── Feature grading ─────────────────────────────────────────────────────────
 
 async function gradeFeature(browser, feature, args, runCtx) {
@@ -599,7 +649,8 @@ async function gradeFeature(browser, feature, args, runCtx) {
   // contexts, so user and room names are scoped per feature — otherwise a
   // defect in one feature (e.g. a hijacked account) corrupts later setups.
   const scope = `${runCtx.runId}f${feature.id}`;
-  const ctx = { ...runCtx, scope, roomName: base => `${base}-${scope}` };
+  const extraContexts = [];
+  const ctx = { ...runCtx, scope, roomName: base => `${base}-${scope}`, extraContexts };
   const actors = new Map();
   const contexts = [];
   const slug = `${args.label ?? 'run'}-f${feature.id}`;
@@ -620,7 +671,7 @@ async function gradeFeature(browser, feature, args, runCtx) {
   }
 
   const closeAll = async () => {
-    for (const { context, name, page } of contexts) {
+    for (const { context, name, page } of [...contexts, ...extraContexts]) {
       if (args.trace) {
         await context.tracing.stop({ path: join(args.media ?? '.', `${slug}-${name}.trace.zip`) }).catch(() => {});
       }

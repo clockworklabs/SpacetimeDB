@@ -83,3 +83,28 @@ access to it.
 - Track last-read position per user per room
 - Update counts in real-time as new messages arrive or are read
 
+### Reactions
+
+- Users can react to a message with an emoji, and remove their own reaction
+- Each message shows each emoji with a **count** of how many users have reacted with it
+- A user may react at most once per emoji per message — reacting again does not raise the
+  count by two
+- Counts update live for everyone in the room, and every client shows the same count
+
+### Pinned Messages
+
+- Any member of a room can **pin** a message, and unpin one
+- Pinned messages are listed for the room, visible to everyone in it
+- A room may have **at most 3 pinned messages**. An attempt to pin a fourth is rejected with
+  a visible error and changes nothing.
+- Unpinning frees a slot
+- The pinned list updates live, and every client in the room shows the same list
+
+### Limits
+
+- Enforce the message rate limit **on the server**: at most one message per second per
+  account, with a visible error when exceeded
+- The limit applies to the account, not to a browser tab — the same account in two tabs
+  shares one budget
+- Limits and presence are properties of the application, not of a running process: they must
+  still be correct after the backend restarts
