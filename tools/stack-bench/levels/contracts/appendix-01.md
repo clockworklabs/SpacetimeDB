@@ -15,6 +15,7 @@ Rules:
 
 | Test ID | Element |
 |---|---|
+| `app-title` | the app's visible title, naming which backend it is built on (for example "PostgreSQL Chat") |
 | `signup-username` | username input on the sign-up form |
 | `signup-password` | password input on the sign-up form |
 | `signup-submit` | button that creates the account |

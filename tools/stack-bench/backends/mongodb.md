@@ -29,6 +29,14 @@ cd client && npm install && npm run dev    # on <VITE_PORT>
 
 Mongoose creates collections on first write; there is no migration step.
 
+## Identity
+
+The app must show **"MongoDB Chat"** as its visible title, in the sidebar or
+header, and use it as the page `<title>`. Several backends are benchmarked with
+the same specification, so an app that does not name itself is impossible to tell
+apart from the others — by a person grading it or by the harness checking it
+reached the right server.
+
 ## Configuration
 
 | Setting | Value |

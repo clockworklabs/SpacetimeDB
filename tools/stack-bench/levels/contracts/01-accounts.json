@@ -3,6 +3,12 @@
   "track": "stack-bench",
   "hooks": [
     {
+      "id": "app-title",
+      "element": "the app's visible title, naming which backend it is built on (for example \"PostgreSQL Chat\")",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
       "id": "signup-username",
       "element": "username input on the sign-up form",
       "stage": "landing",

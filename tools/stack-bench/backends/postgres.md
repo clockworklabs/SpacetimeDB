@@ -30,6 +30,14 @@ cd client && npm install && npm run dev                            # on <VITE_PO
 
 Re-run `npx drizzle-kit push` after any schema change.
 
+## Identity
+
+The app must show **"PostgreSQL Chat"** as its visible title, in the sidebar or
+header, and use it as the page `<title>`. Several backends are benchmarked with
+the same specification, so an app that does not name itself is impossible to tell
+apart from the others — by a person grading it or by the harness checking it
+reached the right server.
+
 ## Configuration
 
 | Setting | Value |
