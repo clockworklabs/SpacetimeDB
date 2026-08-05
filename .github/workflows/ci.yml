@@ -506,7 +506,7 @@ jobs:
   codeowners_check:
     if: ${{ github.event_name == 'pull_request' }}
     name: CODEOWNERS check
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2
     permissions:
       contents: read
       pull-requests: read
@@ -536,17 +536,6 @@ jobs:
           cargo ci other-workflows codeowners-check \
             --base-ref "origin/${{ github.event.pull_request.base.ref }}" \
             --pr-number "${{ github.event.pull_request.number }}"
-
-  codeowners_check_merge_group:
-    if: ${{ github.event_name == 'merge_group' }}
-    name: CODEOWNERS check
-    runs-on: ubuntu-latest
-    permissions: read-all
-    steps:
-      - name: Pass redundant merge queue check
-        run: |
-          echo "CODEOWNERS check already ran on the pull request before it entered the merge queue."
-          echo "This merge queue check is redundant and intentionally passes."
 
   wasm_bindings:
     needs: [merge_queue_noop]
