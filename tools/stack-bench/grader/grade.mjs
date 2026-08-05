@@ -212,9 +212,13 @@ async function runStep(step, actors, ctx) {
   if (step.do === 'expectAgreement') return expectAgreement(step, actors, ctx);
   if (step.do === 'clickConcurrently') {
     // Genuine simultaneity: every actor clicks without waiting for the others.
-    await Promise.all(step.actors.map(name => {
-      const a = actors.get(name);
-      const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
+    // `targets` gives each actor its own element, so they compete for a shared
+    // limit instead of all pressing the same button.
+    const targets = step.targets ?? step.actors.map(actor => ({ actor }));
+    await Promise.all(targets.map(t => {
+      const a = actors.get(t.actor);
+      const where = t.in ?? step.in;
+      const scope = where ? { testid: where.testid, contains: expand(where.contains, ctx) } : undefined;
       return a.loc(step.testid, { scope }).click({ timeout: step.within ?? DEFAULT_WITHIN }).catch(() => {});
     }));
     await actors.values().next().value.page.waitForTimeout(step.settleMs ?? 3000);

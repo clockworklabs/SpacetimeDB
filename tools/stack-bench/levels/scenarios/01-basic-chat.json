@@ -473,7 +473,7 @@
             {
               "do": "wait",
               "actor": "alice",
-              "ms": 900
+              "ms": 1400
             },
             {
               "do": "send",

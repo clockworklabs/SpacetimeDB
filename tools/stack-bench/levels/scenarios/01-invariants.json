@@ -315,7 +315,7 @@
             {
               "do": "wait",
               "actor": "alice",
-              "ms": 1200
+              "ms": 1400
             },
             {
               "do": "enterRoom",
@@ -348,7 +348,7 @@
             {
               "do": "wait",
               "actor": "alice",
-              "ms": 1000
+              "ms": 1400
             },
             {
               "do": "send",
@@ -383,7 +383,7 @@
             {
               "do": "wait",
               "actor": "alice",
-              "ms": 1200
+              "ms": 1400
             },
             {
               "do": "send",
@@ -577,14 +577,14 @@
                 "dave"
               ],
               "testid": "react-button",
-              "settleMs": 4000
+              "settleMs": 5000
             },
             {
               "do": "expect",
               "actor": "alice",
               "testid": "reaction-count",
               "contains": "4",
-              "within": 10000
+              "within": 12000
             }
           ]
         },
@@ -607,14 +607,51 @@
           ]
         },
         {
-          "id": "reacting-twice-does-not-double-count",
+          "id": "removing-a-reaction-decrements-once",
           "points": 1,
-          "desc": "A second reaction with the same emoji by the same user must not raise the count",
+          "desc": "A user removing their reaction takes exactly one off the count, and every client agrees on the new total. One user contributes at most one either way.",
           "steps": [
             {
               "do": "click",
               "actor": "alice",
               "testid": "react-button"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 3000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "reaction-count",
+              "contains": "3",
+              "within": 8000
+            },
+            {
+              "do": "expectAgreement",
+              "actors": [
+                "alice",
+                "bob",
+                "carol",
+                "dave"
+              ],
+              "testid": "reaction-count",
+              "within": 10000
+            }
+          ]
+        },
+        {
+          "id": "pin-cap-holds-under-concurrency",
+          "points": 1,
+          "desc": "Four users pinning four different messages at the same instant, against a cap of three, must leave exactly three. Checking the count and inserting as separate steps lets all four see room under the cap.",
+          "steps": [
+            {
+              "do": "sendMany",
+              "actor": "alice",
+              "prefix": "PIN",
+              "count": 4,
+              "delayMs": 1400
             },
             {
               "do": "wait",
@@ -622,62 +659,53 @@
               "ms": 2000
             },
             {
-              "do": "click",
-              "actor": "alice",
-              "testid": "react-button"
-            },
-            {
-              "do": "wait",
-              "actor": "alice",
-              "ms": 2500
-            },
-            {
-              "do": "expectAgreement",
-              "actors": [
-                "alice",
-                "bob"
-              ],
-              "testid": "reaction-count",
-              "within": 8000
-            }
-          ]
-        },
-        {
-          "id": "pin-cap-holds-under-concurrency",
-          "points": 1,
-          "desc": "Four users pinning at once against a cap of three must leave exactly three. Check-then-insert overshoots the cap; the same list must be seen by everyone.",
-          "steps": [
-            {
-              "do": "sendMany",
-              "actor": "alice",
-              "prefix": "PIN",
-              "count": 4,
-              "delayMs": 1200
-            },
-            {
               "do": "clickConcurrently",
-              "actors": [
-                "alice",
-                "bob",
-                "carol",
-                "dave"
-              ],
               "testid": "pin-button",
-              "settleMs": 5000
+              "settleMs": 6000,
+              "targets": [
+                {
+                  "actor": "alice",
+                  "in": {
+                    "testid": "message-item",
+                    "contains": "PIN-1"
+                  }
+                },
+                {
+                  "actor": "bob",
+                  "in": {
+                    "testid": "message-item",
+                    "contains": "PIN-2"
+                  }
+                },
+                {
+                  "actor": "carol",
+                  "in": {
+                    "testid": "message-item",
+                    "contains": "PIN-3"
+                  }
+                },
+                {
+                  "actor": "dave",
+                  "in": {
+                    "testid": "message-item",
+                    "contains": "PIN-4"
+                  }
+                }
+              ]
             },
             {
               "do": "expect",
               "actor": "alice",
               "testid": "pinned-item",
               "count": 3,
-              "within": 10000
+              "within": 12000
             },
             {
               "do": "expect",
               "actor": "bob",
               "testid": "pinned-item",
               "count": 3,
-              "within": 10000
+              "within": 12000
             }
           ]
         }

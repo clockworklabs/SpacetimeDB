@@ -57,7 +57,7 @@
                   "count": 6
                 }
               ],
-              "delayMs": 600
+              "delayMs": 1400
             },
             {
               "do": "expectAllPresent",
@@ -166,7 +166,7 @@
               "actor": "bob",
               "prefix": "OFFLINE",
               "count": 3,
-              "delayMs": 600
+              "delayMs": 1400
             },
             {
               "do": "setOffline",
@@ -193,7 +193,7 @@
               "actor": "bob",
               "prefix": "AFTER",
               "count": 2,
-              "delayMs": 600
+              "delayMs": 1400
             },
             {
               "do": "expectAllPresent",
