@@ -35,6 +35,16 @@ case "$BACKEND" in
     ;;
 
   spacetime)
+    # The SpacetimeDB host is a shared machine-wide service — other projects'
+    # databases live on it. Killing it to test one benchmark app takes them all
+    # down, so this refuses unless it is pointed at an instance the benchmark
+    # owns. Set STACK_BENCH_STDB_OWNED=1 only for a dedicated host started with
+    # its own --data-dir and --listen-addr.
+    if [ "${STACK_BENCH_STDB_OWNED:-0}" != "1" ]; then
+      echo "refusing to restart a shared SpacetimeDB host." >&2
+      echo "Start a benchmark-owned instance and set STACK_BENCH_STDB_OWNED=1." >&2
+      exit 3
+    fi
     echo "stopping SpacetimeDB host"
     # Kill the standalone host only; the commitlog on disk is what must carry
     # the scheduled rows across the restart.

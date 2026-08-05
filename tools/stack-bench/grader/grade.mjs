@@ -210,6 +210,9 @@ async function runStep(step, actors, ctx) {
       // script exits cleanly. The script does its own readiness wait.
       execFileSync('bash', ['-c', ctx.restartCmd], { stdio: 'ignore', timeout: 300000 });
     } catch (err) {
+      // Exit 3 means the restart was refused as unsafe (a shared host), not that
+      // the app failed. Report it as untestable rather than as a defect.
+      if (err.status === 3) throw new Error('INCONCLUSIVE: backend restart refused — no benchmark-owned instance available');
       throw new Error(`backend restart failed: ${(err.stdout || err.message || '').toString().trim().slice(-200)}`);
     }
     // Not page-bound: clients may be closed across the restart.
