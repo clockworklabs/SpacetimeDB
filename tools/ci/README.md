@@ -260,7 +260,18 @@ Usage: docs
 
 - `--help`: Print help
 
-### `cla-assistant`
+### `other-workflows`
+
+**Usage:**
+```bash
+Usage: other-workflows <COMMAND>
+```
+
+**Options:**
+
+- `--help`: Print help
+
+#### `cla-assistant`
 
 **Usage:**
 ```bash
@@ -271,7 +282,7 @@ Usage: cla-assistant <COMMAND>
 
 - `--help`: Print help
 
-#### `retry`
+##### `retry`
 
 **Usage:**
 ```bash
@@ -284,7 +295,7 @@ Usage: retry [OPTIONS] --pr-number <PR_NUMBER>
 - `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
 - `--help`: Print help
 
-#### `status`
+##### `status`
 
 **Usage:**
 ```bash
@@ -297,6 +308,17 @@ Usage: status [OPTIONS] <--pr <PR>|--sha <SHA>>
 - `--sha <SHA>`: Commit SHA to check
 - `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
 - `--help`: Print help
+
+##### `help`
+
+**Usage:**
+```bash
+Usage: help [COMMAND]...
+```
+
+**Options:**
+
+- `subcommand <COMMAND>`: Print help for the subcommand(s)
 
 #### `help`
 
