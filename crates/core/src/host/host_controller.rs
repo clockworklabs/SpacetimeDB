@@ -1578,7 +1578,10 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     .await
 }
 
-/// Removes metrics associated with a database when the database is deleted.
+/// Removes metrics associated with a database.
+///
+/// This is called when a database's [`ModuleHost`] exits,
+/// including (but not limited to) when a database is deleted.
 ///
 /// Despite the historical function name, this cleans up per-database metric
 /// series even when they are not literally `Gauge`s or `IntGauge`s.
