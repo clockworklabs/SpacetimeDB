@@ -436,8 +436,11 @@ public static class GeneratorSnapshotTests
             }
             """;
 
-        var parseOptions = new CSharpParseOptions(fixture.SampleCompilation.LanguageVersion);
-        var tree = CSharpSyntaxTree.ParseText(source, parseOptions, path: "NullableBTreeIndex.cs");
+        var tree = CSharpSyntaxTree.ParseText(
+            source,
+            fixture.ParseOptions,
+            path: "NullableBTreeIndex.cs"
+        );
         var compilation = fixture.SampleCompilation.AddSyntaxTrees(tree);
 
         var driver = CSharpGeneratorDriver.Create(
@@ -449,7 +452,7 @@ public static class GeneratorSnapshotTests
                 disabledOutputs: IncrementalGeneratorOutputKind.None,
                 trackIncrementalGeneratorSteps: true
             ),
-            parseOptions: parseOptions
+            parseOptions: fixture.ParseOptions
         );
 
         var runResult = driver.RunGenerators(compilation).GetRunResult();
