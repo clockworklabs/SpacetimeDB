@@ -13,7 +13,7 @@
         "carol",
         "dave"
       ],
-      "note": "Counters and capacity limits that several people touch at once. Read-modify-write loses updates and check-then-insert overshoots a cap; a serializable transaction cannot do either. Every assertion here also checks the clients AGREE, because one client showing the right number while another shows a different one is the defect non-atomic broadcast actually produces.",
+      "note": "The pin cap is the real contention target: it must read the current count and decide, which is check-then-insert and genuinely racy. Reactions cannot show a lost update \u2014 one row per user per emoji with onConflictDoNothing cannot lose one whatever the ordering \u2014 so they test agreement and correctness rather than atomicity.",
       "setup": [
         {
           "do": "signUp",
@@ -213,7 +213,7 @@
             {
               "do": "wait",
               "actor": "alice",
-              "ms": 2500
+              "ms": 3000
             },
             {
               "do": "click",
@@ -245,7 +245,7 @@
             {
               "do": "wait",
               "actor": "alice",
-              "ms": 2500
+              "ms": 3000
             },
             {
               "do": "expect",
@@ -261,7 +261,8 @@
                 "bob",
                 "carol"
               ],
-              "settleMs": 4000
+              "method": "POST",
+              "settleMs": 5000
             },
             {
               "do": "expect",
@@ -274,5 +275,7 @@
         }
       ]
     }
-  ]
+  ],
+  "blocked_on": "The write path is a WebSocket, so replaying captured HTTP requests cannot reach it. The rebuilt PostgreSQL app pins over socket.io ('pin:add'), authenticated by a session token from the signup response and passed as socket.handshake.auth.token. Driving contention needs a socket-aware mechanism: connect a client with that token and emit the captured event several times without awaiting the acknowledgements. Everything needed is already captured \u2014 Actor.lastWsWrite records the socket.io event name and payload.",
+  "why_it_matters": "This rebuild is genuinely vulnerable and would be the first real contention finding. Its pin cap reads the count and inserts inside one transaction with NO advisory lock, so at READ COMMITTED concurrent transactions can all see room under the cap and all insert. The previous build defended the same code with pg_advisory_xact_lock and a comment explaining the race. Two builds of the same spec, one safe and one not, is exactly the variance a benchmark exists to measure \u2014 and the harness currently cannot see it."
 }
