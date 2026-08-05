@@ -98,7 +98,15 @@ class Actor {
       }
     });
     page.on('console', m => {
-      if (m.type() === 'error') this.consoleErrors.push(m.text().slice(0, 200));
+      if (m.type() !== 'error') return;
+      const text = m.text();
+      // The browser logs a failed fetch as a console error, so an app that
+      // correctly refuses something — a duplicate username, a wrong password —
+      // looks like it has a bug. A 4xx is the server deliberately saying no;
+      // that is the behaviour under test, not a defect. 5xx still counts, and so
+      // does every genuine JavaScript error.
+      if (/Failed to load resource.*status of 4\d\d/.test(text)) return;
+      this.consoleErrors.push(text.slice(0, 200));
     });
     page.on('pageerror', e => this.consoleErrors.push(`pageerror: ${e.message.slice(0, 200)}`));
   }
