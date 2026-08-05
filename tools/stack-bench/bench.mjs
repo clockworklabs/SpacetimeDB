@@ -70,6 +70,48 @@ function restoreSource(from, appDir) {
   }
 }
 
+// The agent starts dev servers so grading can reach them, but nothing owned
+// their lifetime — runs were leaving vite and Express processes behind, which is
+// how ports and app directories ended up occupied by finished work.
+function portsForRun(backend, runIndex) {
+  const vite = { spacetime: 6173, postgres: 6273, mongodb: 6373 }[backend] + runIndex;
+  return backend === 'spacetime' ? [vite] : [vite, 6001 + runIndex];
+}
+
+function stopServers(backend, runIndex) {
+  for (const port of portsForRun(backend, runIndex)) {
+    let out = '';
+    try {
+      out = execFileSync('netstat', ['-ano'], { encoding: 'utf8' });
+    } catch { return; }
+    const pids = new Set(
+      out.split(String.fromCharCode(10))
+        .filter(l => new RegExp(`:${port}\\s`).test(l) && /LISTENING/i.test(l))
+        .map(l => l.trim().split(/\s+/).pop())
+        .filter(pid => pid && pid !== '0')
+    );
+    for (const pid of pids) {
+      try {
+        execFileSync('taskkill', ['/F', '/PID', pid, '/T'], { stdio: 'ignore' });
+        console.log(`  stopped the server on :${port}`);
+      } catch { /* already gone */ }
+    }
+  }
+}
+
+// SpacetimeDB is a shared service. If one is running we use it and leave it
+// alone; if it is not, that is for a person to start, not for a benchmark.
+function requireSpacetime() {
+  try {
+    execFileSync('curl', ['-s', '-m', '5', '-o', process.platform === 'win32' ? 'NUL' : '/dev/null',
+      'http://localhost:3000/v1/ping'], { stdio: 'ignore' });
+  } catch {
+    console.error('SpacetimeDB is not reachable on :3000. Start it with `spacetime start`.');
+    console.error('This benchmark never starts or stops it — other work runs on that host.');
+    process.exit(2);
+  }
+}
+
 const sh = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...opts });
 
@@ -98,6 +140,13 @@ async function main() {
   const url = args.url ?? `http://localhost:${VITE_BASE[args.backend] + args.runIndex}`;
   args.out ??= join(ROOT, 'results', `${args.backend}-run${args.runIndex}`);
   mkdirSync(args.out, { recursive: true });
+
+  if (args.backend === 'spacetime') requireSpacetime();
+
+  // Leave nothing running once the run is over, however it ends.
+  const teardown = () => stopServers(args.backend, args.runIndex);
+  process.on('SIGINT', () => { console.log('interrupted — stopping servers'); teardown(); process.exit(130); });
+  process.on('SIGTERM', () => { teardown(); process.exit(143); });
 
   const started = Date.now();
   const run = { backend: args.backend, model: args.model, levels: [] };
@@ -192,6 +241,8 @@ async function main() {
   console.log(`  TOTAL ${run.totals.score}/${run.totals.max}  ` +
     `$${run.totals.costUsd}  ${run.totals.fixRounds} fix round(s)  ${run.totals.durationSec}s`);
   console.log(`  ${join(args.out, 'run.json')}`);
+
+  teardown();
 }
 
 main();

@@ -13,7 +13,7 @@
 // Prints a JSON line: { appDir, costUsd, tokens, durationMs, sessionId, ok }
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -180,6 +180,10 @@ function main() {
   const args = parseArgs(process.argv);
   const p = ports(args.backend, args.runIndex);
   if (p.dbPort) ensureDatabase(args.backend, args.runIndex, p.dbPort);
+  // `build` means from scratch. Leaving a previous app in place lets the agent
+  // inherit code — and a stale BUG_REPORT.md — from a run that has nothing to do
+  // with this one.
+  if (args.mode === 'build') rmSync(args.app, { recursive: true, force: true });
   mkdirSync(args.app, { recursive: true });
   writeFileSync(join(args.app, '.stack-bench-backend'), args.backend);
 
