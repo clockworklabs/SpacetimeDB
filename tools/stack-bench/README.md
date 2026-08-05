@@ -30,10 +30,10 @@ Requires the Claude Code CLI, Node and Docker. The services use their own ports
 (6532 Postgres, 6537 MongoDB), container names and volumes, so a run never shares
 state with anything else on the machine.
 
-A run owns only what it starts. The dev servers it launches are stopped when it
-finishes or is interrupted, so nothing is left listening afterwards. SpacetimeDB
-is the exception in the other direction: it is a shared service, so the benchmark
-requires one to already be running and never starts, stops or restarts it.
+A run owns only what it starts, and stops it again when finished or interrupted.
+A SpacetimeDB host that was already running belongs to whoever started it — other
+databases live there — so it is used as-is and left alone. If none is running, one
+is started and stopped again at the end, or kept with `--keep-spacetime`.
 
 ## Levels
 

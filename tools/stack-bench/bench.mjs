@@ -9,8 +9,13 @@
 // Usage:
 //   node bench.mjs --backend spacetime --levels 1-5 [--model claude-sonnet-5]
 //                  [--fix-rounds 3] [--run-index 0] [--out <dir>]
+//                  [--keep-spacetime] [--no-media]
+//
+// A SpacetimeDB host that is already running is used as-is and never stopped. If
+// none is running one is started, and stopped again at the end unless
+// --keep-spacetime.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +39,7 @@ function parseArgs(argv) {
       case '--url': a.url = argv[++i]; break;
       case '--agent': a.agent = argv[++i]; break;
       case '--no-media': a.media = false; break;
+      case '--keep-spacetime': a.keepSpacetime = true; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
   }
@@ -99,17 +105,38 @@ function stopServers(backend, runIndex) {
   }
 }
 
-// SpacetimeDB is a shared service. If one is running we use it and leave it
-// alone; if it is not, that is for a person to start, not for a benchmark.
-function requireSpacetime() {
+const spacetimeUp = () => {
   try {
     execFileSync('curl', ['-s', '-m', '5', '-o', process.platform === 'win32' ? 'NUL' : '/dev/null',
       'http://localhost:3000/v1/ping'], { stdio: 'ignore' });
-  } catch {
-    console.error('SpacetimeDB is not reachable on :3000. Start it with `spacetime start`.');
-    console.error('This benchmark never starts or stops it — other work runs on that host.');
-    process.exit(2);
+    return true;
+  } catch { return false; }
+};
+
+// Own only what you start. A host that was already up belongs to whoever started
+// it — other databases live there — so it is used and left alone. One we start
+// ourselves is ours to stop again, unless --keep-spacetime says otherwise.
+function ensureSpacetime() {
+  if (spacetimeUp()) {
+    console.log('  spacetime   ... already running (will be left alone)');
+    return false;
   }
+  console.log('  spacetime   ... not running, starting it');
+  spawn('spacetime', ['start'], { detached: true, stdio: 'ignore', shell: true }).unref();
+  for (let i = 0; i < 60; i++) {
+    execFileSync(process.platform === 'win32' ? 'timeout' : 'sleep',
+      process.platform === 'win32' ? ['/T', '2', '/NOBREAK'] : ['2'], { stdio: 'ignore' });
+    if (spacetimeUp()) { console.log('  spacetime   ... up'); return true; }
+  }
+  console.error('SpacetimeDB did not come up on :3000.');
+  process.exit(2);
+}
+
+function stopSpacetime() {
+  try {
+    execFileSync('taskkill', ['/F', '/IM', 'spacetimedb-standalone.exe'], { stdio: 'ignore' });
+    console.log('  stopped the SpacetimeDB host this run started');
+  } catch { /* already gone */ }
 }
 
 const sh = (cmd, args, opts = {}) =>
@@ -141,10 +168,14 @@ async function main() {
   args.out ??= join(ROOT, 'results', `${args.backend}-run${args.runIndex}`);
   mkdirSync(args.out, { recursive: true });
 
-  if (args.backend === 'spacetime') requireSpacetime();
+  const weStartedSpacetime = args.backend === 'spacetime' ? ensureSpacetime() : false;
 
-  // Leave nothing running once the run is over, however it ends.
-  const teardown = () => stopServers(args.backend, args.runIndex);
+  // Leave nothing running once the run is over, however it ends — but only stop
+  // what this run brought up.
+  const teardown = () => {
+    stopServers(args.backend, args.runIndex);
+    if (weStartedSpacetime && !args.keepSpacetime) stopSpacetime();
+  };
   process.on('SIGINT', () => { console.log('interrupted — stopping servers'); teardown(); process.exit(130); });
   process.on('SIGTERM', () => { teardown(); process.exit(143); });
 
