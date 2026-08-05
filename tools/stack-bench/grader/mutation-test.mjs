@@ -14,8 +14,14 @@
 // each is expected to break. Client edits hot-reload, so no redeploy is needed.
 
 import { readFileSync, writeFileSync, copyFileSync, existsSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+
+// Resolve tooling relative to this file so the runner works from any directory.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const GRADER = join(HERE, 'grade.mjs');
+const REPORT = join(HERE, '.mutation-report.json');
 
 function parseArgs(argv) {
   const a = {};
@@ -24,6 +30,7 @@ function parseArgs(argv) {
     else if (argv[i] === '--url') a.url = argv[++i];
     else if (argv[i] === '--mutations') a.mutations = argv[++i];
     else if (argv[i] === '--level') a.level = argv[++i];
+    else if (argv[i] === '--spec') a.spec = argv[++i];
     else { console.error(`Unknown arg ${argv[i]}`); process.exit(2); }
   }
   if (!a.app || !a.url || !a.mutations) {
@@ -36,13 +43,14 @@ function parseArgs(argv) {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-function grade(url, level, feature) {
-  const args = ['grade.mjs', '--url', url, '--level', level, '--out', '.mutation-report.json'];
+function grade(url, level, feature, spec) {
+  const args = [GRADER, '--url', url, '--level', level, '--out', REPORT];
+  if (spec) args.push('--spec', spec);
   if (feature) args.push('--feature', String(feature));
   try {
     execFileSync('node', args, { stdio: 'pipe', encoding: 'utf8' });
   } catch { /* grader exits non-zero only on infra errors; report is what matters */ }
-  const r = JSON.parse(readFileSync('.mutation-report.json', 'utf8'));
+  const r = JSON.parse(readFileSync(REPORT, 'utf8'));
   return r;
 }
 
@@ -50,7 +58,7 @@ const args = parseArgs(process.argv);
 const spec = JSON.parse(readFileSync(args.mutations, 'utf8'));
 
 console.log('Baseline (unmutated app)...');
-const baseline = grade(args.url, args.level);
+const baseline = grade(args.url, args.level, undefined, args.spec);
 const baseScores = Object.fromEntries(baseline.features.map(f => [f.id, f.score]));
 console.log(`  baseline: ${baseline.total}/${baseline.max}  ${baseline.features.map(f => `F${f.id}:${f.score}`).join(' ')}\n`);
 
@@ -74,7 +82,7 @@ for (const m of spec.mutations) {
 
   let r;
   try {
-    r = grade(args.url, args.level);
+    r = grade(args.url, args.level, undefined, args.spec);
   } finally {
     copyFileSync(backup, target);
     unlinkSync(backup);
@@ -96,7 +104,7 @@ for (const m of spec.mutations) {
   if (status === 'SURVIVED') console.log(`    ORACLE HOLE: ${m.desc}`);
 }
 
-if (existsSync('.mutation-report.json')) unlinkSync('.mutation-report.json');
+if (existsSync(REPORT)) unlinkSync(REPORT);
 
 const survived = results.filter(r => r.status === 'SURVIVED');
 console.log(`\n${results.filter(r => r.status.startsWith('CAUGHT')).length}/${results.length} mutations caught`);

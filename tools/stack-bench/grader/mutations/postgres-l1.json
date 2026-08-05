@@ -1,0 +1,14 @@
+{
+  "note": "Defects injected into the generated PostgreSQL app to prove the concurrency criteria can actually fail. Anchors are specific to this app.",
+  "mutations": [
+    {
+      "id": "pin-cap-without-serialization",
+      "desc": "Remove the advisory lock so the cap check and insert are no longer atomic — concurrent pins should all pass the check and overshoot the cap",
+      "breaks": 106,
+      "file": "server/src/index.ts",
+      "edits": [
+        { "find": "      await tx.execute(sql`select pg_advisory_xact_lock(${roomId})`);\n\n      const currentPins", "replace": "      const currentPins" }
+      ]
+    }
+  ]
+}
