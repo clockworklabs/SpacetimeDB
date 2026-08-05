@@ -504,7 +504,7 @@ jobs:
           retention-days: 30
 
   codeowners_check:
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+    if: ${{ github.event_name == 'pull_request' }}
     name: CODEOWNERS check
     runs-on: ubuntu-latest
     permissions:
@@ -515,25 +515,15 @@ jobs:
       RUST_BACKTRACE: full
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Pass redundant merge queue check
-        if: ${{ github.event_name == 'merge_group' }}
-        run: |
-          echo "CODEOWNERS check already ran on the pull request before it entered the merge queue."
-          echo "This merge queue check is redundant and intentionally passes."
-
       - uses: actions/checkout@v4
-        if: ${{ github.event_name == 'pull_request' }}
         with:
           fetch-depth: 0
 
       - uses: dsherret/rust-toolchain-file@v1
-        if: ${{ github.event_name == 'pull_request' }}
       - name: Set default rust toolchain
-        if: ${{ github.event_name == 'pull_request' }}
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Cache Rust dependencies
-        if: ${{ github.event_name == 'pull_request' }}
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
@@ -542,11 +532,21 @@ jobs:
           prefix-key: v1
 
       - name: Run CODEOWNERS check
-        if: ${{ github.event_name == 'pull_request' }}
         run: |
           cargo ci other-workflows codeowners-check \
             --base-ref "origin/${{ github.event.pull_request.base.ref }}" \
             --pr-number "${{ github.event.pull_request.number }}"
+
+  codeowners_check_merge_group:
+    if: ${{ github.event_name == 'merge_group' }}
+    name: CODEOWNERS check
+    runs-on: ubuntu-latest
+    permissions: read-all
+    steps:
+      - name: Pass redundant merge queue check
+        run: |
+          echo "CODEOWNERS check already ran on the pull request before it entered the merge queue."
+          echo "This merge queue check is redundant and intentionally passes."
 
   wasm_bindings:
     needs: [merge_queue_noop]
