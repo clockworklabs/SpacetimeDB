@@ -33,10 +33,6 @@ internal abstract class RawTableIterBase<T>
                 if (ret == Errno.EXHAUSTED)
                 {
                     handle = FFI.RowIter.INVALID;
-                    if (buffer_len == requested_len)
-                    {
-                        buffer_len = 0;
-                    }
                 }
                 // On success, the only way `buffer_len == 0` is for the iterator to be exhausted.
                 // This happens when the host iterator was empty from the start.
