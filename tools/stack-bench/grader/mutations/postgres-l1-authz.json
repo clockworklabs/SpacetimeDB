@@ -1,0 +1,47 @@
+{
+  "note": [
+    "Validation for the authorization and privacy criteria added with the member",
+    "panel and direct messages. Every one of them passed on both backends first",
+    "try, and identical results across backends is exactly the tell that has",
+    "preceded five of five previous false positives — so each criterion has to be",
+    "shown failing against a defect it is supposed to catch before it can be",
+    "reported as evidence of anything.",
+    "",
+    "These edit the SERVER, so the app must be running under a watcher (npm run",
+    "dev = tsx watch) for the change to take effect.",
+    "",
+    "Run with:",
+    "  node mutation-test.mjs --app <app> --url <url> --level 1",
+    "    --spec ../tracks/chat/scenarios/01-invariants.json",
+    "    --mutations mutations/postgres-l1-authz.json"
+  ],
+  "mutations": [
+    {
+      "id": "broadcast-every-message-to-everyone",
+      "file": "server/src/index.ts",
+      "desc": "Messages go to every connected client instead of the room's channel. The interface still looks correct — each client renders only the room it is showing — so this is invisible to a DOM assertion and visible only on the wire.",
+      "find": "io.to(`room:${roomId}`).emit('room:message', { roomId, message: out });",
+      "replace": "io.emit('room:message', { roomId, message: out });",
+      "breaks": 109,
+      "settleMs": 6000
+    },
+    {
+      "id": "removal-does-not-close-the-stream",
+      "file": "server/src/index.ts",
+      "desc": "A removed member is marked removed in the database but their socket stays subscribed to the room, so they keep receiving its messages live. The member panel updates correctly, which is all a DOM check can see.",
+      "find": "    removeUserFromRoomChannel(targetId, roomId);",
+      "replace": "    // removeUserFromRoomChannel(targetId, roomId);",
+      "breaks": 108,
+      "settleMs": 6000
+    },
+    {
+      "id": "anyone-can-remove-a-member",
+      "file": "server/src/index.ts",
+      "desc": "The ownership check on removal is dropped. The button is still hidden from non-owners, so the app looks correct; only re-issuing the request as the wrong user can see it.",
+      "find": "if (membership.role !== 'owner') return res.status(403).json({ error: 'Only a room owner can remove members' });",
+      "replace": "if (false) return res.status(403).json({ error: 'Only a room owner can remove members' });",
+      "breaks": 108,
+      "settleMs": 6000
+    }
+  ]
+}

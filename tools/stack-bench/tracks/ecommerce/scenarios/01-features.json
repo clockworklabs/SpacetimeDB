@@ -8,16 +8,18 @@
     {
       "id": 1,
       "name": "Accounts",
-      "actors": ["shopper"],
-      "setup": [],
+      "actors": ["shopper", "impostor"],
+      "setup": [
+        { "do": "signUp", "actor": "shopper", "name": "ann" }
+      ],
+      "note": "The refusals are attempted by a second, signed-out actor: a client that is already signed in has no sign-up form to submit, so re-using one actor would test nothing.",
       "criteria": [
         {
           "id": "1a",
           "desc": "a visitor can create an account and is signed in as it",
           "points": 1,
           "steps": [
-            { "do": "signUp", "actor": "shopper", "name": "ann" },
-            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "ann" }
+            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "ann", "within": 6000 }
           ]
         },
         {
@@ -25,11 +27,9 @@
           "desc": "a taken username is refused and does not sign the visitor in as the existing account",
           "points": 1,
           "steps": [
-            { "do": "signUp", "actor": "shopper", "name": "ann" },
-            { "do": "reload", "actor": "shopper" },
-            { "do": "signUp", "actor": "shopper", "name": "ann", "password": "different-pw", "expectFailure": true },
-            { "do": "expect", "actor": "shopper", "testid": "auth-error" },
-            { "do": "expect", "actor": "shopper", "testid": "current-user", "absent": true }
+            { "do": "signUp", "actor": "impostor", "name": "ann", "password": "different-pw", "expectFailure": true },
+            { "do": "expect", "actor": "impostor", "testid": "auth-error", "within": 6000 },
+            { "do": "expect", "actor": "impostor", "testid": "current-user", "absent": true }
           ]
         },
         {
@@ -37,20 +37,29 @@
           "desc": "a wrong password is refused",
           "points": 1,
           "steps": [
-            { "do": "signUp", "actor": "shopper", "name": "bea" },
-            { "do": "reload", "actor": "shopper" },
-            { "do": "signIn", "actor": "shopper", "name": "bea", "password": "wrong-pw", "expectFailure": true },
-            { "do": "expect", "actor": "shopper", "testid": "auth-error" }
+            { "do": "signIn", "actor": "impostor", "name": "ann", "password": "wrong-pw", "expectFailure": true },
+            { "do": "expect", "actor": "impostor", "testid": "auth-error", "within": 6000 },
+            { "do": "expect", "actor": "impostor", "testid": "current-user", "absent": true }
           ]
         },
         {
           "id": "1d",
+          "desc": "signing out and back in returns the same account",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "shopper", "testid": "signout" },
+            { "do": "expect", "actor": "shopper", "testid": "signup-username", "within": 6000 },
+            { "do": "signIn", "actor": "shopper", "name": "ann" },
+            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "ann", "within": 6000 }
+          ]
+        },
+        {
+          "id": "1e",
           "desc": "the session survives a reload",
           "points": 1,
           "steps": [
-            { "do": "signUp", "actor": "shopper", "name": "cai" },
             { "do": "reload", "actor": "shopper", "settleMs": 4000 },
-            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "cai" }
+            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "ann", "within": 6000 }
           ]
         }
       ]
@@ -318,9 +327,8 @@
           "points": 2,
           "steps": [
             { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Grinding Wheel" }, "equals": 100 },
-            { "do": "click", "actor": "admin", "testid": "warehouse-select", "in": { "testid": "admin-location-row", "contains": "Grinding Wheel" } },
-            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "25" },
-            { "do": "click", "actor": "admin", "testid": "restock-submit" },
+            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "25", "in": { "testid": "admin-location-row", "contains": "Grinding Wheel" } },
+            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Grinding Wheel" } },
             { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Grinding Wheel" }, "equals": 125, "within": 10000 },
             { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Grinding Wheel" }, "equals": 125 }
           ]

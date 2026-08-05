@@ -950,8 +950,8 @@
               "from": "owner",
               "match": "member",
               "swap": {
-                "find": "Target",
-                "with": "Owner"
+                "find": "{user:Target}",
+                "with": "{user:Owner}"
               }
             },
             {

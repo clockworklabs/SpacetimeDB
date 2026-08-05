@@ -55,8 +55,6 @@
   <div id="admin-items"></div>
   <div id="admin-warehouses"></div>
   <div id="admin-locations"></div>
-  <input data-testid="restock-input" placeholder="units">
-  <button data-testid="restock-submit">Restock</button>
   <span>Revenue: <span data-testid="admin-revenue">0.00</span></span>
 </div>
 
@@ -208,16 +206,22 @@ function renderAdmin() {
   }
   const whBox = $('#admin-warehouses'); whBox.textContent = '';
   for (const w of WAREHOUSES) whBox.append(el('div', 'admin-warehouse-item', w));
+  // Restocking lives on the row, so choosing the row chooses both the item and
+  // the warehouse — there is nothing ambiguous left to select.
   const locBox = $('#admin-locations'); locBox.textContent = '';
   for (const item of items) {
     for (const w of WAREHOUSES) {
       const row = el('div', 'admin-location-row');
       row.append(el('span', null, item.name + ' @ ' + w));
       row.append(el('span', 'admin-location-qty', String(item.stock[w])));
-      const sel = el('select', 'warehouse-select');
-      for (const opt of WAREHOUSES) { const o = el('option', null, opt); o.value = opt; sel.append(o); }
-      sel.value = w;
-      row.append(sel);
+      const input = el('input', 'restock-input');
+      input.placeholder = 'units';
+      const btn = el('button', 'restock-submit', 'Restock');
+      btn.onclick = () => {
+        const n = Number(input.value);
+        if (n > 0) { item.stock[w] += n; renderAll(); }
+      };
+      row.append(input, btn);
       locBox.append(row);
     }
   }
@@ -273,10 +277,6 @@ $('[data-testid="admin-link"]').onclick = () => {
   $('[data-testid="admin-panel"]').hidden = false; renderAdmin();
 };
 $('[data-testid="checkout-submit"]').onclick = checkout;
-$('[data-testid="restock-submit"]').onclick = () => {
-  const n = Number($('[data-testid="restock-input"]').value);
-  if (n > 0) { items[0].stock.East += n; renderAll(); }
-};
 $('[data-testid="search-input"]').addEventListener('input', e => renderSearch(e.target.value));
 
 renderAll();

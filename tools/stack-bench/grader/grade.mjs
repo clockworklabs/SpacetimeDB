@@ -174,23 +174,53 @@ const swapToken = (s, from, to) => s.replace(tokenRe(from), to);
 
 // Apps address a user by id, not by the name shown on screen. The id is already
 // in traffic the harness recorded — find it next to the name the app sent back.
-function discoveredId(actor, username) {
+// EVERY nearby candidate is returned, not the first: in a member list the id
+// sitting closest to a name is frequently the previous entry's, and picking it
+// made the whole replay quietly unverifiable.
+const ID_KEY = /"(?:_?id|user_?id|userId|memberId|member_id)"\s*:\s*"?([A-Za-z0-9_-]{1,64})"?/g;
+
+function discoverIds(actor, username) {
+  const found = new Set();
   const quoted = `"${username}"`;
   for (const chunk of actor.received) {
     let i = chunk.indexOf(quoted);
     while (i !== -1) {
-      const window = chunk.slice(Math.max(0, i - 300), i + 300);
-      const m = window.match(/"(?:_?id|user_?id|userId)"\s*:\s*"?([A-Za-z0-9_-]{1,64})"?/);
-      if (m) return m[1];
+      for (const m of chunk.slice(Math.max(0, i - 200), i + 200).matchAll(ID_KEY)) found.add(m[1]);
       i = chunk.indexOf(quoted, i + 1);
     }
+  }
+  return [...found];
+}
+
+// The credentials to replay WITH. Reusing the privileged user's token proves
+// nothing, and replaying with none at all is worse: the server answers 401 and
+// the test reads as "authorization works" when it only showed that anonymous
+// requests are refused.
+const AUTH_HEADER = /^(authorization|cookie|x-auth-token|x-session|x-token|x-user)/i;
+
+function authFor(actor) {
+  for (const w of [...actor.writes].reverse()) {
+    const h = Object.entries(w.headers ?? {}).filter(([k, v]) => AUTH_HEADER.test(k) && v);
+    if (h.length) return Object.fromEntries(h);
+  }
+  // Nothing signed-in was ever sent — recover the token the server handed back.
+  for (const chunk of actor.received) {
+    const m = chunk.match(/"(?:token|accessToken|access_token|jwt|sessionToken)"\s*:\s*"([^"]{8,})"/);
+    if (m) return { authorization: `Bearer ${m[1]}` };
   }
   return null;
 }
 
 // Scenario strings may reference a run-scoped room as "{room:base}".
+// "{room:base}" is a run-scoped room. "{user:Name}" is the scoped account name
+// signUp actually created — scenarios name people as Alice and Target, but the
+// app only ever sees "Alice-<scope>", so anything matched against real traffic
+// has to be expanded the same way.
 const expand = (s, ctx) =>
-  typeof s === 'string' ? s.replace(/\{room:([^}]+)\}/g, (_, b) => ctx.roomName(b)) : s;
+  typeof s === 'string'
+    ? s.replace(/\{room:([^}]+)\}/g, (_, b) => ctx.roomName(b))
+       .replace(/\{user:([^}]+)\}/g, (_, n) => `${n}-${ctx.scope}`)
+    : s;
 
 
 // ─── On-screen annotation ────────────────────────────────────────────────────
@@ -251,8 +281,10 @@ function describeStep(step) {
     case 'scheduleMessage': return `schedule "${step.text}" for ${step.secondsAhead}s ahead`;
     case 'wait': return `wait ${step.ms}ms`;
     case 'expect': return `expect ${step.absent ? 'no ' : ''}${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`;
+    case 'recordNumber': return `note the current ${step.testid}`;
     case 'expectNumber': {
       const want = [
+        step.relativeTo !== undefined ? `has risen by ${step.plus ?? 0}` : null,
         step.equals !== undefined ? `is ${step.equals}` : null,
         step.atLeast !== undefined ? `is at least ${step.atLeast}` : null,
         step.atMost !== undefined ? `is at most ${step.atMost}` : null,
@@ -568,13 +600,14 @@ async function runStep(step, actors, ctx) {
 
       // Swap in this actor's own credentials — otherwise the replay carries the
       // privileged user's token and proves nothing about who may do what.
-      const mine = actor.lastWrite?.headers ?? {};
-      const creds = {};
-      for (const [k, v] of Object.entries(mine)) {
-        if (/^(authorization|cookie|x-auth-token|x-session|x-token|x-user)/i.test(k)) creds[k] = v;
+      const mine = authFor(actor);
+      if (!mine) {
+        actor.replay = { inconclusive: true, reason: `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused` };
+        return;
       }
+      const creds = { ...mine };
       for (const k of Object.keys(write.headers)) {
-        if (/^(authorization|cookie|x-auth-token|x-session|x-token|x-user)/i.test(k) && !(k in creds)) creds[k] = '';
+        if (AUTH_HEADER.test(k) && !(k in creds)) creds[k] = '';
       }
 
       // The replay must name a DIFFERENT victim than the original request, or an
@@ -589,9 +622,10 @@ async function runStep(step, actors, ctx) {
           // Most apps address a user by id, not by display name. Scenarios stay
           // written in names; the harness resolves them to whatever ids the app
           // itself used, read out of traffic it has already seen.
-          const ra = discoveredId(source, find) ?? discoveredId(actor, find);
-          const rb = discoveredId(source, to) ?? discoveredId(actor, to);
-          if (ra && rb && (mentions(url, ra) || mentions(data ?? '', ra))) { a = ra; b = rb; }
+          const candidates = [...discoverIds(source, find), ...discoverIds(actor, find)];
+          const ra = candidates.find(c => mentions(url, c) || mentions(data ?? '', c));
+          const rb = [...discoverIds(source, to), ...discoverIds(actor, to)].find(c => c !== ra);
+          if (ra && rb) { a = ra; b = rb; }
           else {
             actor.replay = { inconclusive: true, reason: `neither "${find}" nor an id resolved for it appears in ${write.method} ${write.url} — cannot retarget the replay` };
             return;
@@ -614,7 +648,14 @@ async function runStep(step, actors, ctx) {
     case 'expectReplayRejected': {
       const r = actor.replay;
       if (!r) throw new Error('no replayAs ran before this assertion');
-      if (r.inconclusive) return;     // unverified never scores and never penalises
+      if (r.inconclusive) {
+        // Unverified never scores and never penalises — but it must be VISIBLE.
+        // A replay that quietly declines to run looks exactly like a server that
+        // refused, and this criterion then rests on its DOM assertions alone.
+        ctx.unverified.push(`${actor.name}: ${r.reason}`);
+        return;
+      }
+      ctx.verified?.push(`${actor.name}: server refused ${r.method} ${r.url} (HTTP ${r.status})`);
       if (r.accepted) {
         throw new Error(`server ACCEPTED ${r.method} ${r.url} from ${actor.name}, who is not allowed to do it (HTTP ${r.status}) — the check is in the interface, not the server`);
       }
@@ -763,6 +804,18 @@ async function runStep(step, actors, ctx) {
       if (step.settleMs) await page.waitForTimeout(step.settleMs);
       return;
     }
+    case 'recordNumber': {
+      // Remember a number now so a later assertion can be about the CHANGE.
+      // Features share a database, so absolute totals — revenue above all —
+      // depend on what every earlier feature happened to buy. A delta does not.
+      const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
+      const loc = actor.loc(step.testid, { contains: expand(step.contains, ctx), scope });
+      await loc.waitFor({ state: 'visible', timeout: step.within ?? DEFAULT_WITHIN });
+      const value = parseNumber(await loc.innerText().catch(() => ''));
+      if (value === null) throw new Error(`${tid(step.testid)} has no number to record`);
+      ctx.recorded[step.as] = value;
+      return;
+    }
     case 'expectNumber': return expectNumber(actor, step, ctx);
     case 'wait': return page.waitForTimeout(step.ms);
     case 'expect': return runExpect(actor, step, ctx);
@@ -836,7 +889,17 @@ async function expectNumber(actor, step, ctx) {
     throw new Error(`${tid(step.testid)}${where} not visible within ${within}ms`);
   });
 
-  const check = n => (step.equals === undefined || n === step.equals)
+  // `relativeTo` turns the comparison into one about the change since a
+  // recordNumber step, which is the only honest way to assert on a running
+  // total that earlier features have also contributed to.
+  let equals = step.equals;
+  if (step.relativeTo !== undefined) {
+    const base = ctx.recorded?.[step.relativeTo];
+    if (base === undefined) throw new Error(`no number recorded as "${step.relativeTo}"`);
+    equals = base + (step.plus ?? 0);
+  }
+
+  const check = n => (equals === undefined || n === equals)
     && (step.atLeast === undefined || n >= step.atLeast)
     && (step.atMost === undefined || n <= step.atMost);
 
@@ -851,7 +914,9 @@ async function expectNumber(actor, step, ctx) {
     await actor.page.waitForTimeout(250);
   }
   const wanted = [
-    step.equals !== undefined ? `exactly ${step.equals}` : null,
+    equals !== undefined
+      ? `exactly ${equals}${step.relativeTo !== undefined ? ` (${step.relativeTo} + ${step.plus ?? 0})` : ''}`
+      : null,
     step.atLeast !== undefined ? `at least ${step.atLeast}` : null,
     step.atMost !== undefined ? `at most ${step.atMost}` : null,
   ].filter(Boolean).join(' and ') || 'a number';
@@ -930,7 +995,8 @@ async function gradeFeature(browser, feature, args, runCtx) {
   // defect in one feature (e.g. a hijacked account) corrupts later setups.
   const scope = `${runCtx.runId}f${feature.id}`;
   const extraContexts = [];
-  const ctx = { ...runCtx, scope, roomName: base => `${base}-${scope}`, extraContexts };
+  const ctx = { ...runCtx, scope, roomName: base => `${base}-${scope}`, extraContexts, recorded: {},
+    unverified: [], verified: [] };
   const actors = new Map();
   const contexts = [];
   const slug = `${args.label ?? 'run'}-f${feature.id}`;
@@ -1033,6 +1099,12 @@ async function gradeFeature(browser, feature, args, runCtx) {
   for (const actor of actors.values()) {
     for (const e of actor.consoleErrors) result.consoleErrors.push(`[${actor.name}] ${e}`);
   }
+
+  // What the server-side checks could and could not actually test. A criterion
+  // whose replay was unverified passed on its interface behaviour only; that is
+  // a weaker claim and the report has to say so out loud.
+  if (ctx.unverified.length) result.unverified = ctx.unverified;
+  if (ctx.verified.length) result.verified = ctx.verified;
 
   // Caps, applied in severity order.
   if (feature.max === undefined && refreshDependent && result.score > 1) {

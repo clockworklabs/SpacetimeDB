@@ -1,0 +1,47 @@
+{
+  "note": [
+    "The SpacetimeDB counterpart to postgres-l1-authz.json. Validating the new",
+    "criteria against only one backend would tell us the grader catches defects",
+    "in that backend's shape — which is the bias worth avoiding, since the point",
+    "of the benchmark is a fair comparison.",
+    "",
+    "These edit the MODULE, so they need a republish rather than a hot reload:",
+    "set redeployMs high enough for `spacetime publish` to finish, and run with a",
+    "redeploy command (see redeploy below).",
+    "",
+    "EXPECTATION, recorded before running so the result cannot be rationalised",
+    "afterwards:",
+    "  - leak-every-message SHOULD be caught. The view is the subscription, so",
+    "    dropping its filter puts other people's direct messages on the wire while",
+    "    the interface still renders only the open conversation.",
+    "  - anyone-can-remove-a-member is EXPECTED TO SURVIVE, and that is a known",
+    "    hole rather than a pass. Authorization is verified by re-issuing a real",
+    "    request as the wrong user, and a reducer call cannot be replayed over",
+    "    HTTP — so on this backend the criterion rests on its DOM assertion, which",
+    "    a server-side change does not affect. If it survives, the honest reading",
+    "    is that the harness cannot currently see server-side authorization holes",
+    "    on SpacetimeDB, NOT that SpacetimeDB has none. Fixing it means driving the",
+    "    reducer from the wrong actor's own live connection."
+  ],
+  "redeploy": "spacetime publish stackbench-run0 --module-path backend/spacetimedb",
+  "mutations": [
+    {
+      "id": "leak-every-message",
+      "file": "backend/spacetimedb/src/index.ts",
+      "desc": "The my_messages view stops restricting rows to conversations the caller belongs to, so every client is sent every message including other people's direct ones. The interface still shows only the open conversation.",
+      "find": "    if (!convIds.has(msg.conversationId)) continue;",
+      "replace": "    // if (!convIds.has(msg.conversationId)) continue;",
+      "breaks": 109,
+      "settleMs": 25000
+    },
+    {
+      "id": "anyone-can-remove-a-member",
+      "file": "backend/spacetimedb/src/index.ts",
+      "desc": "The ownership check in the removeMember reducer is dropped. The control stays hidden from non-owners, so nothing visible changes.",
+      "find": "    if (!myMembership || !myMembership.isOwner) throw new SenderError('only an owner can remove members');",
+      "replace": "    if (false) throw new SenderError('only an owner can remove members');",
+      "breaks": 108,
+      "settleMs": 25000
+    }
+  ]
+}

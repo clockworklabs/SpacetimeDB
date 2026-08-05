@@ -267,13 +267,13 @@
     },
     {
       "id": "restock-input",
-      "element": "the input for how many units to add when restocking",
+      "element": "the input for how many units to add, inside the item-in-warehouse row it restocks — one per admin-location-row, so the row identifies both the item and the warehouse",
       "stage": "admin",
       "check": "visible"
     },
     {
       "id": "restock-submit",
-      "element": "button that applies the restock",
+      "element": "button that applies the restock, inside the same admin-location-row as its restock-input",
       "stage": "admin",
       "check": "visible"
     },
@@ -332,13 +332,6 @@
       "stage": "scenario",
       "check": "visible",
       "note": "present for an admin account and absent for a customer — both halves are scored"
-    },
-    {
-      "id": "warehouse-select",
-      "element": "the control choosing which warehouse a restock goes to",
-      "stage": "scenario",
-      "check": "visible",
-      "note": "exercised when the admin suite moves stock into a named warehouse"
     }
   ]
 }

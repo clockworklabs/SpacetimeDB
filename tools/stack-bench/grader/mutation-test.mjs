@@ -31,21 +31,66 @@ function parseArgs(argv) {
     else if (argv[i] === '--mutations') a.mutations = argv[++i];
     else if (argv[i] === '--level') a.level = argv[++i];
     else if (argv[i] === '--spec') a.spec = argv[++i];
+    else if (argv[i] === '--backend') a.backend = argv[++i];
+    else if (argv[i] === '--run-index') a.runIndex = argv[++i];
+    else if (argv[i] === '--track-slug') a.slug = argv[++i];
+    else if (argv[i] === '--probe') a.probe = argv[++i];
+    else if (argv[i] === '--redeploy') a.redeploy = argv[++i];
     else { console.error(`Unknown arg ${argv[i]}`); process.exit(2); }
   }
   if (!a.app || !a.url || !a.mutations) {
-    console.error('Usage: node mutation-test.mjs --app <dir> --url <url> --mutations <file> [--level N]');
+    console.error('Usage: node mutation-test.mjs --app <dir> --url <url> --mutations <file> [--level N] [--backend <b>]');
     process.exit(2);
   }
   a.level ??= '1';
+  a.runIndex ??= '0';
   return a;
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const lastLine = err => (err.stdout || err.message || '').toString().trim().split(/\r?\n/).pop();
 
-function grade(url, level, feature, spec) {
-  const args = [GRADER, '--url', url, '--level', level, '--out', REPORT];
-  if (spec) args.push('--spec', spec);
+// Editing a watched source file restarts the server. Grading before it is back
+// fails EVERY feature, which reads as "the mutation was caught" in the target
+// and as collateral everywhere else — three probes were wasted that way. Wait
+// for the app to answer instead of guessing with a sleep.
+async function waitForApp(a, seconds = 120) {
+  const probe = new URL(a.probe ?? '/api/rooms', a.url).toString();
+  const deadline = Date.now() + seconds * 1000;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(probe, { signal: AbortSignal.timeout(3000) });
+      if (res.status < 500) return true;      // 401/404 still means it is serving
+    } catch { /* not up yet */ }
+    await sleep(2000);
+  }
+  console.log(`  (app did not answer at ${probe} within ${seconds}s — results will be unreliable)`);
+  return false;
+}
+
+// Grading a dirty database silently lowers scores, and this compares scores
+// across runs — an accumulated room would read as a mutation being "caught".
+function reset(a) {
+  if (!a.backend) return;
+  try {
+    execFileSync('bash', [join(HERE, '..', 'reset-db.sh'), a.backend, a.app, a.runIndex, a.slug ?? ''],
+      { stdio: 'pipe', encoding: 'utf8' });
+  } catch (err) {
+    console.log(`  (reset failed: ${(err.stdout || err.message || '').toString().trim().split('\n').pop()})`);
+  }
+}
+
+function redeploy(a, spec) {
+  const cmd = a.redeploy ?? spec.redeploy;
+  if (!cmd) return;
+  try { execFileSync('bash', ['-c', cmd], { cwd: a.app, stdio: 'pipe', encoding: 'utf8' }); }
+  catch (err) { console.log(`  (redeploy failed: ${lastLine(err)})`); }
+}
+
+function grade(a, feature) {
+  reset(a);
+  const args = [GRADER, '--url', a.url, '--level', a.level, '--out', REPORT];
+  if (a.spec) args.push('--spec', a.spec);
   if (feature) args.push('--feature', String(feature));
   try {
     execFileSync('node', args, { stdio: 'pipe', encoding: 'utf8' });
@@ -58,7 +103,8 @@ const args = parseArgs(process.argv);
 const spec = JSON.parse(readFileSync(args.mutations, 'utf8'));
 
 console.log('Baseline (unmutated app)...');
-const baseline = grade(args.url, args.level, undefined, args.spec);
+await waitForApp(args);
+const baseline = grade(args, undefined);
 const baseScores = Object.fromEntries(baseline.features.map(f => [f.id, f.score]));
 console.log(`  baseline: ${baseline.total}/${baseline.max}  ${baseline.features.map(f => `F${f.id}:${f.score}`).join(' ')}\n`);
 
@@ -78,15 +124,19 @@ for (const m of spec.mutations) {
 
   copyFileSync(target, backup);
   writeFileSync(target, edits.reduce((src, e) => src.replace(e.find, e.replace), original));
-  await sleep(m.settleMs ?? 4000);            // let the dev server hot-reload
+  await sleep(m.settleMs ?? 4000);            // let the watcher notice the edit
+  redeploy(args, spec);
+  await waitForApp(args);
 
   let r;
   try {
-    r = grade(args.url, args.level, undefined, args.spec);
+    r = grade(args, undefined);
   } finally {
     copyFileSync(backup, target);
     unlinkSync(backup);
-    await sleep(m.settleMs ?? 4000);          // restore before the next mutation
+    await sleep(m.settleMs ?? 4000);
+    redeploy(args, spec);
+    await waitForApp(args);                   // healthy again before the next probe
   }
 
   const got = Object.fromEntries(r.features.map(f => [f.id, f.score]));
@@ -96,11 +146,25 @@ for (const m of spec.mutations) {
     .map(Number);
 
   const status = !expectedDropped ? 'SURVIVED' : collateral.length ? 'CAUGHT+COLLATERAL' : 'CAUGHT';
-  results.push({ id: m.id, status, breaks: m.breaks, before: baseScores[m.breaks], after: got[m.breaks], collateral });
+
+  // WHICH criterion noticed matters as much as whether the score moved. A
+  // feature dropping to zero usually means its setup broke, which proves the
+  // app is wrecked rather than that the intended assertion can see the defect.
+  const broken = r.features.find(f => f.id === m.breaks);
+  const caughtBy = (broken?.criteria ?? []).filter(c => !c.passed).map(c => c.id);
+  const setupBroke = Boolean(broken?.setupError);
+  results.push({ id: m.id, status, breaks: m.breaks, before: baseScores[m.breaks], after: got[m.breaks],
+    collateral, caughtBy, setupBroke, setupError: broken?.setupError ?? null });
 
   const detail = `F${m.breaks} ${baseScores[m.breaks]}→${got[m.breaks]}` +
     (collateral.length ? `, also dropped F${collateral.join(',F')}` : '');
   console.log(`${status.padEnd(18)} ${m.id} — ${detail}`);
+  if (caughtBy.length) console.log(`    failed criteria: ${caughtBy.join(', ')}`);
+  if (setupBroke) {
+    console.log(`    WARNING: the feature's SETUP failed (${String(broken.setupError).slice(0, 120)})`);
+    console.log('    The score moved because the app broke, not because the assertion saw the defect.');
+    console.log('    Treat this as an inconclusive probe and make the mutation more surgical.');
+  }
   if (status === 'SURVIVED') console.log(`    ORACLE HOLE: ${m.desc}`);
 }
 

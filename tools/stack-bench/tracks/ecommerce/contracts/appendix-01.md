@@ -57,8 +57,8 @@ Rules:
 | `admin-warehouse-item` | one per warehouse in the admin warehouse list, containing its name |
 | `admin-location-row` | one per item-in-warehouse holding, containing the item and warehouse it refers to |
 | `admin-location-qty` | the quantity held in one warehouse for one item, as a number |
-| `restock-input` | the input for how many units to add when restocking |
-| `restock-submit` | button that applies the restock |
+| `restock-input` | the input for how many units to add, inside the item-in-warehouse row it restocks — one per admin-location-row, so the row identifies both the item and the warehouse |
+| `restock-submit` | button that applies the restock, inside the same admin-location-row as its restock-input |
 | `admin-revenue` | total revenue across all orders, as a number |
 | `buy-error` | appears when buying an out-of-stock item, or checking out more than is available |
 | `auth-error` | appears on a taken username or a wrong password |
@@ -67,7 +67,6 @@ Rules:
 | `empty-cart` | shown before anything is added, and again after checkout empties the cart |
 | `cart-remove` | checked with a populated cart by the feature suite |
 | `admin-link` | present for an admin account and absent for a customer — both halves are scored |
-| `warehouse-select` | exercised when the admin suite moves stock into a named warehouse |
 
 Before declaring DEPLOY_COMPLETE, verify the hooks by running the contract
 linter (command provided in your build instructions) and fix any failures.

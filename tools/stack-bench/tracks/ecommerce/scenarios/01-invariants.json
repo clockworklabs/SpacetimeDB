@@ -69,13 +69,13 @@
           "points": 2,
           "steps": [
             { "do": "click", "actor": "admin", "testid": "admin-link" },
-            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "10" },
-            { "do": "click", "actor": "admin", "testid": "restock-submit" },
+            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "10", "in": { "testid": "admin-location-row", "contains": "Anvil" } },
+            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Anvil" } },
             { "do": "wait", "actor": "admin", "ms": 2000 },
-            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Anvil" }, "atLeast": 100 },
+            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Anvil" }, "as": "anvil-after-admin-restock" },
             { "do": "replayAs", "actor": "customer", "from": "admin", "match": "restock", "settleMs": 2500 },
             { "do": "expectReplayRejected", "actor": "customer" },
-            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Anvil" }, "atMost": 110 }
+            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Anvil" }, "relativeTo": "anvil-after-admin-restock", "plus": 0 }
           ]
         }
       ]
@@ -177,25 +177,27 @@
       "criteria": [
         {
           "id": "107a",
-          "desc": "revenue equals what was actually bought",
+          "desc": "revenue rises by exactly what was bought",
           "points": 1,
           "steps": [
+            { "do": "click", "actor": "admin", "testid": "admin-link" },
+            { "do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "revenue-before" },
+            { "do": "recordNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Kiln Brick" }, "as": "brick-before" },
             { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Kiln Brick" } },
             { "do": "wait", "actor": "buyer", "ms": 1000 },
             { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Kiln Brick" } },
             { "do": "wait", "actor": "buyer", "ms": 2000 },
-            { "do": "click", "actor": "admin", "testid": "admin-link" },
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "equals": 16, "within": 10000 }
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "revenue-before", "plus": 16, "within": 10000 }
           ]
         },
         {
           "id": "107b",
-          "desc": "what the store sold is what left the warehouses",
+          "desc": "what the store sold is what left the warehouses, and a fresh client agrees",
           "points": 1,
           "steps": [
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Kiln Brick" }, "equals": 98 },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Kiln Brick" }, "relativeTo": "brick-before", "plus": -2 },
             { "do": "freshClient", "actor": "buyer" },
-            { "do": "expectNumber", "actor": "buyer-fresh", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Kiln Brick" }, "equals": 98 }
+            { "do": "expectNumber", "actor": "buyer-fresh", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Kiln Brick" }, "relativeTo": "brick-before", "plus": -2 }
           ]
         }
       ]
