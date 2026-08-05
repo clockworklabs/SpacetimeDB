@@ -18,7 +18,7 @@
     <RepositoryUrl>https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk</RepositoryUrl>
     <AssemblyVersion>2.8.0</AssemblyVersion>
     <Version>2.8.0</Version>
-    <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);*~/**;tests/**</DefaultItemExcludes>
     <!-- We want to save DLLs for Unity which doesn't support NuGet. -->
     <RestorePackagesPath>packages</RestorePackagesPath>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
