@@ -32,7 +32,7 @@ Re-run `npx drizzle-kit push` after any schema change.
 
 ## Branding & Styling
 
-- App title: **"PostgreSQL Chat"**
+- App title: **"PostgreSQL <APP_NOUN>"**
 - Dark theme using official PostgreSQL brand colors:
   - Primary: `#336791` (PostgreSQL blue)
   - Primary hover: `#008bb9` (lighter PostgreSQL blue)

@@ -5,23 +5,29 @@
 # breaks assertions that pass on a clean app, with no error to show for it — so
 # every suite resets first.
 #
-# Usage: reset-db.sh <backend> <app-dir> [run-index]
+# Usage: reset-db.sh <backend> <app-dir> [run-index] [track-slug]
+#
+# The track slug separates one application's databases from another's, so a run
+# of one track cannot wipe the other's data. Empty (the default) is the chat
+# track, whose names predate tracks and must not change.
 set -euo pipefail
 
 BACKEND="${1:?backend required}"
 APP_DIR="${2:?app dir required}"
 RUN_INDEX="${3:-0}"
+SLUG="${4:-}"
 
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-stack-bench-postgres}"
 MONGO_CONTAINER="${MONGO_CONTAINER:-stack-bench-mongodb}"
-DB_NAME="stackbench_run${RUN_INDEX}"
+DB_NAME="stackbench${SLUG:+_$SLUG}_run${RUN_INDEX}"
+MODULE_FALLBACK="stackbench${SLUG:+-$SLUG}-run${RUN_INDEX}"
 
 case "$BACKEND" in
   spacetime)
     # Republishing with --delete-data clears the module's tables in place, so the
     # client keeps pointing at the same module name.
     MODULE=$(grep -oE "MODULE_NAME\s*=\s*'[^']+'" "$APP_DIR/client/src/config.ts" 2>/dev/null | grep -oE "'[^']+'" | tr -d "'")
-    MODULE="${MODULE:-stackbench-run${RUN_INDEX}}"
+    MODULE="${MODULE:-$MODULE_FALLBACK}"
     echo y | spacetime publish "$MODULE" --module-path "$APP_DIR/backend/spacetimedb" --delete-data >/dev/null 2>&1
     echo "reset spacetime module $MODULE"
     ;;

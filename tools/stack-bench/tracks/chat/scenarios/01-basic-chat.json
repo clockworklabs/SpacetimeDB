@@ -517,6 +517,296 @@
           ]
         }
       ]
+    },
+    {
+      "id": 6,
+      "name": "Room Members and Roles",
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "team"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "team"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "members-appear-live",
+          "points": 1,
+          "desc": "Someone joining a room appears in its member panel without anyone reloading",
+          "steps": [
+            {
+              "do": "enterRoom",
+              "actor": "bob",
+              "room": "team"
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "member-item",
+              "contains": "Bob",
+              "within": 8000
+            }
+          ]
+        },
+        {
+          "id": "owner-is-shown",
+          "points": 1,
+          "desc": "The room's creator is marked as its owner",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "member-owner",
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "removed-member-disappears",
+          "points": 1,
+          "desc": "Removing a member takes them out of the panel live, for everyone still in the room",
+          "steps": [
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "member-remove",
+              "in": {
+                "testid": "member-item",
+                "contains": "Bob"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "member-item",
+              "contains": "Bob",
+              "absent": true,
+              "within": 8000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Direct Messages",
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "wait",
+          "actor": "alice",
+          "ms": 2000
+        }
+      ],
+      "criteria": [
+        {
+          "id": "dm-can-be-started",
+          "points": 1,
+          "desc": "A user can open a direct conversation with another user",
+          "steps": [
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "dm-start",
+              "in": {
+                "testid": "online-user",
+                "contains": "Bob"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "dm-item",
+              "contains": "Bob",
+              "within": 8000
+            }
+          ]
+        },
+        {
+          "id": "dm-delivers-live",
+          "points": 1,
+          "desc": "A direct message reaches the other participant live, with no reload",
+          "steps": [
+            {
+              "do": "click",
+              "actor": "alice",
+              "testid": "dm-item",
+              "in": {
+                "testid": "dm-list",
+                "contains": "Bob"
+              }
+            },
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "a private word"
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "a private word",
+              "within": 10000
+            }
+          ]
+        },
+        {
+          "id": "dm-persists",
+          "points": 1,
+          "desc": "A direct conversation and its messages survive a reload",
+          "steps": [
+            {
+              "do": "reload",
+              "actor": "bob",
+              "settleMs": 3500
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "dm-item",
+              "contains": "Alice",
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Message Ownership",
+      "actors": [
+        "alice",
+        "bob"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "owned"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "owned"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "owned"
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "a message of my own"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "author-can-edit-and-delete",
+          "points": 1,
+          "desc": "The author of a message is offered edit and delete on it",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "message-edit",
+              "in": {
+                "testid": "message-item",
+                "contains": "a message of my own"
+              },
+              "within": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "alice",
+              "testid": "message-delete",
+              "in": {
+                "testid": "message-item",
+                "contains": "a message of my own"
+              },
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "others-are-not",
+          "points": 1,
+          "desc": "Nobody else is offered edit or delete on that message",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-item",
+              "contains": "a message of my own",
+              "within": 8000
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-edit",
+              "in": {
+                "testid": "message-item",
+                "contains": "a message of my own"
+              },
+              "absent": true,
+              "within": 5000
+            },
+            {
+              "do": "expect",
+              "actor": "bob",
+              "testid": "message-delete",
+              "in": {
+                "testid": "message-item",
+                "contains": "a message of my own"
+              },
+              "absent": true,
+              "within": 5000
+            }
+          ]
+        }
+      ]
     }
   ]
 }

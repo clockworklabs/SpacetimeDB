@@ -107,7 +107,14 @@
       "id": "online-users",
       "element": "container listing the usernames of users currently online",
       "stage": "main",
-      "check": "attached"
+      "check": "attached",
+      "note": "container listing signed-in users"
+    },
+    {
+      "id": "online-user",
+      "element": "one entry per signed-in user (repeated testid), containing that user's username",
+      "stage": "scenario",
+      "note": "appears while that user is signed in, gone once they sign out"
     },
     {
       "id": "message-input",
@@ -192,6 +199,78 @@
       "element": "control on a pinned entry that unpins it",
       "stage": "scenario",
       "note": "present on each pinned-item"
+    },
+    {
+      "id": "member-panel",
+      "element": "container listing the members of the current room",
+      "stage": "room",
+      "check": "attached"
+    },
+    {
+      "id": "member-item",
+      "element": "one entry per room member (repeated testid), containing that member's username",
+      "stage": "scenario",
+      "note": "appears for each member of the current room; gone once they leave or are removed"
+    },
+    {
+      "id": "member-owner",
+      "element": "marker on a member entry showing they own the room",
+      "stage": "scenario",
+      "note": "present on the owner's entry only"
+    },
+    {
+      "id": "member-remove",
+      "element": "control on a member entry that removes them from the room",
+      "stage": "scenario",
+      "note": "shown to owners only"
+    },
+    {
+      "id": "member-promote",
+      "element": "control on a member entry that promotes them to owner",
+      "stage": "scenario",
+      "note": "shown to owners only"
+    },
+    {
+      "id": "dm-start",
+      "element": "control on another user's entry that opens a direct conversation with them",
+      "stage": "scenario",
+      "note": "present on each other user listed as online, and on each member entry"
+    },
+    {
+      "id": "dm-list",
+      "element": "container listing the user's direct conversations",
+      "stage": "main",
+      "check": "attached"
+    },
+    {
+      "id": "dm-item",
+      "element": "one entry per direct conversation (repeated testid), naming the other participant",
+      "stage": "scenario",
+      "note": "appears once a direct conversation exists; visible only to its two participants"
+    },
+    {
+      "id": "permission-error",
+      "element": "error shown when the server refuses an action the user is not allowed to take",
+      "stage": "scenario",
+      "note": "visible after a refused unpin, removal, promotion, edit or delete"
+    },
+    {
+      "id": "message-edit",
+      "element": "control on a message that edits it",
+      "stage": "scenario",
+      "note": "shown on the author's own messages"
+    },
+    {
+      "id": "message-delete",
+      "element": "control on a message that deletes it",
+      "stage": "scenario",
+      "note": "shown on the author's own messages"
+    },
+    {
+      "id": "edited-marker",
+      "element": "marker showing a message has been edited",
+      "stage": "scenario",
+      "note": "appears on a message after it is edited"
     }
   ],
   "note": "Level 1 is sequential's basic chat with accounts added. Hooks cover the sign-up and sign-in forms, rooms and messages, plus typing indicators, read receipts and unread counts."

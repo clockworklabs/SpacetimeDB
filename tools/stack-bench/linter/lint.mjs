@@ -12,16 +12,18 @@
 import { chromium } from 'playwright';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { loadTrack, DEFAULT_TRACK } from '../tracks.mjs';
 
 const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CHECK_TIMEOUT = 5000;
 
 function parseArgs(argv) {
-  const args = { level: 1, json: false, headed: false };
+  const args = { level: 1, json: false, headed: false, track: DEFAULT_TRACK };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--url': args.url = argv[++i]; break;
+      case '--track': args.track = argv[++i]; break;
       case '--level': args.level = parseInt(argv[++i], 10); break;
       case '--json': args.json = true; break;
       case '--out': args.out = argv[++i]; break;
@@ -39,8 +41,8 @@ function parseArgs(argv) {
   return args;
 }
 
-function loadHooks(level) {
-  const CONTRACTS_DIR = join(ROOT_DIR, 'levels', 'contracts');
+function loadHooks(level, track) {
+  const CONTRACTS_DIR = track.contracts;
   const files = readdirSync(CONTRACTS_DIR).filter(f => /^\d+-[a-z-]+\.json$/.test(f)).sort();
   const hooks = [];
   for (const f of files) {
@@ -83,7 +85,8 @@ async function checkHook(page, hook, results) {
 
 async function run() {
   const args = parseArgs(process.argv);
-  const hooks = loadHooks(args.level);
+  const track = loadTrack(args.track);
+  const hooks = loadHooks(args.level, track);
   const byStage = stage => hooks.filter(h => h.stage === stage);
   const results = [];
   const blocked = stage => {
@@ -97,84 +100,10 @@ async function run() {
   page.setDefaultTimeout(CHECK_TIMEOUT);
 
   try {
-    await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-
-    // Stage: landing (fresh identity -> registration UI must be shown)
-    let ok = true;
-    for (const h of byStage('landing')) ok = (await checkHook(page, h, results)) && ok;
-
-    if (ok) {
-      await page.locator(tid('signup-username')).first().fill(`lint-${uniq}`);
-      await page.locator(tid('signup-password')).first().fill(`pw-lint-${uniq}`);
-      await page.locator(tid('signup-submit')).first().click();
-    }
-
-    // Stage: main (registered -> rooms + online users)
-    if (ok) {
-      for (const h of byStage('main')) ok = (await checkHook(page, h, results)) && ok;
-    } else blocked('main');
-
-    // Create a room, then check hooks that need one to exist. The created room
-    // must arrive in the list via the app's live update path (no reload) — this
-    // is itself a contract requirement, so we wait for OUR room, not any room.
-    const ourRoom = page.locator(tid('room-item'), { hasText: `lint-room-${uniq}` }).first();
-    if (ok) {
-      const nameInput = page.locator(tid('room-name-input')).first();
-      if (!(await nameInput.isVisible().catch(() => false))) {
-        await page.locator(tid('room-create')).first().click();
-      }
-      await nameInput.fill(`lint-room-${uniq}`);
-      await page.locator(tid('room-name-submit')).first().click();
-      for (const h of byStage('main-after-create')) {
-        if (h.id === 'room-item') {
-          try {
-            await ourRoom.waitFor({ state: 'visible', timeout: CHECK_TIMEOUT });
-            results.push({ id: h.id, status: 'PASS' });
-          } catch {
-            results.push({
-              id: h.id, status: 'FAIL',
-              detail: `created room "lint-room-${uniq}" but no ${tid(h.id)} containing it appeared without a reload`,
-            });
-            ok = false;
-          }
-        } else ok = (await checkHook(page, h, results)) && ok;
-      }
-    } else blocked('main-after-create');
-
-    // Stage: room (enter our room, send a probe message via Enter).
-    // Apps may implement click-to-join then click-to-enter; allow a second click.
-    if (ok) {
-      await ourRoom.click();
-      const msgInput = page.locator(tid('message-input')).first();
-      if (!(await msgInput.isVisible().catch(() => false))) {
-        await page.waitForTimeout(750);
-        if (!(await msgInput.isVisible().catch(() => false))) await ourRoom.click();
-      }
-      for (const h of byStage('room')) await checkHook(page, h, results); // non-blocking: check all
-      ok = !results.some(r => r.status === 'FAIL' && hooks.find(h => h.id === r.id)?.stage === 'room');
-    } else blocked('room');
-
-    if (ok && !results.some(r => r.id === 'message-input' && r.status !== 'PASS')) {
-      const probe = `lint probe ${uniq}`;
-      await page.locator(tid('message-input')).first().fill(probe);
-      await page.locator(tid('message-input')).first().press('Enter');
-      for (const h of byStage('room-after-send')) {
-        const loc = page.locator(tid(h.id), { hasText: probe }).first();
-        try {
-          await loc.waitFor({ state: 'visible', timeout: CHECK_TIMEOUT });
-          results.push({ id: h.id, status: 'PASS' });
-        } catch {
-          results.push({
-            id: h.id, status: 'FAIL',
-            detail: `sent "${probe}" via Enter but no ${tid(h.id)} containing it appeared — expected: ${h.element}`,
-          });
-        }
-      }
-    } else blocked('room-after-send');
-
-    for (const h of byStage('scenario')) {
-      results.push({ id: h.id, status: 'SCENARIO', detail: h.note });
-    }
+    // The golden path is the one thing about linting that is entirely
+    // application-specific, so each track brings its own.
+    const { walk } = await import(pathToFileURL(track.walk).href);
+    await walk({ page, args, hooks, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT });
   } catch (err) {
     console.error(`Golden path aborted: ${err.message}`);
     for (const h of hooks) {

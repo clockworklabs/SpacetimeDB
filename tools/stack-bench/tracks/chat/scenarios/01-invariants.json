@@ -620,6 +620,354 @@
           ]
         }
       ]
+    },
+    {
+      "id": 109,
+      "name": "Direct Message Privacy",
+      "max": 3,
+      "actors": [
+        "alice",
+        "bob",
+        "snoop"
+      ],
+      "note": "A direct conversation is the first data in level 1 that must not reach someone. The wire check is the one that matters: an app that broadcasts widely and filters in the browser looks perfect on screen while the data is already in every client.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "Alice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "Bob"
+        },
+        {
+          "do": "signUp",
+          "actor": "snoop",
+          "name": "Snoop"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "lobby"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "alice",
+          "room": "lobby"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "snoop",
+          "room": "lobby"
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "a public message in the lobby"
+        },
+        {
+          "do": "wait",
+          "actor": "alice",
+          "ms": 2500
+        },
+        {
+          "do": "click",
+          "actor": "alice",
+          "testid": "dm-start",
+          "in": {
+            "testid": "online-user",
+            "contains": "Bob"
+          }
+        },
+        {
+          "do": "wait",
+          "actor": "alice",
+          "ms": 2000
+        },
+        {
+          "do": "click",
+          "actor": "alice",
+          "testid": "dm-item",
+          "in": {
+            "testid": "dm-list",
+            "contains": "Bob"
+          }
+        },
+        {
+          "do": "send",
+          "actor": "alice",
+          "text": "SECRET between alice and bob"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "outsider-cannot-see-the-conversation",
+          "points": 1,
+          "desc": "A third party does not see the conversation in their list",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "snoop",
+              "testid": "dm-item",
+              "contains": "Alice",
+              "absent": true,
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "outsider-cannot-read-the-messages",
+          "points": 1,
+          "desc": "A third party never sees the messages",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "snoop",
+              "testid": "message-item",
+              "contains": "SECRET between alice and bob",
+              "absent": true,
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "outsider-never-receives-it-over-the-wire",
+          "points": 1,
+          "desc": "A third party's client is never SENT the private message. Hiding it in the interface is not privacy \u2014 anyone with developer tools can read what their own browser received.",
+          "steps": [
+            {
+              "do": "expectReceived",
+              "actor": "snoop",
+              "contains": "a public message in the lobby",
+              "within": 8000
+            },
+            {
+              "do": "click",
+              "actor": "bob",
+              "testid": "dm-item",
+              "in": {
+                "testid": "dm-list",
+                "contains": "Alice"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "bob",
+              "ms": 2000
+            },
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "SECOND SECRET for bob only"
+            },
+            {
+              "do": "wait",
+              "actor": "alice",
+              "ms": 4000
+            },
+            {
+              "do": "expectReceived",
+              "actor": "bob",
+              "contains": "SECOND SECRET for bob only",
+              "within": 8000
+            },
+            {
+              "do": "expectNotReceived",
+              "actor": "snoop",
+              "contains": "SECOND SECRET for bob only"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 108,
+      "name": "Authorization",
+      "max": 4,
+      "actors": [
+        "owner",
+        "member",
+        "target",
+        "outsider"
+      ],
+      "note": "Each of these is an action the wrong person must not be able to take. Where the app writes over HTTP the request is re-issued with the wrong user's credentials, because a hidden control is not a check. Where identity comes from the live connection there is nothing to re-issue: that replay records as unverified and never scores or penalises, so the point rests on what the interface actually does.",
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "Owner"
+        },
+        {
+          "do": "signUp",
+          "actor": "member",
+          "name": "Member"
+        },
+        {
+          "do": "signUp",
+          "actor": "target",
+          "name": "Target"
+        },
+        {
+          "do": "signUp",
+          "actor": "outsider",
+          "name": "Outsider"
+        },
+        {
+          "do": "createRoom",
+          "actor": "owner",
+          "room": "guarded"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "owner",
+          "room": "guarded"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "member",
+          "room": "guarded"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "target",
+          "room": "guarded"
+        },
+        {
+          "do": "send",
+          "actor": "owner",
+          "text": "owner message"
+        },
+        {
+          "do": "wait",
+          "actor": "owner",
+          "ms": 2500
+        }
+      ],
+      "criteria": [
+        {
+          "id": "outsider-cannot-read-the-room",
+          "points": 1,
+          "desc": "Someone who never joined the room cannot read its history",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "outsider",
+              "testid": "message-item",
+              "contains": "owner message",
+              "absent": true,
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "outsider-cannot-post-to-the-room",
+          "points": 1,
+          "desc": "Someone who never joined cannot post to the room, even by re-issuing a member's own send request",
+          "steps": [
+            {
+              "do": "replayAs",
+              "actor": "outsider",
+              "from": "owner",
+              "match": "owner message",
+              "swap": {
+                "find": "owner message",
+                "with": "posted by an outsider"
+              }
+            },
+            {
+              "do": "expectReplayRejected",
+              "actor": "outsider"
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "message-item",
+              "contains": "posted by an outsider",
+              "absent": true,
+              "within": 6000
+            }
+          ]
+        },
+        {
+          "id": "removed-member-stops-receiving",
+          "points": 1,
+          "desc": "A removed user stops receiving the room's messages immediately, without reloading. Revoking access has to stop the stream, not just stop the interface drawing it.",
+          "steps": [
+            {
+              "do": "expectReceived",
+              "actor": "target",
+              "contains": "owner message",
+              "within": 8000
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "member-remove",
+              "in": {
+                "testid": "member-item",
+                "contains": "Target"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "owner",
+              "ms": 3000
+            },
+            {
+              "do": "send",
+              "actor": "owner",
+              "text": "after the removal"
+            },
+            {
+              "do": "wait",
+              "actor": "owner",
+              "ms": 4000
+            },
+            {
+              "do": "expectNotReceived",
+              "actor": "target",
+              "contains": "after the removal"
+            }
+          ]
+        },
+        {
+          "id": "only-an-owner-can-remove-a-member",
+          "points": 1,
+          "desc": "A member who is not an owner cannot remove anyone \u2014 not through the interface, and not by re-issuing the owner's own removal request against a different person",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "member",
+              "testid": "member-remove",
+              "absent": true,
+              "within": 5000
+            },
+            {
+              "do": "replayAs",
+              "actor": "member",
+              "from": "owner",
+              "match": "member",
+              "swap": {
+                "find": "Target",
+                "with": "Owner"
+              }
+            },
+            {
+              "do": "expectReplayRejected",
+              "actor": "member"
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "member-item",
+              "contains": "Owner",
+              "within": 6000
+            }
+          ]
+        }
+      ]
     }
   ]
 }

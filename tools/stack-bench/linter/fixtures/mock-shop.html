@@ -1,0 +1,283 @@
+<!-- A hand-written store that satisfies the ecommerce contract, so the linter's
+     golden path can be validated without paying for a generated app. It fakes
+     nothing the walk inspects: signing up really reveals the buying controls,
+     search really covers the whole catalogue, checkout really produces an order.
+     Not a reference implementation — no server, no concurrency, no auth. -->
+<h1 data-testid="app-title">Mock Shop</h1>
+
+<div id="auth">
+  <input data-testid="signup-username" placeholder="username">
+  <input data-testid="signup-password" type="password" placeholder="password">
+  <button data-testid="signup-submit">Sign up</button>
+  <button data-testid="signin-toggle">Have an account?</button>
+  <span id="signin-form" hidden>
+    <input data-testid="signin-username" placeholder="username">
+    <input data-testid="signin-password" type="password" placeholder="password">
+    <button data-testid="signin-submit">Sign in</button>
+  </span>
+</div>
+
+<div id="account" hidden>
+  <span data-testid="current-user"></span>
+  <button data-testid="cart-toggle">Cart</button>
+  <span data-testid="cart-count">0</span>
+  <button data-testid="orders-toggle">Orders</button>
+  <button data-testid="admin-link" hidden>Admin</button>
+  <button data-testid="signout">Sign out</button>
+</div>
+
+<input data-testid="search-input" placeholder="search">
+<div data-testid="search-results" hidden></div>
+<div data-testid="item-list"></div>
+
+<div data-testid="item-detail" hidden>
+  <h2 id="detail-name"></h2>
+  <span>Average rating: <span data-testid="review-average">0</span></span>
+  <select data-testid="review-rating">
+    <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+    <option value="4">4</option><option value="5">5</option>
+  </select>
+  <input data-testid="review-input" placeholder="your review">
+  <button data-testid="review-submit">Submit review</button>
+  <div id="reviews"></div>
+</div>
+
+<div data-testid="cart-panel" hidden>
+  <div id="cart-lines"></div>
+  <div data-testid="empty-cart" hidden>Your cart is empty</div>
+  <span>Total: <span data-testid="cart-total">0.00</span></span>
+  <button data-testid="checkout-submit">Check out</button>
+</div>
+
+<div data-testid="order-list" hidden></div>
+
+<div data-testid="admin-panel" hidden>
+  <div id="admin-items"></div>
+  <div id="admin-warehouses"></div>
+  <div id="admin-locations"></div>
+  <input data-testid="restock-input" placeholder="units">
+  <button data-testid="restock-submit">Restock</button>
+  <span>Revenue: <span data-testid="admin-revenue">0.00</span></span>
+</div>
+
+<div data-testid="buy-error" hidden></div>
+<div data-testid="auth-error" hidden></div>
+<div data-testid="review-error" hidden></div>
+
+<script>
+const CATALOGUE = [
+  ['Anvil', 45.00, 60, 40], ['Bellows', 89.50, 50, 50], ['Chisel Set', 32.00, 70, 30],
+  ['Drill Press', 349.00, 55, 45], ['Forge Tongs', 27.50, 80, 20], ['Grinding Wheel', 64.00, 50, 50],
+  ['Hammer', 18.00, 60, 40], ['Ingot Mold', 41.00, 50, 50], ["Jeweller's Loupe", 22.00, 70, 30],
+  ['Kiln Brick', 8.00, 90, 10], ['Limited Vase', 500.00, 2, 1], ["Miller's Sieve", 15.00, 60, 40],
+];
+const WAREHOUSES = ['East', 'West'];
+const items = CATALOGUE.map(([name, price, east, west], id) =>
+  ({ id, name, price, stock: { East: east, West: west }, purchases: 0, reviews: [] }));
+const total = i => i.stock.East + i.stock.West;
+const $ = s => document.querySelector(s);
+const el = (tag, testid, text) => {
+  const n = document.createElement(tag);
+  if (testid) n.dataset.testid = testid;
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
+
+let user = null, cart = [], orders = [], revenue = 0;
+
+// Ranked by purchases, ties alphabetical — the ordering the contract requires.
+const ranked = () => [...items].sort((a, b) => b.purchases - a.purchases || a.name.localeCompare(b.name));
+
+function card(item) {
+  const c = el('div', 'item-card');
+  c.append(el('span', 'item-name', item.name));
+  c.append(el('span', 'item-price', '$' + item.price.toFixed(2)));
+  c.append(el('span', 'item-stock', 'Stock: ' + total(item)));
+  if (total(item) === 0) c.append(el('span', 'out-of-stock', 'Out of stock'));
+  if (user) {
+    const buy = el('button', 'buy-now', 'Buy');
+    buy.onclick = e => { e.stopPropagation(); buyOne(item); };
+    const add = el('button', 'add-to-cart', 'Add to cart');
+    add.onclick = e => { e.stopPropagation(); addToCart(item); };
+    c.append(buy, add);
+  }
+  c.querySelector('[data-testid="item-name"]').onclick = () => openItem(item);
+  return c;
+}
+
+function renderStorefront() {
+  const list = $('[data-testid="item-list"]');
+  list.textContent = '';
+  for (const item of ranked().slice(0, 10)) list.append(card(item));
+}
+
+function renderSearch(q) {
+  const box = $('[data-testid="search-results"]');
+  box.textContent = '';
+  if (!q) { box.hidden = true; return; }
+  box.hidden = false;
+  for (const item of items.filter(i => i.name.toLowerCase().includes(q.toLowerCase()))) box.append(card(item));
+}
+
+function buyOne(item) {
+  if (total(item) === 0) { flash('buy-error', 'Out of stock'); return; }
+  item.stock.East > 0 ? item.stock.East-- : item.stock.West--;
+  item.purchases++;
+  revenue += item.price;
+  orders.push({ lines: [{ name: item.name, qty: 1, price: item.price }], total: item.price });
+  renderAll();
+}
+
+function addToCart(item) {
+  const line = cart.find(l => l.id === item.id);
+  line ? line.qty++ : cart.push({ id: item.id, name: item.name, price: item.price, qty: 1 });
+  renderAll();
+}
+
+function checkout() {
+  if (!cart.length) return;
+  for (const line of cart) {
+    const item = items[line.id];
+    for (let n = 0; n < line.qty; n++) { item.stock.East > 0 ? item.stock.East-- : item.stock.West--; item.purchases++; }
+    revenue += line.price * line.qty;
+  }
+  orders.push({ lines: cart.map(l => ({ ...l })), total: cart.reduce((s, l) => s + l.price * l.qty, 0) });
+  cart = [];
+  renderAll();
+}
+
+function openItem(item) {
+  $('[data-testid="item-detail"]').hidden = false;
+  $('#detail-name').textContent = item.name;
+  $('[data-testid="review-submit"]').onclick = () => {
+    const text = $('[data-testid="review-input"]').value;
+    const rating = Number($('[data-testid="review-rating"]').value);
+    if (!text) return;
+    const mine = item.reviews.find(r => r.by === user);
+    mine ? Object.assign(mine, { text, rating }) : item.reviews.push({ by: user, text, rating });
+    renderReviews(item);
+  };
+  renderReviews(item);
+}
+
+function renderReviews(item) {
+  const box = $('#reviews');
+  box.textContent = '';
+  for (const r of item.reviews) box.append(el('div', 'review-item', r.text));
+  const avg = item.reviews.length
+    ? item.reviews.reduce((s, r) => s + r.rating, 0) / item.reviews.length : 0;
+  $('[data-testid="review-average"]').textContent = String(avg);
+}
+
+function renderCart() {
+  const box = $('#cart-lines');
+  box.textContent = '';
+  for (const line of cart) {
+    const row = el('div', 'cart-item');
+    row.append(el('span', null, line.name));
+    row.append(el('span', 'cart-quantity', String(line.qty)));
+    const rm = el('button', 'cart-remove', 'Remove');
+    rm.onclick = () => { cart = cart.filter(l => l.id !== line.id); renderAll(); };
+    row.append(rm);
+    box.append(row);
+  }
+  $('[data-testid="empty-cart"]').hidden = cart.length > 0;
+  $('[data-testid="cart-total"]').textContent =
+    cart.reduce((s, l) => s + l.price * l.qty, 0).toFixed(2);
+  $('[data-testid="cart-count"]').textContent = String(cart.reduce((s, l) => s + l.qty, 0));
+}
+
+function renderOrders() {
+  const box = $('[data-testid="order-list"]');
+  box.textContent = '';
+  for (const o of orders) {
+    const row = el('div', 'order-item');
+    row.append(el('span', null, o.lines.map(l => l.name).join(', ')));
+    row.append(el('span', 'order-total', o.total.toFixed(2)));
+    box.append(row);
+  }
+}
+
+function renderAdmin() {
+  const itemBox = $('#admin-items'); itemBox.textContent = '';
+  for (const item of items) {
+    const row = el('div', 'admin-item-row');
+    row.append(el('span', null, item.name));
+    row.append(el('span', 'admin-stock', String(total(item))));
+    itemBox.append(row);
+  }
+  const whBox = $('#admin-warehouses'); whBox.textContent = '';
+  for (const w of WAREHOUSES) whBox.append(el('div', 'admin-warehouse-item', w));
+  const locBox = $('#admin-locations'); locBox.textContent = '';
+  for (const item of items) {
+    for (const w of WAREHOUSES) {
+      const row = el('div', 'admin-location-row');
+      row.append(el('span', null, item.name + ' @ ' + w));
+      row.append(el('span', 'admin-location-qty', String(item.stock[w])));
+      const sel = el('select', 'warehouse-select');
+      for (const opt of WAREHOUSES) { const o = el('option', null, opt); o.value = opt; sel.append(o); }
+      sel.value = w;
+      row.append(sel);
+      locBox.append(row);
+    }
+  }
+  $('[data-testid="admin-revenue"]').textContent = revenue.toFixed(2);
+}
+
+function renderAll() {
+  renderStorefront();
+  renderCart();
+  renderOrders();
+  if (user === 'admin') renderAdmin();
+  const q = $('[data-testid="search-input"]').value;
+  if (q) renderSearch(q);
+}
+
+function flash(testid, msg) {
+  const n = $('[data-testid="' + testid + '"]');
+  n.textContent = msg; n.hidden = false;
+}
+
+function signedIn(name) {
+  user = name;
+  $('#auth').hidden = true;
+  $('#account').hidden = false;
+  $('[data-testid="current-user"]').textContent = name;
+  $('[data-testid="admin-link"]').hidden = name !== 'admin';
+  renderAll();
+}
+
+$('[data-testid="signup-submit"]').onclick = () => {
+  const name = $('[data-testid="signup-username"]').value;
+  if (name) signedIn(name);
+};
+$('[data-testid="signin-toggle"]').onclick = () => { $('#signin-form').hidden = false; };
+$('[data-testid="signin-submit"]').onclick = () => {
+  const name = $('[data-testid="signin-username"]').value;
+  if (name) signedIn(name);
+};
+$('[data-testid="signout"]').onclick = () => {
+  user = null; cart = [];
+  $('#auth').hidden = false; $('#account').hidden = true;
+  $('[data-testid="admin-panel"]').hidden = true;
+  $('[data-testid="item-detail"]').hidden = true;
+  renderAll();
+};
+$('[data-testid="cart-toggle"]').onclick = () => {
+  const p = $('[data-testid="cart-panel"]'); p.hidden = !p.hidden;
+};
+$('[data-testid="orders-toggle"]').onclick = () => {
+  const p = $('[data-testid="order-list"]'); p.hidden = !p.hidden;
+};
+$('[data-testid="admin-link"]').onclick = () => {
+  $('[data-testid="admin-panel"]').hidden = false; renderAdmin();
+};
+$('[data-testid="checkout-submit"]').onclick = checkout;
+$('[data-testid="restock-submit"]').onclick = () => {
+  const n = Number($('[data-testid="restock-input"]').value);
+  if (n > 0) { items[0].stock.East += n; renderAll(); }
+};
+$('[data-testid="search-input"]').addEventListener('input', e => renderSearch(e.target.value));
+
+renderAll();
+</script>

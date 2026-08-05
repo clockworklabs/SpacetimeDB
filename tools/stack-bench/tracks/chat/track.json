@@ -1,0 +1,13 @@
+{
+  "title": "Chat",
+  "slug": "",
+  "portOffset": 0,
+  "restartProbe": "/api/rooms",
+  "suites": {
+    "1": [
+      { "id": "features", "spec": "scenarios/01-basic-chat.json" },
+      { "id": "invariants", "spec": "scenarios/01-invariants.json" },
+      { "id": "delivery", "spec": "scenarios/01-delivery.json" }
+    ]
+  }
+}

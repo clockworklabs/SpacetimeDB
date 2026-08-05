@@ -19,18 +19,21 @@ import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadTrack, resultsName, DEFAULT_TRACK } from './tracks.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const AGENT = join(ROOT, 'agent.mjs');
 
 const VITE_BASE = { spacetime: 6173, postgres: 6273, mongodb: 6373 };
+const EXPRESS_BASE = 6001;
 
 function parseArgs(argv) {
   const a = { model: 'claude-sonnet-5', fixRounds: 3, runIndex: 0, levels: '1', media: true,
-    guidance: 'prescribed' };
+    guidance: 'prescribed', track: DEFAULT_TRACK };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--backend': a.backend = argv[++i]; break;
+      case '--track': a.track = argv[++i]; break;
       case '--levels': a.levels = argv[++i]; break;
       case '--model': a.model = argv[++i]; break;
       case '--fix-rounds': a.fixRounds = parseInt(argv[++i], 10); break;
@@ -81,13 +84,31 @@ function restoreSource(from, appDir) {
 // The agent starts dev servers so grading can reach them, but nothing owned
 // their lifetime — runs were leaving vite and Express processes behind, which is
 // how ports and app directories ended up occupied by finished work.
-function portsForRun(backend, runIndex) {
-  const vite = { spacetime: 6173, postgres: 6273, mongodb: 6373 }[backend] + runIndex;
-  return backend === 'spacetime' ? [vite] : [vite, 6001 + runIndex];
+function portsForRun(backend, runIndex, track) {
+  const offset = track.portOffset + runIndex;
+  const vite = VITE_BASE[backend] + offset;
+  return backend === 'spacetime' ? [vite] : [vite, EXPRESS_BASE + offset];
 }
 
-function stopServers(backend, runIndex) {
-  for (const port of portsForRun(backend, runIndex)) {
+// A dev server is usually a watcher supervising a child: the child holds the
+// port, the parent holds the directory. Killing by port leaves the parent alive
+// and the next build fails on EBUSY, so also sweep anything whose command line
+// names this run's app directory.
+function stopByAppDir(appDir) {
+  if (!appDir) return;
+  const script = `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${appDir.replace(/'/g, "''")}*' } | ForEach-Object { $_.ProcessId }`;
+  let out = '';
+  try { out = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' }); }
+  catch { return; }
+  for (const pid of out.split(/\s+/).filter(Boolean)) {
+    if (Number(pid) === process.pid) continue;
+    try { execFileSync('taskkill', ['/F', '/PID', pid, '/T'], { stdio: 'ignore' }); } catch { /* already gone */ }
+  }
+}
+
+function stopServers(backend, runIndex, appDir, track) {
+  stopByAppDir(appDir);
+  for (const port of portsForRun(backend, runIndex, track)) {
     let out = '';
     try {
       out = execFileSync('netstat', ['-ano'], { encoding: 'utf8' });
@@ -146,20 +167,22 @@ const sh = (cmd, args, opts = {}) =>
 
 function runAgent(args, mode, level, appDir) {
   const out = sh('node', [args.agent ?? AGENT, '--mode', mode, '--backend', args.backend,
-    '--level', String(level), '--app', appDir,
+    '--level', String(level), '--app', appDir, '--track', args.track,
     '--run-index', String(args.runIndex), '--model', args.model,
     '--guidance', args.guidance], { stdio: 'pipe' });
   return JSON.parse(out.trim().split('\n').pop());
 }
 
-function grade(args, appDir, url, label, level) {
+function grade(args, appDir, url, label, level, track) {
+  const expressPort = EXPRESS_BASE + track.portOffset + args.runIndex;
   const argv = [join(ROOT, 'run-suite.mjs'), '--app', appDir, '--url', url,
     '--backend', args.backend, '--label', label, '--level', String(level),
+    '--track', args.track,
     '--run-index', String(args.runIndex),
     ...(args.media ? [] : ['--no-media']),
     ...(args.backend === 'stub'
       ? ['--no-reset']
-      : ['--restart-cmd', `bash ${join(ROOT, 'restart-backend.sh')} ${args.backend} ${appDir} ${6001 + args.runIndex}`])];
+      : ['--restart-cmd', `bash ${join(ROOT, 'restart-backend.sh')} ${args.backend} ${appDir} ${expressPort} ${track.restartProbe}`])];
   try { sh('node', argv, { stdio: 'inherit' }); } catch { /* score is in the bundle */ }
   const bundle = join(appDir, 'stack-bench', 'bundle.json');
   return existsSync(bundle) ? JSON.parse(readFileSync(bundle, 'utf8')) : null;
@@ -167,32 +190,47 @@ function grade(args, appDir, url, label, level) {
 
 async function main() {
   const args = parseArgs(process.argv);
-  const url = args.url ?? `http://localhost:${VITE_BASE[args.backend] + args.runIndex}`;
-  args.out ??= join(ROOT, 'results', `${args.backend}-run${args.runIndex}`);
+  const track = loadTrack(args.track);
+  const url = args.url ?? `http://localhost:${VITE_BASE[args.backend] + track.portOffset + args.runIndex}`;
+  const runDir = resultsName(track, args.backend, args.runIndex);
+  args.out ??= join(ROOT, 'results', runDir);
   mkdirSync(args.out, { recursive: true });
 
   const weStartedSpacetime = args.backend === 'spacetime' ? ensureSpacetime() : false;
 
+  // One app, grown level by level — the same app the earlier levels built.
+  const appDir = args.app ?? join(ROOT, 'results', runDir, 'app');
+
   // Leave nothing running once the run is over, however it ends — but only stop
   // what this run brought up.
   const teardown = () => {
-    stopServers(args.backend, args.runIndex);
+    stopServers(args.backend, args.runIndex, appDir, track);
     if (weStartedSpacetime && !args.keepSpacetime) stopSpacetime();
   };
+  // A previous run may have left a watcher holding the app directory, which the
+  // build's wipe would trip over.
+  stopServers(args.backend, args.runIndex, appDir, track);
   process.on('SIGINT', () => { console.log('interrupted — stopping servers'); teardown(); process.exit(130); });
   process.on('SIGTERM', () => { teardown(); process.exit(143); });
 
   const started = Date.now();
-  const run = { backend: args.backend, model: args.model, guidance: args.guidance, levels: [] };
-  // One app, grown level by level — the same app the earlier levels built.
-  const appDir = args.app ?? join(ROOT, 'results', `${args.backend}-run${args.runIndex}`, 'app');
+  const run = { track: args.track, backend: args.backend, model: args.model,
+    guidance: args.guidance, levels: [] };
 
   for (const level of args.levelList) {
     const t0 = Date.now();
     console.log(`\n================ ${args.backend} — level ${level} ================`);
 
     const build = runAgent(args, level === args.levelList[0] ? 'build' : 'upgrade', level, appDir);
-    let bundle = grade(args, appDir, url, `${args.backend}-l${level}`, level);
+    // No session, no app. Grading an empty directory yields a real-looking zero
+    // that is a harness failure, not a result for this backend.
+    if (!build.sessionId) {
+      console.log(`  ABORTED: the coding session never ran — see ${join(appDir, `.session-*-l${level}.json`)}`);
+      run.levels.push({ level, score: null, max: null, error: 'coding session did not run',
+        costUsd: build.costUsd, durationMs: Date.now() - t0 });
+      break;
+    }
+    let bundle = grade(args, appDir, url, `${args.backend}-l${level}`, level, track);
     let fixRounds = 0;
     let fixCost = 0;
     let stalled = false;
@@ -220,7 +258,7 @@ async function main() {
       console.log(`--- fix round ${fixRounds}/${args.fixRounds} ---`);
       const fix = runAgent(args, 'fix', level, appDir);
       fixCost += fix.costUsd;
-      bundle = grade(args, appDir, url, `${args.backend}-l${level}-fix${fixRounds}`, level);
+      bundle = grade(args, appDir, url, `${args.backend}-l${level}-fix${fixRounds}`, level, track);
 
       // A round that moves nothing usually means the finding is not actionable —
       // often the harness is wrong, not the app. Stop rather than pay again for
@@ -229,7 +267,7 @@ async function main() {
       if (after < before) {
         console.log(`    regressed (${before} -> ${after}); rolling back and stopping`);
         restoreSource(snapshot, appDir);
-        bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback`, level);
+        bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback`, level, track);
         regressed = true;
         stalled = true;
         break;
@@ -259,10 +297,11 @@ async function main() {
   }
 
   run.totals = {
-    score: run.levels.reduce((n, l) => n + l.score, 0),
-    max: run.levels.reduce((n, l) => n + l.max, 0),
-    costUsd: Number(run.levels.reduce((n, l) => n + l.buildCostUsd + l.fixCostUsd, 0).toFixed(4)),
-    fixRounds: run.levels.reduce((n, l) => n + l.fixRounds, 0),
+    // A level that never ran contributes nothing rather than NaN.
+    score: run.levels.reduce((n, l) => n + (l.score ?? 0), 0),
+    max: run.levels.reduce((n, l) => n + (l.max ?? 0), 0),
+    costUsd: Number(run.levels.reduce((n, l) => n + (l.buildCostUsd ?? 0) + (l.fixCostUsd ?? 0), 0).toFixed(4)),
+    fixRounds: run.levels.reduce((n, l) => n + (l.fixRounds ?? 0), 0),
     durationSec: Math.round((Date.now() - started) / 1000),
   };
   writeFileSync(join(args.out, 'run.json'), JSON.stringify(run, null, 2));

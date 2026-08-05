@@ -1,0 +1,344 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "note": "Stages follow the linter's golden path: landing (signed out) -> storefront (signed up) -> search-results -> item -> item-after-review -> cart -> after-checkout -> admin (signed in as the seeded admin). Hooks marked scenario need a second actor, a concurrent action or a specific failure, and are checked by the scenario suites instead.",
+  "hooks": [
+    {
+      "id": "app-title",
+      "element": "the app's visible title, naming which backend it is built on (for example \"PostgreSQL Shop\")",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "item-list",
+      "element": "the container holding the storefront's item cards",
+      "stage": "landing",
+      "check": "attached"
+    },
+    {
+      "id": "item-card",
+      "element": "one per item shown on the storefront; contains that item's name, price and stock",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "item-name",
+      "element": "the item's name, inside its card",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "item-price",
+      "element": "the item's price, inside its card",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "item-stock",
+      "element": "the item's current stock as a number, inside its card",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "search-input",
+      "element": "the search box, usable signed out",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signup-username",
+      "element": "username input on the sign-up form",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signup-password",
+      "element": "password input on the sign-up form",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signup-submit",
+      "element": "button that submits the sign-up form",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signin-toggle",
+      "element": "control that reveals the sign-in form; the sign-up form must remain usable after it is clicked",
+      "stage": "landing",
+      "check": "visible"
+    },
+    {
+      "id": "signin-username",
+      "element": "username input on the sign-in form",
+      "stage": "landing",
+      "check": "attached",
+      "revealedBy": "signin-toggle"
+    },
+    {
+      "id": "signin-password",
+      "element": "password input on the sign-in form",
+      "stage": "landing",
+      "check": "attached",
+      "revealedBy": "signin-toggle"
+    },
+    {
+      "id": "signin-submit",
+      "element": "button that submits the sign-in form",
+      "stage": "landing",
+      "check": "attached",
+      "revealedBy": "signin-toggle"
+    },
+
+    {
+      "id": "current-user",
+      "element": "the signed-in account's name, shown once signed in",
+      "stage": "storefront",
+      "check": "visible"
+    },
+    {
+      "id": "signout",
+      "element": "control that signs the current account out",
+      "stage": "storefront",
+      "check": "visible"
+    },
+    {
+      "id": "buy-now",
+      "element": "button on an item card that buys one unit immediately; shown only to signed-in customers",
+      "stage": "storefront",
+      "check": "visible"
+    },
+    {
+      "id": "add-to-cart",
+      "element": "button on an item card that adds one unit to the cart; shown only to signed-in customers",
+      "stage": "storefront",
+      "check": "visible"
+    },
+    {
+      "id": "cart-toggle",
+      "element": "control that opens the cart",
+      "stage": "storefront",
+      "check": "visible"
+    },
+    {
+      "id": "cart-count",
+      "element": "the number of items currently in the cart",
+      "stage": "storefront",
+      "check": "visible"
+    },
+    {
+      "id": "orders-toggle",
+      "element": "control that opens the customer's order history",
+      "stage": "storefront",
+      "check": "visible"
+    },
+
+    {
+      "id": "search-results",
+      "element": "the container holding search results; its item cards carry the same hooks as the storefront's",
+      "stage": "search-results",
+      "check": "attached"
+    },
+
+    {
+      "id": "item-detail",
+      "element": "the panel or page showing one item, opened from its card",
+      "stage": "item",
+      "check": "visible"
+    },
+    {
+      "id": "review-rating",
+      "element": "the input choosing a rating from 1 to 5 for a new review",
+      "stage": "item",
+      "check": "visible"
+    },
+    {
+      "id": "review-input",
+      "element": "the text input for a new review's comment",
+      "stage": "item",
+      "check": "visible"
+    },
+    {
+      "id": "review-submit",
+      "element": "button that submits the review",
+      "stage": "item",
+      "check": "visible"
+    },
+    {
+      "id": "review-average",
+      "element": "the item's average rating as a number",
+      "stage": "item",
+      "check": "visible"
+    },
+
+    {
+      "id": "review-item",
+      "element": "one per review on the item, containing its comment; appears without a reload once submitted",
+      "stage": "item-after-review",
+      "check": "visible"
+    },
+
+    {
+      "id": "cart-panel",
+      "element": "the cart's container, opened by cart-toggle",
+      "stage": "cart",
+      "check": "visible"
+    },
+    {
+      "id": "cart-item",
+      "element": "one per line in the cart, containing that item's name",
+      "stage": "cart",
+      "check": "visible"
+    },
+    {
+      "id": "cart-quantity",
+      "element": "the quantity of a cart line, as a number",
+      "stage": "cart",
+      "check": "visible"
+    },
+    {
+      "id": "cart-total",
+      "element": "the cart's total price",
+      "stage": "cart",
+      "check": "visible"
+    },
+    {
+      "id": "checkout-submit",
+      "element": "button that turns the cart into an order",
+      "stage": "cart",
+      "check": "visible"
+    },
+
+    {
+      "id": "order-list",
+      "element": "the container holding the customer's orders, opened by orders-toggle",
+      "stage": "after-checkout",
+      "check": "attached"
+    },
+    {
+      "id": "order-item",
+      "element": "one per order, containing the names of the items bought",
+      "stage": "after-checkout",
+      "check": "visible"
+    },
+    {
+      "id": "order-total",
+      "element": "an order's total price",
+      "stage": "after-checkout",
+      "check": "visible"
+    },
+
+    {
+      "id": "admin-panel",
+      "element": "the admin area's container; present only for an admin account",
+      "stage": "admin",
+      "check": "visible"
+    },
+    {
+      "id": "admin-item-row",
+      "element": "one per item in the admin item list, containing that item's name",
+      "stage": "admin",
+      "check": "visible"
+    },
+    {
+      "id": "admin-stock",
+      "element": "an item's total stock in the admin item list, as a number",
+      "stage": "admin",
+      "check": "visible"
+    },
+    {
+      "id": "admin-warehouse-item",
+      "element": "one per warehouse in the admin warehouse list, containing its name",
+      "stage": "admin",
+      "check": "visible"
+    },
+    {
+      "id": "admin-location-row",
+      "element": "one per item-in-warehouse holding, containing the item and warehouse it refers to",
+      "stage": "admin",
+      "check": "visible"
+    },
+    {
+      "id": "admin-location-qty",
+      "element": "the quantity held in one warehouse for one item, as a number",
+      "stage": "admin",
+      "check": "visible"
+    },
+    {
+      "id": "restock-input",
+      "element": "the input for how many units to add when restocking",
+      "stage": "admin",
+      "check": "visible"
+    },
+    {
+      "id": "restock-submit",
+      "element": "button that applies the restock",
+      "stage": "admin",
+      "check": "visible"
+    },
+    {
+      "id": "admin-revenue",
+      "element": "total revenue across all orders, as a number",
+      "stage": "admin",
+      "check": "visible"
+    },
+
+    {
+      "id": "buy-error",
+      "element": "the visible error shown when a purchase is refused",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "appears when buying an out-of-stock item, or checking out more than is available"
+    },
+    {
+      "id": "auth-error",
+      "element": "the visible error shown when sign-up or sign-in is refused",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "appears on a taken username or a wrong password"
+    },
+    {
+      "id": "review-error",
+      "element": "the visible error shown when a review is refused",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "appears if a second review of the same item is rejected rather than updating the first"
+    },
+    {
+      "id": "out-of-stock",
+      "element": "the marker on an item card whose stock is zero",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "appears once an item's stock reaches zero, without a reload"
+    },
+    {
+      "id": "empty-cart",
+      "element": "the empty state shown when the cart has nothing in it",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "shown before anything is added, and again after checkout empties the cart"
+    },
+    {
+      "id": "cart-remove",
+      "element": "control on a cart line that removes it",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "checked with a populated cart by the feature suite"
+    },
+    {
+      "id": "admin-link",
+      "element": "the control that opens the admin area",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "present for an admin account and absent for a customer — both halves are scored"
+    },
+    {
+      "id": "warehouse-select",
+      "element": "the control choosing which warehouse a restock goes to",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "exercised when the admin suite moves stock into a named warehouse"
+    }
+  ]
+}

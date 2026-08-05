@@ -32,6 +32,7 @@ Rules:
 | `room-list` | container listing the rooms |
 | `room-item` | one entry per room inside the room list (repeated testid), containing the room name |
 | `online-users` | container listing the usernames of users currently online |
+| `online-user` | appears while that user is signed in, gone once they sign out |
 | `message-input` | text input for composing a message; pressing Enter sends it |
 | `message-list` | scrollable container holding the room's messages |
 | `message-item` | one entry per message (repeated testid), containing the message text and its author's username |
@@ -46,6 +47,18 @@ Rules:
 | `pinned-item` | the room's pinned messages, capped at three |
 | `pin-error` | visible after a rejected pin; must not appear on a successful one |
 | `pinned-unpin` | present on each pinned-item |
+| `member-panel` | container listing the members of the current room |
+| `member-item` | appears for each member of the current room; gone once they leave or are removed |
+| `member-owner` | present on the owner's entry only |
+| `member-remove` | shown to owners only |
+| `member-promote` | shown to owners only |
+| `dm-start` | present on each other user listed as online, and on each member entry |
+| `dm-list` | container listing the user's direct conversations |
+| `dm-item` | appears once a direct conversation exists; visible only to its two participants |
+| `permission-error` | visible after a refused unpin, removal, promotion, edit or delete |
+| `message-edit` | shown on the author's own messages |
+| `message-delete` | shown on the author's own messages |
+| `edited-marker` | appears on a message after it is edited |
 
 Before declaring DEPLOY_COMPLETE, verify the hooks by running the contract
 linter (command provided in your build instructions) and fix any failures.

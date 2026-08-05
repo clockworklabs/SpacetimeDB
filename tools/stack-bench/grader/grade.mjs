@@ -2,10 +2,12 @@
 // Stack Bench functional grader.
 //
 // Executes versioned scenario specs against a running app using multiple
-// isolated browser contexts (one per actor), and scores each feature 0-3 from
-// observed behavior only. Mechanically enforces the rules human graders applied:
-//   - JS console errors during a feature cap it at 2/3
-//   - a feature that only works after a reload caps at 1/3
+// isolated browser contexts (one per actor), and scores each feature from
+// observed behavior only — one point per criterion it passes. Mechanically
+// enforces the rules human graders applied (features with an explicit `max`,
+// i.e. the invariants, opt out of the caps and are scored purely per-criterion):
+//   - JS console errors during a feature cap it at 2
+//   - a feature that only works after a reload caps at 1
 //   - untestable (setup failed) scores 0
 //
 // The grader never reloads a page except in the refresh probe, so "realtime"
@@ -22,7 +24,6 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_WITHIN = 5000;
-const MAX_PER_FEATURE = 3;
 
 function parseArgs(argv) {
   const args = { level: 1, headed: false };
@@ -53,6 +54,12 @@ const uniq = () => Math.random().toString(36).slice(2, 7);
 
 // ─── Actor: an isolated browser context with its own identity ────────────────
 
+// Which requests count as writes worth capturing for replay and forgery. The
+// default covers chat's routes; a scenario spec can widen it for an application
+// whose endpoints are named differently (`writeUrlPattern`).
+const DEFAULT_WRITE_URL = '\\/api\\/|\\/rooms|\\/messages';
+let WRITE_URL_RE = new RegExp(DEFAULT_WRITE_URL);
+
 const IDENTITY_FIELD = /^(user_?id|sender_?id|author_?id|from_?user|identity)$/i;
 const CONTENT_FIELD = /^(content|text|message|body|msg)$/i;
 const ROOM_FIELD = /^(room_?id|channel_?id|conversation_?id)$/i;
@@ -62,6 +69,12 @@ class Actor {
     this.name = name;
     this.context = context;
     this.consoleErrors = [];
+    // Everything this client is SENT, whatever the transport: WebSocket frames
+    // (text or binary) and HTTP response bodies. Privacy is a property of what
+    // reaches a browser, not of what that browser chooses to draw — an app that
+    // ships every message to every client and hides the wrong ones in React has
+    // no privacy at all, and this buffer is the only place that shows it.
+    this.received = [];
     this.attach(page);
   }
   attach(page) {
@@ -72,6 +85,7 @@ class Actor {
     this.lastWrite = null;
     this.lastWrites = {};   // by method: a toggle adds with POST and removes with DELETE,
                             // so replaying "the last write" can undo instead of redo
+    this.writes = [];       // every write, so another actor can replay a privileged one
     this.lastWsWrite = null;
     // Apps write over WebSocket as often as over HTTP (socket.io emits a text
     // frame like 42["send_message",{...}]). We cannot replay those as easily,
@@ -88,15 +102,23 @@ class Actor {
           if (arg && typeof arg === 'object') this.lastWsWrite = { event, body: arg };
         } catch { /* not a socket.io event frame */ }
       });
+      // Binary frames are decoded as UTF-8 too: a binary wire format still
+      // carries message text as inline UTF-8 bytes, so a substring search finds
+      // it without the harness knowing the encoding.
+      ws.on('framereceived', f => this.record(f.payload));
     });
     page.on('request', req => {
       if (req.method() === 'GET' || req.method() === 'OPTIONS') return;
       const url = req.url();
-      if (!/\/api\/|\/rooms|\/messages/.test(url)) return;
+      if (!WRITE_URL_RE.test(url)) return;
       let body = null;
-      try { body = JSON.parse(req.postData() ?? ''); } catch { return; }
+      try { body = JSON.parse(req.postData() ?? ''); } catch { /* bodyless, e.g. a DELETE */ }
+      // Forging needs a body to tamper with; replaying does not — a privileged
+      // action is often a bare DELETE whose meaning is entirely in the URL.
+      const write = { url, method: req.method(), headers: req.headers(), body };
+      this.writes.push(write);
+      if (this.writes.length > 200) this.writes.shift();
       if (body && typeof body === 'object') {
-        const write = { url, method: req.method(), headers: req.headers(), body };
         this.lastWrite = write;
         this.lastWrites[req.method()] = write;
       }
@@ -113,6 +135,22 @@ class Actor {
       this.consoleErrors.push(text.slice(0, 200));
     });
     page.on('pageerror', e => this.consoleErrors.push(`pageerror: ${e.message.slice(0, 200)}`));
+    page.on('response', async res => {
+      const type = res.headers()['content-type'] ?? '';
+      // Data only. Scripts and markup are served as text/* too, and a Vite
+      // bundle would bury the buffer in megabytes of application source.
+      if (!/(application\/json|application\/x-ndjson|text\/event-stream|text\/plain)/.test(type)) return;
+      try { this.record(await res.text()); } catch { /* body gone, or page closed */ }
+    });
+  }
+  record(payload) {
+    const text = typeof payload === 'string' ? payload : Buffer.from(payload).toString('utf8');
+    if (!text) return;
+    this.received.push(text.slice(0, 200_000));
+    if (this.received.length > 2000) this.received.shift();
+  }
+  wasSent(needle) {
+    return this.received.some(chunk => chunk.includes(needle));
   }
   loc(testid, { contains, scope } = {}) {
     // `scope` narrows the search to inside a specific container (e.g. the badge
@@ -124,6 +162,30 @@ class Actor {
       ? root.locator(tid(testid), { hasText: contains }).first()
       : root.locator(tid(testid)).first();
   }
+}
+
+// ─── Retargeting a replayed request ──────────────────────────────────────────
+
+// Match a token only on its own boundaries, so swapping user 7 for user 3 in
+// /rooms/17/members/7 cannot silently rewrite the room.
+const tokenRe = t => new RegExp(`(?<![A-Za-z0-9_-])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`, 'g');
+const mentions = (s, t) => tokenRe(t).test(s);
+const swapToken = (s, from, to) => s.replace(tokenRe(from), to);
+
+// Apps address a user by id, not by the name shown on screen. The id is already
+// in traffic the harness recorded — find it next to the name the app sent back.
+function discoveredId(actor, username) {
+  const quoted = `"${username}"`;
+  for (const chunk of actor.received) {
+    let i = chunk.indexOf(quoted);
+    while (i !== -1) {
+      const window = chunk.slice(Math.max(0, i - 300), i + 300);
+      const m = window.match(/"(?:_?id|user_?id|userId)"\s*:\s*"?([A-Za-z0-9_-]{1,64})"?/);
+      if (m) return m[1];
+      i = chunk.indexOf(quoted, i + 1);
+    }
+  }
+  return null;
 }
 
 // Scenario strings may reference a run-scoped room as "{room:base}".
@@ -179,6 +241,7 @@ function describeStep(step) {
     case 'typeInto': return 'start typing';
     case 'clearInput': return 'stop typing';
     case 'click': return `click ${step.testid}`;
+    case 'fill': return `type "${step.text}" into ${step.testid}`;
     case 'reload': return 'reload the page';
     case 'closeClient': return 'close the browser';
     case 'openClient': return 'reopen the browser';
@@ -188,9 +251,21 @@ function describeStep(step) {
     case 'scheduleMessage': return `schedule "${step.text}" for ${step.secondsAhead}s ahead`;
     case 'wait': return `wait ${step.ms}ms`;
     case 'expect': return `expect ${step.absent ? 'no ' : ''}${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`;
+    case 'expectNumber': {
+      const want = [
+        step.equals !== undefined ? `is ${step.equals}` : null,
+        step.atLeast !== undefined ? `is at least ${step.atLeast}` : null,
+        step.atMost !== undefined ? `is at most ${step.atMost}` : null,
+      ].filter(Boolean).join(' and ') || 'is a number';
+      return `expect ${step.testid} ${want}`;
+    }
+    case 'expectAgreement': return `expect all clients agree on ${step.testid}`;
     case 'expectAllPresent': return `expect all ${step.count} "${step.prefix}" messages exactly once`;
     case 'expectOrderMatches': return 'expect both clients agree on order';
     case 'expectForgeryRejected': return 'expect the forged write to be rejected';
+    case 'expectNotReceived': return `expect "${step.contains}" is never sent to this client`;
+    case 'replayAs': return `replay ${step.from}'s "${step.match}" request as this actor`;
+    case 'expectReplayRejected': return 'expect the server refuses the replayed request';
     default: return step.do;
   }
 }
@@ -325,7 +400,9 @@ async function runStep(step, actors, ctx) {
     case 'signUp': {
       // Passwords are derived from the scoped name so a later signIn can
       // reproduce them without the scenario restating the credential.
-      const user = `${step.name}-${ctx.scope}`;
+      // `exact` opts out of scoping, for an account the application seeds
+      // under a fixed name rather than one this run creates.
+      const user = step.exact ? step.name : `${step.name}-${ctx.scope}`;
       const pass = step.password ?? `pw-${user}`;
       await page.locator(tid('signup-username')).first().fill(user);
       await page.locator(tid('signup-password')).first().fill(pass);
@@ -339,7 +416,7 @@ async function runStep(step, actors, ctx) {
       return;
     }
     case 'signIn': {
-      const user = `${step.name}-${ctx.scope}`;
+      const user = step.exact ? step.name : `${step.name}-${ctx.scope}`;
       const pass = step.password ?? `pw-${user}`;
       const toggle = actor.loc('signin-toggle');
       if (await toggle.count()) await toggle.click({ timeout: DEFAULT_WITHIN }).catch(() => {});
@@ -468,6 +545,103 @@ async function runStep(step, actors, ctx) {
       }
       return;
     }
+    case 'replayAs': {
+      // Take a privileged request another actor really made and re-issue it as
+      // THIS actor, with this actor's own credentials. Hiding the control is not
+      // authorization; the server has to say no to the request itself.
+      const source = actors.get(step.from);
+      if (!source) throw new Error(`replayAs: no actor "${step.from}"`);
+      const needle = expand(step.match, ctx).toLowerCase();
+      const write = [...source.writes].reverse()
+        .find(w => `${w.method} ${w.url} ${JSON.stringify(w.body)}`.toLowerCase().includes(needle));
+
+      if (!write) {
+        // Either the app writes over its live connection (identity comes from
+        // the connection, so there is nothing to re-issue) or the privileged
+        // action never happened. Neither proves the server is safe, so this
+        // records as unverified and the criterion rests on its DOM assertions.
+        actor.replay = { inconclusive: true, reason: source.lastWsWrite
+          ? `${step.from} writes over WebSocket ("${source.lastWsWrite.event}") — identity comes from the connection, replay not attempted`
+          : `no HTTP write from ${step.from} matching "${step.match}"` };
+        return;
+      }
+
+      // Swap in this actor's own credentials — otherwise the replay carries the
+      // privileged user's token and proves nothing about who may do what.
+      const mine = actor.lastWrite?.headers ?? {};
+      const creds = {};
+      for (const [k, v] of Object.entries(mine)) {
+        if (/^(authorization|cookie|x-auth-token|x-session|x-token|x-user)/i.test(k)) creds[k] = v;
+      }
+      for (const k of Object.keys(write.headers)) {
+        if (/^(authorization|cookie|x-auth-token|x-session|x-token|x-user)/i.test(k) && !(k in creds)) creds[k] = '';
+      }
+
+      // The replay must name a DIFFERENT victim than the original request, or an
+      // idempotent server could accept a no-op and look guilty. The target may
+      // live in the URL or in the body, so swap across both.
+      let url = write.url;
+      let data = write.body === null ? undefined : JSON.stringify(write.body);
+      if (step.swap) {
+        const find = expand(step.swap.find, ctx), to = expand(step.swap.with, ctx);
+        let a = find, b = to;
+        if (!mentions(url, a) && !mentions(data ?? '', a)) {
+          // Most apps address a user by id, not by display name. Scenarios stay
+          // written in names; the harness resolves them to whatever ids the app
+          // itself used, read out of traffic it has already seen.
+          const ra = discoveredId(source, find) ?? discoveredId(actor, find);
+          const rb = discoveredId(source, to) ?? discoveredId(actor, to);
+          if (ra && rb && (mentions(url, ra) || mentions(data ?? '', ra))) { a = ra; b = rb; }
+          else {
+            actor.replay = { inconclusive: true, reason: `neither "${find}" nor an id resolved for it appears in ${write.method} ${write.url} — cannot retarget the replay` };
+            return;
+          }
+        }
+        url = swapToken(url, a, b);
+        if (data) data = swapToken(data, a, b);
+      }
+
+      const res = await page.request.fetch(url, {
+        method: write.method,
+        headers: replayHeaders(write, creds),
+        ...(data === undefined ? {} : { data }),
+      }).catch(e => ({ status: () => 0, ok: () => false, error: e.message }));
+
+      actor.replay = { accepted: res.ok(), status: res.status(), url, method: write.method };
+      await page.waitForTimeout(step.settleMs ?? 2000);
+      return;
+    }
+    case 'expectReplayRejected': {
+      const r = actor.replay;
+      if (!r) throw new Error('no replayAs ran before this assertion');
+      if (r.inconclusive) return;     // unverified never scores and never penalises
+      if (r.accepted) {
+        throw new Error(`server ACCEPTED ${r.method} ${r.url} from ${actor.name}, who is not allowed to do it (HTTP ${r.status}) — the check is in the interface, not the server`);
+      }
+      return;
+    }
+    case 'expectReceived': {
+      // The positive control for the wire checks below. It proves this harness
+      // can see what this app's live channel delivers, so that "not received"
+      // means the server withheld it rather than that we were looking in the
+      // wrong place.
+      const needle = expand(step.contains, ctx);
+      const deadline = Date.now() + (step.within ?? DEFAULT_WITHIN);
+      while (!actor.wasSent(needle) && Date.now() < deadline) await page.waitForTimeout(250);
+      if (!actor.wasSent(needle)) {
+        throw new Error(`the harness never saw "${needle}" reach ${actor.name}, who should have it — traffic on this app is not visible to the wire checks`);
+      }
+      return;
+    }
+    case 'expectNotReceived': {
+      const needle = expand(step.contains, ctx);
+      // A client that was never sent the text cannot leak it. A client that was
+      // sent it has already leaked it, however carefully the interface hides it.
+      if (actor.wasSent(needle)) {
+        throw new Error(`"${needle}" was delivered to ${actor.name}, who is not a participant — the server sends private data to everyone and relies on the client to hide it`);
+      }
+      return;
+    }
     case 'scheduleMessage': {
       // The L2 contract names the toggle and the time input but not the submit
       // control, so fall back to a labelled button when no hook is present.
@@ -516,11 +690,14 @@ async function runStep(step, actors, ctx) {
       // rather than re-measuring session persistence.
       const nameInput = page.locator(tid('signup-username')).first();
       if (await nameInput.isVisible().catch(() => false)) {
-        const user = `${step.name}-${ctx.scope}`;
+        const user = step.exact ? step.name : `${step.name}-${ctx.scope}`;
         await nameInput.fill(user);
-        await page.locator(tid('signup-password')).first().fill(`pw-${user}`);
+        await page.locator(tid('signup-password')).first().fill(step.password ?? `pw-${user}`);
         await page.locator(tid('signup-submit')).first().click();
-        await page.locator(tid('room-list')).first().waitFor({ state: 'attached', timeout: DEFAULT_WITHIN });
+        // What proves the app is ready differs per application; chat's room list
+        // is the default because that is what this step has always waited for.
+        await page.locator(tid(step.readyTestid ?? 'room-list')).first()
+          .waitFor({ state: 'attached', timeout: DEFAULT_WITHIN });
         await page.waitForTimeout(step.settleMs ?? 1500);
       }
       return;
@@ -575,6 +752,18 @@ async function runStep(step, actors, ctx) {
       ctx.extraContexts?.push({ context, name: `${step.actor}-fresh`, page: fresh });
       return;
     }
+    case 'fill': {
+      // Type into any input the contract names. Chat has dedicated steps for its
+      // two inputs; every other application needs the general form.
+      const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
+      const loc = actor.loc(step.testid, { scope });
+      await loc.waitFor({ state: 'visible', timeout: step.within ?? DEFAULT_WITHIN });
+      await loc.fill(expand(step.text, ctx) ?? '');
+      if (step.enter) await loc.press('Enter');
+      if (step.settleMs) await page.waitForTimeout(step.settleMs);
+      return;
+    }
+    case 'expectNumber': return expectNumber(actor, step, ctx);
     case 'wait': return page.waitForTimeout(step.ms);
     case 'expect': return runExpect(actor, step, ctx);
     default: throw new Error(`unknown action "${step.do}"`);
@@ -624,6 +813,49 @@ async function runExpect(actor, step, ctx = { roomName: x => x }) {
       throw new Error(`${tid(step.testid)} unexpectedly contains "${step.notContains}" (text: "${text.trim().slice(0, 80)}")`);
     }
   }
+}
+
+// Pull the first number out of rendered text: "Stock: 1,024 left" -> 1024,
+// "$12.50" -> 12.5. Returns null when there is no number to read.
+function parseNumber(text) {
+  const m = (text ?? '').replace(/[, ]/g, '').match(/-?\d+(\.\d+)?/);
+  return m ? Number(m[0]) : null;
+}
+
+// Counting elements and substring-matching text cannot express "the stock is
+// exactly 3": `contains: "3"` also matches 13, and `count` counts tags, not
+// values. Quantities are what an inventory is made of, so they get a real
+// comparison.
+async function expectNumber(actor, step, ctx) {
+  const within = step.within ?? DEFAULT_WITHIN;
+  const contains = expand(step.contains, ctx);
+  const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
+  const where = scope ? ` inside ${tid(scope.testid)} "${scope.contains}"` : '';
+  const loc = actor.loc(step.testid, { contains, scope });
+  await loc.waitFor({ state: 'visible', timeout: within }).catch(() => {
+    throw new Error(`${tid(step.testid)}${where} not visible within ${within}ms`);
+  });
+
+  const check = n => (step.equals === undefined || n === step.equals)
+    && (step.atLeast === undefined || n >= step.atLeast)
+    && (step.atMost === undefined || n <= step.atMost);
+
+  // The value may still be settling — a live count arrives after the write that
+  // changed it — so poll rather than read once.
+  const deadline = Date.now() + within;
+  let last = null;
+  for (;;) {
+    last = parseNumber(await loc.innerText().catch(() => ''));
+    if (last !== null && check(last)) return;
+    if (Date.now() > deadline) break;
+    await actor.page.waitForTimeout(250);
+  }
+  const wanted = [
+    step.equals !== undefined ? `exactly ${step.equals}` : null,
+    step.atLeast !== undefined ? `at least ${step.atLeast}` : null,
+    step.atMost !== undefined ? `at most ${step.atMost}` : null,
+  ].filter(Boolean).join(' and ') || 'a number';
+  throw new Error(`${tid(step.testid)}${where} reads ${last === null ? 'no number' : last}, expected ${wanted}`);
 }
 
 // Indices are zero-padded so "AA-1" cannot substring-match "AA-10".
@@ -676,7 +908,10 @@ async function expectAgreement(step, actors, ctx) {
     seen = {};
     for (const name of step.actors) {
       const loc = actors.get(name).loc(step.testid, { contains, scope });
-      seen[name] = ((await loc.innerText().catch(() => '<missing>')) || '<missing>').trim();
+      const text = ((await loc.innerText().catch(() => '<missing>')) || '<missing>').trim();
+      // Comparing raw text makes "97 left" and "Stock: 97" disagree even though
+      // the clients are consistent. `numeric` compares the value instead.
+      seen[name] = step.numeric ? String(parseNumber(text) ?? '<no number>') : text;
     }
     if (new Set(Object.values(seen)).size === 1) return;
     if (Date.now() > deadline) {
@@ -729,7 +964,9 @@ async function gradeFeature(browser, feature, args, runCtx) {
     }
   };
 
-  const featureMax = feature.max ?? MAX_PER_FEATURE;
+  // A feature is worth what its criteria are worth. An explicit `max` is only
+  // a consistency check (check-scenarios.mjs enforces it), never a top-up.
+  const featureMax = feature.criteria.reduce((n, c) => n + (c.points ?? 1), 0);
   const result = {
     id: feature.id, name: feature.name, score: 0, max: featureMax,
     criteria: [], caps: [], consoleErrors: [],
@@ -843,6 +1080,8 @@ async function main() {
     process.exit(2);
   }
 
+  if (spec.writeUrlPattern) WRITE_URL_RE = new RegExp(spec.writeUrlPattern);
+
   const features = args.feature ? spec.features.filter(f => f.id === args.feature) : spec.features;
   const runId = uniq();
   const ctx = { runId, roomName: base => `${base}-${runId}`, restartCmd: args.restartCmd, url: args.url };
@@ -850,7 +1089,7 @@ async function main() {
   const browser = await chromium.launch({ headless: !args.headed });
   const report = {
     label: args.label ?? null, url: args.url, level: args.level, runId,
-    total: 0, max: features.reduce((n, f) => n + (f.max ?? MAX_PER_FEATURE), 0), features: [],
+    total: 0, max: features.reduce((n, f) => n + f.criteria.reduce((m, c) => m + (c.points ?? 1), 0), 0), features: [],
   };
 
   // Preflight: grading a dirty database silently biases scores downward (a long

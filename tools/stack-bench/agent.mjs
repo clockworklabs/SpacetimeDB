@@ -16,6 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadTrack, levelPrompt, appendix, dbName, moduleName, DEFAULT_TRACK } from './tracks.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(ROOT, '..', '..');
@@ -27,16 +28,19 @@ const PORTS = {
 };
 
 function parseArgs(argv) {
-  const a = { level: 1, runIndex: 0, model: 'claude-sonnet-5', guidance: 'prescribed' };
+  const a = { level: 1, runIndex: 0, model: 'claude-sonnet-5', guidance: 'prescribed',
+    track: DEFAULT_TRACK };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--mode': a.mode = argv[++i]; break;
+      case '--track': a.track = argv[++i]; break;
       case '--backend': a.backend = argv[++i]; break;
       case '--level': a.level = parseInt(argv[++i], 10); break;
       case '--app': a.app = argv[++i]; break;
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--model': a.model = argv[++i]; break;
       case '--guidance': a.guidance = argv[++i]; break;
+      case '--print-prompt': a.printPrompt = true; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
   }
@@ -58,25 +62,28 @@ function findClaude() {
   return 'claude';
 }
 
-const ports = (backend, runIndex) => {
+// Tracks are offset from one another so a chat run and an ecommerce run at the
+// same --run-index cannot land on the same port.
+const ports = (backend, runIndex, track) => {
   const p = PORTS[backend];
+  const offset = track.portOffset + runIndex;
   return {
-    vite: p.vite + runIndex,
-    express: p.express ? p.express + runIndex : null,
+    vite: p.vite + offset,
+    express: p.express ? p.express + offset : null,
     dbPort: p.db ?? null,
   };
 };
 
-const dbUrl = (backend, runIndex, dbPort) =>
+const dbUrl = (backend, runIndex, dbPort, track) =>
   backend === 'postgres'
-    ? `postgresql://stackbench:stackbench@localhost:${dbPort}/stackbench_run${runIndex}`
-    : `mongodb://localhost:${dbPort}/stackbench_run${runIndex}`;
+    ? `postgresql://stackbench:stackbench@localhost:${dbPort}/${dbName(track, runIndex)}`
+    : `mongodb://localhost:${dbPort}/${dbName(track, runIndex)}`;
 
 // Per-run databases must exist before the app connects, or the agent will go
 // looking for one that does — which has led to apps silently using a foreign
 // instance.
-function ensureDatabase(backend, runIndex, dbPort) {
-  const name = `stackbench_run${runIndex}`;
+function ensureDatabase(backend, runIndex, dbPort, track) {
+  const name = dbName(track, runIndex);
   if (backend === 'postgres') {
     const container = process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres';
     try {
@@ -88,15 +95,11 @@ function ensureDatabase(backend, runIndex, dbPort) {
   return name;
 }
 
-function moduleName(runIndex) {
-  return `stackbench-run${runIndex}`;
-}
-
 // prescribed: the stack is chosen for them (Express, socket.io, an ORM, a layout).
 // minimal: only the database, the ports the harness needs, and branding — how to
 // build it is the model's call. Prescribing a stack means measuring the stack we
 // picked, not the database.
-function backendDoc(args, p) {
+function backendDoc(args, p, track) {
   const rel = args.guidance === 'minimal'
     ? join('backends', 'minimal', `${args.backend}.md`)
     : join('backends', `${args.backend}.md`);
@@ -104,8 +107,9 @@ function backendDoc(args, p) {
   return raw
     .replaceAll('<VITE_PORT>', String(p.vite))
     .replaceAll('<EXPRESS_PORT>', String(p.express ?? ''))
-    .replaceAll('<MODULE_NAME>', moduleName(args.runIndex))
-    .replaceAll('<DATABASE_URL>', p.dbPort ? dbUrl(args.backend, args.runIndex, p.dbPort) : '');
+    .replaceAll('<APP_NOUN>', track.title)
+    .replaceAll('<MODULE_NAME>', moduleName(track, args.runIndex))
+    .replaceAll('<DATABASE_URL>', p.dbPort ? dbUrl(args.backend, args.runIndex, p.dbPort, track) : '');
 }
 
 // SpacetimeDB is young enough that models have little of it in training data;
@@ -119,24 +123,13 @@ function skillDocs(backend) {
     .join('\n\n---\n\n');
 }
 
-function levelPrompt(level) {
-  const dir = join(ROOT, 'levels', 'prompts');
-  const file = readdirSync(dir).find(f => f.startsWith(String(level).padStart(2, '0') + '-'));
-  if (!file) throw new Error(`No prompt for level ${level} in ${dir}`);
-  return readFileSync(join(dir, file), 'utf8');
-}
-
-function appendix(level) {
-  const f = join(ROOT, 'levels', 'contracts', `appendix-${String(level).padStart(2, '0')}.md`);
-  return existsSync(f) ? readFileSync(f, 'utf8') : '';
-}
-
-function buildPrompt(args, p) {
-  const lint = `node "${join(ROOT, 'linter', 'lint.mjs')}" --url http://localhost:${p.vite} --level ${args.level}`;
+function buildPrompt(args, p, track) {
+  const lint = `node "${join(ROOT, 'linter', 'lint.mjs')}" --url http://localhost:${p.vite} --level ${args.level}`
+    + (track.name === DEFAULT_TRACK ? '' : ` --track ${track.name}`);
   const common = [
     `The app lives in ${args.app.replace(/\\/g, '/')} — work there.`,
     '',
-    backendDoc(args, p),
+    backendDoc(args, p, track),
   ];
   const skills = skillDocs(args.backend);
   if (skills) common.push('', '---', '', skills);
@@ -179,15 +172,20 @@ function buildPrompt(args, p) {
     '',
     '---',
     '',
-    levelPrompt(args.level),
-    appendix(args.level),
+    levelPrompt(track, args.level),
+    appendix(track, args.level),
   ].join('\n');
 }
 
 function main() {
   const args = parseArgs(process.argv);
-  const p = ports(args.backend, args.runIndex);
-  if (p.dbPort) ensureDatabase(args.backend, args.runIndex, p.dbPort);
+  const track = loadTrack(args.track);
+  const p = ports(args.backend, args.runIndex, track);
+  // Renders what the model would be given, without spending anything or
+  // touching the app directory. The regression gate for harness changes is a
+  // diff of this against a saved copy.
+  if (args.printPrompt) { process.stdout.write(buildPrompt(args, p, track)); return; }
+  if (p.dbPort) ensureDatabase(args.backend, args.runIndex, p.dbPort, track);
   // `build` means from scratch. Leaving a previous app in place lets the agent
   // inherit code — and a stale BUG_REPORT.md — from a run that has nothing to do
   // with this one.
@@ -198,34 +196,48 @@ function main() {
       try { rmSync(args.app, { recursive: true, force: true }); break; }
       catch (err) {
         if (attempt >= 5) throw err;
-        execFileSync(process.platform === 'win32' ? 'timeout' : 'sleep',
-          process.platform === 'win32' ? ['/T', '3', '/NOBREAK'] : ['3'], { stdio: 'ignore' });
+        // A synchronous sleep with no child process: `timeout` refuses to run
+        // when stdin is not a console, which is exactly how this is invoked.
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
       }
     }
   }
   mkdirSync(args.app, { recursive: true });
   writeFileSync(join(args.app, '.stack-bench-backend'), args.backend);
 
-  const prompt = buildPrompt(args, p);
+  const prompt = buildPrompt(args, p, track);
   writeFileSync(join(args.app, `.prompt-${args.mode}-l${args.level}.md`), prompt);
 
   const started = Date.now();
   let raw = '';
+  let spawnError = null;
   try {
+    // The prompt goes in on stdin, not as an argument. Windows caps a command
+    // line at 32767 characters, and the SpacetimeDB prompt carries the skill
+    // documents on top of the level spec — it crossed that line as soon as L1
+    // grew, and the spawn fails with a bare ENOENT that reads as "CLI missing".
     raw = execFileSync(findClaude(), [
       '--print', '--output-format', 'json',
       '--dangerously-skip-permissions',
       '--model', args.model,
       '--add-dir', args.app,
       '--add-dir', ROOT,
-      '-p', prompt,
-    ], { cwd: args.app, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+    ], { cwd: args.app, input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
   } catch (err) {
     raw = (err.stdout || '').toString();
+    spawnError = err.code
+      ? `could not run the coding session: ${err.code} (${err.message.split('\n')[0]})`
+      : null;
   }
 
   let result = {};
   try { result = JSON.parse(raw); } catch { /* non-JSON means the session died */ }
+  // A session that never started produced no code, and grading an empty
+  // directory reports a real-looking 0 for the backend. Say so instead: this
+  // failure mode cost a run once already, silently.
+  if (spawnError || (!result.session_id && !raw.trim())) {
+    console.error(`\nAGENT DID NOT RUN — ${spawnError ?? 'the session produced no output'}`);
+  }
   const usage = result.usage ?? {};
   const out = {
     appDir: args.app,

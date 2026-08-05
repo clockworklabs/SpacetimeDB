@@ -1,0 +1,132 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — contention (WITHHELD)",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "EVERY CRITERION SCORES ZERO ON PURPOSE. A criterion here is a claim that concurrent customers can break an application, and that claim is not proven until this suite has actually caught a defect. The chat track's contention criteria were withheld for the same reason and are still withheld, because the failure they predicted never appeared. Promote a criterion to real points only when grader/mutation-test.mjs shows it CAUGHT its mutant in grader/mutations/<backend>-ecom-l1.json AND it passes against the unmutated reference build. Record which mutant proved it in `provenBy` when promoting. Until then these run, and their results are reported, but they cannot move a score in either direction.",
+  "features": [
+    {
+      "id": 201,
+      "name": "The last unit is sold once",
+      "actors": ["a", "b", "c", "d", "e", "f"],
+      "setup": [
+        { "do": "signUp", "actor": "a", "name": "c1" },
+        { "do": "signUp", "actor": "b", "name": "c2" },
+        { "do": "signUp", "actor": "c", "name": "c3" },
+        { "do": "signUp", "actor": "d", "name": "c4" },
+        { "do": "signUp", "actor": "e", "name": "c5" },
+        { "do": "signUp", "actor": "f", "name": "c6" },
+        { "do": "fill", "actor": "a", "testid": "search-input", "text": "Limited Vase", "enter": true, "settleMs": 1200 },
+        { "do": "fill", "actor": "b", "testid": "search-input", "text": "Limited Vase", "enter": true, "settleMs": 1200 },
+        { "do": "fill", "actor": "c", "testid": "search-input", "text": "Limited Vase", "enter": true, "settleMs": 1200 },
+        { "do": "fill", "actor": "d", "testid": "search-input", "text": "Limited Vase", "enter": true, "settleMs": 1200 },
+        { "do": "fill", "actor": "e", "testid": "search-input", "text": "Limited Vase", "enter": true, "settleMs": 1200 },
+        { "do": "fill", "actor": "f", "testid": "search-input", "text": "Limited Vase", "enter": true, "settleMs": 1200 }
+      ],
+      "criteria": [
+        {
+          "id": "201a",
+          "desc": "six customers buy the last three units at once: stock lands on exactly zero, never below",
+          "points": 0,
+          "withheld": "no build has yet failed this",
+          "steps": [
+            { "do": "clickConcurrently", "testid": "buy-now",
+              "actors": ["a", "b", "c", "d", "e", "f"],
+              "in": { "testid": "item-card", "contains": "Limited Vase" },
+              "settleMs": 6000 },
+            { "do": "expectNumber", "actor": "a", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Limited Vase" }, "equals": 0 },
+            { "do": "expectAgreement", "actors": ["a", "b", "c", "d", "e", "f"], "testid": "item-stock", "in": { "testid": "item-card", "contains": "Limited Vase" }, "numeric": true }
+          ]
+        },
+        {
+          "id": "201b",
+          "desc": "exactly three of the six customers end up with an order",
+          "points": 0,
+          "withheld": "no build has yet failed this",
+          "steps": [
+            { "do": "click", "actor": "a", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "a", "testid": "order-item", "contains": "Limited Vase", "maxCount": 1 }
+          ]
+        },
+        {
+          "id": "201c",
+          "desc": "revenue counts three sales, not six",
+          "points": 0,
+          "withheld": "needs an admin actor; wire once 201a has demonstrably failed somewhere",
+          "steps": []
+        }
+      ]
+    },
+
+    {
+      "id": 202,
+      "name": "A restock during a rush is not lost",
+      "actors": ["admin", "a", "b", "c"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signUp", "actor": "a", "name": "r1" },
+        { "do": "signUp", "actor": "b", "name": "r2" },
+        { "do": "signUp", "actor": "c", "name": "r3" }
+      ],
+      "criteria": [
+        {
+          "id": "202a",
+          "desc": "three purchases and a restock of five leave stock at start + 5 - 3",
+          "points": 0,
+          "withheld": "no build has yet failed this",
+          "steps": [
+            { "do": "clickConcurrently", "testid": "buy-now",
+              "actors": ["a", "b", "c"],
+              "in": { "testid": "item-card", "contains": "Bellows" },
+              "settleMs": 500 },
+            { "do": "click", "actor": "admin", "testid": "admin-link" },
+            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "5" },
+            { "do": "click", "actor": "admin", "testid": "restock-submit" },
+            { "do": "wait", "actor": "admin", "ms": 6000 },
+            { "do": "expectNumber", "actor": "a", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bellows" }, "equals": 102 }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": 203,
+      "name": "One cart, two tabs, one checkout",
+      "actors": ["tab1", "tab2"],
+      "setup": [
+        { "do": "signUp", "actor": "tab1", "name": "twin" },
+        { "do": "signIn", "actor": "tab2", "name": "twin" }
+      ],
+      "criteria": [
+        {
+          "id": "203a",
+          "desc": "the same item added from two tabs at once becomes one line of two",
+          "points": 0,
+          "withheld": "no build has yet failed this",
+          "steps": [
+            { "do": "clickConcurrently", "testid": "add-to-cart",
+              "actors": ["tab1", "tab2"],
+              "in": { "testid": "item-card", "contains": "Grinding Wheel" },
+              "settleMs": 4000 },
+            { "do": "click", "actor": "tab1", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "tab1", "testid": "cart-item", "contains": "Grinding Wheel", "count": 1 },
+            { "do": "expectNumber", "actor": "tab1", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Grinding Wheel" }, "equals": 2 }
+          ]
+        },
+        {
+          "id": "203b",
+          "desc": "checking the same cart out twice at once produces one order",
+          "points": 0,
+          "withheld": "no build has yet failed this",
+          "steps": [
+            { "do": "click", "actor": "tab2", "testid": "cart-toggle" },
+            { "do": "clickConcurrently", "testid": "checkout-submit",
+              "actors": ["tab1", "tab2"], "settleMs": 5000 },
+            { "do": "click", "actor": "tab1", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "tab1", "testid": "order-item", "contains": "Grinding Wheel", "count": 1 }
+          ]
+        }
+      ]
+    }
+  ]
+}

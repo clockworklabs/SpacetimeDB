@@ -8,12 +8,16 @@
 # Restarting only the Express side would not be a fair comparison, so the
 # SpacetimeDB host is restarted too.
 #
-# Usage: restart-backend.sh <backend> <app-dir> [express-port]
+# Usage: restart-backend.sh <backend> <app-dir> [express-port] [probe-path]
+#
+# The probe path is whatever endpoint proves this application's server is
+# answering again; it differs per track, so it is passed in rather than assumed.
 set -euo pipefail
 
 BACKEND="${1:?backend required}"
 APP_DIR="${2:?app dir required}"
 PORT="${3:-}"
+PROBE="${4:-/api/rooms}"
 
 wait_for() {  # wait_for <url> <seconds>
   local url="$1" deadline=$(( $(date +%s) + ${2:-60} ))
@@ -30,7 +34,7 @@ case "$BACKEND" in
     npx --yes kill-port "$PORT" >/dev/null 2>&1 || true
     sleep 3
     ( cd "$APP_DIR/server" && PORT="$PORT" nohup npm run dev < /dev/null > "/tmp/restart-$BACKEND-$PORT.log" 2>&1 & )
-    wait_for "http://localhost:$PORT/api/rooms" 180
+    wait_for "http://localhost:$PORT$PROBE" 180
     echo "Express on :$PORT is back"
     ;;
 

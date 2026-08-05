@@ -83,6 +83,28 @@ access to it.
 - Track last-read position per user per room
 - Update counts in real-time as new messages arrive or are read
 
+### Room Members and Roles
+
+- Each room shows a **member panel**: everyone who has joined it, with their online state
+- The panel updates live as people join, leave, connect and disconnect
+- The user who created a room is its **owner**; the panel shows who that is
+- An owner can **promote** another member to owner, and can **remove** a member from the room
+- Only members can read a room's messages or post to it. A non-member is refused by the
+  server, not merely prevented by hiding a button.
+- **Removal takes effect immediately.** A removed user stops receiving that room's messages
+  without reloading, loses access to its history, and cannot rejoin a room they were removed
+  from unless an owner re-adds them.
+
+### Direct Messages
+
+- A user can open a **direct conversation** with another user from that user's entry in the
+  online list or a member panel. It reads and composes like a room.
+- A direct conversation is visible only to its two participants. Nobody else can read it —
+  not through the interface, not through any request the client can make, and it is never
+  sent to anybody else's browser in the first place.
+- Direct messages arrive live, are attributed, and persist like room messages
+- Unread counts cover direct conversations too
+
 ### Reactions
 
 - Users can react to a message with an emoji, and remove their own reaction
@@ -93,12 +115,23 @@ access to it.
 
 ### Pinned Messages
 
-- Any member of a room can **pin** a message, and unpin one
+- Any member of a room can **pin** a message
+- Only the user who pinned a message, or an owner of the room, can unpin it
 - Pinned messages are listed for the room, visible to everyone in it
 - A room may have **at most 3 pinned messages**. An attempt to pin a fourth is rejected with
   a visible error and changes nothing.
 - Unpinning frees a slot
 - The pinned list updates live, and every client in the room shows the same list
+
+### Ownership
+
+Every action belongs to somebody, and the server decides who may take it:
+
+- Only the author of a message can edit or delete it; edited messages show as edited
+- Only the pinner or a room owner can unpin
+- Only a room owner can promote or remove members
+- An attempt by the wrong user is refused with a visible error and changes nothing. Enforce
+  this on the server — hiding a control in the interface is not enforcement.
 
 ### Limits
 

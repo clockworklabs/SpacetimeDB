@@ -1,0 +1,331 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — features",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "Each feature is given its own seeded items where it mutates stock, because features share one database and a purchase in one would otherwise move another's numbers. Items reserved per feature: F2 Chisel Set, F3 Forge Tongs + Limited Vase, F4 Hammer + Kiln Brick, F6 Ingot Mold, F7 Grinding Wheel.",
+  "features": [
+    {
+      "id": 1,
+      "name": "Accounts",
+      "actors": ["shopper"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "1a",
+          "desc": "a visitor can create an account and is signed in as it",
+          "points": 1,
+          "steps": [
+            { "do": "signUp", "actor": "shopper", "name": "ann" },
+            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "ann" }
+          ]
+        },
+        {
+          "id": "1b",
+          "desc": "a taken username is refused and does not sign the visitor in as the existing account",
+          "points": 1,
+          "steps": [
+            { "do": "signUp", "actor": "shopper", "name": "ann" },
+            { "do": "reload", "actor": "shopper" },
+            { "do": "signUp", "actor": "shopper", "name": "ann", "password": "different-pw", "expectFailure": true },
+            { "do": "expect", "actor": "shopper", "testid": "auth-error" },
+            { "do": "expect", "actor": "shopper", "testid": "current-user", "absent": true }
+          ]
+        },
+        {
+          "id": "1c",
+          "desc": "a wrong password is refused",
+          "points": 1,
+          "steps": [
+            { "do": "signUp", "actor": "shopper", "name": "bea" },
+            { "do": "reload", "actor": "shopper" },
+            { "do": "signIn", "actor": "shopper", "name": "bea", "password": "wrong-pw", "expectFailure": true },
+            { "do": "expect", "actor": "shopper", "testid": "auth-error" }
+          ]
+        },
+        {
+          "id": "1d",
+          "desc": "the session survives a reload",
+          "points": 1,
+          "steps": [
+            { "do": "signUp", "actor": "shopper", "name": "cai" },
+            { "do": "reload", "actor": "shopper", "settleMs": 4000 },
+            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "cai" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": 2,
+      "name": "Storefront is public and live",
+      "actors": ["buyer", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "dov" }
+      ],
+      "criteria": [
+        {
+          "id": "2a",
+          "desc": "a signed-out visitor sees the catalogue with prices and stock",
+          "points": 1,
+          "steps": [
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Anvil" },
+            { "do": "expect", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Anvil" } },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Anvil" }, "atLeast": 1 }
+          ]
+        },
+        {
+          "id": "2b",
+          "desc": "the storefront shows ten items, alphabetically while nothing has been bought",
+          "points": 1,
+          "steps": [
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "count": 10 },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Anvil" },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Kiln Brick" },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Limited Vase", "absent": true }
+          ]
+        },
+        {
+          "id": "2c",
+          "desc": "a purchase moves the bought item to the front of the ranking, live",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Chisel Set" } },
+            { "do": "wait", "actor": "visitor", "ms": 2500 },
+            { "do": "expect", "actor": "visitor", "testid": "item-name", "in": { "testid": "item-list" }, "contains": "Chisel Set" },
+            { "do": "expectAgreement", "actors": ["buyer", "visitor"], "testid": "item-stock", "in": { "testid": "item-card", "contains": "Chisel Set" }, "numeric": true }
+          ]
+        },
+        {
+          "id": "2d",
+          "desc": "search finds an item that is not on the storefront",
+          "points": 1,
+          "steps": [
+            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Vase", "enter": true, "settleMs": 1500 },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Limited Vase", "in": { "testid": "search-results" } }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": 3,
+      "name": "Buying",
+      "actors": ["buyer", "watcher", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "eli" },
+        { "do": "signUp", "actor": "watcher", "name": "fay" }
+      ],
+      "criteria": [
+        {
+          "id": "3a",
+          "desc": "a signed-out visitor is offered no way to buy",
+          "points": 1,
+          "steps": [
+            { "do": "expect", "actor": "visitor", "testid": "buy-now", "absent": true },
+            { "do": "expect", "actor": "visitor", "testid": "add-to-cart", "absent": true }
+          ]
+        },
+        {
+          "id": "3b",
+          "desc": "buying reduces the stock every other client sees, without a reload",
+          "points": 2,
+          "steps": [
+            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Forge Tongs" }, "equals": 100 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Forge Tongs" } },
+            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Forge Tongs" }, "equals": 99 },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Forge Tongs" }, "equals": 99 }
+          ]
+        },
+        {
+          "id": "3c",
+          "desc": "the purchase is recorded in the buyer's order history at the price paid",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Forge Tongs" } },
+            { "do": "click", "actor": "buyer", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "buyer", "testid": "order-item", "contains": "Forge Tongs" },
+            { "do": "expectNumber", "actor": "buyer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Forge Tongs" }, "atLeast": 27.5 }
+          ]
+        },
+        {
+          "id": "3d",
+          "desc": "an item can be bought down to zero and then refused",
+          "points": 2,
+          "steps": [
+            { "do": "fill", "actor": "buyer", "testid": "search-input", "text": "Limited Vase", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Limited Vase" } },
+            { "do": "wait", "actor": "buyer", "ms": 800 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Limited Vase" } },
+            { "do": "wait", "actor": "buyer", "ms": 800 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Limited Vase" } },
+            { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Limited Vase" }, "equals": 0 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Limited Vase" } },
+            { "do": "expect", "actor": "buyer", "testid": "buy-error" },
+            { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Limited Vase" }, "equals": 0 }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": 4,
+      "name": "Cart belongs to the account",
+      "actors": ["tab1", "tab2"],
+      "setup": [
+        { "do": "signUp", "actor": "tab1", "name": "gus" }
+      ],
+      "criteria": [
+        {
+          "id": "4a",
+          "desc": "adding the same item twice raises its quantity instead of adding a second line",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "tab1", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Hammer" } },
+            { "do": "wait", "actor": "tab1", "ms": 800 },
+            { "do": "click", "actor": "tab1", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Hammer" } },
+            { "do": "click", "actor": "tab1", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "tab1", "testid": "cart-item", "contains": "Hammer", "count": 1 },
+            { "do": "expectNumber", "actor": "tab1", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Hammer" }, "equals": 2 }
+          ]
+        },
+        {
+          "id": "4b",
+          "desc": "the cart survives a reload",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "tab1", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Kiln Brick" } },
+            { "do": "reload", "actor": "tab1", "settleMs": 4000 },
+            { "do": "click", "actor": "tab1", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "tab1", "testid": "cart-item", "contains": "Kiln Brick" }
+          ]
+        },
+        {
+          "id": "4c",
+          "desc": "the same account signed in elsewhere sees one cart, live",
+          "points": 2,
+          "steps": [
+            { "do": "signIn", "actor": "tab2", "name": "gus" },
+            { "do": "click", "actor": "tab2", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "tab2", "testid": "cart-item", "contains": "Kiln Brick" },
+            { "do": "click", "actor": "tab1", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Ingot Mold" } },
+            { "do": "expect", "actor": "tab2", "testid": "cart-item", "contains": "Ingot Mold", "within": 10000 }
+          ]
+        },
+        {
+          "id": "4d",
+          "desc": "checkout creates one order, reduces stock and empties the cart",
+          "points": 2,
+          "steps": [
+            { "do": "click", "actor": "tab1", "testid": "cart-toggle" },
+            { "do": "click", "actor": "tab1", "testid": "checkout-submit" },
+            { "do": "wait", "actor": "tab1", "ms": 2000 },
+            { "do": "click", "actor": "tab1", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "tab1", "testid": "order-item", "contains": "Hammer" },
+            { "do": "expectNumber", "actor": "tab1", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Hammer" }, "equals": 98 },
+            { "do": "click", "actor": "tab1", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "tab1", "testid": "empty-cart" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": 6,
+      "name": "Reviews",
+      "actors": ["author", "other", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "author", "name": "hal" },
+        { "do": "signUp", "actor": "other", "name": "ivy" }
+      ],
+      "criteria": [
+        {
+          "id": "6a",
+          "desc": "a customer can review an item and everyone sees it, signed out included",
+          "points": 2,
+          "steps": [
+            { "do": "click", "actor": "author", "testid": "item-name", "in": { "testid": "item-card", "contains": "Ingot Mold" } },
+            { "do": "fill", "actor": "author", "testid": "review-rating", "text": "4" },
+            { "do": "fill", "actor": "author", "testid": "review-input", "text": "solid mold" },
+            { "do": "click", "actor": "author", "testid": "review-submit" },
+            { "do": "expect", "actor": "author", "testid": "review-item", "contains": "solid mold" },
+            { "do": "click", "actor": "visitor", "testid": "item-name", "in": { "testid": "item-card", "contains": "Ingot Mold" } },
+            { "do": "expect", "actor": "visitor", "testid": "review-item", "contains": "solid mold", "within": 10000 }
+          ]
+        },
+        {
+          "id": "6b",
+          "desc": "one review per customer per item — a second does not add a duplicate",
+          "points": 1,
+          "steps": [
+            { "do": "fill", "actor": "author", "testid": "review-rating", "text": "2" },
+            { "do": "fill", "actor": "author", "testid": "review-input", "text": "changed my mind" },
+            { "do": "click", "actor": "author", "testid": "review-submit" },
+            { "do": "wait", "actor": "author", "ms": 2000 },
+            { "do": "expect", "actor": "author", "testid": "review-item", "contains": "solid mold", "absent": true }
+          ]
+        },
+        {
+          "id": "6c",
+          "desc": "the average rating reflects both reviewers, live",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "other", "testid": "item-name", "in": { "testid": "item-card", "contains": "Ingot Mold" } },
+            { "do": "fill", "actor": "other", "testid": "review-rating", "text": "4" },
+            { "do": "fill", "actor": "other", "testid": "review-input", "text": "does the job" },
+            { "do": "click", "actor": "other", "testid": "review-submit" },
+            { "do": "expectNumber", "actor": "other", "testid": "review-average", "equals": 3, "within": 10000 },
+            { "do": "expectAgreement", "actors": ["author", "other"], "testid": "review-average", "numeric": true }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": 7,
+      "name": "Admin and warehouses",
+      "actors": ["admin", "customer", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "jon" },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }
+      ],
+      "criteria": [
+        {
+          "id": "7a",
+          "desc": "the admin area is for admins only",
+          "points": 1,
+          "steps": [
+            { "do": "expect", "actor": "admin", "testid": "admin-link" },
+            { "do": "expect", "actor": "customer", "testid": "admin-link", "absent": true },
+            { "do": "expect", "actor": "customer", "testid": "admin-panel", "absent": true }
+          ]
+        },
+        {
+          "id": "7b",
+          "desc": "admin lists every item, every warehouse, and what each warehouse holds",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "admin", "testid": "admin-link" },
+            { "do": "expect", "actor": "admin", "testid": "admin-item-row", "count": 12 },
+            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "East" },
+            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "West" },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Grinding Wheel" }, "equals": 100 }
+          ]
+        },
+        {
+          "id": "7c",
+          "desc": "the storefront stock is the sum across warehouses, and a restock raises it live",
+          "points": 2,
+          "steps": [
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Grinding Wheel" }, "equals": 100 },
+            { "do": "click", "actor": "admin", "testid": "warehouse-select", "in": { "testid": "admin-location-row", "contains": "Grinding Wheel" } },
+            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "25" },
+            { "do": "click", "actor": "admin", "testid": "restock-submit" },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Grinding Wheel" }, "equals": 125, "within": 10000 },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Grinding Wheel" }, "equals": 125 }
+          ]
+        }
+      ]
+    }
+  ]
+}

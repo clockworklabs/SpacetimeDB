@@ -2,14 +2,17 @@
 // Generates the per-level "Testing Hooks" prompt appendix from the contract
 // JSONs. Cumulative: appendix for level N includes hooks from levels 1..N.
 //
-// Usage: node gen-appendix.mjs            (regenerates all appendix files)
+// Usage: node gen-appendix.mjs [--track <name>]   (regenerates all appendix files)
 
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadTrack, DEFAULT_TRACK } from '../tracks.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const CONTRACTS_DIR = join(ROOT, 'levels', 'contracts');
+const trackArg = process.argv.includes('--track')
+  ? process.argv[process.argv.indexOf('--track') + 1]
+  : DEFAULT_TRACK;
+const CONTRACTS_DIR = loadTrack(trackArg).contracts;
 const FILE_RE = /^\d+-[a-z-]+\.json$/;
 
 const files = readdirSync(CONTRACTS_DIR).filter(f => FILE_RE.test(f)).sort();

@@ -31,7 +31,7 @@ Mongoose creates collections on first write; there is no migration step.
 
 ## Branding & Styling
 
-- App title: **"MongoDB Chat"**
+- App title: **"MongoDB <APP_NOUN>"**
 - Dark theme using official MongoDB brand colors:
   - Primary: `#00ED64` (MongoDB green)
   - Primary hover: `#00C957` (darker green)

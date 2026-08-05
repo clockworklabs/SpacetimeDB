@@ -17,22 +17,13 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadTrack, suitesFor, DEFAULT_TRACK } from './tracks.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RESET = join(ROOT, 'reset-db.sh');
 
-// Suites per level. Features and invariants come from that level's scenarios;
-// delivery applies from the level that introduces it onward.
-const SUITES = {
-  1: [
-    { id: 'features', spec: 'levels/scenarios/01-basic-chat.json' },
-    { id: 'invariants', spec: 'levels/scenarios/01-invariants.json' },
-    { id: 'delivery', spec: 'levels/scenarios/01-delivery.json' },
-  ],
-};
-
 function parseArgs(argv) {
-  const a = { level: '1', reset: true, media: true, runIndex: 0 };
+  const a = { level: '1', reset: true, media: true, runIndex: 0, track: DEFAULT_TRACK };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--app': a.app = argv[++i]; break;
@@ -109,10 +100,10 @@ function codeMetrics(args) {
   };
 }
 
-function resetDatabase(args) {
+function resetDatabase(args, track) {
   process.stdout.write('  reset database ... ');
   try {
-    run('bash', [RESET, args.backend, args.app, String(args.runIndex ?? 0)]);
+    run('bash', [RESET, args.backend, args.app, String(args.runIndex ?? 0), track.slug]);
     console.log('ok');
   } catch (err) {
     console.log('FAILED');
@@ -127,7 +118,7 @@ function lint(args) {
   const out = join(args.out, 'contract-lint.json');
   try {
     run('node', [join(ROOT, 'linter', 'lint.mjs'), '--url', args.url, '--level', args.level,
-      '--label', args.label, '--out', out]);
+      '--track', args.track, '--label', args.label, '--out', out]);
   } catch { /* non-zero exit means hooks failed; the report still lands */ }
   if (!existsSync(out)) { console.log('NO REPORT'); return null; }
   const r = JSON.parse(readFileSync(out, 'utf8'));
@@ -140,7 +131,7 @@ function gradeSuite(args, suite) {
   const out = join(args.out, `grading-${suite.id}.json`);
   const argv = [join(ROOT, 'grader', 'grade.mjs'), '--url', args.url, '--level', args.level,
     '--label', `${args.label}-${suite.id}`, '--out', out];
-  if (suite.spec) argv.push('--spec', join(ROOT, suite.spec));
+  if (suite.spec) argv.push('--spec', suite.spec);
   if (args.restartCmd) argv.push('--restart-cmd', args.restartCmd);
   if (args.media) argv.push('--media', join(args.out, 'media'), '--trace');
   let stdout = '';
@@ -163,6 +154,7 @@ function gradeSuite(args, suite) {
 
 async function main() {
   const args = parseArgs(process.argv);
+  const track = loadTrack(args.track);
   mkdirSync(args.out, { recursive: true });
 
   console.log(`\n=== ${args.label} (${args.backend}) ===`);
@@ -170,16 +162,25 @@ async function main() {
   console.log(`  url: ${args.url}`);
 
   const bundle = {
-    label: args.label, backend: args.backend, url: args.url, app: args.app,
+    label: args.label, track: args.track, backend: args.backend, url: args.url, app: args.app,
     level: Number(args.level), suites: {}, totals: {},
   };
 
   // Reset before EVERY step, not once per run: the lint and each suite create
-  // rooms of their own, so a single up-front reset leaves later suites grading
+  // state of their own, so a single up-front reset leaves later suites grading
   // dirty state — which silently lowers scores.
   const freshen = async () => {
     if (!args.reset) return true;
-    if (!resetDatabase(args)) return false;
+    if (!resetDatabase(args, track)) return false;
+    // An app whose fixture data is created at startup has just had it wiped, so
+    // the server has to come back before the state it seeds exists again.
+    // Republishing a SpacetimeDB module re-runs `init`, so only the hosted
+    // backends need this.
+    if (track.reseedOnReset && args.restartCmd && args.backend !== 'spacetime') {
+      process.stdout.write('  reseed      ... ');
+      try { run('bash', ['-c', args.restartCmd]); console.log('ok'); }
+      catch { console.log('FAILED (server did not come back)'); return false; }
+    }
     await sleep(8000);                       // let the app reconnect / republish
     return true;
   };
@@ -208,7 +209,7 @@ async function main() {
   bundle.suites.lint = lint(args);
 
   let total = 0, max = 0, dirty = false;
-  for (const suite of SUITES[Number(args.level)] ?? SUITES[1]) {
+  for (const suite of suitesFor(track, args.level)) {
     if (!(await freshen())) { console.log(`  ${suite.id}: SKIPPED (reset failed)`); continue; }
     const r = gradeSuite(args, suite);
     bundle.suites[suite.id] = r;

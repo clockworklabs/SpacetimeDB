@@ -27,7 +27,7 @@ The client must be served on that port and left running when you are done.
 
 ## Branding & Styling
 
-- App title: **"SpacetimeDB Chat"**
+- App title: **"SpacetimeDB <APP_NOUN>"**
 - Dark theme using official SpacetimeDB brand colors:
   - Primary: `#4cf490` (SpacetimeDB green)
   - Primary hover: `#4cf490bf` (green 75% opacity)

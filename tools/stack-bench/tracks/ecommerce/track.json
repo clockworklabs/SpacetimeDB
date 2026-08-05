@@ -1,0 +1,14 @@
+{
+  "title": "Shop",
+  "slug": "ecom",
+  "portOffset": 300,
+  "restartProbe": "/api/items",
+  "reseedOnReset": true,
+  "suites": {
+    "1": [
+      { "id": "features", "spec": "scenarios/01-features.json" },
+      { "id": "invariants", "spec": "scenarios/01-invariants.json" },
+      { "id": "contention", "spec": "scenarios/01-contention.json" }
+    ]
+  }
+}

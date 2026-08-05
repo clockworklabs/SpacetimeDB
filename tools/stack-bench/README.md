@@ -35,18 +35,34 @@ A SpacetimeDB host that was already running belongs to whoever started it — ot
 databases live there — so it is used as-is and left alone. If none is running, one
 is started and stopped again at the end, or kept with `--keep-spacetime`.
 
+## Tracks
+
+A track is one application the benchmark can build and grade. Everything
+application-specific — level prompts, the UI contract, the scenario suites and
+the golden path the linter walks — lives under `tracks/<name>/`, declared by a
+`track.json`. Adding an application is a matter of dropping in a directory; the
+harness needs no change. Pick one with `--track` (default `chat`).
+
+| Track | Application | Why it exists |
+|---|---|---|
+| `chat` | rooms, messages, presence | the original; history and human grades exist for it |
+| `ecommerce` | storefront, cart, warehouses | live derived numbers and contention, which chat saturated on |
+
+Tracks are isolated by a port offset and a name slug, so two can run at the same
+`--run-index` without colliding on ports, databases or result directories.
+
 ## Levels
 
-Ordered by the property each makes verifiable, not by feature novelty —
-see `levels/LEVELS.md`.
+Ordered by the property each makes verifiable, not by feature novelty — see each
+track's `LEVELS.md`.
 
-| Level | Adds | Makes verifiable |
-|---|---|---|
-| 1 | accounts + basic chat | identity, durable and ephemeral state, real-time |
-| 2 | private rooms, membership | authorization, revocation, isolation |
-| 3 | reactions, polls, capacity | atomicity and isolation under contention |
-| 4 | scheduling, expiry | durability of deferred work |
-| 5 | volume | throughput, latency, efficiency |
+| Level | Chat adds | Ecommerce adds | Makes verifiable |
+|---|---|---|---|
+| 1 | accounts + basic chat | storefront, cart, warehouses | identity, durable state, real-time |
+| 2 | private rooms, membership | personalisation, catalogue queries | authorization / per-user derivation |
+| 3 | reactions, polls, capacity | warehouse transfers | atomicity and isolation |
+| 4 | scheduling, expiry | order lifecycle, expiry | durability of deferred work |
+| 5 | volume | volume | throughput, latency, efficiency |
 
 Levels are cumulative: an app at L3 is still checked against L1 and L2, so a
 regression is caught rather than scored around.
@@ -54,8 +70,8 @@ regression is caught rather than scored around.
 ## How verification works
 
 Apps differ in structure, so the harness locates elements only through a
-contract of `data-testid` attributes the prompt requires (`levels/contracts/`).
-Scenarios (`levels/scenarios/`) then drive real browser clients — one isolated
+contract of `data-testid` attributes the prompt requires (`tracks/<t>/contracts/`).
+Scenarios (`tracks/<t>/scenarios/`) then drive real browser clients — one isolated
 context per actor, so identities are genuinely separate — and assert on what a
 user would observe.
 
@@ -84,7 +100,8 @@ The grader never reloads except to probe for that, so "real-time" means real-tim
 | `linter/lint.mjs` | checks the app exposes the contract's test ids |
 | `docker-compose.yaml` | the Postgres and MongoDB services |
 | `reset-db.sh`, `restart-backend.sh` | environment control used by the suites |
-| `levels/` | prompts, contracts and scenarios per level |
+| `tracks.mjs` | resolves a track: its paths, suites, ports and names |
+| `tracks/<name>/` | one application: prompts, contracts, scenarios, lint walk |
 | `backends/` | per-backend setup and deploy instructions given to the agent |
 | `FINDINGS.md` | product issues the benchmark has surfaced |
 
