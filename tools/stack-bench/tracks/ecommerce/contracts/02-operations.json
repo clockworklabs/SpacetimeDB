@@ -1,0 +1,160 @@
+{
+  "level": 2,
+  "track": "ecommerce",
+  "note": "Level 2 hooks. Cumulative with level 1. Most of these are LIVE views: the point of the level is that six kinds of action each touch several of them, so a backend that wires updates per path has roughly forty obligations while one that pushes state has a handful. Stage `operations` is reached by signing in as the seeded admin; `fulfilment` by signing in as the seeded staff account.",
+  "hooks": [
+    {
+      "id": "staff-link",
+      "element": "the control that opens the fulfilment area; present for a staff or admin account and absent for a customer",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "both halves are scored — present for staff, absent for a customer"
+    },
+    {
+      "id": "fulfilment-panel",
+      "element": "the fulfilment area's container",
+      "stage": "fulfilment",
+      "check": "visible"
+    },
+    {
+      "id": "queue-item",
+      "element": "one per order waiting to ship, oldest first, naming the items it contains",
+      "stage": "fulfilment",
+      "check": "visible"
+    },
+    {
+      "id": "queue-warehouse",
+      "element": "the warehouse a queued order's item will ship from, inside its queue-item",
+      "stage": "fulfilment",
+      "check": "visible"
+    },
+    {
+      "id": "queue-depth",
+      "element": "how many orders are waiting, as a number",
+      "stage": "fulfilment",
+      "check": "visible"
+    },
+    {
+      "id": "ship-submit",
+      "element": "button on a queued order that marks it shipped",
+      "stage": "fulfilment",
+      "check": "visible"
+    },
+
+    {
+      "id": "transfer-from",
+      "element": "the control choosing the warehouse a transfer takes stock from, inside the item's admin row",
+      "stage": "operations",
+      "check": "visible"
+    },
+    {
+      "id": "transfer-to",
+      "element": "the control choosing the warehouse a transfer sends stock to, inside the same row",
+      "stage": "operations",
+      "check": "visible"
+    },
+    {
+      "id": "transfer-qty",
+      "element": "how many units to transfer",
+      "stage": "operations",
+      "check": "visible"
+    },
+    {
+      "id": "transfer-submit",
+      "element": "button that performs the transfer",
+      "stage": "operations",
+      "check": "visible"
+    },
+    {
+      "id": "price-input",
+      "element": "the input for an item's new price, inside its admin row",
+      "stage": "operations",
+      "check": "visible"
+    },
+    {
+      "id": "price-submit",
+      "element": "button that applies the new price",
+      "stage": "operations",
+      "check": "visible"
+    },
+
+    {
+      "id": "low-stock-list",
+      "element": "the container listing items at or below ten units",
+      "stage": "operations",
+      "check": "attached"
+    },
+    {
+      "id": "low-stock-item",
+      "element": "one per item in the low-stock list, naming the item",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "appears and disappears live as stock crosses the threshold"
+    },
+    {
+      "id": "warehouse-total",
+      "element": "the number of units a warehouse holds, inside its admin-warehouse-item",
+      "stage": "operations",
+      "check": "visible"
+    },
+    {
+      "id": "category-row",
+      "element": "one per category in the admin totals, naming the category",
+      "stage": "operations",
+      "check": "visible"
+    },
+    {
+      "id": "category-units",
+      "element": "units sold in that category, as a number, inside its category-row",
+      "stage": "operations",
+      "check": "visible"
+    },
+    {
+      "id": "category-revenue",
+      "element": "revenue earned by that category, as a number, inside its category-row",
+      "stage": "operations",
+      "check": "visible"
+    },
+
+    {
+      "id": "recommended-list",
+      "element": "the container holding a signed-in customer's recommendations",
+      "stage": "storefront",
+      "check": "attached"
+    },
+    {
+      "id": "recommended-item",
+      "element": "one per recommended item, naming it",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "appears once the customer has bought from a category; excludes items already in their cart"
+    },
+
+    {
+      "id": "order-status",
+      "element": "an order's state — pending, shipped, cancelled — inside its order-item",
+      "stage": "after-checkout",
+      "check": "visible"
+    },
+    {
+      "id": "cancel-order",
+      "element": "button on a pending order that cancels it",
+      "stage": "after-checkout",
+      "check": "visible"
+    },
+    {
+      "id": "return-item",
+      "element": "button on a shipped order's line that returns it",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "only on orders that have shipped"
+    },
+    {
+      "id": "order-error",
+      "element": "the visible error shown when an operation is refused",
+      "stage": "scenario",
+      "check": "visible",
+      "note": "appears on a transfer that would overdraw a warehouse, or cancelling an order that already shipped"
+    }
+  ]
+}
