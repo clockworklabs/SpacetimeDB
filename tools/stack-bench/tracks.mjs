@@ -56,6 +56,70 @@ export function loadTrack(name = DEFAULT_TRACK) {
   };
 }
 
+// ─── Ports ───────────────────────────────────────────────────────────────────
+//
+// The single source of truth. These used to live separately in agent.mjs and
+// bench.mjs, and both Express backends sat on one base — which twice produced a
+// client quietly proxying into the OTHER backend's server, and confident scores
+// for the wrong database. Bases are spaced per backend, tracks are offset from
+// one another, and assertNoPortCollisions() proves the whole grid disjoint
+// rather than trusting anyone's arithmetic.
+
+export const PORT_BASES = {
+  spacetime: { vite: 6173 },
+  postgres: { vite: 6273, express: 6001, db: 6532 },
+  mongodb: { vite: 6373, express: 6101, db: 6537 },
+};
+
+// Run indexes above this are refused: the spacing proof below only covers this
+// range, and an uncapped index walks one backend's window into another's — at
+// 28 and above, chat's postgres client window reaches ecommerce's postgres API
+// base. Twenty concurrent runs of one backend on one machine is already far
+// beyond anything this benchmark does.
+export const RUN_INDEX_CAP = 20;
+
+export function portsFor(track, backend, runIndex) {
+  if (runIndex > RUN_INDEX_CAP) {
+    throw new Error(`--run-index ${runIndex} exceeds ${RUN_INDEX_CAP}; the port grid is only proven collision-free below that`);
+  }
+  const base = PORT_BASES[backend];
+  if (!base) throw new Error(`unknown backend "${backend}"`);
+  const offset = track.portOffset + runIndex;
+  return {
+    vite: base.vite + offset,
+    express: base.express ? base.express + offset : null,
+    dbPort: base.db ?? null,
+  };
+}
+
+// Every (track, backend, run-index) combination must own its ports outright.
+// Run at startup: a new track whose offset collides with an existing window
+// fails loudly here, instead of silently grading the wrong application.
+export function assertNoPortCollisions() {
+  const owner = new Map();
+  // The database containers' host ports are fixed and shared by design, but no
+  // track window may land on them either.
+  for (const [backend, base] of Object.entries(PORT_BASES)) {
+    if (base.db) owner.set(base.db, `${backend} database container`);
+  }
+  for (const name of listTracks()) {
+    const track = loadTrack(name);
+    for (const backend of Object.keys(PORT_BASES)) {
+      for (let i = 0; i <= RUN_INDEX_CAP; i++) {
+        const p = portsFor(track, backend, i);
+        for (const port of [p.vite, p.express]) {
+          if (port == null) continue;
+          const who = `${name}/${backend}/run${i}`;
+          if (owner.has(port)) {
+            throw new Error(`port ${port} is claimed by both ${owner.get(port)} and ${who} — adjust the new track's portOffset`);
+          }
+          owner.set(port, who);
+        }
+      }
+    }
+  }
+}
+
 // Suffixed names: chat keeps the unsuffixed originals, so its databases,
 // modules and result directories are exactly what they have always been.
 export const dbName = (track, runIndex) =>

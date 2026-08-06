@@ -16,16 +16,15 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadTrack, levelPrompt, appendix, dbName, moduleName, DEFAULT_TRACK } from './tracks.mjs';
+import { loadTrack, levelPrompt, appendix, dbName, moduleName, portsFor, DEFAULT_TRACK } from './tracks.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(ROOT, '..', '..');
 
-const PORTS = {
-  spacetime: { vite: 6173 },
-  postgres: { vite: 6273, express: 6001, db: 6532 },
-  mongodb: { vite: 6373, express: 6001, db: 6537 },
-};
+// The benchmark runs its own SpacetimeDB host so that measurements describe the
+// module under test rather than whatever else is published on a shared machine,
+// and so restarting it for durability tests cannot take somebody else down.
+const STDB_URI = process.env.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210';
 
 function parseArgs(argv) {
   const a = { level: 1, runIndex: 0, model: 'claude-sonnet-5', guidance: 'prescribed',
@@ -62,18 +61,6 @@ function findClaude() {
   return 'claude';
 }
 
-// Tracks are offset from one another so a chat run and an ecommerce run at the
-// same --run-index cannot land on the same port.
-const ports = (backend, runIndex, track) => {
-  const p = PORTS[backend];
-  const offset = track.portOffset + runIndex;
-  return {
-    vite: p.vite + offset,
-    express: p.express ? p.express + offset : null,
-    dbPort: p.db ?? null,
-  };
-};
-
 const dbUrl = (backend, runIndex, dbPort, track) =>
   backend === 'postgres'
     ? `postgresql://stackbench:stackbench@localhost:${dbPort}/${dbName(track, runIndex)}`
@@ -109,7 +96,8 @@ function backendDoc(args, p, track) {
     .replaceAll('<EXPRESS_PORT>', String(p.express ?? ''))
     .replaceAll('<APP_NOUN>', track.title)
     .replaceAll('<MODULE_NAME>', moduleName(track, args.runIndex))
-    .replaceAll('<DATABASE_URL>', p.dbPort ? dbUrl(args.backend, args.runIndex, p.dbPort, track) : '');
+    .replaceAll('<DATABASE_URL>', p.dbPort ? dbUrl(args.backend, args.runIndex, p.dbPort, track) : '')
+    .replaceAll('<STDB_URI>', STDB_URI);
 }
 
 // SpacetimeDB is young enough that models have little of it in training data;
@@ -180,7 +168,7 @@ function buildPrompt(args, p, track) {
 function main() {
   const args = parseArgs(process.argv);
   const track = loadTrack(args.track);
-  const p = ports(args.backend, args.runIndex, track);
+  const p = portsFor(track, args.backend, args.runIndex);
   // Renders what the model would be given, without spending anything or
   // touching the app directory. The regression gate for harness changes is a
   // diff of this against a saved copy.
@@ -220,8 +208,15 @@ function main() {
       '--print', '--output-format', 'json',
       '--dangerously-skip-permissions',
       '--model', args.model,
+      // The app directory is the ONLY thing the session may read. Granting the
+      // harness root handed it every previous build, the rollback snapshots and
+      // `tracks/*/scenarios/*.json` — the graded assertions themselves. A run
+      // did exactly that: it found a prior 49/49 implementation in a sibling
+      // snapshot and copied it, reporting DEPLOY_COMPLETE in 170s for $1.12.
+      // Everything the model legitimately needs (backend guidance, skill
+      // documents, the level spec, the contract appendix) is inlined into the
+      // prompt, and the linter is invoked by absolute path rather than read.
       '--add-dir', args.app,
-      '--add-dir', ROOT,
     ], { cwd: args.app, input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
   } catch (err) {
     raw = (err.stdout || '').toString();
@@ -239,14 +234,34 @@ function main() {
     console.error(`\nAGENT DID NOT RUN — ${spawnError ?? 'the session produced no output'}`);
   }
   const usage = result.usage ?? {};
+  const input = usage.input_tokens ?? 0;
+  const output = usage.output_tokens ?? 0;
+  const cacheWrite = usage.cache_creation_input_tokens ?? 0;
+  const cacheRead = usage.cache_read_input_tokens ?? 0;
+  const turns = result.num_turns ?? null;
+
+  // A single total cannot say WHY one backend cost more, and the answer is
+  // almost never the database. Cost here is roughly (turns × prompt size):
+  // cache reads dominate the token count and are re-paid every turn, so a
+  // backend handed a bigger guidance pack pays more for identical work. Keep
+  // the parts, so a cost difference can be attributed instead of assumed.
   const out = {
     appDir: args.app,
     mode: args.mode,
     level: args.level,
+    track: args.track,
+    backend: args.backend,
+    model: args.model,
+    guidance: args.guidance,
     costUsd: Number((result.total_cost_usd ?? 0).toFixed(4)),
-    tokens: (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0)
-      + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0),
-    outputTokens: usage.output_tokens ?? 0,
+    tokens: input + output + cacheWrite + cacheRead,
+    outputTokens: output,
+    usage: { input, output, cacheWrite, cacheRead },
+    turns,
+    // What the model was handed before it did anything — the denominator for
+    // every per-turn cost, and the axis the benchmark is least fair on.
+    promptBytes: prompt.length,
+    tokensPerTurn: turns ? Math.round((input + output + cacheWrite + cacheRead) / turns) : null,
     durationMs: Date.now() - started,
     sessionId: result.session_id ?? null,
     ok: result.is_error === false,

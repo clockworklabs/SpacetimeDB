@@ -11,21 +11,21 @@
 //                  [--fix-rounds 3] [--run-index 0] [--out <dir>]
 //                  [--keep-spacetime] [--no-media]
 //
-// A SpacetimeDB host that is already running is used as-is and never stopped. If
-// none is running one is started, and stopped again at the end unless
-// --keep-spacetime.
+// The benchmark runs its own SpacetimeDB host (STACK_BENCH_STDB_URI, default
+// 127.0.0.1:3210, data in .spacetime-data) rather than a machine-wide one, so
+// resource measurements describe the module under test and a durability restart
+// cannot disturb anything else. It is started if absent and stopped at the end
+// unless --keep-spacetime.
 
 import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { loadTrack, resultsName, DEFAULT_TRACK } from './tracks.mjs';
+import { loadTrack, resultsName, portsFor, assertNoPortCollisions, PORT_BASES, DEFAULT_TRACK } from './tracks.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const AGENT = join(ROOT, 'agent.mjs');
-
-const VITE_BASE = { spacetime: 6173, postgres: 6273, mongodb: 6373 };
-const EXPRESS_BASE = 6001;
 
 function parseArgs(argv) {
   const a = { model: 'claude-sonnet-5', fixRounds: 3, runIndex: 0, levels: '1', media: true,
@@ -85,9 +85,10 @@ function restoreSource(from, appDir) {
 // their lifetime — runs were leaving vite and Express processes behind, which is
 // how ports and app directories ended up occupied by finished work.
 function portsForRun(backend, runIndex, track) {
-  const offset = track.portOffset + runIndex;
-  const vite = VITE_BASE[backend] + offset;
-  return backend === 'spacetime' ? [vite] : [vite, EXPRESS_BASE + offset];
+  // The stub backend (offline test loop) owns no ports at all.
+  if (!PORT_BASES[backend]) return [];
+  const p = portsFor(track, backend, runIndex);
+  return p.express ? [p.vite, p.express] : [p.vite];
 }
 
 // A dev server is usually a watcher supervising a child: the child holds the
@@ -128,10 +129,18 @@ function stopServers(backend, runIndex, appDir, track) {
   }
 }
 
+// The benchmark runs its OWN SpacetimeDB host, on its own port and data
+// directory. Sharing a machine-wide host meant resource measurements described
+// whatever else was published there, and restarting it for a durability test
+// took somebody else's databases down with it.
+const STDB_URI = process.env.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210';
+const STDB_PORT = new URL(STDB_URI).port;
+const STDB_DATA_DIR = join(ROOT, '.spacetime-data');
+
 const spacetimeUp = () => {
   try {
     execFileSync('curl', ['-s', '-m', '5', '-o', process.platform === 'win32' ? 'NUL' : '/dev/null',
-      'http://localhost:3000/v1/ping'], { stdio: 'ignore' });
+      `${STDB_URI}/v1/ping`], { stdio: 'ignore' });
     return true;
   } catch { return false; }
 };
@@ -144,22 +153,35 @@ function ensureSpacetime() {
     console.log('  spacetime   ... already running (will be left alone)');
     return false;
   }
-  console.log('  spacetime   ... not running, starting it');
-  spawn('spacetime', ['start'], { detached: true, stdio: 'ignore', shell: true }).unref();
+  console.log(`  spacetime   ... not running, starting a benchmark-owned host on :${STDB_PORT}`);
+  mkdirSync(STDB_DATA_DIR, { recursive: true });
+  spawn('spacetime', ['start', '--listen-addr', `127.0.0.1:${STDB_PORT}`, '--data-dir', STDB_DATA_DIR],
+    { detached: true, stdio: 'ignore', shell: true }).unref();
   for (let i = 0; i < 60; i++) {
     execFileSync(process.platform === 'win32' ? 'timeout' : 'sleep',
       process.platform === 'win32' ? ['/T', '2', '/NOBREAK'] : ['2'], { stdio: 'ignore' });
     if (spacetimeUp()) { console.log('  spacetime   ... up'); return true; }
   }
-  console.error('SpacetimeDB did not come up on :3000.');
+  console.error(`SpacetimeDB did not come up on :${STDB_PORT}.`);
   process.exit(2);
 }
 
+// Stop ONLY the host listening on the benchmark's port. Killing by image name
+// terminates every SpacetimeDB on the machine, which is how a grading run once
+// took down databases that had nothing to do with the benchmark.
 function stopSpacetime() {
-  try {
-    execFileSync('taskkill', ['/F', '/IM', 'spacetimedb-standalone.exe'], { stdio: 'ignore' });
-    console.log('  stopped the SpacetimeDB host this run started');
-  } catch { /* already gone */ }
+  let out = '';
+  try { out = execFileSync('netstat', ['-ano'], { encoding: 'utf8' }); } catch { return; }
+  const pids = new Set(out.split(String.fromCharCode(10))
+    .filter(l => new RegExp(`:${STDB_PORT}\\s`).test(l) && /LISTENING/i.test(l))
+    .map(l => l.trim().split(/\s+/).pop())
+    .filter(pid => pid && pid !== '0'));
+  for (const pid of pids) {
+    try {
+      execFileSync('taskkill', ['/F', '/PID', pid, '/T'], { stdio: 'ignore' });
+      console.log(`  stopped the SpacetimeDB host this run started on :${STDB_PORT}`);
+    } catch { /* already gone */ }
+  }
 }
 
 const sh = (cmd, args, opts = {}) =>
@@ -173,16 +195,25 @@ function runAgent(args, mode, level, appDir) {
   return JSON.parse(out.trim().split('\n').pop());
 }
 
+// The restart command is handed to `bash -c`, which reads a backslash as an
+// escape: a Windows path arrives with its separators eaten and `\tools` turned
+// into a literal tab. Bash accepts forward slashes on Windows, so the path is
+// written the one way both shells agree on.
+const forBash = p => p.replace(/\\/g, '/');
+
 function grade(args, appDir, url, label, level, track) {
-  const expressPort = EXPRESS_BASE + track.portOffset + args.runIndex;
+  const expressPort = PORT_BASES[args.backend]
+    ? portsFor(track, args.backend, args.runIndex).express ?? ''
+    : '';
   const argv = [join(ROOT, 'run-suite.mjs'), '--app', appDir, '--url', url,
     '--backend', args.backend, '--label', label, '--level', String(level),
     '--track', args.track,
+    '--reseed-probe', `http://localhost:${expressPort}${track.restartProbe}`,
     '--run-index', String(args.runIndex),
     ...(args.media ? [] : ['--no-media']),
     ...(args.backend === 'stub'
       ? ['--no-reset']
-      : ['--restart-cmd', `bash ${join(ROOT, 'restart-backend.sh')} ${args.backend} ${appDir} ${expressPort} ${track.restartProbe}`])];
+      : ['--restart-cmd', `bash ${forBash(join(ROOT, 'restart-backend.sh'))} ${args.backend} ${forBash(appDir)} ${expressPort} ${track.restartProbe}`])];
   try { sh('node', argv, { stdio: 'inherit' }); } catch { /* score is in the bundle */ }
   const bundle = join(appDir, 'stack-bench', 'bundle.json');
   return existsSync(bundle) ? JSON.parse(readFileSync(bundle, 'utf8')) : null;
@@ -190,8 +221,11 @@ function grade(args, appDir, url, label, level, track) {
 
 async function main() {
   const args = parseArgs(process.argv);
+  process.env.STACK_BENCH_STDB_URI = STDB_URI;
+  process.env.STACK_BENCH_STDB_OWNED = '1';   // this host is ours; restarts are allowed
   const track = loadTrack(args.track);
-  const url = args.url ?? `http://localhost:${VITE_BASE[args.backend] + track.portOffset + args.runIndex}`;
+  assertNoPortCollisions();
+  const url = args.url ?? `http://localhost:${portsFor(track, args.backend, args.runIndex).vite}`;
   const runDir = resultsName(track, args.backend, args.runIndex);
   args.out ??= join(ROOT, 'results', runDir);
   mkdirSync(args.out, { recursive: true });
@@ -231,6 +265,19 @@ async function main() {
       break;
     }
     let bundle = grade(args, appDir, url, `${args.backend}-l${level}`, level, track);
+
+    // What the model built BEFORE being handed the answers. Every backend can
+    // reach the same total given enough fix rounds, so the post-fix score stops
+    // discriminating — what it got right unaided is the comparison that survives.
+    const firstBuild = {
+      score: bundle?.totals?.score ?? null,
+      max: bundle?.totals?.max ?? null,
+      contractPass: bundle?.totals?.contractPass ?? null,
+      missed: Object.values(bundle?.suites ?? {}).flatMap(s =>
+        (s?.features ?? []).flatMap(f =>
+          (f.criteria ?? []).filter(c => !c.passed).map(c => `${f.name}/${c.id}`))),
+    };
+
     let fixRounds = 0;
     let fixCost = 0;
     let stalled = false;
@@ -252,7 +299,10 @@ async function main() {
       const before = bundle?.totals?.score ?? 0;
       // A fix can break more than it mends. Keep the source that produced the
       // best score so far, and roll back to it if a round regresses.
-      const snapshot = join(args.out, `snapshot-l${level}`);
+      // Kept outside the results tree: a snapshot is a known-good copy of the
+      // answer, and a coding session that can reach one will copy it instead of
+      // building. It only has to survive this process.
+      const snapshot = join(tmpdir(), `stack-bench-snapshot-${args.backend}-${args.track}-run${args.runIndex}-l${level}`);
       snapshotSource(appDir, snapshot);
       fixRounds += 1;
       console.log(`--- fix round ${fixRounds}/${args.fixRounds} ---`);
@@ -283,11 +333,17 @@ async function main() {
       level,
       score: bundle?.totals?.score ?? 0,
       max: bundle?.totals?.max ?? 0,
+      firstBuild,
       contractPass: bundle?.totals?.contractPass ?? null,
       code: bundle?.code ?? null,
       buildCostUsd: build.costUsd,
       fixCostUsd: Number(fixCost.toFixed(4)),
       tokens: build.tokens,
+      // Carried up so a run summary can explain a cost, not just report one.
+      usage: build.usage ?? null,
+      turns: build.turns ?? null,
+      promptBytes: build.promptBytes ?? null,
+      tokensPerTurn: build.tokensPerTurn ?? null,
       fixRounds,
       stalled,
       regressed,
@@ -308,8 +364,9 @@ async function main() {
 
   console.log(`\n================ ${args.backend} summary ================`);
   for (const l of run.levels) {
-    console.log(`  L${l.level}: ${l.score}/${l.max}  ${l.fixRounds} fix round(s)  ` +
-      `$${(l.buildCostUsd + l.fixCostUsd).toFixed(2)}  ${l.durationSec}s`);
+    const unaided = l.firstBuild?.score != null ? `${l.firstBuild.score}/${l.firstBuild.max} unaided → ` : '';
+    console.log(`  L${l.level}: ${unaided}${l.score}/${l.max}  ${l.fixRounds} fix round(s)  ` +
+      `$${((l.buildCostUsd ?? 0) + (l.fixCostUsd ?? 0)).toFixed(2)}  ${l.durationSec}s`);
   }
   console.log(`  TOTAL ${run.totals.score}/${run.totals.max}  ` +
     `$${run.totals.costUsd}  ${run.totals.fixRounds} fix round(s)  ${run.totals.durationSec}s`);

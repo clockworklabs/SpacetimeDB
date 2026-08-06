@@ -51,6 +51,10 @@ harness needs no change. Pick one with `--track` (default `chat`).
 Tracks are isolated by a port offset and a name slug, so two can run at the same
 `--run-index` without colliding on ports, databases or result directories.
 
+`tracks/ecommerce/overview.html` is a self-contained explainer of that track —
+what gets built, how it is graded, and how the benchmark is kept honest — written
+for a reader who does not work on the harness.
+
 ## Levels
 
 Ordered by the property each makes verifiable, not by feature novelty — see each

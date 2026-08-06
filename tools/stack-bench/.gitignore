@@ -6,3 +6,7 @@ GRADING_RUBRIC_L1.md
 results/
 snapshot-l*/
 GRADING_RUBRIC.md
+grader/.candidates/
+.spacetime-data/
+grader/.mutation-report.json
+tracks/*/overview.html

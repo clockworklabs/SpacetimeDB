@@ -34,6 +34,7 @@ function parseArgs(argv) {
       case '--level': a.level = argv[++i]; break;
       case '--no-media': a.media = false; break;
       case '--track': a.track = argv[++i]; break;
+      case '--reseed-probe': a.reseedProbe = argv[++i]; break;
       case '--restart-cmd': a.restartCmd = argv[++i]; break;
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--no-reset': a.reset = false; break;
@@ -49,7 +50,21 @@ function parseArgs(argv) {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: 'pipe', cwd: ROOT });
+const run = (cmd, args, opts = {}) =>
+  execFileSync(cmd, args, { encoding: 'utf8', stdio: 'pipe', cwd: ROOT, ...opts });
+
+// Does this URL respond at all? Any HTTP status counts — the question is whether
+// a server is listening, not what it thinks of the request.
+async function answers(url, attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      execFileSync('curl', ['-s', '-m', '4', '-o',
+        process.platform === 'win32' ? 'NUL' : '/dev/null', url], { stdio: 'ignore' });
+      return true;
+    } catch { await sleep(2000); }
+  }
+  return false;
+}
 
 // The benchmark's own database containers. A generated app that connects
 // somewhere else is not measuring what we think it is: one Postgres app pointed
@@ -149,6 +164,16 @@ function gradeSuite(args, suite) {
       console.log(`      FAIL ${f.name} / ${c.id}`);
     }
   }
+  // A criterion that PASSED on interface behaviour alone, because its
+  // server-side check could not be run against this backend, is a weaker result
+  // than one where the server refused a real request. Saying so on every run is
+  // the difference between a disclosed limitation and a flattering score.
+  const uiOnly = r.features.flatMap(f =>
+    f.criteria.filter(c => c.passed && c.serverCheck === 'unverified').map(c => `${f.name}/${c.id}`));
+  if (uiOnly.length) {
+    console.log(`      note: ${uiOnly.length} criterion/criteria passed on interface behaviour only`);
+    for (const u of uiOnly) console.log(`            ${u} — server-side check not runnable on this backend`);
+  }
   return r;
 }
 
@@ -178,8 +203,30 @@ async function main() {
     // backends need this.
     if (track.reseedOnReset && args.restartCmd && args.backend !== 'spacetime') {
       process.stdout.write('  reseed      ... ');
-      try { run('bash', ['-c', args.restartCmd]); console.log('ok'); }
-      catch { console.log('FAILED (server did not come back)'); return false; }
+      // The restart script leaves the new server running, and on Windows that
+      // child keeps a handle open long after the script's own work is done — so
+      // waiting for the command to exit waits forever. What matters is whether
+      // the server is answering, so that is what we wait for, and the command
+      // itself is given a deadline rather than the benefit of the doubt.
+      try {
+        run('bash', ['-c', args.restartCmd], { timeout: 200_000 });
+        console.log('ok');
+      } catch (err) {
+        if (args.reseedProbe && await answers(args.reseedProbe)) {
+          console.log('ok (server answering; restart command did not return)');
+          await sleep(2000);
+          return true;
+        }
+        // Say what actually went wrong. A bare "did not come back" sent the
+        // first investigation looking at the application, when the fault was
+        // the command line the harness built.
+        const detail = ((err.stderr || '') + (err.stdout || '') + (err.message || ''))
+          .toString().trim().split('\n').slice(-3).join(' | ').slice(0, 300);
+        console.log('FAILED (server did not come back)');
+        console.log(`    command: ${args.restartCmd}`);
+        console.log(`    ${detail}`);
+        return false;
+      }
     }
     await sleep(8000);                       // let the app reconnect / republish
     return true;
@@ -188,6 +235,19 @@ async function main() {
   bundle.code = codeMetrics(args);
   console.log(`  code        ... ${bundle.code.serverLoc} server LOC in ${bundle.code.serverFiles} files, ` +
     `${bundle.code.totalLoc} total LOC, ${bundle.code.runtimeDeps} runtime deps`);
+
+  // An interrupted mutation run leaves the app deliberately broken with a
+  // backup beside it. Grading that produces confident numbers for source
+  // nobody intended to measure.
+  const mutated = readdirSync(args.app, { recursive: true, withFileTypes: true })
+    .filter(e => e.isFile() && e.name.endsWith('.mutation-backup'))
+    .map(e => join(e.parentPath ?? e.path ?? args.app, e.name));
+  if (mutated.length) {
+    bundle.error = `app still carries mutation backups (${mutated.join(', ')}) — its source is mutated, not the build under test`;
+    writeFileSync(join(args.out, 'bundle.json'), JSON.stringify(bundle, null, 2));
+    console.log(`\nABORTED: ${bundle.error}`);
+    process.exit(1);
+  }
 
   const prov = checkDatabaseProvenance(args);
   bundle.provenance = prov;
