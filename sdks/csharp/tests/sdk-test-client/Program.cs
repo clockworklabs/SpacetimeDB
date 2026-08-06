@@ -772,7 +772,12 @@ void RunInsertOptionSome()
     test.Db.Db.OptionString.OnInsert += (_, row) => { Require(row.S == "string", "OptionString Some did not round-trip"); Seen(); };
     test.Db.Db.OptionIdentity.OnInsert += (_, row) => { Require(row.I == test.Identity, "OptionIdentity Some did not round-trip"); Seen(); };
     test.Db.Db.OptionSimpleEnum.OnInsert += (_, row) => { Require(row.E == SimpleEnum.Zero, "OptionSimpleEnum Some did not round-trip"); Seen(); };
-    test.Db.Db.OptionEveryPrimitiveStruct.OnInsert += (_, row) => { Require(row.S == primitive, "OptionEveryPrimitiveStruct Some did not round-trip"); Seen(); };
+    test.Db.Db.OptionEveryPrimitiveStruct.OnInsert += (_, row) =>
+    {
+        Require(row.S != null, "OptionEveryPrimitiveStruct Some did not round-trip");
+        RequireEveryPrimitiveStructEqual(row.S, primitive, "OptionEveryPrimitiveStruct Some did not round-trip");
+        Seen();
+    };
     test.Db.Db.OptionVecOptionI32.OnInsert += (_, row) => { Require(row.V != null && row.V.SequenceEqual(vecOption), "OptionVecOptionI32 Some did not round-trip"); Seen(); };
 
     test.Db.Reducers.InsertOptionI32(42);
@@ -900,19 +905,35 @@ void RunInsertDeleteLargeTable()
     var large = LargeTableValue(test);
     var inserted = false;
     var deleted = false;
+    var insertReducer = false;
+    var deleteReducer = false;
+    test.Db.Reducers.OnInsertLargeTable += (
+        ctx,
+        _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        insertReducer = true;
+    };
+    test.Db.Reducers.OnDeleteLargeTable += (
+        ctx,
+        _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        deleteReducer = true;
+    };
     test.Db.Db.LargeTable.OnInsert += (_, row) =>
     {
-        Require(row == large, "LargeTable insert did not round-trip");
+        RequireLargeTableEqual(row, large, "LargeTable insert did not round-trip");
         inserted = true;
         CallDeleteLargeTable(test, large);
     };
     test.Db.Db.LargeTable.OnDelete += (_, row) =>
     {
-        Require(row == large, "LargeTable delete did not round-trip");
+        RequireLargeTableEqual(row, large, "LargeTable delete did not round-trip");
         deleted = true;
     };
     CallInsertLargeTable(test, large);
-    test.FrameTickUntil(() => inserted && deleted);
+    test.FrameTickUntil(() => inserted && deleted && insertReducer && deleteReducer);
 }
 
 void RunInsertPrimitivesAsStrings()
@@ -1135,7 +1156,7 @@ void RunRowDeduplicationRJoinSAndRJoinT()
     test.Db.Db.UniqueU32.OnInsert += (_, _) => uniqueInserts++;
     test.Db.Reducers.InsertPkU32(42, 0xbeef);
     test.FrameTickUntil(() => pkInsert && pkDelete && pkTwoInsert);
-    Require(uniqueInserts <= 1, $"Expected at most one deduplicated unique_u32 insert, got {uniqueInserts}");
+    Require(uniqueInserts == 1, $"Expected exactly one deduplicated unique_u32 insert, got {uniqueInserts}");
 }
 
 void RunLhsJoinUpdate(bool disjoint)
@@ -1656,6 +1677,33 @@ void RequireEveryVecStructEqual(EveryVecStruct actual, EveryVecStruct expected, 
         actual.T.SequenceEqual(expected.T) &&
         actual.U.SequenceEqual(expected.U),
         message);
+}
+
+void RequireLargeTableEqual(LargeTable actual, LargeTable expected, string message)
+{
+    Require(
+        actual.A == expected.A &&
+        actual.B == expected.B &&
+        actual.C == expected.C &&
+        actual.D == expected.D &&
+        actual.E == expected.E &&
+        actual.F == expected.F &&
+        actual.G == expected.G &&
+        actual.H == expected.H &&
+        actual.I == expected.I &&
+        actual.J == expected.J &&
+        actual.K == expected.K &&
+        actual.L == expected.L &&
+        actual.M == expected.M &&
+        actual.N == expected.N &&
+        actual.O == expected.O &&
+        actual.P == expected.P &&
+        actual.Q == expected.Q,
+        message);
+    RequireEnumPayloadEqual(actual.R, expected.R, message);
+    RequireByteStructEqual(actual.T, expected.T, message);
+    RequireEveryPrimitiveStructEqual(actual.U, expected.U, message);
+    RequireEveryVecStructEqual(actual.V, expected.V, message);
 }
 
 void RequireStructListEqual<T>(IReadOnlyList<T> actual, IReadOnlyList<T> expected, Action<T, T, string> requireEqual, string message)
