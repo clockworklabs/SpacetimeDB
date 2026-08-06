@@ -278,6 +278,8 @@ const Shape = t.enum('Shape', {
 A client subscribing to a view receives only the rows it returns. Use a per-user view
 (keyed on `ctx.sender`) for per-viewer access control: deleting a row it depends on
 (e.g. a membership row) automatically drops the rows it was exposing from that client.
+A view re-evaluates whenever the rows it reads change, for each subscribed client; index
+accessors keep that work proportional to the rows returned.
 
 `t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`. A named output type must not reuse the generated PascalCase name of its view accessor (for example, reserve `DiscountedProduct` for a `discounted_product` view).
 
@@ -288,7 +290,7 @@ Both `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take three arg
 export const activeUsers = spacetimedb.anonymousView(
   { name: 'active_users', public: true },
   t.array(entity.rowType),
-  (ctx) => [...ctx.db.entity.iter()].filter(e => e.active)
+  (ctx) => [...ctx.db.entity.active.filter(true)]        // active: t.bool().index('btree')
 );
 
 // Per-user view (varies by ctx.sender):

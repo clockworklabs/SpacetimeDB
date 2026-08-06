@@ -8,7 +8,7 @@ client is your choice.
 
 | Setting | Value |
 |---|---|
-| Server URI | `http://localhost:3000` |
+| Server URI | `<STDB_URI>` |
 | Module name | `<MODULE_NAME>` |
 | Client dev server | must be reachable at `http://localhost:<VITE_PORT>` |
 

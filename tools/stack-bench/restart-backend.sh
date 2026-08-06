@@ -49,17 +49,21 @@ case "$BACKEND" in
       echo "Start a benchmark-owned instance and set STACK_BENCH_STDB_OWNED=1." >&2
       exit 3
     fi
-    echo "stopping SpacetimeDB host"
+    STDB_URI="${STACK_BENCH_STDB_URI:-http://127.0.0.1:3210}"
+    STDB_PORT="${STDB_URI##*:}"
+    STDB_DATA_DIR="$(cd "$(dirname "$0")" && pwd)/.spacetime-data"
+    echo "stopping the benchmark's SpacetimeDB host on :$STDB_PORT"
     # Kill the standalone host only; the commitlog on disk is what must carry
     # the scheduled rows across the restart.
     if command -v taskkill >/dev/null 2>&1; then
-      taskkill //F //IM spacetimedb-standalone.exe >/dev/null 2>&1 || true
+      pid=$(netstat -ano | grep -E ":${STDB_PORT}[[:space:]]" | grep -i LISTENING | awk '{print $NF}' | head -1)
+      [ -n "$pid" ] && taskkill //F //PID "$pid" //T >/dev/null 2>&1 || true
     else
-      pkill -f spacetimedb-standalone || true
+      pkill -f "listen-addr 127.0.0.1:${STDB_PORT}" || true
     fi
     sleep 4
-    nohup spacetime start < /dev/null > /tmp/restart-spacetime.log 2>&1 &
-    wait_for "http://localhost:3000/v1/ping" 240
+    nohup spacetime start --listen-addr "127.0.0.1:${STDB_PORT}" --data-dir "$STDB_DATA_DIR" < /dev/null > /tmp/restart-spacetime.log 2>&1 &
+    wait_for "${STACK_BENCH_STDB_URI:-http://127.0.0.1:3210}/v1/ping" 240
     echo "SpacetimeDB host is back"
     ;;
 

@@ -28,7 +28,7 @@ tables and calls reducers over a live connection.
 Publish the module, then regenerate the client bindings from it:
 
 ```bash
-spacetime publish <MODULE_NAME> --module-path backend/spacetimedb
+spacetime publish <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI>
 spacetime generate --lang typescript --out-dir client/src/module_bindings --module-path backend/spacetimedb
 ```
 
@@ -36,7 +36,7 @@ Republish after any server change, and regenerate after any schema change.
 If a schema change is rejected as incompatible, republish with `--delete-data`:
 
 ```bash
-echo y | spacetime publish <MODULE_NAME> --module-path backend/spacetimedb --delete-data
+echo y | spacetime publish <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI> --delete-data
 ```
 
 Then start the client:
@@ -45,7 +45,7 @@ Then start the client:
 cd client && npm install && npm run dev
 ```
 
-`spacetime logs <MODULE_NAME>` shows module output, including reducer errors.
+`spacetime logs <MODULE_NAME> -s <STDB_URI>` shows module output, including reducer errors.
 
 ## Branding & Styling
 
@@ -70,7 +70,7 @@ cd client && npm install && npm run dev
 
 | Setting | Value |
 |---|---|
-| Server URI | `http://localhost:3000` |
+| Server URI | `<STDB_URI>` |
 | Module name | `<MODULE_NAME>` |
 | Client dev server | `<VITE_PORT>` |
 
