@@ -40,10 +40,7 @@ pub struct SpacetimeIdentityClaims {
     /// The unix timestamp the token was issued at
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub iat: SystemTime,
-    // Older no-expiration tokens were serialized as `"exp": null`.
-    // Keep accepting those during validation, but omit the claim for new no-expiration tokens.
     #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<SystemTime>,
 
     #[serde(flatten)]
@@ -89,9 +86,7 @@ pub struct IncomingClaims {
     /// The unix timestamp the token was issued at
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub iat: SystemTime,
-    // See `SpacetimeIdentityClaims::exp`: absent and null both mean no expiration.
     #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub exp: Option<SystemTime>,
 
     /// All remaining claims from the JWT payload

@@ -1,26 +1,12 @@
 use spacetimedb_smoketests::Smoketest;
 
-/// Module code with a bug: `Person` is the wrong table name, should be `person`
-const MODULE_CODE_BROKEN: &str = r#"
-use spacetimedb::{client_visibility_filter, Filter};
-
-#[spacetimedb::table(accessor = person, public)]
-pub struct Person {
-    name: String,
-}
-
-#[client_visibility_filter]
-// Bug: `Person` is the wrong table name, should be `person`.
-const HIDE_PEOPLE_EXCEPT_ME: Filter = Filter::Sql("SELECT * FROM Person WHERE name = 'me'");
-"#;
-
 const FIXED_QUERY: &str = r#""sql": "SELECT * FROM person WHERE name = 'me'""#;
 
 /// This tests that publishing an invalid module does not leave a broken entry in the control DB.
 #[test]
 fn test_fail_initial_publish() {
     let mut test = Smoketest::builder()
-        .module_code(MODULE_CODE_BROKEN)
+        .precompiled_module("fail-initial-publish-broken")
         .autopublish(false)
         .build();
 
@@ -60,7 +46,7 @@ fn test_fail_initial_publish() {
 
     // Publishing the broken code again fails, but the database still exists afterwards,
     // with the previous version of the module code.
-    test.write_module_code(MODULE_CODE_BROKEN).unwrap();
+    test.use_precompiled_module("fail-initial-publish-broken");
     let result = test.publish().name(&name).run();
     assert!(result.is_err(), "Expected publish to fail with broken module");
 

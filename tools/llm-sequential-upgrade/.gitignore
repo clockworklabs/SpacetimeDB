@@ -4,14 +4,11 @@
 **/results/**/.vite/
 **/results/**/drizzle/
 
+# Local env files inside generated apps (not committed)
+**/results/**/.env
+
 # Telemetry backup files
 **/telemetry/*.jsonl.bak
-
-
-# Playwright
-**/playwright/node_modules/
-**/playwright/test-results/
-**/playwright/playwright-report/
 
 # Isolation git repos inside generated apps (created by run.sh, cleaned up after)
 **/results/**/.git/
@@ -21,3 +18,13 @@ telemetry/metrics.jsonl
 
 # Raw telemetry contains PII (email, account IDs) - store privately
 **/telemetry/**/raw-telemetry.jsonl
+# Full Claude Code session transcript (large; contains absolute paths/PII) - store privately
+**/telemetry/**/session-transcript.jsonl
+# Verbose run transcripts (large, regenerable) - not tracked
+**/telemetry/**/run.log
+# Local absolute app paths (machine-specific)
+**/telemetry/**/app-dir.txt
+**/telemetry/**/metadata.json
+
+# Sequential-upgrade run output lives in the external spacetimedb-ai-test-results repo
+sequential-upgrade/sequential-upgrade-*/

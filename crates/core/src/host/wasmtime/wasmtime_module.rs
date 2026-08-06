@@ -20,7 +20,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use wasmtime::{
     AsContext, AsContextMut, Caller, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace,
     WasmParams, WasmResults,
@@ -244,7 +244,7 @@ pub(super) fn call_view_export(
     mut ctx: impl AsContextMut<Data = WasmInstanceEnv>,
     call_view: Option<CallViewType>,
     call_view_anon: Option<CallViewAnonType>,
-    view_name: &Identifier,
+    view_name: &NamespacedIdentifier,
     fn_ptr: u32,
     sender: Option<Identity>,
     args_source: u32,
@@ -365,6 +365,18 @@ fn instantiate_wasmtime_instance(
     // Note: this budget is just for initializers
     set_store_fuel(&mut store, FunctionBudget::DEFAULT_BUDGET.into());
     store.set_epoch_deadline(EPOCH_TICKS_PER_SECOND);
+
+    // NativeAOT-LLVM modules are WASI reactors that export `_initialize`
+    // to set up the native runtime. This must be called before any other exports.
+    // Traditional .NET 8 WASI modules export `_start` instead (which is not called here).
+    if let Ok(init) = instance.get_typed_func::<(), ()>(&mut store, "_initialize") {
+        call_sync_typed_func(&init, &mut store, (), supports_async).map_err(|err| {
+            InitializationError::RuntimeError {
+                err,
+                func: "_initialize".to_owned(),
+            }
+        })?;
+    }
 
     for preinit in &func_names.preinits {
         let func = instance.get_typed_func::<(), ()>(&mut store, preinit).unwrap();
@@ -630,7 +642,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
-        let reducer_name = op.name.clone().into();
+        let reducer_name: NamespacedIdentifier = op.name().clone();
         let (args_source, errors_sink) =
             store
                 .data_mut()
@@ -674,7 +686,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name().clone(), args_bytes, op.timestamp, op.call_type());
 
         let call_result = call_view_export(
             &mut *store,
@@ -711,7 +723,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), args_bytes, op.timestamp, op.call_type());
+                .start_funcall(op.name().clone(), args_bytes, op.timestamp, op.call_type());
 
         let call_result = call_view_export(
             &mut *store,
@@ -757,7 +769,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, result_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
+                .start_funcall(op.name().clone(), op.arg_bytes, op.timestamp, FuncCallType::Procedure);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             let res = module_host_actor::ProcedureExecuteResult {
@@ -825,7 +837,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (request_source, response_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name.clone(), op.request_bytes, op.timestamp, call_type);
+                .start_funcall(op.name().clone(), op.request_bytes, op.timestamp, call_type);
         let request_body_source = store
             .data_mut()
             .create_extra_bytes_source(op.request_body_bytes)

@@ -2,9 +2,8 @@
 
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
-use duct::cmd;
+use duct::{cmd, Expression};
 use serde_json::Value;
-use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::path::Path;
 use std::path::PathBuf;
@@ -14,11 +13,30 @@ const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
 mod cla_assistant;
+mod codeowners_check;
 mod keynote_bench;
 mod smoketest;
 mod util;
 
 use util::ensure_repo_root;
+
+/// On Windows, `pnpm` is installed as a `.cmd` shim which `CreateProcess` cannot
+/// find without going through the shell.  Wrapping with `cmd /c` fixes this.
+/// On Unix, we invoke `pnpm` directly.
+fn pnpm<I, S>(args: I) -> Expression
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    let args: Vec<std::ffi::OsString> = args.into_iter().map(|a| a.as_ref().to_os_string()).collect();
+    if cfg!(windows) {
+        let mut full: Vec<std::ffi::OsString> = vec!["/c".into(), "pnpm".into()];
+        full.extend(args);
+        cmd("cmd", full)
+    } else {
+        cmd("pnpm", args)
+    }
+}
 
 /// SpacetimeDB CI tasks
 ///
@@ -38,7 +56,7 @@ struct Cli {
     /// When no subcommand is specified, all subcommands are run in sequence. This option allows
     /// specifying subcommands to skip when running all. For example, to skip the `unreal-tests`
     /// subcommand, use `--skip unreal-tests`.
-    #[arg(long)]
+    #[arg(long, default_value = "other-workflows")]
     skip: Vec<String>,
 }
 
@@ -48,22 +66,7 @@ fn check_global_json_policy() -> Result<()> {
     let root_json = Path::new("global.json");
     let root_contents = fs::read_to_string(root_json)?;
 
-    fn find_all_global_json(dir: &Path) -> Result<Vec<PathBuf>> {
-        let mut out = Vec::new();
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            let ft = entry.file_type()?;
-            if ft.is_dir() {
-                out.extend(find_all_global_json(&path)?);
-            } else if path.file_name() == Some(OsStr::new("global.json")) {
-                out.push(path);
-            }
-        }
-        Ok(out)
-    }
-
-    let globals = find_all_global_json(Path::new("."))?;
+    let globals = git_tracked_files(":(glob)**/global.json")?;
 
     let mut ok = true;
     for p in globals {
@@ -368,6 +371,24 @@ enum CiCmd {
     VersionUpgradeCheck,
     /// Builds the docs site.
     Docs,
+    /// Workflows should leave here if they should not be run as part of a no-subcommand invocation of `cargo ci`.
+    OtherWorkflows {
+        #[command(subcommand)]
+        cmd: OtherWorkflowsCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum OtherWorkflowsCmd {
+    /// Checks that sensitive CODEOWNERS-controlled files have the required approvals.
+    CodeownersCheck {
+        /// Git ref to compare against, usually origin/<pull request base branch>.
+        #[arg(long)]
+        base_ref: String,
+        /// Pull request number to inspect for approval state.
+        #[arg(long)]
+        pr_number: u64,
+    },
     /// Interacts with CLA Assistant.
     ClaAssistant {
         #[command(subcommand)]
@@ -432,9 +453,9 @@ fn run_publish_checks() -> Result<()> {
 }
 
 fn run_typescript_tests() -> Result<()> {
-    cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
-    cmd!("pnpm", "test").dir("crates/bindings-typescript").run()?;
-    cmd!("pnpm", "generate").dir("templates/chat-react-ts").run()?;
+    pnpm(["build"]).dir("crates/bindings-typescript").run()?;
+    pnpm(["test"]).dir("crates/bindings-typescript").run()?;
+    pnpm(["generate"]).dir("templates/chat-react-ts").run()?;
     let diff_status = cmd!(
         "bash",
         "tools/check-diff.sh",
@@ -444,19 +465,19 @@ fn run_typescript_tests() -> Result<()> {
     if !diff_status.status.success() {
         bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
     }
-    cmd!("pnpm", "build").dir("templates/chat-react-ts").run()?;
-    cmd!("pnpm", "-r", "--filter", "./**", "run", "build")
+    pnpm(["build"]).dir("templates/chat-react-ts").run()?;
+    pnpm(["-r", "--filter", "./**", "run", "build"])
         .dir("templates")
         .run()?;
-    cmd!("pnpm", "-r", "--filter", "./**", "run", "build")
+    pnpm(["-r", "--filter", "./**", "run", "build"])
         .dir("crates/bindings-typescript")
         .run()?;
     Ok(())
 }
 
 fn run_docs_build() -> Result<()> {
-    cmd!("pnpm", "install").dir("docs").run()?;
-    cmd!("pnpm", "build").dir("docs").run()?;
+    pnpm(["install"]).dir("docs").run()?;
+    pnpm(["build"]).dir("docs").run()?;
     Ok(())
 }
 
@@ -482,7 +503,7 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Some(CiCmd::Test) => {
-            cmd!("pnpm", "build").dir("crates/bindings-typescript").run()?;
+            pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
@@ -610,6 +631,7 @@ fn main() -> Result<()> {
             cmd!(
                 "cargo",
                 "clippy",
+                "--timings",
                 "--all",
                 "--tests",
                 "--benches",
@@ -621,6 +643,7 @@ fn main() -> Result<()> {
             cmd!(
                 "cargo",
                 "clippy",
+                "--timings",
                 "--no-default-features",
                 "--features=browser",
                 "-pspacetimedb-sdk",
@@ -635,7 +658,7 @@ fn main() -> Result<()> {
             cmd!("dotnet", "csharpier", "--check", ".")
                 .dir("crates/bindings-csharp")
                 .run()?;
-            cmd!("pnpm", "lint").run()?;
+            pnpm(["lint"]).run()?;
             cmd!("cargo", "test", "--doc", "--target", "wasm32-unknown-unknown")
                 .dir("crates/bindings")
                 .run()?;
@@ -653,6 +676,15 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::WasmBindings) => {
+            pnpm([
+                "install",
+                "--filter",
+                "./crates/bindings-typescript...",
+                "--filter",
+                "./modules/module-test-ts...",
+            ])
+            .run()?;
+            pnpm(["build"]).dir("crates/bindings-typescript").run()?;
             cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
             // Pre-build the CLI so that it _doesn't_ get `cargo update`d, since that may break the build.
             cmd!("cargo", "build", "-p", "spacetimedb-cli").run()?;
@@ -745,8 +777,8 @@ fn main() -> Result<()> {
                 );
             }
 
-            cmd!("pnpm", "install", "--recursive").run()?;
-            cmd!("pnpm", "generate-cli-docs").dir("docs").run()?;
+            pnpm(["install", "--recursive"]).run()?;
+            pnpm(["generate-cli-docs"]).dir("docs").run()?;
             let out = cmd!("git", "status", "--porcelain", "--", "docs").read()?;
             if out.is_empty() {
                 log::info!("No docs changes detected");
@@ -776,6 +808,12 @@ fn main() -> Result<()> {
             check_global_json_policy()?;
         }
 
+        Some(CiCmd::OtherWorkflows {
+            cmd: OtherWorkflowsCmd::CodeownersCheck { base_ref, pr_number },
+        }) => {
+            codeowners_check::run(&base_ref, pr_number)?;
+        }
+
         Some(CiCmd::PublishChecks) => {
             run_publish_checks()?;
         }
@@ -792,7 +830,9 @@ fn main() -> Result<()> {
             run_docs_build()?;
         }
 
-        Some(CiCmd::ClaAssistant { cmd }) => {
+        Some(CiCmd::OtherWorkflows {
+            cmd: OtherWorkflowsCmd::ClaAssistant { cmd },
+        }) => {
             cla_assistant::run(cmd)?;
         }
 
