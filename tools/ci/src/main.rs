@@ -13,6 +13,7 @@ const README_PATH: &str = "tools/ci/README.md";
 
 mod ci_docs;
 mod cla_assistant;
+mod codeowners_check;
 mod keynote_bench;
 mod smoketest;
 mod util;
@@ -379,6 +380,15 @@ enum CiCmd {
 
 #[derive(Subcommand)]
 enum OtherWorkflowsCmd {
+    /// Checks that sensitive CODEOWNERS-controlled files have the required approvals.
+    CodeownersCheck {
+        /// Git ref to compare against, usually origin/<pull request base branch>.
+        #[arg(long)]
+        base_ref: String,
+        /// Pull request number to inspect for approval state.
+        #[arg(long)]
+        pr_number: u64,
+    },
     /// Interacts with CLA Assistant.
     ClaAssistant {
         #[command(subcommand)]
@@ -796,6 +806,12 @@ fn main() -> Result<()> {
 
         Some(CiCmd::GlobalJsonPolicy) => {
             check_global_json_policy()?;
+        }
+
+        Some(CiCmd::OtherWorkflows {
+            cmd: OtherWorkflowsCmd::CodeownersCheck { base_ref, pr_number },
+        }) => {
+            codeowners_check::run(&base_ref, pr_number)?;
         }
 
         Some(CiCmd::PublishChecks) => {

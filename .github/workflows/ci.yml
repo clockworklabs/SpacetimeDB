@@ -503,6 +503,40 @@ jobs:
           path: ${{ github.workspace }}/target/cargo-timings/
           retention-days: 30
 
+  codeowners_check:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: CODEOWNERS check
+    runs-on: spacetimedb-new-runner-2
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          save-if: false
+          prefix-key: v1
+
+      - name: Run CODEOWNERS check
+        run: |
+          cargo ci other-workflows codeowners-check \
+            --base-ref "origin/${{ github.event.pull_request.base.ref }}" \
+            --pr-number "${{ github.event.pull_request.number }}"
+
   wasm_bindings:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
