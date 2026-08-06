@@ -2043,10 +2043,9 @@ impl MutTxId {
         // NOTE: Because st_sequences has a unique index on sequence_name, this will
         // fail if the table already exists.
 
-        // TODO: If this is a reserved ID, (or the table is a reserved id) should we set
-        // allocated to seq.start - 1 to match `bootstrap_system_tables`.
-
         // This is a hack to match the bootstrapping logic for system tables.
+        // In `bootstrap_system_tables`, the allocated value is set to `start - 1` for reserved tables,
+        // so we treat reserved tables differently here to match that behavior.
 
         let allocated = if table_id_is_reserved(table_id) {
             seq.start - 1
