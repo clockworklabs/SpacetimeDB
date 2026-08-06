@@ -1,10 +1,14 @@
+use std::collections::HashSet;
+
 use spacetimedb_lib::{AlgebraicValue, ProductValue};
 
 use super::migrations::MigrationExpectation;
-use super::row::{normalize_rows, Row};
+use super::row::{normalize_rows, row_projection_to_bytes, row_to_bytes, Row};
 use super::state::{schema_state_for_plan, CommitDelta, CountState, TableDelta, TableRowCount, TableRows};
 use super::workload::{InsertOutcome, Interaction, Observation};
-use crate::schema::{ColumnPlan, SchemaPlan, TablePlan};
+use crate::schema::{ColumnPlan, SchemaPlan, TablePlan, UniqueConstraintPlan};
+
+type RowKey = Vec<u8>;
 
 #[derive(Debug)]
 pub struct Model {
@@ -16,6 +20,9 @@ pub struct Model {
 #[derive(Debug)]
 struct TableState {
     rows: Vec<Row>,
+    row_count: usize,
+    row_keys: HashSet<RowKey>,
+    unique_keys: Vec<HashSet<RowKey>>,
     ever_inserted: bool,
 }
 
@@ -26,37 +33,143 @@ struct PendingTx {
 
 // Keep mutable transactions as an overlay: committed rows stay shared, while
 // pending tables record only new rows and delete markers.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct PendingTable {
     inserts: Vec<Row>,
+    insert_row_keys: HashSet<RowKey>,
+    inserted_unique_keys: Vec<HashSet<RowKey>>,
     deletes: Vec<Row>,
+    delete_row_keys: HashSet<RowKey>,
+    deleted_unique_keys: Vec<HashSet<RowKey>>,
+}
+
+impl TableState {
+    fn new(unique_constraints: &[UniqueConstraintPlan]) -> Self {
+        Self {
+            rows: vec![],
+            row_count: 0,
+            row_keys: HashSet::new(),
+            unique_keys: empty_key_sets(unique_constraints.len()),
+            ever_inserted: false,
+        }
+    }
+
+    fn from_rows(unique_constraints: &[UniqueConstraintPlan], rows: Vec<Row>, ever_inserted: bool) -> Self {
+        let mut state = Self::new(unique_constraints);
+        state.ever_inserted = ever_inserted;
+        for row in rows {
+            state.insert_row(unique_constraints, row);
+        }
+        state
+    }
+
+    fn contains_row_key(&self, row_key: &[u8]) -> bool {
+        self.row_keys.contains(row_key)
+    }
+
+    fn contains_unique_key(&self, constraint_idx: usize, key: &[u8]) -> bool {
+        self.unique_keys[constraint_idx].contains(key)
+    }
+
+    fn insert_row(&mut self, unique_constraints: &[UniqueConstraintPlan], row: Row) {
+        let row_key = row_to_bytes(&row);
+        let inserted = self.row_keys.insert(row_key);
+        debug_assert!(inserted, "committed table stored a duplicate row");
+        add_unique_keys(&mut self.unique_keys, unique_constraints, &row);
+        self.row_count += 1;
+        self.rows.push(row);
+    }
+
+    fn remove_row(&mut self, unique_constraints: &[UniqueConstraintPlan], row: &Row) {
+        let index = self
+            .rows
+            .iter()
+            .position(|committed| committed == row)
+            .expect("committed row is present when delete marker exists");
+        let removed_row = self.rows.remove(index);
+        let row_key = row_to_bytes(&removed_row);
+        let removed = self.row_keys.remove(&row_key);
+        debug_assert!(removed, "committed table removed a row that was not indexed");
+        remove_unique_keys(&mut self.unique_keys, unique_constraints, &removed_row);
+        self.row_count -= 1;
+    }
 }
 
 impl PendingTable {
-    fn is_deleted(&self, row: &Row) -> bool {
-        self.deletes.iter().any(|deleted| deleted == row)
+    fn new(unique_constraints: &[UniqueConstraintPlan]) -> Self {
+        Self {
+            inserts: vec![],
+            insert_row_keys: HashSet::new(),
+            inserted_unique_keys: empty_key_sets(unique_constraints.len()),
+            deletes: vec![],
+            delete_row_keys: HashSet::new(),
+            deleted_unique_keys: empty_key_sets(unique_constraints.len()),
+        }
     }
 
-    fn insert(&mut self, row: Row) {
-        if let Some(index) = self.deletes.iter().position(|deleted| deleted == &row) {
-            self.deletes.remove(index);
-        } else {
+    fn contains_inserted_row_key(&self, row_key: &[u8]) -> bool {
+        self.insert_row_keys.contains(row_key)
+    }
+
+    fn contains_deleted_row_key(&self, row_key: &[u8]) -> bool {
+        self.delete_row_keys.contains(row_key)
+    }
+
+    fn contains_inserted_unique_key(&self, constraint_idx: usize, key: &[u8]) -> bool {
+        self.inserted_unique_keys[constraint_idx].contains(key)
+    }
+
+    fn contains_deleted_unique_key(&self, constraint_idx: usize, key: &[u8]) -> bool {
+        self.deleted_unique_keys[constraint_idx].contains(key)
+    }
+
+    fn is_deleted(&self, row: &Row) -> bool {
+        self.delete_row_keys.contains(&row_to_bytes(row))
+    }
+
+    fn insert(&mut self, unique_constraints: &[UniqueConstraintPlan], row: Row) {
+        let row_key = row_to_bytes(&row);
+        if self.delete_row_keys.remove(&row_key) {
+            let index = self
+                .deletes
+                .iter()
+                .position(|deleted| deleted == &row)
+                .expect("delete marker row is indexed");
+            let deleted = self.deletes.remove(index);
+            remove_unique_keys(&mut self.deleted_unique_keys, unique_constraints, &deleted);
+        } else if self.insert_row_keys.insert(row_key) {
+            add_unique_keys(&mut self.inserted_unique_keys, unique_constraints, &row);
             self.inserts.push(row);
         }
     }
 
-    fn delete(&mut self, row: &Row, committed_has_row: bool) {
-        self.inserts.retain(|inserted| inserted != row);
-        if committed_has_row && !self.is_deleted(row) {
+    fn delete(&mut self, unique_constraints: &[UniqueConstraintPlan], row: &Row, committed_has_row: bool) {
+        let row_key = row_to_bytes(row);
+        if self.insert_row_keys.remove(&row_key) {
+            let index = self
+                .inserts
+                .iter()
+                .position(|inserted| inserted == row)
+                .expect("insert overlay row is indexed");
+            let inserted = self.inserts.remove(index);
+            remove_unique_keys(&mut self.inserted_unique_keys, unique_constraints, &inserted);
+            return;
+        }
+
+        if committed_has_row && self.delete_row_keys.insert(row_key) {
+            add_unique_keys(&mut self.deleted_unique_keys, unique_constraints, row);
             self.deletes.push(row.clone());
         }
     }
 }
 
 impl PendingTx {
-    fn new(table_count: usize) -> Self {
+    fn new(tables: &[TablePlan]) -> Self {
         Self {
-            tables: (0..table_count).map(|_| PendingTable::default()).collect(),
+            tables: tables
+                .iter()
+                .map(|table| PendingTable::new(&table.unique_constraints))
+                .collect(),
         }
     }
 }
@@ -66,10 +179,7 @@ impl Model {
         let committed_tables = schema
             .tables
             .iter()
-            .map(|_| TableState {
-                rows: vec![],
-                ever_inserted: false,
-            })
+            .map(|table| TableState::new(&table.unique_constraints))
             .collect();
         Self {
             schema,
@@ -109,16 +219,43 @@ impl Model {
     }
 
     fn visible_count(&self, table: usize) -> u64 {
-        self.visible_rows(table).count() as u64
+        let pending = self.pending_table(table);
+        let committed = self.committed_tables[table].row_count;
+        pending
+            .map(|pending| committed + pending.inserts.len() - pending.deletes.len())
+            .unwrap_or(committed) as u64
     }
 
-    fn any_visible_row(&self, table: usize, matches: impl FnMut(&Row) -> bool) -> bool {
-        self.visible_rows(table).any(matches)
+    fn contains_visible_row(&self, table: usize, row: &Row) -> bool {
+        let row_key = row_to_bytes(row);
+        if let Some(pending_table) = self.pending_table(table) {
+            if pending_table.contains_inserted_row_key(&row_key) {
+                return true;
+            }
+            if pending_table.contains_deleted_row_key(&row_key) {
+                return false;
+            }
+        }
+
+        self.committed_tables[table].contains_row_key(&row_key)
+    }
+
+    fn visible_unique_key_exists(&self, table: usize, constraint_idx: usize, key: &[u8]) -> bool {
+        if let Some(pending_table) = self.pending_table(table) {
+            if pending_table.contains_inserted_unique_key(constraint_idx, key) {
+                return true;
+            }
+            if pending_table.contains_deleted_unique_key(constraint_idx, key) {
+                return false;
+            }
+        }
+
+        self.committed_tables[table].contains_unique_key(constraint_idx, key)
     }
 
     fn violates_unique_constraint(&self, table: usize, row: &Row, ignore_sequence_constraints: bool) -> bool {
         let table_plan = &self.schema.tables[table];
-        for constraint in &table_plan.unique_constraints {
+        for (constraint_idx, constraint) in table_plan.unique_constraints.iter().enumerate() {
             if ignore_sequence_constraints
                 && constraint
                     .columns
@@ -128,12 +265,8 @@ impl Model {
                 continue;
             }
 
-            if self.any_visible_row(table, |visible_row| {
-                constraint
-                    .columns
-                    .iter()
-                    .all(|&col| visible_row.elements[col] == row.elements[col])
-            }) {
+            let key = row_projection_to_bytes(row, &constraint.columns);
+            if self.visible_unique_key_exists(table, constraint_idx, &key) {
                 return true;
             }
         }
@@ -141,8 +274,7 @@ impl Model {
     }
 
     pub(crate) fn insert_would_violate_unique_constraint(&self, table: usize, row: &Row) -> bool {
-        !self.any_visible_row(table, |visible_row| visible_row == row)
-            && self.violates_unique_constraint(table, row, true)
+        !self.contains_visible_row(table, row) && self.violates_unique_constraint(table, row, true)
     }
 
     pub fn apply(&mut self, interaction: &Interaction, observation: &Observation) -> anyhow::Result<Observation> {
@@ -153,7 +285,7 @@ impl Model {
                     "begin-mut-tx produced unexpected observation"
                 );
                 debug_assert!(self.pending_tx.is_none());
-                self.pending_tx = Some(PendingTx::new(self.schema.tables.len()));
+                self.pending_tx = Some(PendingTx::new(&self.schema.tables));
                 Ok(Observation::BeganMutTx)
             }
             Interaction::Insert { table, .. } => {
@@ -165,13 +297,14 @@ impl Model {
                 self.committed_tables[*table].ever_inserted = true;
                 match outcome {
                     InsertOutcome::Accepted(row) => {
-                        let already_visible = self.any_visible_row(*table, |visible_row| visible_row == row);
+                        let already_visible = self.contains_visible_row(*table, row);
                         anyhow::ensure!(
                             already_visible || !self.violates_unique_constraint(*table, row, false),
                             "target accepted row that violates a visible unique constraint"
                         );
                         if !already_visible {
-                            self.pending_table_mut(*table).insert(row.clone());
+                            let unique_constraints = self.schema.tables[*table].unique_constraints.clone();
+                            self.pending_table_mut(*table).insert(&unique_constraints, row.clone());
                         }
                         Ok(Observation::Inserted {
                             outcome: InsertOutcome::Accepted(row.clone()),
@@ -186,9 +319,11 @@ impl Model {
                     "delete produced unexpected observation"
                 );
                 debug_assert!(self.pending_tx.is_some());
-                if self.any_visible_row(*table, |visible_row| visible_row == row) {
-                    let committed_has_row = self.visible_committed_rows(*table).any(|committed| committed == row);
-                    self.pending_table_mut(*table).delete(row, committed_has_row);
+                if self.contains_visible_row(*table, row) {
+                    let committed_has_row = self.committed_tables[*table].contains_row_key(&row_to_bytes(row));
+                    let unique_constraints = self.schema.tables[*table].unique_constraints.clone();
+                    self.pending_table_mut(*table)
+                        .delete(&unique_constraints, row, committed_has_row);
                 }
                 Ok(Observation::Deleted)
             }
@@ -236,15 +371,11 @@ impl Model {
                 continue;
             }
 
-            let before_rows = &self.committed_tables[table].rows;
+            let before_count = self.committed_tables[table].row_count;
             let inserts = normalize_rows(pending_table.inserts.clone());
             let deletes = normalize_rows(pending_table.deletes.clone());
-            let after_count = before_rows
-                .iter()
-                .filter(|before| !pending_table.is_deleted(before))
-                .count()
-                + pending_table.inserts.len();
-            let truncated = !before_rows.is_empty() && after_count == 0 && !deletes.is_empty();
+            let after_count = before_count + pending_table.inserts.len() - pending_table.deletes.len();
+            let truncated = before_count > 0 && after_count == 0 && !deletes.is_empty();
 
             if !inserts.is_empty() || !deletes.is_empty() || truncated {
                 tables.push(TableDelta {
@@ -255,9 +386,14 @@ impl Model {
                 });
             }
 
-            let committed_rows = &mut self.committed_tables[table].rows;
-            committed_rows.retain(|row| !pending_table.is_deleted(row));
-            committed_rows.extend(pending_table.inserts);
+            let unique_constraints = self.schema.tables[table].unique_constraints.clone();
+            let committed_table = &mut self.committed_tables[table];
+            for deleted in &pending_table.deletes {
+                committed_table.remove_row(&unique_constraints, deleted);
+            }
+            for inserted in pending_table.inserts {
+                committed_table.insert_row(&unique_constraints, inserted);
+            }
         }
 
         CommitDelta { tables }
@@ -350,10 +486,7 @@ fn remap_table_states(
                 .iter()
                 .position(|old_table| old_table.name == new_table.name)
             else {
-                return TableState {
-                    rows: vec![],
-                    ever_inserted: false,
-                };
+                return TableState::new(&new_table.unique_constraints);
             };
 
             let old_table = &old_schema.tables[old_table_idx];
@@ -366,14 +499,12 @@ fn remap_table_states(
 }
 
 fn remap_table_state(old_table: &TablePlan, new_table: &TablePlan, state: TableState) -> TableState {
-    TableState {
-        rows: state
-            .rows
-            .into_iter()
-            .map(|row| remap_row(old_table, new_table, row))
-            .collect(),
-        ever_inserted: state.ever_inserted,
-    }
+    let rows = state
+        .rows
+        .into_iter()
+        .map(|row| remap_row(old_table, new_table, row))
+        .collect();
+    TableState::from_rows(&new_table.unique_constraints, rows, state.ever_inserted)
 }
 
 fn remap_row(old_table: &TablePlan, new_table: &TablePlan, row: Row) -> Row {
@@ -394,6 +525,24 @@ fn remap_value(old_table: &TablePlan, new_column: &ColumnPlan, row: &Row) -> Alg
         .position(|old_column| old_column.name == new_column.name)
         .map(|old_column| row.elements[old_column].clone())
         .unwrap_or_else(|| new_column.ty.default_value())
+}
+
+fn empty_key_sets(count: usize) -> Vec<HashSet<RowKey>> {
+    (0..count).map(|_| HashSet::new()).collect()
+}
+
+fn add_unique_keys(key_sets: &mut [HashSet<RowKey>], unique_constraints: &[UniqueConstraintPlan], row: &Row) {
+    for (key_set, constraint) in key_sets.iter_mut().zip(unique_constraints) {
+        let inserted = key_set.insert(row_projection_to_bytes(row, &constraint.columns));
+        debug_assert!(inserted, "row duplicated a unique key inside the oracle");
+    }
+}
+
+fn remove_unique_keys(key_sets: &mut [HashSet<RowKey>], unique_constraints: &[UniqueConstraintPlan], row: &Row) {
+    for (key_set, constraint) in key_sets.iter_mut().zip(unique_constraints) {
+        let removed = key_set.remove(&row_projection_to_bytes(row, &constraint.columns));
+        debug_assert!(removed, "row removed a unique key that was not indexed");
+    }
 }
 
 #[cfg(test)]
@@ -490,10 +639,15 @@ mod tests {
         }
     }
 
+    fn seed_committed_row(model: &mut Model, table: usize, row: Row) {
+        let unique_constraints = model.schema.tables[table].unique_constraints.clone();
+        model.committed_tables[table].insert_row(&unique_constraints, row);
+    }
+
     #[test]
     fn insert_would_violate_unique_constraint_distinguishes_duplicates_from_conflicts() {
         let mut model = Model::new(keyed_payload_schema(false));
-        model.committed_tables[0].rows.push(payload_row(1, "a"));
+        seed_committed_row(&mut model, 0, payload_row(1, "a"));
 
         assert!(!model.insert_would_violate_unique_constraint(0, &payload_row(1, "a")));
         assert!(model.insert_would_violate_unique_constraint(0, &payload_row(1, "b")));
@@ -503,7 +657,7 @@ mod tests {
     #[test]
     fn insert_would_violate_unique_constraint_treats_sequence_constraints_as_ambiguous() {
         let mut model = Model::new(keyed_payload_schema(true));
-        model.committed_tables[0].rows.push(payload_row(1, "a"));
+        seed_committed_row(&mut model, 0, payload_row(1, "a"));
 
         assert!(!model.insert_would_violate_unique_constraint(0, &payload_row(0, "b")));
     }
@@ -511,7 +665,7 @@ mod tests {
     #[test]
     fn begin_mut_tx_does_not_clone_committed_tables() {
         let mut model = Model::new(schema());
-        model.committed_tables[0].rows.push(row(1));
+        seed_committed_row(&mut model, 0, row(1));
 
         observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
 
@@ -526,7 +680,7 @@ mod tests {
     #[test]
     fn insert_records_delta_without_cloning_committed_rows() {
         let mut model = Model::new(schema());
-        model.committed_tables[0].rows.push(row(1));
+        seed_committed_row(&mut model, 0, row(1));
 
         observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
         observe(
@@ -545,8 +699,8 @@ mod tests {
     #[test]
     fn delete_records_marker_without_cloning_committed_rows() {
         let mut model = Model::new(schema());
-        model.committed_tables[0].rows.push(row(1));
-        model.committed_tables[0].rows.push(row(2));
+        seed_committed_row(&mut model, 0, row(1));
+        seed_committed_row(&mut model, 0, row(2));
 
         observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
         observe(
@@ -603,7 +757,7 @@ mod tests {
     #[test]
     fn delete_is_visible_before_commit() {
         let mut model = Model::new(schema());
-        model.committed_tables[0].rows.push(row(1));
+        seed_committed_row(&mut model, 0, row(1));
 
         observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
         observe(
@@ -613,5 +767,23 @@ mod tests {
         );
 
         assert_eq!(model.row_count(0), 0);
+    }
+
+    #[test]
+    fn pending_delete_clears_unique_conflict_until_commit() {
+        let mut model = Model::new(keyed_payload_schema(false));
+        seed_committed_row(&mut model, 0, payload_row(1, "a"));
+
+        observe(&mut model, Interaction::BeginMutTx, Observation::BeganMutTx);
+        observe(
+            &mut model,
+            Interaction::Delete {
+                table: 0,
+                row: payload_row(1, "a"),
+            },
+            Observation::Deleted,
+        );
+
+        assert!(!model.insert_would_violate_unique_constraint(0, &payload_row(1, "b")));
     }
 }

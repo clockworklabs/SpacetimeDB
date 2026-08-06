@@ -176,7 +176,10 @@ impl MigrationRuleWeights {
     fn entries(&self) -> RuleWeightEntries {
         vec![
             (RuleId::AddTable, self.add_table),
-            (RuleId::RemovePristineNonEventTable, self.remove_pristine_non_event_table),
+            (
+                RuleId::RemovePristineNonEventTable,
+                self.remove_pristine_non_event_table,
+            ),
             (RuleId::RemoveEmptyEventTable, self.remove_empty_event_table),
             (RuleId::AddColumn, self.add_column),
             (RuleId::AddIndex, self.add_index),
@@ -184,7 +187,10 @@ impl MigrationRuleWeights {
             (RuleId::ChangeIndex, self.change_index),
             (RuleId::AddSequenceOnPristineTable, self.add_sequence_on_pristine_table),
             (RuleId::RemoveSequence, self.remove_sequence),
-            (RuleId::AddUniqueConstraintOnPristineTable, self.add_unique_constraint_on_pristine_table),
+            (
+                RuleId::AddUniqueConstraintOnPristineTable,
+                self.add_unique_constraint_on_pristine_table,
+            ),
             (RuleId::RemoveUniqueConstraint, self.remove_unique_constraint),
             (RuleId::DropPrimaryKeyAndWidenSum, self.drop_primary_key_and_widen_sum),
             (RuleId::WidenSumColumn, self.widen_sum_column),
@@ -251,7 +257,6 @@ static MIGRATION_RULES: &[RuleEntry] = &[
         rule: &ReschemaEmptyEventTableRule,
     },
 ];
-
 
 fn migration_rules() -> &'static [RuleEntry] {
     MIGRATION_RULES

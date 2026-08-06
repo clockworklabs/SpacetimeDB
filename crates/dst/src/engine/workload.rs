@@ -2,7 +2,7 @@
 
 use std::fmt::{Debug, Error as FmtError, Formatter};
 
-use super::generation::{GenerationCaseWeights, GenCtx, GenerationState};
+use super::generation::{GenCtx, GenerationCaseWeights, GenerationState};
 use super::migrations::{EngineMigrationConfig, Migration};
 use super::model::Model;
 use super::row::Row;

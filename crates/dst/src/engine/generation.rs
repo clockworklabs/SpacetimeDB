@@ -20,9 +20,6 @@ use super::row::Row;
 use crate::rng::{choice, Choice, WeightedChoice};
 use crate::schema::{SchemaPlan, SchemaProfile, TablePlan, Type};
 
-// Bound the valid-insert search: random generation may collide with existing
-// unique constraints, but a failed search must not stall the workload.
-const INSERT_CANDIDATE_ATTEMPTS: usize = 32;
 const VALUE_POOL_VALUES_PER_TYPE: usize = 4096;
 
 /// Generation context for one model state plus accumulated generator memory.
@@ -543,28 +540,13 @@ impl<'a> ValueGen<'a> {
         // one arm of this match.
         let choices = self.generation.config.choices();
         match GenerationCase::pick(self.rng, &choices) {
-            GenerationCase::Fresh => self.gen_valid_insert_row(table),
+            GenerationCase::Fresh => self.gen_row_candidate(table),
             GenerationCase::Pooled => self
                 .unique_conflict_row(table)
                 .or_else(|| self.existing_row(table))
-                .unwrap_or_else(|| self.gen_valid_insert_row(table)),
+                .unwrap_or_else(|| self.gen_row_candidate(table)),
             GenerationCase::Near => self.gen_row_candidate(table),
         }
-    }
-
-    fn gen_valid_insert_row(&mut self, table: usize) -> Row {
-        // The valid path samples the same value domain as rejected paths. After
-        // bounded attempts, prefer an existing row as an accepted no-op over a
-        // hand-built per-type escape value.
-        for _ in 0..INSERT_CANDIDATE_ATTEMPTS {
-            let row = self.gen_row_candidate(table);
-            if !self.model.insert_would_violate_unique_constraint(table, &row) {
-                return row;
-            }
-        }
-
-        self.existing_row(table)
-            .unwrap_or_else(|| self.gen_row_candidate(table))
     }
 
     fn gen_row_candidate(&mut self, table: usize) -> Row {
