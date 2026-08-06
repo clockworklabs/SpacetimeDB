@@ -24,6 +24,9 @@ switch (testName)
     case "insert-primitive":
         RunInsertPrimitive();
         break;
+    case "subscribe-and-cancel":
+        RunSubscribeAndCancel();
+        break;
     case "subscribe-and-unsubscribe":
         RunSubscribeAndUnsubscribe();
         break;
@@ -216,6 +219,26 @@ void RunInsertPrimitive()
     test.Db.Reducers.InsertOneF64(2.5);
     test.Db.Reducers.InsertOneString("hello");
     test.FrameTickUntil(() => remaining == 0);
+}
+
+void RunSubscribeAndCancel()
+{
+    using var test = Connect();
+    var ended = false;
+    var handle = test.Db.SubscriptionBuilder()
+        .OnApplied(_ => throw new Exception("Subscription should never be applied"))
+        .OnError((_, err) => throw err)
+        .Subscribe(new[] { "SELECT * FROM one_u8" });
+
+    Require(!handle.IsActive, "New subscription should not be active yet");
+    Require(!handle.IsEnded, "New subscription should not be ended yet");
+    handle.UnsubscribeThen(_ =>
+    {
+        Require(!handle.IsActive, "Canceled subscription should not be active");
+        Require(handle.IsEnded, "Canceled subscription should be ended");
+        ended = true;
+    });
+    test.FrameTickUntil(() => ended);
 }
 
 void RunSubscribeAndUnsubscribe()
