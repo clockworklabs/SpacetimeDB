@@ -741,6 +741,17 @@ struct Column<'a> {
     default_value: Option<syn::Expr>,
 }
 
+fn is_string_type(ty: &syn::Type) -> bool {
+    let syn::Type::Path(type_path) = ty else {
+        return false;
+    };
+    type_path
+        .path
+        .segments
+        .last()
+        .is_some_and(|segment| segment.ident == "String")
+}
+
 fn try_find_column<'a, 'b, T: ?Sized>(cols: &'a [Column<'b>], name: &T) -> Option<&'a Column<'b>>
 where
     Ident: PartialEq<T>,
@@ -1013,10 +1024,17 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             if let Some(val) = &col.default_value {
                 let ty = &col.ty;
                 let ident_span = col.ident.span();
-                Some(quote_spanned! { ident_span =>
+
+                if is_string_type(ty) {
+                    Some(quote_spanned! { ident_span =>
+                        let _check: &'static str = #val;
+                    })
+                } else {
                     // This closure enforces that `val` is of type `ty` at compile-time.
-                    let _check: #ty = #val;
-                })
+                    Some(quote_spanned! { ident_span =>
+                        let _check: #ty = #val;
+                    })
+                }
             } else {
                 None
             }
@@ -1027,13 +1045,21 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         if let Some(val) = &col.default_value {
             let col_id = col.index;
             let ty = &col.ty;
+            let value = if is_string_type(ty) {
+                quote! {
+                    let value: &'static str = #val;
+                    value.serialize(spacetimedb::sats::algebraic_value::ser::ValueSerializer).expect("default value serialization failed")
+                }
+            } else {
+                quote! {
+                    let value: #ty = #val;
+                    value.serialize(spacetimedb::sats::algebraic_value::ser::ValueSerializer).expect("default value serialization failed")
+                }
+            };
             Some(quote! {
                 spacetimedb::table::ColumnDefault {
                     col_id: #col_id,
-                    value: {
-                        let value: #ty = #val;
-                        value.serialize(spacetimedb::sats::algebraic_value::ser::ValueSerializer).expect("default value serialization failed")
-                    },
+                    value: { #value },
                 },
             })
         } else {
