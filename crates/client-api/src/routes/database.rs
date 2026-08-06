@@ -90,7 +90,6 @@ fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
 }
 #[derive(Deserialize)]
 pub struct CallParams {
-    name_or_identity: NameOrIdentity,
     reducer: String,
 }
 
@@ -141,10 +140,8 @@ fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, S
 pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Extension(auth): Extension<SpacetimeAuth>,
-    Path(CallParams {
-        name_or_identity,
-        reducer,
-    }): Path<CallParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Path(CallParams { reducer }): Path<CallParams>,
     TypedHeader(content_type): TypedHeader<headers::ContentType>,
     ByteStringBody(body): ByteStringBody,
 ) -> axum::response::Result<impl IntoResponse> {
@@ -156,7 +153,8 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let caller_auth: ConnectionAuthCtx = auth.into();
 
-    let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+    let owner_identity = database.owner_identity;
+    let module = find_database_module(&worker_ctx, &database).await?;
 
     let fut = async move |module: ModuleHost, caller_identity: Identity, connection_id: ConnectionId| {
         let result = match module
@@ -216,41 +214,36 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     with_connection(module, caller_auth, caller_identity, fut).await
 }
 #[derive(Deserialize)]
-pub struct HttpRouteRootParams {
-    name_or_identity: NameOrIdentity,
-}
-
-#[derive(Deserialize)]
 pub struct HttpRouteParams {
-    name_or_identity: NameOrIdentity,
     path: String,
 }
 
 pub async fn handle_http_route_root<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
-    Path(HttpRouteRootParams { name_or_identity }): Path<HttpRouteRootParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     OriginalUri(original_uri): OriginalUri,
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
-    handle_http_route_impl(worker_ctx, name_or_identity, "".to_string(), original_uri, request).await
+    handle_http_route_impl(worker_ctx, database, "".to_string(), original_uri, request).await
 }
 
 pub async fn handle_http_route_root_slash<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
-    Path(HttpRouteRootParams { name_or_identity }): Path<HttpRouteRootParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     OriginalUri(original_uri): OriginalUri,
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
-    handle_http_route_impl(worker_ctx, name_or_identity, "/".to_string(), original_uri, request).await
+    handle_http_route_impl(worker_ctx, database, "/".to_string(), original_uri, request).await
 }
 
 pub async fn handle_http_route<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
-    Path(HttpRouteParams { name_or_identity, path }): Path<HttpRouteParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Path(HttpRouteParams { path }): Path<HttpRouteParams>,
     OriginalUri(original_uri): OriginalUri,
     request: Request,
 ) -> axum::response::Result<impl IntoResponse> {
-    handle_http_route_impl(worker_ctx, name_or_identity, format!("/{path}"), original_uri, request).await
+    handle_http_route_impl(worker_ctx, database, format!("/{path}"), original_uri, request).await
 }
 
 /// Error response body for unknown user-defined HTTP route.
@@ -258,7 +251,7 @@ const NO_SUCH_ROUTE: &str = "Database has not registered a handler for this rout
 
 async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
     worker_ctx: S,
-    name_or_identity: NameOrIdentity,
+    database: Database,
     handler_path: String,
     original_uri: http::Uri,
     request: Request,
@@ -266,7 +259,7 @@ async fn handle_http_route_impl<S: ControlStateDelegate + NodeDelegate>(
     let (parts, body) = request.into_parts();
     let st_method = http_method_to_st(&parts.method);
 
-    let (module, _database) = find_module_and_database(&worker_ctx, name_or_identity).await?;
+    let module = find_database_module(&worker_ctx, &database).await?;
     let module_def = &module.info().module_def;
 
     let Some((handler_id, _handler_def, _route_def)) = module_def.match_http_route(&st_method, &handler_path) else {
@@ -461,31 +454,23 @@ pub(crate) fn client_disconnected_error_to_response(err: ReducerCallError) -> Er
     (StatusCode::INTERNAL_SERVER_ERROR, format!("{:#}", anyhow::anyhow!(err))).into()
 }
 
-pub(crate) async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
+pub(crate) async fn find_database_leader<S: ControlStateDelegate + NodeDelegate>(
     worker_ctx: &S,
-    name_or_identity: NameOrIdentity,
-) -> axum::response::Result<(Host, Database)> {
-    let db_identity = name_or_identity.resolve(worker_ctx).await?;
-    let database = worker_ctx_find_database(worker_ctx, &db_identity)
-        .await?
-        .ok_or_else(|| {
-            log::error!("Could not find database: {}", db_identity.to_hex());
-            NO_SUCH_DATABASE
-        })?;
-
+    database: &Database,
+) -> axum::response::Result<Host> {
     let leader = worker_ctx.leader(database.id).await.map_err(Into::into)?;
 
-    Ok((leader, database))
+    Ok(leader)
 }
 
-pub(crate) async fn find_module_and_database<S: ControlStateDelegate + NodeDelegate>(
+pub(crate) async fn find_database_module<S: ControlStateDelegate + NodeDelegate>(
     worker_ctx: &S,
-    name_or_identity: NameOrIdentity,
-) -> axum::response::Result<(ModuleHost, Database)> {
-    let (leader, database) = find_leader_and_database(worker_ctx, name_or_identity).await?;
+    database: &Database,
+) -> axum::response::Result<ModuleHost> {
+    let leader = find_database_leader(worker_ctx, database).await?;
     let module = leader.module().await.map_err(log_and_500)?;
 
-    Ok((module, database))
+    Ok(module)
 }
 
 #[derive(Debug, derive_more::From)]
@@ -503,10 +488,6 @@ fn procedure_outcome_response(return_val: AlgebraicValue) -> (StatusCode, axum::
 }
 
 #[derive(Deserialize)]
-pub struct SchemaParams {
-    name_or_identity: NameOrIdentity,
-}
-#[derive(Deserialize)]
 pub struct SchemaQueryParams {
     version: SchemaVersion,
 }
@@ -521,14 +502,14 @@ enum SchemaVersion {
 
 pub async fn schema<S>(
     State(worker_ctx): State<S>,
-    Path(SchemaParams { name_or_identity }): Path<SchemaParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Query(SchemaQueryParams { version }): Query<SchemaQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let (leader, _) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
+    let leader = find_database_leader(&worker_ctx, &database).await?;
     // Wait for the module to finish loading rather than returning an immediate
     // 500 error. The database may still be initializing (replaying the log,
     // running init reducers, etc.).
@@ -561,6 +542,9 @@ pub struct DatabaseParam {
     name_or_identity: NameOrIdentity,
 }
 
+#[derive(Clone)]
+pub struct ResolvedDatabase(pub Database);
+
 #[derive(sats::Serialize)]
 struct DatabaseResponse {
     database_identity: Identity,
@@ -581,24 +565,10 @@ impl From<Database> for DatabaseResponse {
 }
 
 pub async fn db_info<S: ControlStateDelegate>(
-    State(worker_ctx): State<S>,
-    Path(DatabaseParam { name_or_identity }): Path<DatabaseParam>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
 ) -> axum::response::Result<impl IntoResponse> {
-    log::trace!("Trying to resolve database identity: {name_or_identity:?}");
-    let database_identity = name_or_identity.resolve(&worker_ctx).await?;
-    log::trace!("Resolved identity to: {database_identity:?}");
-    let database = worker_ctx_find_database(&worker_ctx, &database_identity)
-        .await?
-        .ok_or(NO_SUCH_DATABASE)?;
-    log::trace!("Fetched database from the worker db for database identity: {database_identity:?}");
-
     let response = DatabaseResponse::from(database);
     Ok(axum::Json(sats::serde::SerdeWrapper(response)))
-}
-
-#[derive(Deserialize)]
-pub struct LogsParams {
-    name_or_identity: NameOrIdentity,
 }
 
 #[derive(Deserialize)]
@@ -610,7 +580,7 @@ pub struct LogsQuery {
 
 pub async fn logs<S>(
     State(worker_ctx): State<S>,
-    Path(LogsParams { name_or_identity }): Path<LogsParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Query(LogsQuery { num_lines, follow }): Query<LogsQuery>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse>
@@ -620,10 +590,7 @@ where
     // You should not be able to read the logs from a database that you do not own
     // so, unless you are the owner, this will fail.
 
-    let database_identity: Identity = name_or_identity.resolve(&worker_ctx).await?;
-    let database = worker_ctx_find_database(&worker_ctx, &database_identity)
-        .await?
-        .ok_or(NO_SUCH_DATABASE)?;
+    let database_identity = database.database_identity;
 
     worker_ctx
         .authorize_action(auth.claims.identity, database.database_identity, Action::ViewModuleLogs)
@@ -688,11 +655,6 @@ pub(crate) async fn worker_ctx_find_database(
 }
 
 #[derive(Deserialize)]
-pub struct SqlParams {
-    pub name_or_identity: NameOrIdentity,
-}
-
-#[derive(Deserialize)]
 pub struct SqlQueryParams {
     /// If `true`, return the query result only after its transaction offset
     /// is confirmed to be durable.
@@ -742,7 +704,7 @@ where
 
 pub async fn sql_direct<S>(
     worker_ctx: S,
-    SqlParams { name_or_identity }: SqlParams,
+    database: Database,
     SqlQueryParams { confirmed }: SqlQueryParams,
     caller_identity: Identity,
     caller_auth: ConnectionAuthCtx,
@@ -751,7 +713,7 @@ pub async fn sql_direct<S>(
 where
     S: NodeDelegate + ControlStateDelegate + Authorization + 'static,
 {
-    let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
+    let host = find_database_leader(&worker_ctx, &database).await?;
 
     let module = host.module().await.map_err(log_and_500)?;
     let fut = async move |_module: ModuleHost, caller_identity: Identity, _connection_id: ConnectionId| {
@@ -773,7 +735,7 @@ where
 
 pub async fn sql<S>(
     State(worker_ctx): State<S>,
-    Path(name_or_identity): Path<SqlParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Query(params): Query<SqlQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     body: String,
@@ -783,7 +745,7 @@ where
 {
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
-    let json = sql_direct(worker_ctx, name_or_identity, params, caller_identity, caller_auth, body).await?;
+    let json = sql_direct(worker_ctx, database, params, caller_identity, caller_auth, body).await?;
 
     let total_duration = json.iter().fold(0, |acc, x| acc + x.total_duration_micros);
 
@@ -795,11 +757,6 @@ where
 
 #[derive(Deserialize)]
 pub struct DNSParams {
-    name_or_identity: NameOrIdentity,
-}
-
-#[derive(Deserialize)]
-pub struct ReverseDNSParams {
     name_or_identity: NameOrIdentity,
 }
 
@@ -817,9 +774,9 @@ pub async fn get_identity<S: ControlStateDelegate>(
 
 pub async fn get_names<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(ReverseDNSParams { name_or_identity }): Path<ReverseDNSParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let database_identity = name_or_identity.resolve(&ctx).await?;
+    let database_identity = database.database_identity;
 
     let names = ctx
         .reverse_lookup(&database_identity)
@@ -847,6 +804,7 @@ pub struct ResetDatabaseQueryParams {
 
 pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Path(ResetDatabaseParams { name_or_identity }): Path<ResetDatabaseParams>,
     Query(ResetDatabaseQueryParams {
         num_replicas,
@@ -855,10 +813,7 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Option<Bytes>,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-    let database_identity = name_or_identity.resolve(&ctx).await?;
-    let database = worker_ctx_find_database(&ctx, &database_identity)
-        .await?
-        .ok_or(NO_SUCH_DATABASE)?;
+    let database_identity = database.database_identity;
 
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::ResetDatabase)
         .await?;
@@ -965,12 +920,8 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             .ok_or_else(|| bad_request("Clear database requires database name or identity".into()))?;
         let database_identity = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)?;
         if let Ok(identity) = database_identity {
-            let exists = ctx
-                .get_database_by_identity(&identity)
-                .await
-                .map_err(log_and_500)?
-                .is_some();
-            if exists {
+            let database = ctx.get_database_by_identity(&identity).await.map_err(log_and_500)?;
+            if let Some(database) = database {
                 if parent.is_some() {
                     return Err(bad_request(
                         "Setting the parent of an existing database is not supported".into(),
@@ -979,6 +930,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
 
                 return self::reset(
                     State(ctx),
+                    Extension(ResolvedDatabase(database)),
                     Path(ResetDatabaseParams {
                         name_or_identity: name_or_identity.clone(),
                     }),
@@ -1229,11 +1181,6 @@ fn bad_request(message: Cow<'static, str>) -> ErrorResponse {
 }
 
 #[derive(serde::Deserialize)]
-pub struct PrePublishParams {
-    name_or_identity: NameOrIdentity,
-}
-
-#[derive(serde::Deserialize)]
 pub struct PrePublishQueryParams {
     #[serde(default)]
     style: PrettyPrintStyle,
@@ -1243,13 +1190,13 @@ pub struct PrePublishQueryParams {
 
 pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
-    Path(PrePublishParams { name_or_identity }): Path<PrePublishParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Query(PrePublishQueryParams { style, host_type }): Query<PrePublishQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PrePublishResult>> {
     // User should not be able to print migration plans for a database that they do not own
-    let database_identity = resolve_and_authenticate(&ctx, &name_or_identity, &auth).await?;
+    let database_identity = resolve_and_authenticate(&ctx, database, &auth).await?;
     let style = match style {
         PrettyPrintStyle::NoColor => AutoMigratePrettyPrintStyle::NoColor,
         PrettyPrintStyle::AnsiColor => AutoMigratePrettyPrintStyle::AnsiColor,
@@ -1311,17 +1258,13 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
     .map(axum::Json)
 }
 
-/// Resolves the [`NameOrIdentity`] to a database identity and checks if the
-/// `auth` identity owns the database.
+/// Checks if the `auth` identity owns the middleware-resolved database.
 async fn resolve_and_authenticate<S: ControlStateDelegate + Authorization>(
     ctx: &S,
-    name_or_identity: &NameOrIdentity,
+    database: Database,
     auth: &SpacetimeAuth,
 ) -> axum::response::Result<Identity> {
-    let database_identity = name_or_identity.resolve(ctx).await?;
-    let database = worker_ctx_find_database(ctx, &database_identity)
-        .await?
-        .ok_or(NO_SUCH_DATABASE)?;
+    let database_identity = database.database_identity;
 
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
         .await?;
@@ -1364,13 +1307,10 @@ pub async fn delete_database<S: ControlStateDelegate + Authorization>(
 
 pub async fn lock_database<S: ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
-    Path(DeleteDatabaseParams { name_or_identity }): Path<DeleteDatabaseParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let database_identity = name_or_identity.resolve(&ctx).await?;
-    let Some(_database) = worker_ctx_find_database(&ctx, &database_identity).await? else {
-        return Err(StatusCode::NOT_FOUND.into());
-    };
+    let database_identity = database.database_identity;
 
     ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
         .await?;
@@ -1384,13 +1324,10 @@ pub async fn lock_database<S: ControlStateDelegate + Authorization>(
 
 pub async fn unlock_database<S: ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
-    Path(DeleteDatabaseParams { name_or_identity }): Path<DeleteDatabaseParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let database_identity = name_or_identity.resolve(&ctx).await?;
-    let Some(_database) = worker_ctx_find_database(&ctx, &database_identity).await? else {
-        return Err(StatusCode::NOT_FOUND.into());
-    };
+    let database_identity = database.database_identity;
 
     ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
         .await?;
@@ -1402,19 +1339,14 @@ pub async fn unlock_database<S: ControlStateDelegate + Authorization>(
     Ok(())
 }
 
-#[derive(Deserialize)]
-pub struct AddNameParams {
-    name_or_identity: NameOrIdentity,
-}
-
 pub async fn add_name<S: ControlStateDelegate>(
     State(ctx): State<S>,
-    Path(AddNameParams { name_or_identity }): Path<AddNameParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Extension(auth): Extension<SpacetimeAuth>,
     name: String,
 ) -> axum::response::Result<impl IntoResponse> {
     let name = DatabaseName::try_from(name).map_err(|err| (StatusCode::BAD_REQUEST, err.to_string()))?;
-    let database_identity = name_or_identity.resolve(&ctx).await?;
+    let database_identity = database.database_identity;
 
     let response = ctx
         .create_dns_record(&auth.claims.identity, &name.into(), &database_identity)
@@ -1432,14 +1364,9 @@ pub async fn add_name<S: ControlStateDelegate>(
     Ok((code, axum::Json(response)))
 }
 
-#[derive(Deserialize)]
-pub struct SetNamesParams {
-    name_or_identity: NameOrIdentity,
-}
-
 pub async fn set_names<S: ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
-    Path(SetNamesParams { name_or_identity }): Path<SetNamesParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Extension(auth): Extension<SpacetimeAuth>,
     names: axum::Json<Vec<String>>,
 ) -> axum::response::Result<impl IntoResponse> {
@@ -1450,18 +1377,7 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|(input, e)| (StatusCode::BAD_REQUEST, format!("Error parsing `{input}`: {e}")))?;
 
-    let database_identity = name_or_identity.resolve(&ctx).await?;
-
-    let database = ctx
-        .get_database_by_identity(&database_identity)
-        .await
-        .map_err(log_and_500)?;
-    let Some(database) = database else {
-        return Ok((
-            StatusCode::NOT_FOUND,
-            axum::Json(name::SetDomainsResult::DatabaseNotFound),
-        ));
-    };
+    let database_identity = database.database_identity;
 
     ctx.authorize_action(auth.claims.identity, database.database_identity, Action::RenameDatabase)
         .await
@@ -1509,30 +1425,15 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
     Ok((status, axum::Json(response)))
 }
 
-#[derive(serde::Deserialize)]
-pub struct TimestampParams {
-    name_or_identity: NameOrIdentity,
-}
-
 /// Returns the database's view of the current time,
 /// as a SATS-JSON encoded [`Timestamp`].
 ///
-/// Takes a particular database's [`NameOrIdentity`] as an argument
+/// Takes a particular database as an argument
 /// because in a clusterized SpacetimeDB-cloud deployment,
 /// this request will be routed to the node running the requested database.
-async fn get_timestamp<S: ControlStateDelegate>(
-    State(worker_ctx): State<S>,
-    Path(TimestampParams { name_or_identity }): Path<TimestampParams>,
+async fn get_timestamp(
+    Extension(ResolvedDatabase(_database)): Extension<ResolvedDatabase>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let db_identity = name_or_identity.resolve(&worker_ctx).await?;
-
-    let _database = worker_ctx_find_database(&worker_ctx, &db_identity)
-        .await?
-        .ok_or_else(|| {
-            log::error!("Could not find database: {}", db_identity.to_hex());
-            NO_SUCH_DATABASE
-        })?;
-
     Ok(axum::Json(sats::serde::SerdeWrapper(Timestamp::now())).into_response())
 }
 
@@ -1607,7 +1508,7 @@ where
             mcp_post: post(crate::routes::mcp::mcp::<S>),
             pre_publish: post(pre_publish::<S>),
             db_reset: put(reset::<S>),
-            timestamp_get: get(get_timestamp::<S>),
+            timestamp_get: get(get_timestamp),
             lock_post: post(lock_database::<S>),
             unlock_post: post(unlock_database::<S>),
             http_route_root: any(handle_http_route_root::<S>),
@@ -1622,17 +1523,16 @@ where
     S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
 {
     pub fn into_router(self, ctx: S) -> axum::Router<S> {
-        let egress_metrics_middleware =
-            axum::middleware::from_fn_with_state(ctx.clone(), http_response_egress_metrics_middleware::<S>);
+        let resolving_egress_metrics_middleware = axum::middleware::from_fn_with_state(
+            ctx.clone(),
+            resolve_database_name_and_count_response_egress_middleware::<S>,
+        );
 
         let counted_db_router = axum::Router::<S>::new()
-            .route("/", self.db_put)
             .route("/", self.db_get)
-            .route("/", self.db_delete)
             .route("/names", self.names_get)
             .route("/names", self.names_post)
             .route("/names", self.names_put)
-            .route("/identity", self.identity_get)
             .route("/call/:reducer", self.call_reducer_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
@@ -1643,12 +1543,24 @@ where
             .route("/reset", self.db_reset)
             .route("/lock", self.lock_post)
             .route("/unlock", self.unlock_post)
-            .route_layer(egress_metrics_middleware.clone());
+            .route_layer(resolving_egress_metrics_middleware.clone());
 
-        // Add the subscribe route after `egress_metrics_middleware`
+        // Publishing can create a database for a new name, so it bypasses existing-database resolution.
+        // Publish operations are infrequent and the responses are small, so we don't mind that we don't measure them.
+        let db_router = counted_db_router.route("/", self.db_put);
+
+        // These routes have different behavior on a non-existent database than a 404,
+        // and so resolve the database themselves rather than having the middleware do so.
+        // Like publish, these operations are infrequent and the responses are small,
+        // so we don't mind that we don't measure them.
+        let db_router = db_router
+            .route("/", self.db_delete)
+            .route("/identity", self.identity_get);
+
+        // Add the subscribe route after `resolving_egress_metrics_middleware`
         // so that its egress bytes don't get counted into `http_response_size_bytes`;
         // we have different metrics tracking WebSocket message size.
-        let db_router = counted_db_router.route("/subscribe", self.subscribe_get);
+        let db_router = db_router.route("/subscribe", self.subscribe_get);
 
         let authed_root_router = axum::Router::new().route(
             "/",
@@ -1671,7 +1583,7 @@ where
             .route("/:name_or_identity/route", self.http_route_root)
             .route("/:name_or_identity/route/", self.http_route_root_slash)
             .route("/:name_or_identity/route/*path", self.http_route)
-            .route_layer(egress_metrics_middleware);
+            .route_layer(resolving_egress_metrics_middleware);
 
         axum::Router::new()
             .merge(authed_root_router)
@@ -1680,36 +1592,31 @@ where
     }
 }
 
-/// Middleware which counts response bytes in the metric `spacetime_http_response_size_bytes_total`.
+/// Resolves an existing database, attaches it as [`ResolvedDatabase`],
+/// and counts response bytes in the metric `spacetime_http_response_size_bytes_total`.
 ///
-/// This middleware is intended to be supplied to all HTTP routes which apply to a particular database,
-/// *except* the WebSocket connection route (confusingly named `subscribe`), whose egress is measured separately.
-async fn http_response_egress_metrics_middleware<S>(
+/// This middleware returns established name and database `404`s before the handler runs.
+/// It is intended for HTTP routes that require an existing database,
+/// except WebSocket `subscribe`, whose egress is measured separately.
+async fn resolve_database_name_and_count_response_egress_middleware<S>(
     State(worker_ctx): State<S>,
     Path(DatabaseParam { name_or_identity }): Path<DatabaseParam>,
-    request: Request,
+    mut request: Request,
     next: axum::middleware::Next,
 ) -> axum::response::Response
 where
     S: ControlStateDelegate + Clone + Send + Sync + 'static,
 {
-    let Ok(Ok(database_identity)) = name_or_identity.try_resolve(&worker_ctx).await else {
-        // The provided name doesn't map to an `Identity`.
-        // Run the route unchanged (as opposed to returning an error from the middleware)
-        // to preserve the error-handling behavior of the route.
-        return next.run(request).await;
+    let database_identity = match name_or_identity.resolve(&worker_ctx).await {
+        Ok(database_identity) => database_identity,
+        Err(response) => return Err::<(), ErrorResponse>(response).into_response(),
     };
-
-    if !matches!(
-        worker_ctx_find_database(&worker_ctx, &database_identity).await,
-        Ok(Some(_))
-    ) {
-        // We have what appears to be an `Identity`, but it doesn't name any database.
-        // Don't create a metrics label for it,
-        // and run the route unchanged (as opposed to returning an error from the middleware)
-        // to preserve the error-handling behavior of the route.
-        return next.run(request).await;
-    }
+    let database = match worker_ctx_find_database(&worker_ctx, &database_identity).await {
+        Ok(Some(database)) => database,
+        Ok(None) => return NO_SUCH_DATABASE.into_response(),
+        Err(response) => return Err::<(), ErrorResponse>(response).into_response(),
+    };
+    request.extensions_mut().insert(ResolvedDatabase(database.clone()));
 
     let response = next.run(request).await;
     let (parts, body) = response.into_parts();
@@ -1727,7 +1634,7 @@ where
 
     let counter = DB_METRICS
         .http_response_size_bytes
-        .with_label_values(&database_identity);
+        .with_label_values(&database.database_identity);
     counter.inc_by(header_bytes as u64);
 
     // `/logs?follow=true` can stream indefinitely.
@@ -1767,6 +1674,7 @@ mod tests {
     use spacetimedb_paths::FromPathUnchecked;
     use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tower::util::ServiceExt;
 
     #[derive(Clone, Default)]
@@ -1819,6 +1727,7 @@ mod tests {
         module_logs_dir: ModuleLogsDir,
         databases: std::sync::Arc<HashMap<Identity, Database>>,
         dns: std::sync::Arc<HashMap<String, Identity>>,
+        dns_lookups: std::sync::Arc<AtomicUsize>,
     }
 
     impl DummyState {
@@ -1831,6 +1740,7 @@ mod tests {
                 module_logs_dir: ModuleLogsDir::from_path_unchecked(std::env::temp_dir()),
                 databases: std::sync::Arc::new(HashMap::new()),
                 dns: std::sync::Arc::new(HashMap::new()),
+                dns_lookups: std::sync::Arc::new(AtomicUsize::new(0)),
             }
         }
 
@@ -1846,6 +1756,10 @@ mod tests {
             dns.insert(name.to_owned(), database_identity);
             self.dns = std::sync::Arc::new(dns);
             self
+        }
+
+        fn dns_lookups(&self) -> usize {
+            self.dns_lookups.load(Ordering::Relaxed)
         }
     }
 
@@ -1988,6 +1902,7 @@ mod tests {
             Ok(None)
         }
         async fn lookup_database_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+            self.dns_lookups.fetch_add(1, Ordering::Relaxed);
             Ok(self.dns.get(domain).copied())
         }
         async fn reverse_lookup(&self, _database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
@@ -2113,9 +2028,8 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
         let body = response.into_body().collect().await.unwrap().to_bytes();
         // We'll get this error message out of the stack:
-        // - `find_module_and_database`
-        // - `find_leader_and_database`
-        // - `name_or_identity.resolve(worker_ctx)` -> `NameOrIdentity::resolve`
+        // The database-resolution middleware returns this established error
+        // before the unauthenticated HTTP route handler is invoked.
         assert_eq!(body, "`not-a-database` not found");
     }
 
@@ -2191,7 +2105,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn http_response_egress_metric_skips_unresolved_and_nonexistent_databases() {
+    async fn resolving_middleware_returns_not_found_without_creating_metrics_labels() {
         let resolved_but_missing_identity = test_identity(13);
         let arbitrary_identity = test_identity(14);
         remove_http_response_size_metric(resolved_but_missing_identity);
@@ -2205,25 +2119,29 @@ mod tests {
         .into_router(state.clone())
         .with_state(state);
 
-        let _ = app
+        let response = app
             .clone()
             .oneshot(Request::builder().uri("/unresolved-name").body(Body::empty()).unwrap())
             .await
-            .unwrap()
-            .into_body()
-            .collect()
-            .await
             .unwrap();
-        let _ = app
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response.into_body().collect().await.unwrap().to_bytes(),
+            "`unresolved-name` not found"
+        );
+
+        let response = app
             .clone()
             .oneshot(Request::builder().uri("/missing-db").body(Body::empty()).unwrap())
             .await
-            .unwrap()
-            .into_body()
-            .collect()
-            .await
             .unwrap();
-        let _ = app
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response.into_body().collect().await.unwrap().to_bytes(),
+            "No such database."
+        );
+
+        let response = app
             .oneshot(
                 Request::builder()
                     .uri(format!("/{arbitrary_identity}"))
@@ -2231,17 +2149,107 @@ mod tests {
                     .unwrap(),
             )
             .await
-            .unwrap()
-            .into_body()
-            .collect()
-            .await
             .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response.into_body().collect().await.unwrap().to_bytes(),
+            "No such database."
+        );
 
         assert_eq!(collected_http_response_size_metric(resolved_but_missing_identity), None);
         assert_eq!(collected_http_response_size_metric(arbitrary_identity), None);
 
         remove_http_response_size_metric(resolved_but_missing_identity);
         remove_http_response_size_metric(arbitrary_identity);
+    }
+
+    #[tokio::test]
+    async fn resolving_middleware_attaches_database_and_resolves_a_name_once() {
+        let database_identity = test_identity(17);
+        remove_http_response_size_metric(database_identity);
+
+        let state = DummyState::new()
+            .with_database(database_identity)
+            .with_dns("named-database", database_identity);
+        let app = DatabaseRoutes::<DummyState> {
+            db_get: axum::routing::get(
+                |Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>| async move {
+                    database.database_identity.to_string()
+                },
+            ),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state.clone());
+
+        let response = app
+            .oneshot(Request::builder().uri("/named-database").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.into_body().collect().await.unwrap().to_bytes(),
+            database_identity.to_string()
+        );
+        assert_eq!(state.dns_lookups(), 1);
+
+        remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
+    async fn db_info_resolves_a_database_name_once() {
+        let database_identity = test_identity(19);
+        remove_http_response_size_metric(database_identity);
+
+        let state = DummyState::new()
+            .with_database(database_identity)
+            .with_dns("db-info", database_identity);
+        let app = DatabaseRoutes::<DummyState>::default()
+            .into_router(state.clone())
+            .with_state(state.clone());
+
+        let response = app
+            .oneshot(Request::builder().uri("/db-info").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(state.dns_lookups(), 1);
+
+        remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
+    async fn publish_delete_and_identity_bypass_resolving_middleware() {
+        let missing_identity = test_identity(18);
+        remove_http_response_size_metric(missing_identity);
+
+        let state = DummyState::new();
+        let app = DatabaseRoutes::<DummyState> {
+            db_put: axum::routing::put(|| async { "publish" }),
+            db_delete: axum::routing::delete(|| async { "delete" }),
+            identity_get: axum::routing::get(|| async { "identity" }),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+
+        let delete_uri = format!("/{missing_identity}");
+        let identity_uri = format!("/{missing_identity}/identity");
+        for (method, uri, expected) in [
+            (http::Method::PUT, "/unregistered-name", "publish"),
+            (http::Method::DELETE, delete_uri.as_str(), "delete"),
+            (http::Method::GET, identity_uri.as_str(), "identity"),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().method(method).uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), expected);
+        }
+
+        assert_eq!(collected_http_response_size_metric(missing_identity), None);
     }
 
     #[tokio::test]
