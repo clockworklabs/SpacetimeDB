@@ -534,6 +534,12 @@ metrics_group!(
         #[buckets(100e-6, 500e-6, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10)]
         pub reducer_wait_time: HistogramVec,
 
+        #[name = spacetime_scheduled_function_delay_seconds]
+        #[help = "The amount of time (in seconds) between when a scheduled function was due and when the scheduler began invoking it"]
+        #[labels(db: Identity, function: str)]
+        #[buckets(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60, 300)]
+        pub scheduled_function_delay: HistogramVec,
+
         #[name = spacetime_worker_wasm_instance_errors_total]
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]
         #[labels(database_identity: Identity, module_hash: Hash, reducer_symbol: str)]
