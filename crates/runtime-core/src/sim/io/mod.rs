@@ -2,14 +2,19 @@ use alloc::{
     boxed::Box,
     collections::{BTreeMap, VecDeque},
     sync::Arc,
+    vec::Vec,
 };
-use core::result::Result;
+use core::{ops::RangeBounds, result::Result};
 use futures_channel::oneshot;
 
-use crate::io::{AlignedBytes, ErrorWith, SpacetimeIO};
+use crate::{
+    io::{AlignedBytes, ErrorWith, SpacetimeIO},
+    sim::Rng,
+};
 
 mod fs;
-mod op;
+pub mod op;
+use op::{Completion, Submission};
 
 pub use crate::io::SECTOR_SIZE;
 pub use fs::File;
@@ -31,12 +36,44 @@ impl From<fs::Error> for Error {
 
 #[derive(Clone, Default)]
 pub struct SimulatorIO {
+    // TODO: We make `SimulatorIO` `Send + Sync` for now, because
+    // [crate::sim::executor::Handle] is just `Arc<Executor>`. This means that a
+    // future carrying a handle can't be `spawn`ed, because spawning requires
+    // the future to be `Send`.
+    //
+    // We should fix this at some point, so below can become `Rc<RefCell<_>>`.
     inner: Arc<spin::Mutex<SimulatorIOInner>>,
 }
 
 impl SimulatorIO {
+    /// Run the submission at the front of the queue (if any), and complete the
+    /// completion at the front of the queue (if any).
     pub fn tick(&self) -> bool {
         self.inner.lock().tick()
+    }
+
+    /// Execute `sqe`.
+    pub fn execute(&self, sqe: Box<dyn Submission>) {
+        self.inner.lock().execute(sqe);
+    }
+
+    /// Remove and return the submission at the fron of the queue, if any.
+    pub fn next_submission(&self) -> Option<Box<dyn Submission>> {
+        self.inner.lock().next()
+    }
+
+    /// Remove and return a random submission, or `None` if the queue is empty.
+    pub fn random_submission(&self, rng: &Rng) -> Option<Box<dyn Submission>> {
+        self.inner.lock().next_random(rng)
+    }
+
+    /// Remove `range` from the completion queue.
+    pub fn completions(&self, range: impl RangeBounds<usize>) -> impl Iterator<Item = Box<dyn Completion>> {
+        self.inner
+            .lock()
+            .drain_completions(range)
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     async fn submit_and_wait<T>(
@@ -163,7 +200,9 @@ impl SimulatorIOInner {
     fn tick(&mut self) -> bool {
         let mut progress = false;
         if let Some(sqe) = self.submissions.pop_front() {
-            sqe.execute(&mut self.files, &mut self.completions);
+            if let Some(cqe) = sqe.execute(&mut self.files) {
+                self.completions.push_back(cqe);
+            }
             progress = true;
         }
         if let Some(cqe) = self.completions.pop_front() {
@@ -174,21 +213,28 @@ impl SimulatorIOInner {
         progress
     }
 
+    fn execute(&mut self, sqe: Box<dyn Submission>) {
+        if let Some(cqe) = sqe.execute(&mut self.files) {
+            self.completions.push_back(cqe);
+        }
+    }
+
+    fn next(&mut self) -> Option<Box<dyn Submission>> {
+        self.submissions.pop_front()
+    }
+
+    fn next_random(&mut self, rng: &Rng) -> Option<Box<dyn Submission>> {
+        let i = rng.next_u64() % self.submissions.len() as u64;
+        self.submissions.remove(i as usize)
+    }
+
+    fn drain_completions(&mut self, range: impl RangeBounds<usize>) -> impl Iterator<Item = Box<dyn Completion>> {
+        self.completions.drain(range)
+    }
+
     fn submit(&mut self, op: Box<dyn Submission>) {
         self.submissions.push_back(op);
     }
-}
-
-trait Submission: Send {
-    fn execute(
-        self: Box<Self>,
-        files: &mut BTreeMap<Box<str>, fs::File>,
-        completions: &mut VecDeque<Box<dyn Completion>>,
-    );
-}
-
-trait Completion: Send {
-    fn complete(self: Box<Self>);
 }
 
 #[cfg(test)]
