@@ -1,35 +1,29 @@
 use anyhow::{bail, Context, Result};
 use clap::Args;
-use github_api::{prs_mentioning, GithubApi, PullRequest, WorkflowRun};
-use serde::Serialize;
+use duct::{cmd, Expression};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::time::Duration;
 
+const API_VERSION: &str = "2022-11-28";
 const PUBLIC_REPO: &str = "clockworklabs/SpacetimeDB";
 const PRIVATE_REPO: &str = "clockworklabs/SpacetimeDBPrivate";
 const PRIVATE_WORKFLOW: &str = "ci.yml";
 const PRIVATE_DEFAULT_BRANCH: &str = "master";
-const PRIVATE_PROTOCOL_FILE: &str = ".github/internal-tests-protocol";
-const PINNED_COORDINATION_PROTOCOL: &str = "2";
 
 #[derive(Args)]
 /// Selects or starts the private workflow for a public Internal Tests run.
 pub(crate) struct CoordinateArgs {
-    #[arg(long)]
-    public_run_attempt: u64,
-
+    /// Immutable public commit to test.
     #[arg(long)]
     public_sha: String,
 
+    /// Public pull request number, when coordinating a pull request run.
     #[arg(long)]
     public_pr_number: Option<u64>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PrivateProtocol {
-    Legacy,
-    Pinned,
 }
 
 #[derive(Debug)]
@@ -39,171 +33,282 @@ struct PrivateSource {
     pull: Option<PullRequest>,
 }
 
-/// The subset of a GitHub workflow run needed by the coordinator.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SelectedRun {
     id: u64,
-    event: String,
     status: String,
     conclusion: Option<String>,
     attempt: u64,
     url: String,
 }
 
-impl From<&WorkflowRun> for SelectedRun {
-    fn from(run: &WorkflowRun) -> Self {
+impl From<WorkflowRun> for SelectedRun {
+    fn from(run: WorkflowRun) -> Self {
         Self {
             id: run.id,
-            event: run.event.clone(),
-            status: run.status.clone(),
-            conclusion: run.conclusion.clone(),
+            status: run.status,
+            conclusion: run.conclusion,
             attempt: run.run_attempt,
-            url: run.html_url.clone(),
+            url: run.html_url,
         }
     }
 }
 
-#[derive(Serialize)]
-struct PinnedPrivateCiInputs<'a> {
-    private_ref: &'a str,
-    public_ref: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    public_pr_number: Option<String>,
+fn api(args: impl IntoIterator<Item = String>) -> Expression {
+    let mut gh_args = vec![
+        "api".to_owned(),
+        "-H".to_owned(),
+        "Accept: application/vnd.github+json".to_owned(),
+        "-H".to_owned(),
+        format!("X-GitHub-Api-Version: {API_VERSION}"),
+    ];
+    gh_args.extend(args);
+    cmd("gh", gh_args)
 }
 
-#[derive(Serialize)]
-struct LegacyPrivateCiInputs<'a> {
-    public_ref: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    public_pr_number: Option<String>,
+fn get<T: DeserializeOwned>(path: &str) -> Result<T> {
+    let output = api(["--method".to_owned(), "GET".to_owned(), path.to_owned()])
+        .read()
+        .with_context(|| format!("GitHub API GET {path} failed"))?;
+    serde_json::from_str(&output).context("failed to parse GitHub response")
 }
 
-/// Coordinates the public Internal Tests run without checking out or executing
-/// code from the private repository.
-pub(crate) fn coordinate(args: CoordinateArgs) -> Result<()> {
-    let github = GithubApi::from_environment();
-    let public_pr_created_at = validate_public_pr_head(&github, &args)?;
-    let private_source = resolve_private_source(&github, args.public_pr_number)?;
+fn get_paginated<P: DeserializeOwned>(path: &str) -> Result<Vec<P>> {
+    let output = api([
+        "--method".to_owned(),
+        "GET".to_owned(),
+        "--paginate".to_owned(),
+        "--slurp".to_owned(),
+        path.to_owned(),
+    ])
+    .read()
+    .with_context(|| format!("paginated GitHub API GET {path} failed"))?;
+    serde_json::from_str(&output).context("failed to parse paginated GitHub response")
+}
 
-    let selected = match private_protocol(&github, &private_source.sha)? {
-        PrivateProtocol::Legacy => {
-            println!(
-                "Private source {} does not advertise pinned coordination; using the legacy dispatch protocol.",
-                private_source.sha
-            );
-            dispatch_legacy_private_ci(&github, &args)?
-        }
-        PrivateProtocol::Pinned => coordinate_pinned(&github, &args, &private_source, public_pr_created_at.as_deref())?,
-    };
+fn post<I: Serialize, O: DeserializeOwned>(path: &str, input: &I) -> Result<O> {
+    let body = serde_json::to_vec(input).context("failed to serialize GitHub request")?;
+    let output = api([
+        "--method".to_owned(),
+        "POST".to_owned(),
+        "--input".to_owned(),
+        "-".to_owned(),
+        path.to_owned(),
+    ])
+    .stdin_bytes(body)
+    .read()
+    .with_context(|| format!("GitHub API POST {path} failed"))?;
+    serde_json::from_str(&output).context("failed to parse GitHub response")
+}
 
-    write_github_output("run_id", selected.id)?;
-    write_github_output("run_url", &selected.url)?;
-    write_github_output("cancel_on_cancel", selected.event == "workflow_dispatch")?;
+fn pull_request(repo: &str, number: u64) -> Result<PullRequest> {
+    get(&format!("/repos/{repo}/pulls/{number}"))
+}
+
+fn branch(repo: &str, branch: &str) -> Result<Branch> {
+    get(&format!("/repos/{repo}/branches/{branch}"))
+}
+
+fn git_tree(repo: &str, sha: &str) -> Result<GitTree> {
+    get(&format!("/repos/{repo}/git/trees/{sha}"))
+}
+
+/// Returns runs for an exact event and private SHA, filtering locally rather than relying only on GitHub's query.
+fn workflow_runs(event: &str, head_sha: &str) -> Result<Vec<WorkflowRun>> {
+    let path = format!(
+        "/repos/{PRIVATE_REPO}/actions/workflows/{PRIVATE_WORKFLOW}/runs?event={event}&head_sha={head_sha}&per_page=100"
+    );
+    let pages: Vec<WorkflowRunsPage> = get_paginated(&path)?;
+    Ok(pages
+        .into_iter()
+        .flat_map(|page| page.workflow_runs)
+        .filter(|run| run.event == event && run.head_sha == head_sha)
+        .collect())
+}
+
+fn workflow_run(run_id: u64) -> Result<WorkflowRunStatus> {
+    get(&format!("/repos/{PRIVATE_REPO}/actions/runs/{run_id}"))
+}
+
+fn rerun_failed_jobs(run_id: u64) -> Result<()> {
+    cmd!(
+        "gh",
+        "run",
+        "rerun",
+        run_id.to_string(),
+        "--failed",
+        "--repo",
+        PRIVATE_REPO
+    )
+    .run()
+    .with_context(|| format!("failed to rerun unsuccessful jobs in private run {run_id}"))?;
     Ok(())
 }
 
-/// The marker is a capability probe, so any read failure uses the legacy protocol.
-/// A successfully-read but unknown version remains an error.
-fn private_protocol(github: &GithubApi, private_sha: &str) -> Result<PrivateProtocol> {
-    protocol_from_marker_result(
-        private_sha,
-        github.repository_file(PRIVATE_REPO, PRIVATE_PROTOCOL_FILE, private_sha),
+fn dispatch_workflow(git_ref: &str, public_sha: &str) -> Result<DispatchResponse> {
+    post(
+        &format!("/repos/{PRIVATE_REPO}/actions/workflows/{PRIVATE_WORKFLOW}/dispatches"),
+        &DispatchWorkflow {
+            ref_name: git_ref,
+            inputs: DispatchInputs { public_ref: public_sha },
+            return_run_details: true,
+        },
     )
 }
 
-fn protocol_from_marker_result(private_sha: &str, marker: Result<String>) -> Result<PrivateProtocol> {
-    match marker {
-        Ok(protocol) => parse_private_protocol(private_sha, &protocol),
-        Err(error) => {
-            eprintln!(
-                "warning: failed to read the Internal Tests protocol marker at private source {private_sha}: {error:#}; falling back to legacy coordination"
-            );
-            Ok(PrivateProtocol::Legacy)
-        }
-    }
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct Repository {
+    full_name: String,
 }
 
-fn parse_private_protocol(private_sha: &str, protocol: &str) -> Result<PrivateProtocol> {
-    match protocol.trim() {
-        PINNED_COORDINATION_PROTOCOL => Ok(PrivateProtocol::Pinned),
-        version => bail!("private source {private_sha} advertises unsupported Internal Tests protocol {version:?}"),
-    }
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct PullRequestRef {
+    #[serde(rename = "ref")]
+    ref_name: String,
+    sha: String,
+    repo: Option<Repository>,
 }
 
-fn coordinate_pinned(
-    github: &GithubApi,
-    args: &CoordinateArgs,
-    private_source: &PrivateSource,
-    public_pr_created_at: Option<&str>,
-) -> Result<SelectedRun> {
-    let (equivalent_private_run, workflow_dispatch_runs) =
-        fetch_existing_runs(github, args, private_source, public_pr_created_at)?;
-    let mut selected = select_existing_run(
-        args,
-        &private_source.sha,
-        equivalent_private_run,
-        workflow_dispatch_runs,
-    );
-
-    // A pull-request run is authoritative and is never retried here. A workflow-dispatch run
-    // is the coordinator's fallback and may rerun only its failed jobs.
-    rerun_failed_dispatch_jobs(github, &mut selected, args.public_run_attempt)?;
-
-    if should_dispatch(&selected) {
-        selected = Some(dispatch_pinned_private_ci(github, args, private_source)?);
-    }
-
-    selected.context(
-        "failed to select or dispatch the private CI workflow; inspect the private workflow, then rerun the public Internal Tests workflow",
-    )
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct PullRequest {
+    number: u64,
+    state: String,
+    head: PullRequestRef,
 }
 
-/// Verifies that a public PR still points at the commit that triggered this run.
-fn validate_public_pr_head(github: &GithubApi, args: &CoordinateArgs) -> Result<Option<String>> {
-    let Some(public_pr_number) = args.public_pr_number else {
-        return Ok(None);
-    };
-
-    let current = github.pull_request(PUBLIC_REPO, public_pr_number)?;
-    if current.head.sha != args.public_sha {
-        bail!(
-            "public PR #{public_pr_number} advanced from {} to {}; rerun the public Internal Tests workflow for the newer public SHA",
-            args.public_sha,
-            current.head.sha
-        );
-    }
-    Ok(Some(current.created_at))
+#[derive(Deserialize)]
+struct TimelineIssue {
+    number: u64,
+    repository: Option<Repository>,
+    pull_request: Option<serde_json::Value>,
 }
 
-/// Resolves the single open private PR linked through GitHub's cross-reference
-/// timeline. Draft PRs are included and duplicate timeline events are collapsed.
-fn find_related_private_pr(github: &GithubApi, public_pr_number: Option<u64>) -> Result<Option<PullRequest>> {
+#[derive(Deserialize)]
+struct TimelineSource {
+    issue: Option<TimelineIssue>,
+}
+
+#[derive(Deserialize)]
+struct TimelineEvent {
+    event: Option<String>,
+    source: Option<TimelineSource>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct Branch {
+    commit: Commit,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct Commit {
+    sha: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct GitTree {
+    tree: Vec<GitTreeEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct GitTreeEntry {
+    path: String,
+    #[serde(rename = "type")]
+    kind: String,
+    sha: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct WorkflowRunsPage {
+    workflow_runs: Vec<WorkflowRun>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct WorkflowRunRef {
+    sha: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct WorkflowRunPullRequest {
+    number: u64,
+    head: WorkflowRunRef,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct WorkflowRun {
+    id: u64,
+    display_title: String,
+    event: String,
+    head_sha: String,
+    status: String,
+    conclusion: Option<String>,
+    run_attempt: u64,
+    html_url: String,
+    created_at: String,
+    #[serde(default)]
+    pull_requests: Vec<WorkflowRunPullRequest>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct WorkflowRunStatus {
+    id: u64,
+    status: String,
+    conclusion: Option<String>,
+    run_attempt: u64,
+    html_url: String,
+}
+
+#[derive(Serialize)]
+struct DispatchInputs<'a> {
+    public_ref: &'a str,
+}
+
+#[derive(Serialize)]
+struct DispatchWorkflow<'a> {
+    #[serde(rename = "ref")]
+    ref_name: &'a str,
+    inputs: DispatchInputs<'a>,
+    return_run_details: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct DispatchResponse {
+    workflow_run_id: u64,
+    html_url: String,
+}
+
+fn related_private_pr(public_pr_number: Option<u64>) -> Result<Option<PullRequest>> {
     let Some(public_pr_number) = public_pr_number else {
         return Ok(None);
     };
 
-    let related = prs_mentioning(github, PUBLIC_REPO, PRIVATE_REPO, public_pr_number, true)?;
-    if related.len() > 1 {
-        bail!(
-            "found multiple open private PRs related to public PR #{public_pr_number}: {}",
-            related
-                .iter()
-                .map(|pull| pull.number.to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-    }
+    let pages: Vec<Vec<TimelineEvent>> =
+        get_paginated(&format!("/repos/{PUBLIC_REPO}/issues/{public_pr_number}/timeline"))?;
+    let numbers = pages
+        .into_iter()
+        .flatten()
+        .filter(|event| event.event.as_deref() == Some("cross-referenced"))
+        .filter_map(|event| event.source.and_then(|source| source.issue))
+        .filter(|issue| issue.repository.as_ref().map(|repo| repo.full_name.as_str()) == Some(PRIVATE_REPO))
+        .filter(|issue| issue.pull_request.is_some())
+        .map(|issue| issue.number)
+        .collect::<BTreeSet<_>>();
 
-    related
-        .first()
-        .map(|pull| github.pull_request(PRIVATE_REPO, pull.number))
-        .transpose()
+    let mut pulls = Vec::new();
+    for number in numbers {
+        let pull = pull_request(PRIVATE_REPO, number)?;
+        if pull.state == "open" && pull.head.repo.as_ref().map(|repo| repo.full_name.as_str()) == Some(PRIVATE_REPO) {
+            pulls.push(pull);
+        }
+    }
+    if pulls.len() > 1 {
+        bail!("found multiple open linked private PRs");
+    }
+    Ok(pulls.pop())
 }
 
-/// Selects an immutable private commit, preferring a linked PR over private master.
-fn resolve_private_source(github: &GithubApi, public_pr_number: Option<u64>) -> Result<PrivateSource> {
-    if let Some(pull) = find_related_private_pr(github, public_pr_number)? {
-        println!("Using related private PR #{} at {}.", pull.number, pull.head.sha);
+fn resolve_private_source(public_pr_number: Option<u64>) -> Result<PrivateSource> {
+    if let Some(pull) = related_private_pr(public_pr_number)? {
+        println!("Found a linked private PR.");
         return Ok(PrivateSource {
             sha: pull.head.sha.clone(),
             workflow_ref: pull.head.ref_name.clone(),
@@ -211,8 +316,8 @@ fn resolve_private_source(github: &GithubApi, public_pr_number: Option<u64>) -> 
         });
     }
 
-    let sha = github.branch(PRIVATE_REPO, PRIVATE_DEFAULT_BRANCH)?.commit.sha;
-    println!("No related private PR; using private master at {sha}.");
+    println!("No linked private PR; using private master.");
+    let sha = branch(PRIVATE_REPO, PRIVATE_DEFAULT_BRANCH)?.commit.sha;
     Ok(PrivateSource {
         sha,
         workflow_ref: PRIVATE_DEFAULT_BRANCH.to_owned(),
@@ -220,133 +325,52 @@ fn resolve_private_source(github: &GithubApi, public_pr_number: Option<u64>) -> 
     })
 }
 
-/// Builds the display title that identifies a public/private source pair.
-fn run_name(public_sha: &str, private_sha: &str) -> String {
-    format!("CI [public={public_sha}; private={private_sha}]")
-}
-
-/// Returns the newest workflow run by update time, using creation time as a tie-breaker.
-fn newest_run(runs: impl IntoIterator<Item = WorkflowRun>) -> Option<WorkflowRun> {
-    runs.into_iter().max_by(|left, right| {
-        left.updated_at
-            .cmp(&right.updated_at)
-            .then_with(|| left.created_at.cmp(&right.created_at))
-    })
-}
-
-fn matching_private_pr_run(runs: Vec<WorkflowRun>, pull: &PullRequest) -> Option<WorkflowRun> {
-    newest_run(runs.into_iter().filter(|run| run.head_sha == pull.head.sha))
-}
-
-fn public_submodule_sha(github: &GithubApi, private_tree_sha: &str) -> Result<Option<String>> {
-    let tree = github.git_tree(PRIVATE_REPO, private_tree_sha)?;
-    Ok(tree
+fn public_submodule_sha(private_sha: &str) -> Result<String> {
+    git_tree(PRIVATE_REPO, private_sha)?
         .tree
         .into_iter()
         .find(|entry| entry.path == "public" && entry.kind == "commit")
-        .map(|entry| entry.sha))
+        .map(|entry| entry.sha)
+        .context("the linked private PR does not contain a public submodule entry")
 }
 
-fn equivalent_private_pr_run(
-    github: &GithubApi,
-    pull: &PullRequest,
-    public_sha: &str,
-    created_at: Option<&str>,
-) -> Result<Option<WorkflowRun>> {
-    if public_submodule_sha(github, &pull.head.sha)?.as_deref() != Some(public_sha) {
-        return Ok(None);
-    }
-
-    let mut filters = vec![
-        ("event", "pull_request".to_owned()),
-        ("head_sha", pull.head.sha.clone()),
-    ];
-    if let Some(created_at) = created_at {
-        filters.push(("created", format!(">={created_at}")));
-    }
-    let runs = github.latest_workflow_runs(PRIVATE_REPO, PRIVATE_WORKFLOW, &filters)?;
-    Ok(matching_private_pr_run(runs, pull))
+fn newest_run(runs: impl IntoIterator<Item = WorkflowRun>) -> Option<WorkflowRun> {
+    runs.into_iter().max_by(|left, right| {
+        left.created_at
+            .cmp(&right.created_at)
+            .then_with(|| left.id.cmp(&right.id))
+    })
 }
 
-fn fetch_existing_runs(
-    github: &GithubApi,
-    args: &CoordinateArgs,
-    private_source: &PrivateSource,
-    public_pr_created_at: Option<&str>,
-) -> Result<(Option<WorkflowRun>, Vec<WorkflowRun>)> {
-    let created_at = created_lower_bound(public_pr_created_at, private_source.pull.as_ref());
-    let equivalent_private_run = if let Some(pull) = private_source.pull.as_ref() {
-        equivalent_private_pr_run(github, pull, &args.public_sha, created_at)?
-    } else {
-        None
-    };
-
-    let should_search_dispatch_history = private_source.pull.is_some() || args.public_run_attempt > 1;
-    let workflow_dispatch_runs = if equivalent_private_run.is_none() && should_search_dispatch_history {
-        let mut filters = vec![
-            ("event", "workflow_dispatch".to_owned()),
-            ("branch", private_source.workflow_ref.clone()),
-        ];
-        if let Some(created_at) = created_at {
-            filters.push(("created", format!(">={created_at}")));
-        }
-        github.latest_workflow_runs(PRIVATE_REPO, PRIVATE_WORKFLOW, &filters)?
-    } else {
-        if private_source.pull.is_none() && args.public_run_attempt == 1 {
-            println!("No linked private PR on the initial attempt; dispatching without scanning private CI history.");
-        }
-        Vec::new()
-    };
-
-    Ok((equivalent_private_run, workflow_dispatch_runs))
+fn matching_pull_request_run(runs: Vec<WorkflowRun>, pull: &PullRequest) -> Option<WorkflowRun> {
+    newest_run(runs.into_iter().filter(|run| {
+        run.pull_requests
+            .iter()
+            .any(|run_pull| run_pull.number == pull.number && run_pull.head.sha == pull.head.sha)
+    }))
 }
 
-/// Excludes runs from before either linked PR existed.
-fn created_lower_bound<'a>(
-    public_pr_created_at: Option<&'a str>,
-    private_pull: Option<&'a PullRequest>,
-) -> Option<&'a str> {
-    [public_pr_created_at, private_pull.map(|pull| pull.created_at.as_str())]
-        .into_iter()
-        .flatten()
-        .max()
+fn dispatch_title(public_sha: &str) -> String {
+    format!("CI [public_ref={public_sha}]")
 }
 
-fn select_existing_run(
-    args: &CoordinateArgs,
-    private_sha: &str,
-    equivalent_private_run: Option<WorkflowRun>,
-    workflow_dispatch_runs: Vec<WorkflowRun>,
-) -> Option<SelectedRun> {
-    if let Some(run) = equivalent_private_run {
-        println!("The private PR CI run tested the same public SHA: {}.", run.html_url);
-        return Some(SelectedRun::from(&run));
-    }
-
-    let expected_name = run_name(&args.public_sha, private_sha);
-    let selected = newest_run(
-        workflow_dispatch_runs
-            .into_iter()
-            .filter(|run| run.display_title == expected_name),
-    );
-    if let Some(run) = selected {
-        println!(
-            "Found the private run for this exact public/private pair: {}.",
-            run.html_url
-        );
-        return Some(SelectedRun::from(&run));
-    }
-
-    None
+/// Completes the public/private SHA match; the caller has already restricted these runs to the private SHA.
+fn matching_dispatch_run(runs: Vec<WorkflowRun>, public_sha: &str) -> Option<WorkflowRun> {
+    let expected_title = dispatch_title(public_sha);
+    newest_run(runs.into_iter().filter(|run| run.display_title == expected_title))
 }
 
-fn wait_for_rerun(github: &GithubApi, run: &SelectedRun) -> Result<SelectedRun> {
+fn should_rerun_failed_jobs(run: &SelectedRun) -> bool {
+    run.status == "completed" && run.conclusion.as_deref() != Some("success")
+}
+
+/// Waits for GitHub to expose the new attempt or status so callers do not receive the stale completed result.
+fn wait_for_rerun(run: &SelectedRun) -> Result<SelectedRun> {
     for _ in 0..30 {
-        let current = github.workflow_run(PRIVATE_REPO, run.id)?;
-        if current.run_attempt > run.attempt {
+        let current = workflow_run(run.id)?;
+        if current.run_attempt > run.attempt || current.status != "completed" {
             return Ok(SelectedRun {
                 id: current.id,
-                event: run.event.clone(),
                 status: current.status,
                 conclusion: current.conclusion,
                 attempt: current.run_attempt,
@@ -355,91 +379,7 @@ fn wait_for_rerun(github: &GithubApi, run: &SelectedRun) -> Result<SelectedRun> 
         }
         std::thread::sleep(Duration::from_secs(2));
     }
-    bail!(
-        "timed out waiting for private CI run {} to start its failed-job rerun; rerun private CI manually, then rerun public Internal Tests",
-        run.id
-    )
-}
-
-fn rerun_failed_dispatch_jobs(
-    github: &GithubApi,
-    selected: &mut Option<SelectedRun>,
-    public_run_attempt: u64,
-) -> Result<()> {
-    let Some(run) = selected else {
-        return Ok(());
-    };
-
-    if should_rerun_failed_dispatch_jobs(run, public_run_attempt) {
-        println!("Re-running only failed jobs in the private CI workflow at {}.", run.url);
-        github.rerun_failed_jobs(PRIVATE_REPO, run.id)?;
-        *selected = Some(wait_for_rerun(github, run)?);
-    } else {
-        println!("Reusing {} without starting private CI again.", run.url);
-    }
-    Ok(())
-}
-
-fn should_rerun_failed_dispatch_jobs(run: &SelectedRun, public_run_attempt: u64) -> bool {
-    run.event == "workflow_dispatch"
-        && public_run_attempt > 1
-        && run.status == "completed"
-        && matches!(run.conclusion.as_deref(), Some("failure" | "timed_out"))
-}
-
-fn should_dispatch(selected: &Option<SelectedRun>) -> bool {
-    selected.as_ref().is_none_or(|run| {
-        run.event != "pull_request"
-            && run.status == "completed"
-            && !matches!(run.conclusion.as_deref(), Some("success" | "failure" | "timed_out"))
-    })
-}
-
-fn dispatch_pinned_private_ci(
-    github: &GithubApi,
-    args: &CoordinateArgs,
-    private_source: &PrivateSource,
-) -> Result<SelectedRun> {
-    let response = github.dispatch_workflow(
-        PRIVATE_REPO,
-        PRIVATE_WORKFLOW,
-        &private_source.workflow_ref,
-        PinnedPrivateCiInputs {
-            private_ref: &private_source.sha,
-            public_ref: &args.public_sha,
-            public_pr_number: args.public_pr_number.map(|number| number.to_string()),
-        },
-    )?;
-    println!(
-        "Dispatched full private CI for the current public/private pair: {}.",
-        response.html_url
-    );
-    Ok(dispatched_run(response.workflow_run_id, response.html_url))
-}
-
-fn dispatch_legacy_private_ci(github: &GithubApi, args: &CoordinateArgs) -> Result<SelectedRun> {
-    let response = github.dispatch_workflow(
-        PRIVATE_REPO,
-        PRIVATE_WORKFLOW,
-        PRIVATE_DEFAULT_BRANCH,
-        LegacyPrivateCiInputs {
-            public_ref: &args.public_sha,
-            public_pr_number: args.public_pr_number.map(|number| number.to_string()),
-        },
-    )?;
-    println!("Dispatched legacy private CI: {}.", response.html_url);
-    Ok(dispatched_run(response.workflow_run_id, response.html_url))
-}
-
-fn dispatched_run(id: u64, url: String) -> SelectedRun {
-    SelectedRun {
-        id,
-        event: "workflow_dispatch".to_owned(),
-        status: "queued".to_owned(),
-        conclusion: None,
-        attempt: 1,
-        url,
-    }
+    bail!("timed out waiting for the private run to start its rerun")
 }
 
 fn write_github_output(name: &str, value: impl std::fmt::Display) -> Result<()> {
@@ -453,301 +393,158 @@ fn write_github_output(name: &str, value: impl std::fmt::Display) -> Result<()> 
     writeln!(output, "{name}={value}").context("failed to write GITHUB_OUTPUT")
 }
 
+/// Coordinates the public Internal Tests run without checking out or executing private code.
+pub(crate) fn coordinate(args: CoordinateArgs) -> Result<()> {
+    let private_source = resolve_private_source(args.public_pr_number)?;
+
+    let matching_pull_run = if let Some(pull) = private_source.pull.as_ref() {
+        if public_submodule_sha(&private_source.sha)? == args.public_sha {
+            matching_pull_request_run(workflow_runs("pull_request", &private_source.sha)?, pull)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let mut did_dispatch = false;
+    let selected = if let Some(run) = matching_pull_run {
+        println!("Reusing the linked private PR run for this public/private SHA pair.");
+        SelectedRun::from(run)
+    } else if let Some(run) = matching_dispatch_run(
+        workflow_runs("workflow_dispatch", &private_source.sha)?,
+        &args.public_sha,
+    ) {
+        let selected = SelectedRun::from(run);
+        if should_rerun_failed_jobs(&selected) {
+            println!("Re-running unsuccessful jobs in the existing private run.");
+            rerun_failed_jobs(selected.id)?;
+            wait_for_rerun(&selected)?
+        } else {
+            println!("Reusing the existing private run for this public/private SHA pair.");
+            selected
+        }
+    } else {
+        println!("Dispatching a new private run for this public/private SHA pair.");
+        let response = dispatch_workflow(&private_source.workflow_ref, &args.public_sha)?;
+        did_dispatch = true;
+        SelectedRun {
+            id: response.workflow_run_id,
+            status: "queued".to_owned(),
+            conclusion: None,
+            attempt: 1,
+            url: response.html_url,
+        }
+    };
+
+    println!("View run: {}", selected.url);
+    write_github_output("run_id", selected.id)?;
+    write_github_output("run_url", &selected.url)?;
+    write_github_output("did_dispatch", did_dispatch)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn pull(created_at: &str) -> PullRequest {
+    fn pull() -> PullRequest {
         PullRequest {
             number: 42,
             state: "open".to_owned(),
-            head: github_api::PullRequestRef {
-                ref_name: "feature".to_owned(),
+            head: PullRequestRef {
+                ref_name: "private-branch".to_owned(),
                 sha: "private-sha".to_owned(),
+                repo: Some(Repository {
+                    full_name: PRIVATE_REPO.to_owned(),
+                }),
             },
-            created_at: created_at.to_owned(),
         }
     }
 
-    fn workflow_run(id: u64, updated_at: &str, conclusion: &str) -> WorkflowRun {
+    fn run(id: u64, event: &str, title: &str, created_at: &str) -> WorkflowRun {
         WorkflowRun {
             id,
-            name: "CI".to_owned(),
-            path: ".github/workflows/ci.yml".to_owned(),
-            display_title: "CI".to_owned(),
-            event: "workflow_dispatch".to_owned(),
+            display_title: title.to_owned(),
+            event: event.to_owned(),
             head_sha: "private-sha".to_owned(),
             status: "completed".to_owned(),
-            conclusion: Some(conclusion.to_owned()),
+            conclusion: Some("success".to_owned()),
             run_attempt: 1,
             html_url: format!("https://example.test/{id}"),
-            created_at: updated_at.to_owned(),
-            updated_at: updated_at.to_owned(),
+            created_at: created_at.to_owned(),
             pull_requests: Vec::new(),
         }
     }
 
-    fn selected_run(event: &str, status: &str, conclusion: Option<&str>) -> SelectedRun {
-        SelectedRun {
-            id: 1,
-            event: event.to_owned(),
-            status: status.to_owned(),
-            conclusion: conclusion.map(str::to_owned),
-            attempt: 1,
-            url: "https://example.test/1".to_owned(),
-        }
-    }
-
-    fn coordinate_args() -> CoordinateArgs {
-        CoordinateArgs {
-            public_run_attempt: 1,
-            public_sha: "public-sha".to_owned(),
-            public_pr_number: None,
-        }
-    }
-
-    fn workflow_dispatch_run(id: u64, updated_at: &str, display_title: &str) -> WorkflowRun {
-        let mut run = workflow_run(id, updated_at, "failure");
-        run.display_title = display_title.to_owned();
-        run
-    }
-
     #[test]
-    fn protocol_negotiation_accepts_pinned_and_rejects_unknown_versions() {
-        assert_eq!(
-            protocol_from_marker_result("private-sha", Err(anyhow::anyhow!("probe failed"))).unwrap(),
-            PrivateProtocol::Legacy
-        );
-        assert_eq!(
-            parse_private_protocol("private-sha", "2\n").unwrap(),
-            PrivateProtocol::Pinned
-        );
-        assert!(parse_private_protocol("private-sha", "3\n").is_err());
-    }
+    fn pull_request_run_requires_the_linked_pull_and_private_sha() {
+        let mut matching = run(1, "pull_request", "CI", "2026-01-01T00:00:00Z");
+        matching.pull_requests.push(WorkflowRunPullRequest {
+            number: 42,
+            head: WorkflowRunRef {
+                sha: "private-sha".to_owned(),
+            },
+        });
+        let mut unrelated = matching.clone();
+        unrelated.id = 2;
+        unrelated.pull_requests[0].number = 99;
 
-    #[test]
-    fn run_name_contains_both_immutable_source_refs() {
         assert_eq!(
-            run_name("public-sha", "private-sha"),
-            "CI [public=public-sha; private=private-sha]"
-        );
-    }
-
-    #[test]
-    fn created_lower_bound_uses_the_later_pr_creation_time() {
-        let private_pull = pull("2026-01-02T00:00:00Z");
-        assert_eq!(
-            created_lower_bound(Some("2026-01-01T00:00:00Z"), Some(&private_pull)),
-            Some("2026-01-02T00:00:00Z")
-        );
-        assert_eq!(
-            created_lower_bound(Some("2026-01-03T00:00:00Z"), Some(&private_pull)),
-            Some("2026-01-03T00:00:00Z")
-        );
-        assert_eq!(created_lower_bound(None, None), None);
-    }
-
-    #[test]
-    fn private_pr_run_takes_precedence_over_dispatch_candidate() {
-        let args = coordinate_args();
-        let expected = run_name(&args.public_sha, "private-sha");
-        let selected = select_existing_run(
-            &args,
-            "private-sha",
-            Some(workflow_dispatch_run(3, "2026-01-03T00:00:00Z", "private-pr-run")),
-            vec![workflow_dispatch_run(4, "2026-01-04T00:00:00Z", &expected)],
-        );
-        assert_eq!(selected.unwrap().id, 3);
-    }
-
-    #[test]
-    fn dispatch_selection_requires_exact_source_pair_identity() {
-        let args = coordinate_args();
-        let expected = run_name(&args.public_sha, "private-sha");
-        let selected = select_existing_run(
-            &args,
-            "private-sha",
-            None,
-            vec![
-                workflow_dispatch_run(1, "2026-01-01T00:00:00Z", "unrelated"),
-                workflow_dispatch_run(2, "2026-01-02T00:00:00Z", &expected),
-            ],
-        );
-        assert_eq!(selected.unwrap().id, 2);
-    }
-
-    #[test]
-    fn matching_private_pr_run_uses_only_the_private_head_sha() {
-        let mut run = workflow_run(1, "2026-01-01T00:00:00Z", "success");
-        run.event = "pull_request".to_owned();
-        assert_eq!(
-            matching_private_pr_run(vec![run], &pull("2026-01-01T00:00:00Z"))
+            matching_pull_request_run(vec![unrelated, matching], &pull())
                 .unwrap()
                 .id,
             1
         );
-
-        let mut different_head = workflow_run(2, "2026-01-02T00:00:00Z", "success");
-        different_head.event = "pull_request".to_owned();
-        different_head.head_sha = "different-private-sha".to_owned();
-        assert!(matching_private_pr_run(vec![different_head], &pull("2026-01-01T00:00:00Z")).is_none());
     }
 
     #[test]
-    fn failed_job_rerun_policy_is_limited_to_failed_dispatch_runs_on_public_reruns() {
-        struct Case {
-            name: &'static str,
-            event: &'static str,
-            status: &'static str,
-            conclusion: Option<&'static str>,
-            public_run_attempt: u64,
-            expected: bool,
-        }
-
-        let cases = [
-            Case {
-                name: "unlinked failed run on a public rerun",
-                event: "workflow_dispatch",
-                status: "completed",
-                conclusion: Some("failure"),
-                public_run_attempt: 2,
-                expected: true,
-            },
-            Case {
-                name: "unlinked timed out run on a public rerun",
-                event: "workflow_dispatch",
-                status: "completed",
-                conclusion: Some("timed_out"),
-                public_run_attempt: 2,
-                expected: true,
-            },
-            Case {
-                name: "linked private PR pull-request run on a public rerun",
-                event: "pull_request",
-                status: "completed",
-                conclusion: Some("failure"),
-                public_run_attempt: 2,
-                expected: false,
-            },
-            Case {
-                name: "unlinked failed run on the initial public attempt",
-                event: "workflow_dispatch",
-                status: "completed",
-                conclusion: Some("failure"),
-                public_run_attempt: 1,
-                expected: false,
-            },
-            Case {
-                name: "successful run",
-                event: "workflow_dispatch",
-                status: "completed",
-                conclusion: Some("success"),
-                public_run_attempt: 2,
-                expected: false,
-            },
-            Case {
-                name: "private run still in progress",
-                event: "workflow_dispatch",
-                status: "in_progress",
-                conclusion: None,
-                public_run_attempt: 2,
-                expected: false,
-            },
-        ];
-
-        for case in cases {
-            let run = selected_run(case.event, case.status, case.conclusion);
-            assert_eq!(
-                should_rerun_failed_dispatch_jobs(&run, case.public_run_attempt),
-                case.expected,
-                "unexpected rerun policy for {}",
-                case.name
-            );
-        }
+    fn dispatch_run_requires_the_public_sha_and_prefers_the_newest() {
+        let expected = dispatch_title("public-sha");
+        let selected = matching_dispatch_run(
+            vec![
+                run(1, "workflow_dispatch", &expected, "2026-01-01T00:00:00Z"),
+                run(2, "workflow_dispatch", "unrelated", "2026-01-03T00:00:00Z"),
+                run(3, "workflow_dispatch", &expected, "2026-01-02T00:00:00Z"),
+            ],
+            "public-sha",
+        )
+        .unwrap();
+        assert_eq!(selected.id, 3);
     }
 
     #[test]
-    fn dispatch_policy_reuses_known_runs_and_replaces_cancelled_dispatches() {
-        struct Case {
-            name: &'static str,
-            event: &'static str,
-            run: Option<(&'static str, Option<&'static str>)>,
-            expected: bool,
-        }
+    fn only_completed_unsuccessful_dispatches_are_rerun() {
+        let selected = |status: &str, conclusion: Option<&str>| SelectedRun {
+            id: 1,
+            status: status.to_owned(),
+            conclusion: conclusion.map(str::to_owned),
+            attempt: 1,
+            url: "https://example.test/1".to_owned(),
+        };
 
-        let cases = [
-            Case {
-                name: "no matching run",
-                event: "workflow_dispatch",
-                run: None,
-                expected: true,
-            },
-            Case {
-                name: "queued run",
-                event: "workflow_dispatch",
-                run: Some(("queued", None)),
-                expected: false,
-            },
-            Case {
-                name: "in-progress run",
-                event: "workflow_dispatch",
-                run: Some(("in_progress", None)),
-                expected: false,
-            },
-            Case {
-                name: "successful run",
-                event: "workflow_dispatch",
-                run: Some(("completed", Some("success"))),
-                expected: false,
-            },
-            Case {
-                name: "failed run",
-                event: "workflow_dispatch",
-                run: Some(("completed", Some("failure"))),
-                expected: false,
-            },
-            Case {
-                name: "timed out run",
-                event: "workflow_dispatch",
-                run: Some(("completed", Some("timed_out"))),
-                expected: false,
-            },
-            Case {
-                name: "cancelled run",
-                event: "workflow_dispatch",
-                run: Some(("completed", Some("cancelled"))),
-                expected: true,
-            },
-            Case {
-                name: "skipped run",
-                event: "workflow_dispatch",
-                run: Some(("completed", Some("skipped"))),
-                expected: true,
-            },
-            Case {
-                name: "cancelled pull-request run remains authoritative",
-                event: "pull_request",
-                run: Some(("completed", Some("cancelled"))),
-                expected: false,
-            },
-            Case {
-                name: "skipped pull-request run remains authoritative",
-                event: "pull_request",
-                run: Some(("completed", Some("skipped"))),
-                expected: false,
-            },
-        ];
+        assert!(should_rerun_failed_jobs(&selected("completed", Some("failure"))));
+        assert!(should_rerun_failed_jobs(&selected("completed", Some("cancelled"))));
+        assert!(!should_rerun_failed_jobs(&selected("completed", Some("success"))));
+        assert!(!should_rerun_failed_jobs(&selected("in_progress", None)));
+    }
 
-        for case in cases {
-            let selected = case
-                .run
-                .map(|(status, conclusion)| selected_run(case.event, status, conclusion));
-            assert_eq!(
-                should_dispatch(&selected),
-                case.expected,
-                "unexpected dispatch policy for {}",
-                case.name
-            );
-        }
+    #[test]
+    fn dispatch_request_uses_the_private_ref_and_public_sha() {
+        let request = DispatchWorkflow {
+            ref_name: "private-branch",
+            inputs: DispatchInputs {
+                public_ref: "public-sha",
+            },
+            return_run_details: true,
+        };
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            serde_json::json!({
+                "ref": "private-branch",
+                "inputs": { "public_ref": "public-sha" },
+                "return_run_details": true,
+            })
+        );
     }
 }

@@ -361,7 +361,6 @@ fn check_codex_plugin_skills_sync() -> Result<()> {
 
 #[derive(Subcommand)]
 enum CiCmd {
-    /// Selects or starts private CI for a public Internal Tests workflow.
     #[command(hide = true)]
     CoordinateInternalTests(internal_tests::CoordinateArgs),
     /// Runs tests
@@ -466,7 +465,7 @@ enum OtherWorkflowsCmd {
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     let subcmds = Cli::command()
         .get_subcommands()
-        .filter(|sc| !sc.is_hide_set())
+        .filter(|subcommand| !subcommand.is_hide_set())
         .map(|sc| sc.get_name().to_string())
         .collect::<Vec<_>>();
 
@@ -573,7 +572,6 @@ fn main() -> Result<()> {
         Some(CiCmd::CoordinateInternalTests(args)) => {
             internal_tests::coordinate(args)?;
         }
-
         Some(CiCmd::Test) => {
             pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 

@@ -77,7 +77,7 @@ fn generate_markdown(cmd: &mut Command, heading_level: usize) -> String {
         out.push('\n');
     }
 
-    for sub in cmd.get_subcommands_mut().filter(|sub| !sub.is_hide_set()) {
+    for sub in cmd.get_subcommands_mut().filter(|subcommand| !subcommand.is_hide_set()) {
         out.push_str(&generate_markdown(sub, heading_level + 1));
     }
 
