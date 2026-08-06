@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
@@ -141,7 +142,9 @@ void RunProcedureHttpOk()
     test.Db.Procedures.ReadMySchema(serverUrl, (_, result) =>
     {
         RequireSuccess(result);
-        Require(result.Value.Contains("\"read_my_schema\""), "Schema response did not include read_my_schema");
+        Require(
+            SchemaContainsProcedureExport(result.Value, "read_my_schema"),
+            "Schema response did not include a procedure export named read_my_schema");
         observed = true;
     });
 
@@ -188,6 +191,64 @@ void RequireExpectedReturnStruct(ReturnStruct value)
 {
     Require(value.A == 42, $"Expected A=42, got {value.A}");
     Require(value.B == "magic", $"Expected B=magic, got {value.B}");
+}
+
+bool SchemaContainsProcedureExport(string schemaJson, string procedureName)
+{
+    using var document = JsonDocument.Parse(schemaJson);
+    Require(document.RootElement.ValueKind == JsonValueKind.Object, "Schema response was not a JSON object");
+    Require(document.RootElement.TryGetProperty("misc_exports", out var miscExports), "Schema response did not contain misc_exports");
+    Require(miscExports.ValueKind == JsonValueKind.Array, "Schema misc_exports was not an array");
+
+    foreach (var export in miscExports.EnumerateArray())
+    {
+        if (TryGetProcedureDef(export, out var procedureDef) && ProcedureNameEquals(procedureDef, procedureName))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool TryGetProcedureDef(JsonElement export, out JsonElement procedureDef)
+{
+    if (export.ValueKind == JsonValueKind.Object)
+    {
+        if (export.TryGetProperty("Procedure", out procedureDef) || export.TryGetProperty("procedure", out procedureDef))
+        {
+            return procedureDef.ValueKind == JsonValueKind.Object;
+        }
+
+        if (export.TryGetProperty("tag", out var tag)
+            && tag.ValueKind == JsonValueKind.String
+            && string.Equals(tag.GetString(), "Procedure", StringComparison.OrdinalIgnoreCase)
+            && export.TryGetProperty("value", out procedureDef))
+        {
+            return procedureDef.ValueKind == JsonValueKind.Object;
+        }
+    }
+
+    procedureDef = default;
+    return false;
+}
+
+bool ProcedureNameEquals(JsonElement procedureDef, string procedureName)
+{
+    return procedureDef.TryGetProperty("name", out var name) && IdentifierEquals(name, procedureName);
+}
+
+bool IdentifierEquals(JsonElement identifier, string expected)
+{
+    if (identifier.ValueKind == JsonValueKind.String)
+    {
+        return identifier.GetString() == expected;
+    }
+
+    return identifier.ValueKind == JsonValueKind.Object
+        && identifier.TryGetProperty("name", out var name)
+        && name.ValueKind == JsonValueKind.String
+        && name.GetString() == expected;
 }
 
 TestConnection ConnectAndSubscribeAll()
