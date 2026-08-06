@@ -3,6 +3,9 @@ use spacetimedb_testing::sdk::Test;
 
 const TEST_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/sdk-test-client");
 const CONNECT_DISCONNECT_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/connect-disconnect-client");
+const PROCEDURE_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedure-client");
+const VIEW_PK_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-pk-client");
+const PROCEDURAL_VIEW_PK_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedural-view-pk-client");
 
 fn make_test(subcommand: &str) -> Test {
     Test::builder()
@@ -13,6 +16,45 @@ fn make_test(subcommand: &str) -> Test {
         .with_bindings_dir("module_bindings")
         .with_compile_command("bash ../build-client.sh")
         .with_run_command(format!("dotnet ./bin~/Debug/net8.0/sdk-test-client.dll {subcommand}"))
+        .build()
+}
+
+fn make_procedure_test(subcommand: &str) -> Test {
+    Test::builder()
+        .with_name(format!("csharp-client-{subcommand}"))
+        .with_module("sdk-test-procedure-cs")
+        .with_client(PROCEDURE_CLIENT)
+        .with_language("csharp")
+        .with_generate_private_items(true)
+        .with_bindings_dir("module_bindings")
+        .with_compile_command("bash ../build-client.sh")
+        .with_run_command(format!("dotnet ./bin~/Debug/net8.0/procedure-client.dll {subcommand}"))
+        .build()
+}
+
+fn make_view_pk_test(subcommand: &str) -> Test {
+    Test::builder()
+        .with_name(format!("csharp-client-{subcommand}"))
+        .with_module("sdk-test-view-pk-cs")
+        .with_client(VIEW_PK_CLIENT)
+        .with_language("csharp")
+        .with_bindings_dir("module_bindings")
+        .with_compile_command("bash ../build-client.sh")
+        .with_run_command(format!("dotnet ./bin~/Debug/net8.0/view-pk-client.dll {subcommand}"))
+        .build()
+}
+
+fn make_procedural_view_pk_test(subcommand: &str) -> Test {
+    Test::builder()
+        .with_name(format!("csharp-client-{subcommand}"))
+        .with_module("sdk-test-procedural-view-pk-cs")
+        .with_client(PROCEDURAL_VIEW_PK_CLIENT)
+        .with_language("csharp")
+        .with_bindings_dir("module_bindings")
+        .with_compile_command("bash ../build-client.sh")
+        .with_run_command(format!(
+            "dotnet ./bin~/Debug/net8.0/procedural-view-pk-client.dll {subcommand}"
+        ))
         .build()
 }
 
@@ -315,6 +357,84 @@ fn overlapping_subscriptions() {
 #[serial(CsharpSdk)]
 fn sorted_uuids_insert() {
     make_test("sorted-uuids-insert").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn procedure_return_values() {
+    make_procedure_test("procedure-return-values").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn procedure_observe_panic() {
+    make_procedure_test("procedure-observe-panic").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn insert_with_tx_commit() {
+    make_procedure_test("insert-with-tx-commit").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn insert_with_tx_rollback() {
+    make_procedure_test("insert-with-tx-rollback").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn procedure_http_ok() {
+    make_procedure_test("procedure-http-ok").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn procedure_http_err() {
+    make_procedure_test("procedure-http-err").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn schedule_procedure() {
+    make_procedure_test("schedule-procedure").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn view_pk_on_update() {
+    make_view_pk_test("view-pk-on-update").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn view_pk_join_query_builder() {
+    make_view_pk_test("view-pk-join-query-builder").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn view_pk_semijoin_two_sender_views_query_builder() {
+    make_view_pk_test("view-pk-semijoin-two-sender-views-query-builder").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn sender_scoped_procedural_pk_view() {
+    make_procedural_view_pk_test("sender-scoped-pk-view").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn procedural_view_pk_left_semijoin() {
+    make_procedural_view_pk_test("view-pk-left-semijoin").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn procedural_view_pk_right_semijoin() {
+    make_procedural_view_pk_test("view-pk-right-semijoin").run();
 }
 
 #[test]
