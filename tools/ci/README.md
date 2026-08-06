@@ -271,6 +271,19 @@ Usage: other-workflows <COMMAND>
 
 - `--help`: Print help
 
+#### `codeowners-check`
+
+**Usage:**
+```bash
+Usage: codeowners-check --base-ref <BASE_REF> --pr-number <PR_NUMBER>
+```
+
+**Options:**
+
+- `--base-ref <BASE_REF>`: Git ref to compare against, usually origin/<pull request base branch>
+- `--pr-number <PR_NUMBER>`: Pull request number to inspect for approval state
+- `--help`: Print help
+
 #### `cla-assistant`
 
 **Usage:**
