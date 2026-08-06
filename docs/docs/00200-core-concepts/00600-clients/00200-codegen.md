@@ -234,9 +234,7 @@ conn.reducers().on_create_user(|ctx, name, email| {
 Context.Reducers->CreateUser(TEXT("Alice"), TEXT("alice@example.com"));
 
 // Register a callback to observe reducer invocations
-FOnCreateUserDelegate Callback;
-BIND_DELEGATE_SAFE(Callback, this, AMyActor, OnCreateUser);
-Context.Reducers->OnCreateUser(Callback);
+Context.Reducers->OnCreateUser.AddDynamic(this, &AMyActor::OnCreateUser);
 
 // Callback function (must be UFUNCTION)
 UFUNCTION()

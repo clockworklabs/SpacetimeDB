@@ -319,13 +319,13 @@ let conn = DbConnection::builder()
 ```cpp
 // Create delegates
 FOnConnectDelegate ConnectDelegate;
-ConnectDelegate.BindDynamic(this, &AMyActor::OnConnected);
+BIND_DELEGATE_SAFE(ConnectDelegate, this, AMyActor, OnConnected);
 
 FOnConnectErrorDelegate ErrorDelegate;
-ErrorDelegate.BindDynamic(this, &AMyActor::OnConnectError);
+BIND_DELEGATE_SAFE(ErrorDelegate, this, AMyActor, OnConnectError);
 
 FOnDisconnectDelegate DisconnectDelegate;
-DisconnectDelegate.BindDynamic(this, &AMyActor::OnDisconnected);
+BIND_DELEGATE_SAFE(DisconnectDelegate, this, AMyActor, OnDisconnected);
 
 // Build connection with callbacks
 UDbConnection* Conn = UDbConnection::Builder()
@@ -351,9 +351,9 @@ void OnConnectError(const FString& Error)
 }
 
 UFUNCTION()
-void OnDisconnected()
+void OnDisconnected(UDbConnection* Connection, const FString& Error)
 {
-    UE_LOG(LogTemp, Warning, TEXT("Disconnected from SpacetimeDB"));
+    UE_LOG(LogTemp, Warning, TEXT("Disconnected from SpacetimeDB: %s"), *Error);
 }
 ```
 
