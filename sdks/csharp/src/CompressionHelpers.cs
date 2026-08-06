@@ -98,14 +98,14 @@ namespace SpacetimeDB
         internal static (BinaryReader reader, int rowCount) ParseRowList(BsatnRowList list) =>
         (
             new BinaryReader(new ListStream(list.RowsData)),
-            list.RowsData.Count == 0
-                ? 0
-                : list.SizeHint switch
-                {
-                    RowSizeHint.FixedSize(var size) => list.RowsData.Count / size,
-                    RowSizeHint.RowOffsets(var offsets) => offsets.Count,
-                    _ => throw new NotImplementedException()
-                }
+            list.SizeHint switch
+            {
+                RowSizeHint.FixedSize(var size) => size == 0
+                    ? throw new InvalidOperationException("Fixed-size BSATN row list cannot have zero-sized rows")
+                    : list.RowsData.Count / size,
+                RowSizeHint.RowOffsets(var offsets) => offsets.Count,
+                _ => throw new NotImplementedException()
+            }
         );
     }
 }
