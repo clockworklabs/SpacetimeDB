@@ -851,6 +851,7 @@ void RunInsertStruct()
     var byteStruct = new ByteStruct { B = 99 };
     var expected = new HashSet<string>
     {
+        "one_unit_struct",
         "one_byte_struct",
         "one_every_primitive_struct",
         "one_every_vec_struct",
@@ -860,11 +861,19 @@ void RunInsertStruct()
         "vec_every_vec_struct",
     };
     var seen = new HashSet<string>();
+    var oneUnitStructReducerSeen = false;
     void Seen(string name)
     {
         Require(seen.Add(name), $"{name} callback fired more than once");
     }
 
+    test.Db.Reducers.OnInsertOneUnitStruct += (ctx, s) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(s is not null, "InsertOneUnitStruct reducer callback saw null argument");
+        oneUnitStructReducerSeen = true;
+    };
+    test.Db.Db.OneUnitStruct.OnInsert += (_, row) => { Require(row.S is not null, "UnitStruct did not round-trip"); Seen("one_unit_struct"); };
     test.Db.Db.OneByteStruct.OnInsert += (_, row) => { RequireByteStructEqual(row.S, byteStruct, "ByteStruct did not round-trip"); Seen("one_byte_struct"); };
     test.Db.Db.OneEveryPrimitiveStruct.OnInsert += (_, row) => { RequireEveryPrimitiveStructEqual(row.S, primitive, "EveryPrimitiveStruct did not round-trip"); Seen("one_every_primitive_struct"); };
     test.Db.Db.OneEveryVecStruct.OnInsert += (_, row) => { RequireEveryVecStructEqual(row.S, vec, "EveryVecStruct did not round-trip"); Seen("one_every_vec_struct"); };
@@ -873,6 +882,7 @@ void RunInsertStruct()
     test.Db.Db.VecEveryPrimitiveStruct.OnInsert += (_, row) => { RequireStructListEqual(row.S, new[] { primitive }, RequireEveryPrimitiveStructEqual, "VecEveryPrimitiveStruct did not round-trip"); Seen("vec_every_primitive_struct"); };
     test.Db.Db.VecEveryVecStruct.OnInsert += (_, row) => { RequireStructListEqual(row.S, new[] { vec }, RequireEveryVecStructEqual, "VecEveryVecStruct did not round-trip"); Seen("vec_every_vec_struct"); };
 
+    test.Db.Reducers.InsertOneUnitStruct(new UnitStruct());
     test.Db.Reducers.InsertOneByteStruct(byteStruct);
     test.Db.Reducers.InsertOneEveryPrimitiveStruct(primitive);
     test.Db.Reducers.InsertOneEveryVecStruct(vec);
@@ -881,7 +891,7 @@ void RunInsertStruct()
     test.Db.Reducers.InsertVecEveryPrimitiveStruct(new() { primitive });
     test.Db.Reducers.InsertVecEveryVecStruct(new() { vec });
     test.FrameTickUntil(
-        () => seen.SetEquals(expected),
+        () => seen.SetEquals(expected) && oneUnitStructReducerSeen,
         timeoutMessage: () => $"Timed out waiting for struct callbacks. Missing: {string.Join(", ", expected.Except(seen).OrderBy(name => name))}");
 }
 
