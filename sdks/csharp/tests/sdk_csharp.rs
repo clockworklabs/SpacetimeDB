@@ -60,386 +60,386 @@ fn make_procedural_view_pk_test(subcommand: &str) -> Test {
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_primitive() {
+fn csharp_insert_primitive() {
     make_test("insert-primitive").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn subscribe_and_cancel() {
+fn csharp_subscribe_and_cancel() {
     make_test("subscribe-and-cancel").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn subscribe_and_unsubscribe() {
+fn csharp_subscribe_and_unsubscribe() {
     make_test("subscribe-and-unsubscribe").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn subscription_error_smoke_test() {
+fn csharp_subscription_error_smoke_test() {
     make_test("subscription-error-smoke-test").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn subscribe_all_select_star() {
+fn csharp_subscribe_all_select_star() {
     make_test("subscribe-all-select-star").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn delete_primitive() {
+fn csharp_delete_primitive() {
     make_test("delete-primitive").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn update_primitive() {
+fn csharp_update_primitive() {
     make_test("update-primitive").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_identity() {
+fn csharp_insert_identity() {
     make_test("insert-identity").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_caller_identity() {
+fn csharp_insert_caller_identity() {
     make_test("insert-caller-identity").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn delete_identity() {
+fn csharp_delete_identity() {
     make_test("delete-identity").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn update_identity() {
+fn csharp_update_identity() {
     make_test("update-identity").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_connection_id() {
+fn csharp_insert_connection_id() {
     make_test("insert-connection-id").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_caller_connection_id() {
+fn csharp_insert_caller_connection_id() {
     make_test("insert-caller-connection-id").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn delete_connection_id() {
+fn csharp_delete_connection_id() {
     make_test("delete-connection-id").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn update_connection_id() {
+fn csharp_update_connection_id() {
     make_test("update-connection-id").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_timestamp() {
+fn csharp_insert_timestamp() {
     make_test("insert-timestamp").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_call_timestamp() {
+fn csharp_insert_call_timestamp() {
     make_test("insert-call-timestamp").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_uuid() {
+fn csharp_insert_uuid() {
     make_test("insert-uuid").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_call_uuid_v4() {
+fn csharp_insert_call_uuid_v4() {
     make_test("insert-call-uuid-v4").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_call_uuid_v7() {
+fn csharp_insert_call_uuid_v7() {
     make_test("insert-call-uuid-v7").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn delete_uuid() {
+fn csharp_delete_uuid() {
     make_test("delete-uuid").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn update_uuid() {
+fn csharp_update_uuid() {
     make_test("update-uuid").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn on_reducer() {
+fn csharp_on_reducer() {
     make_test("on-reducer").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_vec() {
+fn csharp_insert_vec() {
     make_test("insert-vec").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_option_some() {
+fn csharp_insert_option_some() {
     make_test("insert-option-some").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_option_none() {
+fn csharp_insert_option_none() {
     make_test("insert-option-none").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_struct() {
+fn csharp_insert_struct() {
     make_test("insert-struct").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_simple_enum() {
+fn csharp_insert_simple_enum() {
     make_test("insert-simple-enum").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_enum_with_payload() {
+fn csharp_insert_enum_with_payload() {
     make_test("insert-enum-with-payload").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn fail_reducer() {
+fn csharp_fail_reducer() {
     make_test("fail-reducer").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_delete_large_table() {
+fn csharp_insert_delete_large_table() {
     make_test("insert-delete-large-table").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_primitives_as_strings() {
+fn csharp_insert_primitives_as_strings() {
     make_test("insert-primitives-as-strings").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
 #[should_panic]
-fn should_fail() {
+fn csharp_should_fail() {
     make_test("should-fail").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn reauth() {
+fn csharp_reauth() {
     make_test("reauth").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn reconnect_different_connection_id() {
+fn csharp_reconnect_different_connection_id() {
     make_test("reconnect-different-connection-id").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn caller_always_notified() {
+fn csharp_caller_always_notified() {
     make_test("caller-always-notified").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn caller_alice_receives_reducer_callback_but_not_bob() {
+fn csharp_caller_alice_receives_reducer_callback_but_not_bob() {
     make_test("caller-alice-receives-reducer-callback-but-not-bob").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn row_deduplication() {
+fn csharp_row_deduplication() {
     make_test("row-deduplication").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn row_deduplication_join_r_and_s() {
+fn csharp_row_deduplication_join_r_and_s() {
     make_test("row-deduplication-join-r-and-s").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn row_deduplication_r_join_s_and_r_joint() {
+fn csharp_row_deduplication_r_join_s_and_r_joint() {
     make_test("row-deduplication-r-join-s-and-r-joint").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn test_lhs_join_update() {
+fn csharp_test_lhs_join_update() {
     make_test("test-lhs-join-update").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn test_lhs_join_update_disjoint_queries() {
+fn csharp_test_lhs_join_update_disjoint_queries() {
     make_test("test-lhs-join-update-disjoint-queries").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn test_intra_query_bag_semantics_for_join() {
+fn csharp_test_intra_query_bag_semantics_for_join() {
     make_test("test-intra-query-bag-semantics-for-join").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn two_different_compression_algos() {
+fn csharp_two_different_compression_algos() {
     make_test("two-different-compression-algos").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn test_parameterized_subscription() {
+fn csharp_test_parameterized_subscription() {
     make_test("test-parameterized-subscription").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn test_rls_subscription() {
+fn csharp_test_rls_subscription() {
     make_test("test-rls-subscription").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn pk_simple_enum() {
+fn csharp_pk_simple_enum() {
     make_test("pk-simple-enum").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn indexed_simple_enum() {
+fn csharp_indexed_simple_enum() {
     make_test("indexed-simple-enum").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn overlapping_subscriptions() {
+fn csharp_overlapping_subscriptions() {
     make_test("overlapping-subscriptions").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn sorted_uuids_insert() {
+fn csharp_sorted_uuids_insert() {
     make_test("sorted-uuids-insert").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn procedure_return_values() {
+fn csharp_procedure_return_values() {
     make_procedure_test("procedure-return-values").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn procedure_observe_panic() {
+fn csharp_procedure_observe_panic() {
     make_procedure_test("procedure-observe-panic").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_with_tx_commit() {
+fn csharp_insert_with_tx_commit() {
     make_procedure_test("insert-with-tx-commit").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn insert_with_tx_rollback() {
+fn csharp_insert_with_tx_rollback() {
     make_procedure_test("insert-with-tx-rollback").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn procedure_http_ok() {
+fn csharp_procedure_http_ok() {
     make_procedure_test("procedure-http-ok").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn procedure_http_err() {
+fn csharp_procedure_http_err() {
     make_procedure_test("procedure-http-err").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn schedule_procedure() {
+fn csharp_schedule_procedure() {
     make_procedure_test("schedule-procedure").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn view_pk_on_update() {
+fn csharp_view_pk_on_update() {
     make_view_pk_test("view-pk-on-update").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn view_pk_join_query_builder() {
+fn csharp_view_pk_join_query_builder() {
     make_view_pk_test("view-pk-join-query-builder").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn view_pk_semijoin_two_sender_views_query_builder() {
+fn csharp_view_pk_semijoin_two_sender_views_query_builder() {
     make_view_pk_test("view-pk-semijoin-two-sender-views-query-builder").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn sender_scoped_procedural_pk_view() {
+fn csharp_sender_scoped_procedural_pk_view() {
     make_procedural_view_pk_test("sender-scoped-pk-view").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn procedural_view_pk_left_semijoin() {
+fn csharp_procedural_view_pk_left_semijoin() {
     make_procedural_view_pk_test("view-pk-left-semijoin").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn procedural_view_pk_right_semijoin() {
+fn csharp_procedural_view_pk_right_semijoin() {
     make_procedural_view_pk_test("view-pk-right-semijoin").run();
 }
 
 #[test]
 #[serial(CsharpSdk)]
-fn connect_disconnect_callbacks() {
+fn csharp_connect_disconnect_callbacks() {
     Test::builder()
         .with_name("csharp-client-connect-disconnect-callbacks")
         .with_module("sdk-test-connect-disconnect-cs")
