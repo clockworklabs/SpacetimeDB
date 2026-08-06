@@ -11,9 +11,9 @@ const ADMIN_PASS = 'stackbench-admin-2026';
 // (the catalogue starts with no purchases, so the storefront is alphabetical),
 // which is what makes searching for it prove that search covers the catalogue
 // rather than filtering what is already on screen.
-const CART_ITEM = 'Hammer';
-const REVIEW_ITEM = 'Anvil';
-const SEARCH_ONLY = 'Miller';
+const CART_ITEM = 'Headphones';
+const REVIEW_ITEM = 'Air Purifier';
+const SEARCH_ONLY = 'Webcam';
 
 export async function walk({ page, args, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT }) {
   const fail = (h, detail) => { results.push({ id: h.id, status: 'FAIL', detail }); };
@@ -36,6 +36,15 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
   if (ok) {
     for (const h of byStage('storefront')) ok = (await checkHook(page, h, results)) && ok;
   } else blocked('storefront');
+
+  // Reviews are gated on having bought the item, so the walk earns the right
+  // before it exercises the form — otherwise a spec-compliant refusal would
+  // read as a missing hook.
+  if (ok) {
+    await page.locator(tid('item-card'), { hasText: REVIEW_ITEM }).first()
+      .locator(tid('buy-now')).first().click();
+    await page.waitForTimeout(1200);
+  }
 
   // Stage: search-results — search for an item the storefront is not showing.
   if (ok) {

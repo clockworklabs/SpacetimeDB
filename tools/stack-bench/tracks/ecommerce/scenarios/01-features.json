@@ -3,14 +3,21 @@
   "track": "ecommerce",
   "name": "Storefront and warehouse — features",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "Each feature is given its own seeded items where it mutates stock, because features share one database and a purchase in one would otherwise move another's numbers. Items reserved per feature: F2 Chisel Set, F3 Forge Tongs + Limited Vase, F4 Hammer + Kiln Brick, F6 Ingot Mold, F7 Grinding Wheel.",
+  "note": "Each feature is given its own seeded items where it mutates stock, because features share one database and a purchase in one would otherwise move another's numbers. Items reserved per feature: F2 Coffee Grinder, F3 Espresso Machine + Mirrorless Camera, F4 Headphones + Laptop Stand, F6 Induction Cooktop, F7 Gaming Mouse. Panels are closed after use and items are reached via search, because the storefront shows only the top ten and earlier features change that ranking.",
   "features": [
     {
       "id": 1,
       "name": "Accounts",
-      "actors": ["shopper", "impostor"],
+      "actors": [
+        "shopper",
+        "impostor"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "shopper", "name": "ann" }
+        {
+          "do": "signUp",
+          "actor": "shopper",
+          "name": "ann"
+        }
       ],
       "note": "The refusals are attempted by a second, signed-out actor: a client that is already signed in has no sign-up form to submit, so re-using one actor would test nothing.",
       "criteria": [
@@ -19,7 +26,13 @@
           "desc": "a visitor can create an account and is signed in as it",
           "points": 1,
           "steps": [
-            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "ann", "within": 6000 }
+            {
+              "do": "expect",
+              "actor": "shopper",
+              "testid": "current-user",
+              "contains": "ann",
+              "within": 6000
+            }
           ]
         },
         {
@@ -27,9 +40,25 @@
           "desc": "a taken username is refused and does not sign the visitor in as the existing account",
           "points": 1,
           "steps": [
-            { "do": "signUp", "actor": "impostor", "name": "ann", "password": "different-pw", "expectFailure": true },
-            { "do": "expect", "actor": "impostor", "testid": "auth-error", "within": 6000 },
-            { "do": "expect", "actor": "impostor", "testid": "current-user", "absent": true }
+            {
+              "do": "signUp",
+              "actor": "impostor",
+              "name": "ann",
+              "password": "different-pw",
+              "expectFailure": true
+            },
+            {
+              "do": "expect",
+              "actor": "impostor",
+              "testid": "auth-error",
+              "within": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "impostor",
+              "testid": "current-user",
+              "absent": true
+            }
           ]
         },
         {
@@ -37,9 +66,25 @@
           "desc": "a wrong password is refused",
           "points": 1,
           "steps": [
-            { "do": "signIn", "actor": "impostor", "name": "ann", "password": "wrong-pw", "expectFailure": true },
-            { "do": "expect", "actor": "impostor", "testid": "auth-error", "within": 6000 },
-            { "do": "expect", "actor": "impostor", "testid": "current-user", "absent": true }
+            {
+              "do": "signIn",
+              "actor": "impostor",
+              "name": "ann",
+              "password": "wrong-pw",
+              "expectFailure": true
+            },
+            {
+              "do": "expect",
+              "actor": "impostor",
+              "testid": "auth-error",
+              "within": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "impostor",
+              "testid": "current-user",
+              "absent": true
+            }
           ]
         },
         {
@@ -47,10 +92,29 @@
           "desc": "signing out and back in returns the same account",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "shopper", "testid": "signout" },
-            { "do": "expect", "actor": "shopper", "testid": "signup-username", "within": 6000 },
-            { "do": "signIn", "actor": "shopper", "name": "ann" },
-            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "ann", "within": 6000 }
+            {
+              "do": "click",
+              "actor": "shopper",
+              "testid": "signout"
+            },
+            {
+              "do": "expect",
+              "actor": "shopper",
+              "testid": "signup-username",
+              "within": 6000
+            },
+            {
+              "do": "signIn",
+              "actor": "shopper",
+              "name": "ann"
+            },
+            {
+              "do": "expect",
+              "actor": "shopper",
+              "testid": "current-user",
+              "contains": "ann",
+              "within": 6000
+            }
           ]
         },
         {
@@ -58,19 +122,35 @@
           "desc": "the session survives a reload",
           "points": 1,
           "steps": [
-            { "do": "reload", "actor": "shopper", "settleMs": 4000 },
-            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "ann", "within": 6000 }
+            {
+              "do": "reload",
+              "actor": "shopper",
+              "settleMs": 4000
+            },
+            {
+              "do": "expect",
+              "actor": "shopper",
+              "testid": "current-user",
+              "contains": "ann",
+              "within": 6000
+            }
           ]
         }
       ]
     },
-
     {
       "id": 2,
       "name": "Storefront is public and live",
-      "actors": ["buyer", "visitor"],
+      "actors": [
+        "buyer",
+        "visitor"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "buyer", "name": "dov" }
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "dov"
+        }
       ],
       "criteria": [
         {
@@ -78,9 +158,31 @@
           "desc": "a signed-out visitor sees the catalogue with prices and stock",
           "points": 1,
           "steps": [
-            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Anvil" },
-            { "do": "expect", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Anvil" } },
-            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Anvil" }, "atLeast": 1 }
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "item-card",
+              "contains": "Air Purifier"
+            },
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "item-price",
+              "in": {
+                "testid": "item-card",
+                "contains": "Air Purifier"
+              }
+            },
+            {
+              "do": "expectNumber",
+              "actor": "visitor",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Air Purifier"
+              },
+              "atLeast": 1
+            }
           ]
         },
         {
@@ -88,10 +190,31 @@
           "desc": "the storefront shows ten items, alphabetically while nothing has been bought",
           "points": 1,
           "steps": [
-            { "do": "expect", "actor": "visitor", "testid": "item-card", "count": 10 },
-            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Anvil" },
-            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Kiln Brick" },
-            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Limited Vase", "absent": true }
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "item-card",
+              "count": 10
+            },
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "item-card",
+              "contains": "Air Purifier"
+            },
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "item-card",
+              "contains": "Laptop Stand"
+            },
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "item-card",
+              "contains": "Mirrorless Camera",
+              "absent": true
+            }
           ]
         },
         {
@@ -99,10 +222,42 @@
           "desc": "a purchase moves the bought item to the front of the ranking, live",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Chisel Set" } },
-            { "do": "wait", "actor": "visitor", "ms": 2500 },
-            { "do": "expect", "actor": "visitor", "testid": "item-name", "in": { "testid": "item-list" }, "contains": "Chisel Set" },
-            { "do": "expectAgreement", "actors": ["buyer", "visitor"], "testid": "item-stock", "in": { "testid": "item-card", "contains": "Chisel Set" }, "numeric": true }
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Coffee Grinder"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "visitor",
+              "ms": 2500
+            },
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "item-name",
+              "in": {
+                "testid": "item-list"
+              },
+              "contains": "Coffee Grinder"
+            },
+            {
+              "do": "expectAgreement",
+              "actors": [
+                "buyer",
+                "visitor"
+              ],
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Coffee Grinder"
+              },
+              "numeric": true
+            }
           ]
         },
         {
@@ -110,20 +265,46 @@
           "desc": "search finds an item that is not on the storefront",
           "points": 1,
           "steps": [
-            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Vase", "enter": true, "settleMs": 1500 },
-            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Limited Vase", "in": { "testid": "search-results" } }
+            {
+              "do": "fill",
+              "actor": "visitor",
+              "testid": "search-input",
+              "text": "Mirrorless",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "item-card",
+              "contains": "Mirrorless Camera",
+              "in": {
+                "testid": "search-results"
+              }
+            }
           ]
         }
       ]
     },
-
     {
       "id": 3,
       "name": "Buying",
-      "actors": ["buyer", "watcher", "visitor"],
+      "actors": [
+        "buyer",
+        "watcher",
+        "visitor"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "buyer", "name": "eli" },
-        { "do": "signUp", "actor": "watcher", "name": "fay" }
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "eli"
+        },
+        {
+          "do": "signUp",
+          "actor": "watcher",
+          "name": "fay"
+        }
       ],
       "criteria": [
         {
@@ -131,8 +312,18 @@
           "desc": "a signed-out visitor is offered no way to buy",
           "points": 1,
           "steps": [
-            { "do": "expect", "actor": "visitor", "testid": "buy-now", "absent": true },
-            { "do": "expect", "actor": "visitor", "testid": "add-to-cart", "absent": true }
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "buy-now",
+              "absent": true
+            },
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "add-to-cart",
+              "absent": true
+            }
           ]
         },
         {
@@ -140,10 +331,45 @@
           "desc": "buying reduces the stock every other client sees, without a reload",
           "points": 2,
           "steps": [
-            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Forge Tongs" }, "equals": 100 },
-            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Forge Tongs" } },
-            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Forge Tongs" }, "equals": 99 },
-            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Forge Tongs" }, "equals": 99 }
+            {
+              "do": "expectNumber",
+              "actor": "watcher",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Espresso Machine"
+              },
+              "equals": 100
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Espresso Machine"
+              }
+            },
+            {
+              "do": "expectNumber",
+              "actor": "watcher",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Espresso Machine"
+              },
+              "equals": 99
+            },
+            {
+              "do": "expectNumber",
+              "actor": "visitor",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Espresso Machine"
+              },
+              "equals": 99
+            }
           ]
         },
         {
@@ -151,38 +377,196 @@
           "desc": "the purchase is recorded in the buyer's order history at the price paid",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Forge Tongs" } },
-            { "do": "click", "actor": "buyer", "testid": "orders-toggle" },
-            { "do": "expect", "actor": "buyer", "testid": "order-item", "contains": "Forge Tongs" },
-            { "do": "expectNumber", "actor": "buyer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Forge Tongs" }, "atLeast": 27.5 }
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Espresso Machine"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "buyer",
+              "testid": "order-item",
+              "contains": "Espresso Machine"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "buyer",
+              "testid": "order-total",
+              "in": {
+                "testid": "order-item",
+                "contains": "Espresso Machine"
+              },
+              "atLeast": 449
+            },
+            {
+              "do": "pressKey",
+              "actor": "buyer",
+              "key": "Escape",
+              "settleMs": 800
+            }
           ]
         },
         {
           "id": "3d",
-          "desc": "an item can be bought down to zero and then refused",
+          "desc": "an item sells out visibly, and a checkout exceeding stock is refused and changes nothing",
           "points": 2,
           "steps": [
-            { "do": "fill", "actor": "buyer", "testid": "search-input", "text": "Limited Vase", "enter": true, "settleMs": 1500 },
-            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Limited Vase" } },
-            { "do": "wait", "actor": "buyer", "ms": 800 },
-            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Limited Vase" } },
-            { "do": "wait", "actor": "buyer", "ms": 800 },
-            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Limited Vase" } },
-            { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Limited Vase" }, "equals": 0 },
-            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Limited Vase" } },
-            { "do": "expect", "actor": "buyer", "testid": "buy-error" },
-            { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Limited Vase" }, "equals": 0 }
+            {
+              "do": "fill",
+              "actor": "buyer",
+              "testid": "search-input",
+              "text": "Mirrorless Camera",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Mirrorless Camera"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "buyer",
+              "ms": 800
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Mirrorless Camera"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "buyer",
+              "ms": 800
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Mirrorless Camera"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "buyer",
+              "ms": 800
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Mirrorless Camera"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "buyer",
+              "ms": 800
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Mirrorless Camera"
+              }
+            },
+            {
+              "do": "expectNumber",
+              "actor": "buyer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Mirrorless Camera"
+              },
+              "equals": 0
+            },
+            {
+              "do": "expect",
+              "actor": "buyer",
+              "testid": "out-of-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Mirrorless Camera"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "cart-toggle"
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "checkout-submit"
+            },
+            {
+              "do": "expect",
+              "actor": "buyer",
+              "testid": "buy-error",
+              "within": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "buyer",
+              "testid": "cart-item",
+              "contains": "Mirrorless Camera"
+            },
+            {
+              "do": "pressKey",
+              "actor": "buyer",
+              "key": "Escape",
+              "settleMs": 800
+            },
+            {
+              "do": "expectNumber",
+              "actor": "buyer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Mirrorless Camera"
+              },
+              "equals": 0
+            }
           ]
         }
       ]
     },
-
     {
       "id": 4,
       "name": "Cart belongs to the account",
-      "actors": ["tab1", "tab2"],
+      "actors": [
+        "tab1",
+        "tab2"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "tab1", "name": "gus" }
+        {
+          "do": "signUp",
+          "actor": "tab1",
+          "name": "gus"
+        }
       ],
       "criteria": [
         {
@@ -190,12 +574,57 @@
           "desc": "adding the same item twice raises its quantity instead of adding a second line",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "tab1", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Hammer" } },
-            { "do": "wait", "actor": "tab1", "ms": 800 },
-            { "do": "click", "actor": "tab1", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Hammer" } },
-            { "do": "click", "actor": "tab1", "testid": "cart-toggle" },
-            { "do": "expect", "actor": "tab1", "testid": "cart-item", "contains": "Hammer", "count": 1 },
-            { "do": "expectNumber", "actor": "tab1", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Hammer" }, "equals": 2 }
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Headphones"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "tab1",
+              "ms": 800
+            },
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Headphones"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "cart-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "tab1",
+              "testid": "cart-item",
+              "contains": "Headphones",
+              "count": 1
+            },
+            {
+              "do": "expectNumber",
+              "actor": "tab1",
+              "testid": "cart-quantity",
+              "in": {
+                "testid": "cart-item",
+                "contains": "Headphones"
+              },
+              "equals": 2
+            },
+            {
+              "do": "pressKey",
+              "actor": "tab1",
+              "key": "Escape",
+              "settleMs": 800
+            }
           ]
         },
         {
@@ -203,10 +632,39 @@
           "desc": "the cart survives a reload",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "tab1", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Kiln Brick" } },
-            { "do": "reload", "actor": "tab1", "settleMs": 4000 },
-            { "do": "click", "actor": "tab1", "testid": "cart-toggle" },
-            { "do": "expect", "actor": "tab1", "testid": "cart-item", "contains": "Kiln Brick" }
+            {
+              "do": "fill",
+              "actor": "tab1",
+              "testid": "search-input",
+              "text": "Laptop Stand",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Laptop Stand"
+              }
+            },
+            {
+              "do": "reload",
+              "actor": "tab1",
+              "settleMs": 4000
+            },
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "cart-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "tab1",
+              "testid": "cart-item",
+              "contains": "Laptop Stand"
+            }
           ]
         },
         {
@@ -214,11 +672,46 @@
           "desc": "the same account signed in elsewhere sees one cart, live",
           "points": 2,
           "steps": [
-            { "do": "signIn", "actor": "tab2", "name": "gus" },
-            { "do": "click", "actor": "tab2", "testid": "cart-toggle" },
-            { "do": "expect", "actor": "tab2", "testid": "cart-item", "contains": "Kiln Brick" },
-            { "do": "click", "actor": "tab1", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Ingot Mold" } },
-            { "do": "expect", "actor": "tab2", "testid": "cart-item", "contains": "Ingot Mold", "within": 10000 }
+            {
+              "do": "signIn",
+              "actor": "tab2",
+              "name": "gus"
+            },
+            {
+              "do": "click",
+              "actor": "tab2",
+              "testid": "cart-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "tab2",
+              "testid": "cart-item",
+              "contains": "Laptop Stand"
+            },
+            {
+              "do": "fill",
+              "actor": "tab1",
+              "testid": "search-input",
+              "text": "Induction Cooktop",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Induction Cooktop"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "tab2",
+              "testid": "cart-item",
+              "contains": "Induction Cooktop",
+              "within": 10000
+            }
           ]
         },
         {
@@ -226,26 +719,104 @@
           "desc": "checkout creates one order, reduces stock and empties the cart",
           "points": 2,
           "steps": [
-            { "do": "click", "actor": "tab1", "testid": "cart-toggle" },
-            { "do": "click", "actor": "tab1", "testid": "checkout-submit" },
-            { "do": "wait", "actor": "tab1", "ms": 2000 },
-            { "do": "click", "actor": "tab1", "testid": "orders-toggle" },
-            { "do": "expect", "actor": "tab1", "testid": "order-item", "contains": "Hammer" },
-            { "do": "expectNumber", "actor": "tab1", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Hammer" }, "equals": 98 },
-            { "do": "click", "actor": "tab1", "testid": "cart-toggle" },
-            { "do": "expect", "actor": "tab1", "testid": "empty-cart" }
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "cart-toggle"
+            },
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "checkout-submit"
+            },
+            {
+              "do": "wait",
+              "actor": "tab1",
+              "ms": 2000
+            },
+            {
+              "do": "expect",
+              "actor": "tab1",
+              "testid": "empty-cart"
+            },
+            {
+              "do": "pressKey",
+              "actor": "tab1",
+              "key": "Escape",
+              "settleMs": 800
+            },
+            {
+              "do": "expectNumber",
+              "actor": "tab1",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Headphones"
+              },
+              "equals": 98
+            },
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "tab1",
+              "testid": "order-item",
+              "contains": "Headphones"
+            }
           ]
         }
       ]
     },
-
     {
       "id": 6,
       "name": "Reviews",
-      "actors": ["author", "other", "visitor"],
+      "actors": [
+        "author",
+        "other",
+        "visitor"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "author", "name": "hal" },
-        { "do": "signUp", "actor": "other", "name": "ivy" }
+        {
+          "do": "signUp",
+          "actor": "author",
+          "name": "hal"
+        },
+        {
+          "do": "signUp",
+          "actor": "other",
+          "name": "ivy"
+        },
+        {
+          "do": "click",
+          "actor": "author",
+          "testid": "buy-now",
+          "in": {
+            "testid": "item-card",
+            "contains": "Induction Cooktop"
+          }
+        },
+        {
+          "do": "wait",
+          "actor": "author",
+          "ms": 800
+        },
+        {
+          "do": "click",
+          "actor": "other",
+          "testid": "buy-now",
+          "in": {
+            "testid": "item-card",
+            "contains": "Induction Cooktop"
+          }
+        },
+        {
+          "do": "wait",
+          "actor": "other",
+          "ms": 800
+        }
       ],
       "criteria": [
         {
@@ -253,13 +824,62 @@
           "desc": "a customer can review an item and everyone sees it, signed out included",
           "points": 2,
           "steps": [
-            { "do": "click", "actor": "author", "testid": "item-name", "in": { "testid": "item-card", "contains": "Ingot Mold" } },
-            { "do": "fill", "actor": "author", "testid": "review-rating", "text": "4" },
-            { "do": "fill", "actor": "author", "testid": "review-input", "text": "solid mold" },
-            { "do": "click", "actor": "author", "testid": "review-submit" },
-            { "do": "expect", "actor": "author", "testid": "review-item", "contains": "solid mold" },
-            { "do": "click", "actor": "visitor", "testid": "item-name", "in": { "testid": "item-card", "contains": "Ingot Mold" } },
-            { "do": "expect", "actor": "visitor", "testid": "review-item", "contains": "solid mold", "within": 10000 }
+            {
+              "do": "fill",
+              "actor": "author",
+              "testid": "search-input",
+              "text": "Induction Cooktop",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "author",
+              "testid": "item-name",
+              "in": {
+                "testid": "item-card",
+                "contains": "Induction Cooktop"
+              }
+            },
+            {
+              "do": "fill",
+              "actor": "author",
+              "testid": "review-rating",
+              "text": "4"
+            },
+            {
+              "do": "fill",
+              "actor": "author",
+              "testid": "review-input",
+              "text": "solid mold"
+            },
+            {
+              "do": "click",
+              "actor": "author",
+              "testid": "review-submit"
+            },
+            {
+              "do": "expect",
+              "actor": "author",
+              "testid": "review-item",
+              "contains": "solid mold"
+            },
+            {
+              "do": "click",
+              "actor": "visitor",
+              "testid": "item-name",
+              "in": {
+                "testid": "item-card",
+                "contains": "Induction Cooktop"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "review-item",
+              "contains": "solid mold",
+              "within": 10000
+            }
           ]
         },
         {
@@ -267,11 +887,35 @@
           "desc": "one review per customer per item — a second does not add a duplicate",
           "points": 1,
           "steps": [
-            { "do": "fill", "actor": "author", "testid": "review-rating", "text": "2" },
-            { "do": "fill", "actor": "author", "testid": "review-input", "text": "changed my mind" },
-            { "do": "click", "actor": "author", "testid": "review-submit" },
-            { "do": "wait", "actor": "author", "ms": 2000 },
-            { "do": "expect", "actor": "author", "testid": "review-item", "contains": "solid mold", "absent": true }
+            {
+              "do": "fill",
+              "actor": "author",
+              "testid": "review-rating",
+              "text": "2"
+            },
+            {
+              "do": "fill",
+              "actor": "author",
+              "testid": "review-input",
+              "text": "changed my mind"
+            },
+            {
+              "do": "click",
+              "actor": "author",
+              "testid": "review-submit"
+            },
+            {
+              "do": "wait",
+              "actor": "author",
+              "ms": 2000
+            },
+            {
+              "do": "expect",
+              "actor": "author",
+              "testid": "review-item",
+              "contains": "solid mold",
+              "absent": true
+            }
           ]
         },
         {
@@ -279,24 +923,82 @@
           "desc": "the average rating reflects both reviewers, live",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "other", "testid": "item-name", "in": { "testid": "item-card", "contains": "Ingot Mold" } },
-            { "do": "fill", "actor": "other", "testid": "review-rating", "text": "4" },
-            { "do": "fill", "actor": "other", "testid": "review-input", "text": "does the job" },
-            { "do": "click", "actor": "other", "testid": "review-submit" },
-            { "do": "expectNumber", "actor": "other", "testid": "review-average", "equals": 3, "within": 10000 },
-            { "do": "expectAgreement", "actors": ["author", "other"], "testid": "review-average", "numeric": true }
+            {
+              "do": "fill",
+              "actor": "other",
+              "testid": "search-input",
+              "text": "Induction Cooktop",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "other",
+              "testid": "item-name",
+              "in": {
+                "testid": "item-card",
+                "contains": "Induction Cooktop"
+              }
+            },
+            {
+              "do": "fill",
+              "actor": "other",
+              "testid": "review-rating",
+              "text": "4"
+            },
+            {
+              "do": "fill",
+              "actor": "other",
+              "testid": "review-input",
+              "text": "does the job"
+            },
+            {
+              "do": "click",
+              "actor": "other",
+              "testid": "review-submit"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "other",
+              "testid": "review-average",
+              "equals": 3,
+              "within": 10000
+            },
+            {
+              "do": "expectAgreement",
+              "actors": [
+                "author",
+                "other"
+              ],
+              "testid": "review-average",
+              "numeric": true
+            }
           ]
         }
-      ]
+      ],
+      "note": "Both reviewers buy the item in setup: reviews are gated on a purchase, so an unpurchased reviewer would be refused by a compliant app."
     },
-
     {
       "id": 7,
       "name": "Admin and warehouses",
-      "actors": ["admin", "customer", "visitor"],
+      "actors": [
+        "admin",
+        "customer",
+        "visitor"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "customer", "name": "jon" },
-        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "jon"
+        },
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        }
       ],
       "criteria": [
         {
@@ -304,9 +1006,23 @@
           "desc": "the admin area is for admins only",
           "points": 1,
           "steps": [
-            { "do": "expect", "actor": "admin", "testid": "admin-link" },
-            { "do": "expect", "actor": "customer", "testid": "admin-link", "absent": true },
-            { "do": "expect", "actor": "customer", "testid": "admin-panel", "absent": true }
+            {
+              "do": "expect",
+              "actor": "admin",
+              "testid": "admin-link"
+            },
+            {
+              "do": "expect",
+              "actor": "customer",
+              "testid": "admin-link",
+              "absent": true
+            },
+            {
+              "do": "expect",
+              "actor": "customer",
+              "testid": "admin-panel",
+              "absent": true
+            }
           ]
         },
         {
@@ -314,11 +1030,39 @@
           "desc": "admin lists every item, every warehouse, and what each warehouse holds",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "admin", "testid": "admin-link" },
-            { "do": "expect", "actor": "admin", "testid": "admin-item-row", "count": 12 },
-            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "East" },
-            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "West" },
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Grinding Wheel" }, "equals": 100 }
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "admin-link"
+            },
+            {
+              "do": "expect",
+              "actor": "admin",
+              "testid": "admin-item-row",
+              "count": 12
+            },
+            {
+              "do": "expect",
+              "actor": "admin",
+              "testid": "admin-warehouse-item",
+              "contains": "East"
+            },
+            {
+              "do": "expect",
+              "actor": "admin",
+              "testid": "admin-warehouse-item",
+              "contains": "West"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-stock",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Gaming Mouse"
+              },
+              "equals": 100
+            }
           ]
         },
         {
@@ -326,11 +1070,70 @@
           "desc": "the storefront stock is the sum across warehouses, and a restock raises it live",
           "points": 2,
           "steps": [
-            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Grinding Wheel" }, "equals": 100 },
-            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "25", "in": { "testid": "admin-location-row", "contains": "Grinding Wheel" } },
-            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Grinding Wheel" } },
-            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Grinding Wheel" }, "equals": 125, "within": 10000 },
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Grinding Wheel" }, "equals": 125 }
+            {
+              "do": "pressKey",
+              "actor": "visitor",
+              "key": "Escape",
+              "settleMs": 800
+            },
+            {
+              "do": "fill",
+              "actor": "visitor",
+              "testid": "search-input",
+              "text": "Gaming Mouse",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "expectNumber",
+              "actor": "visitor",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Gaming Mouse"
+              },
+              "equals": 100
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "restock-input",
+              "text": "25",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Gaming Mouse"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "restock-submit",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Gaming Mouse"
+              }
+            },
+            {
+              "do": "expectNumber",
+              "actor": "visitor",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Gaming Mouse"
+              },
+              "equals": 125,
+              "within": 10000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-stock",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Gaming Mouse"
+              },
+              "equals": 125
+            }
           ]
         }
       ]

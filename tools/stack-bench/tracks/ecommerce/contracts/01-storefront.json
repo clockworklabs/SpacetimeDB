@@ -149,7 +149,7 @@
     },
     {
       "id": "review-rating",
-      "element": "the input choosing a rating from 1 to 5 for a new review",
+      "element": "the form control choosing a rating from 1 to 5 — an input or a select, so it can be driven by automation",
       "stage": "item",
       "check": "visible"
     },
@@ -303,7 +303,7 @@
       "element": "the visible error shown when a review is refused",
       "stage": "scenario",
       "check": "visible",
-      "note": "appears if a second review of the same item is rejected rather than updating the first"
+      "note": "appears when reviewing an item the customer has never bought; also if a second review is rejected rather than updating the first"
     },
     {
       "id": "out-of-stock",

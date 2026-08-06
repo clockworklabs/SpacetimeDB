@@ -38,7 +38,7 @@ Rules:
 | `orders-toggle` | control that opens the customer's order history |
 | `search-results` | the container holding search results; its item cards carry the same hooks as the storefront's |
 | `item-detail` | the panel or page showing one item, opened from its card |
-| `review-rating` | the input choosing a rating from 1 to 5 for a new review |
+| `review-rating` | the form control choosing a rating from 1 to 5 — an input or a select, so it can be driven by automation |
 | `review-input` | the text input for a new review's comment |
 | `review-submit` | button that submits the review |
 | `review-average` | the item's average rating as a number |
@@ -62,7 +62,7 @@ Rules:
 | `admin-revenue` | total revenue across all orders, as a number |
 | `buy-error` | appears when buying an out-of-stock item, or checking out more than is available |
 | `auth-error` | appears on a taken username or a wrong password |
-| `review-error` | appears if a second review of the same item is rejected rather than updating the first |
+| `review-error` | appears when reviewing an item the customer has never bought; also if a second review is rejected rather than updating the first |
 | `out-of-stock` | appears once an item's stock reaches zero, without a reload |
 | `empty-cart` | shown before anything is added, and again after checkout empties the cart |
 | `cart-remove` | checked with a populated cart by the feature suite |

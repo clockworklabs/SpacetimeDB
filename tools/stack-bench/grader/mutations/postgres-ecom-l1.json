@@ -1,0 +1,45 @@
+{
+  "note": "Defects injected into the generated PostgreSQL shop to prove the ecommerce contention criteria can actually fail. A criterion in tracks/ecommerce/scenarios/01-contention.json stays at zero points until it CATCHES its mutant here and still passes on the unmutated build. Anchors are specific to this app; regenerate for another. NOTE: breaks must be the numeric FEATURE id — mutation-test.mjs indexes per-feature scores; a criterion id silently resolves to undefined and every mutant reads as SURVIVED.",
+  "mutations": [
+    {
+      "id": "oversell-no-row-lock",
+      "desc": "Drop FOR UPDATE from the stock read in the purchase transaction, so concurrent buyers each see the same pre-decrement quantity, both pass the availability check, and the shelf goes below zero or sells the last unit twice",
+      "breaks": 201,
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "`SELECT id, quantity FROM item_stock WHERE item_id = $1 ORDER BY warehouse_id FOR UPDATE`",
+          "replace": "`SELECT id, quantity FROM item_stock WHERE item_id = $1 ORDER BY warehouse_id`"
+        }
+      ],
+      "breaksCriterion": "201a"
+    },
+    {
+      "id": "restock-lost-update",
+      "desc": "DISCARDED — EQUIVALENT MUTANT. Rewriting `quantity = quantity + N` as a subselect against the same row is semantically identical in PostgreSQL: both read the row's current version under the statement's snapshot, so nothing observable changes. It proved nothing, and an equivalent mutant is indistinguishable from an oracle hole. A real lost update needs the read and the write split across two statements with the value carried in application memory.",
+      "breaks": 202,
+      "disabled": true,
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "`UPDATE item_stock SET quantity = quantity + $1 WHERE item_id = $2 AND warehouse_id = $3",
+          "replace": "`UPDATE item_stock SET quantity = (SELECT quantity FROM item_stock s WHERE s.item_id = $2 AND s.warehouse_id = $3) + $1 WHERE item_id = $2 AND warehouse_id = $3"
+        }
+      ],
+      "breaksCriterion": "202a"
+    },
+    {
+      "id": "checkout-not-idempotent",
+      "desc": "Drop FOR UPDATE from the cart read at checkout, so two simultaneous checkouts of one cart both see its lines and each create an order",
+      "breaks": 203,
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "`SELECT item_id as \"itemId\", quantity FROM cart_items WHERE user_id = $1 ORDER BY item_id FOR UPDATE`",
+          "replace": "`SELECT item_id as \"itemId\", quantity FROM cart_items WHERE user_id = $1 ORDER BY item_id`"
+        }
+      ],
+      "breaksCriterion": "203b"
+    }
+  ]
+}

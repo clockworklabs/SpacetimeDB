@@ -3,14 +3,21 @@
   "track": "ecommerce",
   "name": "Storefront and warehouse — invariants",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "Cross-cutting properties, scored separately from features because an app can implement every feature and still let anyone spend anyone else's money. Each is stated as an outcome a customer would recognise, not as a protocol detail — a backend must not lose points for being harder to inspect, nor gain them for it.",
+  "note": "Cross-cutting properties, scored separately from features because an app can implement every feature and still let anyone spend anyone else's money. Each is stated as an outcome a customer would recognise, not as a protocol detail — a backend must not lose points for being harder to inspect, nor gain them for it. 108 and 109 cover what a customer may assert about things that are not theirs: a rating is a claim about a purchase, and a cart belongs to exactly one account.",
   "features": [
     {
       "id": 101,
       "name": "Purchase requires an account",
-      "actors": ["buyer", "guest"],
+      "actors": [
+        "buyer",
+        "guest"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "buyer", "name": "kim" }
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "kim"
+        }
       ],
       "criteria": [
         {
@@ -18,24 +25,73 @@
           "desc": "a purchase request replayed without a session creates no order and moves no stock",
           "points": 2,
           "steps": [
-            { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bellows" }, "equals": 100 },
-            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bellows" } },
-            { "do": "wait", "actor": "buyer", "ms": 1500 },
-            { "do": "replayAs", "actor": "guest", "from": "buyer", "match": "buy", "settleMs": 2500 },
-            { "do": "expectReplayRejected", "actor": "guest" },
-            { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bellows" }, "equals": 99 }
+            {
+              "do": "expectNumber",
+              "actor": "buyer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
+              "equals": 100
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "buyer",
+              "ms": 1500
+            },
+            {
+              "do": "replayAs",
+              "actor": "guest",
+              "from": "buyer",
+              "match": "buy",
+              "settleMs": 2500
+            },
+            {
+              "do": "expectReplayRejected",
+              "actor": "guest"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "buyer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
+              "equals": 99
+            }
           ]
         }
       ]
     },
-
     {
       "id": 102,
       "name": "Purchases are attributed to whoever made them",
-      "actors": ["victim", "attacker"],
+      "actors": [
+        "victim",
+        "attacker"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "victim", "name": "lee" },
-        { "do": "signUp", "actor": "attacker", "name": "mel" }
+        {
+          "do": "signUp",
+          "actor": "victim",
+          "name": "lee"
+        },
+        {
+          "do": "signUp",
+          "actor": "attacker",
+          "name": "mel"
+        }
       ],
       "criteria": [
         {
@@ -43,24 +99,66 @@
           "desc": "an order cannot be placed in someone else's name by editing the request",
           "points": 2,
           "steps": [
-            { "do": "click", "actor": "attacker", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Drill Press" } },
-            { "do": "wait", "actor": "attacker", "ms": 1500 },
-            { "do": "forgeWrite", "actor": "attacker", "fromActor": "victim", "settleMs": 2500 },
-            { "do": "expectForgeryRejected", "actor": "attacker" },
-            { "do": "click", "actor": "victim", "testid": "orders-toggle" },
-            { "do": "expect", "actor": "victim", "testid": "order-item", "contains": "Drill Press", "absent": true }
+            {
+              "do": "click",
+              "actor": "attacker",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Desk Lamp"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "attacker",
+              "ms": 1500
+            },
+            {
+              "do": "forgeWrite",
+              "actor": "attacker",
+              "fromActor": "victim",
+              "settleMs": 2500
+            },
+            {
+              "do": "expectForgeryRejected",
+              "actor": "attacker"
+            },
+            {
+              "do": "click",
+              "actor": "victim",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "victim",
+              "testid": "order-item",
+              "contains": "Desk Lamp",
+              "absent": true
+            }
           ]
         }
       ]
     },
-
     {
       "id": 103,
       "name": "Stock is administered by admins only",
-      "actors": ["admin", "customer"],
+      "actors": [
+        "admin",
+        "customer"
+      ],
       "setup": [
-        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-        { "do": "signUp", "actor": "customer", "name": "ned" }
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "ned"
+        }
       ],
       "criteria": [
         {
@@ -68,25 +166,89 @@
           "desc": "a restock replayed by a customer is refused and changes no stock",
           "points": 2,
           "steps": [
-            { "do": "click", "actor": "admin", "testid": "admin-link" },
-            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "10", "in": { "testid": "admin-location-row", "contains": "Anvil" } },
-            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Anvil" } },
-            { "do": "wait", "actor": "admin", "ms": 2000 },
-            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Anvil" }, "as": "anvil-after-admin-restock" },
-            { "do": "replayAs", "actor": "customer", "from": "admin", "match": "restock", "settleMs": 2500 },
-            { "do": "expectReplayRejected", "actor": "customer" },
-            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Anvil" }, "relativeTo": "anvil-after-admin-restock", "plus": 0 }
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "admin-link"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "restock-input",
+              "text": "10",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Air Purifier"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "restock-submit",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Air Purifier"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "admin",
+              "ms": 2000
+            },
+            {
+              "do": "pressKey",
+              "actor": "customer",
+              "key": "Escape",
+              "settleMs": 800
+            },
+            {
+              "do": "recordNumber",
+              "actor": "customer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Air Purifier"
+              },
+              "as": "purifier-after-admin-restock"
+            },
+            {
+              "do": "replayAs",
+              "actor": "customer",
+              "from": "admin",
+              "match": "restock",
+              "settleMs": 2500
+            },
+            {
+              "do": "expectReplayRejected",
+              "actor": "customer"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "customer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Air Purifier"
+              },
+              "relativeTo": "purifier-after-admin-restock",
+              "plus": 0
+            }
           ]
         }
       ]
     },
-
     {
       "id": 104,
       "name": "The price is the store's to set",
-      "actors": ["buyer"],
+      "actors": [
+        "buyer"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "buyer", "name": "oli" }
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "oli"
+        }
       ],
       "criteria": [
         {
@@ -94,23 +256,62 @@
           "desc": "a purchase request with the price edited does not sell the item for less",
           "points": 2,
           "steps": [
-            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Drill Press" } },
-            { "do": "wait", "actor": "buyer", "ms": 1500 },
-            { "do": "replayAs", "actor": "buyer", "from": "buyer", "match": "buy",
-              "swap": { "find": "349", "with": "1" }, "settleMs": 2500 },
-            { "do": "click", "actor": "buyer", "testid": "orders-toggle" },
-            { "do": "expectNumber", "actor": "buyer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Drill Press" }, "atLeast": 349 }
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Espresso Machine"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "buyer",
+              "ms": 1500
+            },
+            {
+              "do": "replayAs",
+              "actor": "buyer",
+              "from": "buyer",
+              "match": "buy",
+              "swap": {
+                "find": "449",
+                "with": "1"
+              },
+              "settleMs": 2500
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "buyer",
+              "testid": "order-total",
+              "in": {
+                "testid": "order-item",
+                "contains": "Espresso Machine"
+              },
+              "atLeast": 449
+            }
           ]
         }
       ]
     },
-
     {
       "id": 105,
       "name": "An account keeps what belongs to it",
-      "actors": ["shopper"],
+      "actors": [
+        "shopper"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "shopper", "name": "pat" }
+        {
+          "do": "signUp",
+          "actor": "shopper",
+          "name": "pat"
+        }
       ],
       "criteria": [
         {
@@ -118,14 +319,57 @@
           "desc": "cart and order history survive a reload as the same account",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Jeweller's Loupe" } },
-            { "do": "click", "actor": "shopper", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Hammer" } },
-            { "do": "reload", "actor": "shopper", "settleMs": 4000 },
-            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "pat" },
-            { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
-            { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Jeweller's Loupe" },
-            { "do": "click", "actor": "shopper", "testid": "orders-toggle" },
-            { "do": "expect", "actor": "shopper", "testid": "order-item", "contains": "Hammer" }
+            {
+              "do": "click",
+              "actor": "shopper",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Keyboard"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "shopper",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Headphones"
+              }
+            },
+            {
+              "do": "reload",
+              "actor": "shopper",
+              "settleMs": 4000
+            },
+            {
+              "do": "expect",
+              "actor": "shopper",
+              "testid": "current-user",
+              "contains": "pat"
+            },
+            {
+              "do": "click",
+              "actor": "shopper",
+              "testid": "cart-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "shopper",
+              "testid": "cart-item",
+              "contains": "Keyboard"
+            },
+            {
+              "do": "click",
+              "actor": "shopper",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "shopper",
+              "testid": "order-item",
+              "contains": "Headphones"
+            }
           ]
         },
         {
@@ -133,23 +377,56 @@
           "desc": "the same account survives the connection dropping and coming back",
           "points": 1,
           "steps": [
-            { "do": "setOffline", "actor": "shopper", "settleMs": 3000 },
-            { "do": "setOffline", "actor": "shopper", "offline": false, "settleMs": 6000 },
-            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "pat" },
-            { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
-            { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Jeweller's Loupe" }
+            {
+              "do": "setOffline",
+              "actor": "shopper",
+              "settleMs": 3000
+            },
+            {
+              "do": "setOffline",
+              "actor": "shopper",
+              "offline": false,
+              "settleMs": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "shopper",
+              "testid": "current-user",
+              "contains": "pat"
+            },
+            {
+              "do": "click",
+              "actor": "shopper",
+              "testid": "cart-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "shopper",
+              "testid": "cart-item",
+              "contains": "Keyboard"
+            }
           ]
         }
       ]
     },
-
     {
       "id": 106,
       "name": "One customer's orders are not another's",
-      "actors": ["one", "two"],
+      "actors": [
+        "one",
+        "two"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "one", "name": "quin" },
-        { "do": "signUp", "actor": "two", "name": "ros" }
+        {
+          "do": "signUp",
+          "actor": "one",
+          "name": "quin"
+        },
+        {
+          "do": "signUp",
+          "actor": "two",
+          "name": "ros"
+        }
       ],
       "criteria": [
         {
@@ -157,22 +434,56 @@
           "desc": "a customer's order history contains only their own orders",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "one", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Chisel Set" } },
-            { "do": "wait", "actor": "one", "ms": 2000 },
-            { "do": "click", "actor": "two", "testid": "orders-toggle" },
-            { "do": "expect", "actor": "two", "testid": "order-item", "contains": "Chisel Set", "absent": true }
+            {
+              "do": "click",
+              "actor": "one",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Coffee Grinder"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "one",
+              "ms": 2000
+            },
+            {
+              "do": "click",
+              "actor": "two",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "two",
+              "testid": "order-item",
+              "contains": "Coffee Grinder",
+              "absent": true
+            }
           ]
         }
       ]
     },
-
     {
       "id": 107,
       "name": "The books balance",
-      "actors": ["buyer", "admin"],
+      "actors": [
+        "buyer",
+        "admin"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "buyer", "name": "sam" },
-        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }
+        {
+          "do": "signUp",
+          "actor": "buyer",
+          "name": "sam"
+        },
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        }
       ],
       "criteria": [
         {
@@ -180,14 +491,69 @@
           "desc": "revenue rises by exactly what was bought",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "admin", "testid": "admin-link" },
-            { "do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "revenue-before" },
-            { "do": "recordNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Kiln Brick" }, "as": "brick-before" },
-            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Kiln Brick" } },
-            { "do": "wait", "actor": "buyer", "ms": 1000 },
-            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Kiln Brick" } },
-            { "do": "wait", "actor": "buyer", "ms": 2000 },
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "revenue-before", "plus": 16, "within": 10000 }
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "admin-link"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "admin-revenue",
+              "as": "revenue-before"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "admin-stock",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Laptop Stand"
+              },
+              "as": "brick-before"
+            },
+            {
+              "do": "pressKey",
+              "actor": "buyer",
+              "key": "Escape",
+              "settleMs": 800
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Laptop Stand"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "buyer",
+              "ms": 1000
+            },
+            {
+              "do": "click",
+              "actor": "buyer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Laptop Stand"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "buyer",
+              "ms": 2000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-revenue",
+              "relativeTo": "revenue-before",
+              "plus": 58,
+              "within": 10000
+            }
           ]
         },
         {
@@ -195,9 +561,269 @@
           "desc": "what the store sold is what left the warehouses, and a fresh client agrees",
           "points": 1,
           "steps": [
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Kiln Brick" }, "relativeTo": "brick-before", "plus": -2 },
-            { "do": "freshClient", "actor": "buyer" },
-            { "do": "expectNumber", "actor": "buyer-fresh", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Kiln Brick" }, "relativeTo": "brick-before", "plus": -2 }
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-stock",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Laptop Stand"
+              },
+              "relativeTo": "brick-before",
+              "plus": -2
+            },
+            {
+              "do": "freshClient",
+              "actor": "buyer"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "buyer-fresh",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Laptop Stand"
+              },
+              "relativeTo": "brick-before",
+              "plus": -2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 108,
+      "name": "A review is a claim about a purchase",
+      "actors": [
+        "owner",
+        "stranger"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "tam"
+        },
+        {
+          "do": "signUp",
+          "actor": "stranger",
+          "name": "uma"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "108a",
+          "desc": "someone who never bought the item cannot review it",
+          "points": 2,
+          "steps": [
+            {
+              "do": "fill",
+              "actor": "stranger",
+              "testid": "search-input",
+              "text": "Webcam",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "stranger",
+              "testid": "item-name",
+              "in": {
+                "testid": "item-card",
+                "contains": "Webcam"
+              }
+            },
+            {
+              "do": "fill",
+              "actor": "stranger",
+              "testid": "review-rating",
+              "text": "5"
+            },
+            {
+              "do": "fill",
+              "actor": "stranger",
+              "testid": "review-input",
+              "text": "never bought this"
+            },
+            {
+              "do": "click",
+              "actor": "stranger",
+              "testid": "review-submit"
+            },
+            {
+              "do": "expect",
+              "actor": "stranger",
+              "testid": "review-error",
+              "within": 6000
+            },
+            {
+              "do": "expect",
+              "actor": "stranger",
+              "testid": "review-item",
+              "contains": "never bought this",
+              "absent": true
+            }
+          ]
+        },
+        {
+          "id": "108b",
+          "desc": "buying the item earns the right to review it",
+          "points": 1,
+          "steps": [
+            {
+              "do": "fill",
+              "actor": "owner",
+              "testid": "search-input",
+              "text": "Webcam",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Webcam"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "owner",
+              "ms": 2000
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "item-name",
+              "in": {
+                "testid": "item-card",
+                "contains": "Webcam"
+              }
+            },
+            {
+              "do": "fill",
+              "actor": "owner",
+              "testid": "review-rating",
+              "text": "4"
+            },
+            {
+              "do": "fill",
+              "actor": "owner",
+              "testid": "review-input",
+              "text": "bought and used it"
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "review-submit"
+            },
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "review-item",
+              "contains": "bought and used it",
+              "within": 8000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 109,
+      "name": "A cart is nobody else’s business",
+      "actors": [
+        "owner",
+        "stranger"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "owner",
+          "name": "vic"
+        },
+        {
+          "do": "signUp",
+          "actor": "stranger",
+          "name": "wes"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "109a",
+          "desc": "one customer’s cart request replayed by another leaves the owner’s cart untouched",
+          "points": 2,
+          "steps": [
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Coffee Grinder"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "owner",
+              "ms": 1500
+            },
+            {
+              "do": "replayAs",
+              "actor": "stranger",
+              "from": "owner",
+              "match": "cart",
+              "settleMs": 2500
+            },
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "cart-toggle"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "owner",
+              "testid": "cart-quantity",
+              "in": {
+                "testid": "cart-item",
+                "contains": "Coffee Grinder"
+              },
+              "equals": 1
+            }
+          ]
+        },
+        {
+          "id": "109b",
+          "desc": "a quantity below one is refused rather than credited",
+          "points": 1,
+          "steps": [
+            {
+              "do": "replayAs",
+              "actor": "owner",
+              "from": "owner",
+              "match": "cart",
+              "swap": {
+                "find": "\"quantity\":1",
+                "with": "\"quantity\":-3"
+              },
+              "settleMs": 2500
+            },
+            {
+              "do": "expectNumber",
+              "actor": "owner",
+              "testid": "cart-total",
+              "atLeast": 0
+            },
+            {
+              "do": "expectNumber",
+              "actor": "owner",
+              "testid": "cart-quantity",
+              "in": {
+                "testid": "cart-item",
+                "contains": "Coffee Grinder"
+              },
+              "atLeast": 1
+            }
           ]
         }
       ]

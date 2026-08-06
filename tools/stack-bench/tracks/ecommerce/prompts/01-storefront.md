@@ -79,6 +79,9 @@ grant access to it.
   add-to-cart action, and the server must refuse a purchase request that arrives
   without a valid session — not merely hide the button.
 - Buying an item **reduces its stock by one for everyone**, immediately
+- A purchase is a **sale, not just a stock movement**: it creates an order for the buyer,
+  visible in their order history, and its price counts towards total revenue — exactly as a
+  checkout does. Stock must never leave a warehouse without a corresponding order.
 - An item with **zero stock cannot be bought**. The attempt fails with a visible error
   and changes nothing.
 - **Stock may never go negative, and two customers must never both get the last unit.**
@@ -102,6 +105,9 @@ grant access to it.
 
 ### Order history
 
+- A cart belongs to one account and **nobody else can read or change it**
+- A cart line's quantity is **at least one**. A request carrying zero or a negative
+  quantity is refused and changes nothing — it must never reduce an order's total.
 - A customer can see **their own past orders**, newest first, each showing its items,
   quantities, the price paid and an order total
 - The price recorded on an order is **the price at the time of purchase** — later price
@@ -110,8 +116,10 @@ grant access to it.
 
 ### Reviews
 
-- A signed-in customer can **write a review** of an item: a rating from 1 to 5 and a
-  short comment
+- A customer can **write a review** of an item **they have bought**. The review form is
+  shown to every signed-in customer, but the **server** refuses a review from someone who
+  has never ordered the item, with a visible error — a rating is a claim about a purchase,
+  and hiding the form is not enforcement.
 - **One review per customer per item.** A second attempt updates their existing review
   rather than adding another.
 - Reviews are visible to everyone, including signed-out visitors
@@ -122,7 +130,8 @@ grant access to it.
 - Admin accounts see an **admin area**; customers do not, and the server must refuse
   admin actions from a non-admin account
 - Admin lists **every item** with its stock, **every warehouse**, and the **stock of
-  each item in each warehouse**
+  each item in each warehouse**. These are live like every other view: a purchase or a
+  restock moves the admin's numbers without a reload.
 - An admin can **restock**: add units of an item to a named warehouse
 - An item's stock on the storefront is the **sum of that item's units across all
   warehouses**. A restock in one warehouse raises the storefront number live, for
@@ -142,25 +151,25 @@ storefront stock is the sum of its two rows:
 
 | Item | Price | East | West |
 |---|---|---|---|
-| Anvil | 45.00 | 60 | 40 |
-| Bellows | 89.50 | 50 | 50 |
-| Chisel Set | 32.00 | 70 | 30 |
-| Drill Press | 349.00 | 55 | 45 |
-| Forge Tongs | 27.50 | 80 | 20 |
-| Grinding Wheel | 64.00 | 50 | 50 |
-| Hammer | 18.00 | 60 | 40 |
-| Ingot Mold | 41.00 | 50 | 50 |
-| Jeweller's Loupe | 22.00 | 70 | 30 |
-| Kiln Brick | 8.00 | 90 | 10 |
-| Limited Vase | 500.00 | 2 | 1 |
-| Miller's Sieve | 15.00 | 60 | 40 |
+| Air Purifier | 189.00 | 60 | 40 |
+| Bluetooth Speaker | 79.50 | 50 | 50 |
+| Coffee Grinder | 64.00 | 70 | 30 |
+| Desk Lamp | 42.00 | 55 | 45 |
+| Espresso Machine | 449.00 | 80 | 20 |
+| Gaming Mouse | 59.00 | 50 | 50 |
+| Headphones | 199.00 | 60 | 40 |
+| Induction Cooktop | 329.00 | 50 | 50 |
+| Keyboard | 89.00 | 70 | 30 |
+| Laptop Stand | 29.00 | 90 | 10 |
+| Mirrorless Camera | 1299.00 | 2 | 1 |
+| Webcam | 69.00 | 60 | 40 |
 
 **Admin account:** username `admin`, password `stackbench-admin-2026`. It is an
 admin; every account created through sign-up is a customer.
 
 No purchases, orders or reviews exist at the start — so every item begins with the
 same purchase count and the storefront's opening order is alphabetical, which means
-`Limited Vase` and `Miller's Sieve` are the two items not on the front page until
+`Mirrorless Camera` and `Webcam` are the two items not on the front page until
 something is bought.
 
 Do not seed this data again if it is already there: restarting the server must not
