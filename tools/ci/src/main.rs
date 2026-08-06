@@ -361,8 +361,6 @@ fn check_codex_plugin_skills_sync() -> Result<()> {
 
 #[derive(Subcommand)]
 enum CiCmd {
-    #[command(hide = true)]
-    CoordinateInternalTests(internal_tests::CoordinateArgs),
     /// Runs tests
     ///
     /// Runs rust tests, codegens csharp sdk and runs csharp tests.
@@ -446,6 +444,8 @@ enum CiCmd {
 
 #[derive(Subcommand)]
 enum OtherWorkflowsCmd {
+    /// Selects or starts the private workflow for a public Internal Tests run.
+    CoordinateInternalTests(internal_tests::CoordinateArgs),
     /// Checks that sensitive CODEOWNERS-controlled files have the required approvals.
     CodeownersCheck {
         /// Git ref to compare against, usually origin/<pull request base branch>.
@@ -465,7 +465,6 @@ enum OtherWorkflowsCmd {
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     let subcmds = Cli::command()
         .get_subcommands()
-        .filter(|subcommand| !subcommand.is_hide_set())
         .map(|sc| sc.get_name().to_string())
         .collect::<Vec<_>>();
 
@@ -569,9 +568,6 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.cmd {
-        Some(CiCmd::CoordinateInternalTests(args)) => {
-            internal_tests::coordinate(args)?;
-        }
         Some(CiCmd::Test) => {
             pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 
@@ -879,6 +875,11 @@ fn main() -> Result<()> {
             check_global_json_policy()?;
         }
 
+        Some(CiCmd::OtherWorkflows {
+            cmd: OtherWorkflowsCmd::CoordinateInternalTests(args),
+        }) => {
+            internal_tests::coordinate(args)?;
+        }
         Some(CiCmd::OtherWorkflows {
             cmd: OtherWorkflowsCmd::CodeownersCheck { base_ref, pr_number },
         }) => {

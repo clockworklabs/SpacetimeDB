@@ -63,7 +63,7 @@ jobs:
           fi
           cargo run --quiet \
             --manifest-path tools/ci/Cargo.toml \
-            -- coordinate-internal-tests "${args[@]}"
+            -- other-workflows coordinate-internal-tests "${args[@]}"
 
       - name: Wait for Internal Tests to complete
         if: steps.filter.outputs.non_docs == 'true'
