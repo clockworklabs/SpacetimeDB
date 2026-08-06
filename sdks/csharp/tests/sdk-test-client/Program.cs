@@ -1105,12 +1105,13 @@ void RunRowDeduplication()
     using var test = ConnectAndSubscribeSql(
         "SELECT * FROM pk_u32 WHERE n < 100",
         "SELECT * FROM pk_u32 WHERE n < 200");
+    var callbacks = new CallbackAssertions();
     var ins24 = Once("insert 24");
     var ins42 = Once("insert 42");
     var del24 = Once("delete 24");
     var upd42 = Once("update 42");
 
-    test.Db.Db.PkU32.OnInsert += (_, row) =>
+    test.Db.Db.PkU32.OnInsert += (_, row) => callbacks.Capture(() =>
     {
         if (row.N == 24)
         {
@@ -1126,21 +1127,21 @@ void RunRowDeduplication()
         {
             throw new Exception($"Unexpected pk_u32 insert {row.N}");
         }
-    };
-    test.Db.Db.PkU32.OnDelete += (_, row) =>
+    });
+    test.Db.Db.PkU32.OnDelete += (_, row) => callbacks.Capture(() =>
     {
         Require(row.N == 24, "Only row 24 should be deleted");
         del24.Invoke();
-    };
-    test.Db.Db.PkU32.OnUpdate += (_, oldRow, newRow) =>
+    });
+    test.Db.Db.PkU32.OnUpdate += (_, oldRow, newRow) => callbacks.Capture(() =>
     {
         Require(oldRow.N == 42 && oldRow.Data == 0xbeef && newRow.N == 42 && newRow.Data == 0xfeeb, "Unexpected pk_u32 update");
         upd42.Invoke();
-    };
+    });
 
     test.Db.Reducers.InsertPkU32(24, 0xbeef);
     test.Db.Reducers.InsertPkU32(42, 0xbeef);
-    test.FrameTickUntil(() => ins24.Done && ins42.Done && del24.Done && upd42.Done);
+    test.FrameTickUntil(callbacks.Until(() => ins24.Done && ins42.Done && del24.Done && upd42.Done));
     Require(test.Db.Db.PkU32.Count == 1, "Deduplicated cache should contain one row");
 }
 
@@ -1149,6 +1150,7 @@ void RunRowDeduplicationJoinRAndS()
     using var test = ConnectAndSubscribeSql(
         "SELECT * FROM pk_u32",
         "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n");
+    var callbacks = new CallbackAssertions();
     var pkInsert = false;
     var pkUpdate = false;
     var uniqueInsert = false;
@@ -1159,25 +1161,25 @@ void RunRowDeduplicationJoinRAndS()
         Require(n == 42 && uniqueData == 0xbeef && pkData == 100, "Unexpected insert_unique_u32_update_pk_u32 args");
         compositeReducerSeen = true;
     };
-    test.Db.Db.PkU32.OnInsert += (_, row) =>
+    test.Db.Db.PkU32.OnInsert += (_, row) => callbacks.Capture(() =>
     {
         Require(row.N == 42 && row.Data == 50, "Unexpected pk_u32 insert");
         pkInsert = true;
         test.Db.Reducers.InsertUniqueU32UpdatePkU32(42, 0xbeef, 100);
-    };
-    test.Db.Db.PkU32.OnUpdate += (_, oldRow, newRow) =>
+    });
+    test.Db.Db.PkU32.OnUpdate += (_, oldRow, newRow) => callbacks.Capture(() =>
     {
         Require(oldRow.N == 42 && oldRow.Data == 50 && newRow.N == 42 && newRow.Data == 100, "Unexpected pk_u32 update");
         pkUpdate = true;
-    };
-    test.Db.Db.UniqueU32.OnInsert += (_, row) =>
+    });
+    test.Db.Db.UniqueU32.OnInsert += (_, row) => callbacks.Capture(() =>
     {
         Require(row.N == 42 && row.Data == 0xbeef, "Unexpected unique_u32 insert");
         uniqueInsert = true;
-    };
-    test.Db.Db.UniqueU32.OnDelete += (_, _) => throw new Exception("unique_u32 should not be deleted");
+    });
+    test.Db.Db.UniqueU32.OnDelete += (_, _) => callbacks.Fail("unique_u32 should not be deleted");
     test.Db.Reducers.InsertPkU32(42, 50);
-    test.FrameTickUntil(() => pkInsert && pkUpdate && uniqueInsert && compositeReducerSeen);
+    test.FrameTickUntil(callbacks.Until(() => pkInsert && pkUpdate && uniqueInsert && compositeReducerSeen));
 }
 
 void RunRowDeduplicationRJoinSAndRJoinT()
@@ -1187,6 +1189,7 @@ void RunRowDeduplicationRJoinSAndRJoinT()
         "SELECT * FROM pk_u32_two",
         "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32 ON unique_u32.n = pk_u32.n",
         "SELECT unique_u32.* FROM unique_u32 JOIN pk_u32_two ON unique_u32.n = pk_u32_two.n");
+    var callbacks = new CallbackAssertions();
     var pkInsert = false;
     var pkDelete = false;
     var pkTwoInsert = false;
@@ -1200,25 +1203,25 @@ void RunRowDeduplicationRJoinSAndRJoinT()
         Require(n == 42 && data == 0xbeef, "Unexpected delete_pk_u32_insert_pk_u32_two args");
         compositeReducerSeen = true;
     };
-    test.Db.Db.PkU32.OnInsert += (_, row) =>
+    test.Db.Db.PkU32.OnInsert += (_, row) => callbacks.Capture(() =>
     {
         Require(row.N == 42 && row.Data == 0xbeef, "Unexpected pk_u32 insert");
         pkInsert = true;
         test.Db.Reducers.DeletePkU32InsertPkU32Two(42, 0xbeef);
-    };
-    test.Db.Db.PkU32.OnDelete += (_, row) =>
+    });
+    test.Db.Db.PkU32.OnDelete += (_, row) => callbacks.Capture(() =>
     {
         Require(row.N == 42 && row.Data == 0xbeef, "Unexpected pk_u32 delete");
         pkDelete = true;
-    };
-    test.Db.Db.PkU32Two.OnInsert += (_, row) =>
+    });
+    test.Db.Db.PkU32Two.OnInsert += (_, row) => callbacks.Capture(() =>
     {
         Require(row.N == 42 && row.Data == 0xbeef, "Unexpected pk_u32_two insert");
         pkTwoInsert = true;
-    };
+    });
     test.Db.Db.UniqueU32.OnInsert += (_, _) => uniqueInserts++;
     test.Db.Reducers.InsertPkU32(42, 0xbeef);
-    test.FrameTickUntil(() => pkInsert && pkDelete && pkTwoInsert && compositeReducerSeen);
+    test.FrameTickUntil(callbacks.Until(() => pkInsert && pkDelete && pkTwoInsert && compositeReducerSeen));
     Require(uniqueInserts == 1, $"Expected exactly one deduplicated unique_u32 insert, got {uniqueInserts}");
 }
 
@@ -1293,6 +1296,7 @@ void RunIntraQueryBagSemanticsForJoin()
     using var test = ConnectAndSubscribeSql(
         "SELECT * FROM btree_u32",
         "SELECT pk_u32.* FROM pk_u32 JOIN btree_u32 ON pk_u32.n = btree_u32.n");
+    var callbacks = new CallbackAssertions();
     var pkInserts = 0;
     var pkDeletes = 0;
     var insertBtreeReducerSeen = false;
@@ -1313,16 +1317,16 @@ void RunIntraQueryBagSemanticsForJoin()
         Require(btreeRows.Count == 1 && btreeRows[0].N == 0 && btreeRows[0].Data == 1, "Unexpected insert_into_pk_btree_u32 btree args");
         insertPkBtreeReducerSeen = true;
     };
-    test.Db.Db.PkU32.OnInsert += (_, row) =>
+    test.Db.Db.PkU32.OnInsert += (_, row) => callbacks.Capture(() =>
     {
         Require(row.N == 0 && row.Data == 0, "Unexpected pk_u32 insert");
         pkInserts++;
-    };
-    test.Db.Db.PkU32.OnDelete += (_, row) =>
+    });
+    test.Db.Db.PkU32.OnDelete += (_, row) => callbacks.Capture(() =>
     {
         Require(row.N == 0 && row.Data == 0, "Unexpected pk_u32 delete");
         pkDeletes++;
-    };
+    });
     test.Db.Reducers.OnDeleteFromBtreeU32 += (ctx, rows) =>
     {
         RequireCommitted(ctx.Event.Status);
@@ -1347,7 +1351,7 @@ void RunIntraQueryBagSemanticsForJoin()
     test.Db.Reducers.DeleteFromBtreeU32(new() { new BTreeU32(0, 0) });
     test.Db.Reducers.DeleteFromBtreeU32(new() { new BTreeU32(0, 1) });
 
-    test.FrameTickUntil(() => insertBtreeReducerSeen && insertPkBtreeReducerSeen && firstBtreeDeleteReducerSeen && secondBtreeDeleteReducerSeen && pkDeletes == 1);
+    test.FrameTickUntil(callbacks.Until(() => insertBtreeReducerSeen && insertPkBtreeReducerSeen && firstBtreeDeleteReducerSeen && secondBtreeDeleteReducerSeen && pkDeletes == 1));
     Require(pkInserts == 1, $"Expected one pk_u32 insert, got {pkInserts}");
 }
 
@@ -1419,6 +1423,7 @@ void RunRlsSubscription()
 void RunPkSimpleEnum()
 {
     using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.PkSimpleEnum()));
+    var callbacks = new CallbackAssertions();
     var updated = false;
     var enumValue = SimpleEnum.Two;
     var insertReducerSeen = false;
@@ -1435,20 +1440,20 @@ void RunPkSimpleEnum()
         Require(a == enumValue && data == 24, "Unexpected update_pk_simple_enum args");
         updateReducerSeen = true;
     };
-    test.Db.Db.PkSimpleEnum.OnInsert += (_, row) =>
+    test.Db.Db.PkSimpleEnum.OnInsert += (_, row) => callbacks.Capture(() =>
     {
         Require(row.A == enumValue && row.Data == 42, "Unexpected pk_simple_enum insert");
         test.Db.Reducers.UpdatePkSimpleEnum(enumValue, 24);
-    };
-    test.Db.Db.PkSimpleEnum.OnUpdate += (_, oldRow, newRow) =>
+    });
+    test.Db.Db.PkSimpleEnum.OnUpdate += (_, oldRow, newRow) => callbacks.Capture(() =>
     {
         Require(oldRow.A == enumValue && oldRow.Data == 42, "Unexpected old pk_simple_enum row");
         Require(newRow.A == enumValue && newRow.Data == 24, "Unexpected new pk_simple_enum row");
         updated = true;
-    };
-    test.Db.Db.PkSimpleEnum.OnDelete += (_, _) => throw new Exception("pk_simple_enum should not be deleted");
+    });
+    test.Db.Db.PkSimpleEnum.OnDelete += (_, _) => callbacks.Fail("pk_simple_enum should not be deleted");
     test.Db.Reducers.InsertPkSimpleEnum(enumValue, 42);
-    test.FrameTickUntil(() => updated && insertReducerSeen && updateReducerSeen);
+    test.FrameTickUntil(callbacks.Until(() => updated && insertReducerSeen && updateReducerSeen));
 }
 
 void RunIndexedSimpleEnum()
@@ -1988,6 +1993,45 @@ sealed class OnceFlag
     public void Invoke() => mark();
 
     public static implicit operator Action(OnceFlag flag) => flag.Invoke;
+}
+
+sealed class CallbackAssertions
+{
+    private Exception? failure;
+
+    public void Capture(Action assertion)
+    {
+        if (failure is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            assertion();
+        }
+        catch (Exception e)
+        {
+            failure = e;
+        }
+    }
+
+    public void Fail(string message) => Capture(() => throw new Exception(message));
+
+    public Func<bool> Until(Func<bool> isComplete) =>
+        () =>
+        {
+            ThrowIfAny();
+            return isComplete();
+        };
+
+    private void ThrowIfAny()
+    {
+        if (failure is not null)
+        {
+            throw new Exception("Table callback assertion failed", failure);
+        }
+    }
 }
 
 sealed class HarnessConnection : IDisposable
