@@ -856,7 +856,7 @@ async fn ws_recv_task<MessageHandler>(
                 && let MessageHandleError::Execution(err) = e
             {
                 // TODO: Review log level after guest/client execution errors can be distinguished from internal failures.
-                log::error!("{err:#}");
+                log::warn!("{err:#}");
                 // If the send task has exited, also exit this recv task.
                 if unordered_tx.send(err.into()).is_err() {
                     break;

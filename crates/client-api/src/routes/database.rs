@@ -141,7 +141,7 @@ fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, S
         }
         ProcedureCallError::InternalError(_) => {
             // TODO: May need to split this from module errors vs host errors
-            log::warn!("Internal error while invoking procedure {procedure}: {e:#}");
+            log::info!("Internal error while invoking procedure {procedure}: {e:#}");
             StatusCode::INTERNAL_SERVER_ERROR
         }
     };
