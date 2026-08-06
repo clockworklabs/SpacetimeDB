@@ -147,7 +147,7 @@
               "numeric": true
             }
           ],
-          "provenBy": "oversell-no-row-lock (postgres-ecom-l1.json): stripping FOR UPDATE from the stock read made six concurrent buyers drive item-stock to -3 where the criterion demands exactly 0; the unmutated app passes."
+          "provenBy": "Proven on all three backends it scores, each by removing that stack’s own oversell protection: postgres (FOR UPDATE on the stock read) and mongodb (the quantity:{$gte} filter on the conditional update) both drove stock to -3; spacetime, whose reducers are transactional and have no lock to remove, was mutated by dropping the stock guard and read 4294967293 — the same -3 wrapped by u32 underflow. Every unmutated build passes. NOTE the asymmetry: the postgres and mongodb mutants inject a RACE; the spacetime one injects a missing validation, because the race is not expressible in a reducer. See grader/mutations/spacetime-ecom-l1.json."
         },
         {
           "id": "201b",
