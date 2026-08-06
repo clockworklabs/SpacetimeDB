@@ -272,6 +272,7 @@ function describeStep(step) {
     case 'clearInput': return 'stop typing';
     case 'click': return `click ${step.testid}`;
     case 'fill': return `type "${step.text}" into ${step.testid}`;
+    case 'pressKey': return `press ${step.key ?? 'Escape'}`;
     case 'reload': return 'reload the page';
     case 'closeClient': return 'close the browser';
     case 'openClient': return 'reopen the browser';
@@ -339,22 +340,45 @@ async function runStep(step, actors, ctx) {
     // less, so a race never happens. Replaying each actor's own captured write
     // through Promise.all issues them together and actually overlaps them.
     const method = step.method ?? 'POST';
-    const pending = step.actors
-      .map(name => {
-        const a = actors.get(name);
-        return { actor: a, write: a?.lastWrites?.[method] ?? a?.lastWrite };
-      })
+    // `lastWrites` only holds requests that carried a JSON body, so a bodyless
+    // action — a checkout, a "confirm" — is never eligible and the replay
+    // silently races the wrong request instead. `match` picks the intended one
+    // out of the full capture by URL, the same way replayAs does.
+    const pick = a => {
+      if (!a) return undefined;
+      if (step.match) {
+        return [...(a.writes ?? [])].reverse()
+          .find(w => w.method === method && w.url.includes(step.match));
+      }
+      return a.lastWrites?.[method] ?? a.lastWrite;
+    };
+    const pending = step.actors.map(name => ({ actor: actors.get(name), write: pick(actors.get(name)) }))
       .filter(x => x.write);
     if (pending.length < 2) {
-      throw new Error('INCONCLUSIVE: fewer than two write requests were captured, so nothing was contended. ' +
-        'This backend may not write over HTTP.');
+      throw new Error(`INCONCLUSIVE: fewer than two ${step.match ? `"${step.match}" ` : ''}write requests were captured, ` +
+        'so nothing was contended. This backend may not write over HTTP, or the request carried no JSON body ' +
+        '(only bodied writes reach lastWrites — pass `match` to select by URL instead).');
     }
-    await Promise.all(pending.map(({ actor, write }) =>
+    // A replay that the server refused looks identical to one it accepted if the
+    // error is swallowed — and then an assertion about the result is really an
+    // assertion about a request that never took effect. Record what came back.
+    const replies = await Promise.all(pending.map(({ actor, write }) =>
       actor.page.request.fetch(write.url, {
         method: write.method,
         headers: replayHeaders(write),
-        data: JSON.stringify(write.body),
-      }).catch(() => {})));
+        data: write.body === undefined || write.body === null ? undefined : JSON.stringify(write.body),
+      }).then(r => r.status(), err => `error: ${String(err.message).split('\n')[0]}`)));
+    // What matters is that both requests REACHED the server together — not what
+    // it decided. Refusing the second is often the correct answer (a cart that
+    // has already been checked out), and demanding two successes would mark a
+    // correctly-behaving app inconclusive. Only a transport failure means the
+    // race never happened.
+    const answered = replies.filter(s => typeof s === 'number');
+    if (answered.length < 2) {
+      throw new Error(`INCONCLUSIVE: only ${answered.length} of ${pending.length} replayed ` +
+        `${step.match ?? 'write'} requests reached the server (responses: ${replies.join(', ')}), ` +
+        'so the two never contended.');
+    }
     await pending[0].actor.page.waitForTimeout(step.settleMs ?? 3000);
     return;
   }
@@ -363,12 +387,22 @@ async function runStep(step, actors, ctx) {
     // `targets` gives each actor its own element, so they compete for a shared
     // limit instead of all pressing the same button.
     const targets = step.targets ?? step.actors.map(actor => ({ actor }));
-    await Promise.all(targets.map(t => {
+    // A click that never landed and a write the server lost look identical in
+    // the result — the cart is simply short one item. Swallowing click errors
+    // therefore turns a UI problem into a fabricated concurrency defect, so a
+    // click that fails to dispatch is reported as a broken test, not a finding.
+    const outcomes = await Promise.all(targets.map(t => {
       const a = actors.get(t.actor);
       const where = t.in ?? step.in;
       const scope = where ? { testid: where.testid, contains: expand(where.contains, ctx) } : undefined;
-      return a.loc(step.testid, { scope }).click({ timeout: step.within ?? DEFAULT_WITHIN }).catch(() => {});
+      return a.loc(step.testid, { scope }).click({ timeout: step.within ?? DEFAULT_WITHIN })
+        .then(() => null, err => `${t.actor}: ${String(err.message).split('\n')[0]}`);
     }));
+    const failed = outcomes.filter(Boolean);
+    if (failed.length) {
+      throw new Error(`INCONCLUSIVE: ${failed.length} of ${targets.length} concurrent clicks on ` +
+        `${tid(step.testid)} never dispatched, so nothing was actually contended — ${failed.join(' | ')}`);
+    }
     await actors.values().next().value.page.waitForTimeout(step.settleMs ?? 3000);
     return;
   }
@@ -653,9 +687,11 @@ async function runStep(step, actors, ctx) {
         // A replay that quietly declines to run looks exactly like a server that
         // refused, and this criterion then rests on its DOM assertions alone.
         ctx.unverified.push(`${actor.name}: ${r.reason}`);
+        ctx.serverCheck = 'unverified';
         return;
       }
       ctx.verified?.push(`${actor.name}: server refused ${r.method} ${r.url} (HTTP ${r.status})`);
+      ctx.serverCheck = 'verified';
       if (r.accepted) {
         throw new Error(`server ACCEPTED ${r.method} ${r.url} from ${actor.name}, who is not allowed to do it (HTTP ${r.status}) — the check is in the interface, not the server`);
       }
@@ -799,7 +835,16 @@ async function runStep(step, actors, ctx) {
       const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
       const loc = actor.loc(step.testid, { scope });
       await loc.waitFor({ state: 'visible', timeout: step.within ?? DEFAULT_WITHIN });
-      await loc.fill(expand(step.text, ctx) ?? '');
+      const text = expand(step.text, ctx) ?? '';
+      // A rating or a warehouse is as likely to be a dropdown as a text box, and
+      // `fill` refuses a <select> outright. The scenario says what the value is;
+      // how the app collects it is the app's business.
+      const tag = await loc.evaluate(el => el.tagName).catch(() => '');
+      if (tag === 'SELECT') {
+        await loc.selectOption(text).catch(async () => { await loc.selectOption({ label: text }); });
+      } else {
+        await loc.fill(text);
+      }
       if (step.enter) await loc.press('Enter');
       if (step.settleMs) await page.waitForTimeout(step.settleMs);
       return;
@@ -811,9 +856,18 @@ async function runStep(step, actors, ctx) {
       const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
       const loc = actor.loc(step.testid, { contains: expand(step.contains, ctx), scope });
       await loc.waitFor({ state: 'visible', timeout: step.within ?? DEFAULT_WITHIN });
-      const value = parseNumber(await loc.innerText().catch(() => ''));
+      const value = parseNumber(await readValue(loc));
       if (value === null) throw new Error(`${tid(step.testid)} has no number to record`);
       ctx.recorded[step.as] = value;
+      return;
+    }
+    case 'pressKey': {
+      // Closing a panel by clicking its opener again assumes the opener
+      // toggles, and the contract only promises it OPENS — an app whose panel
+      // hides the storefront then blocks every later click. Escape is the one
+      // close the specification actually requires of everyone.
+      await page.keyboard.press(step.key ?? 'Escape');
+      await page.waitForTimeout(step.settleMs ?? 600);
       return;
     }
     case 'expectNumber': return expectNumber(actor, step, ctx);
@@ -843,15 +897,21 @@ async function runExpect(actor, step, ctx = { roomName: x => x }) {
     }
   }
 
-  await loc.waitFor({ state: 'visible', timeout: within }).catch(() => {
+  // Zero can satisfy "at most N" — a customer who lost the oversell race has no
+  // order at all, and that is exactly what the criterion wants to see. So when
+  // only maxCount constrains the step, absence is a count of zero, not a
+  // failure to appear.
+  const visible = await loc.waitFor({ state: 'visible', timeout: within })
+    .then(() => true).catch(() => false);
+  if (!visible && !(step.maxCount !== undefined && step.count === undefined)) {
     throw new Error(`${tid(step.testid)}${contains ? ` containing "${contains}"` : ''}${where} not visible within ${within}ms`);
-  });
+  }
 
   if (step.count !== undefined || step.maxCount !== undefined) {
     const all = scope
       ? actor.page.locator(tid(scope.testid), { hasText: scope.contains }).first().locator(tid(step.testid))
       : (contains ? actor.page.locator(tid(step.testid), { hasText: contains }) : actor.page.locator(tid(step.testid)));
-    const n = await all.count();
+    const n = visible ? await all.count() : 0;
     if (step.count !== undefined && n !== step.count) {
       throw new Error(`expected exactly ${step.count} ${tid(step.testid)}${contains ? ` containing "${contains}"` : ''}, found ${n}`);
     }
@@ -859,6 +919,7 @@ async function runExpect(actor, step, ctx = { roomName: x => x }) {
       throw new Error(`expected at most ${step.maxCount} ${tid(step.testid)}${contains ? ` containing "${contains}"` : ''}, found ${n}`);
     }
   }
+  if (!visible) return;
 
   if (step.notContains) {
     const text = (await loc.innerText().catch(() => '')) || '';
@@ -866,6 +927,17 @@ async function runExpect(actor, step, ctx = { roomName: x => x }) {
       throw new Error(`${tid(step.testid)} unexpectedly contains "${step.notContains}" (text: "${text.trim().slice(0, 80)}")`);
     }
   }
+}
+
+// What a person reads off this element. A quantity shown in a spin box lives in
+// the value, not the text — `innerText` on an <input> is empty, which made a
+// perfectly good cart line look like it had no quantity at all.
+async function readValue(loc) {
+  const tag = await loc.evaluate(el => el.tagName).catch(() => '');
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+    return (await loc.inputValue().catch(() => '')) || '';
+  }
+  return (await loc.innerText().catch(() => '')) || '';
 }
 
 // Pull the first number out of rendered text: "Stock: 1,024 left" -> 1024,
@@ -908,7 +980,7 @@ async function expectNumber(actor, step, ctx) {
   const deadline = Date.now() + within;
   let last = null;
   for (;;) {
-    last = parseNumber(await loc.innerText().catch(() => ''));
+    last = parseNumber(await readValue(loc));
     if (last !== null && check(last)) return;
     if (Date.now() > deadline) break;
     await actor.page.waitForTimeout(250);
@@ -973,7 +1045,7 @@ async function expectAgreement(step, actors, ctx) {
     seen = {};
     for (const name of step.actors) {
       const loc = actors.get(name).loc(step.testid, { contains, scope });
-      const text = ((await loc.innerText().catch(() => '<missing>')) || '<missing>').trim();
+      const text = (step.numeric ? await readValue(loc) : ((await loc.innerText().catch(() => '<missing>')) || '<missing>')).trim() || '<missing>';
       // Comparing raw text makes "97 left" and "Stock: 97" disagree even though
       // the clients are consistent. `numeric` compares the value instead.
       seen[name] = step.numeric ? String(parseNumber(text) ?? '<no number>') : text;
@@ -1057,6 +1129,7 @@ async function gradeFeature(browser, feature, args, runCtx) {
   let refreshDependent = false;
   for (const criterion of feature.criteria) {
     let passed = true, detail = null;
+    ctx.serverCheck = null;
     try {
       for (const step of criterion.steps) {
         await annotate(actors.get(step.actor) ?? actors.values().next().value,
@@ -1092,8 +1165,23 @@ async function gradeFeature(browser, feature, args, runCtx) {
         } catch { /* genuinely absent, not just refresh-dependent */ }
       }
     }
-    result.criteria.push({ id: criterion.id, desc: criterion.desc, points: criterion.points, passed, detail });
+    // A criterion the harness could not actually run is not a failure of the
+    // application. SpacetimeDB writes over a WebSocket, so a replay-based check
+    // captures nothing and reports INCONCLUSIVE — scoring that zero would
+    // penalise a backend for being architecturally different rather than wrong,
+    // which is the same thumb on the scale as crediting it for being
+    // uninspectable. Inconclusive earns no credit AND costs nothing: it leaves
+    // the scored total, and is reported separately so the gap is visible.
+    const inconclusive = !passed && /^INCONCLUSIVE/.test(String(detail));
+    result.criteria.push({ id: criterion.id, desc: criterion.desc, points: criterion.points,
+      passed, inconclusive: inconclusive || undefined, detail,
+      ...(ctx.serverCheck ? { serverCheck: ctx.serverCheck } : {}) });
     if (passed) result.score += criterion.points;
+    else if (inconclusive) {
+      result.max -= criterion.points;
+      result.inconclusive = [...(result.inconclusive ?? []),
+        { id: criterion.id, points: criterion.points, detail: String(detail).slice(0, 300) }];
+    }
   }
 
   for (const actor of actors.values()) {
@@ -1179,9 +1267,18 @@ async function main() {
     const r = await gradeFeature(browser, feature, args, ctx);
     report.features.push(r);
     report.total += r.score;
+    // Criteria the harness could not run are removed from the denominator by
+    // gradeFeature; carry that up so the run's total is out of what was
+    // actually testable against THIS backend.
+    if (r.inconclusive?.length) {
+      report.max -= r.inconclusive.reduce((n, c) => n + c.points, 0);
+      report.inconclusive = [...(report.inconclusive ?? []),
+        ...r.inconclusive.map(c => ({ feature: r.id, ...c }))];
+    }
     console.log(`${r.score}/${r.max}${r.caps.length ? ` (${r.caps.join('; ')})` : ''}`);
     for (const c of r.criteria.filter(c => !c.passed)) {
-      console.log(`    FAIL ${c.id} — ${c.detail}`);
+      // An untestable criterion is not a defect, and must not read like one.
+      console.log(`    ${c.inconclusive ? 'UNTESTABLE' : 'FAIL'} ${c.id} — ${c.detail}`);
     }
   }
 

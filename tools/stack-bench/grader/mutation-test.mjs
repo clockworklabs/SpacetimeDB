@@ -55,7 +55,16 @@ const lastLine = err => (err.stdout || err.message || '').toString().trim().spli
 // and as collateral everywhere else — three probes were wasted that way. Wait
 // for the app to answer instead of guessing with a sleep.
 async function waitForApp(a, seconds = 120) {
-  const probe = new URL(a.probe ?? '/api/rooms', a.url).toString();
+  // Git Bash rewrites a bare "/" argument into its own install directory, so a
+  // `--probe /` arrives as "c:/Program Files/Git/" and the check quietly waits
+  // out its timeout against a path that was never part of the app. Anything
+  // that is not a URL or a rooted path is not a probe.
+  let path = a.probe ?? '/api/rooms';
+  if (!/^https?:\/\//.test(path) && (/^[a-zA-Z]:/.test(path) || /Program Files|\\/.test(path))) {
+    console.log(`  (ignoring mangled --probe "${path}" — pass a full URL to avoid shell path conversion)`);
+    path = '/';
+  }
+  const probe = new URL(path, a.url).toString();
   const deadline = Date.now() + seconds * 1000;
   while (Date.now() < deadline) {
     try {
@@ -101,6 +110,20 @@ function grade(a, feature) {
 
 const args = parseArgs(process.argv);
 const spec = JSON.parse(readFileSync(args.mutations, 'utf8'));
+
+// A killed run never reaches its restore, leaving the app MUTATED on disk with
+// a backup beside it. Every later grade then silently measures the broken app —
+// which read as the grader inventing a defect, and nearly shipped as a
+// three-way comparison. Check BEFORE the baseline, which is the first thing a
+// stale mutation corrupts.
+for (const m of spec.mutations) {
+  const stale = join(args.app, m.file) + '.mutation-backup';
+  if (existsSync(stale)) {
+    console.error(`\nREFUSING TO RUN: ${stale} exists, so ${m.file} is probably still mutated from an interrupted run.`);
+    console.error(`Restore it first:  cp "${stale}" "${join(args.app, m.file)}" && rm "${stale}"`);
+    process.exit(2);
+  }
+}
 
 console.log('Baseline (unmutated app)...');
 await waitForApp(args);
