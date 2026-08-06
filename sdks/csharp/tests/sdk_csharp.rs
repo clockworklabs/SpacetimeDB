@@ -24,6 +24,12 @@ fn insert_primitive() {
 
 #[test]
 #[serial(CsharpSdk)]
+fn subscribe_and_cancel() {
+    make_test("subscribe-and-cancel").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
 fn subscribe_and_unsubscribe() {
     make_test("subscribe-and-unsubscribe").run();
 }
