@@ -176,31 +176,27 @@ switch (testName)
 
 void RunInsertPrimitive()
 {
-    using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder()
-        .AddQuery(qb => qb.From.OneU8())
-        .AddQuery(qb => qb.From.OneU16())
-        .AddQuery(qb => qb.From.OneU32())
-        .AddQuery(qb => qb.From.OneU64())
-        .AddQuery(qb => qb.From.OneI8())
-        .AddQuery(qb => qb.From.OneI16())
-        .AddQuery(qb => qb.From.OneI32())
-        .AddQuery(qb => qb.From.OneI64())
-        .AddQuery(qb => qb.From.OneBool())
-        .AddQuery(qb => qb.From.OneF32())
-        .AddQuery(qb => qb.From.OneF64())
-        .AddQuery(qb => qb.From.OneString()));
+    using var test = ConnectAndSubscribeAll();
+    var u128 = new U128(0, 5);
+    var u256 = new U256(new U128(0, 0), new U128(0, 6));
+    var i128 = new I128(0, 7);
+    var i256 = new I256(new U128(0, 0), new U128(0, 8));
 
-    var remaining = 12;
+    var remaining = 16;
     void Seen() => remaining--;
 
     test.Db.Db.OneU8.OnInsert += (_, row) => { Require(row.N == 1, "OneU8 did not round-trip"); Seen(); };
     test.Db.Db.OneU16.OnInsert += (_, row) => { Require(row.N == 2, "OneU16 did not round-trip"); Seen(); };
     test.Db.Db.OneU32.OnInsert += (_, row) => { Require(row.N == 3, "OneU32 did not round-trip"); Seen(); };
     test.Db.Db.OneU64.OnInsert += (_, row) => { Require(row.N == 4, "OneU64 did not round-trip"); Seen(); };
+    test.Db.Db.OneU128.OnInsert += (_, row) => { Require(row.N.Equals(u128), "OneU128 did not round-trip"); Seen(); };
+    test.Db.Db.OneU256.OnInsert += (_, row) => { Require(row.N.Equals(u256), "OneU256 did not round-trip"); Seen(); };
     test.Db.Db.OneI8.OnInsert += (_, row) => { Require(row.N == -1, "OneI8 did not round-trip"); Seen(); };
     test.Db.Db.OneI16.OnInsert += (_, row) => { Require(row.N == -2, "OneI16 did not round-trip"); Seen(); };
     test.Db.Db.OneI32.OnInsert += (_, row) => { Require(row.N == -3, "OneI32 did not round-trip"); Seen(); };
     test.Db.Db.OneI64.OnInsert += (_, row) => { Require(row.N == -4, "OneI64 did not round-trip"); Seen(); };
+    test.Db.Db.OneI128.OnInsert += (_, row) => { Require(row.N.Equals(i128), "OneI128 did not round-trip"); Seen(); };
+    test.Db.Db.OneI256.OnInsert += (_, row) => { Require(row.N.Equals(i256), "OneI256 did not round-trip"); Seen(); };
     test.Db.Db.OneBool.OnInsert += (_, row) => { Require(row.B, "OneBool did not round-trip"); Seen(); };
     test.Db.Db.OneF32.OnInsert += (_, row) => { Require(Math.Abs(row.F - 1.25f) < 0.001f, "OneF32 did not round-trip"); Seen(); };
     test.Db.Db.OneF64.OnInsert += (_, row) => { Require(Math.Abs(row.F - 2.5) < 0.001, "OneF64 did not round-trip"); Seen(); };
@@ -210,10 +206,14 @@ void RunInsertPrimitive()
     test.Db.Reducers.InsertOneU16(2);
     test.Db.Reducers.InsertOneU32(3);
     test.Db.Reducers.InsertOneU64(4);
+    test.Db.Reducers.InsertOneU128(u128);
+    test.Db.Reducers.InsertOneU256(u256);
     test.Db.Reducers.InsertOneI8(-1);
     test.Db.Reducers.InsertOneI16(-2);
     test.Db.Reducers.InsertOneI32(-3);
     test.Db.Reducers.InsertOneI64(-4);
+    test.Db.Reducers.InsertOneI128(i128);
+    test.Db.Reducers.InsertOneI256(i256);
     test.Db.Reducers.InsertOneBool(true);
     test.Db.Reducers.InsertOneF32(1.25f);
     test.Db.Reducers.InsertOneF64(2.5);
@@ -331,32 +331,118 @@ void RunSubscribeAllSelectStar()
 
 void RunDeletePrimitive()
 {
-    using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.UniqueU8()));
-    var inserted = false;
-    var deleted = false;
+    using var test = ConnectAndSubscribeAll();
+    var u128 = new U128(0, 5);
+    var u256 = new U256(new U128(0, 0), new U128(0, 6));
+    var i128 = new I128(0, 7);
+    var i256 = new I256(new U128(0, 0), new U128(0, 8));
+    var remaining = 14;
+    void Seen() => remaining--;
 
-    test.Db.Db.UniqueU8.OnInsert += (_, row) =>
-    {
-        Require(row.N == 7 && row.Data == 10, "Unexpected unique_u8 insert row");
-        inserted = true;
-    };
-    test.Db.Db.UniqueU8.OnDelete += (_, row) =>
-    {
-        Require(row.N == 7 && row.Data == 10, "Unexpected unique_u8 delete row");
-        deleted = true;
-    };
+    test.Db.Db.UniqueU8.OnDelete += (_, row) => { Require(row.N == 1 && row.Data == 10, "Unexpected unique_u8 delete row"); Seen(); };
+    test.Db.Db.UniqueU16.OnDelete += (_, row) => { Require(row.N == 2 && row.Data == 10, "Unexpected unique_u16 delete row"); Seen(); };
+    test.Db.Db.UniqueU32.OnDelete += (_, row) => { Require(row.N == 3 && row.Data == 10, "Unexpected unique_u32 delete row"); Seen(); };
+    test.Db.Db.UniqueU64.OnDelete += (_, row) => { Require(row.N == 4 && row.Data == 10, "Unexpected unique_u64 delete row"); Seen(); };
+    test.Db.Db.UniqueU128.OnDelete += (_, row) => { Require(row.N.Equals(u128) && row.Data == 10, "Unexpected unique_u128 delete row"); Seen(); };
+    test.Db.Db.UniqueU256.OnDelete += (_, row) => { Require(row.N.Equals(u256) && row.Data == 10, "Unexpected unique_u256 delete row"); Seen(); };
+    test.Db.Db.UniqueI8.OnDelete += (_, row) => { Require(row.N == -1 && row.Data == 10, "Unexpected unique_i8 delete row"); Seen(); };
+    test.Db.Db.UniqueI16.OnDelete += (_, row) => { Require(row.N == -2 && row.Data == 10, "Unexpected unique_i16 delete row"); Seen(); };
+    test.Db.Db.UniqueI32.OnDelete += (_, row) => { Require(row.N == -3 && row.Data == 10, "Unexpected unique_i32 delete row"); Seen(); };
+    test.Db.Db.UniqueI64.OnDelete += (_, row) => { Require(row.N == -4 && row.Data == 10, "Unexpected unique_i64 delete row"); Seen(); };
+    test.Db.Db.UniqueI128.OnDelete += (_, row) => { Require(row.N.Equals(i128) && row.Data == 10, "Unexpected unique_i128 delete row"); Seen(); };
+    test.Db.Db.UniqueI256.OnDelete += (_, row) => { Require(row.N.Equals(i256) && row.Data == 10, "Unexpected unique_i256 delete row"); Seen(); };
+    test.Db.Db.UniqueBool.OnDelete += (_, row) => { Require(row.B && row.Data == 10, "Unexpected unique_bool delete row"); Seen(); };
+    test.Db.Db.UniqueString.OnDelete += (_, row) => { Require(row.S == "key" && row.Data == 10, "Unexpected unique_string delete row"); Seen(); };
 
-    test.Db.Reducers.InsertUniqueU8(7, 10);
-    test.FrameTickUntil(() => inserted);
-    test.Db.Reducers.DeleteUniqueU8(7);
-    test.FrameTickUntil(() => deleted);
-    Require(test.Db.Db.UniqueU8.Count == 0, $"Expected unique_u8 cache count 0, got {test.Db.Db.UniqueU8.Count}");
+    test.Db.Reducers.InsertUniqueU8(1, 10);
+    test.Db.Reducers.InsertUniqueU16(2, 10);
+    test.Db.Reducers.InsertUniqueU32(3, 10);
+    test.Db.Reducers.InsertUniqueU64(4, 10);
+    test.Db.Reducers.InsertUniqueU128(u128, 10);
+    test.Db.Reducers.InsertUniqueU256(u256, 10);
+    test.Db.Reducers.InsertUniqueI8(-1, 10);
+    test.Db.Reducers.InsertUniqueI16(-2, 10);
+    test.Db.Reducers.InsertUniqueI32(-3, 10);
+    test.Db.Reducers.InsertUniqueI64(-4, 10);
+    test.Db.Reducers.InsertUniqueI128(i128, 10);
+    test.Db.Reducers.InsertUniqueI256(i256, 10);
+    test.Db.Reducers.InsertUniqueBool(true, 10);
+    test.Db.Reducers.InsertUniqueString("key", 10);
+    test.FrameTickUntil(() => test.Db.Db.UniqueString.Count == 1);
+
+    test.Db.Reducers.DeleteUniqueU8(1);
+    test.Db.Reducers.DeleteUniqueU16(2);
+    test.Db.Reducers.DeleteUniqueU32(3);
+    test.Db.Reducers.DeleteUniqueU64(4);
+    test.Db.Reducers.DeleteUniqueU128(u128);
+    test.Db.Reducers.DeleteUniqueU256(u256);
+    test.Db.Reducers.DeleteUniqueI8(-1);
+    test.Db.Reducers.DeleteUniqueI16(-2);
+    test.Db.Reducers.DeleteUniqueI32(-3);
+    test.Db.Reducers.DeleteUniqueI64(-4);
+    test.Db.Reducers.DeleteUniqueI128(i128);
+    test.Db.Reducers.DeleteUniqueI256(i256);
+    test.Db.Reducers.DeleteUniqueBool(true);
+    test.Db.Reducers.DeleteUniqueString("key");
+    test.FrameTickUntil(() => remaining == 0);
 }
 
 void RunUpdatePrimitive()
 {
-    using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.PkU32()));
-    ExpectPkU32Update(test, 9, 11, 12);
+    using var test = ConnectAndSubscribeAll();
+    var u128 = new U128(0, 5);
+    var u256 = new U256(new U128(0, 0), new U128(0, 6));
+    var i128 = new I128(0, 7);
+    var i256 = new I256(new U128(0, 0), new U128(0, 8));
+    var remaining = 14;
+    void Seen() => remaining--;
+
+    test.Db.Db.PkU8.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N == 1 && oldRow.Data == 10 && newRow.N == 1 && newRow.Data == 20, "Unexpected pk_u8 update"); Seen(); };
+    test.Db.Db.PkU16.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N == 2 && oldRow.Data == 10 && newRow.N == 2 && newRow.Data == 20, "Unexpected pk_u16 update"); Seen(); };
+    test.Db.Db.PkU32.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N == 3 && oldRow.Data == 10 && newRow.N == 3 && newRow.Data == 20, "Unexpected pk_u32 update"); Seen(); };
+    test.Db.Db.PkU64.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N == 4 && oldRow.Data == 10 && newRow.N == 4 && newRow.Data == 20, "Unexpected pk_u64 update"); Seen(); };
+    test.Db.Db.PkU128.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N.Equals(u128) && oldRow.Data == 10 && newRow.N.Equals(u128) && newRow.Data == 20, "Unexpected pk_u128 update"); Seen(); };
+    test.Db.Db.PkU256.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N.Equals(u256) && oldRow.Data == 10 && newRow.N.Equals(u256) && newRow.Data == 20, "Unexpected pk_u256 update"); Seen(); };
+    test.Db.Db.PkI8.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N == -1 && oldRow.Data == 10 && newRow.N == -1 && newRow.Data == 20, "Unexpected pk_i8 update"); Seen(); };
+    test.Db.Db.PkI16.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N == -2 && oldRow.Data == 10 && newRow.N == -2 && newRow.Data == 20, "Unexpected pk_i16 update"); Seen(); };
+    test.Db.Db.PkI32.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N == -3 && oldRow.Data == 10 && newRow.N == -3 && newRow.Data == 20, "Unexpected pk_i32 update"); Seen(); };
+    test.Db.Db.PkI64.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N == -4 && oldRow.Data == 10 && newRow.N == -4 && newRow.Data == 20, "Unexpected pk_i64 update"); Seen(); };
+    test.Db.Db.PkI128.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N.Equals(i128) && oldRow.Data == 10 && newRow.N.Equals(i128) && newRow.Data == 20, "Unexpected pk_i128 update"); Seen(); };
+    test.Db.Db.PkI256.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.N.Equals(i256) && oldRow.Data == 10 && newRow.N.Equals(i256) && newRow.Data == 20, "Unexpected pk_i256 update"); Seen(); };
+    test.Db.Db.PkBool.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.B && oldRow.Data == 10 && newRow.B && newRow.Data == 20, "Unexpected pk_bool update"); Seen(); };
+    test.Db.Db.PkString.OnUpdate += (_, oldRow, newRow) => { Require(oldRow.S == "key" && oldRow.Data == 10 && newRow.S == "key" && newRow.Data == 20, "Unexpected pk_string update"); Seen(); };
+
+    test.Db.Reducers.InsertPkU8(1, 10);
+    test.Db.Reducers.InsertPkU16(2, 10);
+    test.Db.Reducers.InsertPkU32(3, 10);
+    test.Db.Reducers.InsertPkU64(4, 10);
+    test.Db.Reducers.InsertPkU128(u128, 10);
+    test.Db.Reducers.InsertPkU256(u256, 10);
+    test.Db.Reducers.InsertPkI8(-1, 10);
+    test.Db.Reducers.InsertPkI16(-2, 10);
+    test.Db.Reducers.InsertPkI32(-3, 10);
+    test.Db.Reducers.InsertPkI64(-4, 10);
+    test.Db.Reducers.InsertPkI128(i128, 10);
+    test.Db.Reducers.InsertPkI256(i256, 10);
+    test.Db.Reducers.InsertPkBool(true, 10);
+    test.Db.Reducers.InsertPkString("key", 10);
+    test.FrameTickUntil(() => test.Db.Db.PkString.Count == 1);
+
+    test.Db.Reducers.UpdatePkU8(1, 20);
+    test.Db.Reducers.UpdatePkU16(2, 20);
+    test.Db.Reducers.UpdatePkU32(3, 20);
+    test.Db.Reducers.UpdatePkU64(4, 20);
+    test.Db.Reducers.UpdatePkU128(u128, 20);
+    test.Db.Reducers.UpdatePkU256(u256, 20);
+    test.Db.Reducers.UpdatePkI8(-1, 20);
+    test.Db.Reducers.UpdatePkI16(-2, 20);
+    test.Db.Reducers.UpdatePkI32(-3, 20);
+    test.Db.Reducers.UpdatePkI64(-4, 20);
+    test.Db.Reducers.UpdatePkI128(i128, 20);
+    test.Db.Reducers.UpdatePkI256(i256, 20);
+    test.Db.Reducers.UpdatePkBool(true, 20);
+    test.Db.Reducers.UpdatePkString("key", 20);
+    test.FrameTickUntil(() => remaining == 0);
 }
 
 void RunInsertIdentity()
@@ -621,93 +707,191 @@ void RunFailReducer()
 
 void RunInsertVec()
 {
-    using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder()
-        .AddQuery(qb => qb.From.VecI32())
-        .AddQuery(qb => qb.From.VecString())
-        .AddQuery(qb => qb.From.VecUuid()));
-    var remaining = 3;
+    using var test = ConnectAndSubscribeAll();
+    var u128 = new List<U128> { new(0, 5), new(0, 6) };
+    var u256 = new List<U256> { new(new U128(0, 0), new U128(0, 7)), new(new U128(0, 0), new U128(0, 8)) };
+    var i128 = new List<I128> { new(0, 9), new(0, 10) };
+    var i256 = new List<I256> { new(new U128(0, 0), new U128(0, 11)), new(new U128(0, 0), new U128(0, 12)) };
     var uuid = Uuid.Parse("01890f3d-8120-7cc8-9a1f-cd1224fb3a10");
-    test.Db.Db.VecI32.OnInsert += (_, row) => { Require(row.N.SequenceEqual(new[] { -1, 0, 42 }), "VecI32 did not round-trip"); remaining--; };
-    test.Db.Db.VecString.OnInsert += (_, row) => { Require(row.S.SequenceEqual(new[] { "alpha", "beta" }), "VecString did not round-trip"); remaining--; };
-    test.Db.Db.VecUuid.OnInsert += (_, row) => { Require(row.U.SequenceEqual(new[] { uuid }), "VecUuid did not round-trip"); remaining--; };
+    var timestamp = new Timestamp(1_234_567);
+    var duration = new TimeDuration(9_876);
+    var remaining = 19;
+    void Seen() => remaining--;
+
+    test.Db.Db.VecU8.OnInsert += (_, row) => { RequireSequenceEqual(row.N, new byte[] { 0, 1 }, "VecU8 did not round-trip"); Seen(); };
+    test.Db.Db.VecU16.OnInsert += (_, row) => { RequireSequenceEqual(row.N, new ushort[] { 0, 1 }, "VecU16 did not round-trip"); Seen(); };
+    test.Db.Db.VecU32.OnInsert += (_, row) => { RequireSequenceEqual(row.N, new uint[] { 0, 1 }, "VecU32 did not round-trip"); Seen(); };
+    test.Db.Db.VecU64.OnInsert += (_, row) => { RequireSequenceEqual(row.N, new ulong[] { 0, 1 }, "VecU64 did not round-trip"); Seen(); };
+    test.Db.Db.VecU128.OnInsert += (_, row) => { RequireSequenceEqual(row.N, u128, "VecU128 did not round-trip"); Seen(); };
+    test.Db.Db.VecU256.OnInsert += (_, row) => { RequireSequenceEqual(row.N, u256, "VecU256 did not round-trip"); Seen(); };
+    test.Db.Db.VecI8.OnInsert += (_, row) => { RequireSequenceEqual(row.N, new sbyte[] { 0, 1 }, "VecI8 did not round-trip"); Seen(); };
+    test.Db.Db.VecI16.OnInsert += (_, row) => { RequireSequenceEqual(row.N, new short[] { 0, 1 }, "VecI16 did not round-trip"); Seen(); };
+    test.Db.Db.VecI32.OnInsert += (_, row) => { RequireSequenceEqual(row.N, new[] { -1, 0, 42 }, "VecI32 did not round-trip"); Seen(); };
+    test.Db.Db.VecI64.OnInsert += (_, row) => { RequireSequenceEqual(row.N, new long[] { 0, 1 }, "VecI64 did not round-trip"); Seen(); };
+    test.Db.Db.VecI128.OnInsert += (_, row) => { RequireSequenceEqual(row.N, i128, "VecI128 did not round-trip"); Seen(); };
+    test.Db.Db.VecI256.OnInsert += (_, row) => { RequireSequenceEqual(row.N, i256, "VecI256 did not round-trip"); Seen(); };
+    test.Db.Db.VecBool.OnInsert += (_, row) => { RequireSequenceEqual(row.B, new[] { false, true }, "VecBool did not round-trip"); Seen(); };
+    test.Db.Db.VecF32.OnInsert += (_, row) => { Require(row.F.Count == 2 && Math.Abs(row.F[0] - 0.0f) < 0.001f && Math.Abs(row.F[1] - 1.0f) < 0.001f, "VecF32 did not round-trip"); Seen(); };
+    test.Db.Db.VecF64.OnInsert += (_, row) => { Require(row.F.Count == 2 && Math.Abs(row.F[0] - 0.0) < 0.001 && Math.Abs(row.F[1] - 1.0) < 0.001, "VecF64 did not round-trip"); Seen(); };
+    test.Db.Db.VecString.OnInsert += (_, row) => { RequireSequenceEqual(row.S, new[] { "zero", "one" }, "VecString did not round-trip"); Seen(); };
+    test.Db.Db.VecIdentity.OnInsert += (_, row) => { RequireSequenceEqual(row.I, new[] { test.Identity }, "VecIdentity did not round-trip"); Seen(); };
+    test.Db.Db.VecConnectionId.OnInsert += (_, row) => { RequireSequenceEqual(row.A, new[] { test.Db.ConnectionId }, "VecConnectionId did not round-trip"); Seen(); };
+    test.Db.Db.VecTimestamp.OnInsert += (_, row) => { RequireSequenceEqual(row.T, new[] { timestamp }, "VecTimestamp did not round-trip"); Seen(); };
+
+    test.Db.Reducers.InsertVecU8(new() { 0, 1 });
+    test.Db.Reducers.InsertVecU16(new() { 0, 1 });
+    test.Db.Reducers.InsertVecU32(new() { 0, 1 });
+    test.Db.Reducers.InsertVecU64(new() { 0, 1 });
+    test.Db.Reducers.InsertVecU128(u128);
+    test.Db.Reducers.InsertVecU256(u256);
+    test.Db.Reducers.InsertVecI8(new() { 0, 1 });
+    test.Db.Reducers.InsertVecI16(new() { 0, 1 });
     test.Db.Reducers.InsertVecI32(new() { -1, 0, 42 });
-    test.Db.Reducers.InsertVecString(new() { "alpha", "beta" });
-    test.Db.Reducers.InsertVecUuid(new() { uuid });
+    test.Db.Reducers.InsertVecI64(new() { 0, 1 });
+    test.Db.Reducers.InsertVecI128(i128);
+    test.Db.Reducers.InsertVecI256(i256);
+    test.Db.Reducers.InsertVecBool(new() { false, true });
+    test.Db.Reducers.InsertVecF32(new() { 0.0f, 1.0f });
+    test.Db.Reducers.InsertVecF64(new() { 0.0, 1.0 });
+    test.Db.Reducers.InsertVecString(new() { "zero", "one" });
+    test.Db.Reducers.InsertVecIdentity(new() { test.Identity });
+    test.Db.Reducers.InsertVecConnectionId(new() { test.Db.ConnectionId });
+    test.Db.Reducers.InsertVecTimestamp(new() { timestamp });
     test.FrameTickUntil(() => remaining == 0);
 }
 
 void RunInsertOptionSome()
 {
-    using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder()
-        .AddQuery(qb => qb.From.OptionI32())
-        .AddQuery(qb => qb.From.OptionString())
-        .AddQuery(qb => qb.From.OptionUuid()));
-    var remaining = 3;
-    var uuid = Uuid.Parse("01890f3d-8120-7cc8-9a1f-cd1224fb3a10");
-    test.Db.Db.OptionI32.OnInsert += (_, row) => { Require(row.N == 42, "OptionI32 Some did not round-trip"); remaining--; };
-    test.Db.Db.OptionString.OnInsert += (_, row) => { Require(row.S == "present", "OptionString Some did not round-trip"); remaining--; };
-    test.Db.Db.OptionUuid.OnInsert += (_, row) => { Require(row.U == uuid, "OptionUuid Some did not round-trip"); remaining--; };
+    using var test = ConnectAndSubscribeAll();
+    var primitive = EveryPrimitiveStructValue(test);
+    var vecOption = new List<int?> { 0, null };
+    var remaining = 6;
+    void Seen() => remaining--;
+
+    test.Db.Db.OptionI32.OnInsert += (_, row) => { Require(row.N == 42, "OptionI32 Some did not round-trip"); Seen(); };
+    test.Db.Db.OptionString.OnInsert += (_, row) => { Require(row.S == "string", "OptionString Some did not round-trip"); Seen(); };
+    test.Db.Db.OptionIdentity.OnInsert += (_, row) => { Require(row.I == test.Identity, "OptionIdentity Some did not round-trip"); Seen(); };
+    test.Db.Db.OptionSimpleEnum.OnInsert += (_, row) => { Require(row.E == SimpleEnum.Zero, "OptionSimpleEnum Some did not round-trip"); Seen(); };
+    test.Db.Db.OptionEveryPrimitiveStruct.OnInsert += (_, row) => { Require(row.S == primitive, "OptionEveryPrimitiveStruct Some did not round-trip"); Seen(); };
+    test.Db.Db.OptionVecOptionI32.OnInsert += (_, row) => { Require(row.V != null && row.V.SequenceEqual(vecOption), "OptionVecOptionI32 Some did not round-trip"); Seen(); };
+
     test.Db.Reducers.InsertOptionI32(42);
-    test.Db.Reducers.InsertOptionString("present");
-    test.Db.Reducers.InsertOptionUuid(uuid);
+    test.Db.Reducers.InsertOptionString("string");
+    test.Db.Reducers.InsertOptionIdentity(test.Identity);
+    test.Db.Reducers.InsertOptionSimpleEnum(SimpleEnum.Zero);
+    test.Db.Reducers.InsertOptionEveryPrimitiveStruct(primitive);
+    test.Db.Reducers.InsertOptionVecOptionI32(vecOption);
     test.FrameTickUntil(() => remaining == 0);
 }
 
 void RunInsertOptionNone()
 {
-    using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder()
-        .AddQuery(qb => qb.From.OptionI32())
-        .AddQuery(qb => qb.From.OptionString())
-        .AddQuery(qb => qb.From.OptionUuid()));
-    var remaining = 3;
-    test.Db.Db.OptionI32.OnInsert += (_, row) => { Require(row.N == null, "OptionI32 None did not round-trip"); remaining--; };
-    test.Db.Db.OptionString.OnInsert += (_, row) => { Require(row.S == null, "OptionString None did not round-trip"); remaining--; };
-    test.Db.Db.OptionUuid.OnInsert += (_, row) => { Require(row.U == null, "OptionUuid None did not round-trip"); remaining--; };
+    using var test = ConnectAndSubscribeAll();
+    var remaining = 6;
+    void Seen() => remaining--;
+
+    test.Db.Db.OptionI32.OnInsert += (_, row) => { Require(row.N == null, "OptionI32 None did not round-trip"); Seen(); };
+    test.Db.Db.OptionString.OnInsert += (_, row) => { Require(row.S == null, "OptionString None did not round-trip"); Seen(); };
+    test.Db.Db.OptionIdentity.OnInsert += (_, row) => { Require(row.I == null, "OptionIdentity None did not round-trip"); Seen(); };
+    test.Db.Db.OptionSimpleEnum.OnInsert += (_, row) => { Require(row.E == null, "OptionSimpleEnum None did not round-trip"); Seen(); };
+    test.Db.Db.OptionEveryPrimitiveStruct.OnInsert += (_, row) => { Require(row.S == null, "OptionEveryPrimitiveStruct None did not round-trip"); Seen(); };
+    test.Db.Db.OptionVecOptionI32.OnInsert += (_, row) => { Require(row.V == null, "OptionVecOptionI32 None did not round-trip"); Seen(); };
+
     test.Db.Reducers.InsertOptionI32(null);
     test.Db.Reducers.InsertOptionString(null);
-    test.Db.Reducers.InsertOptionUuid(null);
+    test.Db.Reducers.InsertOptionIdentity(null);
+    test.Db.Reducers.InsertOptionSimpleEnum(null);
+    test.Db.Reducers.InsertOptionEveryPrimitiveStruct(null);
+    test.Db.Reducers.InsertOptionVecOptionI32(null);
     test.FrameTickUntil(() => remaining == 0);
 }
 
 void RunInsertStruct()
 {
-    using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder()
-        .AddQuery(qb => qb.From.OneByteStruct())
-        .AddQuery(qb => qb.From.OneEveryPrimitiveStruct()));
-    var remaining = 2;
+    using var test = ConnectAndSubscribeAll();
     var primitive = EveryPrimitiveStructValue(test);
-    test.Db.Db.OneByteStruct.OnInsert += (_, row) => { Require(row.S.B == 99, "ByteStruct did not round-trip"); remaining--; };
-    test.Db.Db.OneEveryPrimitiveStruct.OnInsert += (_, row) => { Require(row.S == primitive, "EveryPrimitiveStruct did not round-trip"); remaining--; };
-    test.Db.Reducers.InsertOneByteStruct(new ByteStruct { B = 99 });
+    var vec = EveryVecStructValue(test);
+    var byteStruct = new ByteStruct { B = 99 };
+    var expected = new HashSet<string>
+    {
+        "one_byte_struct",
+        "one_every_primitive_struct",
+        "one_every_vec_struct",
+        "vec_unit_struct",
+        "vec_byte_struct",
+        "vec_every_primitive_struct",
+        "vec_every_vec_struct",
+    };
+    var seen = new HashSet<string>();
+    void Seen(string name)
+    {
+        Require(seen.Add(name), $"{name} callback fired more than once");
+    }
+
+    test.Db.Db.OneByteStruct.OnInsert += (_, row) => { RequireByteStructEqual(row.S, byteStruct, "ByteStruct did not round-trip"); Seen("one_byte_struct"); };
+    test.Db.Db.OneEveryPrimitiveStruct.OnInsert += (_, row) => { RequireEveryPrimitiveStructEqual(row.S, primitive, "EveryPrimitiveStruct did not round-trip"); Seen("one_every_primitive_struct"); };
+    test.Db.Db.OneEveryVecStruct.OnInsert += (_, row) => { RequireEveryVecStructEqual(row.S, vec, "EveryVecStruct did not round-trip"); Seen("one_every_vec_struct"); };
+    test.Db.Db.VecUnitStruct.OnInsert += (_, row) => { RequireSequenceEqual(row.S, new[] { new UnitStruct() }, "VecUnitStruct did not round-trip"); Seen("vec_unit_struct"); };
+    test.Db.Db.VecByteStruct.OnInsert += (_, row) => { RequireStructListEqual(row.S, new[] { byteStruct }, RequireByteStructEqual, "VecByteStruct did not round-trip"); Seen("vec_byte_struct"); };
+    test.Db.Db.VecEveryPrimitiveStruct.OnInsert += (_, row) => { RequireStructListEqual(row.S, new[] { primitive }, RequireEveryPrimitiveStructEqual, "VecEveryPrimitiveStruct did not round-trip"); Seen("vec_every_primitive_struct"); };
+    test.Db.Db.VecEveryVecStruct.OnInsert += (_, row) => { RequireStructListEqual(row.S, new[] { vec }, RequireEveryVecStructEqual, "VecEveryVecStruct did not round-trip"); Seen("vec_every_vec_struct"); };
+
+    test.Db.Reducers.InsertOneByteStruct(byteStruct);
     test.Db.Reducers.InsertOneEveryPrimitiveStruct(primitive);
-    test.FrameTickUntil(() => remaining == 0);
+    test.Db.Reducers.InsertOneEveryVecStruct(vec);
+    test.Db.Reducers.InsertVecUnitStruct(new() { new UnitStruct() });
+    test.Db.Reducers.InsertVecByteStruct(new() { byteStruct });
+    test.Db.Reducers.InsertVecEveryPrimitiveStruct(new() { primitive });
+    test.Db.Reducers.InsertVecEveryVecStruct(new() { vec });
+    test.FrameTickUntil(
+        () => seen.SetEquals(expected),
+        timeoutMessage: () => $"Timed out waiting for struct callbacks. Missing: {string.Join(", ", expected.Except(seen).OrderBy(name => name))}");
 }
 
 void RunInsertSimpleEnum()
 {
-    using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.OneSimpleEnum()));
-    var inserted = false;
+    using var test = ConnectAndSubscribeAll();
+    var remaining = 2;
+    void Seen() => remaining--;
+
     test.Db.Db.OneSimpleEnum.OnInsert += (_, row) =>
     {
-        Require(row.E == SimpleEnum.Two, "SimpleEnum did not round-trip");
-        inserted = true;
+        Require(row.E == SimpleEnum.One, "SimpleEnum did not round-trip");
+        Seen();
     };
-    test.Db.Reducers.InsertOneSimpleEnum(SimpleEnum.Two);
-    test.FrameTickUntil(() => inserted);
+    test.Db.Db.VecSimpleEnum.OnInsert += (_, row) =>
+    {
+        RequireSequenceEqual(row.E, new[] { SimpleEnum.Zero, SimpleEnum.One, SimpleEnum.Two }, "VecSimpleEnum did not round-trip");
+        Seen();
+    };
+
+    test.Db.Reducers.InsertOneSimpleEnum(SimpleEnum.One);
+    test.Db.Reducers.InsertVecSimpleEnum(new() { SimpleEnum.Zero, SimpleEnum.One, SimpleEnum.Two });
+    test.FrameTickUntil(() => remaining == 0);
 }
 
 void RunInsertEnumWithPayload()
 {
-    using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.OneEnumWithPayload()));
-    var inserted = false;
-    var payload = new EnumWithPayload.U8(17);
+    using var test = ConnectAndSubscribeAll();
+    var onePayload = new EnumWithPayload.U8(17);
+    var payloads = EnumPayloadValues(test);
+    var remaining = 2;
+    void Seen() => remaining--;
+
     test.Db.Db.OneEnumWithPayload.OnInsert += (_, row) =>
     {
-        Require(row.E == payload, "EnumWithPayload did not round-trip");
-        inserted = true;
+        Require(row.E == onePayload, "EnumWithPayload did not round-trip");
+        Seen();
     };
-    test.Db.Reducers.InsertOneEnumWithPayload(payload);
-    test.FrameTickUntil(() => inserted);
+    test.Db.Db.VecEnumWithPayload.OnInsert += (_, row) =>
+    {
+        RequireEnumPayloadListEqual(row.E, payloads, "VecEnumWithPayload did not round-trip");
+        Seen();
+    };
+
+    test.Db.Reducers.InsertOneEnumWithPayload(onePayload);
+    test.Db.Reducers.InsertVecEnumWithPayload(payloads);
+    test.FrameTickUntil(() => remaining == 0);
 }
 
 void RunInsertDeleteLargeTable()
@@ -1415,6 +1599,74 @@ void Require(bool condition, string message)
     }
 }
 
+void RequireByteStructEqual(ByteStruct actual, ByteStruct expected, string message)
+{
+    Require(actual.B == expected.B, message);
+}
+
+void RequireEveryPrimitiveStructEqual(EveryPrimitiveStruct actual, EveryPrimitiveStruct expected, string message)
+{
+    Require(
+        actual.A == expected.A &&
+        actual.B == expected.B &&
+        actual.C == expected.C &&
+        actual.D == expected.D &&
+        actual.E == expected.E &&
+        actual.F == expected.F &&
+        actual.G == expected.G &&
+        actual.H == expected.H &&
+        actual.I == expected.I &&
+        actual.J == expected.J &&
+        actual.K == expected.K &&
+        actual.L == expected.L &&
+        actual.M == expected.M &&
+        actual.N == expected.N &&
+        actual.O == expected.O &&
+        actual.P == expected.P &&
+        actual.Q == expected.Q &&
+        actual.R == expected.R &&
+        actual.S == expected.S &&
+        actual.T == expected.T &&
+        actual.U == expected.U,
+        message);
+}
+
+void RequireEveryVecStructEqual(EveryVecStruct actual, EveryVecStruct expected, string message)
+{
+    Require(
+        actual.A.SequenceEqual(expected.A) &&
+        actual.B.SequenceEqual(expected.B) &&
+        actual.C.SequenceEqual(expected.C) &&
+        actual.D.SequenceEqual(expected.D) &&
+        actual.E.SequenceEqual(expected.E) &&
+        actual.F.SequenceEqual(expected.F) &&
+        actual.G.SequenceEqual(expected.G) &&
+        actual.H.SequenceEqual(expected.H) &&
+        actual.I.SequenceEqual(expected.I) &&
+        actual.J.SequenceEqual(expected.J) &&
+        actual.K.SequenceEqual(expected.K) &&
+        actual.L.SequenceEqual(expected.L) &&
+        actual.M.SequenceEqual(expected.M) &&
+        actual.N.SequenceEqual(expected.N) &&
+        actual.O.SequenceEqual(expected.O) &&
+        actual.P.SequenceEqual(expected.P) &&
+        actual.Q.SequenceEqual(expected.Q) &&
+        actual.R.SequenceEqual(expected.R) &&
+        actual.S.SequenceEqual(expected.S) &&
+        actual.T.SequenceEqual(expected.T) &&
+        actual.U.SequenceEqual(expected.U),
+        message);
+}
+
+void RequireStructListEqual<T>(IReadOnlyList<T> actual, IReadOnlyList<T> expected, Action<T, T, string> requireEqual, string message)
+{
+    Require(actual.Count == expected.Count, message);
+    for (var i = 0; i < actual.Count; i++)
+    {
+        requireEqual(actual[i], expected[i], message);
+    }
+}
+
 OnceFlag Once(string name)
 {
     var seen = false;
@@ -1426,6 +1678,84 @@ OnceFlag Once(string name)
         }
         seen = true;
     }, () => seen);
+}
+
+List<EnumWithPayload> EnumPayloadValues(HarnessConnection test) => new()
+{
+    new EnumWithPayload.U8(0),
+    new EnumWithPayload.U16(1),
+    new EnumWithPayload.U32(2),
+    new EnumWithPayload.U64(3),
+    new EnumWithPayload.U128(new U128(0, 4)),
+    new EnumWithPayload.U256(new U256(new U128(0, 0), new U128(0, 5))),
+    new EnumWithPayload.I8(0),
+    new EnumWithPayload.I16(-1),
+    new EnumWithPayload.I32(-2),
+    new EnumWithPayload.I64(-3),
+    new EnumWithPayload.I128(new I128(0, 4)),
+    new EnumWithPayload.I256(new I256(new U128(0, 0), new U128(0, 5))),
+    new EnumWithPayload.Bool(true),
+    new EnumWithPayload.F32(0.0f),
+    new EnumWithPayload.F64(100.0),
+    new EnumWithPayload.Str("enum holds string"),
+    new EnumWithPayload.Identity(test.Identity),
+    new EnumWithPayload.ConnectionId(test.Db.ConnectionId),
+    new EnumWithPayload.Timestamp(new Timestamp(1_234_567)),
+    new EnumWithPayload.Uuid(Uuid.Parse("01890f3d-8120-7cc8-9a1f-cd1224fb3a10")),
+    new EnumWithPayload.Bytes(new() { 0xde, 0xad, 0xbe, 0xef }),
+    new EnumWithPayload.Ints(new() { 0, 1, 2 }),
+    new EnumWithPayload.Strings(new() { "enum", "of", "vec", "of", "strings" }),
+    new EnumWithPayload.SimpleEnums(new() { SimpleEnum.Zero, SimpleEnum.One, SimpleEnum.Two }),
+};
+
+void RequireSequenceEqual<T>(IEnumerable<T> actual, IEnumerable<T> expected, string message)
+{
+    if (!actual.SequenceEqual(expected))
+    {
+        throw new Exception(message);
+    }
+}
+
+void RequireEnumPayloadListEqual(IReadOnlyList<EnumWithPayload> actual, IReadOnlyList<EnumWithPayload> expected, string message)
+{
+    Require(actual.Count == expected.Count, message);
+    for (var i = 0; i < actual.Count; i++)
+    {
+        RequireEnumPayloadEqual(actual[i], expected[i], message);
+    }
+}
+
+void RequireEnumPayloadEqual(EnumWithPayload actual, EnumWithPayload expected, string message)
+{
+    var equal = (actual, expected) switch
+    {
+        (EnumWithPayload.U8 a, EnumWithPayload.U8 e) => a.U8_ == e.U8_,
+        (EnumWithPayload.U16 a, EnumWithPayload.U16 e) => a.U16_ == e.U16_,
+        (EnumWithPayload.U32 a, EnumWithPayload.U32 e) => a.U32_ == e.U32_,
+        (EnumWithPayload.U64 a, EnumWithPayload.U64 e) => a.U64_ == e.U64_,
+        (EnumWithPayload.U128 a, EnumWithPayload.U128 e) => a.U128_ == e.U128_,
+        (EnumWithPayload.U256 a, EnumWithPayload.U256 e) => a.U256_ == e.U256_,
+        (EnumWithPayload.I8 a, EnumWithPayload.I8 e) => a.I8_ == e.I8_,
+        (EnumWithPayload.I16 a, EnumWithPayload.I16 e) => a.I16_ == e.I16_,
+        (EnumWithPayload.I32 a, EnumWithPayload.I32 e) => a.I32_ == e.I32_,
+        (EnumWithPayload.I64 a, EnumWithPayload.I64 e) => a.I64_ == e.I64_,
+        (EnumWithPayload.I128 a, EnumWithPayload.I128 e) => a.I128_ == e.I128_,
+        (EnumWithPayload.I256 a, EnumWithPayload.I256 e) => a.I256_ == e.I256_,
+        (EnumWithPayload.Bool a, EnumWithPayload.Bool e) => a.Bool_ == e.Bool_,
+        (EnumWithPayload.F32 a, EnumWithPayload.F32 e) => a.F32_ == e.F32_,
+        (EnumWithPayload.F64 a, EnumWithPayload.F64 e) => a.F64_ == e.F64_,
+        (EnumWithPayload.Str a, EnumWithPayload.Str e) => a.Str_ == e.Str_,
+        (EnumWithPayload.Identity a, EnumWithPayload.Identity e) => a.Identity_ == e.Identity_,
+        (EnumWithPayload.ConnectionId a, EnumWithPayload.ConnectionId e) => a.ConnectionId_ == e.ConnectionId_,
+        (EnumWithPayload.Timestamp a, EnumWithPayload.Timestamp e) => a.Timestamp_ == e.Timestamp_,
+        (EnumWithPayload.Uuid a, EnumWithPayload.Uuid e) => a.Uuid_ == e.Uuid_,
+        (EnumWithPayload.Bytes a, EnumWithPayload.Bytes e) => a.Bytes_.SequenceEqual(e.Bytes_),
+        (EnumWithPayload.Ints a, EnumWithPayload.Ints e) => a.Ints_.SequenceEqual(e.Ints_),
+        (EnumWithPayload.Strings a, EnumWithPayload.Strings e) => a.Strings_.SequenceEqual(e.Strings_),
+        (EnumWithPayload.SimpleEnums a, EnumWithPayload.SimpleEnums e) => a.SimpleEnums_.SequenceEqual(e.SimpleEnums_),
+        _ => false,
+    };
+    Require(equal, message);
 }
 
 void FrameTickUntil(IEnumerable<HarnessConnection> connections, Func<bool> isComplete, int timeoutSeconds = 20)
@@ -1478,7 +1808,7 @@ sealed class HarnessConnection : IDisposable
         this.allowCleanDisconnect = allowCleanDisconnect;
     }
 
-    public void FrameTickUntil(Func<bool> isComplete, int timeoutSeconds = 20)
+    public void FrameTickUntil(Func<bool> isComplete, int timeoutSeconds = 20, Func<string>? timeoutMessage = null)
     {
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
         while (!isComplete())
@@ -1487,7 +1817,7 @@ sealed class HarnessConnection : IDisposable
             Thread.Sleep(25);
             if (DateTime.UtcNow > deadline)
             {
-                throw new TimeoutException($"Timed out after {timeoutSeconds} seconds");
+                throw new TimeoutException(timeoutMessage?.Invoke() ?? $"Timed out after {timeoutSeconds} seconds");
             }
         }
     }
