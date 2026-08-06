@@ -14,7 +14,6 @@ const README_PATH: &str = "tools/ci/README.md";
 mod ci_docs;
 mod cla_assistant;
 mod codeowners_check;
-mod internal_tests;
 mod keynote_bench;
 mod smoketest;
 mod util;
@@ -298,9 +297,6 @@ fn check_pnpm_release_age_policy() -> Result<()> {
 
 #[derive(Subcommand)]
 enum CiCmd {
-    /// Selects or starts private CI for a public Internal Tests workflow.
-    #[command(hide = true)]
-    CoordinateInternalTests(internal_tests::CoordinateArgs),
     /// Runs tests
     ///
     /// Runs rust tests, codegens csharp sdk and runs csharp tests.
@@ -403,7 +399,6 @@ enum OtherWorkflowsCmd {
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     let subcmds = Cli::command()
         .get_subcommands()
-        .filter(|sc| !sc.is_hide_set())
         .map(|sc| sc.get_name().to_string())
         .collect::<Vec<_>>();
 
@@ -507,10 +502,6 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.cmd {
-        Some(CiCmd::CoordinateInternalTests(args)) => {
-            internal_tests::coordinate(args)?;
-        }
-
         Some(CiCmd::Test) => {
             pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 

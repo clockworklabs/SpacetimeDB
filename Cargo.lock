@@ -903,7 +903,6 @@ dependencies = [
  "clap 4.5.50",
  "duct",
  "env_logger 0.10.2",
- "github-api",
  "keynote-bench-harness",
  "log",
  "regex",
@@ -2612,15 +2611,6 @@ dependencies = [
  "openssl-probe",
  "openssl-sys",
  "url",
-]
-
-[[package]]
-name = "github-api"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
 ]
 
 [[package]]
