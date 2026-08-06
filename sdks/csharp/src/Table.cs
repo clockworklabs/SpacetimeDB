@@ -100,7 +100,7 @@ namespace SpacetimeDB
         // and therefore avoids using reflection when initializing the row object.
 
         public abstract class IndexBase<Column>
-            // where Column : IEquatable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though. 
+            // where Column : IEquatable<Column> // TODO: Revisit. Enums don't satisfy the `IEquatable<Column>` constraint. It shouldn't be needed though.
             where Column : notnull
         {
             protected abstract Column GetKey(Row row);
