@@ -465,6 +465,12 @@ void RunInsertCallerIdentity()
 {
     using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.OneIdentity()));
     var inserted = false;
+    var reducerSeen = false;
+    test.Db.Reducers.OnInsertCallerOneIdentity += ctx =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        reducerSeen = true;
+    };
 
     test.Db.Db.OneIdentity.OnInsert += (_, row) =>
     {
@@ -473,7 +479,7 @@ void RunInsertCallerIdentity()
     };
 
     test.Db.Reducers.InsertCallerOneIdentity();
-    test.FrameTickUntil(() => inserted);
+    test.FrameTickUntil(() => inserted && reducerSeen);
 }
 
 void RunDeleteIdentity()
@@ -532,13 +538,19 @@ void RunInsertCallerConnectionId()
 {
     using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.OneConnectionId()));
     var inserted = false;
+    var reducerSeen = false;
+    test.Db.Reducers.OnInsertCallerOneConnectionId += ctx =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        reducerSeen = true;
+    };
     test.Db.Db.OneConnectionId.OnInsert += (_, row) =>
     {
         Require(row.A == test.Db.ConnectionId, "Caller ConnectionId did not match connection state");
         inserted = true;
     };
     test.Db.Reducers.InsertCallerOneConnectionId();
-    test.FrameTickUntil(() => inserted);
+    test.FrameTickUntil(() => inserted && reducerSeen);
 }
 
 void RunDeleteConnectionId()
@@ -590,6 +602,12 @@ void RunInsertCallTimestamp()
 {
     using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.OneTimestamp()));
     var inserted = false;
+    var reducerSeen = false;
+    test.Db.Reducers.OnInsertCallTimestamp += ctx =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        reducerSeen = true;
+    };
     test.Db.Db.OneTimestamp.OnInsert += (ctx, row) =>
     {
         Require(ctx.Event is Event<Reducer>.Reducer, "Expected reducer event for insert_call_timestamp");
@@ -597,7 +615,7 @@ void RunInsertCallTimestamp()
         inserted = true;
     };
     test.Db.Reducers.InsertCallTimestamp();
-    test.FrameTickUntil(() => inserted);
+    test.FrameTickUntil(() => inserted && reducerSeen);
 }
 
 void RunInsertUuid()
@@ -614,21 +632,35 @@ void RunInsertUuid()
     test.FrameTickUntil(() => inserted);
 }
 
-void RunInsertCallUuidV4() => RunGeneratedUuid(test => test.Db.Reducers.InsertCallUuidV4());
+void RunInsertCallUuidV4() => RunGeneratedUuid(
+    test => test.Db.Reducers.InsertCallUuidV4(),
+    (test, mark) => test.Db.Reducers.OnInsertCallUuidV4 += ctx =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        mark();
+    });
 
-void RunInsertCallUuidV7() => RunGeneratedUuid(test => test.Db.Reducers.InsertCallUuidV7());
+void RunInsertCallUuidV7() => RunGeneratedUuid(
+    test => test.Db.Reducers.InsertCallUuidV7(),
+    (test, mark) => test.Db.Reducers.OnInsertCallUuidV7 += ctx =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        mark();
+    });
 
-void RunGeneratedUuid(Action<HarnessConnection> callReducer)
+void RunGeneratedUuid(Action<HarnessConnection> callReducer, Action<HarnessConnection, Action> registerReducerCallback)
 {
     using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.OneUuid()));
     var inserted = false;
+    var reducerSeen = false;
+    registerReducerCallback(test, () => reducerSeen = true);
     test.Db.Db.OneUuid.OnInsert += (_, row) =>
     {
         Require(row.U != Uuid.NIL, "Generated UUID was nil");
         inserted = true;
     };
     callReducer(test);
-    test.FrameTickUntil(() => inserted);
+    test.FrameTickUntil(() => inserted && reducerSeen);
 }
 
 void RunDeleteUuid()
@@ -965,13 +997,20 @@ void RunInsertPrimitivesAsStrings()
         primitive.U.ToString(),
     };
     var inserted = false;
+    var reducerSeen = false;
+    test.Db.Reducers.OnInsertPrimitivesAsStrings += (ctx, row) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        RequireEveryPrimitiveStructEqual(row, primitive, "InsertPrimitivesAsStrings reducer callback saw wrong argument");
+        reducerSeen = true;
+    };
     test.Db.Db.VecString.OnInsert += (_, row) =>
     {
         Require(row.S.SequenceEqual(expected), "Primitive string conversion did not round-trip");
         inserted = true;
     };
     test.Db.Reducers.InsertPrimitivesAsStrings(primitive);
-    test.FrameTickUntil(() => inserted);
+    test.FrameTickUntil(() => inserted && reducerSeen);
 }
 
 void RunReauth()
@@ -1103,6 +1142,13 @@ void RunRowDeduplicationJoinRAndS()
     var pkInsert = false;
     var pkUpdate = false;
     var uniqueInsert = false;
+    var compositeReducerSeen = false;
+    test.Db.Reducers.OnInsertUniqueU32UpdatePkU32 += (ctx, n, uniqueData, pkData) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(n == 42 && uniqueData == 0xbeef && pkData == 100, "Unexpected insert_unique_u32_update_pk_u32 args");
+        compositeReducerSeen = true;
+    };
     test.Db.Db.PkU32.OnInsert += (_, row) =>
     {
         Require(row.N == 42 && row.Data == 50, "Unexpected pk_u32 insert");
@@ -1121,7 +1167,7 @@ void RunRowDeduplicationJoinRAndS()
     };
     test.Db.Db.UniqueU32.OnDelete += (_, _) => throw new Exception("unique_u32 should not be deleted");
     test.Db.Reducers.InsertPkU32(42, 50);
-    test.FrameTickUntil(() => pkInsert && pkUpdate && uniqueInsert);
+    test.FrameTickUntil(() => pkInsert && pkUpdate && uniqueInsert && compositeReducerSeen);
 }
 
 void RunRowDeduplicationRJoinSAndRJoinT()
@@ -1134,9 +1180,16 @@ void RunRowDeduplicationRJoinSAndRJoinT()
     var pkInsert = false;
     var pkDelete = false;
     var pkTwoInsert = false;
+    var compositeReducerSeen = false;
     var uniqueInserts = 0;
     test.Db.Reducers.InsertUniqueU32(42, 0xbeef);
     test.FrameTickUntil(() => true);
+    test.Db.Reducers.OnDeletePkU32InsertPkU32Two += (ctx, n, data) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(n == 42 && data == 0xbeef, "Unexpected delete_pk_u32_insert_pk_u32_two args");
+        compositeReducerSeen = true;
+    };
     test.Db.Db.PkU32.OnInsert += (_, row) =>
     {
         Require(row.N == 42 && row.Data == 0xbeef, "Unexpected pk_u32 insert");
@@ -1155,7 +1208,7 @@ void RunRowDeduplicationRJoinSAndRJoinT()
     };
     test.Db.Db.UniqueU32.OnInsert += (_, _) => uniqueInserts++;
     test.Db.Reducers.InsertPkU32(42, 0xbeef);
-    test.FrameTickUntil(() => pkInsert && pkDelete && pkTwoInsert);
+    test.FrameTickUntil(() => pkInsert && pkDelete && pkTwoInsert && compositeReducerSeen);
     Require(uniqueInserts == 1, $"Expected exactly one deduplicated unique_u32 insert, got {uniqueInserts}");
 }
 
@@ -1176,6 +1229,27 @@ void RunLhsJoinUpdate(bool disjoint)
     var insertedRows = 0;
     var update1 = false;
     var update2 = false;
+    var insertPkReducers = 0;
+    var insertUniqueReducers = 0;
+    var updateReducers = 0;
+    test.Db.Reducers.OnInsertPkU32 += (ctx, n, data) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require((n == 1 || n == 2) && data == 0, "Unexpected insert_pk_u32 args");
+        insertPkReducers++;
+    };
+    test.Db.Reducers.OnInsertUniqueU32 += (ctx, n, data) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require((n == 1 && data == 3) || (n == 2 && data == 4), "Unexpected insert_unique_u32 args");
+        insertUniqueReducers++;
+    };
+    test.Db.Reducers.OnUpdatePkU32 += (ctx, n, data) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(n == 2 && data is 0 or 1, "Unexpected update_pk_u32 args");
+        updateReducers++;
+    };
     test.Db.Db.PkU32.OnInsert += (_, row) =>
     {
         if (row.N is 1 or 2)
@@ -1199,9 +1273,9 @@ void RunLhsJoinUpdate(bool disjoint)
     test.Db.Reducers.InsertPkU32(2, 0);
     test.Db.Reducers.InsertUniqueU32(1, 3);
     test.Db.Reducers.InsertUniqueU32(2, 4);
-    test.FrameTickUntil(() => insertedRows == 2);
+    test.FrameTickUntil(() => insertedRows == 2 && insertPkReducers == 2 && insertUniqueReducers == 2);
     test.Db.Reducers.UpdatePkU32(2, 1);
-    test.FrameTickUntil(() => update1 && update2);
+    test.FrameTickUntil(() => update1 && update2 && updateReducers == 2);
 }
 
 void RunIntraQueryBagSemanticsForJoin()
@@ -1211,9 +1285,24 @@ void RunIntraQueryBagSemanticsForJoin()
         "SELECT pk_u32.* FROM pk_u32 JOIN btree_u32 ON pk_u32.n = btree_u32.n");
     var pkInserts = 0;
     var pkDeletes = 0;
+    var insertBtreeReducerSeen = false;
+    var insertPkBtreeReducerSeen = false;
     var firstBtreeDeleteReducerSeen = false;
     var secondBtreeDeleteReducerSeen = false;
 
+    test.Db.Reducers.OnInsertIntoBtreeU32 += (ctx, rows) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(rows.Count == 1 && rows[0].N == 0 && rows[0].Data == 0, "Unexpected insert_into_btree_u32 args");
+        insertBtreeReducerSeen = true;
+    };
+    test.Db.Reducers.OnInsertIntoPkBtreeU32 += (ctx, pkRows, btreeRows) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(pkRows.Count == 1 && pkRows[0].N == 0 && pkRows[0].Data == 0, "Unexpected insert_into_pk_btree_u32 pk args");
+        Require(btreeRows.Count == 1 && btreeRows[0].N == 0 && btreeRows[0].Data == 1, "Unexpected insert_into_pk_btree_u32 btree args");
+        insertPkBtreeReducerSeen = true;
+    };
     test.Db.Db.PkU32.OnInsert += (_, row) =>
     {
         Require(row.N == 0 && row.Data == 0, "Unexpected pk_u32 insert");
@@ -1248,7 +1337,7 @@ void RunIntraQueryBagSemanticsForJoin()
     test.Db.Reducers.DeleteFromBtreeU32(new() { new BTreeU32(0, 0) });
     test.Db.Reducers.DeleteFromBtreeU32(new() { new BTreeU32(0, 1) });
 
-    test.FrameTickUntil(() => firstBtreeDeleteReducerSeen && secondBtreeDeleteReducerSeen && pkDeletes == 1);
+    test.FrameTickUntil(() => insertBtreeReducerSeen && insertPkBtreeReducerSeen && firstBtreeDeleteReducerSeen && secondBtreeDeleteReducerSeen && pkDeletes == 1);
     Require(pkInserts == 1, $"Expected one pk_u32 insert, got {pkInserts}");
 }
 
@@ -1288,6 +1377,8 @@ void RunRlsSubscription()
     using var bob = ConnectAndSubscribeSql("SELECT * FROM users");
     var aliceInserted = false;
     var bobInserted = false;
+    var aliceReducerSeen = false;
+    var bobReducerSeen = false;
     alice.Db.Db.Users.OnInsert += (_, row) =>
     {
         Require(row.Name == "Alice" && row.Identity == alice.Identity, "Alice saw wrong RLS row");
@@ -1298,9 +1389,21 @@ void RunRlsSubscription()
         Require(row.Name == "Bob" && row.Identity == bob.Identity, "Bob saw wrong RLS row");
         bobInserted = true;
     };
+    alice.Db.Reducers.OnInsertUser += (ctx, name, identity) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(name == "Alice" && identity == alice.Identity, "Unexpected Alice insert_user args");
+        aliceReducerSeen = true;
+    };
+    bob.Db.Reducers.OnInsertUser += (ctx, name, identity) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(name == "Bob" && identity == bob.Identity, "Unexpected Bob insert_user args");
+        bobReducerSeen = true;
+    };
     alice.Db.Reducers.InsertUser("Alice", alice.Identity);
     bob.Db.Reducers.InsertUser("Bob", bob.Identity);
-    FrameTickUntil(new[] { alice, bob }, () => aliceInserted && bobInserted);
+    FrameTickUntil(new[] { alice, bob }, () => aliceInserted && bobInserted && aliceReducerSeen && bobReducerSeen);
 }
 
 void RunPkSimpleEnum()
@@ -1308,6 +1411,20 @@ void RunPkSimpleEnum()
     using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.PkSimpleEnum()));
     var updated = false;
     var enumValue = SimpleEnum.Two;
+    var insertReducerSeen = false;
+    var updateReducerSeen = false;
+    test.Db.Reducers.OnInsertPkSimpleEnum += (ctx, a, data) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(a == enumValue && data == 42, "Unexpected insert_pk_simple_enum args");
+        insertReducerSeen = true;
+    };
+    test.Db.Reducers.OnUpdatePkSimpleEnum += (ctx, a, data) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(a == enumValue && data == 24, "Unexpected update_pk_simple_enum args");
+        updateReducerSeen = true;
+    };
     test.Db.Db.PkSimpleEnum.OnInsert += (_, row) =>
     {
         Require(row.A == enumValue && row.Data == 42, "Unexpected pk_simple_enum insert");
@@ -1321,13 +1438,27 @@ void RunPkSimpleEnum()
     };
     test.Db.Db.PkSimpleEnum.OnDelete += (_, _) => throw new Exception("pk_simple_enum should not be deleted");
     test.Db.Reducers.InsertPkSimpleEnum(enumValue, 42);
-    test.FrameTickUntil(() => updated);
+    test.FrameTickUntil(() => updated && insertReducerSeen && updateReducerSeen);
 }
 
 void RunIndexedSimpleEnum()
 {
     using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.IndexedSimpleEnum()));
     var updated = false;
+    var insertReducerSeen = false;
+    var updateReducerSeen = false;
+    test.Db.Reducers.OnInsertIntoIndexedSimpleEnum += (ctx, n) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(n == SimpleEnum.Two, "Unexpected insert_into_indexed_simple_enum args");
+        insertReducerSeen = true;
+    };
+    test.Db.Reducers.OnUpdateIndexedSimpleEnum += (ctx, oldValue, newValue) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(oldValue == SimpleEnum.Two && newValue == SimpleEnum.One, "Unexpected update_indexed_simple_enum args");
+        updateReducerSeen = true;
+    };
     test.Db.Db.IndexedSimpleEnum.OnInsert += (_, row) =>
     {
         if (row.N == SimpleEnum.Two)
@@ -1340,7 +1471,7 @@ void RunIndexedSimpleEnum()
         }
     };
     test.Db.Reducers.InsertIntoIndexedSimpleEnum(SimpleEnum.Two);
-    test.FrameTickUntil(() => updated);
+    test.FrameTickUntil(() => updated && insertReducerSeen && updateReducerSeen);
 }
 
 void RunOverlappingSubscriptions()
@@ -1359,13 +1490,20 @@ void RunOverlappingSubscriptions()
         .Subscribe(new[] { "SELECT * FROM pk_u8 WHERE n < 100", "SELECT * FROM pk_u8 WHERE n > 0" });
     test.FrameTickUntil(() => applied);
     var updated = false;
+    var updateReducerSeen = false;
+    test.Db.Reducers.OnUpdatePkU8 += (ctx, n, data) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        Require(n == 1 && data == 1, "Unexpected update_pk_u8 args");
+        updateReducerSeen = true;
+    };
     test.Db.Db.PkU8.OnUpdate += (_, oldRow, newRow) =>
     {
         Require(oldRow.N == 1 && oldRow.Data == 0 && newRow.N == 1 && newRow.Data == 1, "Overlapping update was wrong");
         updated = true;
     };
     test.Db.Reducers.UpdatePkU8(1, 1);
-    test.FrameTickUntil(() => updated);
+    test.FrameTickUntil(() => updated && updateReducerSeen);
 }
 
 void RunSortedUuidsInsert()
