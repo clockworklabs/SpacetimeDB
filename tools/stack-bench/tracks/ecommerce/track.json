@@ -6,9 +6,32 @@
   "reseedOnReset": true,
   "suites": {
     "1": [
-      { "id": "features", "spec": "scenarios/01-features.json" },
-      { "id": "invariants", "spec": "scenarios/01-invariants.json" },
-      { "id": "contention", "spec": "scenarios/01-contention.json" }
+      {
+        "id": "features",
+        "spec": "scenarios/01-features.json"
+      },
+      {
+        "id": "invariants",
+        "spec": "scenarios/01-invariants.json"
+      },
+      {
+        "id": "contention",
+        "spec": "scenarios/01-contention.json"
+      }
+    ],
+    "2": [
+      {
+        "id": "features",
+        "spec": "scenarios/02-features.json"
+      },
+      {
+        "id": "invariants",
+        "spec": "scenarios/02-invariants.json"
+      },
+      {
+        "id": "contention",
+        "spec": "scenarios/01-contention.json"
+      }
     ]
   }
 }

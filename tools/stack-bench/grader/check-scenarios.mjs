@@ -30,10 +30,18 @@ let problems = 0;
 const fail = (where, msg) => { console.log(`  ${where}: ${msg}`); problems++; };
 
 // A track's contracts are keyed by level, one file per level whatever its name.
+// Levels are CUMULATIVE — a level 2 scenario legitimately drives level 1's
+// hooks, because the app it grades still has them — so each level's set is the
+// union of every level up to it, the same way the linter loads them.
 function hooksByLevel(track) {
-  const byLevel = {};
+  const perFile = {};
   for (const f of readdirSync(track.contracts).filter(f => /^\d\d-.*\.json$/.test(f))) {
-    byLevel[f.slice(0, 2)] = new Set(JSON.parse(readFileSync(join(track.contracts, f), 'utf8')).hooks.map(h => h.id));
+    perFile[f.slice(0, 2)] = JSON.parse(readFileSync(join(track.contracts, f), 'utf8')).hooks.map(h => h.id);
+  }
+  const byLevel = {};
+  for (const lvl of Object.keys(perFile)) {
+    byLevel[lvl] = new Set(
+      Object.entries(perFile).filter(([l]) => l <= lvl).flatMap(([, ids]) => ids));
   }
   return byLevel;
 }

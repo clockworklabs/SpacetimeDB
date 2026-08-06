@@ -1,0 +1,195 @@
+{
+  "level": 2,
+  "track": "ecommerce",
+  "name": "Running the business — invariants",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses|\\/transfer|\\/cancel|\\/return|\\/ship|\\/price|\\/fulfil",
+  "note": "Properties that must survive the new operations regardless of which feature works. Level 2 adds two roles and six ways to move stock or money, so the questions are: can someone do an operator's job without being an operator, does conservation still hold once stock can flow backwards, and does anything a customer sends decide what the store charges. Stated as outcomes a person would recognise, and scored so a backend is never penalised for a check the harness could not run against it.",
+  "features": [
+    {
+      "id": 201,
+      "name": "Operating the store requires being an operator",
+      "actors": ["admin", "customer"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signUp", "actor": "customer", "name": "notstaff" },
+        { "do": "click", "actor": "admin", "testid": "admin-link" }
+      ],
+      "criteria": [
+        {
+          "id": "201a",
+          "desc": "a customer replaying an admin's transfer moves no stock",
+          "points": 2,
+          "steps": [
+            { "do": "fill", "actor": "admin", "testid": "transfer-from", "text": "East", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" } },
+            { "do": "fill", "actor": "admin", "testid": "transfer-to", "text": "West", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" } },
+            { "do": "fill", "actor": "admin", "testid": "transfer-qty", "text": "5", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" } },
+            { "do": "click", "actor": "admin", "testid": "transfer-submit", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" } },
+            { "do": "wait", "actor": "admin", "ms": 2500 },
+            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Gaming Mouse", "enter": true, "settleMs": 1500 },
+            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "as": "after-admin-move" },
+            { "do": "replayAs", "actor": "customer", "from": "admin", "match": "transfer", "settleMs": 2500 },
+            { "do": "expectReplayRejected", "actor": "customer" },
+            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "relativeTo": "after-admin-move", "plus": 0 }
+          ]
+        },
+        {
+          "id": "201b",
+          "desc": "a customer cannot set a price by replaying an admin's change",
+          "points": 2,
+          "steps": [
+            { "do": "fill", "actor": "admin", "testid": "price-input", "text": "77.00", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" } },
+            { "do": "click", "actor": "admin", "testid": "price-submit", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" } },
+            { "do": "wait", "actor": "admin", "ms": 2500 },
+            { "do": "replayAs", "actor": "customer", "from": "admin", "match": "price",
+              "swap": { "find": "77", "with": "1" }, "settleMs": 2500 },
+            { "do": "expectReplayRejected", "actor": "customer" },
+            { "do": "expectNumber", "actor": "customer", "testid": "item-price", "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "atLeast": 77 }
+          ]
+        },
+        {
+          "id": "201c",
+          "desc": "a customer cannot ship their own order",
+          "points": 2,
+          "steps": [
+            { "do": "pressKey", "actor": "customer", "key": "Escape" },
+            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Laptop Stand", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Laptop Stand" } },
+            { "do": "wait", "actor": "customer", "ms": 2500 },
+            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "customer", "testid": "ship-submit", "absent": true },
+            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Laptop Stand" }, "notContains": "hipped" }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": 202,
+      "name": "Stock is conserved however it moves",
+      "actors": ["admin", "customer"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signUp", "actor": "customer", "name": "conserve" },
+        { "do": "click", "actor": "admin", "testid": "admin-link" }
+      ],
+      "criteria": [
+        {
+          "id": "202a",
+          "desc": "a transfer changes where stock is, never how much there is",
+          "points": 2,
+          "steps": [
+            { "do": "recordNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Espresso Machine" }, "as": "espresso-total" },
+            { "do": "fill", "actor": "admin", "testid": "transfer-from", "text": "East", "in": { "testid": "admin-item-row", "contains": "Espresso Machine" } },
+            { "do": "fill", "actor": "admin", "testid": "transfer-to", "text": "West", "in": { "testid": "admin-item-row", "contains": "Espresso Machine" } },
+            { "do": "fill", "actor": "admin", "testid": "transfer-qty", "text": "17", "in": { "testid": "admin-item-row", "contains": "Espresso Machine" } },
+            { "do": "click", "actor": "admin", "testid": "transfer-submit", "in": { "testid": "admin-item-row", "contains": "Espresso Machine" } },
+            { "do": "wait", "actor": "admin", "ms": 3000 },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Espresso Machine" }, "relativeTo": "espresso-total", "plus": 0 }
+          ]
+        },
+        {
+          "id": "202b",
+          "desc": "a sale and its cancellation leave the shelf exactly as they found it",
+          "points": 2,
+          "steps": [
+            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Induction Cooktop", "enter": true, "settleMs": 1500 },
+            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "as": "cooktop-before" },
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Induction Cooktop" } },
+            { "do": "wait", "actor": "customer", "ms": 2000 },
+            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "relativeTo": "cooktop-before", "plus": -1 },
+            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
+            { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Induction Cooktop" } },
+            { "do": "wait", "actor": "customer", "ms": 2500 },
+            { "do": "pressKey", "actor": "customer", "key": "Escape" },
+            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "relativeTo": "cooktop-before", "plus": 0 }
+          ]
+        },
+        {
+          "id": "202c",
+          "desc": "a fresh client sees the same totals, so nothing was only corrected in one browser",
+          "points": 1,
+          "steps": [
+            { "do": "freshClient", "actor": "customer" },
+            { "do": "fill", "actor": "customer-fresh", "testid": "search-input", "text": "Induction Cooktop", "enter": true, "settleMs": 2000 },
+            { "do": "expectNumber", "actor": "customer-fresh", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "relativeTo": "cooktop-before", "plus": 0 }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": 203,
+      "name": "The books still balance once money can flow backwards",
+      "actors": ["admin", "customer"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signUp", "actor": "customer", "name": "books" },
+        { "do": "click", "actor": "admin", "testid": "admin-link" }
+      ],
+      "criteria": [
+        {
+          "id": "203a",
+          "desc": "revenue rises by what was bought and falls by what was cancelled",
+          "points": 3,
+          "steps": [
+            { "do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "rev-start" },
+            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Desk Lamp", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "wait", "actor": "customer", "ms": 2500 },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "rev-start", "plus": 42, "within": 10000 },
+            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
+            { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Desk Lamp" } },
+            { "do": "wait", "actor": "customer", "ms": 2500 },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "rev-start", "plus": 0, "within": 10000 }
+          ]
+        },
+        {
+          "id": "203b",
+          "desc": "a price change does not rewrite revenue already earned",
+          "points": 2,
+          "steps": [
+            { "do": "pressKey", "actor": "customer", "key": "Escape" },
+            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Webcam", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Webcam" } },
+            { "do": "wait", "actor": "customer", "ms": 2500 },
+            { "do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "rev-after-sale" },
+            { "do": "fill", "actor": "admin", "testid": "price-input", "text": "5.00", "in": { "testid": "admin-item-row", "contains": "Webcam" } },
+            { "do": "click", "actor": "admin", "testid": "price-submit", "in": { "testid": "admin-item-row", "contains": "Webcam" } },
+            { "do": "wait", "actor": "admin", "ms": 3000 },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "rev-after-sale", "plus": 0 }
+          ]
+        }
+      ]
+    },
+
+    {
+      "id": 204,
+      "name": "An order belongs to the person who placed it",
+      "actors": ["one", "two"],
+      "setup": [
+        { "do": "signUp", "actor": "one", "name": "owner" },
+        { "do": "signUp", "actor": "two", "name": "other" }
+      ],
+      "criteria": [
+        {
+          "id": "204a",
+          "desc": "one customer cannot cancel another's order",
+          "points": 2,
+          "steps": [
+            { "do": "fill", "actor": "one", "testid": "search-input", "text": "Chisel", "enter": true, "settleMs": 1200 },
+            { "do": "fill", "actor": "one", "testid": "search-input", "text": "Laptop Stand", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "one", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Laptop Stand" } },
+            { "do": "wait", "actor": "one", "ms": 2500 },
+            { "do": "click", "actor": "one", "testid": "orders-toggle" },
+            { "do": "click", "actor": "one", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Laptop Stand" } },
+            { "do": "wait", "actor": "one", "ms": 2000 },
+            { "do": "replayAs", "actor": "two", "from": "one", "match": "cancel", "settleMs": 2500 },
+            { "do": "expectReplayRejected", "actor": "two" },
+            { "do": "click", "actor": "two", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "two", "testid": "order-item", "contains": "Laptop Stand", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}
