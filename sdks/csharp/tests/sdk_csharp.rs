@@ -36,6 +36,12 @@ fn subscription_error_smoke_test() {
 
 #[test]
 #[serial(CsharpSdk)]
+fn subscribe_all_select_star() {
+    make_test("subscribe-all-select-star").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
 fn delete_primitive() {
     make_test("delete-primitive").run();
 }
@@ -259,6 +265,12 @@ fn test_lhs_join_update_disjoint_queries() {
 
 #[test]
 #[serial(CsharpSdk)]
+fn test_intra_query_bag_semantics_for_join() {
+    make_test("test-intra-query-bag-semantics-for-join").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
 fn two_different_compression_algos() {
     make_test("two-different-compression-algos").run();
 }
@@ -273,6 +285,12 @@ fn test_parameterized_subscription() {
 #[serial(CsharpSdk)]
 fn test_rls_subscription() {
     make_test("test-rls-subscription").run();
+}
+
+#[test]
+#[serial(CsharpSdk)]
+fn pk_simple_enum() {
+    make_test("pk-simple-enum").run();
 }
 
 #[test]

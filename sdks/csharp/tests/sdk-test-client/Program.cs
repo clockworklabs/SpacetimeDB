@@ -30,6 +30,9 @@ switch (testName)
     case "subscription-error-smoke-test":
         RunSubscriptionErrorSmokeTest();
         break;
+    case "subscribe-all-select-star":
+        RunSubscribeAllSelectStar();
+        break;
     case "delete-primitive":
         RunDeletePrimitive();
         break;
@@ -140,6 +143,9 @@ switch (testName)
     case "test-lhs-join-update-disjoint-queries":
         RunLhsJoinUpdate(disjoint: true);
         break;
+    case "test-intra-query-bag-semantics-for-join":
+        RunIntraQueryBagSemanticsForJoin();
+        break;
     case "two-different-compression-algos":
         RunTwoDifferentCompressionAlgos();
         break;
@@ -148,6 +154,9 @@ switch (testName)
         break;
     case "test-rls-subscription":
         RunRlsSubscription();
+        break;
+    case "pk-simple-enum":
+        RunPkSimpleEnum();
         break;
     case "indexed-simple-enum":
         RunIndexedSimpleEnum();
@@ -248,6 +257,53 @@ void RunSubscriptionErrorSmokeTest()
     Require(!handle.IsActive, "Invalid subscription should not be active yet");
     test.FrameTickUntil(() => errored);
     Require(handle.IsEnded, "Invalid subscription handle did not end");
+}
+
+void RunSubscribeAllSelectStar()
+{
+    using var test = ConnectAndSubscribeAll();
+    var remaining = 16;
+    void Seen() => remaining--;
+
+    var u128 = new U128(0, 5);
+    var u256 = new U256(new U128(0, 0), new U128(0, 6));
+    var i128 = new I128(0, 7);
+    var i256 = new I256(new U128(0, 0), new U128(0, 8));
+
+    test.Db.Db.OneU8.OnInsert += (_, row) => { Require(row.N == 1, "OneU8 did not round-trip"); Seen(); };
+    test.Db.Db.OneU16.OnInsert += (_, row) => { Require(row.N == 2, "OneU16 did not round-trip"); Seen(); };
+    test.Db.Db.OneU32.OnInsert += (_, row) => { Require(row.N == 3, "OneU32 did not round-trip"); Seen(); };
+    test.Db.Db.OneU64.OnInsert += (_, row) => { Require(row.N == 4, "OneU64 did not round-trip"); Seen(); };
+    test.Db.Db.OneU128.OnInsert += (_, row) => { Require(row.N.Equals(u128), "OneU128 did not round-trip"); Seen(); };
+    test.Db.Db.OneU256.OnInsert += (_, row) => { Require(row.N.Equals(u256), "OneU256 did not round-trip"); Seen(); };
+    test.Db.Db.OneI8.OnInsert += (_, row) => { Require(row.N == -1, "OneI8 did not round-trip"); Seen(); };
+    test.Db.Db.OneI16.OnInsert += (_, row) => { Require(row.N == -2, "OneI16 did not round-trip"); Seen(); };
+    test.Db.Db.OneI32.OnInsert += (_, row) => { Require(row.N == -3, "OneI32 did not round-trip"); Seen(); };
+    test.Db.Db.OneI64.OnInsert += (_, row) => { Require(row.N == -4, "OneI64 did not round-trip"); Seen(); };
+    test.Db.Db.OneI128.OnInsert += (_, row) => { Require(row.N.Equals(i128), "OneI128 did not round-trip"); Seen(); };
+    test.Db.Db.OneI256.OnInsert += (_, row) => { Require(row.N.Equals(i256), "OneI256 did not round-trip"); Seen(); };
+    test.Db.Db.OneBool.OnInsert += (_, row) => { Require(row.B, "OneBool did not round-trip"); Seen(); };
+    test.Db.Db.OneF32.OnInsert += (_, row) => { Require(Math.Abs(row.F - 1.25f) < 0.001f, "OneF32 did not round-trip"); Seen(); };
+    test.Db.Db.OneF64.OnInsert += (_, row) => { Require(Math.Abs(row.F - 2.5) < 0.001, "OneF64 did not round-trip"); Seen(); };
+    test.Db.Db.OneString.OnInsert += (_, row) => { Require(row.S == "hello", "OneString did not round-trip"); Seen(); };
+
+    test.Db.Reducers.InsertOneU8(1);
+    test.Db.Reducers.InsertOneU16(2);
+    test.Db.Reducers.InsertOneU32(3);
+    test.Db.Reducers.InsertOneU64(4);
+    test.Db.Reducers.InsertOneU128(u128);
+    test.Db.Reducers.InsertOneU256(u256);
+    test.Db.Reducers.InsertOneI8(-1);
+    test.Db.Reducers.InsertOneI16(-2);
+    test.Db.Reducers.InsertOneI32(-3);
+    test.Db.Reducers.InsertOneI64(-4);
+    test.Db.Reducers.InsertOneI128(i128);
+    test.Db.Reducers.InsertOneI256(i256);
+    test.Db.Reducers.InsertOneBool(true);
+    test.Db.Reducers.InsertOneF32(1.25f);
+    test.Db.Reducers.InsertOneF64(2.5);
+    test.Db.Reducers.InsertOneString("hello");
+    test.FrameTickUntil(() => remaining == 0);
 }
 
 void RunDeletePrimitive()
@@ -920,6 +976,54 @@ void RunLhsJoinUpdate(bool disjoint)
     test.FrameTickUntil(() => update1 && update2);
 }
 
+void RunIntraQueryBagSemanticsForJoin()
+{
+    using var test = ConnectAndSubscribeSql(
+        "SELECT * FROM btree_u32",
+        "SELECT pk_u32.* FROM pk_u32 JOIN btree_u32 ON pk_u32.n = btree_u32.n");
+    var pkInserts = 0;
+    var pkDeletes = 0;
+    var firstBtreeDeleteReducerSeen = false;
+    var secondBtreeDeleteReducerSeen = false;
+
+    test.Db.Db.PkU32.OnInsert += (_, row) =>
+    {
+        Require(row.N == 0 && row.Data == 0, "Unexpected pk_u32 insert");
+        pkInserts++;
+    };
+    test.Db.Db.PkU32.OnDelete += (_, row) =>
+    {
+        Require(row.N == 0 && row.Data == 0, "Unexpected pk_u32 delete");
+        pkDeletes++;
+    };
+    test.Db.Reducers.OnDeleteFromBtreeU32 += (ctx, rows) =>
+    {
+        RequireCommitted(ctx.Event.Status);
+        var deleted = rows.Single();
+        if (deleted.Data == 0)
+        {
+            Require(pkDeletes == 0, "pk_u32 was deleted while join multiplicity was still positive");
+            firstBtreeDeleteReducerSeen = true;
+        }
+        else if (deleted.Data == 1)
+        {
+            secondBtreeDeleteReducerSeen = true;
+        }
+        else
+        {
+            throw new Exception($"Unexpected btree_u32 delete data {deleted.Data}");
+        }
+    };
+
+    test.Db.Reducers.InsertIntoBtreeU32(new() { new BTreeU32(0, 0) });
+    test.Db.Reducers.InsertIntoPkBtreeU32(new() { new PkU32(0, 0) }, new() { new BTreeU32(0, 1) });
+    test.Db.Reducers.DeleteFromBtreeU32(new() { new BTreeU32(0, 0) });
+    test.Db.Reducers.DeleteFromBtreeU32(new() { new BTreeU32(0, 1) });
+
+    test.FrameTickUntil(() => firstBtreeDeleteReducerSeen && secondBtreeDeleteReducerSeen && pkDeletes == 1);
+    Require(pkInserts == 1, $"Expected one pk_u32 insert, got {pkInserts}");
+}
+
 void RunTwoDifferentCompressionAlgos()
 {
     var bytes = Enumerable.Range(0, 1 << 15).Select(i => (byte)(i % 251)).ToList();
@@ -969,6 +1073,27 @@ void RunRlsSubscription()
     alice.Db.Reducers.InsertUser("Alice", alice.Identity);
     bob.Db.Reducers.InsertUser("Bob", bob.Identity);
     FrameTickUntil(new[] { alice, bob }, () => aliceInserted && bobInserted);
+}
+
+void RunPkSimpleEnum()
+{
+    using var test = ConnectAndSubscribe(conn => conn.SubscriptionBuilder().AddQuery(qb => qb.From.PkSimpleEnum()));
+    var updated = false;
+    var enumValue = SimpleEnum.Two;
+    test.Db.Db.PkSimpleEnum.OnInsert += (_, row) =>
+    {
+        Require(row.A == enumValue && row.Data == 42, "Unexpected pk_simple_enum insert");
+        test.Db.Reducers.UpdatePkSimpleEnum(enumValue, 24);
+    };
+    test.Db.Db.PkSimpleEnum.OnUpdate += (_, oldRow, newRow) =>
+    {
+        Require(oldRow.A == enumValue && oldRow.Data == 42, "Unexpected old pk_simple_enum row");
+        Require(newRow.A == enumValue && newRow.Data == 24, "Unexpected new pk_simple_enum row");
+        updated = true;
+    };
+    test.Db.Db.PkSimpleEnum.OnDelete += (_, _) => throw new Exception("pk_simple_enum should not be deleted");
+    test.Db.Reducers.InsertPkSimpleEnum(enumValue, 42);
+    test.FrameTickUntil(() => updated);
 }
 
 void RunIndexedSimpleEnum()
@@ -1089,6 +1214,26 @@ HarnessConnection ConnectAndSubscribeSql(params string[] queries)
                 .OnApplied(_ => applied = true)
                 .OnError((_, err) => throw err)
                 .Subscribe(queries);
+            connected = true;
+        })
+        .Build();
+    var harness = new HarnessConnection(db);
+    harness.FrameTickUntil(() => connected && applied);
+    return harness;
+}
+
+HarnessConnection ConnectAndSubscribeAll()
+{
+    var connected = false;
+    var applied = false;
+    DbConnection db = null!;
+    db = BuildConnection()
+        .OnConnect((conn, _, _) =>
+        {
+            conn.SubscriptionBuilder()
+                .OnApplied(_ => applied = true)
+                .OnError((_, err) => throw err)
+                .SubscribeToAllTables();
             connected = true;
         })
         .Build();
