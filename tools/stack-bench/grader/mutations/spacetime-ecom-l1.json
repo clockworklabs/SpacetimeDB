@@ -1,0 +1,19 @@
+{
+  "note": "Defects injected into the generated SpacetimeDB shop.\n\nAN ASYMMETRY WORTH STATING PLAINLY: the PostgreSQL and MongoDB oversell mutants remove a CONCURRENCY CONTROL — a row lock, a conditional update — and the criterion then catches simultaneous buyers each passing the same availability check. There is no equivalent edit here, because a reducer runs as one transaction and nothing interleaves inside it. The defect those mutants inject is not expressible in this module.\n\nThat is a real structural difference, but 'we could not write the mutant' is weaker evidence than 'we wrote one and it was caught', and it must not be reported as though the criterion had been validated the same way. What the mutant below establishes is narrower and still necessary: that criterion 201a is CAPABLE of failing on this backend, so a pass here is a real pass rather than a check that silently cannot fire. It removes the stock guard, which is a validation defect rather than a race.\n\nClaim it this way: applications built on the other two backends shipped a stock decrement whose correctness depended on a lock the author had to remember; the reducer model removes the opportunity. Never claim the other databases cannot do it correctly — every one of these apps could be fixed with one line.",
+  "mutations": [
+    {
+      "id": "oversell-no-stock-guard",
+      "desc": "Remove the availability check from the buy reducer, so a purchase proceeds against an item with no stock and drives it negative. This is NOT the concurrency defect the other backends' mutants inject — it is a missing validation — and it exists to prove criterion 201a can fail on this backend at all.",
+      "breaks": 201,
+      "breaksCriterion": "201a",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (item.stock < 1) throw new SenderError('this item is out of stock');",
+          "replace": ""
+        }
+      ],
+      "redeployRequired": true
+    }
+  ]
+}
