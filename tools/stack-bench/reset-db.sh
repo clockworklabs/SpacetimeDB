@@ -28,8 +28,25 @@ case "$BACKEND" in
     # client keeps pointing at the same module name.
     MODULE=$(grep -oE "MODULE_NAME\s*=\s*'[^']+'" "$APP_DIR/client/src/config.ts" 2>/dev/null | grep -oE "'[^']+'" | tr -d "'")
     MODULE="${MODULE:-$MODULE_FALLBACK}"
-    echo y | spacetime publish "$MODULE" --module-path "$APP_DIR/backend/spacetimedb" --delete-data >/dev/null 2>&1
-    echo "reset spacetime module $MODULE"
+
+    # Reset the host the APP READS, not the one we would prefer it used. These
+    # drifted apart during the move to a benchmark-owned instance: the reset
+    # published to :3210 while the app served :3000, reported success, and every
+    # later grade ran against an accumulating database. A reset that resets
+    # something else is worse than no reset, because it is silent.
+    APP_URI=$(grep -oE "URI\s*=\s*'[^']+'" "$APP_DIR/client/src/config.ts" 2>/dev/null | grep -oE "'[^']+'" | tr -d "'")
+    STDB_URI="${APP_URI:-${STACK_BENCH_STDB_URI:-http://127.0.0.1:3210}}"
+    if [ -n "$APP_URI" ] && [ -n "${STACK_BENCH_STDB_URI:-}" ] && [ "$APP_URI" != "$STACK_BENCH_STDB_URI" ]; then
+      echo "note: app targets $APP_URI but STACK_BENCH_STDB_URI is $STACK_BENCH_STDB_URI — resetting the app's own host" >&2
+    fi
+
+    if ! echo y | spacetime publish "$MODULE" --module-path "$APP_DIR/backend/spacetimedb" \
+         -s "$STDB_URI" --delete-data > /tmp/reset-spacetime.log 2>&1; then
+      echo "FAILED to reset spacetime module $MODULE on $STDB_URI" >&2
+      tail -3 /tmp/reset-spacetime.log >&2
+      exit 1
+    fi
+    echo "reset spacetime module $MODULE on $STDB_URI"
     ;;
 
   postgres)
