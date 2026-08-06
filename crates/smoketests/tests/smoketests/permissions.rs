@@ -189,7 +189,7 @@ fn test_private_table() {
 /// Ensure that you cannot delete a database that you do not own
 #[test]
 fn test_cannot_delete_others_database() {
-    let test = Smoketest::builder().build();
+    let test = Smoketest::builder().precompiled_module("noop").build();
 
     let identity = test.database_identity.as_ref().unwrap().clone();
 

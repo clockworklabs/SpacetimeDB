@@ -269,11 +269,11 @@ where
             Err(e) => {
                 let cause = match &e {
                     ClientConnectedError::Rejected(_) => {
-                        log::info!("websocket: Rejecting connection for {client_log_string} due to rejection from client_connected reducer: {e}");
+                        log::debug!("websocket: Rejecting connection for {client_log_string} due to rejection from client_connected reducer: {e}");
                         ClientRejectCause::ClientConnectedRejected
                     }
                     ClientConnectedError::OutOfEnergy => {
-                        log::info!("websocket: Rejecting connection for {client_log_string} due to out of energy error from client_connected reducer: {e}");
+                        log::debug!("websocket: Rejecting connection for {client_log_string} due to out of energy error from client_connected reducer: {e}");
                         ClientRejectCause::OutOfEnergy
                     }
                     ClientConnectedError::DBError(_) | ClientConnectedError::ReducerCall(_) => {
@@ -570,7 +570,7 @@ async fn ws_client_actor_inner(
         let _ = unordered_tx.send(msg);
     })
     .await;
-    log::info!("Client connection ended: {client_id}");
+    log::trace!("Client connection ended: {client_id}");
 }
 
 /// The main `select!` loop of the websocket client actor.
@@ -734,7 +734,7 @@ async fn ws_main_loop<HotswapWatcher>(
 
             // Exit if we haven't heard from the client for too long.
             _ = &mut idle_timer => {
-                log::warn!("Client {} timed out", state.client_id);
+                log::debug!("Client {} timed out", state.client_id);
                 WORKER_METRICS
                     .ws_clients_idle_timed_out
                     .with_label_values(&state.database)
@@ -1001,7 +1001,7 @@ fn ws_recv_queue(
         reason: Utf8Bytes::from_static("too many requests"),
     });
     let on_message_after_close = move |client_id| {
-        log::warn!("client {client_id} sent message after close or error");
+        log::debug!("client {client_id} sent message after close or error");
     };
 
     let max_incoming_queue_length = state.config.incoming_queue_length.get();
