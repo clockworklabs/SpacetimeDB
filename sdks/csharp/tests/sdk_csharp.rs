@@ -1,3 +1,5 @@
+use std::panic::{catch_unwind, take_hook, AssertUnwindSafe};
+
 use serial_test::serial;
 use spacetimedb_testing::sdk::Test;
 
@@ -56,6 +58,27 @@ fn make_procedural_view_pk_test(subcommand: &str) -> Test {
             "dotnet ./bin~/Debug/net8.0/procedural-view-pk-client.dll {subcommand}"
         ))
         .build()
+}
+
+fn run_expected_client_failure(test: Test, expected_message: &str) {
+    let panic_hook = take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = catch_unwind(AssertUnwindSafe(|| test.run()));
+    std::panic::set_hook(panic_hook);
+
+    let panic = result.expect_err("Expected C# SDK harness client to fail");
+    let message = if let Some(message) = panic.downcast_ref::<String>() {
+        message.as_str()
+    } else if let Some(message) = panic.downcast_ref::<&str>() {
+        message
+    } else {
+        panic!("C# SDK harness failed with non-string panic");
+    };
+
+    assert!(
+        message.contains("(running): Error running") && message.contains(expected_message),
+        "Expected C# SDK harness client failure containing {expected_message:?}, got:\n{message}"
+    );
 }
 
 #[test]
@@ -252,9 +275,11 @@ fn csharp_insert_primitives_as_strings() {
 
 #[test]
 #[serial(CsharpSdk)]
-#[should_panic]
 fn csharp_should_fail() {
-    make_test("should-fail").run();
+    run_expected_client_failure(
+        make_test("should-fail"),
+        "intentional failure for harness should_panic coverage",
+    );
 }
 
 #[test]
