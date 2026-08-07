@@ -43,8 +43,15 @@ const ROOTS = arg('--app') ? transcriptsFor(arg('--app'))
 
 const norm = s => String(s ?? '').replace(/\\/g, '/').replace(/^["']|["']$/g, '').toLowerCase();
 
+// When the caller names the app directory, that IS the boundary — no guessing
+// from whatever directory the session happened to be standing in.
+const APP_BOUNDARY = arg('--app') ? norm(resolve(arg('--app'))) : null;
+
 // Files a build legitimately needs: its own app, plus node_modules noise.
-const IGNORE = /node_modules|\.git[/\\]|package-lock\.json|\/dist\/|\.map$/;
+// ...plus the CLI's own scratch for THIS session (background task output lives
+// under temp/claude/<encoded-app>/<session>/tasks). That is the build reading
+// its own command output, not the harness.
+const IGNORE = /node_modules|\.git[/\\]|package-lock\.json|\/dist\/|\.map$|[/\\]temp[/\\]claude[/\\].*[/\\]tasks[/\\]/;
 
 // Commands that pull file contents into context.
 const READER = /(?:^|[;&|]\s*)(?:cat|head|tail|less|more|type|grep|rg|ack|find|ls\s+-\w*l|sed\s+-n|awk)\s+([^;&|]+)/g;
@@ -59,16 +66,23 @@ const CLASSES = [
 ];
 const classify = p => (CLASSES.find(([re]) => re.test(p)) ?? [null, 'other'])[1];
 
+// The boundary is the APP directory, not wherever the session happened to be
+// standing. Taking the most common cwd looked reasonable and was wrong: a
+// SpacetimeDB build spends most of its turns in backend/spacetimedb, so reads of
+// its OWN client/src/module_bindings/*.ts resolved as escapes and the run was
+// reported contaminated by its own generated bindings.
+//
+// When --app names the directory, that is the answer. Otherwise take the
+// SHALLOWEST cwd seen, which is the closest thing to the app root the transcript
+// knows about — never the most frequent.
 function sessionCwd(lines) {
-  // The CLI records cwd on entries; take the most common one.
-  const tally = new Map();
+  const seen = new Set();
   for (const l of lines) {
     const m = l.match(/"cwd":"((?:[^"\\]|\\.)*)"/);
-    if (!m) continue;
-    const c = norm(m[1].replace(/\\\\/g, '/'));
-    tally.set(c, (tally.get(c) ?? 0) + 1);
+    if (m) seen.add(norm(m[1].replace(/\\\\/g, '/')));
   }
-  return [...tally].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  if (!seen.size) return null;
+  return [...seen].sort((a, b) => a.split('/').length - b.split('/').length || a.length - b.length)[0];
 }
 
 function pathsFromBash(cmd) {
@@ -83,10 +97,19 @@ function pathsFromBash(cmd) {
   return out;
 }
 
-function auditTranscript(file) {
+// An ATTEMPT is not a leak. Once the sandbox actually refuses things, a build
+// that tries to read the rubric and is blocked looks identical to one that
+// succeeded — and marking the blocked run contaminated would void exactly the
+// runs the sandbox is protecting. So a candidate path is held against its
+// tool_use id and only counted once the result comes back not-an-error.
+//
+// Bash is not governed by the Read rules, so its reads resolve as successful
+// unless the command itself failed; that asymmetry is the point of auditing it.
+function auditTranscript(file, boundary) {
   const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
-  const cwd = sessionCwd(lines);
-  const hits = [];
+  const cwd = boundary ?? sessionCwd(lines);
+  const hits = [], refused = [];
+  const pending = new Map();
   let fileTool = 0, bashReads = 0;
 
   for (const line of lines) {
@@ -94,6 +117,13 @@ function auditTranscript(file) {
     const c = e.message?.content;
     if (!Array.isArray(c)) continue;
     for (const p of c) {
+      if (p.type === 'tool_result' && pending.has(p.tool_use_id)) {
+        const { paths, via } = pending.get(p.tool_use_id);
+        pending.delete(p.tool_use_id);
+        const blocked = p.is_error === true;
+        for (const n of paths) (blocked ? refused : hits).push({ path: n, via, kind: classify(n) });
+        continue;
+      }
       if (p.type !== 'tool_use') continue;
       const cand = [];
       if (/^(Read|Grep|Glob|NotebookRead)$/.test(p.name ?? '')) {
@@ -104,17 +134,24 @@ function auditTranscript(file) {
         bashReads += found.length;
         cand.push(...found);
       }
+      const paths = [];
       for (const raw of cand) {
         const n = norm(raw);
         if (!n || IGNORE.test(n)) continue;
         const absolute = /^[a-z]:/.test(n) || n.startsWith('/');
         if (!absolute) continue;              // relative paths resolve inside cwd
         if (cwd && n.startsWith(cwd)) continue;
-        hits.push({ path: n, via: p.name, kind: classify(n) });
+        paths.push(n);
       }
+      if (paths.length) pending.set(p.id, { paths, via: p.name });
     }
   }
-  return { file, cwd, fileTool, bashReads, hits };
+  // A call whose result never arrived (session cut short) is unresolved, and
+  // unresolved is not innocent: count it.
+  for (const { paths, via } of pending.values())
+    for (const n of paths) hits.push({ path: n, via, kind: classify(n), unresolved: true });
+
+  return { file, cwd, fileTool, bashReads, hits, refused };
 }
 
 const results = [];
@@ -129,7 +166,7 @@ for (const root of ROOTS) {
       if (!/\.jsonl$/.test(e.name)) continue;
       if (!/transcript|^[0-9a-f-]{36}\.jsonl$/.test(e.name)) continue;
       if (statSync(p).size < 2000) continue;
-      results.push({ ...auditTranscript(p), root });
+      results.push({ ...auditTranscript(p, APP_BOUNDARY), root });
     }
   }
 }
@@ -143,7 +180,16 @@ console.log('(counts BOTH file tools and Bash cat/grep/find; boundary = the sess
 let clean = 0;
 for (const r of results.sort((a, b) => b.hits.length - a.hits.length)) {
   if (!r.cwd) { console.log(`  ?? ${label(r.file)} — no cwd recorded, cannot judge`); continue; }
-  if (!r.hits.length) { clean++; continue; }
+  if (!r.hits.length) {
+    clean++;
+    // Blocked attempts are worth printing: they are the sandbox doing its job,
+    // and they say which paths a build still goes looking for.
+    if (r.refused?.length) {
+      const kinds = [...new Set(r.refused.map(h => h.kind))].join(', ');
+      console.log(`  ${label(r.file)}\n      clean — ${r.refused.length} attempt(s) BLOCKED by the sandbox (${kinds})`);
+    }
+    continue;
+  }
   const byKind = {};
   for (const h of r.hits) (byKind[h.kind] ??= []).push(h.path);
   console.log(`  ${label(r.file)}`);
