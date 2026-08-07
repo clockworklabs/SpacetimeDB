@@ -60,7 +60,11 @@ function parseArgs(argv) {
 }
 
 // Source only — node_modules and build output are large and reproducible.
-const SOURCE_DIRS = ['backend', 'server', 'client/src', 'client/index.html', 'client/vite.config.ts'];
+const SOURCE_DIRS = ['backend', 'server', 'client/src', 'client/index.html', 'client/vite.config.ts',
+  // The back-office script is evidence — it is how each stack's model
+  // interpreted "write the database directly", and the first run to require
+  // one lost it to cleanup because it was not on this list.
+  'scripts'];
 
 function snapshotSource(appDir, to) {
   rmSync(to, { recursive: true, force: true });
