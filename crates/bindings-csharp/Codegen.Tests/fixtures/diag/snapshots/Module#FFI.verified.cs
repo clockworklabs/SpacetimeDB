@@ -3584,7 +3584,7 @@ static class ModuleRegistration
             var value = new SpacetimeDB.BSATN.F32();
             __memoryStream.Position = 0;
             __memoryStream.SetLength(0);
-            value.Write(__writer, 2);
+            value.Write(__writer, 2F);
             var array = __memoryStream.ToArray();
             SpacetimeDB.Internal.Module.RegisterTableDefaultValue(
                 "TestDefaultFieldValues",
