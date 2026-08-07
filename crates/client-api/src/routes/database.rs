@@ -1207,8 +1207,12 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
 ) -> axum::response::Result<axum::Json<PrePublishResult>> {
+    let database_identity = database.database_identity;
+
     // User should not be able to print migration plans for a database that they do not own
-    let database_identity = resolve_and_authenticate(&ctx, database, &auth).await?;
+    ctx.authorize_action(auth.claims.identity, database_identity, Action::UpdateDatabase)
+        .await?;
+
     let style = match style {
         PrettyPrintStyle::NoColor => AutoMigratePrettyPrintStyle::NoColor,
         PrettyPrintStyle::AnsiColor => AutoMigratePrettyPrintStyle::AnsiColor,
@@ -1268,20 +1272,6 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
         }
     }
     .map(axum::Json)
-}
-
-/// Checks if the `auth` identity owns the middleware-resolved database.
-async fn resolve_and_authenticate<S: ControlStateDelegate + Authorization>(
-    ctx: &S,
-    database: Database,
-    auth: &SpacetimeAuth,
-) -> axum::response::Result<Identity> {
-    let database_identity = database.database_identity;
-
-    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
-        .await?;
-
-    Ok(database_identity)
 }
 
 #[derive(Deserialize)]
@@ -1617,19 +1607,11 @@ async fn resolve_database_name_and_count_response_egress_middleware<S>(
     Path(DatabaseParam { name_or_identity }): Path<DatabaseParam>,
     mut request: Request,
     next: axum::middleware::Next,
-) -> axum::response::Response
+) -> axum::response::Result<axum::response::Response>
 where
     S: ControlStateDelegate + Clone + Send + Sync + 'static,
 {
-    let database_identity = match name_or_identity.resolve(&worker_ctx).await {
-        Ok(database_identity) => database_identity,
-        Err(response) => return Err::<(), ErrorResponse>(response).into_response(),
-    };
-    let database = match worker_ctx_find_database(&worker_ctx, &database_identity).await {
-        Ok(Some(database)) => database,
-        Ok(None) => return NO_SUCH_DATABASE.into_response(),
-        Err(response) => return Err::<(), ErrorResponse>(response).into_response(),
-    };
+    let database = find_database_or_404(&worker_ctx, name_or_identity).await?;
     request.extensions_mut().insert(ResolvedDatabase(database.clone()));
 
     let response = next.run(request).await;
@@ -1660,7 +1642,7 @@ where
         frame
     });
 
-    axum::response::Response::from_parts(parts, Body::new(body))
+    Ok(axum::response::Response::from_parts(parts, Body::new(body)))
 }
 
 #[cfg(test)]
