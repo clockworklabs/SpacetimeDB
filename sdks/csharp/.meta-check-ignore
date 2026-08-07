@@ -1,2 +1,5 @@
 unity-meta-skeleton~
 unity-meta-skeleton~/**
+Cargo.toml
+tests
+tests/**
