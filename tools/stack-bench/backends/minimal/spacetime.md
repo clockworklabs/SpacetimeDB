@@ -19,8 +19,10 @@ Publish the module and regenerate the client bindings from it:
 <STDB_BIN> generate --lang typescript --out-dir <your-client>/src/module_bindings --module-path <your-module-dir>
 ```
 
-Republish after any server change. If a schema change is rejected as
-incompatible, republish with `--delete-data`. `spacetime logs <MODULE_NAME>`
+Republish after any server change. The database holds only this app's own
+seed data (your init logic recreates it), so if a schema change is rejected
+as incompatible, republish with `--delete-data` rather than writing
+migration logic. `spacetime logs <MODULE_NAME>`
 shows module output including reducer errors.
 
 The client must be served on that port and left running when you are done.

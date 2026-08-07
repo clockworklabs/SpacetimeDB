@@ -33,7 +33,11 @@ Publish the module, then regenerate the client bindings from it:
 ```
 
 Republish after any server change, and regenerate after any schema change.
-If a schema change is rejected as incompatible, republish with `--delete-data`:
+
+**Data policy while building:** the database holds nothing but this app's own
+seed data, which your init logic recreates — it is disposable. If a schema
+change is rejected as incompatible, do not write migration logic; republish
+with `--delete-data` and move on:
 
 ```bash
 echo y | <STDB_BIN> publish <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI> --delete-data

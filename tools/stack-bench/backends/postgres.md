@@ -30,6 +30,11 @@ cd client && npm install && npm run dev                            # on <VITE_PO
 
 Re-run `npx drizzle-kit push` after any schema change.
 
+**Data policy while building:** the database holds nothing but this app's own
+seed data, which your startup seeding recreates — it is disposable. If a schema
+change conflicts with existing tables, drop and recreate rather than writing
+migration logic.
+
 ## Branding & Styling
 
 - App title: **"PostgreSQL <APP_NOUN>"**

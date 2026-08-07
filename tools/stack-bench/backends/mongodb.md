@@ -29,6 +29,11 @@ cd client && npm install && npm run dev    # on <VITE_PORT>
 
 Mongoose creates collections on first write; there is no migration step.
 
+**Data policy while building:** the database holds nothing but this app's own
+seed data, which your startup seeding recreates — it is disposable. If a schema
+change conflicts with existing documents, drop the collection rather than
+writing migration logic.
+
 ## Branding & Styling
 
 - App title: **"MongoDB <APP_NOUN>"**
