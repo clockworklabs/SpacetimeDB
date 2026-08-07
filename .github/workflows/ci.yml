@@ -948,6 +948,7 @@ jobs:
         with:
           enable_pr_comment: ${{ github.event_name == 'pull_request' }}
           target_path: sdks/csharp
+          ignored_file_path: sdks/csharp/.meta-check-ignore
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
