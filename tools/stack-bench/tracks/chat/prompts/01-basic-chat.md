@@ -135,8 +135,13 @@ Every action belongs to somebody, and the server decides who may take it:
 
 ### Back office
 
-Real chat services have other systems writing to the same data: moderation
-tooling, compliance takedowns, data-retention jobs. Ship a script at
+**Your app does not own its data.** Real chat services have other systems
+writing to the same database: moderation tooling, compliance takedowns,
+data-retention jobs. The app must remain correct — and its open pages current —
+when data changes by a path its server never saw. This is a property of your
+architecture, not a feature to bolt on.
+
+As the concrete instance of that property, ship a script at
 `scripts/backoffice.mjs` (run with `node`, from the app directory) supporting:
 
 ```

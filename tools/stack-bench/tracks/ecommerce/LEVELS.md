@@ -139,7 +139,28 @@ suites after every upgrade and report regressions as first-class results.
 The promotion rule is the same as contention's, with no exceptions: every
 systems criterion starts at zero points and earns them only when it
 demonstrably fails a real build AND mutation testing shows it catches the
-defect it claims to catch. The out-of-band criteria additionally need a
-`backoffice-writes-via-server` mutant — a script that cheats by calling the
-app's own HTTP API must be CAUGHT, or the criterion is not measuring what it
-says.
+defect it claims to catch.
+
+**Who tests the back-office test.** The app authors the lever AND the surface
+being judged, so the criterion is anchored three ways or it is not a test:
+
+1. *External arithmetic* — expected values derive from the dictated seed
+   (Desk Lamp 55+45; set East to 5 ⇒ the UI must read exactly 50). The app
+   owns the lever, never the answer key. A no-op or wrong-field script cannot
+   match a number it does not control.
+2. *Server-down execution* — stop the app server, run the script, restart,
+   the value must have persisted. Kills scripts that call the app's API and
+   writes that only patched server memory. Requires the stopAppServer /
+   startAppServer step verbs; NOT YET IMPLEMENTED, and 901 must not be
+   promoted before it is.
+3. *Counterfeit levers* — promotion requires harness-authored mutant scripts
+   (no-op, API-calling, memory-patch) each swapped into a passing reference
+   app and CAUGHT.
+
+Residual, stated so nobody over-claims: a file-outbox design (script writes a
+queue, server ingests) passes all three anchors, while a genuinely foreign
+system writing rows directly would bypass it. Schema-blind grading cannot
+close that. The property this criterion may honestly claim is "has a
+documented external-edit path that is live and survives its server being
+down" — which a pure broadcast architecture does not have — and results must
+be published under that claim, not the stronger one.

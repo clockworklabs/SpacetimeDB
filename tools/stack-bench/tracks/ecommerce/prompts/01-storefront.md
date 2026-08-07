@@ -141,8 +141,13 @@ grant access to it.
 
 ### Back office
 
-Real stores have other systems writing to the same data: nightly stock
-corrections, an ERP sync, a warehouse scanner. Ship a script at
+**Your app does not own its data.** Real stores have other systems writing to
+the same database: nightly stock corrections, an ERP sync, a warehouse scanner.
+The app must remain correct — and its open pages current — when data changes by
+a path its server never saw. This is a property of your architecture, not a
+feature to bolt on.
+
+As the concrete instance of that property, ship a script at
 `scripts/backoffice.mjs` (run with `node`, from the app directory) supporting:
 
 ```
