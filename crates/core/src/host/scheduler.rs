@@ -529,7 +529,10 @@ fn prepare_scheduled_procedure_call(
         Ok(Some(params)) => params,
         Err(err) => {
             // All we can do here is log an error.
-            // TODO: Review log level after stale/invalid schedules can be distinguished from internal failures.
+            // This can fail because the schedule row could not be read from the datastore,
+            // the row could not be BSATN-encoded, the scheduled function no longer exists,
+            // or its arguments do not match the current function definition.
+            // TODO: Use a typed error to log internal failures at error! and stale/invalid schedules at warn! or lower.
             log::error!("could not determine scheduled procedure or its parameters: {err:#}");
             let reschedule = id.and_then(|id| {
                 let reschedule_from = (Timestamp::now(), Instant::now());
@@ -573,7 +576,10 @@ fn call_scheduled_reducer_until_done(
         Ok(Some(params)) => params,
         Err(err) => {
             // All we can do here is log an error.
-            // TODO: Review log level after stale/invalid schedules can be distinguished from internal failures.
+            // This can fail because the schedule row could not be read from the datastore,
+            // the row could not be BSATN-encoded, the scheduled function no longer exists,
+            // or its arguments do not match the current function definition.
+            // TODO: Use a typed error to log internal failures at error! and stale/invalid schedules at warn! or lower.
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
             let reschedule = id.and_then(|id| {
                 let reschedule_from = (Timestamp::now(), Instant::now());
