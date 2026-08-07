@@ -9,7 +9,8 @@ tables and calls reducers over a live connection.
 ```
 <app-dir>/
   backend/spacetimedb/
-    package.json          { "type": "module", dependencies: { "spacetimedb": "<STDB_PACKAGE>" } }
+    package.json          { "type": "module", dependencies: { "spacetimedb": "<STDB_PACKAGE>" },
+                            devDependencies: { "typescript": "~5.6.2" } }  ← required; the build runs tsc from node_modules
     tsconfig.json
     src/schema.ts         tables and indexes
     src/index.ts          reducers and lifecycle hooks
