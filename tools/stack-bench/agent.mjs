@@ -26,6 +26,17 @@ const REPO = resolve(ROOT, '..', '..');
 // and so restarting it for durability tests cannot take somebody else down.
 const STDB_URI = process.env.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210';
 
+// Build the app against the SpacetimeDB in THIS repository, not a published
+// release: otherwise a change to the host, the CLI or the module SDK is not
+// under test, and a result describes software nobody is working on.
+const LOCAL_CLI = join(REPO, 'target', 'release', 'spacetimedb-cli.exe');
+const STDB_BIN = process.env.SPACETIME_BIN ?? (existsSync(LOCAL_CLI) ? LOCAL_CLI : 'spacetime');
+const LOCAL_PKG = process.env.STDB_PACKAGE ?? join(REPO, 'crates', 'bindings-typescript');
+
+// Both shells and npm read a Windows backslash as an escape, so paths handed to
+// the model are written the one way every tool agrees on.
+const fwd = p => p.split('\\').join('/');
+
 function parseArgs(argv) {
   const a = { level: 1, runIndex: 0, model: 'claude-sonnet-5', guidance: 'prescribed',
     track: DEFAULT_TRACK };
@@ -97,7 +108,9 @@ function backendDoc(args, p, track) {
     .replaceAll('<APP_NOUN>', track.title)
     .replaceAll('<MODULE_NAME>', moduleName(track, args.runIndex))
     .replaceAll('<DATABASE_URL>', p.dbPort ? dbUrl(args.backend, args.runIndex, p.dbPort, track) : '')
-    .replaceAll('<STDB_URI>', STDB_URI);
+    .replaceAll('<STDB_URI>', STDB_URI)
+    .replaceAll('<STDB_BIN>', fwd(STDB_BIN))
+    .replaceAll('<STDB_PACKAGE>', `file:${fwd(LOCAL_PKG)}`);
 }
 
 // SpacetimeDB is young enough that models have little of it in training data;
@@ -111,9 +124,27 @@ function skillDocs(backend) {
     .join('\n\n---\n\n');
 }
 
+// The prompt used to contain the linter's absolute path, which handed every
+// build a signpost to the harness: two directory listings from there sit
+// grade.mjs and the scenario files that define its score. Audits found runs
+// that took exactly that walk. The command is now a shim inside the app, so
+// nothing the model is given names a location outside its own directory.
+//
+// The shim's own contents still name the path, so this narrows the exposure
+// rather than removing it: the prompt is always read, a shim only if the model
+// goes looking. Removing it entirely means shipping a standalone linter into
+// the app — worth doing, and no worse for disclosure, since the contract it
+// checks is already inlined as the appendix.
+function writeLintShim(appDir, cmd) {
+  const sh = join(appDir, 'check-hooks.sh');
+  writeFileSync(sh, `#!/usr/bin/env bash\n# Verifies the required data-testid hooks resolve in the running app.\n${cmd}\n`);
+  return './check-hooks.sh';
+}
+
 function buildPrompt(args, p, track) {
-  const lint = `node "${join(ROOT, 'linter', 'lint.mjs')}" --url http://localhost:${p.vite} --level ${args.level}`
+  const real = `node "${join(ROOT, 'linter', 'lint.mjs')}" --url http://localhost:${p.vite} --level ${args.level}`
     + (track.name === DEFAULT_TRACK ? '' : ` --track ${track.name}`);
+  const lint = args.printPrompt ? './check-hooks.sh' : writeLintShim(args.app, real);
   const common = [
     `The app lives in ${args.app.replace(/\\/g, '/')} — work there.`,
     '',
@@ -165,6 +196,68 @@ function buildPrompt(args, p, track) {
   ].join('\n');
 }
 
+// A build must not be able to read the thing that grades it.
+//
+// `--add-dir` looks like a boundary and is not one: under
+// --dangerously-skip-permissions it is advisory, and a session given only an
+// empty temp directory still read this project's notes when asked. Audits of
+// past runs found builds reading scenarios/01-invariants.json (the assertions
+// themselves), grade.mjs (the marking scheme), a sibling run's source, and the
+// benchmark's own notes — up to 44 times in a single run.
+//
+// These rules govern the FILE TOOLS ONLY. `Read(...)` does not apply to Bash:
+// a session refused by the Read rule can still `cat` the same path, verified.
+// Closing that would mean banning shell commands a build legitimately needs,
+// so the sandbox is defence in depth, not the control. The control is
+// leak-audit.mjs, which reads the session transcript afterwards and marks a run
+// contaminated if it escaped — prevention we cannot guarantee, detection we can.
+//
+// Pattern notes: glob form (`**/x/**`) matches where an absolute form
+// (`//C:/...`) silently does not on Windows, `**` does NOT traverse a
+// leading-dot directory, and deny beats allow.
+function writeSandbox(appDir) {
+  const sandbox = {
+    permissions: {
+      // NOTE the app itself lives under stack-bench/results/<run>/app, so a
+      // blanket deny on stack-bench would block the build from reading its own
+      // source. Name the harness directories instead, and never deny
+      // BUG_REPORT.md — fix mode is told to read it.
+      deny: [
+        // The test and the marking scheme.
+        'Read(**/stack-bench/tracks/**)',
+        'Read(**/stack-bench/grader/**)',
+        'Read(**/stack-bench/linter/**)',
+        'Read(**/stack-bench/levels/**)',
+        // Harness source and its own documentation.
+        'Read(**/stack-bench/*.mjs)',
+        'Read(**/stack-bench/*.md)',
+        'Read(**/stack-bench/*.sh)',
+        'Read(**/stack-bench/backends/**)',
+        // Archived transcripts of earlier builds: each one quotes the harness
+        // files that build read, so leaving them open would hand a later run
+        // the marking scheme second-hand.
+        'Read(**/stack-bench/transcripts/**)',
+        // The other benchmarks, and their prompts and rubrics.
+        'Read(**/llm-sequential-upgrade/**)',
+        'Read(**/llm-oneshot/**)',
+        // Any agent's notes, plans or transcripts — including this one's.
+        // `**/.claude/**` alone does NOT match: a leading-dot directory is not
+        // traversed by `**`, so a run read this project's notes straight
+        // through it. The `projects/**` rule is the one that actually bites;
+        // the rest are belt and braces, and the probe below proves the set.
+        'Read(**/projects/**)',
+        'Read(**/.claude/**)',
+        'Read(.claude/**)',
+        'Read(**/memory/**)',
+        'Read(**/*.local.md)',
+      ],
+    },
+  };
+  const p = join(appDir, '.sandbox-settings.json');
+  writeFileSync(p, JSON.stringify(sandbox, null, 2));
+  return p;
+}
+
 function main() {
   const args = parseArgs(process.argv);
   const track = loadTrack(args.track);
@@ -206,7 +299,9 @@ function main() {
     // grew, and the spawn fails with a bare ENOENT that reads as "CLI missing".
     raw = execFileSync(findClaude(), [
       '--print', '--output-format', 'json',
-      '--dangerously-skip-permissions',
+      // NOT --dangerously-skip-permissions: it disables the deny rules below
+      // along with everything else, and --add-dir then guards nothing.
+      '--settings', writeSandbox(args.app),
       '--model', args.model,
       // The app directory is the ONLY thing the session may read. Granting the
       // harness root handed it every previous build, the rollback snapshots and

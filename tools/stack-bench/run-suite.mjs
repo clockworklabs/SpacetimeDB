@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, suitesFor, DEFAULT_TRACK } from './tracks.mjs';
+import { answers as hostAnswers } from './platform.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RESET = join(ROOT, 'reset-db.sh');
@@ -57,11 +58,8 @@ const run = (cmd, args, opts = {}) =>
 // a server is listening, not what it thinks of the request.
 async function answers(url, attempts = 3) {
   for (let i = 0; i < attempts; i++) {
-    try {
-      execFileSync('curl', ['-s', '-m', '4', '-o',
-        process.platform === 'win32' ? 'NUL' : '/dev/null', url], { stdio: 'ignore' });
-      return true;
-    } catch { await sleep(2000); }
+    if (hostAnswers(url, 4)) return true;
+    await sleep(2000);
   }
   return false;
 }

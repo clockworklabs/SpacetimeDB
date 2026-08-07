@@ -1,4 +1,5 @@
 <!DOCTYPE html><html><head><title>fixture</title></head><body>
+<h1 data-testid="app-title">Fixture Chat</h1>
 <div id="landing">
   <input data-testid="signup-username"><input data-testid="signup-password" type="password">
   <button data-testid="signup-submit">Create</button>
@@ -12,8 +13,10 @@
   <button data-testid="room-create">+</button>
   <div id="rf" hidden><input data-testid="room-name-input"><button data-testid="room-name-submit">Create</button></div>
   <ul data-testid="room-list" id="rooms"></ul><ul data-testid="online-users"></ul>
+  <ul data-testid="dm-list"></ul>
   <main id="room" hidden><ul data-testid="message-list" id="msgs"></ul>
     <input data-testid="message-input"><button data-testid="leave-room">Leave</button>
+    <div data-testid="member-panel"><span data-testid="member-item">fixture-user</span></div>
     <div data-testid="send-error" hidden>too fast</div></main>
 </div>
 <script>

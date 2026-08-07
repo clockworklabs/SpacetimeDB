@@ -22,7 +22,8 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync } fr
 import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { loadTrack, resultsName, portsFor, assertNoPortCollisions, PORT_BASES, DEFAULT_TRACK } from './tracks.mjs';
+import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions, PORT_BASES, DEFAULT_TRACK } from './tracks.mjs';
+import { pidsOnPort, pidsMatching, killTree, sleepSync, answers } from './platform.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const AGENT = join(ROOT, 'agent.mjs');
@@ -97,34 +98,15 @@ function portsForRun(backend, runIndex, track) {
 // names this run's app directory.
 function stopByAppDir(appDir) {
   if (!appDir) return;
-  const script = `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${appDir.replace(/'/g, "''")}*' } | ForEach-Object { $_.ProcessId }`;
-  let out = '';
-  try { out = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' }); }
-  catch { return; }
-  for (const pid of out.split(/\s+/).filter(Boolean)) {
-    if (Number(pid) === process.pid) continue;
-    try { execFileSync('taskkill', ['/F', '/PID', pid, '/T'], { stdio: 'ignore' }); } catch { /* already gone */ }
-  }
+  for (const pid of pidsMatching(appDir)) killTree(pid);
 }
 
 function stopServers(backend, runIndex, appDir, track) {
   stopByAppDir(appDir);
   for (const port of portsForRun(backend, runIndex, track)) {
-    let out = '';
-    try {
-      out = execFileSync('netstat', ['-ano'], { encoding: 'utf8' });
-    } catch { return; }
-    const pids = new Set(
-      out.split(String.fromCharCode(10))
-        .filter(l => new RegExp(`:${port}\\s`).test(l) && /LISTENING/i.test(l))
-        .map(l => l.trim().split(/\s+/).pop())
-        .filter(pid => pid && pid !== '0')
-    );
-    for (const pid of pids) {
-      try {
-        execFileSync('taskkill', ['/F', '/PID', pid, '/T'], { stdio: 'ignore' });
-        console.log(`  stopped the server on :${port}`);
-      } catch { /* already gone */ }
+    for (const pid of pidsOnPort(port)) {
+      killTree(pid);
+      console.log(`  stopped the server on :${port}`);
     }
   }
 }
@@ -136,14 +118,12 @@ function stopServers(backend, runIndex, appDir, track) {
 const STDB_URI = process.env.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210';
 const STDB_PORT = new URL(STDB_URI).port;
 const STDB_DATA_DIR = join(ROOT, '.spacetime-data');
+// The host under test is the one built from this repository. Falling back to a
+// PATH install would benchmark a release nobody is changing.
+const LOCAL_CLI = join(ROOT, '..', '..', 'target', 'release', 'spacetimedb-cli.exe');
+const SPACETIME_BIN = process.env.SPACETIME_BIN ?? (existsSync(LOCAL_CLI) ? LOCAL_CLI : 'spacetime');
 
-const spacetimeUp = () => {
-  try {
-    execFileSync('curl', ['-s', '-m', '5', '-o', process.platform === 'win32' ? 'NUL' : '/dev/null',
-      `${STDB_URI}/v1/ping`], { stdio: 'ignore' });
-    return true;
-  } catch { return false; }
-};
+const spacetimeUp = () => answers(`${STDB_URI}/v1/ping`, 5);
 
 // Own only what you start. A host that was already up belongs to whoever started
 // it — other databases live there — so it is used and left alone. One we start
@@ -155,11 +135,10 @@ function ensureSpacetime() {
   }
   console.log(`  spacetime   ... not running, starting a benchmark-owned host on :${STDB_PORT}`);
   mkdirSync(STDB_DATA_DIR, { recursive: true });
-  spawn('spacetime', ['start', '--listen-addr', `127.0.0.1:${STDB_PORT}`, '--data-dir', STDB_DATA_DIR],
+  spawn(SPACETIME_BIN, ['start', '--listen-addr', `127.0.0.1:${STDB_PORT}`, '--data-dir', STDB_DATA_DIR],
     { detached: true, stdio: 'ignore', shell: true }).unref();
   for (let i = 0; i < 60; i++) {
-    execFileSync(process.platform === 'win32' ? 'timeout' : 'sleep',
-      process.platform === 'win32' ? ['/T', '2', '/NOBREAK'] : ['2'], { stdio: 'ignore' });
+    sleepSync(2000);
     if (spacetimeUp()) { console.log('  spacetime   ... up'); return true; }
   }
   console.error(`SpacetimeDB did not come up on :${STDB_PORT}.`);
@@ -170,18 +149,31 @@ function ensureSpacetime() {
 // terminates every SpacetimeDB on the machine, which is how a grading run once
 // took down databases that had nothing to do with the benchmark.
 function stopSpacetime() {
-  let out = '';
-  try { out = execFileSync('netstat', ['-ano'], { encoding: 'utf8' }); } catch { return; }
-  const pids = new Set(out.split(String.fromCharCode(10))
-    .filter(l => new RegExp(`:${STDB_PORT}\\s`).test(l) && /LISTENING/i.test(l))
-    .map(l => l.trim().split(/\s+/).pop())
-    .filter(pid => pid && pid !== '0'));
-  for (const pid of pids) {
-    try {
-      execFileSync('taskkill', ['/F', '/PID', pid, '/T'], { stdio: 'ignore' });
-      console.log(`  stopped the SpacetimeDB host this run started on :${STDB_PORT}`);
-    } catch { /* already gone */ }
+  for (const pid of pidsOnPort(STDB_PORT)) {
+    killTree(pid);
+    console.log(`  stopped the SpacetimeDB host this run started on :${STDB_PORT}`);
   }
+}
+
+// Which SpacetimeDB produced this result. With a local build that moves under
+// us, "the version" stops being inferable from the date, and an unrecorded
+// variable has already cost this project several reversed conclusions.
+function stdbProvenance() {
+  const out = { cli: null, commit: null, sdk: null, skillRevision: null };
+  try {
+    const v = execFileSync(SPACETIME_BIN, ['--version'], { encoding: 'utf8' });
+    out.cli = (v.match(/tool version ([\d.]+)/) || [])[1] ?? null;
+    out.commit = (v.match(/Commit: ([0-9a-f]+)/) || [])[1] ?? null;
+  } catch { /* not built, or PATH fallback */ }
+  const repo = join(ROOT, '..', '..');
+  try {
+    out.sdk = JSON.parse(readFileSync(join(repo, 'crates', 'bindings-typescript', 'package.json'), 'utf8')).version;
+  } catch { /* not a checkout */ }
+  try {
+    out.skillRevision = execFileSync('git', ['-C', repo, 'hash-object',
+      'skills/typescript-server/SKILL.md'], { encoding: 'utf8' }).trim();
+  } catch { /* not a git checkout */ }
+  return out;
 }
 
 const sh = (cmd, args, opts = {}) =>
@@ -222,6 +214,7 @@ function grade(args, appDir, url, label, level, track) {
 async function main() {
   const args = parseArgs(process.argv);
   process.env.STACK_BENCH_STDB_URI = STDB_URI;
+  process.env.SPACETIME_BIN = SPACETIME_BIN;
   process.env.STACK_BENCH_STDB_OWNED = '1';   // this host is ours; restarts are allowed
   const track = loadTrack(args.track);
   assertNoPortCollisions();
@@ -233,7 +226,12 @@ async function main() {
   const weStartedSpacetime = args.backend === 'spacetime' ? ensureSpacetime() : false;
 
   // One app, grown level by level — the same app the earlier levels built.
-  const appDir = args.app ?? join(ROOT, 'results', runDir, 'app');
+  // Built OUTSIDE the harness. While the app lived at results/<run>/app it sat
+  // underneath the thing grading it: two directories up are the scenario files
+  // and grade.mjs, and transcripts show builds taking exactly that walk. An
+  // isolated root removes the class rather than forbidding instances of it.
+  // Artifacts are copied back to results/ when the run finishes.
+  const appDir = args.app ?? join(workDirFor(track, args.backend, args.runIndex), 'app');
 
   // Leave nothing running once the run is over, however it ends — but only stop
   // what this run brought up.
@@ -329,10 +327,20 @@ async function main() {
       }
     }
 
+    // A grading run that crashed writes no bundle, and recording that as 0/0
+    // makes a harness failure indistinguishable from an app that scored nothing
+    // — in a ladder run it silently drops a level's result on the floor. Say so
+    // instead, and leave the score null.
+    const graded = bundle?.totals?.max > 0;
+    if (!graded) {
+      console.log(`  L${level}: GRADING DID NOT COMPLETE — no usable bundle. ` +
+        `Score is unknown, not zero; re-grade this level before using the run.`);
+    }
     run.levels.push({
       level,
-      score: bundle?.totals?.score ?? 0,
-      max: bundle?.totals?.max ?? 0,
+      graded,
+      score: graded ? bundle.totals.score : null,
+      max: graded ? bundle.totals.max : null,
       firstBuild,
       contractPass: bundle?.totals?.contractPass ?? null,
       code: bundle?.code ?? null,
@@ -352,6 +360,27 @@ async function main() {
     writeFileSync(join(args.out, 'run.json'), JSON.stringify(run, null, 2));
   }
 
+  // Did the builds read the thing that grades them? Prevention has holes we
+  // know about — permission rules do not govern a bash `cat` — so every run
+  // audits its own transcripts and says so. A score nobody checked for this is
+  // worth less than one that carries the check, and six runs were quoted for a
+  // day before anyone looked.
+  try {
+    const audit = sh('node', [join(ROOT, 'leak-audit.mjs'), '--app', appDir, '--json'], { stdio: 'pipe' });
+    const escapes = JSON.parse(audit).flatMap(r => r.hits ?? []);
+    const serious = escapes.filter(h => /GRADER|CONTRACT|BENCHMARK NOTES|PROMPTS/.test(h.kind));
+    run.contaminated = serious.length > 0;
+    run.contamination = serious.length
+      ? { evidence: [...new Set(serious.map(h => `${h.kind}: ${h.path.split('/').slice(-2).join('/')}`))].slice(0, 8),
+          verdict: 'SCORES NOT USABLE — the build read the harness that grades it.' }
+      : { evidence: 'no reads of the grader, contracts, prompts or notes', verdict: 'scores usable' };
+    if (run.contaminated) {
+      console.log(`\n  !! CONTAMINATED: this build read the harness that grades it —`);
+      for (const e of run.contamination.evidence) console.log(`     ${e}`);
+      console.log('     Scores from this run must not be quoted.');
+    }
+  } catch { run.contamination = { evidence: 'audit did not run', verdict: 'unknown' }; }
+
   run.totals = {
     // A level that never ran contributes nothing rather than NaN.
     score: run.levels.reduce((n, l) => n + (l.score ?? 0), 0),
@@ -359,13 +388,18 @@ async function main() {
     costUsd: Number(run.levels.reduce((n, l) => n + (l.buildCostUsd ?? 0) + (l.fixCostUsd ?? 0), 0).toFixed(4)),
     fixRounds: run.levels.reduce((n, l) => n + (l.fixRounds ?? 0), 0),
     durationSec: Math.round((Date.now() - started) / 1000),
+    // Which levels the totals are actually made of. A run missing a level is
+    // not comparable with one that graded them all, and the summary has to
+    // carry that rather than leaving it to be noticed.
+    ungraded: run.levels.filter(l => !l.graded).map(l => l.level),
   };
   writeFileSync(join(args.out, 'run.json'), JSON.stringify(run, null, 2));
 
   console.log(`\n================ ${args.backend} summary ================`);
   for (const l of run.levels) {
     const unaided = l.firstBuild?.score != null ? `${l.firstBuild.score}/${l.firstBuild.max} unaided → ` : '';
-    console.log(`  L${l.level}: ${unaided}${l.score}/${l.max}  ${l.fixRounds} fix round(s)  ` +
+    const score = l.graded ? `${unaided}${l.score}/${l.max}` : 'NOT GRADED';
+    console.log(`  L${l.level}: ${score}  ${l.fixRounds} fix round(s)  ` +
       `$${((l.buildCostUsd ?? 0) + (l.fixCostUsd ?? 0)).toFixed(2)}  ${l.durationSec}s`);
   }
   console.log(`  TOTAL ${run.totals.score}/${run.totals.max}  ` +

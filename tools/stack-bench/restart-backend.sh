@@ -14,6 +14,7 @@
 # answering again; it differs per track, so it is passed in rather than assumed.
 set -euo pipefail
 
+SPACETIME_BIN="${SPACETIME_BIN:-$(cd "$(dirname "$0")/../.." && pwd)/target/release/spacetimedb-cli.exe}"
 BACKEND="${1:?backend required}"
 APP_DIR="${2:?app dir required}"
 PORT="${3:-}"
@@ -62,7 +63,7 @@ case "$BACKEND" in
       pkill -f "listen-addr 127.0.0.1:${STDB_PORT}" || true
     fi
     sleep 4
-    nohup spacetime start --listen-addr "127.0.0.1:${STDB_PORT}" --data-dir "$STDB_DATA_DIR" < /dev/null > /tmp/restart-spacetime.log 2>&1 &
+    nohup "$SPACETIME_BIN" start --listen-addr "127.0.0.1:${STDB_PORT}" --data-dir "$STDB_DATA_DIR" < /dev/null > /tmp/restart-spacetime.log 2>&1 &
     wait_for "${STACK_BENCH_STDB_URI:-http://127.0.0.1:3210}/v1/ping" 240
     echo "SpacetimeDB host is back"
     ;;

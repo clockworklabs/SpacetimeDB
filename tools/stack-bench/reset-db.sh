@@ -17,6 +17,7 @@ APP_DIR="${2:?app dir required}"
 RUN_INDEX="${3:-0}"
 SLUG="${4:-}"
 
+SPACETIME_BIN="${SPACETIME_BIN:-$(cd "$(dirname "$0")/../.." && pwd)/target/release/spacetimedb-cli.exe}"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-stack-bench-postgres}"
 MONGO_CONTAINER="${MONGO_CONTAINER:-stack-bench-mongodb}"
 DB_NAME="stackbench${SLUG:+_$SLUG}_run${RUN_INDEX}"
@@ -40,7 +41,7 @@ case "$BACKEND" in
       echo "note: app targets $APP_URI but STACK_BENCH_STDB_URI is $STACK_BENCH_STDB_URI — resetting the app's own host" >&2
     fi
 
-    if ! echo y | spacetime publish "$MODULE" --module-path "$APP_DIR/backend/spacetimedb" \
+    if ! echo y | "$SPACETIME_BIN" publish "$MODULE" --module-path "$APP_DIR/backend/spacetimedb" \
          -s "$STDB_URI" --delete-data > /tmp/reset-spacetime.log 2>&1; then
       echo "FAILED to reset spacetime module $MODULE on $STDB_URI" >&2
       tail -3 /tmp/reset-spacetime.log >&2

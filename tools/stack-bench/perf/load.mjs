@@ -23,6 +23,7 @@
 //                 [--clients 8] [--rounds 20] [--out report.json]
 
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { sampleProcesses as hostSample } from '../platform.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -88,25 +89,11 @@ const SERVER_PROCESSES = {
 function sampleProcesses(backend) {
   const spec = SERVER_PROCESSES[backend];
   if (!spec) return null;
-  // TotalProcessorTime is cumulative CPU for the process, so two samples give
-  // the CPU actually spent on the workload rather than since boot.
-  const script = `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${spec.match}*' -or $_.Name -like '*${spec.match}*' } | ForEach-Object {
-    $p = Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
-    if ($p) { "{0}|{1}|{2}" -f $p.Id, $p.TotalProcessorTime.TotalSeconds, $p.WorkingSet64 } }`;
-  try {
-    const out = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8' });
-    // Keyed by pid, because a watcher respawns its child mid-run: summing a
-    // changing set of processes and subtracting produced negative CPU.
-    const byPid = new Map();
-    let rss = 0;
-    for (const line of out.split(/\r?\n/).filter(Boolean)) {
-      const [pid, c, w] = line.split('|');
-      if (c === undefined) continue;
-      byPid.set(pid, Number(c));
-      rss = Math.max(rss, Number(w));
-    }
-    return { byPid, peakRssBytes: rss, processes: byPid.size };
-  } catch { return null; }
+  // Process sampling differs per OS; platform.mjs owns that difference so this
+  // tool runs on a Linux runner as well as a developer machine.
+  const { byPid, rss } = hostSample(spec.match);
+  if (!byPid.size) return null;
+  return { byPid, peakRssBytes: rss, processes: byPid.size };
 }
 
 // CPU actually spent during the window. A process present in both samples

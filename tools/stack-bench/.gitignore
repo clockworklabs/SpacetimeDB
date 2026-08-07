@@ -10,3 +10,4 @@ grader/.candidates/
 .spacetime-data/
 grader/.mutation-report.json
 tracks/*/overview.html
+transcripts/

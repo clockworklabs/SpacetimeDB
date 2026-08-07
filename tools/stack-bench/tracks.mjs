@@ -9,6 +9,7 @@
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -119,6 +120,27 @@ export function assertNoPortCollisions() {
     }
   }
 }
+
+// Where a build actually happens.
+//
+// Building inside results/ put the app underneath the harness that grades it,
+// so every escape was a walk upward: two directories from the app sit the
+// scenario files and grade.mjs. An isolated root removes the class — there is
+// nothing above the app worth reading.
+//
+// Derived from the platform rather than a fixed path, so this works on a Linux
+// runner as well as here. STACK_BENCH_WORK_DIR overrides it; point it at the
+// same volume as the repo if copying results back matters more than isolation.
+//
+// The platform temp directory is also considerably shorter than the repo path,
+// which buys headroom against the Windows 260-character limit that deep
+// node_modules trees run into.
+export function workRoot() {
+  return process.env.STACK_BENCH_WORK_DIR ?? join(tmpdir(), 'stack-bench-runs');
+}
+
+export const workDirFor = (track, backend, runIndex) =>
+  join(workRoot(), resultsName(track, backend, runIndex));
 
 // Suffixed names: chat keeps the unsuffixed originals, so its databases,
 // modules and result directories are exactly what they have always been.
