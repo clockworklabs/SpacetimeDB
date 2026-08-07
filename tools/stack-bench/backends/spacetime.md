@@ -33,6 +33,17 @@ Publish the module, then regenerate the client bindings from it:
 <STDB_BIN> generate --lang typescript --out-dir client/src/module_bindings --module-path backend/spacetimedb
 ```
 
+**While iterating, run development mode instead of republishing by hand.** It
+watches the module and auto-rebuilds, auto-publishes and auto-regenerates the
+client bindings on every save — the equivalent of a watching dev server:
+
+```bash
+<STDB_BIN> dev <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI>
+```
+
+Leave it running in the background while you work. The manual commands below
+are for one-off publishes and for the first deploy.
+
 Republish after any server change, and regenerate after any schema change.
 
 **Data policy while building:** the database holds nothing but this app's own
