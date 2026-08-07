@@ -15,8 +15,8 @@ client is your choice.
 Publish the module and regenerate the client bindings from it:
 
 ```bash
-spacetime publish <MODULE_NAME> --module-path <your-module-dir>
-spacetime generate --lang typescript --out-dir <your-client>/src/module_bindings --module-path <your-module-dir>
+<STDB_BIN> publish <MODULE_NAME> --module-path <your-module-dir>
+<STDB_BIN> generate --lang typescript --out-dir <your-client>/src/module_bindings --module-path <your-module-dir>
 ```
 
 Republish after any server change. If a schema change is rejected as

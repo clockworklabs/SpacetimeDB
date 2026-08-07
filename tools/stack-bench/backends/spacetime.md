@@ -9,12 +9,12 @@ tables and calls reducers over a live connection.
 ```
 <app-dir>/
   backend/spacetimedb/
-    package.json          { "type": "module", dependencies: { "spacetimedb": "^2.0.0" } }
+    package.json          { "type": "module", dependencies: { "spacetimedb": "<STDB_PACKAGE>" } }
     tsconfig.json
     src/schema.ts         tables and indexes
     src/index.ts          reducers and lifecycle hooks
   client/
-    package.json          react, react-dom, vite, spacetimedb
+    package.json          react, react-dom, vite, and "spacetimedb": "<STDB_PACKAGE>"
     vite.config.ts        server.port must be <VITE_PORT>
     index.html
     src/config.ts         MODULE_NAME and SPACETIMEDB_URI
@@ -28,15 +28,15 @@ tables and calls reducers over a live connection.
 Publish the module, then regenerate the client bindings from it:
 
 ```bash
-spacetime publish <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI>
-spacetime generate --lang typescript --out-dir client/src/module_bindings --module-path backend/spacetimedb
+<STDB_BIN> publish <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI>
+<STDB_BIN> generate --lang typescript --out-dir client/src/module_bindings --module-path backend/spacetimedb
 ```
 
 Republish after any server change, and regenerate after any schema change.
 If a schema change is rejected as incompatible, republish with `--delete-data`:
 
 ```bash
-echo y | spacetime publish <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI> --delete-data
+echo y | <STDB_BIN> publish <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI> --delete-data
 ```
 
 Then start the client:
@@ -45,7 +45,7 @@ Then start the client:
 cd client && npm install && npm run dev
 ```
 
-`spacetime logs <MODULE_NAME> -s <STDB_URI>` shows module output, including reducer errors.
+`<STDB_BIN> logs <MODULE_NAME> -s <STDB_URI>` shows module output, including reducer errors.
 
 ## Branding & Styling
 
