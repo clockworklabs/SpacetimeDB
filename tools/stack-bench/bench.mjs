@@ -465,6 +465,17 @@ async function main() {
     } catch (e) {
       console.log(`  (stdb friction report failed: ${String(e.message).split('\n')[0]})`);
     }
+    // The counted errors are half the picture. The other half — repeated cycles,
+    // workarounds, and API used wrongly but successfully — only shows in the
+    // shape of what the model did, so the behavioural review runs too.
+    try {
+      sh('node', [join(ROOT, 'stdb-review.mjs'), '--label', runDir,
+        '--source', join(args.out, 'source'),
+        '--compare', ['postgres', 'mongodb']
+          .map(b => resultsName(track, b, args.runIndex)).join(',')], { stdio: 'inherit' });
+    } catch (e) {
+      console.log(`  (stdb behavioural review failed: ${String(e.message).split('\n')[0]})`);
+    }
   }
 
   console.log(`\n================ ${args.backend} summary ================`);
