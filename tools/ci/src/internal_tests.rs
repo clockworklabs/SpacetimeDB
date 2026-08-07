@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use clap::Args;
 use duct::{cmd, Expression};
 use serde::de::DeserializeOwned;
@@ -29,7 +29,6 @@ pub(crate) struct CoordinateArgs {
 #[derive(Debug)]
 struct PrivateSource {
     sha: String,
-    workflow_ref: String,
     pull: Option<PullRequest>,
 }
 
@@ -145,11 +144,11 @@ fn rerun_failed_jobs(run_id: u64) -> Result<()> {
     Ok(())
 }
 
-fn dispatch_workflow(git_ref: &str, public_sha: &str) -> Result<DispatchResponse> {
+fn dispatch_workflow(public_sha: &str) -> Result<DispatchResponse> {
     post(
         &format!("/repos/{PRIVATE_REPO}/actions/workflows/{PRIVATE_WORKFLOW}/dispatches"),
         &DispatchWorkflow {
-            ref_name: git_ref,
+            ref_name: PRIVATE_DEFAULT_BRANCH,
             inputs: DispatchInputs { public_ref: public_sha },
             return_run_details: true,
         },
@@ -163,8 +162,6 @@ struct Repository {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 struct PullRequestRef {
-    #[serde(rename = "ref")]
-    ref_name: String,
     sha: String,
     repo: Option<Repository>,
 }
@@ -311,18 +308,13 @@ fn resolve_private_source(public_pr_number: Option<u64>) -> Result<PrivateSource
         println!("Found a linked private PR.");
         return Ok(PrivateSource {
             sha: pull.head.sha.clone(),
-            workflow_ref: pull.head.ref_name.clone(),
             pull: Some(pull),
         });
     }
 
     println!("No linked private PR; using private master.");
     let sha = branch(PRIVATE_REPO, PRIVATE_DEFAULT_BRANCH)?.commit.sha;
-    Ok(PrivateSource {
-        sha,
-        workflow_ref: PRIVATE_DEFAULT_BRANCH.to_owned(),
-        pull: None,
-    })
+    Ok(PrivateSource { sha, pull: None })
 }
 
 fn public_submodule_sha(private_sha: &str) -> Result<String> {
@@ -332,6 +324,14 @@ fn public_submodule_sha(private_sha: &str) -> Result<String> {
         .find(|entry| entry.path == "public" && entry.kind == "commit")
         .map(|entry| entry.sha)
         .context("the linked private PR does not contain a public submodule entry")
+}
+
+fn ensure_public_submodule_matches(pull_number: u64, actual: &str, expected: &str) -> Result<()> {
+    ensure!(
+        actual == expected,
+        "private PR #{pull_number} has public SHA {actual}; expected {expected}. Update its public submodule"
+    );
+    Ok(())
 }
 
 fn newest_run(runs: impl IntoIterator<Item = WorkflowRun>) -> Option<WorkflowRun> {
@@ -348,6 +348,16 @@ fn matching_pull_request_run(runs: Vec<WorkflowRun>, pull: &PullRequest) -> Opti
             .iter()
             .any(|run_pull| run_pull.number == pull.number && run_pull.head.sha == pull.head.sha)
     }))
+}
+
+fn required_pull_request_run(private_sha: &str, pull: &PullRequest) -> Result<WorkflowRun> {
+    let runs = workflow_runs("pull_request", private_sha)?;
+    matching_pull_request_run(runs, pull).with_context(|| {
+        format!(
+            "no pull_request CI run found for private PR #{} at {private_sha}",
+            pull.number
+        )
+    })
 }
 
 fn dispatch_title(public_sha: &str) -> String {
@@ -397,18 +407,11 @@ fn write_github_output(name: &str, value: impl std::fmt::Display) -> Result<()> 
 pub(crate) fn coordinate(args: CoordinateArgs) -> Result<()> {
     let private_source = resolve_private_source(args.public_pr_number)?;
 
-    let matching_pull_run = if let Some(pull) = private_source.pull.as_ref() {
-        if public_submodule_sha(&private_source.sha)? == args.public_sha {
-            matching_pull_request_run(workflow_runs("pull_request", &private_source.sha)?, pull)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
     let mut did_dispatch = false;
-    let selected = if let Some(run) = matching_pull_run {
+    let selected = if let Some(pull) = private_source.pull.as_ref() {
+        let private_public_sha = public_submodule_sha(&private_source.sha)?;
+        ensure_public_submodule_matches(pull.number, &private_public_sha, &args.public_sha)?;
+        let run = required_pull_request_run(&private_source.sha, pull)?;
         println!("Reusing the linked private PR run for this public/private SHA pair.");
         SelectedRun::from(run)
     } else if let Some(run) = matching_dispatch_run(
@@ -426,7 +429,7 @@ pub(crate) fn coordinate(args: CoordinateArgs) -> Result<()> {
         }
     } else {
         println!("Dispatching a new private run for this public/private SHA pair.");
-        let response = dispatch_workflow(&private_source.workflow_ref, &args.public_sha)?;
+        let response = dispatch_workflow(&args.public_sha)?;
         did_dispatch = true;
         SelectedRun {
             id: response.workflow_run_id,
@@ -453,7 +456,6 @@ mod tests {
             number: 42,
             state: "open".to_owned(),
             head: PullRequestRef {
-                ref_name: "private-branch".to_owned(),
                 sha: "private-sha".to_owned(),
                 repo: Some(Repository {
                     full_name: PRIVATE_REPO.to_owned(),
@@ -530,9 +532,9 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_request_uses_the_private_ref_and_public_sha() {
+    fn dispatch_request_uses_private_master_and_the_public_sha() {
         let request = DispatchWorkflow {
-            ref_name: "private-branch",
+            ref_name: PRIVATE_DEFAULT_BRANCH,
             inputs: DispatchInputs {
                 public_ref: "public-sha",
             },
@@ -541,7 +543,7 @@ mod tests {
         assert_eq!(
             serde_json::to_value(request).unwrap(),
             serde_json::json!({
-                "ref": "private-branch",
+                "ref": "master",
                 "inputs": { "public_ref": "public-sha" },
                 "return_run_details": true,
             })
