@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 const CLA_CONTEXT: &str = "license/cla";
 
 #[derive(Subcommand)]
-pub(crate) enum ClaAssistantCmd {
+pub enum ClaAssistantCmd {
     /// Retries CLA Assistant if `license/cla` is the only remaining PR blocker.
     Retry(RetryArgs),
 
@@ -20,14 +20,14 @@ pub(crate) enum ClaAssistantCmd {
 }
 
 #[derive(Args)]
-pub(crate) struct RetryArgs {
+pub struct RetryArgs {
     /// Pull request number to check.
     #[arg(long)]
-    pub(crate) pr_number: u64,
+    pub pr_number: u64,
 
     /// Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY.
     #[arg(long)]
-    pub(crate) repo: Option<String>,
+    pub repo: Option<String>,
 }
 
 #[derive(Args)]
@@ -37,21 +37,21 @@ pub(crate) struct RetryArgs {
         .multiple(false)
         .args(["pr", "sha"]),
 ))]
-pub(crate) struct StatusArgs {
+pub struct StatusArgs {
     /// Pull request number whose head commit should be checked.
     #[arg(long)]
-    pub(crate) pr: Option<u64>,
+    pub pr: Option<u64>,
 
     /// Commit SHA to check.
     #[arg(long)]
-    pub(crate) sha: Option<String>,
+    pub sha: Option<String>,
 
     /// Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY.
     #[arg(long)]
-    pub(crate) repo: Option<String>,
+    pub repo: Option<String>,
 }
 
-pub(crate) fn run(cmd: ClaAssistantCmd) -> Result<()> {
+pub fn run(cmd: ClaAssistantCmd) -> Result<()> {
     match cmd {
         ClaAssistantCmd::Retry(args) => retry(args),
         ClaAssistantCmd::Status(args) => status(args),

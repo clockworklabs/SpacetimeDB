@@ -1,3 +1,4 @@
+use crate::ensure_repo_root;
 use anyhow::{anyhow, bail, Context, Result};
 use duct::cmd;
 use serde_json::Value;
@@ -7,7 +8,7 @@ use std::path::{Path, PathBuf};
 const REPO: &str = "clockworklabs/SpacetimeDB";
 
 pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
-    super::ensure_repo_root()?;
+    ensure_repo_root()?;
 
     fetch_base_ref(base_ref)?;
     let review = ReviewStatus::fetch(pr_number)?;

@@ -1,8 +1,9 @@
 [package]
-name = "ci"
+name = "ci-self-docs"
 version = "0.1.0"
 edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
 duct.workspace = true
+clap.workspace = true
