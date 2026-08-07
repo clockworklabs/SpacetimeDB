@@ -480,6 +480,8 @@ public static class Module
                 case Errno.OK:
                     ret.Check();
                     break;
+                default:
+                    throw new UnknownException(ret);
             }
         }
     }
