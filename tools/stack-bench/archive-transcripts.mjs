@@ -40,17 +40,32 @@ function storeDirFor(appDir) {
   return hit ? join(STORE, hit) : null;
 }
 
-if (!existsSync(RESULTS)) {
-  console.error(`no results directory at ${RESULTS}`);
-  process.exit(1);
+// A run builds in an isolated work directory outside the harness, so the CLI
+// files its transcript under THAT path, not under results/. Sweeping results/
+// would quietly archive nothing. --app names the directory the build actually
+// ran in; --label names the folder to file it under.
+const APP = arg('--app');
+const LABEL = arg('--label', APP ? 'run' : null);
+
+const jobs = [];
+if (APP) {
+  jobs.push([LABEL, resolve(APP)]);
+} else {
+  if (!existsSync(RESULTS)) {
+    console.error(`no results directory at ${RESULTS}`);
+    process.exit(1);
+  }
+  for (const run of readdirSync(RESULTS, { withFileTypes: true })) {
+    if (!run.isDirectory()) continue;
+    const appDir = join(RESULTS, run.name, 'app');
+    if (existsSync(appDir)) jobs.push([run.name, appDir]);
+  }
 }
 mkdirSync(OUT, { recursive: true });
 
 let copied = 0, missing = 0;
-for (const run of readdirSync(RESULTS, { withFileTypes: true })) {
-  if (!run.isDirectory()) continue;
-  const appDir = join(RESULTS, run.name, 'app');
-  if (!existsSync(appDir)) continue;
+for (const [name, appDir] of jobs) {
+  const run = { name };
 
   const store = storeDirFor(appDir);
   if (!store) {

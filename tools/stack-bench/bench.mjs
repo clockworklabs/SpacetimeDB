@@ -46,6 +46,7 @@ function parseArgs(argv) {
       case '--no-media': a.media = false; break;
       case '--keep-spacetime': a.keepSpacetime = true; break;
       case '--guidance': a.guidance = argv[++i]; break;
+      case '--skip-probe': a.skipProbe = true; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
   }
@@ -218,6 +219,25 @@ async function main() {
   process.env.STACK_BENCH_STDB_OWNED = '1';   // this host is ours; restarts are allowed
   const track = loadTrack(args.track);
   assertNoPortCollisions();
+
+  // Prove the sandbox before spending a run on it. The rules have already been
+  // wrong twice in ways that read as fine: a deny list shipped under
+  // --dangerously-skip-permissions enforced nothing at all, and the first probe
+  // to check it reported a pass by matching the word "denied" inside the file it
+  // had just read. Neither showed up as an error — both would have produced a
+  // full set of confident, void scores. One cheap session up front is worth less
+  // than the run it protects.
+  if (!args.skipProbe) {
+    console.log('  sandbox    ... probing the deny rules');
+    try {
+      sh('node', [join(ROOT, 'probe-sandbox.mjs'), '--mode', 'acceptEdits', '--model', args.model],
+        { stdio: 'inherit' });
+    } catch {
+      console.error('\nSANDBOX PROBE FAILED — refusing to start a run whose scores could not be trusted.');
+      console.error('Run `node probe-sandbox.mjs --mode acceptEdits` to see which path got through.');
+      process.exit(2);
+    }
+  }
   const url = args.url ?? `http://localhost:${portsFor(track, args.backend, args.runIndex).vite}`;
   const runDir = resultsName(track, args.backend, args.runIndex);
   args.out ??= join(ROOT, 'results', runDir);
@@ -379,7 +399,22 @@ async function main() {
       for (const e of run.contamination.evidence) console.log(`     ${e}`);
       console.log('     Scores from this run must not be quoted.');
     }
-  } catch { run.contamination = { evidence: 'audit did not run', verdict: 'unknown' }; }
+  } catch (e) {
+    // An audit that could not run is not a pass. Treating "unknown" as usable is
+    // how six contaminated runs got quoted for a day, so the unchecked case now
+    // lands on the same side as the failed one.
+    run.contaminated = true;
+    run.contamination = { evidence: `audit did not run: ${String(e.message).split('\n')[0]}`,
+      verdict: 'SCORES NOT USABLE — nothing verified this build stayed inside its directory.' };
+    console.log('\n  !! AUDIT DID NOT RUN — scores from this run must not be quoted.');
+  }
+
+  // Keep the evidence. The transcripts the audit just read are pruned by the CLI
+  // after 30 days, and that has already destroyed one benchmark's audit trail.
+  try {
+    sh('node', [join(ROOT, 'archive-transcripts.mjs'), '--app', appDir, '--label', runDir],
+      { stdio: 'pipe' });
+  } catch { console.log('  (transcript archiving failed — evidence is on a 30-day timer)'); }
 
   run.totals = {
     // A level that never ran contributes nothing rather than NaN.
