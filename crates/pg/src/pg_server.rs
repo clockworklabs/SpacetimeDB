@@ -389,7 +389,7 @@ where
                         let factory_ref = factory.clone();
                         tokio::spawn(async move {
                             process_socket(stream, None, factory_ref).await.inspect_err(|err|{
-                                log::error!("PG: Error processing socket: {err:?}");
+                                log::warn!("PG: Error processing socket: {err:?}");
                             })
                         });
                     }
