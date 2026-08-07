@@ -2,9 +2,8 @@ use alloc::{
     boxed::Box,
     collections::{BTreeMap, VecDeque},
     sync::Arc,
-    vec::Vec,
 };
-use core::{ops::RangeBounds, result::Result};
+use core::{num::NonZeroUsize, result::Result};
 use futures_channel::oneshot;
 
 use crate::{
@@ -21,11 +20,23 @@ pub use fs::File;
 
 #[derive(Debug)]
 pub enum Error {
-    FileNotFound { path: Box<str> },
-    FileAlreadyExists { path: Box<str> },
-    ShortWrite { expected: usize, written: usize },
-    UnexpectedEof { expected: usize, read: usize },
+    FileNotFound {
+        path: Box<str>,
+    },
+    FileAlreadyExists {
+        path: Box<str>,
+    },
+    ShortWrite {
+        expected: usize,
+        written: usize,
+    },
+    UnexpectedEof {
+        expected: usize,
+        read: usize,
+    },
     Fs(fs::Error),
+    /// Injected by the I/O driver.
+    Cancelled,
 }
 
 impl From<fs::Error> for Error {
@@ -46,6 +57,23 @@ pub struct SimulatorIO {
 }
 
 impl SimulatorIO {
+    /// Returns `true` if there are entries in either the submission or
+    /// completion queues.
+    pub fn pending(&self) -> bool {
+        let inner = self.inner.lock();
+        inner.submissions.len() + inner.completions.len() > 0
+    }
+
+    /// Number of entries in the submission queue.
+    pub fn pending_submissions(&self) -> usize {
+        self.inner.lock().submissions.len()
+    }
+
+    /// Number of entries in the completion queue.
+    pub fn pending_completions(&self) -> usize {
+        self.inner.lock().completions.len()
+    }
+
     /// Run the submission at the front of the queue (if any), and complete the
     /// completion at the front of the queue (if any).
     pub fn tick(&self) -> bool {
@@ -57,23 +85,24 @@ impl SimulatorIO {
         self.inner.lock().execute(sqe);
     }
 
-    /// Remove and return the submission at the fron of the queue, if any.
+    /// Remove and return the submission at the front of the queue, if any.
     pub fn next_submission(&self) -> Option<Box<dyn Submission>> {
-        self.inner.lock().next()
+        self.inner.lock().next_submission()
     }
 
     /// Remove and return a random submission, or `None` if the queue is empty.
     pub fn random_submission(&self, rng: &Rng) -> Option<Box<dyn Submission>> {
-        self.inner.lock().next_random(rng)
+        self.inner.lock().random_submission(rng)
     }
 
-    /// Remove `range` from the completion queue.
-    pub fn completions(&self, range: impl RangeBounds<usize>) -> impl Iterator<Item = Box<dyn Completion>> {
-        self.inner
-            .lock()
-            .drain_completions(range)
-            .collect::<Vec<_>>()
-            .into_iter()
+    /// Remove and return the completion at the front of the queue, if any.
+    pub fn next_completion(&self) -> Option<Box<dyn Completion>> {
+        self.inner.lock().next_completion()
+    }
+
+    /// Remove and return a random completion, or `None` if the queue is empty.
+    pub fn random_completion(&self, rng: &Rng) -> Option<Box<dyn Completion>> {
+        self.inner.lock().random_completion(rng)
     }
 
     async fn submit_and_wait<T>(
@@ -219,17 +248,22 @@ impl SimulatorIOInner {
         }
     }
 
-    fn next(&mut self) -> Option<Box<dyn Submission>> {
+    fn next_submission(&mut self) -> Option<Box<dyn Submission>> {
         self.submissions.pop_front()
     }
 
-    fn next_random(&mut self, rng: &Rng) -> Option<Box<dyn Submission>> {
-        let i = rng.next_u64() % self.submissions.len() as u64;
-        self.submissions.remove(i as usize)
+    fn random_submission(&mut self, rng: &Rng) -> Option<Box<dyn Submission>> {
+        let len = NonZeroUsize::new(self.submissions.len())?;
+        self.submissions.remove(rng.index(len.get()))
     }
 
-    fn drain_completions(&mut self, range: impl RangeBounds<usize>) -> impl Iterator<Item = Box<dyn Completion>> {
-        self.completions.drain(range)
+    fn next_completion(&mut self) -> Option<Box<dyn Completion>> {
+        self.completions.pop_front()
+    }
+
+    fn random_completion(&mut self, rng: &Rng) -> Option<Box<dyn Completion>> {
+        let len = NonZeroUsize::new(self.completions.len())?;
+        self.completions.remove(rng.index(len.get()))
     }
 
     fn submit(&mut self, op: Box<dyn Submission>) {
@@ -245,11 +279,8 @@ mod tests {
 
     #[test]
     fn create_file() {
-        let mut rt = Runtime::with_config(RuntimeConfig {
-            enable_io: true,
-            ..<_>::default()
-        });
-        let io = rt.io().clone().unwrap();
+        let mut rt = Runtime::with_config(RuntimeConfig::default().enable_io());
+        let io = rt.io().cloned().unwrap();
 
         let fd = rt
             .block_on(io.create_file("/data/test", 2 * SECTOR_SIZE as u64))
@@ -285,11 +316,8 @@ mod tests {
 
     #[test]
     fn write_read_roundtrip() {
-        let mut rt = Runtime::with_config(RuntimeConfig {
-            enable_io: true,
-            ..<_>::default()
-        });
-        let io = rt.io().clone().unwrap();
+        let mut rt = Runtime::with_config(RuntimeConfig::default().enable_io());
+        let io = rt.io().cloned().unwrap();
 
         let fd = rt
             .block_on(io.create_file("/data/test", 2 * SECTOR_SIZE as u64))
