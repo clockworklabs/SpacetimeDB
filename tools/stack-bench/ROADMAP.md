@@ -73,3 +73,29 @@ More L1 surface area. Both L1s are the right size; discrimination now comes
 from conditions, not features. And nothing whose only defense is "SpacetimeDB
 happens to be good at it" — a criterion must be defensible as what a real
 application needs to someone who has never heard of SpacetimeDB.
+
+## Storm mode and database-truth grading (next after multi-server)
+
+**Storms at API scale.** The grader already captures the app's own write
+requests; `replayConcurrently` scaled to N≥64 copies is a load storm on
+existing machinery for postgres/mongo. SpacetimeDB's ws writes are not
+capturable that way (the known asymmetry): its storm drives ~16 browser
+actors, and the diagnostic reports both concurrency levels honestly. Recipe:
+seed tight (1 in stock, 1 seat), attack one state-changing endpoint at a
+time, a fresh connection per request so keep-alive serializes nothing, and
+sustained open-loop load where a single burst can hide the bug.
+
+**Database-truth grading, schema-blind.** Extend the back-office spec with
+READ subcommands (`report-stock <item>`, `count-orders`) emitting JSON — the
+app ships its own DB reader, and the grader cross-checks three ways: DB truth
+vs seed arithmetic vs what the UI renders. A UI papering over a corrupted
+database stops being able to pass. UI grading stays: stale pages are half the
+story.
+
+**One-shot as the headline.** The unaided `firstBuild` score is the
+correctness-by-default story and is already recorded; report it first, with
+fix rounds as the separate cost-to-correct story.
+
+**Invariant additions:** blind overwrite (two sessions edit one entity; an
+acknowledged write must never silently vanish), replay idempotency on money
+paths, double-booking semantics once a booking-shaped surface exists (L3+).
