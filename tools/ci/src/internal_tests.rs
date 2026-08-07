@@ -374,6 +374,17 @@ fn should_rerun_failed_jobs(run: &SelectedRun) -> bool {
     run.status == "completed" && run.conclusion.as_deref() != Some("success")
 }
 
+fn prepare_existing_run(run: WorkflowRun) -> Result<SelectedRun> {
+    let selected = SelectedRun::from(run);
+    if !should_rerun_failed_jobs(&selected) {
+        return Ok(selected);
+    }
+
+    println!("Re-running unsuccessful jobs in the existing private run.");
+    rerun_failed_jobs(selected.id)?;
+    wait_for_rerun(&selected)
+}
+
 /// Waits for GitHub to expose the new attempt or status so callers do not receive the stale completed result.
 fn wait_for_rerun(run: &SelectedRun) -> Result<SelectedRun> {
     for _ in 0..30 {
@@ -412,21 +423,14 @@ pub(crate) fn coordinate(args: CoordinateArgs) -> Result<()> {
         let private_public_sha = public_submodule_sha(&private_source.sha)?;
         ensure_public_submodule_matches(pull.number, &private_public_sha, &args.public_sha)?;
         let run = required_pull_request_run(&private_source.sha, pull)?;
-        println!("Reusing the linked private PR run for this public/private SHA pair.");
-        SelectedRun::from(run)
+        println!("Found the linked private PR run for this public/private SHA pair.");
+        prepare_existing_run(run)?
     } else if let Some(run) = matching_dispatch_run(
         workflow_runs("workflow_dispatch", &private_source.sha)?,
         &args.public_sha,
     ) {
-        let selected = SelectedRun::from(run);
-        if should_rerun_failed_jobs(&selected) {
-            println!("Re-running unsuccessful jobs in the existing private run.");
-            rerun_failed_jobs(selected.id)?;
-            wait_for_rerun(&selected)?
-        } else {
-            println!("Reusing the existing private run for this public/private SHA pair.");
-            selected
-        }
+        println!("Found an existing private run for this public/private SHA pair.");
+        prepare_existing_run(run)?
     } else {
         println!("Dispatching a new private run for this public/private SHA pair.");
         let response = dispatch_workflow(&args.public_sha)?;
@@ -516,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn only_completed_unsuccessful_dispatches_are_rerun() {
+    fn only_completed_unsuccessful_runs_are_rerun() {
         let selected = |status: &str, conclusion: Option<&str>| SelectedRun {
             id: 1,
             status: status.to_owned(),
