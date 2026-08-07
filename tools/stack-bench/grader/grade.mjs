@@ -455,12 +455,31 @@ async function runStep(step, actors, ctx) {
     const path = join(ctx.appDir, step.script);
     if (!existsSync(path)) throw new Error(`the app does not ship ${step.script} — the spec requires it`);
     try {
-      execFileSync('node', [path, ...(step.args ?? [])],
+      // Args expand the same tokens steps do — usernames are scope-suffixed,
+      // so a raw name would purge a user that does not exist.
+      execFileSync('node', [path, ...(step.args ?? []).map(a => expand(a, ctx))],
         { cwd: ctx.appDir, encoding: 'utf8', stdio: 'pipe', timeout: step.timeoutMs ?? 60000 });
     } catch (err) {
       throw new Error(`${step.script} failed: ${((err.stdout ?? '') + (err.stderr ?? '')).trim().slice(-200) || err.message}`);
     }
     await new Promise(r => setTimeout(r, step.settleMs ?? 3000));
+    return;
+  }
+  if (step.do === 'stopAppServer' || step.do === 'startAppServer') {
+    // The deploy window: a write lands while the app tier is down, and the app
+    // must converge once it returns. Reuses the restart command with a mode
+    // argument; on spacetime both are no-ops because there is no app tier —
+    // which is the measurement, not an exemption.
+    if (!ctx.restartCmd) throw new Error('INCONCLUSIVE: no --restart-cmd supplied, cannot control the app server');
+    const { execFileSync } = await import('node:child_process');
+    const mode = step.do === 'stopAppServer' ? 'stop' : 'start';
+    try {
+      execFileSync('bash', ['-c', `${ctx.restartCmd} ${mode}`], { stdio: 'ignore', timeout: 300000 });
+    } catch (err) {
+      if (err.status === 3) throw new Error('INCONCLUSIVE: app-server control refused on this host');
+      throw new Error(`could not ${mode} the app server: ${(err.stdout || err.message || '').toString().trim().slice(-160)}`);
+    }
+    await new Promise(r => setTimeout(r, step.settleMs ?? (mode === 'start' ? 8000 : 2000)));
     return;
   }
   if (step.do === 'sendConcurrently') {

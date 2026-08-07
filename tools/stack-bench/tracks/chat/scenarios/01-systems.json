@@ -5,14 +5,42 @@
     {
       "id": 901,
       "name": "A write from outside the app is visible without reload",
-      "actors": ["alice", "bob", "auditor"],
+      "actors": [
+        "alice",
+        "bob",
+        "auditor"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "alice", "name": "SysAlice" },
-        { "do": "signUp", "actor": "bob", "name": "SysBob" },
-        { "do": "createRoom", "actor": "alice", "room": "sysroom" },
-        { "do": "enterRoom", "actor": "bob", "room": "sysroom" },
-        { "do": "send", "actor": "bob", "text": "purge-me-alpha" },
-        { "do": "send", "actor": "bob", "text": "purge-me-beta" },
+        {
+          "do": "signUp",
+          "actor": "alice",
+          "name": "SysAlice"
+        },
+        {
+          "do": "signUp",
+          "actor": "bob",
+          "name": "SysBob"
+        },
+        {
+          "do": "createRoom",
+          "actor": "alice",
+          "room": "sysroom"
+        },
+        {
+          "do": "enterRoom",
+          "actor": "bob",
+          "room": "sysroom"
+        },
+        {
+          "do": "send",
+          "actor": "bob",
+          "text": "purge-me-alpha"
+        },
+        {
+          "do": "send",
+          "actor": "bob",
+          "text": "purge-me-beta"
+        },
         {
           "do": "expect",
           "actor": "alice",
@@ -31,7 +59,10 @@
             {
               "do": "runScript",
               "script": "scripts/backoffice.mjs",
-              "args": ["purge-user", "SysBob"],
+              "args": [
+                "purge-user",
+                "{user:SysBob}"
+              ],
               "settleMs": 4000
             },
             {
@@ -50,8 +81,16 @@
           "points": 0,
           "note": "WITHHELD — promoted together with 901a. A fresh actor rather than a reload, so this cannot be confused by session-persistence behaviour, which invariant 105 scores separately.",
           "steps": [
-            { "do": "signUp", "actor": "auditor", "name": "SysAuditor" },
-            { "do": "enterRoom", "actor": "auditor", "room": "sysroom" },
+            {
+              "do": "signUp",
+              "actor": "auditor",
+              "name": "SysAuditor"
+            },
+            {
+              "do": "enterRoom",
+              "actor": "auditor",
+              "room": "sysroom"
+            },
             {
               "do": "expectElementCount",
               "actor": "auditor",
@@ -61,18 +100,80 @@
               "within": 10000
             }
           ]
+        },
+        {
+          "id": "901c",
+          "desc": "a purge that lands while the app server is down is still reflected to an open client once the server returns — the deploy window loses nothing",
+          "points": 0,
+          "note": "WITHHELD — same promotion rule, plus this is the anti-cheat phase: a script that talks to the app server fails here outright. NOTIFY-style event relays also fail unless the app refetches on reconnect, because a notification fired while nobody listened is gone forever.",
+          "steps": [
+            {
+              "do": "send",
+              "actor": "alice",
+              "text": "deploy-window-msg"
+            },
+            {
+              "do": "expect",
+              "actor": "auditor",
+              "testid": "message-item",
+              "contains": "deploy-window-msg",
+              "within": 8000
+            },
+            {
+              "do": "stopAppServer"
+            },
+            {
+              "do": "runScript",
+              "script": "scripts/backoffice.mjs",
+              "args": [
+                "purge-user",
+                "{user:SysAlice}"
+              ]
+            },
+            {
+              "do": "startAppServer"
+            },
+            {
+              "do": "expectElementCount",
+              "actor": "auditor",
+              "testid": "message-item",
+              "contains": "deploy-window-msg",
+              "equals": 0,
+              "within": 20000
+            }
+          ]
         }
       ]
     },
     {
       "id": 902,
       "name": "A list being opened while its contents change",
-      "actors": ["host", "watcher", "joiner"],
+      "actors": [
+        "host",
+        "watcher",
+        "joiner"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "host", "name": "RaceHost" },
-        { "do": "signUp", "actor": "watcher", "name": "RaceWatcher" },
-        { "do": "signUp", "actor": "joiner", "name": "RaceJoiner" },
-        { "do": "createRoom", "actor": "host", "room": "raceroom" }
+        {
+          "do": "signUp",
+          "actor": "host",
+          "name": "RaceHost"
+        },
+        {
+          "do": "signUp",
+          "actor": "watcher",
+          "name": "RaceWatcher"
+        },
+        {
+          "do": "signUp",
+          "actor": "joiner",
+          "name": "RaceJoiner"
+        },
+        {
+          "do": "createRoom",
+          "actor": "host",
+          "room": "raceroom"
+        }
       ],
       "criteria": [
         {
@@ -85,10 +186,18 @@
               "do": "race",
               "branches": [
                 [
-                  { "do": "enterRoom", "actor": "watcher", "room": "raceroom" }
+                  {
+                    "do": "enterRoom",
+                    "actor": "watcher",
+                    "room": "raceroom"
+                  }
                 ],
                 [
-                  { "do": "enterRoom", "actor": "joiner", "room": "raceroom" }
+                  {
+                    "do": "enterRoom",
+                    "actor": "joiner",
+                    "room": "raceroom"
+                  }
                 ]
               ],
               "settleMs": 4000

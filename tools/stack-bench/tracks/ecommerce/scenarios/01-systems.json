@@ -8,13 +8,18 @@
     {
       "id": 901,
       "name": "A write from outside the app is visible without reload",
-      "actors": ["viewer"],
+      "actors": [
+        "viewer"
+      ],
       "setup": [
         {
           "do": "expectNumber",
           "actor": "viewer",
           "testid": "item-stock",
-          "in": { "testid": "item-card", "contains": "Desk Lamp" },
+          "in": {
+            "testid": "item-card",
+            "contains": "Desk Lamp"
+          },
           "equals": 100
         }
       ],
@@ -28,14 +33,22 @@
             {
               "do": "runScript",
               "script": "scripts/backoffice.mjs",
-              "args": ["set-stock", "Desk Lamp", "East", "5"],
+              "args": [
+                "set-stock",
+                "Desk Lamp",
+                "East",
+                "5"
+              ],
               "settleMs": 4000
             },
             {
               "do": "expectNumber",
               "actor": "viewer",
               "testid": "item-stock",
-              "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Desk Lamp"
+              },
               "equals": 50,
               "within": 10000
             }
@@ -47,14 +60,56 @@
           "points": 0,
           "note": "WITHHELD — promoted together with 901a.",
           "steps": [
-            { "do": "reload", "actor": "viewer", "settleMs": 3000 },
+            {
+              "do": "reload",
+              "actor": "viewer",
+              "settleMs": 3000
+            },
             {
               "do": "expectNumber",
               "actor": "viewer",
               "testid": "item-stock",
-              "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Desk Lamp"
+              },
               "equals": 50,
               "within": 10000
+            }
+          ]
+        },
+        {
+          "id": "901c",
+          "desc": "a stock correction that lands while the app server is down shows on an open storefront once the server returns: East 5 + West 10 = 15, no reload",
+          "points": 0,
+          "note": "WITHHELD — same promotion rule, plus this is the anti-cheat phase: a script that talks to the app server fails here outright. Fire-and-forget event relays (NOTIFY) also fail unless the app refetches on reconnect.",
+          "steps": [
+            {
+              "do": "stopAppServer"
+            },
+            {
+              "do": "runScript",
+              "script": "scripts/backoffice.mjs",
+              "args": [
+                "set-stock",
+                "Desk Lamp",
+                "West",
+                "10"
+              ]
+            },
+            {
+              "do": "startAppServer"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "viewer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Desk Lamp"
+              },
+              "equals": 15,
+              "within": 20000
             }
           ]
         }
@@ -63,22 +118,43 @@
     {
       "id": 902,
       "name": "A list being opened while its contents change",
-      "actors": ["reader", "reviewer"],
+      "actors": [
+        "reader",
+        "reviewer"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "reviewer", "name": "raceR" },
-        { "do": "signUp", "actor": "reader", "name": "raceL" },
+        {
+          "do": "signUp",
+          "actor": "reviewer",
+          "name": "raceR"
+        },
+        {
+          "do": "signUp",
+          "actor": "reader",
+          "name": "raceL"
+        },
         {
           "do": "click",
           "actor": "reviewer",
           "testid": "buy-now",
-          "in": { "testid": "item-card", "contains": "Keyboard" }
+          "in": {
+            "testid": "item-card",
+            "contains": "Keyboard"
+          }
         },
-        { "do": "wait", "actor": "reviewer", "ms": 800 },
+        {
+          "do": "wait",
+          "actor": "reviewer",
+          "ms": 800
+        },
         {
           "do": "click",
           "actor": "reviewer",
           "testid": "item-name",
-          "in": { "testid": "item-card", "contains": "Keyboard" },
+          "in": {
+            "testid": "item-card",
+            "contains": "Keyboard"
+          },
           "settleMs": 1200
         },
         {
@@ -103,7 +179,10 @@
                     "do": "click",
                     "actor": "reader",
                     "testid": "item-name",
-                    "in": { "testid": "item-card", "contains": "Keyboard" }
+                    "in": {
+                      "testid": "item-card",
+                      "contains": "Keyboard"
+                    }
                   }
                 ],
                 [

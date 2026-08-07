@@ -8,7 +8,13 @@
 # Restarting only the Express side would not be a fair comparison, so the
 # SpacetimeDB host is restarted too.
 #
-# Usage: restart-backend.sh <backend> <app-dir> [express-port] [probe-path]
+# Usage: restart-backend.sh <backend> <app-dir> [express-port] [probe-path] [mode]
+#
+# mode: restart (default) | stop | start. Stop/start exist for the
+# deploy-window test: a back-office write lands WHILE the server is down, and
+# the app must converge once it returns. For spacetime, stop/start are no-ops
+# on the app tier — the module host is the database and is deliberately not
+# touched; there is no app server to miss anything.
 #
 # The probe path is whatever endpoint proves this application's server is
 # answering again; it differs per track, so it is passed in rather than assumed.
@@ -19,6 +25,7 @@ BACKEND="${1:?backend required}"
 APP_DIR="${2:?app dir required}"
 PORT="${3:-}"
 PROBE="${4:-/api/rooms}"
+MODE="${5:-restart}"
 
 wait_for() {  # wait_for <url> <seconds>
   local url="$1" deadline=$(( $(date +%s) + ${2:-60} ))
@@ -31,15 +38,22 @@ wait_for() {  # wait_for <url> <seconds>
 case "$BACKEND" in
   postgres|mongodb)
     [ -n "$PORT" ] || { echo "express port required for $BACKEND" >&2; exit 2; }
-    echo "stopping Express on :$PORT"
-    npx --yes kill-port "$PORT" >/dev/null 2>&1 || true
-    sleep 3
+    if [ "$MODE" != "start" ]; then
+      echo "stopping Express on :$PORT"
+      npx --yes kill-port "$PORT" >/dev/null 2>&1 || true
+      sleep 3
+    fi
+    [ "$MODE" = "stop" ] && exit 0
     ( cd "$APP_DIR/server" && PORT="$PORT" nohup npm run dev < /dev/null > "/tmp/restart-$BACKEND-$PORT.log" 2>&1 & )
     wait_for "http://localhost:$PORT$PROBE" 180
     echo "Express on :$PORT is back"
     ;;
 
   spacetime)
+    # stop/start address the APP tier, and spacetime has none — the client is
+    # static files and the module host is the database, which stays up exactly
+    # as postgres itself does for the other backends.
+    if [ "$MODE" != "restart" ]; then echo "spacetime has no app server to $MODE"; exit 0; fi
     # The SpacetimeDB host is a shared machine-wide service — other projects'
     # databases live on it. Killing it to test one benchmark app takes them all
     # down, so this refuses unless it is pointed at an instance the benchmark

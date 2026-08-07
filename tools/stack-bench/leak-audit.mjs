@@ -138,6 +138,14 @@ function auditTranscript(file, boundary) {
       for (const raw of cand) {
         const n = norm(raw);
         if (!n || IGNORE.test(n)) continue;
+        // The CLI keeps auto-memory for the session's OWN project dir. A build
+        // reading notes it wrote itself, in this same run, is a diary, not a
+        // leak — the run that surfaced this had its 48/50 voided over a file
+        // whose originSessionId was its own. Memory belonging to ANY OTHER
+        // project dir stays flagged: that is somebody's notes about the
+        // harness. Own-ness is decided by the encoded cwd in the path.
+        if (cwd && /[/\\]projects[/\\][^/\\]+[/\\]memory[/\\]/.test(n)
+          && n.includes(cwd.replace(/[\\/:]/g, '-'))) continue;
         const absolute = /^[a-z]:/.test(n) || n.startsWith('/');
         if (!absolute) continue;              // relative paths resolve inside cwd
         if (cwd && n.startsWith(cwd)) continue;
