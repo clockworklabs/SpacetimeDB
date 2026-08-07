@@ -22,6 +22,16 @@ pub trait Submission: Send + Any {
     /// - The submission is a [Noop].
     ///
     fn execute(self: Box<Self>, files: &mut BTreeMap<Box<str>, fs::File>) -> Option<Box<dyn Completion>>;
+
+    /// Cancel the operation instead of executing it.
+    ///
+    /// This will generate a [Completion] with the result [Error::Cancelled],
+    /// unless:
+    ///
+    /// - The submission is a sub-operation, such as [WritePage] or [ReadPage].
+    /// - The submission is a [Noop].
+    ///
+    fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>>;
 }
 
 /// An object containing the result of executing a [Submission], as well as a
@@ -160,6 +170,10 @@ impl Submission for Noop {
     fn execute(self: Box<Self>, _files: &mut BTreeMap<Box<str>, fs::File>) -> Option<Box<dyn Completion>> {
         None
     }
+
+    fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
+        None
+    }
 }
 
 /// An operation that does nothing.
@@ -175,6 +189,11 @@ pub(crate) struct Ready(Box<dyn Completion>);
 
 impl Submission for Ready {
     fn execute(self: Box<Self>, _files: &mut BTreeMap<Box<str>, fs::File>) -> Option<Box<dyn Completion>> {
+        let Self(completion) = *self;
+        Some(completion)
+    }
+
+    fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
         let Self(completion) = *self;
         Some(completion)
     }
@@ -196,6 +215,11 @@ impl Submission for OpenFile {
         let Self { path, on_complete } = *self;
         let result = files.get(&path).cloned().ok_or(Error::FileNotFound { path });
         Some(completion(result, on_complete))
+    }
+
+    fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
+        let Self { path: _, on_complete } = *self;
+        Some(completion(Err(Error::Cancelled), on_complete))
     }
 }
 
@@ -219,6 +243,15 @@ impl Submission for CreateFile {
         })();
         Some(completion(result, on_complete))
     }
+
+    fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
+        let Self {
+            path: _,
+            len: _,
+            on_complete,
+        } = *self;
+        Some(completion(Err(Error::Cancelled), on_complete))
+    }
 }
 
 /// [Submission] created by [get_len].
@@ -232,6 +265,11 @@ impl Submission for GetLen {
         let Self { fd, on_complete } = *self;
         let result = Ok(fd.len());
         Some(completion(result, on_complete))
+    }
+
+    fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
+        let Self { fd: _, on_complete } = *self;
+        Some(completion(Err(Error::Cancelled), on_complete))
     }
 }
 
@@ -248,6 +286,15 @@ impl Submission for SetLen {
         let result = fd.set_len(len).map_err(Error::from);
         Some(completion(result, on_complete))
     }
+
+    fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
+        let Self {
+            fd: _,
+            len: _,
+            on_complete,
+        } = *self;
+        Some(completion(Err(Error::Cancelled), on_complete))
+    }
 }
 
 struct PagedOpState<B> {
@@ -259,14 +306,14 @@ struct PagedOpState<B> {
 
 fn complete_page_op<B: Send + 'static>(
     state: &Arc<spin::Mutex<PagedOpState<B>>>,
-    result: Result<(), fs::Error>,
+    result: Result<(), Error>,
 ) -> Option<Box<PageOpCompletion<B>>> {
     let complete = {
         let mut state = state.lock();
         if let Err(e) = result
             && state.first_error.is_none()
         {
-            state.first_error.replace(e.into());
+            state.first_error.replace(e);
         }
         assert!(state.remaining > 0);
         state.remaining -= 1;
@@ -327,7 +374,17 @@ impl<B: AlignedBytes + Send + 'static> Submission for WritePage<B> {
             let end = start + SECTOR_SIZE;
             fd.write_page(&buf.as_bytes()[start..end], file_page as _)
         };
-        complete_page_op(&state, result).map(|c| c as Box<dyn Completion>)
+        complete_page_op(&state, result.map_err(Into::into)).map(|c| c as Box<dyn Completion>)
+    }
+
+    fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
+        let Self {
+            fd: _,
+            file_page: _,
+            buf_page: _,
+            state,
+        } = *self;
+        complete_page_op(&state, Err(Error::Cancelled)).map(|c| c as Box<dyn Completion>)
     }
 }
 
@@ -355,7 +412,17 @@ impl<B: AlignedBytes + Send + 'static> Submission for ReadPage<B> {
             let end = start + SECTOR_SIZE;
             fd.read_page(&mut buf.as_bytes_mut()[start..end], file_page as _)
         };
-        complete_page_op(&state, result).map(|c| c as Box<dyn Completion>)
+        complete_page_op(&state, result.map_err(Into::into)).map(|c| c as Box<dyn Completion>)
+    }
+
+    fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
+        let Self {
+            fd: _,
+            file_page: _,
+            buf_page: _,
+            state,
+        } = *self;
+        complete_page_op(&state, Err(Error::Cancelled)).map(|c| c as Box<dyn Completion>)
     }
 }
 

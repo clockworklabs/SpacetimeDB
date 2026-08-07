@@ -74,7 +74,7 @@ impl File {
     ///
     /// Extending allocates pages eagerly as needed. Shrinking drops all pages
     /// at or beyond the new EOF.
-    pub fn set_len(&self, new_len: u64) -> Result<()> {
+    pub(super) fn set_len(&self, new_len: u64) -> Result<()> {
         use cmp::Ordering::*;
 
         if !new_len.is_multiple_of(PAGE_SIZE_U64) {
@@ -107,7 +107,7 @@ impl File {
     }
 
     /// Read one complete page.
-    pub fn read_page(&self, dst: &mut [u8], index: u64) -> Result<()> {
+    pub(super) fn read_page(&self, dst: &mut [u8], index: u64) -> Result<()> {
         if dst.len() != PAGE_SIZE {
             return Err(Error::UnalignedBuffer);
         }
@@ -125,7 +125,7 @@ impl File {
     }
 
     /// Write one complete page.
-    pub fn write_page(&self, src: &[u8], index: u64) -> Result<()> {
+    pub(super) fn write_page(&self, src: &[u8], index: u64) -> Result<()> {
         if src.len() != PAGE_SIZE {
             return Err(Error::UnalignedBuffer);
         }
