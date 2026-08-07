@@ -99,3 +99,25 @@ Each level keeps its own contract (`contracts/`), feature scenarios, and invaria
 Invariants are scored on a separate axis from features, because a feature-only score cannot
 see cross-cutting properties — an app can implement every feature and still let one user
 take over another's account.
+
+## Level 2 — Authorization and People (specified 2026-08-07)
+
+Access control plus the social layer: private rooms with invitations and live
+removal, per-user profiles, friend requests, and presence. The design intent is
+subscription lifecycles — every L2 surface is a panel or list whose contents can
+change WHILE it is open, which is where fetch-on-open architectures go stale and
+where per-viewer access control (a private room, a removal that must take effect
+mid-session) has to be enforced by the data layer rather than by whichever
+clients happen to be polite.
+
+Suites: `02-features` (scored), `02-invariants` (scored — wire-level privacy via
+expectNotReceived, replay-forgery of bio edits and friend accepts, friendship
+as one relationship), and `02-systems` (withheld races: a profile panel opened
+at the moment its bio is saved, a friend accept landing mid-refetch). Systems
+criteria follow the standard promotion rule: zero points until each
+demonstrably fails a real build and its mutant is CAUGHT.
+
+The former draft files `02-scheduled.json` and `04-durability.json` (from the
+pre-track ladder, wired into no suite) were removed when this level was
+specified. Scheduled messages are not part of any current level; the grader's
+`scheduleMessage` verb remains for the deferred-work level (04) to use.

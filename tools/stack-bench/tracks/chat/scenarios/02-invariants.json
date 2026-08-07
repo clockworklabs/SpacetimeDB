@@ -1,0 +1,106 @@
+{
+  "level": 2,
+  "note": "What level 2 must hold true regardless of UI: privacy is a property of the wire, not of what a page chooses to render; a friendship is one relationship; a profile belongs to its owner. Three-way verdicts follow level 1's replay conventions.",
+  "features": [
+    {
+      "id": 211,
+      "name": "Private Room Privacy",
+      "actors": ["owner", "member", "outsider"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "Opal" },
+        { "do": "signUp", "actor": "member", "name": "Mia" },
+        { "do": "signUp", "actor": "outsider", "name": "Xeno" },
+        { "do": "createRoom", "actor": "owner", "room": "sealed", "private": true },
+        { "do": "fill", "actor": "owner", "testid": "invite-input", "text": "{user:Mia}" },
+        { "do": "click", "actor": "owner", "testid": "invite-submit", "settleMs": 1500 },
+        { "do": "enterRoom", "actor": "member", "room": "sealed" }
+      ],
+      "criteria": [
+        {
+          "id": "211a",
+          "desc": "a private message reaches a member and is never sent over the wire to a non-member — regardless of what any page renders",
+          "points": 2,
+          "steps": [
+            { "do": "send", "actor": "owner", "text": "sealed-room-secret" },
+            { "do": "wait", "actor": "owner", "ms": 4000 },
+            { "do": "expectReceived", "actor": "member", "contains": "sealed-room-secret", "within": 8000 },
+            { "do": "expectNotReceived", "actor": "outsider", "contains": "sealed-room-secret" }
+          ]
+        },
+        {
+          "id": "211b",
+          "desc": "a non-member's post into a private room, issued as a raw request, is rejected and appears to nobody",
+          "points": 2,
+          "steps": [
+            { "do": "replayAs", "actor": "outsider", "from": "owner", "match": "sealed-room-secret", "swap": { "find": "sealed-room-secret", "with": "smuggled-outsider-post" } },
+            { "do": "expectReplayRejected", "actor": "outsider" },
+            { "do": "expect", "actor": "member", "testid": "message-item", "contains": "smuggled-outsider-post", "absent": true, "within": 5000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 212,
+      "name": "Friendship Is One Relationship",
+      "actors": ["a", "b"],
+      "setup": [
+        { "do": "signUp", "actor": "a", "name": "Ada" },
+        { "do": "signUp", "actor": "b", "name": "Ben" },
+        { "do": "createRoom", "actor": "a", "room": "symroom" },
+        { "do": "enterRoom", "actor": "b", "room": "symroom" },
+        { "do": "click", "actor": "a", "testid": "member-item", "contains": "Ben", "settleMs": 1200 },
+        { "do": "click", "actor": "a", "testid": "friend-request", "settleMs": 1200 },
+        { "do": "click", "actor": "b", "testid": "friend-accept", "in": { "testid": "friend-pending", "contains": "Ada" }, "settleMs": 1500 }
+      ],
+      "criteria": [
+        {
+          "id": "212a",
+          "desc": "after an accept, each side holds exactly one row for the other — never two, never a half-friendship",
+          "points": 1,
+          "steps": [
+            { "do": "expectElementCount", "actor": "a", "testid": "friend-item", "contains": "Ben", "equals": 1, "within": 10000 },
+            { "do": "expectElementCount", "actor": "b", "testid": "friend-item", "contains": "Ada", "equals": 1, "within": 10000 }
+          ]
+        },
+        {
+          "id": "212b",
+          "desc": "replaying the accept a second time as a raw request creates no second friendship",
+          "points": 2,
+          "steps": [
+            { "do": "replayAs", "actor": "b", "from": "b", "match": "friend" },
+            { "do": "wait", "actor": "b", "ms": 2500 },
+            { "do": "expectElementCount", "actor": "a", "testid": "friend-item", "contains": "Ben", "equals": 1, "within": 8000 },
+            { "do": "expectElementCount", "actor": "b", "testid": "friend-item", "contains": "Ada", "equals": 1, "within": 8000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 213,
+      "name": "A Profile Belongs to Its Owner",
+      "actors": ["victim", "attacker"],
+      "setup": [
+        { "do": "signUp", "actor": "victim", "name": "Vik" },
+        { "do": "signUp", "actor": "attacker", "name": "Axl" },
+        { "do": "createRoom", "actor": "victim", "room": "bioroom" },
+        { "do": "enterRoom", "actor": "attacker", "room": "bioroom" },
+        { "do": "fill", "actor": "victim", "testid": "bio-input", "text": "authentic-bio-text" },
+        { "do": "click", "actor": "victim", "testid": "bio-save", "settleMs": 1500 }
+      ],
+      "criteria": [
+        {
+          "id": "213a",
+          "desc": "another user's raw request to edit someone's bio is rejected, and the bio is unchanged for everyone",
+          "points": 2,
+          "steps": [
+            { "do": "replayAs", "actor": "attacker", "from": "victim", "match": "authentic-bio-text", "swap": { "find": "authentic-bio-text", "with": "defaced-bio-text" } },
+            { "do": "expectReplayRejected", "actor": "attacker" },
+            { "do": "click", "actor": "attacker", "testid": "member-item", "contains": "Vik", "settleMs": 1200 },
+            { "do": "expect", "actor": "attacker", "testid": "profile-bio", "contains": "authentic-bio-text", "within": 8000 },
+            { "do": "expect", "actor": "attacker", "testid": "profile-bio", "contains": "defaced-bio-text", "absent": true, "within": 4000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

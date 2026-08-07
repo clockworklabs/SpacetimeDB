@@ -312,11 +312,12 @@ async function main() {
       '--permission-mode', 'acceptEdits',
       '--settings', writeSandbox(args.app),
       '--model', args.model,
-      // The app directory is the ONLY thing the session may read. Granting the
-      // harness root handed it every previous build, the rollback snapshots and
-      // `tracks/*/scenarios/*.json` — the graded assertions themselves. A run
-      // did exactly that: it found a prior 49/49 implementation in a sibling
-      // snapshot and copied it, reporting DEPLOY_COMPLETE in 170s for $1.12.
+      // Narrows what the session is POINTED at, which is hygiene rather than
+      // isolation: `--dangerously-skip-permissions` makes `--add-dir` advisory,
+      // and sessions have been observed reading `tracks/*/scenarios/*.json`
+      // (the graded assertions) and copying a prior run's snapshot regardless.
+      // Isolation is the sandbox settings above and keeping the harness out of
+      // the app's ancestry; this argument alone guarantees nothing.
       // Everything the model legitimately needs (backend guidance, skill
       // documents, the level spec, the contract appendix) is inlined into the
       // prompt, and the linter is reached over loopback rather than by path.

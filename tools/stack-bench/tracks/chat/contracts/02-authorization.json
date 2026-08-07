@@ -1,0 +1,108 @@
+{
+  "level": 2,
+  "track": "chat",
+  "note": "Level 2 hooks are all stage 'scenario': the golden-path walk stays the level 1 walk, and every level 2 surface is driven and verified by the grader. Repeated-testid rules follow level 1 conventions (one entry per row, containing the identifying text).",
+  "hooks": [
+    {
+      "id": "room-private-toggle",
+      "element": "control at room creation that marks the room private",
+      "stage": "scenario",
+      "note": "present on the room creation surface; its state at creation decides visibility"
+    },
+    {
+      "id": "room-private-badge",
+      "element": "marker on a room that is private, visible to its members",
+      "stage": "scenario",
+      "note": "absent on public rooms"
+    },
+    {
+      "id": "invite-input",
+      "element": "input where a room owner enters a username to invite",
+      "stage": "scenario",
+      "note": "owner-only, on private rooms"
+    },
+    {
+      "id": "invite-submit",
+      "element": "control that sends the invitation",
+      "stage": "scenario",
+      "note": "owner-only, on private rooms"
+    },
+    {
+      "id": "perm-error",
+      "element": "error shown when an action is refused for lack of permission",
+      "stage": "scenario",
+      "note": "visible after a refused action; must not appear on permitted ones"
+    },
+    {
+      "id": "profile-panel",
+      "element": "panel showing a user's profile, opened by clicking their username",
+      "stage": "scenario",
+      "note": "one panel; contents change with the user being viewed"
+    },
+    {
+      "id": "profile-name",
+      "element": "the viewed user's display name inside the profile panel",
+      "stage": "scenario"
+    },
+    {
+      "id": "profile-bio",
+      "element": "the viewed user's bio inside the profile panel",
+      "stage": "scenario",
+      "note": "live while the panel is open — an edit by the profile's owner appears without reopening"
+    },
+    {
+      "id": "profile-close",
+      "element": "control that closes the profile panel",
+      "stage": "scenario"
+    },
+    {
+      "id": "bio-input",
+      "element": "input where a user edits their own bio",
+      "stage": "scenario",
+      "note": "only on the viewer's own profile"
+    },
+    {
+      "id": "bio-save",
+      "element": "control that saves the bio edit",
+      "stage": "scenario",
+      "note": "only on the viewer's own profile"
+    },
+    {
+      "id": "friend-request",
+      "element": "control on another user's profile that sends a friend request",
+      "stage": "scenario",
+      "note": "absent on one's own profile and on an existing friend's profile"
+    },
+    {
+      "id": "friend-pending",
+      "element": "one entry per incoming friend request (repeated testid), containing the sender's username",
+      "stage": "scenario"
+    },
+    {
+      "id": "friend-accept",
+      "element": "control on a pending request that accepts it",
+      "stage": "scenario"
+    },
+    {
+      "id": "friend-decline",
+      "element": "control on a pending request that declines it",
+      "stage": "scenario"
+    },
+    {
+      "id": "friend-item",
+      "element": "one entry per friend in the friends list (repeated testid), containing that friend's username",
+      "stage": "scenario"
+    },
+    {
+      "id": "friend-presence",
+      "element": "online/offline indicator inside a friend entry",
+      "stage": "scenario",
+      "note": "contains the word 'online' or 'offline'; flips live when the friend signs in or out"
+    },
+    {
+      "id": "unfriend",
+      "element": "control inside a friend entry that removes the friendship",
+      "stage": "scenario"
+    }
+  ]
+}
