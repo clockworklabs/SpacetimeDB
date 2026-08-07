@@ -12,13 +12,13 @@
 //
 // Prints a JSON line: { appDir, costUsd, tokens, durationMs, sessionId, ok }
 
-import { execFileSync, execSync } from 'node:child_process';
-import { createServer } from 'node:http';
+import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, levelPrompt, appendix, dbName, moduleName, portsFor, DEFAULT_TRACK } from './tracks.mjs';
 import { writeSandbox } from './sandbox.mjs';
+import { killTree } from './platform.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(ROOT, '..', '..');
@@ -139,25 +139,30 @@ function skillDocs(backend) {
 // So the path stops existing on disk. The harness answers lint requests over
 // loopback for the life of the session, and the shim names a port. A port
 // cannot be followed to grade.mjs.
-function startLintServer(cmd) {
-  const server = createServer((req, res) => {
-    let out = '', ok = true;
-    try {
-      out = execSync(cmd, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: 'pipe' });
-    } catch (e) {
-      ok = false;
-      out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+// It listens in a SEPARATE process. Listening inside this one did not work and
+// was not obviously broken: this process spends the whole session blocked in
+// execFileSync, a blocked event loop accepts no connections, and the build's
+// `curl` hung until its own 120-second tool timeout. One run finished with 14
+// missing hooks after three fix rounds having never once seen a lint result.
+function startLintServer(cmd, appDir) {
+  const portFile = join(appDir, '.lint-port');
+  rmSync(portFile, { force: true });
+  const child = spawn(process.execPath,
+    [join(ROOT, 'lint-server.mjs'), '--port-file', portFile, '--cmd', cmd],
+    { detached: true, stdio: 'ignore' });
+  child.unref();
+
+  // The port file appears only once the socket is accepting, so waiting for it
+  // is waiting for readiness — not a guess at how long a spawn takes.
+  for (let i = 0; i < 100; i++) {
+    if (existsSync(portFile)) {
+      const port = readFileSync(portFile, 'utf8').trim();
+      if (port) return { port, pid: child.pid };
     }
-    // A failing lint must fail the shim, or a build reads "no output" as a pass.
-    res.writeHead(ok ? 200 : 500, { 'content-type': 'text/plain' });
-    res.end(out);
-  });
-  // Port 0 asks the OS for a free one, which avoids inventing another entry in
-  // the port grid — but it is only known once the socket is listening.
-  return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => resolve(server));
-  });
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+  }
+  killTree(child.pid);
+  throw new Error('the lint server did not come up; a build without its hook check is not worth running');
 }
 
 function writeLintShim(appDir, port) {
@@ -258,8 +263,8 @@ async function main() {
   // read the harness location out of.
   const lintCmd = `node "${join(ROOT, 'linter', 'lint.mjs')}" --url http://localhost:${p.vite} --level ${args.level}`
     + (track.name === DEFAULT_TRACK ? '' : ` --track ${track.name}`);
-  const lintServer = await startLintServer(lintCmd);
-  const lintPort = lintServer.address().port;
+  const lintServer = startLintServer(lintCmd, args.app);
+  const lintPort = lintServer.port;
 
   const prompt = buildPrompt(args, p, track, lintPort);
   writeFileSync(join(args.app, `.prompt-${args.mode}-l${args.level}.md`), prompt);
@@ -303,7 +308,7 @@ async function main() {
   // The session is over, so the lint endpoint has no reason to stay open — and
   // an open listener would keep this process alive after it has printed its
   // result.
-  lintServer.close();
+  killTree(lintServer.pid);
 
   let result = {};
   try { result = JSON.parse(raw); } catch { /* non-JSON means the session died */ }
