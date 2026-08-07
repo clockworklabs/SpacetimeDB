@@ -8,6 +8,13 @@ fix it — recording score, cost, tokens, fix rounds and wall time.
 Backends are interchangeable, so the model can be held fixed while the backend
 varies.
 
+## Documents
+
+- `HISTORY.md` — what the benchmark has learned, newest first (start here)
+- `FINDINGS.md` — product bugs with reproductions
+- `STDB-FRICTION.md` — per-run SpacetimeDB friction, appended automatically
+- `ROADMAP.md` — what is still to build, in priority order
+
 ## Run it
 
 ```bash
