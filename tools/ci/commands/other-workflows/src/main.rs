@@ -12,6 +12,7 @@ fn ensure_repo_root() -> Result<()> {
 
 mod cla_assistant;
 mod codeowners_check;
+mod watch;
 
 #[derive(Parser)]
 struct Args {
@@ -32,11 +33,14 @@ enum OtherWorkflowsCmd {
         #[command(subcommand)]
         cmd: cla_assistant::ClaAssistantCmd,
     },
+    /// Waits for a GitHub Actions workflow run to complete.
+    Watch(watch::Args),
 }
 fn main() -> Result<()> {
     env_logger::init();
     match Args::parse().cmd {
         OtherWorkflowsCmd::CodeownersCheck { base_ref, pr_number } => codeowners_check::run(&base_ref, pr_number),
         OtherWorkflowsCmd::ClaAssistant { cmd } => cla_assistant::run(cmd),
+        OtherWorkflowsCmd::Watch(args) => watch::run(args),
     }
 }
