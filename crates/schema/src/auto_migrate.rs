@@ -244,6 +244,14 @@ pub enum AutoMigratePrecheck<'def> {
     /// Perform a check that adding a sequence is valid (the relevant column contains no values
     /// greater than the sequence's start value).
     CheckAddSequenceRangeValid(<SequenceDef as ModuleDefLookup>::Key<'def>),
+
+    /// Perform a check that the table contains no rows.
+    ///
+    /// Emitted for migration steps that are only valid on an empty table,
+    /// such as [`AutoMigrateStep::RemoveTable`] and [`AutoMigrateStep::ReschemaEmptyTable`].
+    /// The planner cannot see table contents, so the check is performed at execution time,
+    /// before any mutations.
+    CheckTableEmpty(<TableDef as ModuleDefLookup>::Key<'def>),
 }
 
 /// A step in an automatic migration.
@@ -285,7 +293,9 @@ pub enum AutoMigrateStep<'def> {
     RemoveRowLevelSecurity(<RawRowLevelSecurityDefV9 as ModuleDefLookup>::Key<'def>),
 
     /// Remove an empty table and all its sub-objects (indexes, constraints, sequences).
-    /// Validated at execution time: fails if the table contains data.
+    ///
+    /// Only valid on an empty table; the plan will contain a matching
+    /// [`AutoMigratePrecheck::CheckTableEmpty`], and execution fails if the table contains data.
     RemoveTable(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Change the column types of a table, in a layout compatible way.
@@ -293,6 +303,13 @@ pub enum AutoMigrateStep<'def> {
 
     /// Change the column types of an event table, in a way that may not be layout-compatible.
     ReschemaEventTable(<TableDef as ModuleDefLookup>::Key<'def>),
+
+    /// Change the columns of a table, in a way that may not be layout-compatible
+    /// (e.g. reordering columns).
+    ///
+    /// Only valid on an empty table; the plan will contain a matching
+    /// [`AutoMigratePrecheck::CheckTableEmpty`], and execution fails if the table contains data.
+    ReschemaEmptyTable(<TableDef as ModuleDefLookup>::Key<'def>),
 
     /// Add columns to a table, in a layout-INCOMPATIBLE way.
     ///
@@ -351,9 +368,6 @@ pub enum AutoMigrateError {
 
     #[error("Removing a column {column} from table {table} requires a manual migration")]
     RemoveColumn { table: Identifier, column: Identifier },
-
-    #[error("Reordering table {table} requires a manual migration")]
-    ReorderTable { table: Identifier },
 
     #[error(
         "Changing the type of column {} in table {} from {:?} to {:?} requires a manual migration",
@@ -696,6 +710,7 @@ fn auto_migrate_tables<'def>(plan: &mut AutoMigratePlan<'def>) -> Result<()> {
 
     for key in old_tables.keys() {
         if !new_tables.contains_key(key) {
+            plan.prechecks.push(AutoMigratePrecheck::CheckTableEmpty(*key));
             plan.steps.push(AutoMigrateStep::RemoveTable(*key));
             plan.ensure_disconnect_all_users();
         }
@@ -781,14 +796,14 @@ fn auto_migrate_table<'def>(
     let columns_ok = old
         .columns
         .iter()
-        .map(|old_col| -> Result<ArrayMonoid<Any, 3>> {
+        .map(|old_col| -> Result<ArrayMonoid<Any, 4>> {
             match new_col_by_name.get(&old_col.name) {
                 None => {
                     if is_event {
                         // Event tables never have any resident rows, so removing a column is not a
                         // data migration. However, changing the schema will break clients.
-                        // `row_type_changed`, `columns_added`, `event_schema_changed`
-                        Ok(ArrayMonoid([Any(false), Any(false), Any(true)]))
+                        // `row_type_changed`, `columns_added`, `event_schema_changed`, `columns_reordered`
+                        Ok(ArrayMonoid([Any(false), Any(false), Any(true), Any(false)]))
                     } else {
                         Err(AutoMigrateError::RemoveColumn {
                             table: old_col.table_name.clone(),
@@ -819,42 +834,33 @@ fn auto_migrate_table<'def>(
                             Err(err)
                         }
                     });
-                    // Reject reordering of existing columns (unless it's an event table).
-                    let positions_ok = if old_col.col_id == new_col.col_id {
-                        Ok(Any(false))
-                    } else if is_event {
-                        Ok(Any(true))
-                    } else {
-                        Err(AutoMigrateError::ReorderTable {
-                            table: old_col.table_name.clone(),
-                        }
-                        .into())
-                    };
-                    (types_ok, positions_ok)
-                        .combine_errors()
-                        // `row_type_changed`, `columns_added`, `event_schema_changed`
-                        .map(|(types_changed, positions_changed)| {
+                    // Reordering existing columns changes the row layout, which is only
+                    // possible when the table has no resident rows. Event tables are
+                    // rowless by construction; other tables get an emptiness precheck.
+                    let positions_changed = Any(old_col.col_id != new_col.col_id);
+                    types_ok
+                        // `row_type_changed`, `columns_added`, `event_schema_changed`, `columns_reordered`
+                        .map(|types_changed| {
                             if is_event {
-                                ArrayMonoid([Any(false), Any(false), types_changed | positions_changed])
+                                ArrayMonoid([Any(false), Any(false), types_changed | positions_changed, Any(false)])
                             } else {
-                                assert!(!positions_changed.0);
-                                ArrayMonoid([types_changed, Any(false), Any(false)])
+                                ArrayMonoid([types_changed, Any(false), Any(false), positions_changed])
                             }
                         })
                 }
             }
         })
-        .chain(new.columns.iter().map(|new_col| -> Result<ArrayMonoid<Any, 3>> {
+        .chain(new.columns.iter().map(|new_col| -> Result<ArrayMonoid<Any, 4>> {
             if old_col_by_name.contains_key(&new_col.name) {
-                Ok(ArrayMonoid([Any(false), Any(false), Any(false)]))
+                Ok(ArrayMonoid([Any(false), Any(false), Any(false), Any(false)]))
             } else if is_event {
                 // Event tables never have any resident rows, so adding a column is not a data
                 // migration. However, changing the schema will break clients.
-                // `row_type_changed`, `columns_added`, `event_schema_changed`
-                Ok(ArrayMonoid([Any(false), Any(false), Any(true)]))
+                // `row_type_changed`, `columns_added`, `event_schema_changed`, `columns_reordered`
+                Ok(ArrayMonoid([Any(false), Any(false), Any(true), Any(false)]))
             } else if new_col.default_value.is_some() {
-                // `row_type_changed`, `columns_added`, `event_schema_changed`
-                Ok(ArrayMonoid([Any(false), Any(true), Any(false)]))
+                // `row_type_changed`, `columns_added`, `event_schema_changed`, `columns_reordered`
+                Ok(ArrayMonoid([Any(false), Any(true), Any(false), Any(false)]))
             } else {
                 Err(AutoMigrateError::AddColumn {
                     table: new_col.table_name.clone(),
@@ -863,16 +869,28 @@ fn auto_migrate_table<'def>(
                 .into())
             }
         }))
-        .collect_all_errors::<ArrayMonoid<Any, 3>>();
+        .collect_all_errors::<ArrayMonoid<Any, 4>>();
 
-    let ((), (), ArrayMonoid([Any(row_type_changed), Any(columns_added), Any(event_schema_changed)])) =
-        (type_ok, event_ok, columns_ok).combine_errors()?;
+    let (
+        (),
+        (),
+        ArrayMonoid([Any(row_type_changed), Any(columns_added), Any(event_schema_changed), Any(columns_reordered)]),
+    ) = (type_ok, event_ok, columns_ok).combine_errors()?;
 
     if event_schema_changed {
         // If we're rewriting an event table, there's no data migration to do.
         // But incompatibly changing the schema can break clients.
         plan.ensure_disconnect_all_users();
         plan.steps.push(AutoMigrateStep::ReschemaEventTable(key));
+    } else if columns_reordered {
+        // Reordering columns rewrites the row layout in place, which is only valid on an
+        // empty table. The planner cannot see table contents, so emptiness is validated
+        // at execution time, before any mutations. This subsumes any `ChangeColumns` or
+        // `AddColumns` for the same table: the reschema rebuilds the full new layout, and
+        // with no resident rows there is no data to migrate or default-fill.
+        plan.prechecks.push(AutoMigratePrecheck::CheckTableEmpty(key));
+        plan.ensure_disconnect_all_users();
+        plan.steps.push(AutoMigrateStep::ReschemaEmptyTable(key));
     } else if columns_added {
         // If we're adding a column, we'll rewrite the whole table.
         // That makes any `ChangeColumns` moot, so we can skip it.
@@ -1168,7 +1186,9 @@ fn auto_migrate_sequences<'def>(
     // Added or changed sequences.
     for (sequence_key, (table_key, new_seq)) in &new_seqs {
         if let Some((_, old_seq)) = old_seqs.get(sequence_key) {
-            // we do not need to check column ids, since in an automigrate, column ids are not changed.
+            // Column ids can change in an automigrate (reordering an empty table); since
+            // `SequenceDef` includes the column id, such a sequence diffs as changed here
+            // and is removed and re-added against the new column position.
             if *old_seq != *new_seq {
                 plan.prechecks
                     .push(AutoMigratePrecheck::CheckAddSequenceRangeValid(*sequence_key));
@@ -1226,14 +1246,23 @@ fn auto_migrate_constraints<'def>(
     }
 
     // Changed constraints.
-    for (constraint_key, (_, new_constraint)) in &new_constraints {
+    for (constraint_key, (table_key, new_constraint)) in &new_constraints {
         if let Some((_, old_constraint)) = old_constraints.get(constraint_key)
             && *old_constraint != *new_constraint
         {
-            results.push(Err(AutoMigrateError::ChangeUniqueConstraint {
-                constraint: old_constraint.name.clone(),
+            // A constraint on a reordered column keeps its name but changes its column ids.
+            // When the owning table is being reschema'd empty (`ReschemaEmptyTable`),
+            // re-adding the constraint against the new column positions is trivially valid,
+            // as the table contains no rows.
+            if plan.any_step(|step| matches!(step, AutoMigrateStep::ReschemaEmptyTable(key) if key == table_key)) {
+                plan.steps.push(AutoMigrateStep::RemoveConstraint(*constraint_key));
+                plan.steps.push(AutoMigrateStep::AddConstraint(*constraint_key));
+            } else {
+                results.push(Err(AutoMigrateError::ChangeUniqueConstraint {
+                    constraint: old_constraint.name.clone(),
+                }
+                .into()));
             }
-            .into()));
         }
     }
 
@@ -1769,11 +1798,6 @@ mod tests {
 
         expect_error_matching!(
             result,
-            AutoMigrateError::ReorderTable { table } => table == &apples
-        );
-
-        expect_error_matching!(
-            result,
             AutoMigrateError::ChangeColumnType(ChangeColumnTypeParts {
                 table,
                 column,
@@ -1961,11 +1985,77 @@ mod tests {
             } => &index[..] == apples_id_index && old_accessor.as_ref() == Some(&accessor_old) && new_accessor.as_ref() == Some(&accessor_new)
         );
 
-        // It is not currently possible to test for `ChangeUniqueConstraint`, because unique constraint names are now generated during validation,
-        // and are determined by their columns and table name. So it's impossible to create a unique constraint with the same name
-        // but different columns from an old one.
+        // It is not currently possible to test for `ChangeUniqueConstraint` on a table that isn't
+        // being reschema'd empty, because unique constraint names are now generated during validation,
+        // and are determined by their columns and table name. So it's impossible to create a unique constraint
+        // with the same name but different columns from an old one.
         // We've left the check in, just in case this changes in the future.
     }
+
+    #[test]
+    fn reorder_columns_of_empty_table() {
+        fn points_module(swapped: bool) -> ModuleDef {
+            let mut builder = RawModuleDefV9Builder::new();
+            let (product_type, id_col) = if swapped {
+                (
+                    ProductType::from([("name", AlgebraicType::String), ("id", AlgebraicType::U64)]),
+                    ColId(1),
+                )
+            } else {
+                (
+                    ProductType::from([("id", AlgebraicType::U64), ("name", AlgebraicType::String)]),
+                    ColId(0),
+                )
+            };
+            builder
+                .build_table_with_new_type("Points", product_type, true)
+                .with_column_sequence(id_col)
+                .with_unique_constraint(id_col)
+                .with_index(btree(id_col), "id_index")
+                .with_primary_key(id_col)
+                .finish();
+            builder.finish().try_into().expect("should be a valid module def")
+        }
+
+        let old_def = points_module(false);
+        let new_def = points_module(true);
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("reordering columns should plan an auto-migration");
+
+        let points = key("", "Points");
+        let points_sequence = sub_key("", "Points_id_seq");
+        let points_constraint = sub_key("", "Points_id_key");
+        let points_index = sub_key("", "Points_id_idx_btree");
+
+        // Reordering requires the table to be empty, validated before any mutations.
+        // The re-added sequence also gets its usual range precheck.
+        assert_eq!(
+            &plan.prechecks[..],
+            &[
+                AutoMigratePrecheck::CheckAddSequenceRangeValid(points_sequence),
+                AutoMigratePrecheck::CheckTableEmpty(points),
+            ],
+        );
+
+        // Sub-objects on the moved column are removed and re-added against the new position,
+        // around the `ReschemaEmptyTable` step. There are no `ChangeColumns`/`AddColumns` steps:
+        // the full-layout reschema subsumes them.
+        assert_eq!(
+            &plan.steps[..],
+            &[
+                AutoMigrateStep::RemoveIndex(points_index),
+                AutoMigrateStep::RemoveConstraint(points_constraint),
+                AutoMigrateStep::RemoveSequence(points_sequence),
+                AutoMigrateStep::ReschemaEmptyTable(points),
+                AutoMigrateStep::AddIndex(points_index),
+                AutoMigrateStep::AddConstraint(points_constraint),
+                AutoMigrateStep::AddSequence(points_sequence),
+                AutoMigrateStep::ChangePrimaryKey(points),
+                AutoMigrateStep::DisconnectAllUsers,
+            ],
+        );
+    }
+
     #[test]
     fn print_empty_to_populated_schema_migration() {
         // Start with completely empty schema

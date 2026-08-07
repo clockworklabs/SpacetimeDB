@@ -257,6 +257,21 @@ fn auto_migrate_database(
                     anyhow::bail!("Precheck failed: added sequence {sequence_name} already has values in range",);
                 }
             }
+            spacetimedb_schema::auto_migrate::AutoMigratePrecheck::CheckTableEmpty(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let table_id = stdb
+                    .table_id_from_name_mut(tx, &table_name)?
+                    .ok_or_else(|| anyhow::anyhow!("Precheck: table `{table_name}` not found in database"))?;
+                let row_count = stdb.table_row_count_mut(tx, table_id).unwrap_or(0);
+                if row_count > 0 {
+                    anyhow::bail!(
+                        "Precheck failed: table `{table_name}` contains data ({row_count} rows), \
+                         but this migration requires it to be empty. \
+                         Clear the table's rows (e.g. via a reducer) before publishing."
+                    );
+                }
+            }
         }
     }
 
@@ -270,13 +285,8 @@ fn auto_migrate_database(
                 let table_name = joined(namespace, local);
                 let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
 
-                if stdb.table_row_count_mut(tx, table_id).unwrap_or(0) > 0 {
-                    anyhow::bail!(
-                        "Cannot remove table `{table_name}`: table contains data. \
-                         Clear the table's rows (e.g. via a reducer) before removing it from your schema."
-                    );
-                }
-
+                // Emptiness was already validated by the matching `CheckTableEmpty` precheck,
+                // before any mutations were performed.
                 log!(logger, "Dropping table `{table_name}`");
                 stdb.drop_table(tx, table_id)?;
             }
@@ -481,6 +491,21 @@ fn auto_migrate_database(
 
                 stdb.alter_event_table_row_type(tx, table_id, column_schemas)?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ReschemaEmptyTable(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (owning_def, table_def) = plan.new.find_table(table_name_key).ok_or_else(|| {
+                    anyhow::anyhow!("ReschemaEmptyTable: table `{table_name}` not found in new module def")
+                })?;
+                let table_id = stdb.table_id_from_name_mut(tx, &table_name).unwrap().unwrap();
+                let column_schemas = column_schemas_from_defs(owning_def, &table_def.columns, table_id);
+
+                log!(logger, "Changing column layout of empty table `{}`", table_name);
+
+                // Emptiness was already validated by the matching `CheckTableEmpty` precheck;
+                // the datastore re-checks it as a backstop.
+                stdb.alter_empty_table_row_type(tx, table_id, column_schemas)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name_key) => {
                 let (namespace, local) = table_name_key;
                 let table_name = joined(namespace, local);
@@ -646,6 +671,7 @@ mod test {
     use crate::relational_db::{
         open_snapshot_repo,
         tests_utils::{begin_mut_tx, insert, TestDB},
+        MutTx,
     };
     use spacetimedb_datastore::locking_tx_datastore::PendingSchemaChange;
     use spacetimedb_datastore::system_tables::ST_EVENT_TABLE_ID;
@@ -656,7 +682,8 @@ mod test {
         },
         Identity,
     };
-    use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64, ProductType};
+    use spacetimedb_primitives::ColId;
+    use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64, ProductType, ProductValue};
     use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};
 
     struct TestLogger;
@@ -1293,15 +1320,221 @@ mod test {
         let result = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger);
         let err = result.err().expect("removing a non-empty table should fail");
         assert!(
-            err.to_string().contains("table contains data"),
+            err.to_string().contains("contains data"),
             "error should mention that the table contains data, got: {err}"
         );
+        assert_eq!(tx.pending_schema_changes(), []);
+        Ok(())
+    }
+
+    /// A module with a single table `points` whose columns are `(id, name)`,
+    /// or `(name, id)` when `swapped`, with a primary key, unique constraint,
+    /// and index on `id` in both cases.
+    fn points_module(swapped: bool) -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        let (product_type, id_col) = if swapped {
+            (ProductType::from([("name", AlgebraicType::String), ("id", U64)]), 1)
+        } else {
+            (ProductType::from([("id", U64), ("name", AlgebraicType::String)]), 0)
+        };
+        builder
+            .build_table_with_new_type("points", product_type, true)
+            .with_unique_constraint(id_col)
+            .with_index(btree(id_col), "points_id_idx")
+            .with_primary_key(id_col)
+            .with_access(TableAccess::Public)
+            .finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    /// Creates the tables of `module` in `stdb`, returning the [`TableId`] of `points`.
+    fn create_points_table(stdb: &TestDB, module: &ModuleDef) -> anyhow::Result<TableId> {
+        let mut tx = begin_mut_tx(stdb);
+        for def in module.tables() {
+            create_table_from_def(stdb, &mut tx, module, def)?;
+        }
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "points")?
+            .expect("`points` table should exist");
+        stdb.commit_tx(tx)?;
+        Ok(table_id)
+    }
+
+    /// Asserts that the stored schema of `table_id` has exactly the column names
+    /// `columns`, in order, and the primary key `primary_key`.
+    fn assert_column_order(
+        stdb: &TestDB,
+        tx: &MutTx,
+        table_id: TableId,
+        columns: &[&str],
+        primary_key: Option<ColId>,
+    ) -> anyhow::Result<()> {
+        let schema = stdb.schema_for_table_mut(tx, table_id)?;
+        let names: Vec<&str> = schema.columns().iter().map(|c| &*c.col_name).collect();
+        assert_eq!(names, columns);
+        assert_eq!(schema.primary_key, primary_key);
+        Ok(())
+    }
+
+    /// Returns all rows of `table_id` as [`ProductValue`]s.
+    fn collect_rows(stdb: &TestDB, tx: &MutTx, table_id: TableId) -> anyhow::Result<Vec<ProductValue>> {
+        Ok(stdb.iter_mut(tx, table_id)?.map(|r| r.to_product_value()).collect())
+    }
+
+    #[test]
+    fn reorder_empty_table_succeeds() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = points_module(false);
+        let new = points_module(true);
+        let table_id = create_points_table(&stdb, &old)?;
+
+        // Insert a row and delete it again: a table which previously contained rows
+        // keeps residual (row-empty) pages, which the reschema must handle.
+        let mut tx = begin_mut_tx(&stdb);
+        insert(&stdb, &mut tx, table_id, &product![7u64, "gone"])?;
+        stdb.commit_tx(tx)?;
+        let mut tx = begin_mut_tx(&stdb);
+        assert_eq!(stdb.delete_by_rel(&mut tx, table_id, [product![7u64, "gone"]]), 1);
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
         assert!(
-            tx.pending_schema_changes().is_empty(),
-            "failed migration should leave no pending schema changes: {:?}",
+            matches!(res, UpdateResult::RequiresClientDisconnect),
+            "reordering columns should disconnect clients"
+        );
+
+        // The stored schema now has the new column order, and the sub-objects
+        // on the moved column were re-created against its new position.
+        assert_column_order(&stdb, &tx, table_id, &["name", "id"], Some(ColId(1)))?;
+        assert!(
+            matches!(
+                tx.pending_schema_changes(),
+                [
+                    PendingSchemaChange::IndexRemoved(..),
+                    PendingSchemaChange::ConstraintRemoved(..),
+                    PendingSchemaChange::ReschemaEmptyTable(..),
+                    PendingSchemaChange::IndexAdded(..),
+                    PendingSchemaChange::ConstraintAdded(..),
+                    PendingSchemaChange::TableAlterPrimaryKey(..),
+                ]
+            ),
+            "{:?}",
             tx.pending_schema_changes()
         );
+        stdb.commit_tx(tx)?;
+
+        // The table is usable with the new layout: insert a row and read it back.
+        let mut tx = begin_mut_tx(&stdb);
+        insert(&stdb, &mut tx, table_id, &product!["p1", 42u64])?;
+        assert_eq!(collect_rows(&stdb, &tx, table_id)?, [product!["p1", 42u64]]);
+        stdb.commit_tx(tx)?;
+
         Ok(())
+    }
+
+    #[test]
+    fn reorder_nonempty_table_fails() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = points_module(false);
+        let new = points_module(true);
+        let table_id = create_points_table(&stdb, &old)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        insert(&stdb, &mut tx, table_id, &product![7u64, "p1"])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let result = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger);
+        let err = result.err().expect("reordering a non-empty table should fail");
+        assert!(
+            err.to_string().contains("contains data"),
+            "error should mention that the table contains data, got: {err}"
+        );
+        assert_eq!(tx.pending_schema_changes(), []);
+
+        // The table keeps its old layout and contents.
+        assert_column_order(&stdb, &tx, table_id, &["id", "name"], Some(ColId(0)))?;
+        assert_eq!(collect_rows(&stdb, &tx, table_id)?, [product![7u64, "p1"]]);
+
+        Ok(())
+    }
+
+    /// Reorders the columns of the (empty) `points` table, then replays the commitlog.
+    ///
+    /// Prior to the accompanying fix in `replay.rs` (`st_column_changed`),
+    /// replaying the reorder failed with a layout-compatibility error,
+    /// as replay used the layout-checked `change_columns_to` for non-event tables.
+    fn replay_reordered_table(snapshot: TakeSnapshot) -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let with_snapshot = matches!(snapshot, TakeSnapshot::BeforeAutomigration);
+        let stdb = with_snapshotting(with_snapshot)?;
+
+        let old = points_module(false);
+        let new = points_module(true);
+        let table_id = create_points_table(&stdb, &old)?;
+
+        // Insert a row and delete it again, so the commitlog contains writes to the
+        // table in the old layout, while the table is empty at migration time.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            insert(&stdb, &mut tx, table_id, &product![7u64, "gone"])?;
+            stdb.commit_tx(tx)?;
+
+            let mut tx = begin_mut_tx(&stdb);
+            assert_eq!(stdb.delete_by_rel(&mut tx, table_id, [product![7u64, "gone"]]), 1);
+            stdb.commit_tx(tx)?;
+        }
+
+        if with_snapshot {
+            take_snapshot(&stdb)?;
+        }
+
+        // Migrate, reordering `points`' columns.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&old, &new)?;
+            let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+            assert!(
+                matches!(res, UpdateResult::RequiresClientDisconnect),
+                "reordering columns should disconnect clients"
+            );
+            stdb.commit_tx(tx)?;
+        }
+
+        // Insert a row in the new layout.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            insert(&stdb, &mut tx, table_id, &product!["p1", 42u64])?;
+            stdb.commit_tx(tx)?;
+        }
+
+        // Replay the commitlog and verify the reordered schema and its rows survived.
+        let stdb = stdb.reopen()?;
+        let tx = begin_mut_tx(&stdb);
+        assert_column_order(&stdb, &tx, table_id, &["name", "id"], Some(ColId(1)))?;
+        assert_eq!(collect_rows(&stdb, &tx, table_id)?, [product!["p1", 42u64]]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn replay_reordered_table_no_snapshot() -> anyhow::Result<()> {
+        replay_reordered_table(TakeSnapshot::None)
+    }
+
+    #[test]
+    fn replay_reordered_table_after_snapshot() -> anyhow::Result<()> {
+        replay_reordered_table(TakeSnapshot::BeforeAutomigration)
     }
 
     #[test]

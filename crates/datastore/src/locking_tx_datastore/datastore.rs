@@ -327,6 +327,15 @@ impl Locking {
         tx.alter_event_table_row_type(table_id, column_schemas)
     }
 
+    pub fn alter_empty_table_row_type_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<()> {
+        tx.alter_empty_table_row_type(table_id, column_schemas)
+    }
+
     pub fn add_columns_to_table_mut_tx(
         &self,
         tx: &mut MutTxId,

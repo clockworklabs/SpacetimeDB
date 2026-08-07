@@ -1462,21 +1462,35 @@ impl MutTxId {
             return Err(TableError::ReschemaNotAnEventTable(table_id).into());
         }
 
+        self.alter_empty_table_row_type(table_id, column_schemas)
+    }
+
+    /// Change the row type of the table identified by `table_id` to `column_schemas`,
+    /// without requiring the new row type to be layout-compatible with the old
+    /// (e.g. columns may be reordered).
+    ///
+    /// This is only valid on a table with no resident rows;
+    /// errors with [`TableError::TableNotEmpty`] otherwise.
+    pub(crate) fn alter_empty_table_row_type(
+        &mut self,
+        table_id: TableId,
+        column_schemas: Vec<ColumnSchema>,
+    ) -> Result<()> {
         // Write to the table in the tx state.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
 
         if tx_table.row_count != 0 || commit_table.row_count != 0 {
             // N.b. the delete table must also be empty, 'cause the committed table is empty.
-            return Err(TableError::EventTableNotEmpty(table_id).into());
+            return Err(TableError::TableNotEmpty(table_id).into());
         }
 
         let old_column_schemas = tx_table
             .change_columns_of_empty_table_to(column_schemas.clone())
-            .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+            .map_err(|_| TableError::TableNotEmpty(table_id))?;
 
         commit_table
             .change_columns_of_empty_table_to(column_schemas.clone())
-            .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+            .map_err(|_| TableError::TableNotEmpty(table_id))?;
 
         // Update system tables.
         // We'll simply remove all rows in `st_columns` and then add the new ones.
@@ -1487,7 +1501,7 @@ impl MutTxId {
         self.insert_st_column(&table_name, &column_schemas)?;
 
         // Remember the pending change so we can undo if necessary.
-        self.push_schema_change(PendingSchemaChange::ReschemaEventTable(table_id, old_column_schemas));
+        self.push_schema_change(PendingSchemaChange::ReschemaEmptyTable(table_id, old_column_schemas));
 
         Ok(())
     }
