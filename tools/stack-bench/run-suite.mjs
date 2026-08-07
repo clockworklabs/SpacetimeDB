@@ -146,6 +146,9 @@ function gradeSuite(args, suite) {
     '--label', `${args.label}-${suite.id}`, '--out', out];
   if (suite.spec) argv.push('--spec', suite.spec);
   if (args.restartCmd) argv.push('--restart-cmd', args.restartCmd);
+  // The systems criteria run scripts the app itself ships (back-office writes),
+  // so the grader has to know where the app lives.
+  if (args.app) argv.push('--app', args.app);
   if (args.media) argv.push('--media', join(args.out, 'media'), '--trace');
   let stdout = '';
   try {

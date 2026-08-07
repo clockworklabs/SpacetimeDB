@@ -139,6 +139,22 @@ grant access to it.
 - Admin sees **total revenue**: the sum of all order totals, which must always equal
   what the orders themselves add up to
 
+### Back office
+
+Real stores have other systems writing to the same data: nightly stock
+corrections, an ERP sync, a warehouse scanner. Ship a script at
+`scripts/backoffice.mjs` (run with `node`, from the app directory) supporting:
+
+```
+node scripts/backoffice.mjs set-stock <item name> <warehouse name> <quantity>
+```
+
+It sets that item's stock in that warehouse **by writing to the database
+directly** — it must work even when the web server is not running, and it must
+not talk to the web server. Every open browser must reflect the change like any
+other: storefront stock, item detail and admin numbers update live, without a
+reload.
+
 ### Starting data
 
 The store ships with a fixed catalogue so it is never empty. On startup, if there

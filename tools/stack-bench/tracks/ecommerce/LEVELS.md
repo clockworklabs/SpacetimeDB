@@ -93,3 +93,53 @@ hypothesis, and this benchmark has already had four hypotheses of that kind
 evaporate when a stronger model wrote the competitor's code. They run and report
 from the start, so the evidence accumulates; they simply cannot move a score until
 they have earned it.
+
+## Systems invariants (both tracks) — the failures that never appear in a demo
+
+Feature tests measure what an app does when one person uses it politely. The
+systems suite (`scenarios/01-systems.json`, both tracks) measures what survives
+the conditions production actually has. Classes, and where each stands:
+
+**Out-of-band writes** (implemented, withheld): another system writes to the
+database — a cron job, an ERP sync, moderation tooling. The spec requires a
+`scripts/backoffice.mjs` that writes to the database directly, and criteria
+901a/b assert open clients reflect the change live. A broadcast layer only
+announces writes that went through it; a subscription to the data itself does
+not care who wrote.
+
+**Enumeration during mutation** (implemented, withheld): a list is fetched while
+its contents change. Criterion 902a asserts the moved row lands exactly once —
+fetch-then-merge architectures show it zero times (stale) or twice (fetch plus
+its own live echo).
+
+**Multiple app servers** (designed, not yet implemented): two instances of the
+app's server against the same database, actors split between them — the classic
+socket.io failure, where a message sent through server A never reaches clients
+on server B. Needs: the prompt to require the server to honour a PORT override,
+bench.mjs to launch a second instance, and the grader to take per-actor URLs.
+SpacetimeDB has no app-server tier to duplicate, which is the point being
+measured.
+
+**Fine-grained subscription lifecycles** (L2 material): profiles and friend
+lists that a client subscribes to when a panel opens and drops when it closes.
+Fetch-on-open architectures go stale the moment the panel outlives its fetch.
+Belongs with the L2 feature specs, where the surfaces exist.
+
+**Races and transactions** (partially covered today): oversell and double-spend
+live in the contention suite; stock conservation is invariant 104. Missing is
+cross-row atomicity under interleaving — a warehouse transfer racing a purchase,
+where a non-transactional backend can lose or duplicate a unit between rows.
+Belongs in 02-operations, where transfers exist.
+
+**Extensibility** (measured by the ladder itself): the cost of L2 on top of L1 —
+turns, dollars, and whether L1 criteria still pass after the upgrade — is the
+extensibility number. No new criteria needed; the protocol is to re-run the L1
+suites after every upgrade and report regressions as first-class results.
+
+The promotion rule is the same as contention's, with no exceptions: every
+systems criterion starts at zero points and earns them only when it
+demonstrably fails a real build AND mutation testing shows it catches the
+defect it claims to catch. The out-of-band criteria additionally need a
+`backoffice-writes-via-server` mutant — a script that cheats by calling the
+app's own HTTP API must be CAUGHT, or the criterion is not measuring what it
+says.

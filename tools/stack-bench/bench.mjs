@@ -278,6 +278,11 @@ async function main() {
 
   // Stamped, so this run cannot inherit a directory another one is still
   // holding. Every level shares it: L2 upgrades the app L1 built.
+  //
+  // An EXPLICIT --app belongs to the caller — the test loop passes one, and
+  // deleting its parent on the way out deleted the loop's own run.json. Only a
+  // directory this run created is this run's to remove.
+  const ownWorkDir = !args.app;
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const appDir = args.app ?? join(workDirFor(track, args.backend, args.runIndex, stamp), 'app');
 
@@ -539,11 +544,14 @@ async function main() {
 
   // Leave nothing in temp. Best-effort: a directory some process still holds is
   // not worth failing a finished run over, and the next run makes its own
-  // anyway. Say so rather than leaving it to be discovered.
-  try {
-    rmSync(dirname(appDir), { recursive: true, force: true });
-  } catch {
-    console.log(`  (work dir still held: ${dirname(appDir)} — the next sweep will take it)`);
+  // anyway. Say so rather than leaving it to be discovered. Only for a
+  // directory THIS run created — an explicit --app is the caller's.
+  if (ownWorkDir) {
+    try {
+      rmSync(dirname(appDir), { recursive: true, force: true });
+    } catch {
+      console.log(`  (work dir still held: ${dirname(appDir)} — the next sweep will take it)`);
+    }
   }
 }
 

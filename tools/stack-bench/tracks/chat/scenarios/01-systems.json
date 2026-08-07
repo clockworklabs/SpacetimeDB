@@ -1,0 +1,117 @@
+{
+  "level": 1,
+  "note": "Properties of the system, not of any one feature: what happens when the database changes underneath the app, and when two things happen at the same time. A broadcast layer only announces writes that went through it — a moderation script that deletes rows directly leaves every open client showing messages that no longer exist. Every criterion is withheld at 0 points until it demonstrably fails a real build AND its mutant is CAUGHT, the same promotion rule as contention.",
+  "features": [
+    {
+      "id": 901,
+      "name": "A write from outside the app is visible without reload",
+      "actors": ["alice", "bob", "auditor"],
+      "setup": [
+        { "do": "signUp", "actor": "alice", "name": "SysAlice" },
+        { "do": "signUp", "actor": "bob", "name": "SysBob" },
+        { "do": "createRoom", "actor": "alice", "room": "sysroom" },
+        { "do": "enterRoom", "actor": "bob", "room": "sysroom" },
+        { "do": "send", "actor": "bob", "text": "purge-me-alpha" },
+        { "do": "send", "actor": "bob", "text": "purge-me-beta" },
+        {
+          "do": "expect",
+          "actor": "alice",
+          "testid": "message-item",
+          "contains": "purge-me-beta",
+          "within": 8000
+        }
+      ],
+      "criteria": [
+        {
+          "id": "901a",
+          "desc": "a back-office script purges SysBob's messages directly in the database; a client with the room open sees them disappear without touching the page",
+          "points": 0,
+          "note": "WITHHELD until proven against a mutant (backoffice-writes-via-server) and a real failing build. The script is the app's own scripts/backoffice.mjs, required by the spec to write to the database without the web server's help — moderation, compliance takedowns and data-retention jobs all look exactly like this.",
+          "steps": [
+            {
+              "do": "runScript",
+              "script": "scripts/backoffice.mjs",
+              "args": ["purge-user", "SysBob"],
+              "settleMs": 4000
+            },
+            {
+              "do": "expectElementCount",
+              "actor": "alice",
+              "testid": "message-item",
+              "contains": "purge-me",
+              "equals": 0,
+              "within": 10000
+            }
+          ]
+        },
+        {
+          "id": "901b",
+          "desc": "a customer arriving after the purge never sees the messages — the rows are gone from the database, not merely from one client's memory",
+          "points": 0,
+          "note": "WITHHELD — promoted together with 901a. A fresh actor rather than a reload, so this cannot be confused by session-persistence behaviour, which invariant 105 scores separately.",
+          "steps": [
+            { "do": "signUp", "actor": "auditor", "name": "SysAuditor" },
+            { "do": "enterRoom", "actor": "auditor", "room": "sysroom" },
+            {
+              "do": "expectElementCount",
+              "actor": "auditor",
+              "testid": "message-item",
+              "contains": "purge-me",
+              "equals": 0,
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 902,
+      "name": "A list being opened while its contents change",
+      "actors": ["host", "watcher", "joiner"],
+      "setup": [
+        { "do": "signUp", "actor": "host", "name": "RaceHost" },
+        { "do": "signUp", "actor": "watcher", "name": "RaceWatcher" },
+        { "do": "signUp", "actor": "joiner", "name": "RaceJoiner" },
+        { "do": "createRoom", "actor": "host", "room": "raceroom" }
+      ],
+      "criteria": [
+        {
+          "id": "902a",
+          "desc": "one user enters the room — fetching its member list — at the same moment another joins: the fetcher ends with the joiner exactly once, not zero (stale fetch) and not twice (fetch merged with the join broadcast)",
+          "points": 0,
+          "note": "WITHHELD until proven against a mutant (fetch-then-append-dupe) and a real failing build. The race window is real; INCONCLUSIVE on a missed race, never a false FAIL.",
+          "steps": [
+            {
+              "do": "race",
+              "branches": [
+                [
+                  { "do": "enterRoom", "actor": "watcher", "room": "raceroom" }
+                ],
+                [
+                  { "do": "enterRoom", "actor": "joiner", "room": "raceroom" }
+                ]
+              ],
+              "settleMs": 4000
+            },
+            {
+              "do": "expectElementCount",
+              "actor": "watcher",
+              "testid": "member-item",
+              "contains": "RaceJoiner",
+              "equals": 1,
+              "within": 10000
+            },
+            {
+              "do": "expectElementCount",
+              "actor": "watcher",
+              "testid": "member-item",
+              "contains": "RaceHost",
+              "equals": 1,
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

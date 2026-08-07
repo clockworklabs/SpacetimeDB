@@ -17,6 +17,10 @@
       {
         "id": "contention",
         "spec": "scenarios/01-contention.json"
+      },
+      {
+        "id": "systems",
+        "spec": "scenarios/01-systems.json"
       }
     ],
     "2": [

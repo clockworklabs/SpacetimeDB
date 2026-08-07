@@ -36,6 +36,7 @@ function parseArgs(argv) {
       case '--feature': args.feature = parseInt(argv[++i], 10); break;
       case '--spec': args.spec = argv[++i]; break;
       case '--restart-cmd': args.restartCmd = argv[++i]; break;
+      case '--app': args.app = argv[++i]; break;
       case '--media': args.media = argv[++i]; break;
       case '--trace': args.trace = true; break;
       case '--headed': args.headed = true; break;
@@ -293,6 +294,9 @@ function describeStep(step) {
       return `expect ${step.testid} ${want}`;
     }
     case 'expectAgreement': return `expect all clients agree on ${step.testid}`;
+    case 'race': return `two things happen at once (${(step.branches ?? []).length} branches)`;
+    case 'runScript': return `run the app's ${step.script}${step.args?.length ? ` ${step.args.join(' ')}` : ''}`;
+    case 'expectElementCount': return `expect exactly ${step.equals} ${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`;
     case 'expectAllPresent': return `expect all ${step.count} "${step.prefix}" messages exactly once`;
     case 'expectOrderMatches': return 'expect both clients agree on order';
     case 'expectForgeryRejected': return 'expect the forged write to be rejected';
@@ -424,6 +428,41 @@ async function runStep(step, actors, ctx) {
     await new Promise(r => setTimeout(r, step.settleMs ?? 10000));
     return;
   }
+  if (step.do === 'race') {
+    // Two things happening at the same time, on purpose: one actor opening a
+    // panel while another joins, a fetch racing the mutation it will miss.
+    // Each branch runs its steps in order; the branches themselves overlap.
+    // This is where fetch-then-merge architectures drop or duplicate rows —
+    // a sequential test can never catch it, because sequencing is the bug's
+    // absence.
+    await Promise.all((step.branches ?? []).map(async branch => {
+      for (const s of branch) await runStep(s, actors, ctx);
+    }));
+    await new Promise(r => setTimeout(r, step.settleMs ?? 2000));
+    return;
+  }
+  if (step.do === 'runScript') {
+    // Runs a script THE APP ITSELF shipped, from the app directory — the spec
+    // requires a back-office script that writes directly to the database, the
+    // way a cron job, an ETL, or another team's service would. The harness
+    // knows nothing about the app's schema; the script is where that knowledge
+    // lives. A missing script is a genuine failure (the spec asked for it),
+    // not an INCONCLUSIVE.
+    if (!ctx.appDir) throw new Error('INCONCLUSIVE: grader was not told the app directory (--app)');
+    const { execFileSync } = await import('node:child_process');
+    const { existsSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const path = join(ctx.appDir, step.script);
+    if (!existsSync(path)) throw new Error(`the app does not ship ${step.script} — the spec requires it`);
+    try {
+      execFileSync('node', [path, ...(step.args ?? [])],
+        { cwd: ctx.appDir, encoding: 'utf8', stdio: 'pipe', timeout: step.timeoutMs ?? 60000 });
+    } catch (err) {
+      throw new Error(`${step.script} failed: ${((err.stdout ?? '') + (err.stderr ?? '')).trim().slice(-200) || err.message}`);
+    }
+    await new Promise(r => setTimeout(r, step.settleMs ?? 3000));
+    return;
+  }
   if (step.do === 'sendConcurrently') {
     // Genuine concurrency: all senders fire without waiting for each other.
     // Apps legitimately rate-limit (the L1 spec requires spam prevention), so
@@ -444,6 +483,26 @@ async function runStep(step, actors, ctx) {
       return;
     }
     case 'sendMany': return sendMany(actor, step.prefix, step.count, step.delayMs ?? 0);
+    case 'expectElementCount': {
+      // Exactly-N, not at-least-N: the classic enumeration-during-mutation bug
+      // is a fetched list MERGED with a live event for the same row, which
+      // renders twice. `expect` can only say the row is there; this says it is
+      // there once.
+      const within = step.within ?? 10000;
+      const deadline = Date.now() + within;
+      const root = step.in
+        ? page.locator(tid(step.in.testid), step.in.contains ? { hasText: step.in.contains } : {}).first()
+        : page;
+      for (;;) {
+        const n = await root.locator(tid(step.testid), step.contains ? { hasText: step.contains } : {}).count();
+        if (n === step.equals) return;
+        if (Date.now() > deadline) {
+          throw new Error(`expected exactly ${step.equals} ${tid(step.testid)}`
+            + `${step.contains ? ` containing "${step.contains}"` : ''}, saw ${n} (after ${within}ms)`);
+        }
+        await page.waitForTimeout(400);
+      }
+    }
     case 'expectAllPresent': {
       // Every message must be present exactly once: catches both loss and
       // duplication (optimistic insert plus broadcast echo renders twice).
@@ -511,6 +570,10 @@ async function runStep(step, actors, ctx) {
         await page.locator(tid('room-create')).first().click();
       }
       await nameInput.fill(roomName);
+      // Level 2 rooms can be private; the toggle is part of the creation
+      // surface, so it belongs to this verb rather than to a separate click
+      // that would race the form closing.
+      if (step.private) await page.locator(tid('room-private-toggle')).first().click();
       await page.locator(tid('room-name-submit')).first().click();
       // Must arrive via the app's live update path — no reload.
       await page.locator(tid('room-item'), { hasText: roomName }).first()
@@ -538,7 +601,11 @@ async function runStep(step, actors, ctx) {
       const scope = step.in
         ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) }
         : undefined;
-      await actor.loc(step.testid, { scope }).click({ timeout: step.within ?? DEFAULT_WITHIN });
+      // `contains` picks WHICH of a repeated testid to click — a member row, a
+      // friend entry — the same way expect narrows what it looks at.
+      await actor.loc(step.testid, { contains: expand(step.contains, ctx), scope })
+        .click({ timeout: step.within ?? DEFAULT_WITHIN });
+      if (step.settleMs) await page.waitForTimeout(step.settleMs);
       return;
     }
     case 'reload': {
@@ -1244,7 +1311,8 @@ async function main() {
 
   const features = args.feature ? spec.features.filter(f => f.id === args.feature) : spec.features;
   const runId = uniq();
-  const ctx = { runId, roomName: base => `${base}-${runId}`, restartCmd: args.restartCmd, url: args.url };
+  const ctx = { runId, roomName: base => `${base}-${runId}`, restartCmd: args.restartCmd, url: args.url,
+    appDir: args.app };
 
   const browser = await chromium.launch({ headless: !args.headed });
   const report = {

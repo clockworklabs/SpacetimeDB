@@ -1,0 +1,138 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — systems",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "Properties of the system, not of any one feature: what happens when the database changes underneath the app, and when two things happen at the same time. These are the failures that appear in production and never in a demo — a broadcast layer only announces writes that went through it, and a fetch-then-merge list drops or duplicates whatever moved while it was fetching. Every criterion is withheld at 0 points until it demonstrably fails a real build AND its mutant is CAUGHT, the same promotion rule as contention.",
+  "features": [
+    {
+      "id": 901,
+      "name": "A write from outside the app is visible without reload",
+      "actors": ["viewer"],
+      "setup": [
+        {
+          "do": "expectNumber",
+          "actor": "viewer",
+          "testid": "item-stock",
+          "in": { "testid": "item-card", "contains": "Desk Lamp" },
+          "equals": 100
+        }
+      ],
+      "criteria": [
+        {
+          "id": "901a",
+          "desc": "a back-office script sets Desk Lamp's East stock to 5, directly in the database; an anonymous viewer with the storefront already open sees 50 without touching the page",
+          "points": 0,
+          "note": "WITHHELD until proven against a mutant (backoffice-writes-via-server) and a real failing build. The script is the app's own scripts/backoffice.mjs, required by the spec to write to the database without the web server's help — the way a cron job or another team's service would.",
+          "steps": [
+            {
+              "do": "runScript",
+              "script": "scripts/backoffice.mjs",
+              "args": ["set-stock", "Desk Lamp", "East", "5"],
+              "settleMs": 4000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "viewer",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "equals": 50,
+              "within": 10000
+            }
+          ]
+        },
+        {
+          "id": "901b",
+          "desc": "the out-of-band change survives a reload — the page did not merely patch its own memory",
+          "points": 0,
+          "note": "WITHHELD — promoted together with 901a.",
+          "steps": [
+            { "do": "reload", "actor": "viewer", "settleMs": 3000 },
+            {
+              "do": "expectNumber",
+              "actor": "viewer",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "equals": 50,
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 902,
+      "name": "A list being opened while its contents change",
+      "actors": ["reader", "reviewer"],
+      "setup": [
+        { "do": "signUp", "actor": "reviewer", "name": "raceR" },
+        { "do": "signUp", "actor": "reader", "name": "raceL" },
+        {
+          "do": "click",
+          "actor": "reviewer",
+          "testid": "buy-now",
+          "in": { "testid": "item-card", "contains": "Keyboard" }
+        },
+        { "do": "wait", "actor": "reviewer", "ms": 800 },
+        {
+          "do": "click",
+          "actor": "reviewer",
+          "testid": "item-name",
+          "in": { "testid": "item-card", "contains": "Keyboard" },
+          "settleMs": 1200
+        },
+        {
+          "do": "fill",
+          "actor": "reviewer",
+          "testid": "review-rating",
+          "text": "5"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "902a",
+          "desc": "one customer opens the Keyboard's reviews at the same moment another posts one: the opener ends with that review exactly once — not zero (stale fetch), not twice (fetch merged with its own live echo)",
+          "points": 0,
+          "note": "WITHHELD until proven against a mutant (fetch-then-append-dupe) and a real failing build. The race window is real and the criterion may need repetition to be reliable; INCONCLUSIVE on a missed race, never a false FAIL.",
+          "steps": [
+            {
+              "do": "race",
+              "branches": [
+                [
+                  {
+                    "do": "click",
+                    "actor": "reader",
+                    "testid": "item-name",
+                    "in": { "testid": "item-card", "contains": "Keyboard" }
+                  }
+                ],
+                [
+                  {
+                    "do": "fill",
+                    "actor": "reviewer",
+                    "testid": "review-input",
+                    "text": "race-review-kbd"
+                  },
+                  {
+                    "do": "click",
+                    "actor": "reviewer",
+                    "testid": "review-submit"
+                  }
+                ]
+              ],
+              "settleMs": 4000
+            },
+            {
+              "do": "expectElementCount",
+              "actor": "reader",
+              "testid": "review-item",
+              "contains": "race-review-kbd",
+              "equals": 1,
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

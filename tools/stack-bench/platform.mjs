@@ -61,16 +61,50 @@ export function pidsOnPort(port) {
  * sight, which is exactly the leftover that wedged a run. Unique per-run work
  * directories are what actually fix that; this narrows the blast radius.
  */
+// The pids this process hangs from: itself, its parent shell, that shell's
+// parent, up to the root. Killing anything in this chain kills the run —
+// which is not hypothetical: an invocation carrying the app path in its own
+// `--app` argument matched itself, killTree took out the invoking bash, and
+// the command died with no output and nothing to debug from.
+function ancestorPids() {
+  const chain = new Set([process.pid]);
+  try {
+    if (isWindows) {
+      const out = run('powershell', ['-NoProfile', '-Command',
+        'Get-CimInstance Win32_Process | ForEach-Object { "{0} {1}" -f $_.ProcessId, $_.ParentProcessId }']);
+      const parent = new Map();
+      for (const line of out.split(/\r?\n/)) {
+        const [pid, ppid] = line.trim().split(/\s+/);
+        if (pid) parent.set(Number(pid), Number(ppid));
+      }
+      let p = process.pid;
+      while (parent.has(p) && !chain.has(parent.get(p))) { p = parent.get(p); chain.add(p); }
+    } else {
+      const out = run('ps', ['-eo', 'pid=,ppid=']);
+      const parent = new Map();
+      for (const line of out.split('\n')) {
+        const [pid, ppid] = line.trim().split(/\s+/);
+        if (pid) parent.set(Number(pid), Number(ppid));
+      }
+      let p = process.pid;
+      while (parent.has(p) && !chain.has(parent.get(p))) { p = parent.get(p); chain.add(p); }
+    }
+  } catch { /* a partial chain still protects this process itself */ }
+  return chain;
+}
+
 export function pidsMatching(needle) {
+  const protectedPids = ancestorPids();
+  let found;
   if (isWindows) {
     const script = `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${
       String(needle).replace(/'/g, "''")}*' -and $_.ProcessId -ne $PID `
       + `-and $_.CommandLine -notlike '*Get-CimInstance*' } | ForEach-Object { $_.ProcessId }`;
-    return run('powershell', ['-NoProfile', '-Command', script])
-      .split(/\s+/).filter(Boolean).filter(p => Number(p) !== process.pid);
+    found = run('powershell', ['-NoProfile', '-Command', script]).split(/\s+/);
+  } else {
+    found = run('pgrep', ['-f', needle]).split('\n').map(s => s.trim());
   }
-  return run('pgrep', ['-f', needle]).split('\n').map(s => s.trim())
-    .filter(Boolean).filter(p => Number(p) !== process.pid);
+  return found.filter(Boolean).filter(p => !protectedPids.has(Number(p)));
 }
 
 /** Kill a process and its children. Never throws — it may already be gone. */

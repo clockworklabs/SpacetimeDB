@@ -133,6 +133,21 @@ Every action belongs to somebody, and the server decides who may take it:
 - An attempt by the wrong user is refused with a visible error and changes nothing. Enforce
   this on the server — hiding a control in the interface is not enforcement.
 
+### Back office
+
+Real chat services have other systems writing to the same data: moderation
+tooling, compliance takedowns, data-retention jobs. Ship a script at
+`scripts/backoffice.mjs` (run with `node`, from the app directory) supporting:
+
+```
+node scripts/backoffice.mjs purge-user <username>
+```
+
+It deletes every message that user has sent **by writing to the database
+directly** — it must work even when the web server is not running, and it must
+not talk to the web server. Every open browser must reflect the purge like any
+other change: the messages disappear live, without a reload.
+
 ### Limits
 
 - Enforce the message rate limit **on the server**: at most one message per second per

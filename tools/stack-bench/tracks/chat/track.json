@@ -5,9 +5,36 @@
   "restartProbe": "/api/rooms",
   "suites": {
     "1": [
-      { "id": "features", "spec": "scenarios/01-basic-chat.json" },
-      { "id": "invariants", "spec": "scenarios/01-invariants.json" },
-      { "id": "delivery", "spec": "scenarios/01-delivery.json" }
+      {
+        "id": "features",
+        "spec": "scenarios/01-basic-chat.json"
+      },
+      {
+        "id": "invariants",
+        "spec": "scenarios/01-invariants.json"
+      },
+      {
+        "id": "delivery",
+        "spec": "scenarios/01-delivery.json"
+      },
+      {
+        "id": "systems",
+        "spec": "scenarios/01-systems.json"
+      }
+    ],
+    "2": [
+      {
+        "id": "features",
+        "spec": "scenarios/02-features.json"
+      },
+      {
+        "id": "invariants",
+        "spec": "scenarios/02-invariants.json"
+      },
+      {
+        "id": "systems",
+        "spec": "scenarios/02-systems.json"
+      }
     ]
   }
 }
