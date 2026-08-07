@@ -1090,10 +1090,15 @@ jobs:
           dotnet workload config --update-mode manifests
           dotnet workload update --from-previous-sdk
           # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
-          # Create temp global.json to target .NET 8 SDK for workload install
-          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > global.json
-          dotnet workload install wasi-experimental
-          rm global.json
+          # Create temp global.json to target .NET 8 SDK for workload install without
+          # overwriting the repository's .NET 10 global.json, which later C# harness
+          # tests rely on for SDK selection.
+          workload_dir="$(mktemp -d)"
+          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > "$workload_dir/global.json"
+          (
+            cd "$workload_dir"
+            dotnet workload install wasi-experimental
+          )
 
       - name: Override NuGet packages
         run: |
