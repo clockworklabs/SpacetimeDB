@@ -29,6 +29,14 @@ cd client && npm install && npm run dev    # on <VITE_PORT>
 
 Mongoose creates collections on first write; there is no migration step.
 
+The server prints to the terminal running `npm run dev`; it restarts on save, so a code change is live without redeploying.
+
+To inspect stored data while debugging:
+
+```bash
+docker exec stack-bench-mongodb mongosh <database from DATABASE_URL> --quiet --eval "db.items.find().limit(5)"
+```
+
 **Data policy while building:** the database holds nothing but this app's own
 seed data, which your startup seeding recreates — it is disposable. If a schema
 change conflicts with existing documents, drop the collection rather than

@@ -63,6 +63,12 @@ cd client && npm install && npm run dev
 
 `<STDB_BIN> logs <MODULE_NAME> -s <STDB_URI>` shows module output, including reducer errors.
 
+To inspect stored data while debugging:
+
+```bash
+<STDB_BIN> sql <MODULE_NAME> "SELECT * FROM item LIMIT 5" -s <STDB_URI>
+```
+
 ## Branding & Styling
 
 - App title: **"SpacetimeDB <APP_NOUN>"**
