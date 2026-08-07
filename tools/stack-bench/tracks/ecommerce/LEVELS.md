@@ -157,6 +157,18 @@ being judged, so the criterion is anchored three ways or it is not a test:
    (no-op, API-calling, memory-patch) each swapped into a passing reference
    app and CAUGHT.
 
+**Why the criterion is fair**, stated before a hostile reviewer states it for
+us: every backend has a legitimate, native path to passing. Postgres apps can
+pass with triggers plus LISTEN/NOTIFY; mongo apps can pass with change
+streams — both real, documented, production-normal features. SpacetimeDB
+passes with no additional work because no write path exists outside its sync
+layer: reducers and SQL both flow through the commit stream subscriptions
+read from. That means the script's write is technically "in-band" on
+SpacetimeDB — which is the property under test, not a loophole: the
+measurement is what it COSTS each stack to make external writes safe, and
+"nothing, by construction" is a finding, not a rig. The criterion is winnable
+by an expert human on all three stacks; the difference is the bill.
+
 Residual, stated so nobody over-claims: a file-outbox design (script writes a
 queue, server ingests) passes all three anchors, while a genuinely foreign
 system writing rows directly would bypass it. Schema-blind grading cannot
