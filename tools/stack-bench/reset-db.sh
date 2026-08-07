@@ -36,6 +36,11 @@ case "$BACKEND" in
     # later grade ran against an accumulating database. A reset that resets
     # something else is worse than no reset, because it is silent.
     APP_URI=$(grep -oE "URI\s*=\s*'[^']+'" "$APP_DIR/client/src/config.ts" 2>/dev/null | grep -oE "'[^']+'" | tr -d "'")
+    # The SDK connects over ws://, and apps legitimately write that into their
+    # config. The CLI publishes over http — handing it a ws URI aborted a whole
+    # grading pass with "Invalid protocol: ws". Same host, translated scheme.
+    APP_URI="${APP_URI/#ws:/http:}"
+    APP_URI="${APP_URI/#wss:/https:}"
     STDB_URI="${APP_URI:-${STACK_BENCH_STDB_URI:-http://127.0.0.1:3210}}"
     if [ -n "$APP_URI" ] && [ -n "${STACK_BENCH_STDB_URI:-}" ] && [ "$APP_URI" != "$STACK_BENCH_STDB_URI" ]; then
       echo "note: app targets $APP_URI but STACK_BENCH_STDB_URI is $STACK_BENCH_STDB_URI — resetting the app's own host" >&2
