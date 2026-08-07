@@ -27,9 +27,9 @@ pub(crate) struct CoordinateArgs {
 }
 
 #[derive(Debug)]
-struct PrivateSource {
-    sha: String,
-    pull: Option<PullRequest>,
+enum PrivateSource {
+    LinkedPrivatePr { pull: PullRequest },
+    PrivateMaster { sha: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,6 +41,11 @@ struct SelectedRun {
     url: String,
 }
 
+struct CoordinatedRun {
+    selected: SelectedRun,
+    did_start: bool,
+}
+
 impl From<WorkflowRun> for SelectedRun {
     fn from(run: WorkflowRun) -> Self {
         Self {
@@ -49,6 +54,18 @@ impl From<WorkflowRun> for SelectedRun {
             conclusion: run.conclusion,
             attempt: run.run_attempt,
             url: run.html_url,
+        }
+    }
+}
+
+impl From<DispatchResponse> for SelectedRun {
+    fn from(response: DispatchResponse) -> Self {
+        Self {
+            id: response.workflow_run_id,
+            status: "queued".to_owned(),
+            conclusion: None,
+            attempt: 1,
+            url: response.html_url,
         }
     }
 }
@@ -112,17 +129,13 @@ fn git_tree(repo: &str, sha: &str) -> Result<GitTree> {
     get(&format!("/repos/{repo}/git/trees/{sha}"))
 }
 
-/// Returns runs for an exact event and private SHA, filtering locally rather than relying only on GitHub's query.
+/// Returns runs for an exact event and private SHA.
 fn workflow_runs(event: &str, head_sha: &str) -> Result<Vec<WorkflowRun>> {
     let path = format!(
         "/repos/{PRIVATE_REPO}/actions/workflows/{PRIVATE_WORKFLOW}/runs?event={event}&head_sha={head_sha}&per_page=100"
     );
     let pages: Vec<WorkflowRunsPage> = get_paginated(&path)?;
-    Ok(pages
-        .into_iter()
-        .flat_map(|page| page.workflow_runs)
-        .filter(|run| run.event == event && run.head_sha == head_sha)
-        .collect())
+    Ok(pages.into_iter().flat_map(|page| page.workflow_runs).collect())
 }
 
 fn workflow_run(run_id: u64) -> Result<WorkflowRunStatus> {
@@ -220,22 +233,14 @@ struct WorkflowRunsPage {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-struct WorkflowRunRef {
-    sha: String,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 struct WorkflowRunPullRequest {
     number: u64,
-    head: WorkflowRunRef,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 struct WorkflowRun {
     id: u64,
     display_title: String,
-    event: String,
-    head_sha: String,
     status: String,
     conclusion: Option<String>,
     run_attempt: u64,
@@ -306,15 +311,12 @@ fn related_private_pr(public_pr_number: Option<u64>) -> Result<Option<PullReques
 fn resolve_private_source(public_pr_number: Option<u64>) -> Result<PrivateSource> {
     if let Some(pull) = related_private_pr(public_pr_number)? {
         println!("Found a linked private PR.");
-        return Ok(PrivateSource {
-            sha: pull.head.sha.clone(),
-            pull: Some(pull),
-        });
+        return Ok(PrivateSource::LinkedPrivatePr { pull });
     }
 
     println!("No linked private PR; using private master.");
     let sha = branch(PRIVATE_REPO, PRIVATE_DEFAULT_BRANCH)?.commit.sha;
-    Ok(PrivateSource { sha, pull: None })
+    Ok(PrivateSource::PrivateMaster { sha })
 }
 
 fn public_submodule_sha(private_sha: &str) -> Result<String> {
@@ -343,19 +345,18 @@ fn newest_run(runs: impl IntoIterator<Item = WorkflowRun>) -> Option<WorkflowRun
 }
 
 fn matching_pull_request_run(runs: Vec<WorkflowRun>, pull: &PullRequest) -> Option<WorkflowRun> {
-    newest_run(runs.into_iter().filter(|run| {
-        run.pull_requests
-            .iter()
-            .any(|run_pull| run_pull.number == pull.number && run_pull.head.sha == pull.head.sha)
-    }))
+    newest_run(
+        runs.into_iter()
+            .filter(|run| run.pull_requests.iter().any(|run_pull| run_pull.number == pull.number)),
+    )
 }
 
-fn required_pull_request_run(private_sha: &str, pull: &PullRequest) -> Result<WorkflowRun> {
-    let runs = workflow_runs("pull_request", private_sha)?;
+fn required_pull_request_run(pull: &PullRequest) -> Result<WorkflowRun> {
+    let runs = workflow_runs("pull_request", &pull.head.sha)?;
     matching_pull_request_run(runs, pull).with_context(|| {
         format!(
-            "no pull_request CI run found for private PR #{} at {private_sha}",
-            pull.number
+            "no pull_request CI run found for private PR #{} at {}",
+            pull.number, pull.head.sha
         )
     })
 }
@@ -364,32 +365,44 @@ fn dispatch_title(public_sha: &str) -> String {
     format!("CI [public_ref={public_sha}]")
 }
 
-/// Completes the public/private SHA match; the caller has already restricted these runs to the private SHA.
-fn matching_dispatch_run(runs: Vec<WorkflowRun>, public_sha: &str) -> Option<WorkflowRun> {
+fn select_matching_dispatch_run(runs: Vec<WorkflowRun>, public_sha: &str) -> Option<WorkflowRun> {
     let expected_title = dispatch_title(public_sha);
     newest_run(runs.into_iter().filter(|run| run.display_title == expected_title))
+}
+
+fn matching_dispatch_run(private_sha: &str, public_sha: &str) -> Result<Option<WorkflowRun>> {
+    Ok(select_matching_dispatch_run(
+        workflow_runs("workflow_dispatch", private_sha)?,
+        public_sha,
+    ))
 }
 
 fn should_rerun_failed_jobs(run: &SelectedRun) -> bool {
     run.status == "completed" && run.conclusion.as_deref() != Some("success")
 }
 
-fn prepare_existing_run(run: WorkflowRun) -> Result<SelectedRun> {
+fn prepare_existing_run(run: WorkflowRun) -> Result<CoordinatedRun> {
     let selected = SelectedRun::from(run);
     if !should_rerun_failed_jobs(&selected) {
-        return Ok(selected);
+        return Ok(CoordinatedRun {
+            selected,
+            did_start: false,
+        });
     }
 
     println!("Re-running unsuccessful jobs in the existing private run.");
     rerun_failed_jobs(selected.id)?;
-    wait_for_rerun(&selected)
+    Ok(CoordinatedRun {
+        selected: wait_for_rerun(&selected)?,
+        did_start: true,
+    })
 }
 
-/// Waits for GitHub to expose the new attempt or status so callers do not receive the stale completed result.
+/// Waits for GitHub to expose the new attempt so callers do not receive the stale completed result.
 fn wait_for_rerun(run: &SelectedRun) -> Result<SelectedRun> {
     for _ in 0..30 {
         let current = workflow_run(run.id)?;
-        if current.run_attempt > run.attempt || current.status != "completed" {
+        if current.run_attempt > run.attempt {
             return Ok(SelectedRun {
                 id: current.id,
                 status: current.status,
@@ -401,6 +414,29 @@ fn wait_for_rerun(run: &SelectedRun) -> Result<SelectedRun> {
         std::thread::sleep(Duration::from_secs(2));
     }
     bail!("timed out waiting for the private run to start its rerun")
+}
+
+/// Reuses or reruns `pull_request` CI for a public PR with a linked private PR.
+fn coordinate_linked_private_pr(public_sha: &str, pull: &PullRequest) -> Result<CoordinatedRun> {
+    let private_public_sha = public_submodule_sha(&pull.head.sha)?;
+    ensure_public_submodule_matches(pull.number, &private_public_sha, public_sha)?;
+    let run = required_pull_request_run(pull)?;
+    println!("Found the linked private PR run for this public/private SHA pair.");
+    prepare_existing_run(run)
+}
+
+/// Reuses, reruns, or dispatches CI on private master for a public-only change.
+fn coordinate_public_only(public_sha: &str, private_master_sha: &str) -> Result<CoordinatedRun> {
+    if let Some(run) = matching_dispatch_run(private_master_sha, public_sha)? {
+        println!("Found an existing private run for this public/private SHA pair.");
+        return prepare_existing_run(run);
+    }
+
+    println!("Dispatching a new private run for this public/private SHA pair.");
+    Ok(CoordinatedRun {
+        selected: dispatch_workflow(public_sha)?.into(),
+        did_start: true,
+    })
 }
 
 fn write_github_output(name: &str, value: impl std::fmt::Display) -> Result<()> {
@@ -418,36 +454,15 @@ fn write_github_output(name: &str, value: impl std::fmt::Display) -> Result<()> 
 pub(crate) fn coordinate(args: CoordinateArgs) -> Result<()> {
     let private_source = resolve_private_source(args.public_pr_number)?;
 
-    let mut did_dispatch = false;
-    let selected = if let Some(pull) = private_source.pull.as_ref() {
-        let private_public_sha = public_submodule_sha(&private_source.sha)?;
-        ensure_public_submodule_matches(pull.number, &private_public_sha, &args.public_sha)?;
-        let run = required_pull_request_run(&private_source.sha, pull)?;
-        println!("Found the linked private PR run for this public/private SHA pair.");
-        prepare_existing_run(run)?
-    } else if let Some(run) = matching_dispatch_run(
-        workflow_runs("workflow_dispatch", &private_source.sha)?,
-        &args.public_sha,
-    ) {
-        println!("Found an existing private run for this public/private SHA pair.");
-        prepare_existing_run(run)?
-    } else {
-        println!("Dispatching a new private run for this public/private SHA pair.");
-        let response = dispatch_workflow(&args.public_sha)?;
-        did_dispatch = true;
-        SelectedRun {
-            id: response.workflow_run_id,
-            status: "queued".to_owned(),
-            conclusion: None,
-            attempt: 1,
-            url: response.html_url,
-        }
+    let coordinated = match private_source {
+        PrivateSource::LinkedPrivatePr { pull } => coordinate_linked_private_pr(&args.public_sha, &pull)?,
+        PrivateSource::PrivateMaster { sha } => coordinate_public_only(&args.public_sha, &sha)?,
     };
 
-    println!("View run: {}", selected.url);
-    write_github_output("run_id", selected.id)?;
-    write_github_output("run_url", &selected.url)?;
-    write_github_output("did_dispatch", did_dispatch)?;
+    println!("View run: {}", coordinated.selected.url);
+    write_github_output("run_id", coordinated.selected.id)?;
+    write_github_output("run_url", &coordinated.selected.url)?;
+    write_github_output("did_start", coordinated.did_start)?;
     Ok(())
 }
 
@@ -468,12 +483,10 @@ mod tests {
         }
     }
 
-    fn run(id: u64, event: &str, title: &str, created_at: &str) -> WorkflowRun {
+    fn run(id: u64, title: &str, created_at: &str) -> WorkflowRun {
         WorkflowRun {
             id,
             display_title: title.to_owned(),
-            event: event.to_owned(),
-            head_sha: "private-sha".to_owned(),
             status: "completed".to_owned(),
             conclusion: Some("success".to_owned()),
             run_attempt: 1,
@@ -484,14 +497,9 @@ mod tests {
     }
 
     #[test]
-    fn pull_request_run_requires_the_linked_pull_and_private_sha() {
-        let mut matching = run(1, "pull_request", "CI", "2026-01-01T00:00:00Z");
-        matching.pull_requests.push(WorkflowRunPullRequest {
-            number: 42,
-            head: WorkflowRunRef {
-                sha: "private-sha".to_owned(),
-            },
-        });
+    fn pull_request_run_requires_the_linked_pull() {
+        let mut matching = run(1, "CI", "2026-01-01T00:00:00Z");
+        matching.pull_requests.push(WorkflowRunPullRequest { number: 42 });
         let mut unrelated = matching.clone();
         unrelated.id = 2;
         unrelated.pull_requests[0].number = 99;
@@ -507,11 +515,11 @@ mod tests {
     #[test]
     fn dispatch_run_requires_the_public_sha_and_prefers_the_newest() {
         let expected = dispatch_title("public-sha");
-        let selected = matching_dispatch_run(
+        let selected = select_matching_dispatch_run(
             vec![
-                run(1, "workflow_dispatch", &expected, "2026-01-01T00:00:00Z"),
-                run(2, "workflow_dispatch", "unrelated", "2026-01-03T00:00:00Z"),
-                run(3, "workflow_dispatch", &expected, "2026-01-02T00:00:00Z"),
+                run(1, &expected, "2026-01-01T00:00:00Z"),
+                run(2, "unrelated", "2026-01-03T00:00:00Z"),
+                run(3, &expected, "2026-01-02T00:00:00Z"),
             ],
             "public-sha",
         )
