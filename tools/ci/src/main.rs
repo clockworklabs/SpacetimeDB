@@ -15,6 +15,7 @@ const README_PATH: &str = "tools/ci/README.md";
 mod ci_docs;
 mod cla_assistant;
 mod codeowners_check;
+mod internal_tests;
 mod keynote_bench;
 mod smoketest;
 mod util;
@@ -443,6 +444,8 @@ enum CiCmd {
 
 #[derive(Subcommand)]
 enum OtherWorkflowsCmd {
+    /// Selects or starts the private workflow for a public Internal Tests run.
+    CoordinateInternalTests(internal_tests::CoordinateArgs),
     /// Checks that sensitive CODEOWNERS-controlled files have the required approvals.
     CodeownersCheck {
         /// Git ref to compare against, usually origin/<pull request base branch>.
@@ -872,6 +875,11 @@ fn main() -> Result<()> {
             check_global_json_policy()?;
         }
 
+        Some(CiCmd::OtherWorkflows {
+            cmd: OtherWorkflowsCmd::CoordinateInternalTests(args),
+        }) => {
+            internal_tests::coordinate(args)?;
+        }
         Some(CiCmd::OtherWorkflows {
             cmd: OtherWorkflowsCmd::CodeownersCheck { base_ref, pr_number },
         }) => {
