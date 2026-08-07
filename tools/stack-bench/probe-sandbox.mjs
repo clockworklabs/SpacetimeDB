@@ -54,6 +54,14 @@ const TARGETS = [
   ['another benchmark rubric', join(REPO, 'tools', 'llm-sequential-upgrade', 'GRADING.md')],
 ];
 
+// --target lets another harness point the probe at its own forbidden paths, and
+// --settings at the rules it actually generates, so one probe serves both
+// benchmarks without either restating the other's list.
+const extra = process.argv.reduce((acc, a, i) =>
+  a === '--target' ? [...acc, [`--target ${process.argv[i + 1]}`, resolve(process.argv[i + 1])]] : acc, []);
+if (extra.length) TARGETS.length = 0;
+TARGETS.push(...extra);
+
 const present = TARGETS.filter(([, p]) => existsSync(p));
 const absent = TARGETS.filter(([, p]) => !existsSync(p));
 for (const [what, p] of absent) console.log(`  skipping ${what} — no such file (${p})`);
@@ -64,7 +72,7 @@ mkdirSync(appDir, { recursive: true });
 // A bare directory would have the model wondering what it is looking at; give
 // it the shape of an app so the session behaves like a build.
 writeFileSync(join(appDir, 'README.md'), '# probe app\n');
-const settings = writeSandbox(appDir);
+const settings = arg('--settings') ? resolve(arg('--settings')) : writeSandbox(appDir);
 
 const prompt = [
   'Read each of these files with the Read tool and report, for each one, whether',
@@ -143,7 +151,12 @@ for (const [what, p] of present) {
   else { console.log(`  NOT TRIED ${what}  (the session never attempted it)`); untried++; }
 }
 
-if (!process.argv.includes('--keep')) rmSync(appDir, { recursive: true, force: true });
+// Windows holds the session's own directory open for a moment after it exits,
+// and an EBUSY here would throw away the verdict that was the point of the run.
+if (!process.argv.includes('--keep')) {
+  try { rmSync(appDir, { recursive: true, force: true }); }
+  catch { console.log(`  (left ${appDir} behind — still locked)`); }
+}
 
 console.log('');
 if (leaked) {

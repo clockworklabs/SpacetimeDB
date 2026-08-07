@@ -859,12 +859,22 @@ if [[ -n "$MODEL" ]]; then
   MODEL_FLAG="--model $MODEL"
 fi
 
+# ─── Sandbox: what a build may not read ──────────────────────────────────────
+# The rules and the reasoning live in sandbox.sh, shared with the probe that
+# proves them.
+source "$SCRIPT_DIR/sandbox.sh"
+SANDBOX_SETTINGS=$(write_sandbox "$APP_DIR" "$BACKEND")
+echo "[OK] Sandbox written ($(grep -c '"Read(' "$SANDBOX_SETTINGS") deny rules)"
+
 # Build args as an array so empty optional flags (model/resume) can't break the invocation.
+# --add-dir no longer names the tool root or the prompt source: the language and
+# feature content is inlined into the prompt above, so nothing outside the app
+# has to be reachable for a build to succeed.
 CLAUDE_ARGS=(
-  --print --verbose --output-format text --dangerously-skip-permissions
+  --print --verbose --output-format text
+  --permission-mode acceptEdits
+  --settings "$SANDBOX_SETTINGS"
   --add-dir "$APP_DIR"
-  --add-dir "$SCRIPT_DIR"
-  --add-dir "$SCRIPT_DIR/../llm-oneshot/apps/chat-app/prompts"
   --session-id "$SESSION_ID"
 )
 [[ -n "$MODEL" ]] && CLAUDE_ARGS+=(--model "$MODEL")
