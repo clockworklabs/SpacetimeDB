@@ -1611,7 +1611,16 @@ async fn resolve_database_name_and_count_response_egress_middleware<S>(
 where
     S: ControlStateDelegate + Clone + Send + Sync + 'static,
 {
-    let database = find_database_or_404(&worker_ctx, name_or_identity).await?;
+    let database = match find_database_or_404(&worker_ctx, name_or_identity).await {
+        Ok(database) => database,
+        Err(err) => {
+            // Fully drain the request before responding
+            // so clients uploading a body receive the HTTP error
+            // instead of a broken pipe from a connection closed mid-upload.
+            while let Some(Ok(_)) = request.body_mut().frame().await {}
+            return Err(err);
+        }
+    };
     request.extensions_mut().insert(ResolvedDatabase(database.clone()));
 
     let response = next.run(request).await;
@@ -1654,7 +1663,7 @@ mod tests {
         Action, Authorization, ControlStateReadAccess, ControlStateWriteAccess, MaybeMisdirected, Unauthorized,
     };
     use async_trait::async_trait;
-    use axum::body::Body;
+    use axum::body::{Body, Bytes};
     use http::Request;
     use spacetimedb::auth::identity::{JwtError, JwtErrorKind, SpacetimeIdentityClaims};
     use spacetimedb::auth::token_validation::{TokenSigner, TokenValidationError, TokenValidator};
@@ -1670,7 +1679,8 @@ mod tests {
     use spacetimedb_paths::FromPathUnchecked;
     use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
     use std::collections::HashMap;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::convert::Infallible;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use tower::util::ServiceExt;
 
     #[derive(Clone, Default)]
@@ -2157,6 +2167,31 @@ mod tests {
 
         remove_http_response_size_metric(resolved_but_missing_identity);
         remove_http_response_size_metric(arbitrary_identity);
+    }
+
+    #[tokio::test]
+    async fn resolving_middleware_drains_request_body_before_not_found() {
+        let body_was_polled = std::sync::Arc::new(AtomicBool::new(false));
+        let body_was_polled_by_stream = body_was_polled.clone();
+        let body = Body::from_stream(futures::stream::once(async move {
+            body_was_polled_by_stream.store(true, Ordering::Relaxed);
+            Ok::<_, Infallible>(Bytes::from_static(b"module"))
+        }));
+        let state = DummyState::new();
+        let app = DatabaseRoutes::<DummyState> {
+            db_get: axum::routing::get(|| async { "not reached" }),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+
+        let response = app
+            .oneshot(Request::builder().uri("/unresolved-name").body(body).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert!(body_was_polled.load(Ordering::Relaxed));
     }
 
     #[tokio::test]
