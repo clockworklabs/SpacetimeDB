@@ -99,3 +99,26 @@ fix rounds as the separate cost-to-correct story.
 **Invariant additions:** blind overwrite (two sessions edit one entity; an
 acknowledged write must never silently vanish), replay idempotency on money
 paths, double-booking semantics once a booking-shaped surface exists (L3+).
+
+## Concurrency bug taxonomy → criterion backlog
+
+The recurring classes in one-shot AI backends, each mapped to where it lands
+in our tracks. Every entry follows the standard rule: withheld until it fails
+a real build and kills its mutant.
+
+| class | shape | lands in |
+|---|---|---|
+| oversell | check-then-insert on a summed ledger; N pass one check | HAVE — 201a |
+| double-book | two overlap checks read the same empty set | L3 booking surface |
+| position collision | concurrent reorders assign one slot twice | chat L3 pinned/ordering |
+| tally drift | read-modify-write counter; stored score ≠ rows | ecommerce reviews avg under storm; HAVE partial (review-average) |
+| reversal replay | idempotent-once operation applied N× | refund/cancel path, ecommerce L2 money invariants |
+| delete-vs-use race | resource deleted mid-checkout yet billed | ecommerce L2: admin deletes item during buy storm |
+| duplicate allocation | waitlist/offer consumed twice | L3 booking |
+| blind overwrite | two edits, last commit clobbers, both 200 | NEXT — cart qty from two tabs, admin stock edit vs restock |
+| boot race / double seed | init runs concurrently, catalogue duplicated | HAVE partial — reseed-once rule in spec; add restart-storm criterion |
+| pool deadlock, healthy /health | txn holds one conn, waits for another | storm mode diagnostic: liveness under N > pool size |
+| control | an app with no shared mutable contention must stay clean | keep — proves storms don't fail everyone |
+
+The control row matters most for fairness: a storm harness that fails every
+app proves nothing. The card-game-shaped control is ours to add as a fixture.
