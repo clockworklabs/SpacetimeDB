@@ -279,7 +279,9 @@ A client subscribing to a view receives only the rows it returns. Use a per-user
 (keyed on `ctx.sender`) for per-viewer access control: deleting a row it depends on
 (e.g. a membership row) automatically drops the rows it was exposing from that client.
 A view re-evaluates whenever the rows it reads change, for each subscribed client; index
-accessors keep that work proportional to the rows returned.
+accessors keep that work proportional to the rows returned. A view covering several keys
+reads the index once per key: `for (const roomId of myRoomIds) for (const m of
+ctx.db.message.roomId.filter(roomId)) out.push(m);`.
 
 `t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`. A named output type must not reuse the generated PascalCase name of its view accessor (for example, reserve `DiscountedProduct` for a `discounted_product` view).
 
