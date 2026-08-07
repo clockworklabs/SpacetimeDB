@@ -216,16 +216,6 @@ struct SimulatorIOInner {
 }
 
 impl SimulatorIOInner {
-    // TODO: Allow runtime to inject faults via:
-    //
-    // - pick random entries from the submission queue
-    // - drop queue entries
-    // - delay `execute` (somehow)
-    // - delay `complete`
-    // - make a submission fail without performing its effect
-    // - execute an arbitrary number of (random) SQEs
-    // - complete an arbitrary number of CQEs
-
     fn tick(&mut self) -> bool {
         let mut progress = false;
         if let Some(sqe) = self.submissions.pop_front() {
