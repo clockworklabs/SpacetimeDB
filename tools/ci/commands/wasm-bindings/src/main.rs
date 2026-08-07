@@ -16,7 +16,6 @@ where
         cmd("pnpm", args)
     }
 }
-use std::path::Path;
 fn main() -> Result<()> {
     env_logger::init();
     pnpm([
@@ -38,10 +37,7 @@ fn main() -> Result<()> {
     //
     // For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
     cmd!("cargo", "update").run()?;
-    let cli_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .unwrap()
+    let cli_path = ci_common::repo_root()
         .join("target/debug/spacetimedb-cli")
         .with_extension(std::env::consts::EXE_EXTENSION);
     cmd!(cli_path, "build", "--module-path", "modules/module-test",).run()?;
