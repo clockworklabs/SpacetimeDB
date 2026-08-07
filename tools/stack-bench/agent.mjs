@@ -265,6 +265,12 @@ async function main() {
     + (track.name === DEFAULT_TRACK ? '' : ` --track ${track.name}`);
   const lintServer = startLintServer(lintCmd, args.app);
   const lintPort = lintServer.port;
+  // A detached child outlives a parent that throws. Without this, every failed
+  // build would leave a listener behind — the exact thing this harness has been
+  // fixing all day.
+  const stopLint = () => killTree(lintServer.pid);
+  process.on('exit', stopLint);
+  for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stopLint(); process.exit(130); });
 
   const prompt = buildPrompt(args, p, track, lintPort);
   writeFileSync(join(args.app, `.prompt-${args.mode}-l${args.level}.md`), prompt);
