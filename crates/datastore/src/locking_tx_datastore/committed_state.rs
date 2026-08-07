@@ -879,7 +879,7 @@ impl CommittedState {
                 unsafe { table.change_columns_to_unchecked(column_schemas, |_, _, _| Ok::<_, Infallible>(())) }
                     .unwrap_or_else(|e| match e {});
             }
-            ReschemaEventTable(table_id, column_schemas) => {
+            ReschemaEmptyTable(table_id, column_schemas) => {
                 let table = self.tables.get_mut(&table_id)?;
                 // SAFETY:
                 // Same argument as in `TableAlterRowType` applies,

@@ -140,6 +140,8 @@ fn format_step<F: MigrationFormatter>(
         // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
         // so for now we're just printing the table name.
         AutoMigrateStep::ReschemaEventTable(table) => f.format_event_table_reschema(&joined(*table)),
+
+        AutoMigrateStep::ReschemaEmptyTable(table) => f.format_empty_table_reschema(&joined(*table)),
     }?;
 
     Ok(())
@@ -207,6 +209,8 @@ pub trait MigrationFormatter {
     // TODO(format-event-table-reschema): I (pgoldman 2026-06-10) didn't have time to meaningfully format event table reschemas,
     // so for now we're just printing the table name.
     fn format_event_table_reschema(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()>;
+    /// Format a layout-incompatible reschema of an empty (non-event) table, e.g. a column reorder.
+    fn format_empty_table_reschema(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()>;
 }
 
 #[derive(Debug, Clone, PartialEq)]

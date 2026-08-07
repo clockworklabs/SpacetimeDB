@@ -382,6 +382,9 @@ impl Table {
         }
         // Remove and drop any pages, as even though they must be empty,
         // they may have residual layout-derived data which conflicts with the new schema.
+        // A table which previously contained rows keeps its (now row-empty) pages around,
+        // so drop them first; `set_pages` requires that no pages are present.
+        self.inner.pages.reset();
         // Safety: there aren't any pages here, so they cannot conflict with the schema or row layout.
         unsafe { self.set_pages(Vec::new(), &NullBlobStore) };
 

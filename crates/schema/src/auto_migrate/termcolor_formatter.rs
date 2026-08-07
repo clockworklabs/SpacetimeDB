@@ -458,6 +458,15 @@ impl MigrationFormatter for TermColorFormatter {
 
         Ok(())
     }
+
+    fn format_empty_table_reschema(&mut self, table_name: &NamespacedIdentifier) -> io::Result<()> {
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" column layout of table ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b" (requires the table to be empty)\n")?;
+
+        Ok(())
+    }
 }
 
 trait ActionColorExt {
