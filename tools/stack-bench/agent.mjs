@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, levelPrompt, appendix, dbName, moduleName, portsFor, DEFAULT_TRACK } from './tracks.mjs';
+import { writeSandbox } from './sandbox.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(ROOT, '..', '..');
@@ -197,66 +198,8 @@ function buildPrompt(args, p, track) {
 }
 
 // A build must not be able to read the thing that grades it.
-//
-// `--add-dir` looks like a boundary and is not one: under
-// --dangerously-skip-permissions it is advisory, and a session given only an
-// empty temp directory still read this project's notes when asked. Audits of
-// past runs found builds reading scenarios/01-invariants.json (the assertions
-// themselves), grade.mjs (the marking scheme), a sibling run's source, and the
-// benchmark's own notes — up to 44 times in a single run.
-//
-// These rules govern the FILE TOOLS ONLY. `Read(...)` does not apply to Bash:
-// a session refused by the Read rule can still `cat` the same path, verified.
-// Closing that would mean banning shell commands a build legitimately needs,
-// so the sandbox is defence in depth, not the control. The control is
-// leak-audit.mjs, which reads the session transcript afterwards and marks a run
-// contaminated if it escaped — prevention we cannot guarantee, detection we can.
-//
-// Pattern notes: glob form (`**/x/**`) matches where an absolute form
-// (`//C:/...`) silently does not on Windows, `**` does NOT traverse a
-// leading-dot directory, and deny beats allow.
-function writeSandbox(appDir) {
-  const sandbox = {
-    permissions: {
-      // NOTE the app itself lives under stack-bench/results/<run>/app, so a
-      // blanket deny on stack-bench would block the build from reading its own
-      // source. Name the harness directories instead, and never deny
-      // BUG_REPORT.md — fix mode is told to read it.
-      deny: [
-        // The test and the marking scheme.
-        'Read(**/stack-bench/tracks/**)',
-        'Read(**/stack-bench/grader/**)',
-        'Read(**/stack-bench/linter/**)',
-        'Read(**/stack-bench/levels/**)',
-        // Harness source and its own documentation.
-        'Read(**/stack-bench/*.mjs)',
-        'Read(**/stack-bench/*.md)',
-        'Read(**/stack-bench/*.sh)',
-        'Read(**/stack-bench/backends/**)',
-        // Archived transcripts of earlier builds: each one quotes the harness
-        // files that build read, so leaving them open would hand a later run
-        // the marking scheme second-hand.
-        'Read(**/stack-bench/transcripts/**)',
-        // The other benchmarks, and their prompts and rubrics.
-        'Read(**/llm-sequential-upgrade/**)',
-        'Read(**/llm-oneshot/**)',
-        // Any agent's notes, plans or transcripts — including this one's.
-        // `**/.claude/**` alone does NOT match: a leading-dot directory is not
-        // traversed by `**`, so a run read this project's notes straight
-        // through it. The `projects/**` rule is the one that actually bites;
-        // the rest are belt and braces, and the probe below proves the set.
-        'Read(**/projects/**)',
-        'Read(**/.claude/**)',
-        'Read(.claude/**)',
-        'Read(**/memory/**)',
-        'Read(**/*.local.md)',
-      ],
-    },
-  };
-  const p = join(appDir, '.sandbox-settings.json');
-  writeFileSync(p, JSON.stringify(sandbox, null, 2));
-  return p;
-}
+// The deny list itself lives in sandbox.mjs, shared with probe-sandbox.mjs so
+// the probe proves the rules a build actually gets.
 
 function main() {
   const args = parseArgs(process.argv);
@@ -299,8 +242,13 @@ function main() {
     // grew, and the spawn fails with a bare ENOENT that reads as "CLI missing".
     raw = execFileSync(findClaude(), [
       '--print', '--output-format', 'json',
-      // NOT --dangerously-skip-permissions: it disables the deny rules below
-      // along with everything else, and --add-dir then guards nothing.
+      // NOT --dangerously-skip-permissions: that is bypassPermissions, which
+      // switches the permission system off entirely — deny rules included.
+      // probe-sandbox.mjs demonstrates it: under the bypass flag all five
+      // probed paths come back in full, and under acceptEdits all five are
+      // refused. The mode must be named explicitly, because the default mode
+      // withholds approval from Write and Edit and a build cannot write files.
+      '--permission-mode', 'acceptEdits',
       '--settings', writeSandbox(args.app),
       '--model', args.model,
       // The app directory is the ONLY thing the session may read. Granting the
