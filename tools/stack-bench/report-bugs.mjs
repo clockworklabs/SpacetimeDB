@@ -56,7 +56,14 @@ const bugs = [];
 for (const file of readdirSync(dir).filter(f => /^grading-.*\.json$/.test(f))) {
   const report = JSON.parse(readFileSync(join(dir, file), 'utf8'));
   for (const feature of report.features ?? []) {
-    for (const c of feature.criteria.filter(x => !x.passed)) {
+    // An INCONCLUSIVE criterion is the harness saying IT could not run the
+    // test — not the app saying it is broken. Handing those to a fix round
+    // bills real money for chasing defects that do not exist: a SpacetimeDB
+    // run spent $6.83 across two rounds on three reported failures, two of
+    // which were this (one criterion that passed on the very next grade, and
+    // one the grader could never contend). Grading still records and prints
+    // them; the bug report is for things the app can actually fix.
+    for (const c of feature.criteria.filter(x => !x.passed && !x.inconclusive)) {
       bugs.push({
         area: feature.name,
         expected: c.desc ?? c.id,
