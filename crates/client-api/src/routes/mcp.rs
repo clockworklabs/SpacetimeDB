@@ -1,22 +1,23 @@
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::response::{ErrorResponse, IntoResponse, Response};
 use axum::{Extension, Json};
 use http::StatusCode;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::host::{FunctionArgs, ReducerOutcome};
-use spacetimedb::messages::control_db::Database;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::sats;
 
 use super::database::{
     client_connected_error_to_response, client_disconnected_error_to_response, find_database_leader,
-    find_database_module, map_reducer_error, sql_direct, ResolvedDatabase, SqlQueryParams,
+    find_database_module, find_database_or_404, map_reducer_error, sql_direct, SqlQueryParams,
 };
 use crate::auth::SpacetimeAuth;
 use crate::routes::subscribe::generate_random_connection_id;
+use crate::util::NameOrIdentity;
 use crate::{log_and_500, Authorization, ControlStateDelegate, NodeDelegate};
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
@@ -35,10 +36,22 @@ const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
 
 type RpcError = (i64, String);
 
+#[derive(Deserialize)]
+pub struct McpParams {
+    name_or_identity: NameOrIdentity,
+}
+
 /// handle MCP JSON-RPC request
+//
+// Due to different name resolution and error handling behavior in different branches,
+// this route handler does not use [`super::database::resolve_database_name_and_count_response_egress_middleware`].
+// This is unfortunate, as we probably would like to count egress bytes from MCP calls,
+// but I (pgoldman 2026-08-07) do not have the wherewithal
+// to significantly rewrite this file in order to make it compatible with the middleware,
+// and do not know which of its error-handling behaviors are safe to change.
 pub async fn mcp<S>(
     State(ctx): State<S>,
-    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
+    Path(McpParams { name_or_identity }): Path<McpParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     Json(request): Json<Value>,
 ) -> axum::response::Result<Response>
@@ -59,7 +72,7 @@ where
         // protocol ping, distinct from the ping tool
         "ping" => jsonrpc_result(&id, json!({})),
         "tools/list" => jsonrpc_result(&id, tools_list()),
-        "tools/call" => match tools_call(&ctx, database, auth, request.get("params")).await {
+        "tools/call" => match tools_call(&ctx, name_or_identity, auth, request.get("params")).await {
             Ok(result) => jsonrpc_result(&id, result),
             Err((code, message)) => jsonrpc_error(&id, code, message),
         },
@@ -137,7 +150,7 @@ fn tools_list() -> Value {
 
 async fn tools_call<S>(
     ctx: &S,
-    database: Database,
+    name_or_identity: NameOrIdentity,
     auth: SpacetimeAuth,
     params: Option<&Value>,
 ) -> Result<Value, RpcError>
@@ -157,20 +170,20 @@ where
             Some(message) => format!("pong: {message}"),
             None => "pong".to_owned(),
         }),
-        "get_schema" => tool_get_schema(ctx, &database).await,
+        "get_schema" => tool_get_schema(ctx, name_or_identity).await,
         "sql" => {
             let Some(sql) = arguments.and_then(|a| a.get("sql")).and_then(Value::as_str) else {
                 return Err((INVALID_PARAMS, "sql argument must be a string".to_owned()));
             };
             let confirmed = arguments.and_then(|a| a.get("confirmed")).and_then(Value::as_bool);
-            tool_sql(ctx, database, auth, sql.to_owned(), confirmed).await
+            tool_sql(ctx, name_or_identity, auth, sql.to_owned(), confirmed).await
         }
         "call" => {
             let Some(reducer) = arguments.and_then(|a| a.get("reducer")).and_then(Value::as_str) else {
                 return Err((INVALID_PARAMS, "reducer argument must be a string".to_owned()));
             };
             let args_json = reducer_args_json(arguments)?;
-            tool_call_reducer(ctx, &database, auth, reducer.to_owned(), args_json).await
+            tool_call_reducer(ctx, name_or_identity, auth, reducer.to_owned(), args_json).await
         }
         other => return Err((INVALID_PARAMS, format!("unknown tool: {other}"))),
     };
@@ -201,11 +214,12 @@ async fn execution_error_to_tool_result(err: ErrorResponse) -> Value {
     json!({ "content": [ { "type": "text", "text": text } ], "isError": true })
 }
 
-async fn tool_get_schema<S>(ctx: &S, database: &Database) -> axum::response::Result<String>
+async fn tool_get_schema<S>(ctx: &S, name_or_identity: NameOrIdentity) -> axum::response::Result<String>
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let leader = find_database_leader(ctx, database).await?;
+    let database = find_database_or_404(ctx, name_or_identity).await?;
+    let leader = find_database_leader(ctx, &database).await?;
     let module = leader.wait_for_module(MODULE_WAIT_TIMEOUT).await.map_err(log_and_500)?;
     let raw = RawModuleDefV9::from(module.info.module_def.as_ref().clone());
     let json = serde_json::to_string(&sats::serde::SerdeWrapper(raw)).map_err(log_and_500)?;
@@ -214,7 +228,7 @@ where
 
 async fn tool_sql<S>(
     ctx: &S,
-    database: Database,
+    name_or_identity: NameOrIdentity,
     auth: SpacetimeAuth,
     sql: String,
     confirmed: Option<bool>,
@@ -224,6 +238,7 @@ where
 {
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
+    let database = find_database_or_404(ctx, name_or_identity).await?;
     let rows = sql_direct(
         ctx.clone(),
         database,
@@ -239,7 +254,7 @@ where
 
 async fn tool_call_reducer<S>(
     ctx: &S,
-    database: &Database,
+    name_or_identity: NameOrIdentity,
     auth: SpacetimeAuth,
     reducer: String,
     args_json: String,
@@ -249,7 +264,8 @@ where
 {
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
-    let module = find_database_module(ctx, database).await?;
+    let database = find_database_or_404(ctx, name_or_identity).await?;
+    let module = find_database_module(ctx, &database).await?;
 
     let connection_id = generate_random_connection_id();
     module

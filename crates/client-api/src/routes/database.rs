@@ -654,6 +654,18 @@ pub(crate) async fn worker_ctx_find_database(
         .map_err(log_and_500)
 }
 
+pub(crate) async fn find_database_or_404(
+    worker_ctx: &(impl ControlStateDelegate + ?Sized),
+    name_or_identity: NameOrIdentity,
+) -> axum::response::Result<Database> {
+    let identity = name_or_identity.resolve(worker_ctx).await?;
+    let database = worker_ctx_find_database(worker_ctx, &identity).await?.ok_or_else(|| {
+        log::debug!("Identity {identity} in HTTP request does not refer to a database");
+        NO_SUCH_DATABASE
+    })?;
+    Ok(database)
+}
+
 #[derive(Deserialize)]
 pub struct SqlQueryParams {
     /// If `true`, return the query result only after its transaction offset
@@ -1537,7 +1549,6 @@ where
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
-            .route("/mcp", self.mcp_post)
             .route("/unstable/timestamp", self.timestamp_get)
             .route("/pre_publish", self.pre_publish)
             .route("/reset", self.db_reset)
@@ -1555,7 +1566,10 @@ where
         // so we don't mind that we don't measure them.
         let db_router = db_router
             .route("/", self.db_delete)
-            .route("/identity", self.identity_get);
+            .route("/identity", self.identity_get)
+            // I (pgoldman 2026-08-07) am actually somewhat concerned that we do care about measuring egress for MCP requests,
+            // but the MCP handler's name resolution and error handling are significantly incompatible with the middleware.
+            .route("/mcp", self.mcp_post);
 
         // Add the subscribe route after `resolving_egress_metrics_middleware`
         // so that its egress bytes don't get counted into `http_response_size_bytes`;
