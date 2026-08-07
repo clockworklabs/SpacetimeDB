@@ -227,7 +227,10 @@ async function main() {
   // had just read. Neither showed up as an error — both would have produced a
   // full set of confident, void scores. One cheap session up front is worth less
   // than the run it protects.
-  if (!args.skipProbe) {
+  // The stub backend is the offline test loop: no model, no cost, nothing to
+  // protect. Spending a real CLI session probing it would make the one test
+  // that is supposed to run for free stop being free.
+  if (!args.skipProbe && args.backend !== 'stub') {
     console.log('  sandbox    ... probing the deny rules');
     try {
       sh('node', [join(ROOT, 'probe-sandbox.mjs'), '--mode', 'acceptEdits', '--model', args.model],
