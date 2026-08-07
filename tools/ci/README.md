@@ -181,7 +181,6 @@ Usage: ci-other-workflows <COMMAND>
 Commands:
   codeowners-check  Checks that sensitive CODEOWNERS-controlled files have the required approvals
   cla-assistant     Interacts with CLA Assistant
-  watch             Waits for a GitHub Actions workflow run to complete
   help              Print this message or the help of the given subcommand(s)
 
 Options:
