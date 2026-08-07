@@ -543,7 +543,6 @@ fn watch_workflow_run(
             bail!("workflow run {run_id} completed with conclusion: {conclusion}");
         }
 
-        println!("workflow run {run_id} status: {}", run.status);
         std::thread::sleep(std::time::Duration::from_secs(interval_seconds));
     }
 
