@@ -17,6 +17,7 @@ This document contains the help content for the `spacetime` command-line program
 * [`spacetime describe`↴](#spacetime-describe)
 * [`spacetime dev`↴](#spacetime-dev)
 * [`spacetime sql`↴](#spacetime-sql)
+* [`spacetime mcp`↴](#spacetime-mcp)
 * [`spacetime rename`↴](#spacetime-rename)
 * [`spacetime generate`↴](#spacetime-generate)
 * [`spacetime list`↴](#spacetime-list)
@@ -53,6 +54,7 @@ This document contains the help content for the `spacetime` command-line program
 * `describe` — Describe the structure of a database or entities within it. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `dev` — Start development mode with auto-regenerate client module bindings, auto-rebuild, and auto-publish on file changes.
 * `sql` — Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject to breaking changes.
+* `mcp` — Serve SpacetimeDB to MCP-aware agents and editors over stdio. WARNING: This command is UNSTABLE and subject to breaking changes.
 * `rename` — Rename a database
 * `generate` — Generate client files for a spacetime module.
 * `list` — Lists the databases attached to an identity. WARNING: This command is UNSTABLE and subject to breaking changes.
@@ -302,6 +304,26 @@ Runs a SQL query on the database. WARNING: This command is UNSTABLE and subject 
 
 * `-y`, `--yes` — Run non-interactively wherever possible. This will answer "yes" to almost all prompts, but will sometimes answer "no" to preserve non-interactivity (e.g. when prompting whether to log in with spacetimedb.com).
 * `--no-config` — Ignore spacetime.json configuration
+
+
+
+## `spacetime mcp`
+
+Serve SpacetimeDB to MCP-aware agents and editors over stdio. WARNING: This command is UNSTABLE and subject to breaking changes.
+
+**Usage:** `spacetime mcp [OPTIONS] [database]`
+
+Run `spacetime help mcp` for more detailed information.
+
+
+###### **Arguments:**
+
+* `<DATABASE>` — The name or identity of a single database to serve. Falls back to the SPACETIMEDB_DB_NAME environment variable. Omit it to serve the whole server, where each tool takes a database argument instead
+
+###### **Options:**
+
+* `-s`, `--server <SERVER>` — The nickname, host name or URL of the server hosting the database
+* `--anonymous` — Perform this action with an anonymous identity
 
 
 
