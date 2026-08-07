@@ -289,6 +289,11 @@ async function main() {
     console.log(`\n================ ${args.backend} — level ${level} ================`);
 
     const build = runAgent(args, level === args.levelList[0] ? 'build' : 'upgrade', level, appDir);
+    // Carry the agent's own record of the setup up to the run. Comparing two
+    // scores is only meaningful if the reasoning budget, permission mode and
+    // CLI version behind them were the same, and that is not knowable after the
+    // fact unless it was written down at the time.
+    run.setup ??= build.setup;
     // No session, no app. Grading an empty directory yields a real-looking zero
     // that is a harness failure, not a result for this backend.
     if (!build.sessionId) {
@@ -444,6 +449,23 @@ async function main() {
     ungraded: run.levels.filter(l => !l.graded).map(l => l.level),
   };
   writeFileSync(join(args.out, 'run.json'), JSON.stringify(run, null, 2));
+
+  // What the model fought with is the part SpacetimeDB can act on, and it is
+  // only in the transcript — the score cannot say it. Appended to a running
+  // file after every SpacetimeDB run so the pattern across runs is visible
+  // rather than rediscovered each time.
+  if (args.backend === 'spacetime') {
+    try {
+      sh('node', [join(ROOT, 'stdb-report.mjs'), '--label', runDir, '--track', args.track,
+        '--level', String(args.levelList[args.levelList.length - 1]),
+        '--score', `${run.totals.score}/${run.totals.max}`,
+        '--cost', String(run.totals.costUsd),
+        '--fix-rounds', String(run.totals.fixRounds),
+        ...(run.contaminated ? ['--contaminated'] : [])], { stdio: 'inherit' });
+    } catch (e) {
+      console.log(`  (stdb friction report failed: ${String(e.message).split('\n')[0]})`);
+    }
+  }
 
   console.log(`\n================ ${args.backend} summary ================`);
   for (const l of run.levels) {

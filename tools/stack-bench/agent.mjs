@@ -39,6 +39,23 @@ const LOCAL_PKG = process.env.STDB_PACKAGE ?? join(REPO, 'crates', 'bindings-typ
 // the model are written the one way every tool agrees on.
 const fwd = p => p.split('\\').join('/');
 
+// How hard the model is allowed to think, pinned rather than left to whatever
+// the installed CLI defaults to. Reasoning budget changes answers, so an
+// unpinned default means a CLI update can move every score with nothing in the
+// record to show why — and a backend comparison is only fair if all three sides
+// got the same budget. Recorded in run.json with the model and CLI version.
+//
+// Note the reasoning TEXT is not retrievable at any budget: `thinking` blocks
+// come back with `thinking: ""` and a signature, in every output mode. The
+// budget still changes behaviour; it just cannot be read afterwards.
+const THINKING_TOKENS = process.env.STACK_BENCH_THINKING ?? '10000';
+
+function cliVersion(bin) {
+  try {
+    return execFileSync(bin, ['--version'], { encoding: 'utf8', stdio: 'pipe' }).trim().split('\n')[0];
+  } catch { return 'unknown'; }
+}
+
 function parseArgs(argv) {
   const a = { level: 1, runIndex: 0, model: 'claude-sonnet-5', guidance: 'prescribed',
     track: DEFAULT_TRACK };
@@ -52,6 +69,7 @@ function parseArgs(argv) {
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--model': a.model = argv[++i]; break;
       case '--guidance': a.guidance = argv[++i]; break;
+      case '--thinking': a.thinking = argv[++i]; break;
       case '--print-prompt': a.printPrompt = true; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
@@ -303,7 +321,13 @@ async function main() {
       // documents, the level spec, the contract appendix) is inlined into the
       // prompt, and the linter is reached over loopback rather than by path.
       '--add-dir', args.app,
-    ], { cwd: args.app, input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+    ], { cwd: args.app, input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
+      env: { ...process.env,
+        MAX_THINKING_TOKENS: String(args.thinking ?? THINKING_TOKENS),
+        // A CLI that updates itself mid-series changes the thing under test
+        // between one backend and the next. The sequential harness has frozen
+        // it since April; this one had not.
+        DISABLE_AUTOUPDATER: '1' } });
   } catch (err) {
     raw = (err.stdout || '').toString();
     spawnError = err.code
@@ -344,6 +368,16 @@ async function main() {
     backend: args.backend,
     model: args.model,
     guidance: args.guidance,
+    // The setup that produced this number. A score whose reasoning budget,
+    // permission mode or CLI version is unknown cannot be compared with a later
+    // one — the run would look identical in the record and not be.
+    setup: {
+      thinkingTokens: Number(args.thinking ?? THINKING_TOKENS),
+      permissionMode: 'acceptEdits',
+      cliVersion: cliVersion(findClaude()),
+      node: process.version,
+      platform: process.platform,
+    },
     costUsd: Number((result.total_cost_usd ?? 0).toFixed(4)),
     tokens: input + output + cacheWrite + cacheRead,
     outputTokens: output,
