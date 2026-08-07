@@ -1,21 +1,26 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, ensure, Context, Result};
-use clap::{Args, Subcommand};
+use clap::{Parser, Subcommand};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::{env, fs};
+
+fn ensure_repo_root() -> Result<()> {
+    if !Path::new("Cargo.toml").exists() {
+        bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
+    }
+    Ok(())
+}
 use tempfile::TempDir;
 
-use crate::util;
-
-#[derive(Args)]
+#[derive(Parser)]
 /// This command builds the binaries needed by the smoketests, then runs them. This prevents
 /// race conditions when running tests in parallel with nextest, where multiple test processes
 /// might try to build the same binaries simultaneously.
-pub struct SmoketestsArgs {
+struct SmoketestsArgs {
     #[command(subcommand)]
     cmd: Option<SmoketestCmd>,
 
@@ -53,7 +58,7 @@ enum SmoketestCmd {
     CheckModList,
 }
 
-pub fn run(args: SmoketestsArgs) -> Result<()> {
+fn run(args: SmoketestsArgs) -> Result<()> {
     match args.cmd {
         Some(SmoketestCmd::Prepare) => {
             build_cli()?;
@@ -292,7 +297,7 @@ fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, auth_host: b
 }
 
 fn check_smoketests_mod_rs_complete() -> Result<()> {
-    util::ensure_repo_root()?;
+    ensure_repo_root()?;
 
     let expected_dir = Path::new("crates/smoketests/tests/smoketests");
     let mut expected = std::collections::BTreeSet::<String>::new();
@@ -351,4 +356,9 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn main() -> Result<()> {
+    env_logger::init();
+    run(SmoketestsArgs::parse())
 }

@@ -1,0 +1,10 @@
+[package]
+name = "ci-keynote-bench"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+keynote-bench-harness = { path = "../../../keynote-bench-harness" }
+spacetimedb-guard.workspace = true
+env_logger.workspace = true

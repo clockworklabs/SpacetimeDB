@@ -899,18 +899,171 @@ name = "ci"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "chrono",
+ "duct",
+]
+
+[[package]]
+name = "ci-cli-docs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "clap 4.5.50",
  "duct",
  "env_logger 0.10.2",
- "keynote-bench-harness",
  "log",
+]
+
+[[package]]
+name = "ci-common"
+version = "0.1.0"
+
+[[package]]
+name = "ci-dlls"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+ "env_logger 0.10.2",
+]
+
+[[package]]
+name = "ci-docs-build"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+ "env_logger 0.10.2",
+]
+
+[[package]]
+name = "ci-global-json-policy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "env_logger 0.10.2",
+ "log",
+ "regex",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "ci-keynote-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "keynote-bench-harness",
+ "spacetimedb-guard",
+]
+
+[[package]]
+name = "ci-lint"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "env_logger 0.10.2",
+ "log",
+ "regex",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "ci-other-workflows"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "env_logger 0.10.2",
  "regex",
  "reqwest 0.12.24",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ci-publish-checks"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+ "env_logger 0.10.2",
+]
+
+[[package]]
+name = "ci-self-docs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
+name = "ci-smoketests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "env_logger 0.10.2",
  "spacetimedb-guard",
  "tempfile",
+]
+
+[[package]]
+name = "ci-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+ "env_logger 0.10.2",
+]
+
+[[package]]
+name = "ci-typescript-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+ "env_logger 0.10.2",
+]
+
+[[package]]
+name = "ci-update-flow"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "env_logger 0.10.2",
+ "log",
+ "tempfile",
+]
+
+[[package]]
+name = "ci-version-upgrade-check"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+ "env_logger 0.10.2",
+]
+
+[[package]]
+name = "ci-wasm-bindings"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "duct",
+ "env_logger 0.10.2",
 ]
 
 [[package]]
