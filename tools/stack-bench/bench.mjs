@@ -22,7 +22,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync } fr
 import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions, PORT_BASES, DEFAULT_TRACK } from './tracks.mjs';
+import { loadTrack, resultsName, portsFor, workDirFor, sweepWorkRoot, assertNoPortCollisions, PORT_BASES, DEFAULT_TRACK } from './tracks.mjs';
 import { pidsOnPort, pidsMatching, killTree, sleepSync, answers } from './platform.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -254,7 +254,19 @@ async function main() {
   // and grade.mjs, and transcripts show builds taking exactly that walk. An
   // isolated root removes the class rather than forbidding instances of it.
   // Artifacts are copied back to results/ when the run finishes.
-  const appDir = args.app ?? join(workDirFor(track, args.backend, args.runIndex), 'app');
+  // Finished runs are deleted on the way in rather than left to pile up in temp,
+  // and anything still locked is named instead of silently skipped.
+  const stuck = sweepWorkRoot();
+  if (stuck.length) {
+    console.log(`  workdirs   ... ${stuck.length} old run dir(s) could not be removed (still held):`);
+    for (const d of stuck.slice(0, 3)) console.log(`               ${d}`);
+    console.log('               harmless — this run uses its own directory.');
+  }
+
+  // Stamped, so this run cannot inherit a directory another one is still
+  // holding. Every level shares it: L2 upgrades the app L1 built.
+  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const appDir = args.app ?? join(workDirFor(track, args.backend, args.runIndex, stamp), 'app');
 
   // Leave nothing running once the run is over, however it ends — but only stop
   // what this run brought up.
@@ -444,7 +456,27 @@ async function main() {
     `$${run.totals.costUsd}  ${run.totals.fixRounds} fix round(s)  ${run.totals.durationSec}s`);
   console.log(`  ${join(args.out, 'run.json')}`);
 
+  // The built source is the evidence behind the score, and it only ever existed
+  // in the work directory — results/ held run.json and nothing else. Copy it
+  // back BEFORE the work directory goes away, or cleaning up destroys the thing
+  // the run was for.
+  try {
+    snapshotSource(appDir, join(args.out, 'source'));
+    console.log(`  source kept at ${join(args.out, 'source')}`);
+  } catch (e) {
+    console.log(`  !! could not keep the source: ${String(e.message).split('\n')[0]}`);
+  }
+
   teardown();
+
+  // Leave nothing in temp. Best-effort: a directory some process still holds is
+  // not worth failing a finished run over, and the next run makes its own
+  // anyway. Say so rather than leaving it to be discovered.
+  try {
+    rmSync(dirname(appDir), { recursive: true, force: true });
+  } catch {
+    console.log(`  (work dir still held: ${dirname(appDir)} — the next sweep will take it)`);
+  }
 }
 
 main();

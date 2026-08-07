@@ -47,14 +47,30 @@ export function pidsOnPort(port) {
   return [...out];
 }
 
-/** PIDs whose command line mentions `needle` — a dev server holding a directory. */
+/**
+ * PIDs whose command line mentions `needle` — a dev server holding a directory.
+ *
+ * The query must not match ITSELF. The PowerShell that runs the search carries
+ * the needle in its own command line, so an unfiltered version returns the
+ * searcher among the results: a cleanup that killed what this returned would
+ * shoot the process asking the question. Confirmed by running it — the only
+ * "match" was the powershell doing the matching.
+ *
+ * Note this finds processes that NAME the directory, not processes standing in
+ * it. `npm run dev` shows as `npm-cli.js run dev` with the path nowhere in
+ * sight, which is exactly the leftover that wedged a run. Unique per-run work
+ * directories are what actually fix that; this narrows the blast radius.
+ */
 export function pidsMatching(needle) {
   if (isWindows) {
     const script = `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${
-      String(needle).replace(/'/g, "''")}*' } | ForEach-Object { $_.ProcessId }`;
-    return run('powershell', ['-NoProfile', '-Command', script]).split(/\s+/).filter(Boolean);
+      String(needle).replace(/'/g, "''")}*' -and $_.ProcessId -ne $PID `
+      + `-and $_.CommandLine -notlike '*Get-CimInstance*' } | ForEach-Object { $_.ProcessId }`;
+    return run('powershell', ['-NoProfile', '-Command', script])
+      .split(/\s+/).filter(Boolean).filter(p => Number(p) !== process.pid);
   }
-  return run('pgrep', ['-f', needle]).split('\n').map(s => s.trim()).filter(Boolean);
+  return run('pgrep', ['-f', needle]).split('\n').map(s => s.trim())
+    .filter(Boolean).filter(p => Number(p) !== process.pid);
 }
 
 /** Kill a process and its children. Never throws — it may already be gone. */

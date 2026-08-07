@@ -7,7 +7,7 @@
 // change to the harness. Everything that differs between *backends* stays in
 // backends/, because that axis is what the benchmark measures.
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -139,8 +139,36 @@ export function workRoot() {
   return process.env.STACK_BENCH_WORK_DIR ?? join(tmpdir(), 'stack-bench-runs');
 }
 
-export const workDirFor = (track, backend, runIndex) =>
-  join(workRoot(), resultsName(track, backend, runIndex));
+// A run gets its OWN directory, stamped, rather than reusing one per backend.
+// Reuse meant a single stale handle wedged every future run: a finished run left
+// postgres-run0/app empty but undeletable — some process still had it as its
+// working directory — and the next build died on EBUSY after five retries, which
+// turns somebody else's leftover into a failed benchmark. A run that never
+// reuses a path cannot be blocked by one.
+//
+// `stamp` is supplied by the caller so every level of one run shares a directory
+// — L2 upgrades the app L1 built.
+export const workDirFor = (track, backend, runIndex, stamp) =>
+  join(workRoot(), resultsName(track, backend, runIndex) + (stamp ? `-${stamp}` : ''));
+
+// Old run directories are deleted on the way in, so finished work does not
+// accumulate in temp forever. Best-effort by design: one locked leftover must
+// not stop the run that is starting. Returns what it could not remove, for the
+// caller to say out loud rather than hide.
+export function sweepWorkRoot(maxAgeHours = 12) {
+  const root = workRoot();
+  const stuck = [];
+  if (!existsSync(root)) return stuck;
+  const cutoff = Date.now() - maxAgeHours * 3600_000;
+  for (const name of readdirSync(root)) {
+    const dir = join(root, name);
+    try {
+      if (statSync(dir).mtimeMs > cutoff) continue;
+      rmSync(dir, { recursive: true, force: true });
+    } catch { stuck.push(dir); }
+  }
+  return stuck;
+}
 
 // Suffixed names: chat keeps the unsuffixed originals, so its databases,
 // modules and result directories are exactly what they have always been.
