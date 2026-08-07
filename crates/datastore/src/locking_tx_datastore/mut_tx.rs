@@ -3142,7 +3142,7 @@ impl MutTxId {
         {
             Some(ptr) => self.delete(ST_CLIENT_ID, ptr).map(drop)?,
             _ => {
-                log::warn!(
+                log::info!(
                     "[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident"
                 );
             }

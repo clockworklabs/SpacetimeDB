@@ -1185,7 +1185,6 @@ pub fn spawn_view_cleanup_loop(
                 result.backlog
             }
             Err(e) => {
-                // TODO: Review log level after retryable cleanup errors can be distinguished from internal database failures.
                 log::error!(
                     "[{}] DATABASE: failed to clear expired views: {}",
                     db.database_identity(),

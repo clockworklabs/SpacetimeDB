@@ -137,7 +137,7 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
                 .map_err(|err| PgWireError::ApiError(Box::new(err)))?;
             let err = String::from_utf8_lossy(&bytes);
             // TODO: Review log level after client SQL errors can be distinguished from internal database failures.
-            log::error!("PG: Error for database {database}: {err}");
+            log::warn!("PG: Error for database {database}: {err}");
             Err(PgError::Sql(format!("{err}")))
         }
     }
@@ -273,7 +273,7 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                     Ok(claims) => claims,
                     Err(err) => {
                         // TODO: Do not log the supplied password/token; then classify credential errors separately from provider failures.
-                        log::error!(
+                        log::warn!(
                             "PG: Authentication failed for identity `{}` on database {database}: {err}",
                             pwd.password
                         );

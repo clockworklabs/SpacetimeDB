@@ -11,6 +11,7 @@ use tokio::runtime;
 use tokio::sync::{mpsc, oneshot, watch};
 use tracing::Instrument;
 
+use super::panic_payload_message;
 use crate::util::thread_scheduling::apply_compute_thread_hint;
 
 /// A handle to a pool of Tokio executors for running database WASM code on.
@@ -374,8 +375,11 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
             .send(ExecutorJob::Async(Box::new(move || {
                 async move {
                     let result = AssertUnwindSafe(f().instrument(span)).catch_unwind().await;
-                    if let Err(Err(_panic)) = tx.send(result) {
-                        tracing::error!("uncaught panic on `SingleThreadedExecutor`")
+                    if let Err(Err(panic)) = tx.send(result) {
+                        tracing::error!(
+                            "uncaught panic on `SingleThreadedExecutor`: {}",
+                            panic_payload_message(panic.as_ref())
+                        )
                     }
                 }
                 .boxed_local()
@@ -399,8 +403,11 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
             .job_tx
             .send(ExecutorJob::Async(Box::new(move || {
                 async move {
-                    if AssertUnwindSafe(f().instrument(span)).catch_unwind().await.is_err() {
-                        tracing::error!("uncaught panic on `SingleThreadedExecutor`")
+                    if let Err(panic) = AssertUnwindSafe(f().instrument(span)).catch_unwind().await {
+                        tracing::error!(
+                            "uncaught panic on `SingleThreadedExecutor`: {}",
+                            panic_payload_message(panic.as_ref())
+                        )
                     }
                 }
                 .boxed_local()
@@ -424,8 +431,11 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
                     let _entered = span.enter();
                     f(state)
                 }));
-                if let Err(Err(_panic)) = tx.send(result) {
-                    tracing::error!("uncaught panic on `SingleThreadedExecutor`")
+                if let Err(Err(panic)) = tx.send(result) {
+                    tracing::error!(
+                        "uncaught panic on `SingleThreadedExecutor`: {}",
+                        panic_payload_message(panic.as_ref())
+                    )
                 }
             })))
             .unwrap_or_else(|_| panic!("job thread exited"));
@@ -446,13 +456,14 @@ impl<S: Send + 'static> SingleThreadedExecutor<S> {
         self.inner
             .job_tx
             .send(ExecutorJob::Sync(Box::new(move |state| {
-                if std::panic::catch_unwind(AssertUnwindSafe(|| {
+                if let Err(panic) = std::panic::catch_unwind(AssertUnwindSafe(|| {
                     let _entered = span.enter();
                     f(state);
-                }))
-                .is_err()
-                {
-                    tracing::error!("uncaught panic on `SingleThreadedExecutor`")
+                })) {
+                    tracing::error!(
+                        "uncaught panic on `SingleThreadedExecutor`: {}",
+                        panic_payload_message(panic.as_ref())
+                    )
                 }
             })))
             .unwrap_or_else(|_| panic!("job thread exited"));

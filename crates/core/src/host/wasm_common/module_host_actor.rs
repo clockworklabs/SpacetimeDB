@@ -1394,7 +1394,7 @@ impl InstanceCommon {
                     Ok(outcome) => outcome,
                     Err(err) => {
                         // TODO: Review log level after guest view errors can be distinguished from materialization failures.
-                        log::error!("Error materializing view `{view_name}`: {err:?}");
+                        log::warn!("Error materializing view `{view_name}`: {err:?}");
                         ViewOutcome::Failed(format!("Error materializing view `{view_name}`: {err}"))
                     }
                 }
