@@ -66,16 +66,9 @@ impl SpacetimeIO for TokioIO {
         offset: u64,
     ) -> Result<B, ErrorWith<Self::Error, B>> {
         let _rt = self.rt.enter();
-        asyncify(move || {
-            #[cfg(unix)]
-            let res = fd.write_all_at(buf.as_bytes(), offset);
-            #[cfg(windows)]
-            let res = fd.seek_write(buf.as_bytes(), offset);
-
-            match res {
-                Ok(()) => Ok(buf),
-                Err(error) => Err(ErrorWith { error, with: buf }),
-            }
+        asyncify(move || match write_all_at(&fd, buf.as_bytes(), offset) {
+            Ok(()) => Ok(buf),
+            Err(error) => Err(ErrorWith { error, with: buf }),
         })
         .await
     }
@@ -87,16 +80,9 @@ impl SpacetimeIO for TokioIO {
         offset: u64,
     ) -> Result<B, ErrorWith<Self::Error, B>> {
         let _rt = self.rt.enter();
-        asyncify(move || {
-            #[cfg(unix)]
-            let res = fd.read_exact_at(buf.as_bytes_mut(), offset);
-            #[cfg(windows)]
-            let res = fd.seek_read(buf.as_bytes_mut(), offset);
-
-            match res {
-                Ok(()) => Ok(buf),
-                Err(error) => Err(ErrorWith { error, with: buf }),
-            }
+        asyncify(move || match read_exact_at(&fd, buf.as_bytes_mut(), offset) {
+            Ok(()) => Ok(buf),
+            Err(error) => Err(ErrorWith { error, with: buf }),
         })
         .await
     }
@@ -154,10 +140,56 @@ async fn open_with_direct_io(options: OpenOptions, path: &str) -> io::Result<tok
     .await
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
 async fn open_with_direct_io(options: OpenOptions, path: &str) -> io::Result<tokio::fs::File> {
     options
         .custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_NO_BUFFERING)
         .open(path)
         .await
+}
+
+#[cfg(unix)]
+#[inline]
+fn read_exact_at(fd: &std::fs::File, buf: &mut [u8], offset: u64) -> io::Result<()> {
+    fd.read_exact_at(buf, offset)
+}
+
+#[cfg(windows)]
+fn read_exact_at(fd: &std::fs::File, buf: &mut [u8], mut offset: u64) -> io::Result<()> {
+    while !buf.is_empty() {
+        match file.seek_read(buf, offset) {
+            Ok(0) => return Err(ErrorKind::UnexpectedEof.into()),
+            Ok(n) => {
+                offset += n as u64;
+                buf = &mut buf[n..];
+            }
+            Err(ref e) if e.kind() == ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[inline]
+fn write_all_at(fd: &std::fs::File, buf: &[u8], offset: u64) -> io::Result<()> {
+    fd.write_all_at(buf, offset)
+}
+
+#[cfg(windows)]
+fn write_all_at(fd: &std::fd::File, buf: &[u8], offset: u64) -> io::Result<()> {
+    while !buf.is_empty() {
+        match file.seek_write(buf, offset) {
+            Ok(0) => return Err(ErrorKind::WriteZero.into()),
+            Ok(n) => {
+                offset += n as u64;
+                buf = &buf[n..];
+            }
+            Err(ref e) if e.kind() == ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+
+    Ok(())
 }
