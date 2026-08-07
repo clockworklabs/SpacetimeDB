@@ -12,7 +12,8 @@
 //
 // Prints a JSON line: { appDir, costUsd, tokens, durationMs, sessionId, ok }
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
+import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -125,27 +126,50 @@ function skillDocs(backend) {
     .join('\n\n---\n\n');
 }
 
-// The prompt used to contain the linter's absolute path, which handed every
-// build a signpost to the harness: two directory listings from there sit
-// grade.mjs and the scenario files that define its score. Audits found runs
-// that took exactly that walk. The command is now a shim inside the app, so
-// nothing the model is given names a location outside its own directory.
+// Naming the linter's path anywhere the build can read it is a signpost to the
+// harness: two directory listings from there sit grade.mjs and the scenario
+// files that define the score. Moving it out of the prompt and into a shim
+// narrowed that and did not close it. A sandboxed postgres build then proved
+// it, scoring 49/49 while the audit caught the whole walk -- `cat`
+// check-hooks.sh, read the path, `cat` lint.mjs, follow its
+// `import '../tracks.mjs'` and on to the contract and the walk. Every one of
+// those was Bash. The file-tool rules refused nothing because nothing was asked
+// of them.
 //
-// The shim's own contents still name the path, so this narrows the exposure
-// rather than removing it: the prompt is always read, a shim only if the model
-// goes looking. Removing it entirely means shipping a standalone linter into
-// the app — worth doing, and no worse for disclosure, since the contract it
-// checks is already inlined as the appendix.
-function writeLintShim(appDir, cmd) {
+// So the path stops existing on disk. The harness answers lint requests over
+// loopback for the life of the session, and the shim names a port. A port
+// cannot be followed to grade.mjs.
+function startLintServer(cmd) {
+  const server = createServer((req, res) => {
+    let out = '', ok = true;
+    try {
+      out = execSync(cmd, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: 'pipe' });
+    } catch (e) {
+      ok = false;
+      out = `${e.stdout ?? ''}${e.stderr ?? ''}`;
+    }
+    // A failing lint must fail the shim, or a build reads "no output" as a pass.
+    res.writeHead(ok ? 200 : 500, { 'content-type': 'text/plain' });
+    res.end(out);
+  });
+  // Port 0 asks the OS for a free one, which avoids inventing another entry in
+  // the port grid — but it is only known once the socket is listening.
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve(server));
+  });
+}
+
+function writeLintShim(appDir, port) {
   const sh = join(appDir, 'check-hooks.sh');
-  writeFileSync(sh, `#!/usr/bin/env bash\n# Verifies the required data-testid hooks resolve in the running app.\n${cmd}\n`);
+  writeFileSync(sh, '#!/usr/bin/env bash\n'
+    + '# Verifies the required data-testid hooks resolve in the running app.\n'
+    + `curl -sS --fail-with-body http://127.0.0.1:${port}/lint\n`);
   return './check-hooks.sh';
 }
 
-function buildPrompt(args, p, track) {
-  const real = `node "${join(ROOT, 'linter', 'lint.mjs')}" --url http://localhost:${p.vite} --level ${args.level}`
-    + (track.name === DEFAULT_TRACK ? '' : ` --track ${track.name}`);
-  const lint = args.printPrompt ? './check-hooks.sh' : writeLintShim(args.app, real);
+function buildPrompt(args, p, track, lintPort) {
+  const lint = args.printPrompt ? './check-hooks.sh' : writeLintShim(args.app, lintPort);
   const common = [
     `The app lives in ${args.app.replace(/\\/g, '/')} — work there.`,
     '',
@@ -201,7 +225,7 @@ function buildPrompt(args, p, track) {
 // The deny list itself lives in sandbox.mjs, shared with probe-sandbox.mjs so
 // the probe proves the rules a build actually gets.
 
-function main() {
+async function main() {
   const args = parseArgs(process.argv);
   const track = loadTrack(args.track);
   const p = portsFor(track, args.backend, args.runIndex);
@@ -229,7 +253,15 @@ function main() {
   mkdirSync(args.app, { recursive: true });
   writeFileSync(join(args.app, '.stack-bench-backend'), args.backend);
 
-  const prompt = buildPrompt(args, p, track);
+  // The linter runs here, in the harness, and answers over loopback. The build
+  // is given a port instead of a path, so there is nothing in its directory to
+  // read the harness location out of.
+  const lintCmd = `node "${join(ROOT, 'linter', 'lint.mjs')}" --url http://localhost:${p.vite} --level ${args.level}`
+    + (track.name === DEFAULT_TRACK ? '' : ` --track ${track.name}`);
+  const lintServer = await startLintServer(lintCmd);
+  const lintPort = lintServer.address().port;
+
+  const prompt = buildPrompt(args, p, track, lintPort);
   writeFileSync(join(args.app, `.prompt-${args.mode}-l${args.level}.md`), prompt);
 
   const started = Date.now();
@@ -258,7 +290,7 @@ function main() {
       // snapshot and copied it, reporting DEPLOY_COMPLETE in 170s for $1.12.
       // Everything the model legitimately needs (backend guidance, skill
       // documents, the level spec, the contract appendix) is inlined into the
-      // prompt, and the linter is invoked by absolute path rather than read.
+      // prompt, and the linter is reached over loopback rather than by path.
       '--add-dir', args.app,
     ], { cwd: args.app, input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
   } catch (err) {
@@ -267,6 +299,11 @@ function main() {
       ? `could not run the coding session: ${err.code} (${err.message.split('\n')[0]})`
       : null;
   }
+
+  // The session is over, so the lint endpoint has no reason to stay open — and
+  // an open listener would keep this process alive after it has printed its
+  // result.
+  lintServer.close();
 
   let result = {};
   try { result = JSON.parse(raw); } catch { /* non-JSON means the session died */ }
@@ -313,4 +350,4 @@ function main() {
   console.log(JSON.stringify(out));
 }
 
-main();
+main().catch(err => { console.error(err); process.exit(1); });
