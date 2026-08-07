@@ -74,12 +74,25 @@ function snapshotSource(appDir, to) {
   }
 }
 
+// Rolling back deletes the app's source, and a dev server watching that
+// directory holds it open: an Express app under `server/` made rmSync throw
+// EBUSY, which killed a finished postgres run outright — after grading, before
+// its totals, transcripts or cleanup. The caller stops the servers first; this
+// retries anyway, because a watcher can take a moment to let go and losing a
+// completed run to a directory handle is a bad trade.
 function restoreSource(from, appDir) {
   for (const rel of SOURCE_DIRS) {
     const src = join(from, rel);
     if (!existsSync(src)) continue;
-    rmSync(join(appDir, rel), { recursive: true, force: true });
-    cpSync(src, join(appDir, rel), { recursive: true });
+    const dest = join(appDir, rel);
+    for (let attempt = 0; ; attempt++) {
+      try { rmSync(dest, { recursive: true, force: true }); break; }
+      catch (err) {
+        if (attempt >= 5) throw err;
+        sleepSync(2000);
+      }
+    }
+    cpSync(src, dest, { recursive: true });
   }
 }
 
@@ -354,6 +367,10 @@ async function main() {
       const after = bundle?.totals?.score ?? 0;
       if (after < before) {
         console.log(`    regressed (${before} -> ${after}); rolling back and stopping`);
+        // Stop the servers BEFORE deleting what they are watching. Without
+        // this, rolling back a regressed postgres run threw EBUSY on
+        // app/server and took the whole finished run down with it.
+        stopServers(args.backend, args.runIndex, appDir, track);
         restoreSource(snapshot, appDir);
         bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback`, level, track);
         regressed = true;
@@ -498,6 +515,24 @@ async function main() {
     console.log(`  source kept at ${join(args.out, 'source')}`);
   } catch (e) {
     console.log(`  !! could not keep the source: ${String(e.message).split('\n')[0]}`);
+  }
+
+  // bundle.json and the per-suite grading files say WHY each criterion failed,
+  // and they lived only in the work directory — so cleaning up destroyed the
+  // evidence behind the score. Asked why a contention criterion failed, the
+  // answer was "the detail was deleted", which is no answer at all. Media is
+  // skipped: traces and video are large and reproducible.
+  try {
+    const from = join(appDir, 'stack-bench');
+    if (existsSync(from)) {
+      cpSync(from, join(args.out, 'grading'), {
+        recursive: true,
+        filter: src => !/[\\/]media([\\/]|$)/.test(src),
+      });
+      console.log(`  grading detail kept at ${join(args.out, 'grading')}`);
+    }
+  } catch (e) {
+    console.log(`  !! could not keep the grading detail: ${String(e.message).split('\n')[0]}`);
   }
 
   teardown();
