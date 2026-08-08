@@ -348,6 +348,55 @@ public static class GeneratorSnapshotTests
     }
 
     [Fact]
+    public static async Task NullableBTreeIndexesCompile()
+    {
+        var fixture = await Fixture.Compile("server");
+
+        const string source = """
+            using SpacetimeDB;
+
+            [SpacetimeDB.Table]
+            public partial struct NullableBTreeIndex
+            {
+                [SpacetimeDB.PrimaryKey]
+                public uint Id;
+
+                [SpacetimeDB.Index.BTree]
+                public uint? AccountId;
+
+                [SpacetimeDB.Reducer]
+                public static void TestNullableBTreeIndex(ReducerContext ctx)
+                {
+                    _ = ctx.Db.NullableBTreeIndex.AccountId.Filter((uint?)null);
+                    _ = ctx.Db.NullableBTreeIndex.AccountId.Filter((uint?)55);
+                    _ = ctx.Db.NullableBTreeIndex.AccountId.Filter(new Bound<uint?>(null, 99));
+                }
+            }
+            """;
+
+        var parseOptions = new CSharpParseOptions(fixture.SampleCompilation.LanguageVersion);
+        var tree = CSharpSyntaxTree.ParseText(source, parseOptions, path: "NullableBTreeIndex.cs");
+        var compilation = fixture.SampleCompilation.AddSyntaxTrees(tree);
+
+        var driver = CSharpGeneratorDriver.Create(
+            [
+                new SpacetimeDB.Codegen.Type().AsSourceGenerator(),
+                new SpacetimeDB.Codegen.Module().AsSourceGenerator(),
+            ],
+            driverOptions: new(
+                disabledOutputs: IncrementalGeneratorOutputKind.None,
+                trackIncrementalGeneratorSteps: true
+            ),
+            parseOptions: parseOptions
+        );
+
+        var runResult = driver.RunGenerators(compilation).GetRunResult();
+        var compilationAfterGen = compilation.AddSyntaxTrees(runResult.GeneratedTrees);
+
+        Assert.Empty(GetCompilationErrors(compilationAfterGen));
+    }
+
+    [Fact]
     public static async Task TestDiagnostics()
     {
         var fixture = await Fixture.Compile("diag");
