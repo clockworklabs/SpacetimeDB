@@ -141,7 +141,7 @@ async fn open_with_direct_io(options: OpenOptions, path: &str) -> io::Result<tok
 }
 
 #[cfg(windows)]
-async fn open_with_direct_io(options: OpenOptions, path: &str) -> io::Result<tokio::fs::File> {
+async fn open_with_direct_io(mut options: OpenOptions, path: &str) -> io::Result<tokio::fs::File> {
     options
         .custom_flags(windows_sys::Win32::Storage::FileSystem::FILE_FLAG_NO_BUFFERING)
         .open(path)
@@ -155,15 +155,15 @@ fn read_exact_at(fd: &std::fs::File, buf: &mut [u8], offset: u64) -> io::Result<
 }
 
 #[cfg(windows)]
-fn read_exact_at(fd: &std::fs::File, buf: &mut [u8], mut offset: u64) -> io::Result<()> {
+fn read_exact_at(fd: &std::fs::File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
     while !buf.is_empty() {
-        match file.seek_read(buf, offset) {
-            Ok(0) => return Err(ErrorKind::UnexpectedEof.into()),
+        match fd.seek_read(buf, offset) {
+            Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
             Ok(n) => {
                 offset += n as u64;
                 buf = &mut buf[n..];
             }
-            Err(ref e) if e.kind() == ErrorKind::Interrupted => {}
+            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
             Err(e) => return Err(e),
         }
     }
@@ -178,15 +178,15 @@ fn write_all_at(fd: &std::fs::File, buf: &[u8], offset: u64) -> io::Result<()> {
 }
 
 #[cfg(windows)]
-fn write_all_at(fd: &std::fd::File, buf: &[u8], offset: u64) -> io::Result<()> {
+fn write_all_at(fd: &std::fs::File, mut buf: &[u8], mut offset: u64) -> io::Result<()> {
     while !buf.is_empty() {
-        match file.seek_write(buf, offset) {
-            Ok(0) => return Err(ErrorKind::WriteZero.into()),
+        match fd.seek_write(buf, offset) {
+            Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
             Ok(n) => {
                 offset += n as u64;
                 buf = &buf[n..];
             }
-            Err(ref e) if e.kind() == ErrorKind::Interrupted => {}
+            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => {}
             Err(e) => return Err(e),
         }
     }
