@@ -119,20 +119,32 @@ pub(crate) fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCo
 }
 
 fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, String) {
-    let status_code = match e {
+    let status_code = match &e {
         ProcedureCallError::Args(_) => {
+            // TODO: Remove this host log once the error is logged to the guest log instead.
             log::debug!("Attempt to call procedure {procedure} with invalid arguments");
             StatusCode::BAD_REQUEST
         }
-        ProcedureCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
+        ProcedureCallError::NoSuchModule(_) => {
+            log::debug!("Attempt to call procedure {procedure} on a module that is not available");
+            StatusCode::NOT_FOUND
+        }
         ProcedureCallError::NoSuchProcedure => {
+            // TODO: Remove this host log once the error is logged to the guest log instead.
             log::debug!("Attempt to call non-existent procedure OR reducer {procedure}");
             StatusCode::NOT_FOUND
         }
-        ProcedureCallError::OutOfEnergy => StatusCode::PAYMENT_REQUIRED,
-        ProcedureCallError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        ProcedureCallError::OutOfEnergy => {
+            // TODO: Remove this host log once the error is logged to the guest log instead.
+            log::info!("Procedure {procedure} could not run because the module is out of energy");
+            StatusCode::PAYMENT_REQUIRED
+        }
+        ProcedureCallError::InternalError(_) => {
+            // TODO: May need to split this from module errors vs host errors
+            log::info!("Internal error while invoking procedure {procedure}: {e:#}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
     };
-    log::error!("Error while invoking procedure {e:#}");
     (status_code, format!("{:#}", anyhow::anyhow!(e)))
 }
 
@@ -422,7 +434,7 @@ fn reducer_outcome_response(
             (StatusCode::from_u16(530).unwrap(), *errmsg)
         }
         ReducerOutcome::BudgetExceeded => {
-            log::warn!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
+            log::info!("Node's energy budget exceeded for identity: {owner_identity} while executing {reducer}");
             (StatusCode::PAYMENT_REQUIRED, "Module energy budget exhausted.".into())
         }
     }
@@ -468,7 +480,7 @@ pub(crate) async fn find_leader_and_database<S: ControlStateDelegate + NodeDeleg
     let database = worker_ctx_find_database(worker_ctx, &db_identity)
         .await?
         .ok_or_else(|| {
-            log::error!("Could not find database: {}", db_identity.to_hex());
+            log::debug!("Could not find database: {}", db_identity.to_hex());
             NO_SUCH_DATABASE
         })?;
 
@@ -1528,7 +1540,7 @@ async fn get_timestamp<S: ControlStateDelegate>(
     let _database = worker_ctx_find_database(&worker_ctx, &db_identity)
         .await?
         .ok_or_else(|| {
-            log::error!("Could not find database: {}", db_identity.to_hex());
+            log::debug!("Could not find database: {}", db_identity.to_hex());
             NO_SUCH_DATABASE
         })?;
 

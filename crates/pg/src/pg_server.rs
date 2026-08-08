@@ -124,7 +124,7 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
         err => {
             let res = err.into_response();
             if res.status() == StatusCode::NOT_FOUND {
-                log::error!("PG: Database not found: {database}");
+                log::debug!("PG: Database not found: {database}");
                 return Err(PgWireError::UserError(Box::new(ErrorInfo::new(
                     "FATAL".to_string(),
                     "3D000".to_string(),
@@ -136,7 +136,8 @@ async fn response<T>(res: axum::response::Result<T>, database: &str) -> Result<T
                 .await
                 .map_err(|err| PgWireError::ApiError(Box::new(err)))?;
             let err = String::from_utf8_lossy(&bytes);
-            log::error!("PG: Error for database {database}: {err}");
+            // TODO: Review log level after client SQL errors can be distinguished from internal database failures.
+            log::warn!("PG: Error for database {database}: {err}");
             Err(PgError::Sql(format!("{err}")))
         }
     }
@@ -271,7 +272,8 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 let claims = match validate_token(&self.ctx, &pwd.password).await {
                     Ok(claims) => claims,
                     Err(err) => {
-                        log::error!(
+                        // TODO: Do not log the supplied password/token; then classify credential errors separately from provider failures.
+                        log::warn!(
                             "PG: Authentication failed for identity `{}` on database {database}: {err}",
                             pwd.password
                         );
@@ -378,12 +380,13 @@ where
                         let factory_ref = factory.clone();
                         tokio::spawn(async move {
                             process_socket(stream, None, factory_ref).await.inspect_err(|err|{
+                                // TODO: Review log level after client/disconnect errors can be distinguished from internal failures.
                                 log::warn!("PG: Error processing socket: {err:?}");
                             })
                         });
                     }
                     Err(e) => {
-                       log::error!("PG: Accept error: {e}");
+                       log::warn!("PG: Accept error: {e}");
                     }
                 }
             }

@@ -1716,7 +1716,7 @@ impl ModuleSubscriptions {
         // TODO(perf): Removing a subscriber is currently O(subscribed_queries).
         // Instead we should maintain an index to make this O(subscribed_views).
         if let Err(err) = self.unsubscribe_views(&removed_queries, client_id.identity) {
-            log::error!(
+            log::warn!(
                 "failed to unsubscribe views for disconnected client ({}, {}): {err}",
                 client_id.identity,
                 client_id.connection_id
@@ -1828,7 +1828,7 @@ impl ModuleSubscriptions {
             };
             for (client_id, query_set_id) in failed_v2_subscriptions {
                 if let Err(err) = subscriptions.remove_subscription_v2(client_id, query_set_id) {
-                    tracing::warn!(?client_id, ?query_set_id, "failed to remove v2 subscription: {err}");
+                    tracing::debug!(?client_id, ?query_set_id, "failed to remove v2 subscription: {err}");
                 }
             }
         }

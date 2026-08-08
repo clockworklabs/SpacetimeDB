@@ -379,9 +379,9 @@ where
         if let Some(current_segment) = self.current_segment.take() {
             trace!("closing current segment on writer drop");
             tokio::spawn(
-                current_segment
-                    .close()
-                    .inspect_err(|e| warn!("error closing segment on drop: {e}")),
+                current_segment.close().inspect_err(|e| {
+                    error!("failed to flush commitlog segment while closing dropped stream writer: {e}")
+                }),
             );
         }
     }

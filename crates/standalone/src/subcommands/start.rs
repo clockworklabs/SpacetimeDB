@@ -282,7 +282,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
             }
         }
     } else {
-        log::warn!("PostgreSQL wire protocol server disabled");
+        log::info!("PostgreSQL wire protocol server disabled");
         axum::serve(tcp, service)
             .with_graceful_shutdown(async {
                 tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");

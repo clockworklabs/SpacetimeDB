@@ -3112,7 +3112,7 @@ impl MutTxId {
         ) {
             // This is possible on restart if the database was previously running a version
             // before this system table was added.
-            log::error!(
+            log::warn!(
                 "[{database_identity}]: delete_st_client_credentials: attempting to delete credentials for missing connection id ({connection_id}), error: {e}"
             );
         }
@@ -3142,7 +3142,7 @@ impl MutTxId {
         {
             Some(ptr) => self.delete(ST_CLIENT_ID, ptr).map(drop)?,
             _ => {
-                log::error!(
+                log::info!(
                     "[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident"
                 );
             }
@@ -3841,9 +3841,9 @@ fn unindexed_iter_by_col_range_warn(
 ) {
     match table_row_count(tx_state, committed_state, table_id) {
         // TODO(ux): log these warnings to the module logs rather than host logs.
-        None => log::error!("iter_by_col_range on unindexed column, but couldn't fetch table `{table_id}`s row count",),
+        None => log::debug!("iter_by_col_range on unindexed column, but couldn't fetch table `{table_id}`s row count",),
         Some(num_rows) => too_many_rows_for_scan_do(committed_state, num_rows, table_id, cols, |name, cols| {
-            log::warn!("iter_by_col_range without index: table {name} has {num_rows} rows; scanning columns {cols:?}",);
+            log::info!("iter_by_col_range without index: table {name} has {num_rows} rows; scanning columns {cols:?}",);
         }),
     }
 }
@@ -3883,9 +3883,9 @@ fn unindexed_iter_by_col_eq_warn(
 ) {
     match table_row_count(tx_state, committed_state, table_id) {
         // TODO(ux): log these warnings to the module logs rather than host logs.
-        None => log::error!("iter_by_col_eq on unindexed column, but couldn't fetch table `{table_id}`s row count",),
+        None => log::debug!("iter_by_col_eq on unindexed column, but couldn't fetch table `{table_id}`s row count",),
         Some(num_rows) => too_many_rows_for_scan_do(committed_state, num_rows, table_id, cols, |name, cols| {
-            log::warn!("iter_by_col_eq without index: table {name} has {num_rows} rows; scanning columns {cols:?}",);
+            log::info!("iter_by_col_eq without index: table {name} has {num_rows} rows; scanning columns {cols:?}",);
         }),
     }
 }

@@ -43,7 +43,7 @@ impl ReplicaContext {
             durability: self
                 .durability_size_on_disk()
                 .inspect_err(|e| {
-                    log::error!(
+                    log::warn!(
                         "database={} replica={}: failed to obtain durability size on disk: {:#}",
                         self.database.database_identity,
                         self.replica_id,
@@ -54,7 +54,7 @@ impl ReplicaContext {
             logs: self
                 .log_file_size()
                 .inspect_err(|e| {
-                    log::error!(
+                    log::warn!(
                         "database={} replica={}: failed to obtain log file size: {:#}",
                         self.database.database_identity,
                         self.replica_id,

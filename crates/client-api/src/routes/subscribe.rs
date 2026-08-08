@@ -240,7 +240,7 @@ where
             Ok(ws) => ws,
             Err(err) => {
                 record_client_rejection(db_identity, ClientRejectCause::WebsocketUpgradeError);
-                log::error!("websocket: WebSocket init error: {err}");
+                log::warn!("websocket: WebSocket init error: {err}");
                 return;
             }
         };
@@ -855,7 +855,8 @@ async fn ws_recv_task<MessageHandler>(
             if ws_version == WsVersion::V1
                 && let MessageHandleError::Execution(err) = e
             {
-                log::error!("{err:#}");
+                // TODO: Review log level after guest/client execution errors can be distinguished from internal failures.
+                log::warn!("{err:#}");
                 // If the send task has exited, also exit this recv task.
                 if unordered_tx.send(err.into()).is_err() {
                     break;
