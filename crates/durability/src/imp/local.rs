@@ -235,6 +235,14 @@ where
     pub fn compress_segments(&self, offsets: &[TxOffset]) -> io::Result<CompressionStats> {
         self.clog.compress_segments(offsets)
     }
+
+    /// Remove the segments at the offsets provided from the underlying
+    /// [`Commitlog`], discarding their contents permanently.
+    ///
+    /// See [`Commitlog::remove_segments`].
+    pub fn remove_segments(&self, offsets: &[TxOffset]) -> io::Result<()> {
+        self.clog.remove_segments(offsets)
+    }
 }
 
 impl<T: Send + Sync + 'static> Local<T, Fs> {
