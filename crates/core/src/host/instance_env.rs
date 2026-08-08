@@ -2212,4 +2212,212 @@ mod test {
         assert_eq!(0, tx.metrics.bytes_sent_to_clients);
         Ok(())
     }
+
+    /// Spin up a one-shot HTTP/1.1 server on loopback which serves `body`
+    /// tagged with `Content-Encoding: {encoding}`.
+    ///
+    /// Returns the bound port, and a handle yielding the request head the client sent
+    /// so that tests can inspect the `Accept-Encoding` reqwest generated.
+    ///
+    /// Requires the `allow_loopback_http_for_tests` feature, as loopback egress is
+    /// otherwise blocked by [`is_blocked_ip`].
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn spawn_encoded_body_server(encoding: &str, body: Vec<u8>) -> (u16, std::thread::JoinHandle<String>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind test server");
+        let port = listener
+            .local_addr()
+            .expect("failed to read test server address")
+            .port();
+        let head = format!(
+            "HTTP/1.1 200 OK\r\n\
+             Content-Type: text/plain\r\n\
+             Content-Encoding: {encoding}\r\n\
+             Content-Length: {}\r\n\
+             Connection: close\r\n\r\n",
+            body.len(),
+        );
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("test server failed to accept");
+
+            // Read the request head. We never send a request body, so `\r\n\r\n` terminates it.
+            let mut request = Vec::new();
+            let mut byte = [0u8; 1];
+            while !request.ends_with(b"\r\n\r\n") {
+                match stream.read(&mut byte).expect("test server failed to read request") {
+                    0 => break,
+                    _ => request.push(byte[0]),
+                }
+            }
+
+            stream
+                .write_all(head.as_bytes())
+                .expect("test server failed to write response head");
+            stream
+                .write_all(&body)
+                .expect("test server failed to write response body");
+            stream.flush().expect("test server failed to flush response");
+
+            String::from_utf8_lossy(&request).into_owned()
+        });
+        (port, handle)
+    }
+
+    /// `GET http://127.0.0.1:{port}/` through [`InstanceEnv::http_request`],
+    /// i.e. the same path a procedure's `ctx.http` call takes.
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn get_via_http_request(
+        env: &mut InstanceEnv,
+        runtime: &tokio::runtime::Runtime,
+        port: u16,
+    ) -> (st_http::Response, bytes::Bytes) {
+        let request = st_http::Request {
+            method: st_http::Method::Get,
+            headers: Vec::<(Option<Box<str>>, Box<[u8]>)>::new().into_iter().collect(),
+            timeout: None,
+            uri: format!("http://127.0.0.1:{port}/"),
+            version: st_http::Version::Http11,
+        };
+        // `http_request` calls `tokio::spawn` before returning its future,
+        // so the call itself must happen inside the runtime context.
+        runtime.block_on(async {
+            env.http_request(request, bytes::Bytes::new())
+                .expect("failed to start HTTP request")
+                .await
+                .expect("HTTP request failed")
+        })
+    }
+
+    /// Assert that a response body encoded with `encoding` arrives at the module decompressed.
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn assert_decompresses(encoding: &str, compress: fn(&[u8], &mut Vec<u8>)) -> Result<()> {
+        let db = relational_db()?;
+        let (mut env, runtime) = instance_env(db)?;
+
+        let plaintext = "hello from a compressed response. ".repeat(64);
+        let mut compressed = Vec::new();
+        compress(plaintext.as_bytes(), &mut compressed);
+        assert!(
+            compressed.len() < plaintext.len(),
+            "test payload should actually compress"
+        );
+
+        let (port, server) = spawn_encoded_body_server(encoding, compressed);
+        let (response, body) = get_via_http_request(&mut env, &runtime, port);
+        let request_head = server.join().expect("test server thread panicked");
+
+        assert!(
+            request_head.to_lowercase().contains("accept-encoding:"),
+            "reqwest should advertise the encodings it supports; request head was:\n{request_head}"
+        );
+        assert!(
+            request_head.to_lowercase().contains(encoding),
+            "reqwest should advertise `{encoding}` support; request head was:\n{request_head}"
+        );
+
+        assert_eq!(response.code, 200);
+        assert_eq!(
+            String::from_utf8_lossy(&body),
+            plaintext,
+            "`{encoding}` response body should reach the module decompressed"
+        );
+
+        // Once reqwest has decompressed the body, it strips the now-inaccurate
+        // `Content-Encoding` and `Content-Length` headers.
+        let header_names = response
+            .headers
+            .into_iter()
+            .map(|(name, _)| name.to_lowercase())
+            .collect::<Vec<_>>();
+        assert!(
+            !header_names.iter().any(|name| name == "content-encoding"),
+            "`Content-Encoding` should be stripped after decompression; got headers {header_names:?}"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn http_request_decompresses_gzip_response() -> Result<()> {
+        assert_decompresses("gzip", |bytes, out| {
+            crate::subscription::websocket_building::gzip_compress(bytes, out)
+        })
+    }
+
+    #[test]
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn http_request_decompresses_brotli_response() -> Result<()> {
+        assert_decompresses("br", |bytes, out| {
+            crate::subscription::websocket_building::brotli_compress(bytes, out)
+        })
+    }
+    /// A module which sets `Accept-Encoding` itself still gets a decompressed body.
+    ///
+    /// reqwest leaves a caller-supplied `Accept-Encoding` header alone rather than
+    /// replacing it with its own, but still decodes the response body. This matters
+    /// for modules written before automatic decompression existed, which set the
+    /// header manually and inflated the body themselves — they now receive plaintext.
+    #[test]
+    #[cfg(feature = "allow_loopback_http_for_tests")]
+    fn http_request_decompresses_despite_caller_supplied_accept_encoding() -> Result<()> {
+        let db = relational_db()?;
+        let (mut env, runtime) = instance_env(db)?;
+
+        let plaintext = "hello from a compressed response. ".repeat(64);
+        let mut compressed = Vec::new();
+        crate::subscription::websocket_building::gzip_compress(plaintext.as_bytes(), &mut compressed);
+        let compressed_len = compressed.len();
+
+        let (port, server) = spawn_encoded_body_server("gzip", compressed);
+
+        let request = st_http::Request {
+            method: st_http::Method::Get,
+            headers: vec![(
+                Some("accept-encoding".into()),
+                b"gzip".as_slice().into(),
+            )]
+            .into_iter()
+            .collect(),
+            timeout: None,
+            uri: format!("http://127.0.0.1:{port}/"),
+            version: st_http::Version::Http11,
+        };
+        let (_response, body) = runtime.block_on(async {
+            env.http_request(request, bytes::Bytes::new())
+                .expect("failed to start HTTP request")
+                .await
+                .expect("HTTP request failed")
+        });
+        let request_head = server.join().expect("test server thread panicked");
+
+        // reqwest does not append its own `gzip, br` when the caller already set the header.
+        let accept_encodings = request_head
+            .to_lowercase()
+            .lines()
+            .filter(|line| line.starts_with("accept-encoding:"))
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            accept_encodings,
+            ["accept-encoding: gzip"],
+            "caller's `Accept-Encoding` should be sent as-is; request head was:\n{request_head}"
+        );
+
+        // ...but the body is decoded anyway, rather than handed over still compressed.
+        assert_ne!(
+            body.len(),
+            compressed_len,
+            "body should not arrive still gzipped"
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&body),
+            plaintext,
+            "body should be decompressed even though the caller set `Accept-Encoding`"
+        );
+
+        Ok(())
+    }
 }
