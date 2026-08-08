@@ -145,4 +145,9 @@ pub trait SpacetimeIO {
 
     /// Allocate `additional` bytes for the file `fd`.
     fn reserve(&self, fd: Self::Fd, additional: u64) -> impl Future<Output = Result<(), Self::Error>>;
+
+    /// Determine the length of the file `fd`.
+    ///
+    /// This should not depend on `fsync`, i.e. `statx`. See `std::io::Seek::stream_len`.
+    fn length(&self, fd: Self::Fd) -> impl Future<Output = Result<u64, Self::Error>>;
 }

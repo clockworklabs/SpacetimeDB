@@ -1,3 +1,4 @@
+use std::io::{Seek, SeekFrom};
 use std::{io, marker::PhantomData, rc::Rc, sync::Arc};
 
 #[cfg(unix)]
@@ -104,6 +105,22 @@ impl SpacetimeIO for TokioIO {
             fd.set_len(len + additional)?;
 
             Ok(())
+        })
+        .await
+    }
+
+    async fn length(&self, fd: Self::Fd) -> Result<u64, Self::Error> {
+        let _rt = self.rt.enter();
+        asyncify(move || {
+            let mut fd = fd.try_clone()?;
+            let pos = fd.stream_position()?;
+            let len = fd.seek(SeekFrom::End(0))?;
+
+            if pos != len {
+                fd.seek(SeekFrom::Start(pos))?;
+            }
+
+            Ok(len)
         })
         .await
     }
