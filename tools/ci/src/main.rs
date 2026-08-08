@@ -677,6 +677,20 @@ fn main() -> Result<()> {
             cmd!("dotnet", "test", "-warnaserror")
                 .dir("crates/bindings-csharp")
                 .run()?;
+            cmd!(
+                "bash",
+                "crates/bindings-cpp/tests/compile/run-compile-tests.sh",
+                "--suite",
+                "http-handlers",
+            )
+            .run()?;
+            cmd!(
+                "bash",
+                "crates/bindings-cpp/tests/compile/run-compile-tests.sh",
+                "--suite",
+                "indexes",
+            )
+            .run()?;
         }
 
         Some(CiCmd::Lint) => {
