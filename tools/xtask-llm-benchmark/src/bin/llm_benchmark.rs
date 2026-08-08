@@ -13,7 +13,8 @@ use tokio::runtime::Runtime;
 use xtask_llm_benchmark::api::ApiClient;
 use xtask_llm_benchmark::bench::bench_route_concurrency;
 use xtask_llm_benchmark::bench::runner::{
-    build_goldens_only_for_lang, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
+    build_goldens_only_for_lang, delete_databases, ensure_goldens_built_once,
+    run_selected_or_all_for_model_async_for_lang,
 };
 use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig, RunOutcome};
 use xtask_llm_benchmark::context::constants::ALL_MODES;
@@ -279,7 +280,7 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         eprintln!("[warn] failed to upload task catalog: {e}");
     }
 
-    let RuntimeInit { runtime, guard } = initialize_runtime(config.hash_only)?;
+    let RuntimeInit { runtime, mut guard } = initialize_runtime(config.hash_only)?;
 
     config.host = guard.as_ref().map(|g| g.host_url.clone());
 
@@ -295,46 +296,86 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
 
     if config.goldens_only {
         let rt = runtime.as_ref().expect("runtime required for --goldens-only");
-        rt.block_on(build_goldens_only_for_lang(
+        let result = rt.block_on(build_goldens_only_for_lang(
             config.host.clone(),
             &bench_root,
             config.lang,
             selectors_ref,
-        ))?;
+        ));
+        let databases = match result {
+            Ok(databases) => databases,
+            Err(error) => {
+                report_server_status(guard.as_mut());
+                return Err(error);
+            }
+        };
+        if let Err(error) = rt.block_on(delete_databases(databases)) {
+            report_server_status(guard.as_mut());
+            return Err(error);
+        }
         println!("[{}] goldens-only build complete", config.lang.as_str());
         return Ok(());
     }
 
-    let llm_provider = if !config.goldens_only && !config.hash_only {
+    // Goldens are live parity fixtures: scorers describe them, call their
+    // reducers, and compare their data with generated modules. Keep them
+    // published through every model and mode, then delete them at teardown.
+    let (llm_provider, golden_databases) = if !config.goldens_only && !config.hash_only {
         let rt = runtime.as_ref().expect("failed to initialize runtime for goldens");
-        rt.block_on(ensure_goldens_built_once(
+        let result = rt.block_on(ensure_goldens_built_once(
             config.host.clone(),
             &bench_root,
             config.lang,
             selectors_ref,
-        ))?;
+        ));
+        let databases = match result {
+            Ok(databases) => databases,
+            Err(error) => {
+                report_server_status(guard.as_mut());
+                return Err(error);
+            }
+        };
 
         let provider = make_provider_from_env()?;
         let rt = runtime.as_ref().expect("failed to initialize runtime for preflight");
         let routes = filter_routes(&config);
         preflight_llm_routes(rt, provider.as_ref(), &routes, &modes)?;
-        Some(provider)
+        (Some(provider), databases)
     } else {
-        None
+        (None, Vec::new())
     };
 
     let mut all_outcomes: Vec<RunOutcome> = Vec::new();
 
     for mode in modes {
-        let outcomes = run_mode_benchmarks(
+        let result = run_mode_benchmarks(
             &mode,
             config.lang,
             &config,
             &bench_root,
             runtime.as_ref(),
             llm_provider.as_ref(),
-        )?;
+        );
+        let outcomes = match result {
+            Ok(outcomes) => outcomes,
+            Err(error) => {
+                if let Some(rt) = runtime.as_ref()
+                    && let Err(cleanup_error) = rt.block_on(delete_databases(golden_databases))
+                {
+                    eprintln!("[cleanup] failed to delete golden databases after benchmark failure: {cleanup_error:#}");
+                }
+                report_server_status(guard.as_mut());
+                return Err(error);
+            }
+        };
         all_outcomes.extend(outcomes);
+    }
+
+    if let Some(rt) = runtime.as_ref()
+        && let Err(error) = rt.block_on(delete_databases(golden_databases))
+    {
+        report_server_status(guard.as_mut());
+        return Err(error);
     }
 
     // Write local run log on --dry-run so results aren't lost
@@ -356,6 +397,17 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn report_server_status(guard: Option<&mut SpacetimeDbGuard>) {
+    let Some(guard) = guard else {
+        return;
+    };
+    match guard.child.try_wait() {
+        Ok(Some(status)) => eprintln!("[server] local SpacetimeDB exited unexpectedly: {status}"),
+        Ok(None) => eprintln!("[server] local SpacetimeDB is still running after benchmark failure"),
+        Err(error) => eprintln!("[server] failed to read local SpacetimeDB exit status: {error}"),
+    }
 }
 
 /* ------------------------------ analyze ------------------------------ */

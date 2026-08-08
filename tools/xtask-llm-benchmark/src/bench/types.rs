@@ -134,6 +134,8 @@ pub struct RouteRun {
 pub enum RunOneError {
     #[error("{msg}")]
     WithOutput { msg: String, llm_output: String },
+    #[error("{msg}")]
+    Infrastructure { msg: String, llm_output: Option<String> },
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

@@ -1,16 +1,14 @@
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
-use futures::{stream, StreamExt};
+use futures::{stream, StreamExt, TryStreamExt};
 use serde_json::json;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
-use std::time::Instant;
-use tokio::sync::Mutex;
+use std::time::{Duration, Instant};
 use tokio::task;
 
-use crate::bench::publishers::{DotnetPublisher, SpacetimeRustPublisher, TypeScriptPublisher};
+use crate::bench::publishers::{DotnetPublisher, PublishedDatabase, SpacetimeRustPublisher, TypeScriptPublisher};
 use crate::bench::templates::materialize_project;
 use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneError};
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
@@ -30,56 +28,43 @@ pub struct TaskRunner {
     pub ts_publisher: TypeScriptPublisher,
 }
 
-static BUILT_KEYS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-
 struct PendingRetry {
     task: TaskPaths,
     error: anyhow::Error,
 }
 
-fn build_key(lang: Lang, selectors: Option<&[String]>) -> String {
-    let v = match selectors {
-        Some(s) if !s.is_empty() => {
-            let mut t = s.to_vec();
-            t.sort(); // stable key independent of order
-            t
+fn task_result_or_infrastructure_error(
+    task: TaskPaths,
+    result: Result<RunOutcome, RunOneError>,
+    started: chrono::DateTime<Utc>,
+) -> Result<(TaskPaths, Result<RunOutcome, RunOneError>)> {
+    match result {
+        Err(RunOneError::Infrastructure { msg, llm_output }) => {
+            let output_note = llm_output
+                .as_deref()
+                .map(|output| format!("; generated output retained in work directory ({} bytes)", output.len()))
+                .unwrap_or_default();
+            bail!("benchmark infrastructure failure: {msg}{output_note}");
         }
-        _ => vec!["ALL".to_string()],
-    };
-    let joined = v.join(",");
-    format!("{lang:?}:{joined}")
+        other => Ok((
+            task,
+            other.map(|mut outcome| {
+                outcome.started_at.get_or_insert(started);
+                outcome
+            }),
+        )),
+    }
 }
 
-/// Build goldens **once per (lang, selector-set)** in this process.
-/// If selectors is None/empty, that means "ALL tasks".
+/// Build the golden databases and return handles that keep their owning CLI
+/// sessions alive until scoring has finished.
 pub async fn ensure_goldens_built_once(
     host: Option<String>,
     bench_root: &Path,
     lang: Lang,
     selectors: Option<&[String]>,
-) -> Result<()> {
-    let key = build_key(lang, selectors);
-    let set = BUILT_KEYS.get_or_init(|| Mutex::new(HashSet::new()));
-    {
-        let set = set.lock();
-        if set.await.contains(&key) {
-            return Ok(());
-        }
-    }
-    // single-flight for this key
-    let set_guard = set.lock().await;
-    if set_guard.contains(&key) {
-        return Ok(());
-    }
-
-    // IMPORTANT: pass selectors through so we only build needed goldens
-    build_goldens_only_for_lang(host, bench_root, lang, selectors).await?;
-
-    // mark as built
-    drop(set_guard);
-    let mut set = BUILT_KEYS.get().unwrap().lock().await;
-    set.insert(key);
-    Ok(())
+) -> Result<Vec<PublishedDatabase>> {
+    build_goldens_only_for_lang(host, bench_root, lang, selectors).await
 }
 
 async fn publish_rust_async(
@@ -87,16 +72,57 @@ async fn publish_rust_async(
     host_url: String,
     wdir: PathBuf,
     db: String,
-) -> Result<()> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await??;
+) -> Result<PublishedDatabase> {
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await?
+}
+async fn publish_cs_async(
+    publisher: DotnetPublisher,
+    host_url: String,
+    wdir: PathBuf,
+    db: String,
+) -> Result<PublishedDatabase> {
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await?
+}
+async fn publish_ts_async(
+    publisher: TypeScriptPublisher,
+    host_url: String,
+    wdir: PathBuf,
+    db: String,
+) -> Result<PublishedDatabase> {
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await?
+}
+
+async fn delete_database_async(database: PublishedDatabase) -> Result<()> {
+    task::spawn_blocking(move || database.delete()).await??;
     Ok(())
 }
-async fn publish_cs_async(publisher: DotnetPublisher, host_url: String, wdir: PathBuf, db: String) -> Result<()> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await??;
+
+pub async fn delete_databases(databases: Vec<PublishedDatabase>) -> Result<()> {
+    stream::iter(databases.into_iter().map(delete_database_async))
+        .buffer_unordered(8)
+        .try_collect::<Vec<_>>()
+        .await?;
     Ok(())
 }
-async fn publish_ts_async(publisher: TypeScriptPublisher, host_url: String, wdir: PathBuf, db: String) -> Result<()> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await??;
+
+async fn ensure_server_healthy(host: Option<&str>) -> Result<()> {
+    let Some(host) = host else {
+        return Ok(());
+    };
+    let ping_url = format!("{}/v1/ping", host.trim_end_matches('/'));
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()?
+        .get(&ping_url)
+        .send()
+        .await
+        .with_context(|| format!("benchmark server at {host} is unavailable; refusing to upload results"))?;
+    if !response.status().is_success() {
+        bail!(
+            "benchmark server health check at {ping_url} returned {}; refusing to upload results",
+            response.status()
+        );
+    }
     Ok(())
 }
 
@@ -123,7 +149,7 @@ impl TaskRunner {
         golden_src_text: &str,
         golden_db: String,
         host: Option<String>,
-    ) -> Result<()> {
+    ) -> Result<PublishedDatabase> {
         self.publish(
             PublishParams {
                 lang,
@@ -139,11 +165,11 @@ impl TaskRunner {
         .await
     }
 
-    async fn publish_llm(&self, params: PublishParams<'_>) -> Result<()> {
+    async fn publish_llm(&self, params: PublishParams<'_>) -> Result<PublishedDatabase> {
         self.publish(params, "llm").await
     }
 
-    async fn publish(&self, params: PublishParams<'_>, phase: &str) -> Result<()> {
+    async fn publish(&self, params: PublishParams<'_>, phase: &str) -> Result<PublishedDatabase> {
         let lang_name = match params.lang {
             Lang::Rust => "rust",
             Lang::CSharp => "csharp",
@@ -164,13 +190,13 @@ impl TaskRunner {
         )?;
 
         let host_url = params.host.unwrap_or_else(|| "local".to_owned());
-        match params.lang {
+        let database = match params.lang {
             Lang::Rust => publish_rust_async(self.rust_publisher, host_url, wdir, params.db_name).await?,
             Lang::CSharp => publish_cs_async(self.cs_publisher, host_url, wdir, params.db_name).await?,
             Lang::TypeScript => publish_ts_async(self.ts_publisher, host_url, wdir, params.db_name).await?,
-        }
+        };
 
-        Ok(())
+        Ok(database)
     }
 
     pub async fn run_one(&self, task: &TaskPaths, cfg: &RunContext<'_>) -> Result<RunOutcome, RunOneError> {
@@ -267,7 +293,7 @@ impl TaskRunner {
             print_llm_output(&cfg.route.display_name, &task_id, &llm_output);
         }
 
-        let publish_error: Option<String> = self
+        let publish_result = self
             .publish_llm(PublishParams {
                 lang: cfg.lang,
                 category: &category,
@@ -277,15 +303,26 @@ impl TaskRunner {
                 db_name: llm_db.clone(),
                 host: cfg.host.clone(),
             })
-            .await
-            .err()
-            .map(|e| {
+            .await;
+        let (published_database, publish_error) = match publish_result {
+            Ok(database) => (Some(database), None),
+            Err(error) => {
                 eprintln!(
-                    "⚠️ publish failed for {}/{}/{}: {e:#}",
+                    "⚠️ publish failed for {}/{}/{}: {error:#}",
                     category, task_id, cfg.route.display_name
                 );
-                format!("{:#}", e)
+                (None, Some(format!("{error:#}")))
+            }
+        };
+
+        if publish_error.is_some()
+            && let Err(error) = ensure_server_healthy(cfg.host.as_deref()).await
+        {
+            return Err(RunOneError::Infrastructure {
+                msg: format!("publish failed and the benchmark server is unavailable: {error:#}"),
+                llm_output: Some(llm_output),
             });
+        }
 
         let mut passed = 0usize;
         let mut partial_sum = 0f32;
@@ -317,6 +354,15 @@ impl TaskRunner {
                     }),
                 },
             );
+        }
+
+        if let Some(database) = published_database
+            && let Err(error) = delete_database_async(database).await
+        {
+            return Err(RunOneError::Infrastructure {
+                msg: format!("database cleanup failed for `{llm_db}`: {error:#}"),
+                llm_output: Some(llm_output),
+            });
         }
 
         let score_pct = if total_tasks == 0 {
@@ -381,7 +427,7 @@ fn partition_results(
     lang_name: &str,
     route: &ModelRoute,
     hash: &str,
-) -> (Vec<RunOutcome>, Vec<PendingRetry>) {
+) -> Result<(Vec<RunOutcome>, Vec<PendingRetry>)> {
     let mut good = Vec::new();
     let mut retry = Vec::new();
 
@@ -400,6 +446,13 @@ fn partition_results(
                     Some(llm_output),
                 ));
             }
+            Err(RunOneError::Infrastructure { msg, llm_output }) => {
+                let output_note = llm_output
+                    .as_deref()
+                    .map(|output| format!("; generated output retained in work directory ({} bytes)", output.len()))
+                    .unwrap_or_default();
+                bail!("benchmark infrastructure failure: {msg}{output_note}");
+            }
             Err(RunOneError::Other(e)) => {
                 // No output at all — provider error, retry
                 eprintln!("\u{26a0}\u{fe0f} provider error, will retry: {e:?}");
@@ -408,7 +461,7 @@ fn partition_results(
         }
     }
 
-    (good, retry)
+    Ok((good, retry))
 }
 
 fn pending_retries_to_outcomes(
@@ -532,21 +585,15 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
                     host,
                 };
 
-                let res = runner.run_one(&task, &run_cfg).await;
-                (
-                    task,
-                    res.map(|mut o| {
-                        o.started_at.get_or_insert(started);
-                        o
-                    }),
-                )
+                let result = runner.run_one(&task, &run_cfg).await;
+                task_result_or_infrastructure_error(task, result, started)
             }
         }))
         .buffer_unordered(buf)
-        .collect()
-        .await;
+        .try_collect()
+        .await?;
 
-    let (mut outcomes, mut retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash);
+    let (mut outcomes, mut retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash)?;
 
     // Retry provider-error tasks until all pass or none make progress
     const MAX_RETRY_ROUNDS: usize = 3;
@@ -586,21 +633,15 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
                         llm,
                         host,
                     };
-                    let res = runner.run_one(&task, &run_cfg).await;
-                    (
-                        task,
-                        res.map(|mut o| {
-                            o.started_at.get_or_insert(started);
-                            o
-                        }),
-                    )
+                    let result = runner.run_one(&task, &run_cfg).await;
+                    task_result_or_infrastructure_error(task, result, started)
                 }
             }))
             .buffer_unordered(buf)
-            .collect()
-            .await;
+            .try_collect()
+            .await?;
 
-        let (new_outcomes, still_failing) = partition_results(retry_results, lang_name, cfg.route, cfg.hash);
+        let (new_outcomes, still_failing) = partition_results(retry_results, lang_name, cfg.route, cfg.hash)?;
 
         if new_outcomes.is_empty() && !still_failing.is_empty() {
             // No progress — provider is likely down. Keep the failures and stop retrying.
@@ -631,6 +672,10 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
     }
 
     println!("[runner] completed batch: {} results", outcomes.len());
+
+    // A dead local server turns later publish failures into misleading zeroes.
+    // Refuse to analyze or upload any batch that cannot pass a final health check.
+    ensure_server_healthy(cfg.host.as_deref()).await?;
 
     if cfg.dry_run {
         let _ = match maybe_generate_analysis(cfg, &outcomes).await {
@@ -728,21 +773,15 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
                     host: cfg.host.clone(),
                 };
 
-                let res = runner.run_one(&task, &run_cfg).await;
-                (
-                    task,
-                    res.map(|mut o| {
-                        o.started_at.get_or_insert(started);
-                        o
-                    }),
-                )
+                let result = runner.run_one(&task, &run_cfg).await;
+                task_result_or_infrastructure_error(task, result, started)
             }
         }))
         .buffer_unordered(buf)
-        .collect()
-        .await;
+        .try_collect()
+        .await?;
 
-    let (mut outcomes, retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash);
+    let (mut outcomes, retry_tasks) = partition_results(results, lang_name, cfg.route, cfg.hash)?;
 
     // Retry provider-error tasks until all pass or none make progress
     let dropped;
@@ -785,21 +824,15 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
                             llm,
                             host,
                         };
-                        let res = runner.run_one(&task, &run_cfg).await;
-                        (
-                            task,
-                            res.map(|mut o| {
-                                o.started_at.get_or_insert(started);
-                                o
-                            }),
-                        )
+                        let result = runner.run_one(&task, &run_cfg).await;
+                        task_result_or_infrastructure_error(task, result, started)
                     }
                 }))
                 .buffer_unordered(buf)
-                .collect()
-                .await;
+                .try_collect()
+                .await?;
 
-            let (new_outcomes, still_failing) = partition_results(retry_results, lang_name, cfg.route, cfg.hash);
+            let (new_outcomes, still_failing) = partition_results(retry_results, lang_name, cfg.route, cfg.hash)?;
 
             if new_outcomes.is_empty() && !still_failing.is_empty() {
                 eprintln!(
@@ -826,6 +859,8 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
             dropped
         );
     }
+
+    ensure_server_healthy(cfg.host.as_deref()).await?;
 
     if cfg.dry_run {
         let _ = match maybe_generate_analysis(cfg, &outcomes).await {
@@ -886,7 +921,7 @@ pub async fn build_goldens_only_for_lang(
     bench_root: &Path,
     lang: Lang,
     selectors: Option<&[String]>,
-) -> Result<()> {
+) -> Result<Vec<PublishedDatabase>> {
     let tasks = if let Some(sels) = selectors {
         let wanted: HashSet<String> = sels.iter().map(|s| normalize_task_selector(s)).collect::<Result<_>>()?;
         let all = discover_tasks(bench_root)?;
@@ -922,7 +957,7 @@ pub async fn build_goldens_only_for_lang(
         _ => bench_concurrency(),
     };
 
-    stream::iter(tasks.into_iter().map(|task| {
+    let databases = stream::iter(tasks.into_iter().map(|task| {
         let runner = &runner;
         let host_clone = host.clone();
         async move {
@@ -943,7 +978,7 @@ pub async fn build_goldens_only_for_lang(
     .collect::<Result<Vec<_>>>()?;
 
     println!("✓ [{}] goldens build/publish: complete", lang_name);
-    Ok(())
+    Ok(databases)
 }
 
 fn discover_tasks(benchmarks_root: &Path) -> Result<Vec<TaskPaths>> {
