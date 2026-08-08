@@ -22,6 +22,7 @@ fn step_namespace<'a, 'def>(step: &'a AutoMigrateStep<'def>) -> Option<&'a Names
         | AutoMigrateStep::RemoveTable((ns, _))
         | AutoMigrateStep::ChangeColumns((ns, _))
         | AutoMigrateStep::ReschemaEventTable((ns, _))
+        | AutoMigrateStep::ReschemaEmptyTable((ns, _))
         | AutoMigrateStep::AddColumns((ns, _))
         | AutoMigrateStep::AddTable((ns, _))
         | AutoMigrateStep::AddSchedule((ns, _))
