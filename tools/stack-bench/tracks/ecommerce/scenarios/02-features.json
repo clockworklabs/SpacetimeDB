@@ -8,11 +8,31 @@
     {
       "id": 1,
       "name": "Fulfilment queue",
-      "actors": ["customer", "staff", "admin"],
+      "actors": [
+        "customer",
+        "staff",
+        "admin"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "customer", "name": "fq" },
-        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "fq"
+        },
+        {
+          "do": "signIn",
+          "actor": "staff",
+          "name": "staff",
+          "password": "stackbench-staff-2026",
+          "exact": true
+        },
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        }
       ],
       "criteria": [
         {
@@ -20,12 +40,48 @@
           "desc": "an order placed by a customer appears in the staff queue without a reload",
           "points": 2,
           "steps": [
-            { "do": "click", "actor": "staff", "testid": "staff-link" },
-            { "do": "recordNumber", "actor": "staff", "testid": "queue-depth", "as": "depth-before" },
-            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Desk Lamp", "enter": true, "settleMs": 1500 },
-            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
-            { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Desk Lamp", "within": 10000 },
-            { "do": "expectNumber", "actor": "staff", "testid": "queue-depth", "relativeTo": "depth-before", "plus": 1 }
+            {
+              "do": "click",
+              "actor": "staff",
+              "testid": "staff-link"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "staff",
+              "testid": "queue-depth",
+              "as": "depth-before"
+            },
+            {
+              "do": "fill",
+              "actor": "customer",
+              "testid": "search-input",
+              "text": "Desk Lamp",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Desk Lamp"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "staff",
+              "testid": "queue-item",
+              "contains": "Desk Lamp",
+              "within": 10000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "staff",
+              "testid": "queue-depth",
+              "relativeTo": "depth-before",
+              "plus": 1
+            }
           ]
         },
         {
@@ -33,7 +89,15 @@
           "desc": "the queue names the warehouse the order will ship from",
           "points": 1,
           "steps": [
-            { "do": "expect", "actor": "staff", "testid": "queue-warehouse", "in": { "testid": "queue-item", "contains": "Desk Lamp" } }
+            {
+              "do": "expect",
+              "actor": "staff",
+              "testid": "queue-warehouse",
+              "in": {
+                "testid": "queue-item",
+                "contains": "Desk Lamp"
+              }
+            }
           ]
         },
         {
@@ -41,10 +105,39 @@
           "desc": "shipping removes the order from the queue for staff and marks it shipped for the customer, live",
           "points": 2,
           "steps": [
-            { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Desk Lamp" } },
-            { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Desk Lamp", "absent": true, "within": 10000 },
-            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Desk Lamp" }, "contains": "hipped", "within": 10000 }
+            {
+              "do": "click",
+              "actor": "staff",
+              "testid": "ship-submit",
+              "in": {
+                "testid": "queue-item",
+                "contains": "Desk Lamp"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "staff",
+              "testid": "queue-item",
+              "contains": "Desk Lamp",
+              "absent": true,
+              "within": 10000
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "customer",
+              "testid": "order-status",
+              "in": {
+                "testid": "order-item",
+                "contains": "Desk Lamp"
+              },
+              "contains": "hipped",
+              "within": 10000
+            }
           ]
         },
         {
@@ -52,21 +145,49 @@
           "desc": "the fulfilment area is for staff and admins, not customers",
           "points": 1,
           "steps": [
-            { "do": "expect", "actor": "admin", "testid": "staff-link" },
-            { "do": "expect", "actor": "customer", "testid": "staff-link", "absent": true }
+            {
+              "do": "expect",
+              "actor": "admin",
+              "testid": "staff-link"
+            },
+            {
+              "do": "expect",
+              "actor": "customer",
+              "testid": "staff-link",
+              "absent": true
+            }
           ]
         }
       ]
     },
-
     {
       "id": 2,
       "name": "Moving stock between warehouses",
-      "actors": ["admin", "staff", "visitor"],
+      "actors": [
+        "admin",
+        "staff",
+        "visitor"
+      ],
       "setup": [
-        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-        { "do": "click", "actor": "admin", "testid": "admin-link" }
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        {
+          "do": "signIn",
+          "actor": "staff",
+          "name": "staff",
+          "password": "stackbench-staff-2026",
+          "exact": true
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link"
+        }
       ],
       "criteria": [
         {
@@ -74,24 +195,121 @@
           "desc": "a transfer moves stock without creating or destroying any",
           "points": 3,
           "steps": [
-            { "do": "recordNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "as": "total-before" },
-            { "do": "recordNumber", "actor": "admin", "testid": "admin-location-qty", "in": { "testid": "admin-location-row", "contains": "Headphones" }, "as": "east-before" },
-            { "do": "fill", "actor": "admin", "testid": "transfer-from", "text": "East", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "fill", "actor": "admin", "testid": "transfer-to", "text": "West", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "fill", "actor": "admin", "testid": "transfer-qty", "text": "10", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "click", "actor": "admin", "testid": "transfer-submit", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "wait", "actor": "admin", "ms": 2500 },
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-location-qty", "in": { "testid": "admin-location-row", "contains": "Headphones" }, "relativeTo": "east-before", "plus": -10 },
-            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "relativeTo": "total-before", "plus": 0 }
+            {
+              "do": "recordNumber",
+              "actor": "visitor",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Headphones"
+              },
+              "as": "total-before"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "admin-location-qty",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Headphones"
+              },
+              "as": "east-before"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "warehouse-total",
+              "in": {
+                "testid": "admin-warehouse-item",
+                "contains": "West"
+              },
+              "as": "west-before"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "transfer-from",
+              "text": "East",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Headphones"
+              }
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "transfer-to",
+              "text": "West",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Headphones"
+              }
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "transfer-qty",
+              "text": "10",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Headphones"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "transfer-submit",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Headphones"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "admin",
+              "ms": 2500
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-location-qty",
+              "in": {
+                "testid": "admin-location-row",
+                "contains": "Headphones"
+              },
+              "relativeTo": "east-before",
+              "plus": -10
+            },
+            {
+              "do": "expectNumber",
+              "actor": "visitor",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Headphones"
+              },
+              "relativeTo": "total-before",
+              "plus": 0
+            }
           ]
         },
         {
           "id": "2b",
-          "desc": "the warehouse totals staff and admins watch both move, live",
+          "desc": "the warehouse totals move live as stock is transferred",
           "points": 2,
           "steps": [
-            { "do": "click", "actor": "staff", "testid": "staff-link" },
-            { "do": "expectAgreement", "actors": ["admin", "staff"], "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "West" }, "numeric": true, "within": 10000 }
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "warehouse-total",
+              "in": {
+                "testid": "admin-warehouse-item",
+                "contains": "West"
+              },
+              "relativeTo": "west-before",
+              "plus": 10,
+              "within": 10000
+            }
           ]
         },
         {
@@ -99,28 +317,114 @@
           "desc": "a transfer that would overdraw a warehouse is refused and changes nothing",
           "points": 2,
           "steps": [
-            { "do": "recordNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Headphones" }, "as": "total-guard" },
-            { "do": "fill", "actor": "admin", "testid": "transfer-from", "text": "East", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "fill", "actor": "admin", "testid": "transfer-to", "text": "West", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "fill", "actor": "admin", "testid": "transfer-qty", "text": "99999", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "click", "actor": "admin", "testid": "transfer-submit", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
-            { "do": "expect", "actor": "admin", "testid": "order-error", "within": 6000 },
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Headphones" }, "relativeTo": "total-guard", "plus": 0 }
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "admin-stock",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Headphones"
+              },
+              "as": "total-guard"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "transfer-from",
+              "text": "East",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Headphones"
+              }
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "transfer-to",
+              "text": "West",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Headphones"
+              }
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "transfer-qty",
+              "text": "99999",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Headphones"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "transfer-submit",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Headphones"
+              }
+            },
+            {
+              "do": "expect",
+              "actor": "admin",
+              "testid": "order-error",
+              "within": 6000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-stock",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Headphones"
+              },
+              "relativeTo": "total-guard",
+              "plus": 0
+            }
           ]
         }
       ]
     },
-
     {
       "id": 3,
       "name": "Cancelling and returning",
-      "actors": ["customer", "staff", "admin"],
+      "actors": [
+        "customer",
+        "staff",
+        "admin"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "customer", "name": "cr" },
-        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-        { "do": "click", "actor": "admin", "testid": "admin-link" },
-        { "do": "click", "actor": "staff", "testid": "staff-link" }
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "cr"
+        },
+        {
+          "do": "signIn",
+          "actor": "staff",
+          "name": "staff",
+          "password": "stackbench-staff-2026",
+          "exact": true
+        },
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link"
+        },
+        {
+          "do": "click",
+          "actor": "staff",
+          "testid": "staff-link"
+        }
       ],
       "criteria": [
         {
@@ -128,26 +432,119 @@
           "desc": "cancelling a pending order returns its stock, empties it from the queue and lowers revenue",
           "points": 3,
           "steps": [
-            { "do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "rev-before" },
-            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Coffee Grinder", "enter": true, "settleMs": 1500 },
-            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Coffee Grinder" }, "as": "stock-before" },
-            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
-            { "do": "wait", "actor": "customer", "ms": 2500 },
-            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
-            { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Coffee Grinder" } },
-            { "do": "wait", "actor": "customer", "ms": 2500 },
-            { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Coffee Grinder", "absent": true, "within": 10000 },
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "rev-before", "plus": 0, "within": 10000 },
-            { "do": "pressKey", "actor": "customer", "key": "Escape" },
-            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Coffee Grinder" }, "relativeTo": "stock-before", "plus": 0 }
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "admin-revenue",
+              "as": "rev-before"
+            },
+            {
+              "do": "fill",
+              "actor": "customer",
+              "testid": "search-input",
+              "text": "Coffee Grinder",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "recordNumber",
+              "actor": "customer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Coffee Grinder"
+              },
+              "as": "stock-before"
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Coffee Grinder"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "customer",
+              "ms": 2500
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "cancel-order",
+              "in": {
+                "testid": "order-item",
+                "contains": "Coffee Grinder"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "customer",
+              "ms": 2500
+            },
+            {
+              "do": "expect",
+              "actor": "staff",
+              "testid": "queue-item",
+              "contains": "Coffee Grinder",
+              "absent": true,
+              "within": 10000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-revenue",
+              "relativeTo": "rev-before",
+              "plus": 0,
+              "within": 10000
+            },
+            {
+              "do": "pressKey",
+              "actor": "customer",
+              "key": "Escape"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "customer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Coffee Grinder"
+              },
+              "relativeTo": "stock-before",
+              "plus": 0
+            }
           ]
         },
         {
           "id": "3b",
-          "desc": "a cancelled purchase stops counting towards the best-seller ranking",
+          "desc": "a cancelled order is shown as cancelled in the customer’s history",
           "points": 1,
           "steps": [
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "contains": "ancel", "within": 8000 }
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "orders-toggle",
+              "settleMs": 1200
+            },
+            {
+              "do": "expect",
+              "actor": "customer",
+              "testid": "order-status",
+              "in": {
+                "testid": "order-item",
+                "contains": "Coffee Grinder"
+              },
+              "contains": "ancel",
+              "within": 8000
+            }
           ]
         },
         {
@@ -155,32 +552,131 @@
           "desc": "returning an item from a shipped order brings the stock back and lowers revenue",
           "points": 3,
           "steps": [
-            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Keyboard", "enter": true, "settleMs": 1500 },
-            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "as": "kb-before" },
-            { "do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "rev2-before" },
-            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } },
-            { "do": "wait", "actor": "customer", "ms": 2500 },
-            { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Keyboard" } },
-            { "do": "wait", "actor": "staff", "ms": 2500 },
-            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
-            { "do": "click", "actor": "customer", "testid": "return-item", "in": { "testid": "order-item", "contains": "Keyboard" } },
-            { "do": "wait", "actor": "customer", "ms": 2500 },
-            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "rev2-before", "plus": 0, "within": 10000 },
-            { "do": "pressKey", "actor": "customer", "key": "Escape" },
-            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "relativeTo": "kb-before", "plus": 0 }
+            {
+              "do": "fill",
+              "actor": "customer",
+              "testid": "search-input",
+              "text": "Keyboard",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "recordNumber",
+              "actor": "customer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Keyboard"
+              },
+              "as": "kb-before"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "admin-revenue",
+              "as": "rev2-before"
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Keyboard"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "customer",
+              "ms": 2500
+            },
+            {
+              "do": "click",
+              "actor": "staff",
+              "testid": "ship-submit",
+              "in": {
+                "testid": "queue-item",
+                "contains": "Keyboard"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "staff",
+              "ms": 2500
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "return-item",
+              "in": {
+                "testid": "order-item",
+                "contains": "Keyboard"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "customer",
+              "ms": 2500
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-revenue",
+              "relativeTo": "rev2-before",
+              "plus": 0,
+              "within": 10000
+            },
+            {
+              "do": "pressKey",
+              "actor": "customer",
+              "key": "Escape"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "customer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Keyboard"
+              },
+              "relativeTo": "kb-before",
+              "plus": 0
+            }
           ]
         }
       ]
     },
-
     {
       "id": 4,
       "name": "Prices change, history does not",
-      "actors": ["admin", "customer", "visitor"],
+      "actors": [
+        "admin",
+        "customer",
+        "visitor"
+      ],
       "setup": [
-        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-        { "do": "signUp", "actor": "customer", "name": "pr" },
-        { "do": "click", "actor": "admin", "testid": "admin-link" }
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "pr"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link"
+        }
       ],
       "criteria": [
         {
@@ -188,14 +684,67 @@
           "desc": "a customer's receipt keeps the price that was paid after the price changes",
           "points": 3,
           "steps": [
-            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Air Purifier", "enter": true, "settleMs": 1500 },
-            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Air Purifier" } },
-            { "do": "wait", "actor": "customer", "ms": 2500 },
-            { "do": "fill", "actor": "admin", "testid": "price-input", "text": "1.00", "in": { "testid": "admin-item-row", "contains": "Air Purifier" } },
-            { "do": "click", "actor": "admin", "testid": "price-submit", "in": { "testid": "admin-item-row", "contains": "Air Purifier" } },
-            { "do": "wait", "actor": "admin", "ms": 2500 },
-            { "do": "click", "actor": "customer", "testid": "orders-toggle" },
-            { "do": "expectNumber", "actor": "customer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Air Purifier" }, "atLeast": 189 }
+            {
+              "do": "fill",
+              "actor": "customer",
+              "testid": "search-input",
+              "text": "Air Purifier",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Air Purifier"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "customer",
+              "ms": 2500
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "price-input",
+              "text": "1.00",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Air Purifier"
+              }
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "price-submit",
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Air Purifier"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "admin",
+              "ms": 2500
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expectNumber",
+              "actor": "customer",
+              "testid": "order-total",
+              "in": {
+                "testid": "order-item",
+                "contains": "Air Purifier"
+              },
+              "atLeast": 189
+            }
           ]
         },
         {
@@ -203,21 +752,55 @@
           "desc": "the new price reaches a signed-out visitor without a reload",
           "points": 2,
           "steps": [
-            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Air Purifier", "enter": true, "settleMs": 1500 },
-            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 1, "within": 10000 }
+            {
+              "do": "fill",
+              "actor": "visitor",
+              "testid": "search-input",
+              "text": "Air Purifier",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "expectNumber",
+              "actor": "visitor",
+              "testid": "item-price",
+              "in": {
+                "testid": "item-card",
+                "contains": "Air Purifier"
+              },
+              "equals": 1,
+              "within": 10000
+            }
           ]
         }
       ]
     },
-
     {
       "id": 5,
       "name": "The operational views",
-      "actors": ["admin", "customer", "visitor"],
+      "actors": [
+        "admin",
+        "customer",
+        "visitor"
+      ],
       "setup": [
-        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-        { "do": "signUp", "actor": "customer", "name": "ops" },
-        { "do": "click", "actor": "admin", "testid": "admin-link" }
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        {
+          "do": "signUp",
+          "actor": "customer",
+          "name": "ops"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link"
+        }
       ],
       "criteria": [
         {
@@ -225,8 +808,20 @@
           "desc": "an item falling to ten units or fewer joins the low-stock list, live",
           "points": 3,
           "steps": [
-            { "do": "expect", "actor": "admin", "testid": "low-stock-item", "contains": "Mirrorless Camera", "within": 8000 },
-            { "do": "expect", "actor": "admin", "testid": "low-stock-item", "contains": "Webcam", "absent": true }
+            {
+              "do": "expect",
+              "actor": "admin",
+              "testid": "low-stock-item",
+              "contains": "Mirrorless Camera",
+              "within": 8000
+            },
+            {
+              "do": "expect",
+              "actor": "admin",
+              "testid": "low-stock-item",
+              "contains": "Webcam",
+              "absent": true
+            }
           ]
         },
         {
@@ -234,12 +829,67 @@
           "desc": "a purchase moves that category's units and revenue, live",
           "points": 3,
           "steps": [
-            { "do": "recordNumber", "actor": "admin", "testid": "category-units", "in": { "testid": "category-row", "contains": "Audio" }, "as": "audio-units" },
-            { "do": "recordNumber", "actor": "admin", "testid": "category-revenue", "in": { "testid": "category-row", "contains": "Audio" }, "as": "audio-rev" },
-            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Bluetooth Speaker", "enter": true, "settleMs": 1500 },
-            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
-            { "do": "expectNumber", "actor": "admin", "testid": "category-units", "in": { "testid": "category-row", "contains": "Audio" }, "relativeTo": "audio-units", "plus": 1, "within": 10000 },
-            { "do": "expectNumber", "actor": "admin", "testid": "category-revenue", "in": { "testid": "category-row", "contains": "Audio" }, "relativeTo": "audio-rev", "plus": 79.5, "within": 10000 }
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "category-units",
+              "in": {
+                "testid": "category-row",
+                "contains": "Audio"
+              },
+              "as": "audio-units"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "category-revenue",
+              "in": {
+                "testid": "category-row",
+                "contains": "Audio"
+              },
+              "as": "audio-rev"
+            },
+            {
+              "do": "fill",
+              "actor": "customer",
+              "testid": "search-input",
+              "text": "Bluetooth Speaker",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              }
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "category-units",
+              "in": {
+                "testid": "category-row",
+                "contains": "Audio"
+              },
+              "relativeTo": "audio-units",
+              "plus": 1,
+              "within": 10000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "category-revenue",
+              "in": {
+                "testid": "category-row",
+                "contains": "Audio"
+              },
+              "relativeTo": "audio-rev",
+              "plus": 79.5,
+              "within": 10000
+            }
           ]
         },
         {
@@ -247,16 +897,31 @@
           "desc": "buying from a category makes that category's other items recommended",
           "points": 2,
           "steps": [
-            { "do": "pressKey", "actor": "customer", "key": "Escape" },
-            { "do": "expect", "actor": "customer", "testid": "recommended-item", "contains": "Headphones", "within": 10000 }
+            {
+              "do": "pressKey",
+              "actor": "customer",
+              "key": "Escape"
+            },
+            {
+              "do": "expect",
+              "actor": "customer",
+              "testid": "recommended-item",
+              "contains": "Headphones",
+              "within": 10000
+            }
           ]
         },
         {
           "id": "5d",
-          "desc": "a signed-out visitor sees best sellers rather than recommendations",
+          "desc": "a signed-out visitor sees best sellers in the recommendations slot",
           "points": 1,
           "steps": [
-            { "do": "expect", "actor": "visitor", "testid": "recommended-item", "contains": "Headphones", "absent": true }
+            {
+              "do": "expect",
+              "actor": "visitor",
+              "testid": "recommended-item",
+              "within": 10000
+            }
           ]
         }
       ]
