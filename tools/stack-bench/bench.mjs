@@ -65,7 +65,7 @@ const SOURCE_DIRS = ['backend', 'server', 'client/src', 'client/index.html', 'cl
   // The back-office script is evidence — it is how each stack's model
   // interpreted "write the database directly", and the first run to require
   // one lost it to cleanup because it was not on this list.
-  'scripts'];
+  'scripts', 'package.json'];
 
 function snapshotSource(appDir, to) {
   rmSync(to, { recursive: true, force: true });

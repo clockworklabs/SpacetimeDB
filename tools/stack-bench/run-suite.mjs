@@ -116,7 +116,11 @@ function codeMetrics(args) {
       if (/^(node_modules|dist|\.vite|module_bindings|drizzle)$/.test(e.name)) continue;
       const p = join(dir, e.name);
       if (e.isDirectory()) walk(p, out);
-      else if (/\.(ts|tsx)$/.test(e.name)) out.push(p);
+      // JavaScript counts too: a stack-free app is under no obligation to use
+      // TypeScript, and one that wrote 17 .js and 10 .jsx files was reported as
+      // "0 server LOC in 0 files" — a lie about the measurement, not a fact
+      // about the app.
+      else if (/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(e.name)) out.push(p);
     }
     return out;
   };

@@ -44,7 +44,24 @@ case "$BACKEND" in
       sleep 3
     fi
     [ "$MODE" = "stop" ] && exit 0
-    ( cd "$APP_DIR/server" && PORT="$PORT" nohup npm run dev < /dev/null > "/tmp/restart-$BACKEND-$PORT.log" 2>&1 & )
+    # Where the server lives is a prescribed-stack assumption. A stack-free app
+    # put package.json at the app root with only src/ under server/, so
+    # `cd server && npm run dev` found no package.json, the restart timed out,
+    # and grading aborted. Start from the directory that actually declares a
+    # start script, preferring the conventional one when it is there.
+    SERVER_DIR=""
+    for d in "$APP_DIR/server" "$APP_DIR"; do
+      [ -f "$d/package.json" ] && { SERVER_DIR="$d"; break; }
+    done
+    if [ -z "$SERVER_DIR" ]; then
+      echo "no package.json in $APP_DIR/server or $APP_DIR — cannot restart this app" >&2
+      exit 2
+    fi
+    # `dev` is the conventional script; fall back to `start` if the app named it
+    # that way. Anything else and the app has not made itself restartable.
+    SCRIPT=dev
+    node -e "process.exit(require('$SERVER_DIR/package.json').scripts?.dev?0:1)" 2>/dev/null || SCRIPT=start
+    ( cd "$SERVER_DIR" && PORT="$PORT" nohup npm run "$SCRIPT" < /dev/null > "/tmp/restart-$BACKEND-$PORT.log" 2>&1 & )
     wait_for "http://localhost:$PORT$PROBE" 180
     echo "Express on :$PORT is back"
     ;;
