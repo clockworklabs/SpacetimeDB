@@ -138,6 +138,22 @@ impl Locking {
         Replay::new(self.database_identity, committed_state, progress, error_behavior)
     }
 
+    /// Reserve the first transaction offset for the durable system-schema
+    /// bootstrap record.
+    ///
+    /// The bootstrap record describes rows already installed by
+    /// [`Self::bootstrap`], so this only advances the offset counter. Returns
+    /// `None` if any transaction has already consumed an offset.
+    pub fn reserve_system_schema_bootstrap_tx_offset(&self) -> Option<TxOffset> {
+        let mut committed_state = self.committed_state.write();
+        if committed_state.next_tx_offset == 0 {
+            committed_state.next_tx_offset = 1;
+            Some(0)
+        } else {
+            None
+        }
+    }
+
     /// Construct a new [`Locking`] datastore containing the state stored in `snapshot`.
     ///
     /// - Construct all the tables referenced by `snapshot`, computing their schemas

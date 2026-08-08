@@ -233,6 +233,70 @@ pub fn system_tables() -> [TableSchema; 20] {
     ]
 }
 
+/// Return the rows which describe the built-in system table schemas.
+///
+/// These rows are inserted directly into committed state by
+/// `CommittedState::bootstrap_system_tables`. Durable databases also write
+/// them into the commit log before the first ordinary transaction so replay
+/// from offset 0 can learn about system tables which are newer than the replay
+/// binary's built-in catalog.
+pub fn system_table_schema_rows() -> Vec<(TableId, ProductValue)> {
+    let schemas = system_tables();
+    let mut rows = Vec::new();
+
+    for schema in &schemas {
+        rows.push((
+            ST_TABLE_ID,
+            ProductValue::from(StTableRow {
+                table_id: schema.table_id,
+                table_name: schema.table_name.clone(),
+                table_type: StTableType::System,
+                table_access: schema.table_access,
+                table_primary_key: schema.primary_key.map(Into::into),
+            }),
+        ));
+    }
+
+    for col in schemas.iter().flat_map(|schema| schema.columns()).cloned() {
+        rows.push((ST_COLUMN_ID, ProductValue::from(StColumnRow::from(col))));
+    }
+
+    for constraint in schemas.iter().flat_map(|schema| &schema.constraints) {
+        rows.push((
+            ST_CONSTRAINT_ID,
+            ProductValue::from(StConstraintRow {
+                constraint_id: constraint.constraint_id,
+                constraint_name: constraint.constraint_name.clone(),
+                table_id: constraint.table_id,
+                constraint_data: constraint.data.clone().into(),
+            }),
+        ));
+    }
+
+    for index in schemas.iter().flat_map(|schema| &schema.indexes).cloned() {
+        rows.push((ST_INDEX_ID, ProductValue::from(StIndexRow::from(index))));
+    }
+
+    for seq in schemas.iter().flat_map(|schema| &schema.sequences) {
+        rows.push((
+            ST_SEQUENCE_ID,
+            ProductValue::from(StSequenceRow {
+                sequence_id: seq.sequence_id,
+                sequence_name: seq.sequence_name.clone(),
+                table_id: seq.table_id,
+                col_pos: seq.col_pos,
+                increment: seq.increment,
+                min_value: seq.min_value,
+                max_value: seq.max_value,
+                start: seq.start,
+                allocated: seq.start - 1,
+            }),
+        ));
+    }
+
+    rows
+}
+
 /// Types that represent the fields / columns of a system table.
 pub trait StFields: Copy + Sized {
     /// Returns the column position of the system table field.

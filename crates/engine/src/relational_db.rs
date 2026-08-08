@@ -7,6 +7,7 @@ use crate::util::asyncify;
 use crate::MetricsRecorderQueue;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
+use spacetimedb_commitlog::payload::txdata::{Mutations, Ops};
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::HashSet;
@@ -21,7 +22,7 @@ use spacetimedb_datastore::locking_tx_datastore::{
     ApplyHistoryCounters, IndexScanPointOrRange, MutTxId, TxId, ViewCallInfo,
 };
 use spacetimedb_datastore::system_tables::{
-    system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
+    system_table_schema_rows, system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
 };
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
@@ -36,7 +37,7 @@ use spacetimedb_datastore::{
     traits::TxData,
 };
 use spacetimedb_durability::local::LocalHistory;
-use spacetimedb_durability::{self as durability, History};
+use spacetimedb_durability::{self as durability, History, Transaction};
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
@@ -337,6 +338,8 @@ impl RelationalDB {
             persistence,
             metrics_recorder_queue,
         );
+        // This will just no op if the commitlog is not empty.
+        db.persist_system_table_schemas_to_empty_commitlog();
         db.migrate_system_tables()?;
 
         if let Some(meta) = db.metadata()? {
@@ -414,6 +417,56 @@ impl RelationalDB {
         let _ = self.commit_tx(tx)?;
         self.inner.assert_system_tables_match()?;
         Ok(())
+    }
+
+    /// If we have a durability layer, and we have no commits yet, persist the
+    /// system table schemas to the commitlog, so that replay will be aware of them.
+    /// This ensures that we can add new system tables while being able to roll back
+    /// to previous code versions before the new system tables were added.
+    ///
+    /// Persist the built-in system table schema rows before the first ordinary
+    /// transaction in a new durable database.
+    ///
+    /// [`Locking::bootstrap`] has already installed these rows in memory
+    /// outside a transaction. This method writes a synthetic durable
+    /// transaction for that already-applied state, so replay from offset 0 can
+    /// learn the schemas of system tables which are newer than the replaying
+    /// binary. Existing databases are left alone because offset 0 has already
+    /// been consumed.
+    fn persist_system_table_schemas_to_empty_commitlog(&self) {
+        let Some(durability) = &self.durability else {
+            return;
+        };
+        let Some(tx_offset) = self.inner.reserve_system_schema_bootstrap_tx_offset() else {
+            return;
+        };
+
+        let mut rows_by_table = std::collections::BTreeMap::<_, Vec<_>>::new();
+        for (table_id, row) in system_table_schema_rows() {
+            rows_by_table.entry(table_id).or_default().push(row);
+        }
+        let inserts: Box<[_]> = rows_by_table
+            .into_iter()
+            .map(|(table_id, rows)| Ops {
+                table_id,
+                rowdata: rows.into(),
+            })
+            .collect();
+
+        let txdata = Txdata {
+            inputs: None,
+            outputs: None,
+            mutations: Some(Mutations {
+                inserts,
+                deletes: Box::new([]),
+                truncates: Box::new([]),
+            }),
+        };
+
+        durability.append_tx(Box::new(move || Transaction {
+            offset: tx_offset,
+            txdata,
+        }));
     }
 
     /// Mark the database as initialized with the given module parameters.
@@ -2399,6 +2452,7 @@ mod tests {
     #![allow(clippy::disallowed_macros)]
 
     use std::cell::RefCell;
+    use std::collections::BTreeMap;
     use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::rc::Rc;
@@ -2417,10 +2471,11 @@ mod tests {
     use spacetimedb_datastore::execution_context::ReducerContext;
     use spacetimedb_datastore::locking_tx_datastore::ViewInstanceArgs;
     use spacetimedb_datastore::system_tables::{
-        system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
-        ST_SEQUENCE_ID, ST_TABLE_ID,
+        system_table_schema_rows, system_tables, AlgebraicTypeViaBytes, StColumnRow, StConstraintRow, StIndexRow,
+        StSequenceRow, StTableRow, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
     };
     use spacetimedb_fs_utils::compression::CompressType;
+    use spacetimedb_lib::db::auth::StTableType;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
@@ -2429,6 +2484,7 @@ mod tests {
     use spacetimedb_paths::FromPathUnchecked;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
+    use spacetimedb_schema::identifier::Identifier;
     use spacetimedb_schema::schema::RowLevelSecuritySchema;
     use spacetimedb_snapshot::CompressionStats;
     #[cfg(unix)]
@@ -3519,6 +3575,8 @@ mod tests {
             inputs: Vec<txdata::Inputs>,
             // The number of transactions seen during traversal of the log.
             num_txs: usize,
+            current_tx_offset: Option<u64>,
+            saw_system_schema_bootstrap: bool,
             // System tables, needed to be able to consume transaction records.
             sys: IntMap<TableId, ProductType>,
             // The table created above, needed to be able to consume transaction
@@ -3538,6 +3596,9 @@ mod tests {
                 let ty = self.sys.get(&table_id).unwrap_or(&self.row_ty);
                 let row = ProductValue::decode(ty, reader)?;
                 log::debug!("insert: {table_id} {row:?}");
+                if self.current_tx_offset == Some(0) && table_id == ST_TABLE_ID {
+                    self.saw_system_schema_bootstrap = true;
+                }
                 Ok(())
             }
 
@@ -3573,6 +3634,7 @@ mod tests {
 
             fn visit_tx_start(&mut self, offset: u64) -> Result<(), Self::Error> {
                 log::debug!("tx start: {offset}");
+                self.current_tx_offset = Some(offset);
                 self.num_txs += 1;
                 Ok(())
             }
@@ -3622,6 +3684,8 @@ mod tests {
         let inputs = Rc::new(RefCell::new(Inputs {
             inputs: Vec::new(),
             num_txs: 0,
+            current_tx_offset: None,
+            saw_system_schema_bootstrap: false,
             sys: system_tables()
                 .into_iter()
                 .map(|schema| (schema.table_id, schema.into_row_type()))
@@ -3640,13 +3704,15 @@ mod tests {
         let inputs = Rc::into_inner(inputs).unwrap().into_inner();
         log::debug!("collected inputs: {:?}", inputs.inputs);
 
-        // We should've seen four transactions:
+        // We should've seen five transactions:
         //
+        // - the synthetic tx which persists the built-in system table schemas
         // - the internal tx which initializes `st_module`
         // - three non-empty transactions here
         //
         // The empty transaction should've been ignored.
-        assert_eq!(inputs.num_txs, 4);
+        assert_eq!(inputs.num_txs, 5);
+        assert!(inputs.saw_system_schema_bootstrap);
         // Two of the transactions should yield inputs.
         assert_eq!(inputs.inputs.len(), 2);
 
@@ -3672,6 +3738,217 @@ mod tests {
             assert_eq!(caller_connection_id, ConnectionId::ZERO);
             assert_eq!(reducer_timestamp, timestamp);
         }
+    }
+
+    fn durable_commitlog_inserts_by_offset(stdb: TestDB) -> BTreeMap<u64, BTreeMap<TableId, Vec<ProductValue>>> {
+        struct InsertsByOffset {
+            rows: BTreeMap<u64, BTreeMap<TableId, Vec<ProductValue>>>,
+            current_tx_offset: Option<u64>,
+            sys: IntMap<TableId, ProductType>,
+        }
+
+        impl txdata::Visitor for InsertsByOffset {
+            type Row = ProductValue;
+            type Error = anyhow::Error;
+
+            fn visit_insert<'a, R: BufReader<'a>>(
+                &mut self,
+                table_id: TableId,
+                reader: &mut R,
+            ) -> Result<Self::Row, Self::Error> {
+                let ty = self
+                    .sys
+                    .get(&table_id)
+                    .with_context(|| format!("no test decoder schema for table {table_id}"))?;
+                let row = ProductValue::decode(ty, reader)?;
+                let tx_offset = self.current_tx_offset.expect("visit_insert called outside a tx");
+                self.rows
+                    .entry(tx_offset)
+                    .or_default()
+                    .entry(table_id)
+                    .or_default()
+                    .push(row.clone());
+                Ok(row)
+            }
+
+            fn visit_delete<'a, R: BufReader<'a>>(
+                &mut self,
+                table_id: TableId,
+                reader: &mut R,
+            ) -> Result<Self::Row, Self::Error> {
+                let ty = self
+                    .sys
+                    .get(&table_id)
+                    .with_context(|| format!("no test decoder schema for table {table_id}"))?;
+                Ok(ProductValue::decode(ty, reader)?)
+            }
+
+            fn skip_row<'a, R: BufReader<'a>>(&mut self, table_id: TableId, reader: &mut R) -> Result<(), Self::Error> {
+                let ty = self
+                    .sys
+                    .get(&table_id)
+                    .with_context(|| format!("no test decoder schema for table {table_id}"))?;
+                ProductValue::decode(ty, reader).map(drop).map_err(Into::into)
+            }
+
+            fn visit_tx_start(&mut self, offset: u64) -> Result<(), Self::Error> {
+                self.current_tx_offset = Some(offset);
+                Ok(())
+            }
+        }
+
+        struct Decoder(Rc<RefCell<InsertsByOffset>>);
+
+        impl spacetimedb_commitlog::Decoder for Decoder {
+            type Record = txdata::Txdata<ProductValue>;
+            type Error = txdata::DecoderError<anyhow::Error>;
+
+            fn decode_record<'a, R: BufReader<'a>>(
+                &self,
+                version: u8,
+                tx_offset: u64,
+                reader: &mut R,
+            ) -> Result<Self::Record, Self::Error> {
+                txdata::decode_record_fn(&mut *self.0.borrow_mut(), version, tx_offset, reader)
+            }
+
+            fn skip_record<'a, R: BufReader<'a>>(
+                &self,
+                version: u8,
+                _tx_offset: u64,
+                reader: &mut R,
+            ) -> Result<(), Self::Error> {
+                txdata::skip_record_fn(&mut *self.0.borrow_mut(), version, reader)
+            }
+        }
+
+        let replica_dir = {
+            let (db, _, rt, dir) = stdb.into_parts();
+            let rt = rt.expect("Durable TestDB must have a runtime");
+            rt.block_on(db.shutdown()).expect("should have durable offset");
+            drop(db);
+            dir.expect("Durable TestDB must have a database directory")
+        };
+
+        let rows = Rc::new(RefCell::new(InsertsByOffset {
+            rows: BTreeMap::new(),
+            current_tx_offset: None,
+            sys: system_tables()
+                .into_iter()
+                .map(|schema| (schema.table_id, schema.into_row_type()))
+                .collect(),
+        }));
+        {
+            let clog = Commitlog::<()>::open(replica_dir.commit_log(), Default::default(), None)
+                .expect("failed to open commitlog");
+            clog.fold_transactions(Decoder(Rc::clone(&rows))).unwrap();
+        }
+        drop(replica_dir);
+
+        Rc::into_inner(rows).unwrap().into_inner().rows
+    }
+
+    #[test]
+    fn new_database_commitlog_starts_with_system_schema_bootstrap() -> ResultTest<()> {
+        let stdb = TestDB::durable_without_snapshot_repo()?;
+        let rows_by_offset = durable_commitlog_inserts_by_offset(stdb);
+
+        let bootstrap_rows = rows_by_offset
+            .get(&0)
+            .expect("offset 0 should contain the bootstrap tx");
+        let expected = system_table_schema_rows().into_iter().fold(
+            BTreeMap::<TableId, Vec<ProductValue>>::new(),
+            |mut rows, (table_id, row)| {
+                rows.entry(table_id).or_default().push(row);
+                rows
+            },
+        );
+
+        assert_eq!(bootstrap_rows, &expected);
+        let mut expected_table_ids = vec![ST_TABLE_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SEQUENCE_ID];
+        expected_table_ids.sort();
+        assert_eq!(bootstrap_rows.keys().copied().collect::<Vec<_>>(), expected_table_ids);
+        Ok(())
+    }
+
+    #[test]
+    fn reopening_new_database_does_not_append_system_schema_bootstrap_again() -> ResultTest<()> {
+        let stdb = TestDB::durable_without_snapshot_repo()?.reopen()?.reopen()?;
+        let rows_by_offset = durable_commitlog_inserts_by_offset(stdb);
+
+        let bootstrap_offsets = rows_by_offset
+            .iter()
+            .filter(|(_, rows)| rows.contains_key(&ST_TABLE_ID))
+            .map(|(offset, _)| *offset)
+            .collect::<Vec<_>>();
+        assert_eq!(bootstrap_offsets, vec![0]);
+        Ok(())
+    }
+
+    #[test]
+    fn replay_from_commitlog_preserves_unknown_future_system_table() -> ResultTest<()> {
+        let highest_id = system_tables().iter().map(|schema| schema.table_id).max().unwrap();
+        let future_table_id = TableId(highest_id.0 + 1);
+        assert!(system_tables().iter().all(|schema| schema.table_id != future_table_id));
+
+        let future_table_row = StTableRow {
+            table_id: future_table_id,
+            table_name: TableName::for_test("st_future"),
+            table_type: StTableType::System,
+            table_access: StAccess::Private,
+            table_primary_key: None,
+        };
+        let future_column_row = StColumnRow {
+            table_id: future_table_id,
+            col_pos: ColId(0),
+            col_name: Identifier::for_test("value"),
+            col_type: AlgebraicTypeViaBytes(AlgebraicType::U32),
+        };
+        let future_row = product![42u32];
+
+        // Add the new table in the first commit, then add a row to it in the second commit.
+        let history = TestHistory::from_txes([
+            Txdata {
+                inputs: None,
+                outputs: None,
+                mutations: Some(txdata::Mutations {
+                    inserts: Box::new([
+                        txdata::Ops {
+                            table_id: ST_TABLE_ID,
+                            rowdata: Arc::new([future_table_row.into()]),
+                        },
+                        txdata::Ops {
+                            table_id: ST_COLUMN_ID,
+                            rowdata: Arc::new([future_column_row.into()]),
+                        },
+                    ]),
+                    deletes: Box::new([]),
+                    truncates: Box::new([]),
+                }),
+            },
+            Txdata {
+                inputs: None,
+                outputs: None,
+                mutations: Some(txdata::Mutations {
+                    inserts: Box::new([txdata::Ops {
+                        table_id: future_table_id,
+                        rowdata: Arc::new([future_row.clone()]),
+                    }]),
+                    deletes: Box::new([]),
+                    truncates: Box::new([]),
+                }),
+            },
+        ]);
+
+        let stdb = TestDB::in_memory_with_history(history, 0)?;
+        let tx = begin_tx(&stdb);
+        let rows = stdb
+            .iter(&tx, future_table_id)?
+            .map(|row_ref| row_ref.to_product_value())
+            .collect::<Vec<_>>();
+        assert_eq!(rows, vec![future_row]);
+        let _ = stdb.release_tx(tx);
+        Ok(())
     }
 
     /// This tests that we are able to correctly replay mutations to system tables,
@@ -3791,11 +4068,11 @@ mod tests {
         );
         let mut offsets = repo.all_snapshots()?.collect::<Vec<_>>();
         offsets.sort();
-        assert_eq!(&offsets, &[1, 2, 3]);
+        assert_eq!(&offsets, &[2, 3, 4]);
         // Simulate we take except the last snapshot
-        let last_compress = 2;
+        let last_compress = 3;
         let mut stats = CompressionStats::default();
-        repo.compress_snapshots(&mut stats, ..3)?;
+        repo.compress_snapshots(&mut stats, ..4)?;
         assert_eq!(stats.compressed(), 2);
         let size_compress_on = repo.size_on_disk()?;
         assert!(size_compress_on.total_size < size_compress_off.total_size);
