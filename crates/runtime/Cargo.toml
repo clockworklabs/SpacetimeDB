@@ -11,11 +11,17 @@ workspace = true
 
 [dependencies]
 tokio.workspace = true
-spacetimedb-runtime-core = { workspace = true, optional = true }
-libc = { version = "0.2", optional = true }
+spacetimedb-runtime-core = { workspace = true }
+static_assertions = "1.1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 futures.workspace = true
 
 [features]
-simulation = ["dep:spacetimedb-runtime-core", "spacetimedb-runtime-core/sim", "dep:libc"]
+simulation = ["spacetimedb-runtime-core/sim"]
