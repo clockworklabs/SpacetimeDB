@@ -1,9 +1,9 @@
 /crates/core/src/db/datastore/traits.rs @cloutiertyler
 /rust-toolchain.toml @cloutiertyler
-LICENSE @cloutiertyler
-LICENSE.txt @cloutiertyler
+LICENSE @cloutiertyler @jdetter
+LICENSE.txt @cloutiertyler @jdetter
 /LICENSE.txt @cloutiertyler @jdetter
-/licenses/ @cloutiertyler
+/licenses/ @cloutiertyler @jdetter
 /crates/client-api-messages/src/websocket.rs @centril @gefjon
 
 /crates/cli/src/ @bfops @cloutiertyler @jdetter
