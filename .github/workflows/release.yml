@@ -442,7 +442,6 @@ jobs:
         run: cargo-release release github-release ${{ github.event.inputs.release_tag }}
 
       - name: Trigger release notifications
-        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ github.event.inputs.release_tag }}
