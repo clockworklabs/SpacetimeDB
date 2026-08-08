@@ -106,7 +106,15 @@ const dbUrl = (backend, runIndex, dbPort, track) =>
 // Per-run databases must exist before the app connects, or the agent will go
 // looking for one that does — which has led to apps silently using a foreign
 // instance.
-function ensureDatabase(backend, runIndex, dbPort, track) {
+//
+// A `build` also WIPES it, schema included. The between-suite reset truncates,
+// because the app is running and its tables must survive; that left one run's
+// schema in place for the next, and a build opened on another app's tables —
+// "different column names like `qty` instead of `quantity`, missing columns,
+// extra tables". It spent real turns diagnosing and clearing someone else's
+// leftovers, and those turns land in the cost figure this benchmark exists to
+// measure. Mongo already dropped its whole database; postgres only truncated.
+function ensureDatabase(backend, runIndex, dbPort, track, wipe = false) {
   const name = dbName(track, runIndex);
   if (backend === 'postgres') {
     const container = process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres';
@@ -114,8 +122,37 @@ function ensureDatabase(backend, runIndex, dbPort, track) {
       execFileSync('docker', ['exec', container, 'psql', '-U', 'stackbench', '-d', 'postgres',
         '-c', `CREATE DATABASE ${name} OWNER stackbench;`], { stdio: 'pipe' });
     } catch { /* already exists */ }
+    if (wipe) {
+      try {
+        execFileSync('docker', ['exec', container, 'psql', '-U', 'stackbench', '-d', name,
+          '-c', 'DROP SCHEMA public CASCADE; CREATE SCHEMA public; '
+              + 'GRANT ALL ON SCHEMA public TO stackbench;'], { stdio: 'pipe' });
+        console.error(`  wiped ${name} (schema dropped) — a build starts on an empty database`);
+      } catch (e) {
+        console.error(`  WARNING: could not wipe ${name}: ${String(e.message).split('\n')[0]}`);
+      }
+    }
+  } else if (backend === 'spacetime' && wipe) {
+    // A published module survives a run. If the next build's schema is not
+    // compatible with it, publish aborts demanding manual migration or
+    // --delete-data — friction this benchmark has recorded and charged to
+    // SpacetimeDB, when the cause was our own leftovers. Delete the module so
+    // a build starts against nothing at all.
+    try {
+      execFileSync(STDB_BIN, ['delete', moduleName(track, runIndex), '-s', STDB_URI, '-y'],
+        { stdio: 'pipe' });
+      console.error(`  deleted module ${moduleName(track, runIndex)} — a build starts with none published`);
+    } catch { /* not published is the desired state */ }
+  } else if (backend === 'mongodb' && wipe) {
+    const container = process.env.MONGO_CONTAINER ?? 'stack-bench-mongodb';
+    try {
+      execFileSync('docker', ['exec', container, 'mongosh', name, '--quiet',
+        '--eval', 'db.dropDatabase()'], { stdio: 'pipe' });
+      console.error(`  wiped ${name} — a build starts on an empty database`);
+    } catch (e) {
+      console.error(`  WARNING: could not wipe ${name}: ${String(e.message).split('\n')[0]}`);
+    }
   }
-  // Mongo creates databases on first write.
   return name;
 }
 
@@ -268,7 +305,12 @@ async function main() {
   // touching the app directory. The regression gate for harness changes is a
   // diff of this against a saved copy.
   if (args.printPrompt) { process.stdout.write(buildPrompt(args, p, track)); return; }
-  if (p.dbPort) ensureDatabase(args.backend, args.runIndex, p.dbPort, track);
+  // Only a build wipes: an upgrade or a fix must find the data the previous
+  // level left, which is the whole point of a cumulative ladder.
+  // Called for every backend, not just those with a dbPort: spacetime has no
+  // database port and would have skipped the pre-build wipe entirely, which is
+  // exactly the backend whose leftover module causes the migration abort.
+  ensureDatabase(args.backend, args.runIndex, p.dbPort, track, args.mode === 'build');
   // `build` means from scratch. Leaving a previous app in place lets the agent
   // inherit code — and a stale BUG_REPORT.md — from a run that has nothing to do
   // with this one.

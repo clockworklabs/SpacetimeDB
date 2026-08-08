@@ -32,12 +32,35 @@
 //                        [--compare postgres-ecom-run0,mongodb-ecom-run0]
 //                        [--source <dir>] [--model claude-sonnet-5] [--print]
 
-import { readFileSync, readdirSync, existsSync, appendFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, appendFileSync, statSync, openSync as fsOpenSync, closeSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+
+// Concurrent runs append here: n=5 isolated trials all write one friction
+// record, and interleaved appends can split an entry down the middle. An
+// exclusive-create lock serialises them; a stale lock older than a minute is
+// broken rather than deadlocking a benchmark run over a log file.
+function appendLocked(file, text) {
+  const lock = file + '.lock';
+  for (let i = 0; i < 120; i++) {
+    try {
+      const fd = fsOpenSync(lock, 'wx');
+      try { appendFileSync(file, text); } finally { closeSync(fd); rmSync(lock, { force: true }); }
+      return;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > 60000) rmSync(lock, { force: true });
+      } catch { /* someone else cleared it */ }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+    }
+  }
+  appendFileSync(file, text);   // lock never freed: a garbled entry beats a lost one
+}
+
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d : process.argv[i + 1]; };
 
 const label = arg('--label');
@@ -228,5 +251,5 @@ lines.push('');
 
 const body = lines.join('\n');
 if (process.argv.includes('--print')) { console.log(body); process.exit(0); }
-appendFileSync(OUT, body);
+appendLocked(OUT, body);
 console.log(`  behavioural review appended to ${OUT} (${verified.length} verified, ${rejected.length} discarded)`);
