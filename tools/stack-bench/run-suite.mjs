@@ -73,18 +73,43 @@ const EXPECTED_DB_PORT = { postgres: '6532', mongodb: '6537' };
 function checkDatabaseProvenance(args) {
   const expected = EXPECTED_DB_PORT[args.backend];
   if (!expected) return { ok: true, reason: 'no external database for this backend' };
-  const envPath = join(args.app, 'server', '.env');
-  if (!existsSync(envPath)) return { ok: false, reason: 'server/.env not found' };
-  const url = (readFileSync(envPath, 'utf8').match(/DATABASE_URL=(.*)/) || [])[1]?.trim() ?? '';
-  const ok = url.includes(`:${expected}/`);
-  return { ok, url, reason: ok ? 'ok' : `app targets ${url} but the benchmark database is on port ${expected}` };
+  // Under `--guidance minimal` the model chooses its own layout, so server/.env
+  // is a prescribed-stack assumption. Hard-coding it aborted every minimal run
+  // with "WRONG DATABASE" on apps whose connection string was simply somewhere
+  // else. Search the app for the connection string instead of dictating where
+  // it lives; the check is that the app targets the benchmark's database, not
+  // that it stores the URL in a particular file.
+  const urls = [];
+  const walk = dir => {
+    if (!existsSync(dir)) return;
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (/^(node_modules|dist|\.vite|\.git|module_bindings)$/.test(e.name)) continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      if (!/\.(env|ts|tsx|js|mjs|json|yaml|yml)$|^\.env/.test(e.name)) continue;
+      try {
+        const m = readFileSync(p, 'utf8').match(/(postgresql|postgres|mongodb(\+srv)?):\/\/[^\s'"`]+/g);
+        if (m) urls.push(...m);
+      } catch { /* unreadable file proves nothing */ }
+    }
+  };
+  walk(args.app);
+  if (!urls.length) return { ok: false, reason: 'no database connection string found anywhere in the app' };
+  const ok = urls.some(u => u.includes(`:${expected}/`));
+  return { ok, url: urls[0],
+    reason: ok ? 'ok' : `app targets ${urls[0]} but the benchmark database is on port ${expected}` };
 }
 
 // Same features for less code is a structural property of the platform, not a
 // property of the model that happened to write it — unlike build cost, which
 // inverted between Sonnet 4.6 and Sonnet 5.
 function codeMetrics(args) {
-  const SERVER_DIR = { spacetime: 'backend', postgres: 'server', mongodb: 'server' }[args.backend] ?? 'server';
+  // Also a prescribed-stack assumption: under minimal guidance an app may put
+  // its server anywhere, and a missing `server/` reported 0 LOC in 0 files
+  // rather than admitting it had not found the code. Fall back to everything
+  // outside the client when the conventional directory is absent.
+  const conventional = { spacetime: 'backend', postgres: 'server', mongodb: 'server' }[args.backend] ?? 'server';
+  const SERVER_DIR = existsSync(join(args.app, conventional)) ? conventional : '.';
   const walk = (dir, out = []) => {
     if (!existsSync(dir)) return out;
     for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -96,8 +121,13 @@ function codeMetrics(args) {
     return out;
   };
   const count = files => files.reduce((n, f) => n + readFileSync(f, 'utf8').split('\n').length, 0);
-  const serverFiles = walk(join(args.app, SERVER_DIR));
+  // With no conventional server directory, "server" is everything that is not
+  // the client — otherwise the fallback counts the client twice and serverLoc
+  // equals totalLoc, which reads as a much larger backend than was written.
   const allFiles = walk(args.app);
+  const serverFiles = SERVER_DIR === '.'
+    ? allFiles.filter(f => !/[\\/]client[\\/]/.test(f))
+    : walk(join(args.app, SERVER_DIR));
 
   let deps = 0;
   for (const pj of ['package.json', join(SERVER_DIR, 'package.json'), 'client/package.json']) {
