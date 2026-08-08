@@ -686,7 +686,7 @@ SPACETIMEDB_PROCEDURE(uint32_t, fetch_external_data, ProcedureContext ctx, Fetch
 
 // From a reducer, schedule the procedure by inserting into the schedule table
 SPACETIMEDB_REDUCER(queue_fetch, ReducerContext ctx, std::string url) {
-    auto scheduled_at = ScheduleAt(TimeDuration::from_seconds(0));  // Run immediately
+    auto scheduled_at = ScheduleAt::interval(TimeDuration::from_seconds(0));  // Run immediately
     FetchSchedule fetch_task{
         0,                // scheduled_id - auto-increment will assign
         scheduled_at,     // When to execute
