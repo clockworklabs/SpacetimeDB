@@ -288,6 +288,10 @@ pub enum AutoMigrateStep<'def> {
     /// Validated at execution time: fails if the table contains data.
     RemoveTable(<TableDef as ModuleDefLookup>::Key<'def>),
 
+    /// Change the module source name stored as an index alias without changing
+    /// the index's canonical name, accessor, columns, or algorithm.
+    ChangeIndexSourceName(<IndexDef as ModuleDefLookup>::Key<'def>),
+
     /// Change the column types of a table, in a layout compatible way.
     ChangeColumns(<TableDef as ModuleDefLookup>::Key<'def>),
 
@@ -1128,6 +1132,8 @@ fn auto_migrate_indexes<'def>(
                 if old_idx.algorithm != new_idx.algorithm {
                     plan.steps.push(AutoMigrateStep::RemoveIndex(index_key));
                     plan.steps.push(AutoMigrateStep::AddIndex(index_key));
+                } else if old_idx.source_name != new_idx.source_name {
+                    plan.steps.push(AutoMigrateStep::ChangeIndexSourceName(index_key));
                 }
                 Ok(())
             }
@@ -1610,6 +1616,44 @@ mod tests {
 
         assert!(steps.contains(&AutoMigrateStep::RemoveView(my_view)), "{steps:?}");
         assert!(steps.contains(&AutoMigrateStep::AddView(my_view)), "{steps:?}");
+    }
+
+    #[test]
+    fn changing_an_index_source_name_rebuilds_its_stored_alias() {
+        fn module_def(index_source_name: &'static str) -> ModuleDef {
+            create_module_def_v10(|builder| {
+                builder
+                    .build_table_with_new_type("buildSession", ProductType::from([("id", AlgebraicType::U64)]), true)
+                    .with_index(btree(0), index_source_name, "id")
+                    .finish();
+
+                let mut explicit = ExplicitNames::default();
+                explicit.insert_table("buildSession", "build_session");
+                builder.add_explicit_names(explicit);
+            })
+        }
+
+        let old = module_def("buildSession_id_idx_btree");
+        let new = module_def("build_session_id_idx_btree");
+        let old_index = old
+            .all_tables_with_prefix()
+            .into_iter()
+            .flat_map(|(_, _, table)| table.indexes.values())
+            .next()
+            .expect("old module should contain an index");
+        let new_index = new
+            .all_tables_with_prefix()
+            .into_iter()
+            .flat_map(|(_, _, table)| table.indexes.values())
+            .next()
+            .expect("new module should contain an index");
+
+        assert_eq!(old_index.key(), new_index.key());
+        assert_ne!(old_index.source_name, new_index.source_name);
+
+        let index_key = old_index.key();
+        let plan = ponder_auto_migrate(&old, &new).expect("source-name migration should succeed");
+        assert_eq!(plan.steps, vec![AutoMigrateStep::ChangeIndexSourceName(index_key)]);
     }
 
     #[test]

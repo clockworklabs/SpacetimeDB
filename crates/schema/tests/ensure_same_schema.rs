@@ -29,6 +29,7 @@ fn step_namespace<'a, 'def>(step: &'a AutoMigrateStep<'def>) -> Option<&'a Names
         | AutoMigrateStep::ChangeAccess((ns, _))
         | AutoMigrateStep::ChangePrimaryKey((ns, _))
         | AutoMigrateStep::UpdateView((ns, _))
+        | AutoMigrateStep::ChangeIndexSourceName((ns, _))
         | AutoMigrateStep::RemoveIndex((ns, _))
         | AutoMigrateStep::RemoveConstraint((ns, _))
         | AutoMigrateStep::RemoveSequence((ns, _))
@@ -58,6 +59,11 @@ fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &
             AutoMigrateStep::AddRowLevelSecurity(_) | AutoMigrateStep::RemoveRowLevelSecurity(_)
         )
     });
+
+    // Source names are module-language aliases rather than canonical schema.
+    // Rust, C#, and TypeScript may legitimately emit different aliases for the
+    // same index, so alias-only migrations do not make schemas non-equivalent.
+    diff.retain(|step| !matches!(step, AutoMigrateStep::ChangeIndexSourceName(_)));
 
     // TODO: Remove this once we have view bindings for C# and TypeScript
     diff.retain(|step| {

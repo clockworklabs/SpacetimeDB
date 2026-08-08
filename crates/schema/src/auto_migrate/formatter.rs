@@ -53,6 +53,9 @@ fn format_step<F: MigrationFormatter>(
         // So we must recompute it and send any updates to clients.
         // No need to include this step in the formatted plan.
         AutoMigrateStep::UpdateView(_) => Ok(()),
+        // Source names are module-internal aliases, so changing one has no
+        // user-facing schema effect to render in the migration summary.
+        AutoMigrateStep::ChangeIndexSourceName(_) => Ok(()),
         AutoMigrateStep::RemoveTable(t) => f.format_remove_table(&joined(*t)),
         AutoMigrateStep::AddTable(t) => {
             let table_info = extract_table_info(*t, plan)?;
