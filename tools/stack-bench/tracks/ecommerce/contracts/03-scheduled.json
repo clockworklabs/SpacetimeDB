@@ -1,0 +1,83 @@
+{
+  "level": 3,
+  "track": "ecommerce",
+  "note": "Level 3 surfaces deferred work: reservations that expire, restocks that fire later, orders that advance themselves. All hooks are stage 'scenario' — the golden-path walk stays level 1's, and everything here is driven and verified by the grader, which is the only thing that can wait for a timer.",
+  "hooks": [
+    {
+      "id": "cart-reservation-timer",
+      "element": "remaining reservation time on a cart line, in seconds",
+      "stage": "scenario",
+      "note": "inside a cart-item; counts down while the reservation is live"
+    },
+    {
+      "id": "cart-item-expired",
+      "element": "marker on a cart line whose reservation has expired",
+      "stage": "scenario",
+      "note": "the line is marked, not removed"
+    },
+    {
+      "id": "cart-expired-notice",
+      "element": "message shown when the whole cart was abandoned and released",
+      "stage": "scenario"
+    },
+    {
+      "id": "schedule-restock-item",
+      "element": "input naming the item for a scheduled restock",
+      "stage": "scenario",
+      "note": "admin only"
+    },
+    {
+      "id": "schedule-restock-warehouse",
+      "element": "input naming the warehouse for a scheduled restock",
+      "stage": "scenario",
+      "note": "admin only"
+    },
+    {
+      "id": "schedule-restock-qty",
+      "element": "input for the quantity to add",
+      "stage": "scenario",
+      "note": "admin only"
+    },
+    {
+      "id": "schedule-restock-delay",
+      "element": "input for the delay in seconds before the restock applies",
+      "stage": "scenario",
+      "note": "admin only"
+    },
+    {
+      "id": "schedule-restock-submit",
+      "element": "control that schedules the restock",
+      "stage": "scenario",
+      "note": "admin only"
+    },
+    {
+      "id": "pending-restock-item",
+      "element": "one entry per pending restock (repeated testid), containing the item name",
+      "stage": "scenario"
+    },
+    {
+      "id": "pending-restock-remaining",
+      "element": "remaining time before a pending restock fires, in seconds",
+      "stage": "scenario",
+      "note": "inside a pending-restock-item"
+    },
+    {
+      "id": "pending-restock-cancel",
+      "element": "control that cancels a pending restock",
+      "stage": "scenario",
+      "note": "inside a pending-restock-item"
+    },
+    {
+      "id": "order-status",
+      "element": "the current status of an order: pending, shipped, delivered or cancelled",
+      "stage": "scenario",
+      "note": "inside an order-item; changes live as the order advances on its own"
+    },
+    {
+      "id": "stock-ledger-entry",
+      "element": "one entry per stock movement (repeated testid), containing the item name and the time it was applied",
+      "stage": "scenario",
+      "note": "admin view; a scheduled restock appears here with the time it actually ran, not when it was scheduled"
+    }
+  ]
+}

@@ -34,35 +34,35 @@ collide.
 L1 is deliberately large — the full anonymous, customer and admin surface — because
 a smaller L1 is what saturated on the chat track.
 
-## L2 — Personalisation and catalogue queries
+## L2 — Running the business (built)
 
-**Unlocks:** per-customer derived state at catalogue scale.
+**Unlocks:** many projections of one dataset, all live at once.
+
+Fulfilment, stock movement between warehouses, cancellations and returns, price
+changes — with visitor, customer, staff and admin each watching a different view
+of the same store. Includes the cross-row atomicity case: a transfer must leave
+the total unchanged even when a purchase interleaves with it (202d, withheld).
+
+## L3 — Work that happens later (built)
+
+**Unlocks:** durability of deferred work.
+
+Reservations that expire on their own, restocks scheduled for a later time,
+orders that advance pending → shipped → delivered with nobody watching, carts
+that go abandoned. The invariants are the point: deferred work survives a
+backend restart, fires exactly once, never fires early, and time never creates
+or destroys stock. This is where an in-memory timer stops being an
+implementation detail and becomes a defect.
+
+## L4 — Personalisation at catalogue scale (designed)
+
+**Unlocks:** per-customer derived state, computed per viewer.
 
 A storefront ranked for *you*: items sharing a category with something you have
-bought come first, then the global ranking. Faceted search and filters over a
-larger catalogue.
-
-The rule has to be stated precisely enough to be checked arithmetically, which is
-why it is a level of its own rather than part of L1.
-
-## L3 — Multi-warehouse operations
-
-**Unlocks:** atomicity across rows.
-
-Transfers between warehouses, and fulfilment that chooses which warehouse serves
-an order. A transfer of N units must leave the total unchanged — no unit may be
-duplicated or lost, even if the transfer is interrupted or two run at once.
-
-This is the ACID gap stated in inventory terms: it is not one row being
-decremented, it is two rows that must move together or not at all.
-
-## L4 — Order lifecycle and deferred work
-
-**Unlocks:** durability of background work.
-
-Orders that move pending to shipped to delivered, carts that expire, restocks
-scheduled for later. Verified across a backend restart: work that was pending
-must still happen, and expired things must actually be gone rather than hidden.
+bought come first, then the global ranking. Faceted search over a larger
+catalogue. The rule must be stated precisely enough to check arithmetically —
+each viewer sees a different correct answer over the same rows, which is the
+per-viewer analogue of L1's shared derived values.
 
 ## L5 — Volume
 

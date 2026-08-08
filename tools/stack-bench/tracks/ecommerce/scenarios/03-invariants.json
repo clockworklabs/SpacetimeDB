@@ -1,0 +1,159 @@
+{
+  "level": 3,
+  "track": "ecommerce",
+  "name": "Work that happens later — invariants",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses|\\/schedule",
+  "note": "What must hold about deferred work regardless of how it is implemented: it survives a restart, it fires once, it does not fire early, and time never creates or destroys stock. This is the level where in-memory timers stop being an implementation detail and become a defect.",
+  "features": [
+    {
+      "id": 311,
+      "name": "Scheduled work survives a restart",
+      "actors": ["admin", "watcher"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "exact": true, "password": "stackbench-admin-2026" },
+        { "do": "click", "actor": "admin", "testid": "admin-link", "settleMs": 1500 },
+        {
+          "do": "recordNumber",
+          "actor": "watcher",
+          "testid": "item-stock",
+          "in": { "testid": "item-card", "contains": "Air Purifier" },
+          "as": "air-before"
+        },
+        { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Air Purifier" },
+        { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" },
+        { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "5" },
+        { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "70" },
+        { "do": "click", "actor": "admin", "testid": "schedule-restock-submit", "settleMs": 2000 }
+      ],
+      "criteria": [
+        {
+          "id": "311a",
+          "desc": "a restock scheduled before a restart still fires after it, once, at its own time — an in-memory timer does not survive and must not be how this was built",
+          "points": 4,
+          "steps": [
+            { "do": "restartBackend", "settleMs": 15000 },
+            { "do": "reload", "actor": "watcher", "settleMs": 5000 },
+            {
+              "do": "expectNumber",
+              "actor": "watcher",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Air Purifier" },
+              "relativeTo": "air-before",
+              "plus": 5,
+              "within": 90000
+            }
+          ]
+        },
+        {
+          "id": "311b",
+          "desc": "it fired exactly once — the restart did not replay it",
+          "points": 3,
+          "steps": [
+            { "do": "wait", "actor": "watcher", "ms": 20000 },
+            {
+              "do": "expectNumber",
+              "actor": "watcher",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Air Purifier" },
+              "relativeTo": "air-before",
+              "plus": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 312,
+      "name": "A restart does not make pending work fire early",
+      "actors": ["admin", "watcher"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "exact": true, "password": "stackbench-admin-2026" },
+        { "do": "click", "actor": "admin", "testid": "admin-link", "settleMs": 1500 },
+        {
+          "do": "recordNumber",
+          "actor": "watcher",
+          "testid": "item-stock",
+          "in": { "testid": "item-card", "contains": "Espresso Machine" },
+          "as": "esp-before"
+        },
+        { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Espresso Machine" },
+        { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "West" },
+        { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "4" },
+        { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "180" },
+        { "do": "click", "actor": "admin", "testid": "schedule-restock-submit", "settleMs": 2000 }
+      ],
+      "criteria": [
+        {
+          "id": "312a",
+          "desc": "a restock due in three minutes has not applied thirty seconds after a restart — re-reading pending work must not run it",
+          "points": 3,
+          "steps": [
+            { "do": "restartBackend", "settleMs": 15000 },
+            { "do": "reload", "actor": "watcher", "settleMs": 5000 },
+            { "do": "wait", "actor": "watcher", "ms": 25000 },
+            {
+              "do": "expectNumber",
+              "actor": "watcher",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Espresso Machine" },
+              "relativeTo": "esp-before",
+              "plus": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 313,
+      "name": "Time does not create or destroy stock",
+      "actors": ["shopper", "admin"],
+      "setup": [
+        { "do": "signUp", "actor": "shopper", "name": "consv" },
+        { "do": "signIn", "actor": "admin", "name": "admin", "exact": true, "password": "stackbench-admin-2026" },
+        { "do": "click", "actor": "admin", "testid": "admin-link", "settleMs": 1500 },
+        {
+          "do": "recordNumber",
+          "actor": "admin",
+          "testid": "admin-stock",
+          "in": { "testid": "admin-item-row", "contains": "Bluetooth Speaker" },
+          "as": "spk-before"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "313a",
+          "desc": "a reservation taken and left to expire returns exactly what it took, counted in the admin's own totals",
+          "points": 3,
+          "steps": [
+            {
+              "do": "click",
+              "actor": "shopper",
+              "testid": "add-to-cart",
+              "in": { "testid": "item-card", "contains": "Bluetooth Speaker" },
+              "settleMs": 1500
+            },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-stock",
+              "in": { "testid": "admin-item-row", "contains": "Bluetooth Speaker" },
+              "relativeTo": "spk-before",
+              "plus": -1,
+              "within": 10000
+            },
+            { "do": "wait", "actor": "shopper", "ms": 100000 },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-stock",
+              "in": { "testid": "admin-item-row", "contains": "Bluetooth Speaker" },
+              "relativeTo": "spk-before",
+              "plus": 0,
+              "within": 30000
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

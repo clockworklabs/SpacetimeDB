@@ -36,6 +36,20 @@
         "id": "contention",
         "spec": "scenarios/01-contention.json"
       }
+    ],
+    "3": [
+      {
+        "id": "features",
+        "spec": "scenarios/03-features.json"
+      },
+      {
+        "id": "invariants",
+        "spec": "scenarios/03-invariants.json"
+      },
+      {
+        "id": "systems",
+        "spec": "scenarios/01-systems.json"
+      }
     ]
   }
 }
