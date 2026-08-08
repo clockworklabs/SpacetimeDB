@@ -11587,6 +11587,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "xtask-stack-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "serde_json",
+]
+
+[[package]]
 name = "xxhash-rust"
 version = "0.8.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
