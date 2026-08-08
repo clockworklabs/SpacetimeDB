@@ -1187,6 +1187,74 @@ bool FInsertOptionNoneTest::RunTest(const FString &Parameters)
 	return true;
 }
 
+bool FDeleteOptionSomeTest::RunTest(const FString &Parameters)
+{
+	TestName = "DeleteOptionSome";
+
+	if (!ValidateParameterConfig(this))
+		return false;
+	UDeleteOptionHandler *Handler = CreateTestHandler<UDeleteOptionHandler>();
+	Handler->bUseSome = true;
+
+#define REG_UNIQUE_OPTION(Suffix, Field, SomeLiteral, NoneLiteral, Expected, RowStructType) \
+	Handler->Counter->Register(TEXT("InsertUniqueOption" #Suffix));                        \
+	Handler->Counter->Register(TEXT("DeleteUniqueOption" #Suffix));
+	FOREACH_UNIQUE_OPTION_PRIMITIVE(REG_UNIQUE_OPTION)
+#undef REG_UNIQUE_OPTION
+
+	UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [this, Handler](UDbConnection *Conn)
+											{
+#define BIND_UNIQUE_OPTION(Suffix, Field, SomeLiteral, NoneLiteral, Expected, RowStructType)                                \
+	Conn->Db->UniqueOption##Suffix->OnInsert.AddDynamic(Handler, &UDeleteOptionHandler::OnInsertUniqueOption##Suffix);     \
+	Conn->Db->UniqueOption##Suffix->OnDelete.AddDynamic(Handler, &UDeleteOptionHandler::OnDeleteUniqueOption##Suffix);
+				FOREACH_UNIQUE_OPTION_PRIMITIVE(BIND_UNIQUE_OPTION)
+#undef BIND_UNIQUE_OPTION
+
+					SubscribeAllThen(Conn, [Handler](FSubscriptionEventContext Ctx)
+						{
+#define CALL_UNIQUE_OPTION(Suffix, Field, SomeLiteral, NoneLiteral, Expected, RowStructType) Ctx.Reducers->InsertUniqueOption##Suffix(SomeLiteral, Expected);
+							FOREACH_UNIQUE_OPTION_PRIMITIVE(CALL_UNIQUE_OPTION)
+#undef CALL_UNIQUE_OPTION
+						}); });
+
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
+	return true;
+}
+
+bool FDeleteOptionNoneTest::RunTest(const FString &Parameters)
+{
+	TestName = "DeleteOptionNone";
+
+	if (!ValidateParameterConfig(this))
+		return false;
+	UDeleteOptionHandler *Handler = CreateTestHandler<UDeleteOptionHandler>();
+	Handler->bUseSome = false;
+
+#define REG_UNIQUE_OPTION(Suffix, Field, SomeLiteral, NoneLiteral, Expected, RowStructType) \
+	Handler->Counter->Register(TEXT("InsertUniqueOption" #Suffix));                        \
+	Handler->Counter->Register(TEXT("DeleteUniqueOption" #Suffix));
+	FOREACH_UNIQUE_OPTION_PRIMITIVE(REG_UNIQUE_OPTION)
+#undef REG_UNIQUE_OPTION
+
+	UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [this, Handler](UDbConnection *Conn)
+											{
+#define BIND_UNIQUE_OPTION(Suffix, Field, SomeLiteral, NoneLiteral, Expected, RowStructType)                                \
+	Conn->Db->UniqueOption##Suffix->OnInsert.AddDynamic(Handler, &UDeleteOptionHandler::OnInsertUniqueOption##Suffix);     \
+	Conn->Db->UniqueOption##Suffix->OnDelete.AddDynamic(Handler, &UDeleteOptionHandler::OnDeleteUniqueOption##Suffix);
+				FOREACH_UNIQUE_OPTION_PRIMITIVE(BIND_UNIQUE_OPTION)
+#undef BIND_UNIQUE_OPTION
+
+					SubscribeAllThen(Conn, [Handler](FSubscriptionEventContext Ctx)
+						{
+#define CALL_UNIQUE_OPTION(Suffix, Field, SomeLiteral, NoneLiteral, Expected, RowStructType) Ctx.Reducers->InsertUniqueOption##Suffix(NoneLiteral, Expected);
+							FOREACH_UNIQUE_OPTION_PRIMITIVE(CALL_UNIQUE_OPTION)
+#undef CALL_UNIQUE_OPTION
+						}); });
+
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
+	return true;
+}
+
 bool FInsertResultOkTest::RunTest(const FString &Parameters)
 {
     TestName = "InsertResultOk";

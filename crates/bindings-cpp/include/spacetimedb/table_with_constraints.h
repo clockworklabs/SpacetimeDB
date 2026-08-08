@@ -210,21 +210,30 @@ struct MultiColumnIndexTag {
 // Constraint Concepts
 // =============================================================================
 
+namespace detail {
+    template<typename T>
+    struct filterable_value_impl
+        : std::bool_constant<
+              std::integral<T> ||
+              std::same_as<T, std::string> ||
+              std::same_as<T, SpacetimeDB::Identity> ||
+              std::same_as<T, SpacetimeDB::ConnectionId> ||
+              std::same_as<T, SpacetimeDB::Timestamp> ||
+              std::same_as<T, SpacetimeDB::Uuid> ||
+              std::same_as<T, SpacetimeDB::I128> ||
+              std::same_as<T, SpacetimeDB::U128> ||
+              std::same_as<T, SpacetimeDB::I256> ||
+              std::same_as<T, SpacetimeDB::U256> ||
+              std::same_as<T, SpacetimeDB::i256> ||
+              std::same_as<T, SpacetimeDB::u256> ||
+              std::is_enum_v<T>> {};
+
+    template<typename T>
+    struct filterable_value_impl<std::optional<T>> : filterable_value_impl<std::remove_cvref_t<T>> {};
+}
+
 template<typename T>
-concept FilterableValue = 
-    std::integral<T> ||
-    std::same_as<T, std::string> ||
-    std::same_as<T, SpacetimeDB::Identity> ||
-    std::same_as<T, SpacetimeDB::ConnectionId> ||
-    std::same_as<T, SpacetimeDB::Timestamp> ||
-    std::same_as<T, SpacetimeDB::Uuid> ||
-    std::same_as<T, SpacetimeDB::I128> ||
-    std::same_as<T, SpacetimeDB::U128> ||
-    std::same_as<T, SpacetimeDB::I256> ||
-    std::same_as<T, SpacetimeDB::U256> ||
-    std::same_as<T, SpacetimeDB::i256> ||
-    std::same_as<T, SpacetimeDB::u256> ||
-    std::is_enum_v<T>;
+concept FilterableValue = detail::filterable_value_impl<std::remove_cvref_t<T>>::value;
 
 template<typename T>
 concept AutoIncrementable = 

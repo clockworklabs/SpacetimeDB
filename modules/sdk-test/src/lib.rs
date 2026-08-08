@@ -495,6 +495,114 @@ define_tables! {
     } #[unique] u Uuid, data i32;
 }
 
+// Tables mapping a unique `Option<T>` for some `T` to a boring `i32` payload.
+define_tables! {
+    UniqueOptionU8 {
+        insert_or_panic insert_unique_option_u8, delete_all delete_all_unique_option_u8,
+        update_non_pk_by update_unique_option_u8 = update_by_n(n),
+        delete_by delete_unique_option_u8 = delete_by_n(n: Option<u8>),
+    } #[unique] n Option<u8>, data i32;
+
+    UniqueOptionU16 {
+        insert_or_panic insert_unique_option_u16, delete_all delete_all_unique_option_u16,
+        update_non_pk_by update_unique_option_u16 = update_by_n(n),
+        delete_by delete_unique_option_u16 = delete_by_n(n: Option<u16>),
+    } #[unique] n Option<u16>, data i32;
+
+    UniqueOptionU32 {
+        insert_or_panic insert_unique_option_u32, delete_all delete_all_unique_option_u32,
+        update_non_pk_by update_unique_option_u32 = update_by_n(n),
+        delete_by delete_unique_option_u32 = delete_by_n(n: Option<u32>),
+    } #[unique] n Option<u32>, data i32;
+
+    UniqueOptionU64 {
+        insert_or_panic insert_unique_option_u64, delete_all delete_all_unique_option_u64,
+        update_non_pk_by update_unique_option_u64 = update_by_n(n),
+        delete_by delete_unique_option_u64 = delete_by_n(n: Option<u64>),
+    } #[unique] n Option<u64>, data i32;
+
+    UniqueOptionU128 {
+        insert_or_panic insert_unique_option_u128, delete_all delete_all_unique_option_u128,
+        update_non_pk_by update_unique_option_u128 = update_by_n(n),
+        delete_by delete_unique_option_u128 = delete_by_n(n: Option<u128>),
+    } #[unique] n Option<u128>, data i32;
+
+    UniqueOptionU256 {
+        insert_or_panic insert_unique_option_u256, delete_all delete_all_unique_option_u256,
+        update_non_pk_by update_unique_option_u256 = update_by_n(n),
+        delete_by delete_unique_option_u256 = delete_by_n(n: Option<u256>),
+    } #[unique] n Option<u256>, data i32;
+
+
+    UniqueOptionI8 {
+        insert_or_panic insert_unique_option_i8, delete_all delete_all_unique_option_i8,
+        update_non_pk_by update_unique_option_i8 = update_by_n(n),
+        delete_by delete_unique_option_i8 = delete_by_n(n: Option<i8>),
+    } #[unique] n Option<i8>, data i32;
+
+
+    UniqueOptionI16 {
+        insert_or_panic insert_unique_option_i16, delete_all delete_all_unique_option_i16,
+        update_non_pk_by update_unique_option_i16 = update_by_n(n),
+        delete_by delete_unique_option_i16 = delete_by_n(n: Option<i16>),
+    } #[unique] n Option<i16>, data i32;
+
+    UniqueOptionI32 {
+        insert_or_panic insert_unique_option_i32, delete_all delete_all_unique_option_i32,
+        update_non_pk_by update_unique_option_i32 = update_by_n(n),
+        delete_by delete_unique_option_i32 = delete_by_n(n: Option<i32>),
+    } #[unique] n Option<i32>, data i32;
+
+    UniqueOptionI64 {
+        insert_or_panic insert_unique_option_i64, delete_all delete_all_unique_option_i64,
+        update_non_pk_by update_unique_option_i64 = update_by_n(n),
+        delete_by delete_unique_option_i64 = delete_by_n(n: Option<i64>),
+    } #[unique] n Option<i64>, data i32;
+
+    UniqueOptionI128 {
+        insert_or_panic insert_unique_option_i128, delete_all delete_all_unique_option_i128,
+        update_non_pk_by update_unique_option_i128 = update_by_n(n),
+        delete_by delete_unique_option_i128 = delete_by_n(n: Option<i128>),
+    } #[unique] n Option<i128>, data i32;
+
+    UniqueOptionI256 {
+        insert_or_panic insert_unique_option_i256, delete_all delete_all_unique_option_i256,
+        update_non_pk_by update_unique_option_i256 = update_by_n(n),
+        delete_by delete_unique_option_i256 = delete_by_n(n: Option<i256>),
+    } #[unique] n Option<i256>, data i32;
+
+
+    UniqueOptionBool {
+        insert_or_panic insert_unique_option_bool, delete_all delete_all_unique_option_bool,
+        update_non_pk_by update_unique_option_bool = update_by_b(b),
+        delete_by delete_unique_option_bool = delete_by_b(b: Option<bool>),
+    } #[unique] b Option<bool>, data i32;
+
+    UniqueOptionString {
+        insert_or_panic insert_unique_option_string, delete_all delete_all_unique_option_string,
+        update_non_pk_by update_unique_option_string = update_by_s(s),
+        delete_by delete_unique_option_string = delete_by_s(s: Option<String>),
+    } #[unique] s Option<String>, data i32;
+
+    UniqueOptionIdentity {
+        insert_or_panic insert_unique_option_identity, delete_all delete_all_unique_option_identity,
+        update_non_pk_by update_unique_option_identity = update_by_i(i),
+        delete_by delete_unique_option_identity = delete_by_i(i: Option<Identity>),
+    } #[unique] i Option<Identity>, data i32;
+
+    UniqueOptionConnectionId {
+        insert_or_panic insert_unique_option_connection_id, delete_all delete_all_unique_option_connection_id,
+        update_non_pk_by update_unique_option_connection_id = update_by_a(a),
+        delete_by delete_unique_option_connection_id = delete_by_a(a: Option<ConnectionId>),
+    } #[unique] a Option<ConnectionId>, data i32;
+
+    UniqueOptionUuid {
+        insert_or_panic insert_unique_option_uuid, delete_all delete_all_unique_option_uuid,
+        update_non_pk_by update_unique_option_uuid = update_by_u(u),
+        delete_by delete_unique_option_uuid = delete_by_u(u: Option<Uuid>),
+    } #[unique] u Option<Uuid>, data i32;
+}
+
 // Tables mapping a primary key to a boring i32 payload.
 // This allows us to test update and delete events.
 define_tables! {

@@ -154,6 +154,76 @@ namespace SpacetimeDB
                 cache.TryGetValue(value, out var rows) ? rows : Enumerable.Empty<Row>();
         }
 
+        public abstract class NullableIndexBase<Column>
+        {
+            protected readonly struct IndexKey : IEquatable<IndexKey>
+            {
+                private static readonly EqualityComparer<Column> Comparer = EqualityComparer<Column>.Default;
+
+                private readonly Column value;
+
+                public IndexKey(Column value)
+                {
+                    this.value = value;
+                }
+
+                public bool Equals(IndexKey other) => Comparer.Equals(value, other.value);
+
+                public override bool Equals(object? obj) => obj is IndexKey other && Equals(other);
+
+                public override int GetHashCode() => Comparer.GetHashCode(value!);
+            }
+
+            protected abstract Column GetKey(Row row);
+        }
+
+        public abstract class NullableUniqueIndexBase<Column> : NullableIndexBase<Column>
+        {
+            private readonly Dictionary<IndexKey, Row> cache = new();
+
+            public NullableUniqueIndexBase(RemoteTableHandleBase<EventContext, Row> table)
+            {
+                table.OnInternalInsert += row => cache.Add(new IndexKey(GetKey(row)), row);
+                table.OnInternalDelete += row => cache.Remove(new IndexKey(GetKey(row)));
+            }
+
+            public Row? Find(Column value) => cache.TryGetValue(new IndexKey(value), out var row) ? row : null;
+        }
+
+        public abstract class NullableBTreeIndexBase<Column> : NullableIndexBase<Column>
+        {
+            // TODO: change to SortedDictionary when adding support for range queries.
+            private readonly Dictionary<IndexKey, HashSet<Row>> cache = new();
+
+            public NullableBTreeIndexBase(RemoteTableHandleBase<EventContext, Row> table)
+            {
+                table.OnInternalInsert += row =>
+                {
+                    var key = new IndexKey(GetKey(row));
+                    if (!cache.TryGetValue(key, out var rows))
+                    {
+                        rows = new();
+                        cache.Add(key, rows);
+                    }
+                    rows.Add(row);
+                };
+
+                table.OnInternalDelete += row =>
+                {
+                    var key = new IndexKey(GetKey(row));
+                    var keyCache = cache[key];
+                    keyCache.Remove(row);
+                    if (keyCache.Count == 0)
+                    {
+                        cache.Remove(key);
+                    }
+                };
+            }
+
+            public IEnumerable<Row> Filter(Column value) =>
+                cache.TryGetValue(new IndexKey(value), out var rows) ? rows : Enumerable.Empty<Row>();
+        }
+
         /// <summary>
         /// Represents a parsed update to a table, storing the changes as a multi-dictionary delta
         /// mapping primary keys to their corresponding row updates.
