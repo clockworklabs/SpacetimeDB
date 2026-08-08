@@ -664,6 +664,12 @@
               "actor": "tab1",
               "testid": "cart-item",
               "contains": "Laptop Stand"
+            },
+            {
+              "do": "pressKey",
+              "actor": "tab1",
+              "key": "Escape",
+              "settleMs": 800
             }
           ]
         },
@@ -744,6 +750,14 @@
               "actor": "tab1",
               "key": "Escape",
               "settleMs": 800
+            },
+            {
+              "do": "fill",
+              "actor": "tab1",
+              "testid": "search-input",
+              "text": "",
+              "enter": true,
+              "settleMs": 1200
             },
             {
               "do": "expectNumber",
