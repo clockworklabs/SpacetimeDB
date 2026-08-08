@@ -45,6 +45,7 @@ function parseArgs(argv) {
       case '--agent': a.agent = argv[++i]; break;
       case '--no-media': a.media = false; break;
       case '--keep-spacetime': a.keepSpacetime = true; break;
+      case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
       case '--skip-probe': a.skipProbe = true; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
@@ -304,7 +305,7 @@ async function main() {
 
   const started = Date.now();
   const run = { track: args.track, backend: args.backend, model: args.model,
-    guidance: args.guidance, levels: [] };
+    guidance: args.guidance, stack: args.guidance === 'minimal' ? 'free' : 'prescribed', levels: [] };
 
   for (const level of args.levelList) {
     const t0 = Date.now();

@@ -68,6 +68,12 @@ function parseArgs(argv) {
       case '--app': a.app = argv[++i]; break;
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--model': a.model = argv[++i]; break;
+      // --stack is the accurate name: the only thing this varies is whether the
+      // stack is prescribed, not how much help the model gets. Everything else
+      // (harness ports, branding, the level spec, the contract appendix) is
+      // identical in both. --guidance is kept as an alias so older invocations
+      // and recorded runs still resolve.
+      case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
       case '--thinking': a.thinking = argv[++i]; break;
       case '--print-prompt': a.printPrompt = true; break;
@@ -118,6 +124,12 @@ function ensureDatabase(backend, runIndex, dbPort, track) {
 // build it is the model's call. Prescribing a stack means measuring the stack we
 // picked, not the database.
 function backendDoc(args, p, track) {
+  if (args.guidance === 'minimal' && args.backend === 'spacetime') {
+    console.error('--stack free does not apply to spacetime: it IS the stack, so there is no '
+      + 'framework, realtime mechanism or ORM to choose. Compare postgres/mongodb free runs '
+      + 'against their own prescribed runs; spacetime prescribed is the reference.');
+    process.exit(2);
+  }
   const rel = args.guidance === 'minimal'
     ? join('backends', 'minimal', `${args.backend}.md`)
     : join('backends', `${args.backend}.md`);
@@ -369,6 +381,7 @@ async function main() {
     backend: args.backend,
     model: args.model,
     guidance: args.guidance,
+    stack: args.guidance === 'minimal' ? 'free' : 'prescribed',
     // The setup that produced this number. A score whose reasoning budget,
     // permission mode or CLI version is unknown cannot be compared with a later
     // one — the run would look identical in the record and not be.
