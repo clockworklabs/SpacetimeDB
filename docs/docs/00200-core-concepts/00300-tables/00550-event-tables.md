@@ -83,6 +83,12 @@ SPACETIMEDB_TABLE(DamageEvent, damage_event, Public, true)
 Once a table has been published as an event table (or a regular table), the `event` flag cannot be changed in a subsequent module update. Attempting to convert a regular table to an event table or vice versa will produce a migration error.
 :::
 
+## Migrating Event Tables
+
+Because event tables do not retain committed rows, SpacetimeDB can automatically migrate many schema changes that would require a manual migration for a regular table. This includes adding, removing, or reordering columns, and changing column types in ways that are not layout-compatible with the previous event-table schema.
+
+These migrations can still break generated client bindings. After changing an event table's schema, regenerate and redeploy affected clients before they subscribe to the updated table. If the publish flow reports the migration as client-breaking, review the plan and explicitly approve the client-breaking migration.
+
 ## Publishing Events
 
 To publish an event, simply insert a row into the event table from within a reducer. The insertion works exactly like inserting into a regular table. The row is visible within the current transaction and can be queried or used in constraints. When the transaction commits successfully, the row is broadcast to all subscribed clients. If the reducer panics or the transaction is rolled back, no events are sent.

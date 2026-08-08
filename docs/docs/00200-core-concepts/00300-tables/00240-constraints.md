@@ -89,6 +89,7 @@ Use `FIELD_PrimaryKey(table, field)` after table registration to mark the primar
 - **One per table**: A table can have at most one primary key column.
 - **Immutable identity**: The primary key defines the row's identity. Changing a primary key value is treated as deleting the old row and inserting a new one.
 - **Unique by definition**: Primary keys are automatically unique. No two rows can have the same primary key value.
+- **Index-filterable type**: Primary keys must use a type that SpacetimeDB can index, such as integers, `bool`, strings, `Identity`, `ConnectionId`, `Uuid`, `Timestamp`, `Hash`, or a no-payload enum.
 
 Because of the unique constraint, SpacetimeDB implements primary keys using a **unique index**. This index is created automatically.
 
@@ -282,6 +283,20 @@ pub struct UserProfile {
 ```
 
 This pattern ensures each identity can only have one profile and makes lookups by identity efficient.
+
+**Timestamp as primary key**: Use `Timestamp` when the row identity is a point in time, such as an audit record or time-series sample:
+
+```csharp
+[SpacetimeDB.Table(Accessor = "AuditEvent", Public = true)]
+public partial struct AuditEvent
+{
+    [SpacetimeDB.PrimaryKey]
+    public Timestamp CreatedAt;
+    public string Message;
+}
+```
+
+Timestamp primary keys are supported in Rust, C#, TypeScript, and C++ modules.
 
 ## Unique Columns
 
