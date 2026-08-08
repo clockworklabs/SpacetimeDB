@@ -48,17 +48,65 @@ type Listener = () => void;
 
 export const CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS = 1000;
 export const CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS = 30_000;
+export const CONNECTION_MANAGER_RECONNECT_MIN_BASE_DELAY_MS = 500;
+export const CONNECTION_MANAGER_RECONNECT_MIN_MAX_DELAY_MS = 10_000;
+export const CONNECTION_MANAGER_RECONNECT_MAX_ALLOWED_DELAY_MS = 5 * 60_000;
+
+/**
+ * Options controlling the auto-reconnect backoff. Set them per connection via
+ * {@link DbConnectionBuilder.withReconnectOptions}. Any field left undefined
+ * falls back to the module default.
+ */
+export type ReconnectOptions = {
+  /**
+   * Delay before the first reconnect attempt, in milliseconds. This is the
+   * minimum backoff; each subsequent attempt doubles it up to `maxDelayMs`.
+   * Defaults to {@link CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS} (1000).
+   */
+  baseDelayMs?: number;
+  /**
+   * Maximum delay between reconnect attempts, in milliseconds. The exponential
+   * backoff is capped here. Defaults to
+   * {@link CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS} (30000).
+   */
+  maxDelayMs?: number;
+};
+
+function normalizeReconnectDelay(
+  value: number | undefined,
+  fallback: number,
+  minimum: number
+): number {
+  if (value === undefined || !Number.isSafeInteger(value)) {
+    return fallback;
+  }
+  return Math.min(
+    Math.max(value, minimum),
+    CONNECTION_MANAGER_RECONNECT_MAX_ALLOWED_DELAY_MS
+  );
+}
 
 /**
  * Computes the reconnect delay for the given attempt (0-based) using
  * exponential backoff: the base delay doubles with each consecutive failed
- * attempt, capped at the maximum delay.
+ * attempt, capped at the maximum delay. `options` overrides the base and/or
+ * maximum delay; unset or malformed fields use safe defaults or bounds.
  */
-export function connectionManagerReconnectDelayMs(attempt: number): number {
-  return Math.min(
-    CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS * 2 ** attempt,
-    CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS
+export function connectionManagerReconnectDelayMs(
+  attempt: number,
+  options?: ReconnectOptions
+): number {
+  const baseDelay = normalizeReconnectDelay(
+    options?.baseDelayMs,
+    CONNECTION_MANAGER_RECONNECT_BASE_DELAY_MS,
+    CONNECTION_MANAGER_RECONNECT_MIN_BASE_DELAY_MS
   );
+  const maxDelay = normalizeReconnectDelay(
+    options?.maxDelayMs,
+    CONNECTION_MANAGER_RECONNECT_MAX_DELAY_MS,
+    CONNECTION_MANAGER_RECONNECT_MIN_MAX_DELAY_MS
+  );
+  return Math.min(baseDelay * 2 ** attempt, maxDelay);
 }
 
 type ManagedConnection = {
@@ -336,7 +384,10 @@ class ConnectionManagerImpl {
       return;
     }
 
-    const delay = connectionManagerReconnectDelayMs(managed.reconnectAttempt);
+    const delay = connectionManagerReconnectDelayMs(
+      managed.reconnectAttempt,
+      managed.builder?.getReconnectOptions()
+    );
     managed.reconnectAttempt += 1;
     managed.reconnectTimer = setTimeout(() => {
       managed.reconnectTimer = null;
