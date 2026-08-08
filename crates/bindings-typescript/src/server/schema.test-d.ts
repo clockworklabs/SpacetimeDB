@@ -99,6 +99,21 @@ spacetimedbIndexSplit.init(ctx => {
   const _nickname = ctx.db.account.nickname;
 });
 
+const buildSession = table(
+  { name: 'build_session' },
+  {
+    id: t.u64().primaryKey(),
+    organizationId: t.string().index('btree'),
+  }
+);
+const canonicalIndexModule = schema({ buildSession });
+
+canonicalIndexModule.init(ctx => {
+  // The canonical table name affects generated metadata, not the reducer API.
+  ctx.db.buildSession.id.find(1n);
+  ctx.db.buildSession.organizationId.filter('org-1');
+});
+
 const manuallyTypedProcedureExport: ProcedureExport<
   any,
   {},

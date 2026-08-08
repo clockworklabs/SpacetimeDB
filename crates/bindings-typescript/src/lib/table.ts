@@ -510,7 +510,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         row.typeName = toPascalCase(tableName);
       }
 
-      // Build index source names using accName
+      // Build generated index source names from the canonical table name.
       for (const index of indexes) {
         const cols =
           index.algorithm.tag === 'Direct'
@@ -519,7 +519,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
         const colS = cols.map(i => colNameList[i]).join('_');
         const sourceName =
-          (index.sourceName = `${accName}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`);
+          (index.sourceName = `${tableName}_${colS}_idx_${index.algorithm.tag.toLowerCase()}`);
 
         const { canonicalName } = index;
         if (canonicalName !== undefined) {
