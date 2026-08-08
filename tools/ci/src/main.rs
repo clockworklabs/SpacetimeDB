@@ -3,6 +3,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::{cmd, Expression};
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::ffi::OsString;
@@ -460,6 +461,95 @@ enum OtherWorkflowsCmd {
         #[command(subcommand)]
         cmd: cla_assistant::ClaAssistantCmd,
     },
+    /// Waits for a GitHub Actions workflow run to complete.
+    Watch {
+        /// Repository containing the workflow run, in owner/repo form.
+        #[arg(long)]
+        repo: String,
+        /// GitHub Actions workflow run ID.
+        #[arg(long)]
+        run_id: u64,
+        /// Optional URL printed while waiting for the run.
+        #[arg(long)]
+        run_url: Option<String>,
+        /// Seconds to sleep between polls.
+        #[arg(long, default_value_t = 30)]
+        interval_seconds: u64,
+        /// Maximum number of polls before timing out.
+        #[arg(long, default_value_t = 240)]
+        max_attempts: u64,
+    },
+}
+
+#[derive(Deserialize)]
+struct WorkflowRunView {
+    status: String,
+    conclusion: Option<String>,
+    url: Option<String>,
+    jobs: Vec<WorkflowJobView>,
+}
+
+#[derive(Deserialize)]
+struct WorkflowJobView {
+    name: String,
+    status: String,
+    conclusion: Option<String>,
+}
+
+fn get_workflow_run(repo: &str, run_id: u64) -> Result<WorkflowRunView> {
+    let raw = cmd!(
+        "gh",
+        "run",
+        "view",
+        run_id.to_string(),
+        "--repo",
+        repo,
+        "--json",
+        "status,conclusion,url,jobs",
+    )
+    .read()
+    .with_context(|| format!("failed to read workflow run {run_id} in {repo}"))?;
+    serde_json::from_str(&raw).with_context(|| format!("failed to parse workflow run {run_id} in {repo}"))
+}
+
+fn print_workflow_job_summary(run: &WorkflowRunView) {
+    println!("Job summary:");
+    for job in &run.jobs {
+        let result = job.conclusion.as_deref().unwrap_or(&job.status);
+        println!("  {result:>11} {}", job.name);
+    }
+}
+
+fn watch_workflow_run(
+    repo: &str,
+    run_id: u64,
+    run_url: Option<String>,
+    interval_seconds: u64,
+    max_attempts: u64,
+) -> Result<()> {
+    let run_url = run_url.or_else(|| get_workflow_run(repo, run_id).ok().and_then(|run| run.url));
+
+    if let Some(run_url) = run_url {
+        println!("Waiting for workflow result... {run_url}");
+    } else {
+        println!("Waiting for workflow result: {repo}/actions/runs/{run_id}");
+    }
+
+    for _ in 0..max_attempts {
+        let run = get_workflow_run(repo, run_id)?;
+        if run.status == "completed" {
+            print_workflow_job_summary(&run);
+            let conclusion = run.conclusion.as_deref().unwrap_or("success");
+            if conclusion == "success" {
+                return Ok(());
+            }
+            bail!("workflow run {run_id} completed with conclusion: {conclusion}");
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(interval_seconds));
+    }
+
+    bail!("timed out waiting for workflow run {run_id} to complete")
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -906,6 +996,19 @@ fn main() -> Result<()> {
             cmd: OtherWorkflowsCmd::ClaAssistant { cmd },
         }) => {
             cla_assistant::run(cmd)?;
+        }
+
+        Some(CiCmd::OtherWorkflows {
+            cmd:
+                OtherWorkflowsCmd::Watch {
+                    repo,
+                    run_id,
+                    run_url,
+                    interval_seconds,
+                    max_attempts,
+                },
+        }) => {
+            watch_workflow_run(&repo, run_id, run_url, interval_seconds, max_attempts)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

@@ -346,6 +346,22 @@ Usage: help [COMMAND]...
 
 - `subcommand <COMMAND>`: Print help for the subcommand(s)
 
+#### `watch`
+
+**Usage:**
+```bash
+Usage: watch [OPTIONS] --repo <REPO> --run-id <RUN_ID>
+```
+
+**Options:**
+
+- `--repo <REPO>`: Repository containing the workflow run, in owner/repo form
+- `--run-id <RUN_ID>`: GitHub Actions workflow run ID
+- `--run-url <RUN_URL>`: Optional URL printed while waiting for the run
+- `--interval-seconds <INTERVAL_SECONDS>`: Seconds to sleep between polls
+- `--max-attempts <MAX_ATTEMPTS>`: Maximum number of polls before timing out
+- `--help`: Print help
+
 #### `help`
 
 **Usage:**
