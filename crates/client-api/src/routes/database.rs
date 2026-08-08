@@ -555,33 +555,62 @@ where
     ))
 }
 
+/// Path parameters for the [db_info] handler.
 #[derive(Deserialize)]
-pub struct DatabaseParam {
+pub struct InfoParams {
     name_or_identity: NameOrIdentity,
 }
 
-#[derive(sats::Serialize)]
-struct DatabaseResponse {
-    database_identity: Identity,
-    owner_identity: Identity,
-    host_type: HostType,
-    initial_program: spacetimedb_lib::Hash,
+/// Query parameters for the [db_info] handler.
+#[derive(Deserialize)]
+pub struct InfoQuery {
+    /// If set, try to determine the current module's program hash.
+    #[serde(
+        default,
+        alias = "current-hash",
+        alias = "current-program",
+        alias = "current_program"
+    )]
+    current_hash: bool,
 }
 
-impl From<Database> for DatabaseResponse {
+/// Response of the [db_info] handler.
+#[derive(Debug, sats::Serialize, sats::Deserialize)]
+pub struct InfoResponse {
+    pub database_identity: Identity,
+    pub owner_identity: Identity,
+    pub host_type: HostType,
+    pub initial_program: spacetimedb_lib::Hash,
+    /// The hash of the database's current module.
+    ///
+    /// This is determined on a best-effort basis. If it is `None`, one of the
+    /// following is true:
+    ///
+    /// - the `current_hash` query parameter was not set
+    /// - the current node doesn't host the leader of the database
+    /// - the database has no current leader
+    /// - the database is paused or suspended
+    /// - the module could not be instantiated
+    ///
+    pub current_program: Option<spacetimedb_lib::Hash>,
+}
+
+impl From<Database> for InfoResponse {
     fn from(db: Database) -> Self {
-        DatabaseResponse {
+        InfoResponse {
             database_identity: db.database_identity,
             owner_identity: db.owner_identity,
             host_type: db.host_type,
             initial_program: db.initial_program,
+            current_program: None,
         }
     }
 }
 
-pub async fn db_info<S: ControlStateDelegate>(
+pub async fn db_info<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
-    Path(DatabaseParam { name_or_identity }): Path<DatabaseParam>,
+    Path(InfoParams { name_or_identity }): Path<InfoParams>,
+    Query(InfoQuery { current_hash }): Query<InfoQuery>,
 ) -> axum::response::Result<impl IntoResponse> {
     log::trace!("Trying to resolve database identity: {name_or_identity:?}");
     let database_identity = name_or_identity.resolve(&worker_ctx).await?;
@@ -591,7 +620,17 @@ pub async fn db_info<S: ControlStateDelegate>(
         .ok_or(NO_SUCH_DATABASE)?;
     log::trace!("Fetched database from the worker db for database identity: {database_identity:?}");
 
-    let response = DatabaseResponse::from(database);
+    let current_program = async {
+        current_hash.then_some(())?;
+        let host = worker_ctx.leader(database.id).await.ok()?;
+        let module = host.module().await.ok()?;
+        Some(module.info().module_hash)
+    }
+    .await;
+
+    let mut response = InfoResponse::from(database);
+    response.current_program = current_program;
+
     Ok(axum::Json(sats::serde::SerdeWrapper(response)))
 }
 
