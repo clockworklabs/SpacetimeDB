@@ -2322,7 +2322,7 @@ namespace SpacetimeDB.Internal
 
 static class ModuleRegistration
 {
-    class Init : SpacetimeDB.Internal.IReducer
+    sealed class Init : SpacetimeDB.Internal.IReducer
     {
         public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -2343,7 +2343,7 @@ static class ModuleRegistration
         }
     }
 
-    class InsertData : SpacetimeDB.Internal.IReducer
+    sealed class InsertData : SpacetimeDB.Internal.IReducer
     {
         private static readonly PublicTable.BSATN dataRW = new();
 
@@ -2366,7 +2366,7 @@ static class ModuleRegistration
         }
     }
 
-    class InsertData2 : SpacetimeDB.Internal.IReducer
+    sealed class InsertData2 : SpacetimeDB.Internal.IReducer
     {
         private static readonly PublicTable.BSATN dataRW = new();
 
@@ -2392,7 +2392,7 @@ static class ModuleRegistration
         }
     }
 
-    class InsertMultiData : SpacetimeDB.Internal.IReducer
+    sealed class InsertMultiData : SpacetimeDB.Internal.IReducer
     {
         private static readonly MultiTableRow.BSATN dataRW = new();
 
@@ -2415,7 +2415,7 @@ static class ModuleRegistration
         }
     }
 
-    class ScheduleImmediate : SpacetimeDB.Internal.IReducer
+    sealed class ScheduleImmediate : SpacetimeDB.Internal.IReducer
     {
         private static readonly PublicTable.BSATN dataRW = new();
 
@@ -2438,7 +2438,7 @@ static class ModuleRegistration
         }
     }
 
-    class SendScheduledMessage : SpacetimeDB.Internal.IReducer
+    sealed class SendScheduledMessage : SpacetimeDB.Internal.IReducer
     {
         private static readonly Timers.SendMessageTimer.BSATN argRW = new();
 
@@ -2574,18 +2574,94 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink error
     ) =>
-        SpacetimeDB.Internal.Module.__call_reducer__(
-            id,
-            sender_0,
-            sender_1,
-            sender_2,
-            sender_3,
-            conn_id_0,
-            conn_id_1,
-            timestamp,
-            args,
-            error
-        );
+        id switch
+        {
+            0
+                => SpacetimeDB.Internal.Module.__call_reducer__<Init>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            1
+                => SpacetimeDB.Internal.Module.__call_reducer__<InsertData>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            2
+                => SpacetimeDB.Internal.Module.__call_reducer__<InsertData2>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            3
+                => SpacetimeDB.Internal.Module.__call_reducer__<InsertMultiData>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            4
+                => SpacetimeDB.Internal.Module.__call_reducer__<ScheduleImmediate>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            5
+                => SpacetimeDB.Internal.Module.__call_reducer__<SendScheduledMessage>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                ),
+            _
+                => SpacetimeDB.Internal.Module.__call_reducer__(
+                    id,
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    error
+                )
+        };
 
     [UnmanagedCallersOnly(EntryPoint = "__call_procedure__")]
     public static SpacetimeDB.Internal.Errno __call_procedure__(
@@ -2600,18 +2676,22 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink result_sink
     ) =>
-        SpacetimeDB.Internal.Module.__call_procedure__(
-            id,
-            sender_0,
-            sender_1,
-            sender_2,
-            sender_3,
-            conn_id_0,
-            conn_id_1,
-            timestamp,
-            args,
-            result_sink
-        );
+        id switch
+        {
+            _
+                => SpacetimeDB.Internal.Module.__call_procedure__(
+                    id,
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    conn_id_0,
+                    conn_id_1,
+                    timestamp,
+                    args,
+                    result_sink
+                )
+        };
 
     [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
     public static SpacetimeDB.Internal.Errno __call_http_handler__(
@@ -2622,14 +2702,18 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSink response_sink,
         SpacetimeDB.Internal.BytesSink response_body_sink
     ) =>
-        SpacetimeDB.Internal.Module.__call_http_handler__(
-            id,
-            timestamp,
-            request,
-            request_body,
-            response_sink,
-            response_body_sink
-        );
+        id switch
+        {
+            _
+                => SpacetimeDB.Internal.Module.__call_http_handler__(
+                    id,
+                    timestamp,
+                    request,
+                    request_body,
+                    response_sink,
+                    response_body_sink
+                )
+        };
 
     [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
     public static SpacetimeDB.Internal.Errno __call_view__(
@@ -2641,22 +2725,53 @@ static class ModuleRegistration
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink sink
     ) =>
-        SpacetimeDB.Internal.Module.__call_view__(
-            id,
-            sender_0,
-            sender_1,
-            sender_2,
-            sender_3,
-            args,
-            sink
-        );
+        id switch
+        {
+            0
+                => SpacetimeDB.Internal.Module.__call_view__<public_table_queryViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            1
+                => SpacetimeDB.Internal.Module.__call_view__<public_table_viewViewDispatcher>(
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                ),
+            _
+                => SpacetimeDB.Internal.Module.__call_view__(
+                    id,
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    args,
+                    sink
+                )
+        };
 
     [UnmanagedCallersOnly(EntryPoint = "__call_view_anon__")]
     public static SpacetimeDB.Internal.Errno __call_view_anon__(
         uint id,
         SpacetimeDB.Internal.BytesSource args,
         SpacetimeDB.Internal.BytesSink sink
-    ) => SpacetimeDB.Internal.Module.__call_view_anon__(id, args, sink);
+    ) =>
+        id switch
+        {
+            0
+                => SpacetimeDB.Internal.Module.__call_view_anon__<find_public_table__by_identityViewDispatcher>(
+                    args,
+                    sink
+                ),
+            _ => SpacetimeDB.Internal.Module.__call_view_anon__(id, args, sink)
+        };
 #endif
 }
 

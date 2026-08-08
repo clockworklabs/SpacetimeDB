@@ -155,6 +155,9 @@ public sealed class HttpError(string message) : Exception(message)
 public sealed class HttpClient
 {
     private static readonly TimeSpan MaxTimeout = TimeSpan.FromMilliseconds(500);
+    private static byte[] responseWireBuffer = new byte[0x10_000];
+    private static byte[] responseBodyBuffer = new byte[0x10_000];
+    private static byte[] errorWireBuffer = new byte[0x10_000];
 
     /// <summary>
     /// Send a simple <c>GET</c> request to <paramref name="uri"/> with no headers.
@@ -341,10 +344,10 @@ public sealed class HttpClient
             {
                 case Errno.OK:
                 {
-                    var responseWireBytes = out_.A.Consume();
+                    var responseWireBytes = out_.A.Consume(ref responseWireBuffer).ToArray();
                     var responseWire = FromBytes(new HttpResponseWire.BSATN(), responseWireBytes);
 
-                    var body = new HttpBody(out_.B.Consume());
+                    var body = new HttpBody(out_.B.Consume(ref responseBodyBuffer).ToArray());
                     var (statusCode, version, headers) = FromWireResponse(responseWire);
 
                     return Result<HttpResponse, HttpError>.Ok(
@@ -353,7 +356,7 @@ public sealed class HttpClient
                 }
                 case Errno.HTTP_ERROR:
                 {
-                    var errorWireBytes = out_.A.Consume();
+                    var errorWireBytes = out_.A.Consume(ref errorWireBuffer).ToArray();
                     var err = FromBytes(new SpacetimeDB.BSATN.String(), errorWireBytes);
                     return Result<HttpResponse, HttpError>.Err(new HttpError(err));
                 }

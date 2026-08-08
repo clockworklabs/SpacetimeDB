@@ -1567,7 +1567,7 @@ record ReducerDeclaration
             )})";
 
         return $$"""
-             class {{Identifier}}: SpacetimeDB.Internal.IReducer {
+             sealed class {{Identifier}}: SpacetimeDB.Internal.IReducer {
                  {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
 
                  public SpacetimeDB.Internal.RawReducerDefV10 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
@@ -1797,7 +1797,7 @@ record ProcedureDeclaration
         }
 
         return $$$"""
-            class {{{Identifier}}} : SpacetimeDB.Internal.IProcedure {
+            sealed class {{{Identifier}}} : SpacetimeDB.Internal.IProcedure {
                 {{{classFields}}}
 
                 public SpacetimeDB.Internal.RawProcedureDefV10 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
@@ -1939,7 +1939,7 @@ record HttpHandlerDeclaration
             : $"return {FullName}((SpacetimeDB.HandlerContext)ctx, request);";
 
         return $$"""
-            class {{Identifier}} : SpacetimeDB.Internal.IHttpHandler {
+            sealed class {{Identifier}} : SpacetimeDB.Internal.IHttpHandler {
                 public SpacetimeDB.Internal.RawHttpHandlerDefV10 MakeHandlerDef() => new(
                     SourceName: nameof({{Identifier}})
                 );
@@ -2906,18 +2906,26 @@ public class Module : IIncrementalGenerator
                             SpacetimeDB.Timestamp timestamp,
                             SpacetimeDB.Internal.BytesSource args,
                             SpacetimeDB.Internal.BytesSink error
-                        ) => SpacetimeDB.Internal.Module.__call_reducer__(
-                            id,
-                            sender_0,
-                            sender_1,
-                            sender_2,
-                            sender_3,
-                            conn_id_0,
-                            conn_id_1,
-                            timestamp,
-                            args,
-                            error
-                        );
+                        ) => id switch {
+                            {{string.Join(
+                                "\n",
+                                addReducers.Select((r, i) =>
+                                    $"{i} => SpacetimeDB.Internal.Module.__call_reducer__<{EscapeIdentifier(r.Name)}>(sender_0, sender_1, sender_2, sender_3, conn_id_0, conn_id_1, timestamp, args, error),"
+                                )
+                            )}}
+                            _ => SpacetimeDB.Internal.Module.__call_reducer__(
+                                id,
+                                sender_0,
+                                sender_1,
+                                sender_2,
+                                sender_3,
+                                conn_id_0,
+                                conn_id_1,
+                                timestamp,
+                                args,
+                                error
+                            )
+                        };
                         
                         [UnmanagedCallersOnly(EntryPoint = "__call_procedure__")]
                         public static SpacetimeDB.Internal.Errno __call_procedure__(
@@ -2931,18 +2939,26 @@ public class Module : IIncrementalGenerator
                             SpacetimeDB.Timestamp timestamp,
                             SpacetimeDB.Internal.BytesSource args,
                             SpacetimeDB.Internal.BytesSink result_sink
-                        ) => SpacetimeDB.Internal.Module.__call_procedure__(
-                            id,
-                            sender_0,
-                            sender_1,
-                            sender_2,
-                            sender_3,
-                            conn_id_0,
-                            conn_id_1,
-                            timestamp,
-                            args,
-                            result_sink
-                        );
+                        ) => id switch {
+                            {{string.Join(
+                                "\n",
+                                addProcedures.Select((p, i) =>
+                                    $"{i} => SpacetimeDB.Internal.Module.__call_procedure__<{EscapeIdentifier(p.Name)}>(sender_0, sender_1, sender_2, sender_3, conn_id_0, conn_id_1, timestamp, args, result_sink),"
+                                )
+                            )}}
+                            _ => SpacetimeDB.Internal.Module.__call_procedure__(
+                                id,
+                                sender_0,
+                                sender_1,
+                                sender_2,
+                                sender_3,
+                                conn_id_0,
+                                conn_id_1,
+                                timestamp,
+                                args,
+                                result_sink
+                            )
+                        };
 
                         [UnmanagedCallersOnly(EntryPoint = "__call_http_handler__")]
                         public static SpacetimeDB.Internal.Errno __call_http_handler__(
@@ -2952,14 +2968,22 @@ public class Module : IIncrementalGenerator
                             SpacetimeDB.Internal.BytesSource request_body,
                             SpacetimeDB.Internal.BytesSink response_sink,
                             SpacetimeDB.Internal.BytesSink response_body_sink
-                        ) => SpacetimeDB.Internal.Module.__call_http_handler__(
-                            id,
-                            timestamp,
-                            request,
-                            request_body,
-                            response_sink,
-                            response_body_sink
-                        );
+                        ) => id switch {
+                            {{string.Join(
+                                "\n",
+                                addHttpHandlers.Select((h, i) =>
+                                    $"{i} => SpacetimeDB.Internal.Module.__call_http_handler__<{EscapeIdentifier(h.Name)}>(timestamp, request, request_body, response_sink, response_body_sink),"
+                                )
+                            )}}
+                            _ => SpacetimeDB.Internal.Module.__call_http_handler__(
+                                id,
+                                timestamp,
+                                request,
+                                request_body,
+                                response_sink,
+                                response_body_sink
+                            )
+                        };
                         
                         [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
                         public static SpacetimeDB.Internal.Errno __call_view__(
@@ -2970,26 +2994,42 @@ public class Module : IIncrementalGenerator
                             ulong sender_3,
                             SpacetimeDB.Internal.BytesSource args,
                             SpacetimeDB.Internal.BytesSink sink
-                        ) => SpacetimeDB.Internal.Module.__call_view__(
-                            id,
-                            sender_0,
-                            sender_1,
-                            sender_2,
-                            sender_3,
-                            args,
-                            sink
-                        );
+                        ) => id switch {
+                            {{string.Join("\n",
+                                views.Array.Where(v => !v.IsAnonymous)
+                                    .Select((v, i) =>
+                                        $"{i} => SpacetimeDB.Internal.Module.__call_view__<{v.Name}ViewDispatcher>(sender_0, sender_1, sender_2, sender_3, args, sink),"
+                                    )
+                            )}}
+                            _ => SpacetimeDB.Internal.Module.__call_view__(
+                                id,
+                                sender_0,
+                                sender_1,
+                                sender_2,
+                                sender_3,
+                                args,
+                                sink
+                            )
+                        };
 
                         [UnmanagedCallersOnly(EntryPoint = "__call_view_anon__")]
                         public static SpacetimeDB.Internal.Errno __call_view_anon__(
                             uint id,
                             SpacetimeDB.Internal.BytesSource args,
                             SpacetimeDB.Internal.BytesSink sink
-                        ) => SpacetimeDB.Internal.Module.__call_view_anon__(
-                            id,
-                            args,
-                            sink
-                        );                                                
+                        ) => id switch {
+                            {{string.Join("\n",
+                                views.Array.Where(v => v.IsAnonymous)
+                                    .Select((v, i) =>
+                                        $"{i} => SpacetimeDB.Internal.Module.__call_view_anon__<{v.Name}ViewDispatcher>(args, sink),"
+                                    )
+                            )}}
+                            _ => SpacetimeDB.Internal.Module.__call_view_anon__(
+                                id,
+                                args,
+                                sink
+                            )
+                        };
                     #endif
                     }
                     
