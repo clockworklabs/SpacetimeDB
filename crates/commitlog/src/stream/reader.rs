@@ -4,10 +4,7 @@ use async_stream::try_stream;
 use bytes::{Buf as _, Bytes};
 use futures::Stream;
 use log::{trace, warn};
-use tokio::{
-    io::{self, AsyncBufRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _},
-    task::spawn_blocking,
-};
+use tokio::io::{self, AsyncBufRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _};
 use tokio_util::io::SyncIoBridge;
 
 use crate::{
@@ -82,33 +79,40 @@ fn read_segment(
         if range.start > segment_start {
             // Don't send a segment header if we're not reading from the start.
             send_segment_header = None;
-            segment = spawn_blocking(move || {
-                let mut segment = SyncIoBridge::new(segment);
-                if let Ok(offset_index) = repo.get_offset_index(segment_start) {
-                    trace!("seek_to_offset segment={} start={}", segment_start, range.start);
-                    seek_to_offset(&mut segment, &offset_index, range.start)
-                        .inspect_err(|e| match e {
-                            IndexError::KeyNotFound =>
-                                trace!(
-                                    "offset not found segment={} offset={}",
-                                    segment_start, range.start
-                                ),
-                            e => {
-                                warn!(
-                                    "error reading index segment={} offset={}: {} {}",
-                                    segment_start,
-                                    range.start,
-                                    e,
-                                    source_chain(&e)
-                                )
-                            }
-                        })
-                        .ok();
-                }
-                segment.into_inner()
-            })
-            .await
-            .unwrap();
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                segment = handle
+                    .spawn_blocking(move || {
+                        let mut segment = SyncIoBridge::new(segment);
+                        if let Ok(offset_index) = repo.get_offset_index(segment_start) {
+                            trace!("seek_to_offset segment={} start={}", segment_start, range.start);
+                            seek_to_offset(&mut segment, &offset_index, range.start)
+                                .inspect_err(|e| match e {
+                                    IndexError::KeyNotFound => trace!(
+                                        "offset not found segment={} offset={}",
+                                        segment_start,
+                                        range.start
+                                    ),
+                                    e => {
+                                        warn!(
+                                            "error reading index segment={} offset={}: {} {}",
+                                            segment_start,
+                                            range.start,
+                                            e,
+                                            source_chain(&e)
+                                        )
+                                    }
+                                })
+                                .ok();
+                        }
+                        segment.into_inner()
+                    })
+                    .await
+                    .unwrap();
+            } else {
+                warn!(
+                    "reading segment {segment_start} without indexed seek because no Tokio runtime is available"
+                );
+            }
         }
 
         let checksum_len = CHECKSUM_LEN[segment_header.checksum_algorithm as usize];

@@ -4,7 +4,7 @@ mod rng;
 pub mod time;
 
 pub use executor::{
-    yield_now, AbortHandle, Handle, JoinError, JoinHandle, Node, NodeBuilder, NodeId, Runtime, RuntimeConfig,
+    yield_now, AbortHandle, Handle, JoinError, JoinHandle, Node, NodeBuilder, NodeId, Runtime, RuntimeConfig, TaskPanic,
 };
 #[doc(hidden)]
 pub use rng::DeterminismLog;

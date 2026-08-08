@@ -1,34 +1,51 @@
 use std::{io, sync::Arc};
 
+use serde::{Deserialize, Serialize};
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::traits::{IsolationLevel, TxData};
 use spacetimedb_engine::error::{DBError, DatastoreError, IndexError};
 use spacetimedb_engine::persistence::{DiskSizeFn, Durability as EngineDurability, Persistence};
 use spacetimedb_engine::relational_db::{MutTx, RelationalDB};
-use spacetimedb_lib::{Identity, RawModuleDef};
+use spacetimedb_engine::snapshot::{Compression, SnapshotWorker};
+use spacetimedb_engine::update::{update_database, UpdateLogger};
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
-use spacetimedb_runtime::sim::{Rng, Runtime as SimRuntime};
+use spacetimedb_runtime::sim::{yield_now, Rng};
 use spacetimedb_runtime::Handle;
+use spacetimedb_schema::auto_migrate::{ponder_migrate, MigratePlan};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
+use spacetimedb_snapshot::DynSnapshotRepo;
 use spacetimedb_table::page_pool::PagePool;
 
+mod generation;
+mod migrations;
 mod model;
 mod properties;
+mod row;
+mod state;
 mod workload;
 
-use self::workload::{
-    normalize_rows, row_to_bytes, CommitDelta, CountState, InsertOutcome, Interaction, Observation, TableDelta,
-    TableRowCount,
+use self::migrations::{Migration, MigrationExpectation};
+use self::row::{normalize_rows, row_to_bytes};
+use self::state::{
+    table_schema_state_for_schema, CommitDelta, CountState, SchemaState, TableDelta, TableRowCount, TableRows,
 };
+use self::workload::{InsertOutcome, Interaction, Observation};
 
 use crate::engine::model::Model;
 use crate::engine::properties::EngineProperties;
 use crate::engine::workload::WorkloadGen;
-use crate::schema::{default_schema, to_raw_def, SchemaPlan};
+use crate::schema::{canonical_schema, schema_with_profile, to_module_def, SchemaPlan, SchemaProfile};
 use crate::sim::commitlog::{InMemoryCommitlog, InMemoryCommitlogHandle};
+use crate::sim::snapshot::InMemorySnapshotRepo;
 use crate::traits::{TargetDriver, TestSuite};
+
+pub use self::generation::GenerationCaseWeights;
+pub use self::migrations::EngineMigrationConfig;
+pub use self::workload::InteractionWeights;
 
 pub struct EngineTarget {
     db: Option<RelationalDB>,
@@ -36,17 +53,19 @@ pub struct EngineTarget {
     active_mut_tx: Option<MutTx>,
     commitlog: InMemoryCommitlog,
     runtime_handle: Handle,
+    snapshot_repo: Arc<InMemorySnapshotRepo>,
+    schema: SchemaPlan,
 }
 
 impl EngineTarget {
-    pub fn init(schema: SchemaPlan, runtime_seed: u64) -> anyhow::Result<Self> {
-        let runtime = SimRuntime::new(runtime_seed);
-        let runtime_handle = Handle::simulation(runtime.handle());
+    pub fn init(schema: SchemaPlan, runtime_handle: Handle) -> anyhow::Result<Self> {
+        let canonical = canonical_schema(&schema)?;
         let commitlog = InMemoryCommitlog::new();
-        let db = Self::open_db(&commitlog, runtime_handle.clone())?;
+        let snapshot_repo = Arc::new(InMemorySnapshotRepo::new(Identity::ZERO, 0));
+        let db = Self::open_db(&commitlog, snapshot_repo.clone(), runtime_handle.clone())?;
 
         Self::install_schema(&db, &schema)?;
-        let table_ids = Self::load_table_ids(&db, &schema)?;
+        let table_ids = Self::load_table_ids(&db, &canonical)?;
 
         Ok(Self {
             db: Some(db),
@@ -54,12 +73,22 @@ impl EngineTarget {
             active_mut_tx: None,
             commitlog,
             runtime_handle,
+            snapshot_repo,
+            schema: canonical,
         })
     }
 
-    fn open_db(commitlog: &InMemoryCommitlog, runtime_handle: Handle) -> anyhow::Result<RelationalDB> {
+    fn open_db(
+        commitlog: &InMemoryCommitlog,
+        snapshot_repo: Arc<InMemorySnapshotRepo>,
+        runtime_handle: Handle,
+    ) -> anyhow::Result<RelationalDB> {
+        let snapshot_stats = snapshot_repo.clone();
+        let snapshot_repo: Arc<DynSnapshotRepo> = snapshot_repo;
+        let snapshot_worker = SnapshotWorker::new(snapshot_repo, Compression::Disabled, runtime_handle.clone());
+        let snapshot_requester = snapshot_worker.clone();
         let history = commitlog.open_handle()?;
-        let persistence = Self::persistence(history.clone(), runtime_handle);
+        let persistence = Self::persistence(history.clone(), Some(snapshot_worker), runtime_handle);
         let (db, connected_clients) = RelationalDB::open(
             Identity::ZERO,
             Identity::ZERO,
@@ -69,10 +98,18 @@ impl EngineTarget {
             PagePool::new_for_test(),
         )?;
         anyhow::ensure!(connected_clients.is_empty(), "replay produced connected clients");
+        commitlog.set_on_new_segment(Some(Arc::new(move |requested_at| {
+            snapshot_stats.observe_snapshot_request(Some(requested_at));
+            snapshot_requester.request_snapshot_ignore_closed();
+        })));
         Ok(db)
     }
 
-    fn persistence(handle: InMemoryCommitlogHandle, runtime_handle: Handle) -> Persistence {
+    fn persistence(
+        handle: InMemoryCommitlogHandle,
+        snapshots: Option<SnapshotWorker>,
+        runtime_handle: Handle,
+    ) -> Persistence {
         let durability: Arc<EngineDurability> = Arc::new(handle);
         let disk_size: DiskSizeFn = Arc::new(|| {
             io::Result::Ok(SizeOnDisk {
@@ -83,16 +120,17 @@ impl EngineTarget {
         Persistence {
             durability,
             disk_size,
-            snapshots: None,
+            snapshots,
             runtime: runtime_handle,
         }
     }
 
+    fn module_def(schema: &SchemaPlan) -> anyhow::Result<ModuleDef> {
+        to_module_def(schema)
+    }
+
     fn install_schema(db: &RelationalDB, schema: &SchemaPlan) -> anyhow::Result<()> {
-        let raw = to_raw_def(schema);
-        let raw_module_def = RawModuleDef::V10(raw);
-        let module_def =
-            ModuleDef::try_from(raw_module_def).map_err(|e| anyhow::anyhow!("schema validation failed: {e}"))?;
+        let module_def = Self::module_def(schema)?;
 
         db.with_auto_commit(Workload::Internal, |tx| -> Result<(), DBError> {
             for table_def in module_def.tables() {
@@ -127,7 +165,11 @@ impl EngineTarget {
 
         drop(db);
 
-        self.db = Some(Self::open_db(&self.commitlog, self.runtime_handle.clone())?);
+        self.db = Some(Self::open_db(
+            &self.commitlog,
+            self.snapshot_repo.clone(),
+            self.runtime_handle.clone(),
+        )?);
         Ok(())
     }
 
@@ -138,27 +180,46 @@ impl EngineTarget {
             .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
         let tx = db.begin_tx(Workload::Internal);
         let mut row_counts = Vec::with_capacity(self.table_ids.len());
+        let mut table_rows = Vec::with_capacity(self.table_ids.len());
+        let mut schema_tables = Vec::with_capacity(self.table_ids.len());
 
         for (table, table_id) in self.table_ids.iter().enumerate() {
-            let count = match db.iter(&tx, *table_id) {
-                Ok(iter) => iter.count() as u64,
+            let rows = match db.iter(&tx, *table_id) {
+                Ok(iter) => normalize_rows(iter.map(|row| row.to_product_value()).collect()),
                 Err(err) => {
                     let _ = db.release_tx(tx);
                     return Err(err.into());
                 }
             };
+            let count = rows.len() as u64;
             row_counts.push(TableRowCount { table, count });
+            table_rows.push(TableRows { table, rows });
+
+            let schema = match db.schema_for_table(&tx, *table_id) {
+                Ok(schema) => schema,
+                Err(err) => {
+                    let _ = db.release_tx(tx);
+                    return Err(err.into());
+                }
+            };
+            schema_tables.push(table_schema_state_for_schema(table, &schema));
         }
 
         let _ = db.release_tx(tx);
-        Ok(CountState { row_counts })
+        Ok(CountState {
+            row_counts,
+            table_rows,
+            schema: SchemaState { tables: schema_tables },
+        })
     }
 
-    fn is_unique_constraint_violation(error: &DBError) -> bool {
-        matches!(
-            error,
-            DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(_)))
-        )
+    fn unique_constraint_violation_details(error: &DBError) -> Option<String> {
+        match error {
+            DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(violation))) => {
+                Some(violation.to_string())
+            }
+            _ => None,
+        }
     }
 
     fn commit_delta_from_tx_data(&self, tx_data: &TxData) -> CommitDelta {
@@ -185,6 +246,79 @@ impl EngineTarget {
 
         tables.sort_by_key(|delta| delta.table);
         CommitDelta { tables }
+    }
+
+    fn migrate(&mut self, migration: &Migration) -> anyhow::Result<Observation> {
+        anyhow::ensure!(
+            self.active_mut_tx.is_none(),
+            "migration while mutable transaction is active"
+        );
+        anyhow::ensure!(
+            migration.target_schema() != &self.schema,
+            "engine DST generated a no-op migration"
+        );
+
+        let old_module_def = Self::module_def(&self.schema)?;
+        let new_module_def = match Self::module_def(migration.target_schema()) {
+            Ok(module_def) => module_def,
+            Err(error) => {
+                return match migration.expectation() {
+                    MigrationExpectation::Rejected => Ok(Observation::MigrationRejected),
+                    MigrationExpectation::Accepted => Err(error),
+                };
+            }
+        };
+
+        let plan = match ponder_migrate(&old_module_def, &new_module_def) {
+            Ok(plan) => plan,
+            Err(error) => {
+                return match migration.expectation() {
+                    MigrationExpectation::Rejected => Ok(Observation::MigrationRejected),
+                    MigrationExpectation::Accepted => Err(error.into()),
+                };
+            }
+        };
+
+        match migration.expectation() {
+            MigrationExpectation::Accepted => {
+                ensure_auto_plan(&plan)?;
+                self.apply_auto_migration(migration, plan)?;
+                Ok(Observation::Migrated)
+            }
+            MigrationExpectation::Rejected => self.expect_rejected_migration(plan),
+        }
+    }
+
+    fn apply_auto_migration(&mut self, migration: &Migration, plan: MigratePlan<'_>) -> anyhow::Result<()> {
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        let _ = update_database(db, &mut tx, AuthCtx::for_testing(), plan, &DstUpdateLogger)?;
+        let Some((_tx_offset, _tx_data, _tx_metrics, _reducer)) = db.commit_tx(tx)? else {
+            anyhow::bail!("migration commit produced no transaction data");
+        };
+
+        self.schema = migration.schema().clone();
+        self.table_ids = Self::load_table_ids(db, &self.schema)?;
+        Ok(())
+    }
+
+    fn expect_rejected_migration(&self, plan: MigratePlan<'_>) -> anyhow::Result<Observation> {
+        if matches!(&plan, MigratePlan::Manual(_)) {
+            return Ok(Observation::MigrationRejected);
+        }
+
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("database is not open"))?;
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
+        match update_database(db, &mut tx, AuthCtx::for_testing(), plan, &DstUpdateLogger) {
+            Ok(_) => anyhow::bail!("engine applied migration expected to be rejected"),
+            Err(_) => Ok(Observation::MigrationRejected),
+        }
     }
 
     pub fn execute(&mut self, interaction: &Interaction) -> anyhow::Result<Observation> {
@@ -216,11 +350,14 @@ impl EngineTarget {
                     .ok_or_else(|| anyhow::anyhow!("insert without active mutable transaction"))?;
                 let outcome = match db.insert(tx, table_id, &bytes) {
                     Ok((_generated_columns, row, _flags)) => InsertOutcome::Accepted(row.to_product_value()),
-                    // Generated rows can intentionally hit unique constraints; the oracle validates that rejection.
-                    Err(error) if Self::is_unique_constraint_violation(&error) => {
-                        InsertOutcome::UniqueConstraintViolation
+                    Err(error) => {
+                        // Generated rows can intentionally hit unique constraints; the oracle validates that rejection.
+                        if let Some(details) = Self::unique_constraint_violation_details(&error) {
+                            InsertOutcome::UniqueConstraintViolation { details }
+                        } else {
+                            return Err(error.into());
+                        }
                     }
-                    Err(error) => return Err(error.into()),
                 };
                 Ok(Observation::Inserted { outcome })
             }
@@ -249,10 +386,10 @@ impl EngineTarget {
                 let Some((_tx_offset, tx_data, _tx_metrics, _reducer)) = db.commit_tx(tx)? else {
                     anyhow::bail!("commit produced no transaction data");
                 };
-                Ok(Observation::Committed {
-                    delta: self.commit_delta_from_tx_data(&tx_data),
-                })
+                let delta = self.commit_delta_from_tx_data(&tx_data);
+                Ok(Observation::Committed { delta })
             }
+            Interaction::Migrate(migration) => self.migrate(migration),
             Interaction::Replay => {
                 let _ = self.active_mut_tx.take();
                 self.reopen_from_commitlog()?;
@@ -271,15 +408,82 @@ impl EngineTarget {
     }
 }
 
-impl TargetDriver<Interaction> for EngineTarget {
-    type Observation = Observation;
+fn ensure_auto_plan(plan: &MigratePlan<'_>) -> anyhow::Result<()> {
+    let MigratePlan::Auto(_) = plan else {
+        anyhow::bail!("engine DST generated a manual migration plan");
+    };
+    Ok(())
+}
 
-    async fn execute<'a>(&'a mut self, interaction: &'a Interaction) -> Result<Self::Observation, anyhow::Error> {
-        EngineTarget::execute(self, interaction)
+struct DstUpdateLogger;
+
+impl UpdateLogger for DstUpdateLogger {
+    fn info(&self, msg: &str) {
+        tracing::debug!(%msg, "engine DST migration update");
     }
 }
 
-pub struct EngineTest;
+impl TargetDriver<Interaction> for EngineTarget {
+    type Observation = Observation;
+
+    fn progress_status(&self) -> Option<String> {
+        let snapshot_stats = self.snapshot_repo.stats();
+        let commitlog_head = self.commitlog.max_committed_offset();
+        let snapshot_lag = commitlog_head
+            .zip(snapshot_stats.last_created_tx_offset)
+            .map(|(head, snapshot)| head.saturating_sub(snapshot));
+
+        Some(format!(
+            "commitlog_head={}, snapshot_lag={}",
+            commitlog_head.map_or_else(|| "none".to_string(), |head| head.to_string()),
+            snapshot_lag.map_or_else(|| "unknown".to_string(), |lag| lag.to_string())
+        ))
+    }
+
+    async fn execute<'a>(&'a mut self, interaction: &'a Interaction) -> Result<Self::Observation, anyhow::Error> {
+        let observation = EngineTarget::execute(self, interaction)?;
+        if matches!(interaction, Interaction::CommitTx | Interaction::Migrate(_)) {
+            // DO not yeild when tx lock is held.
+            yield_now().await;
+        }
+        Ok(observation)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EngineConfig {
+    pub schema: SchemaProfile,
+    pub workload: InteractionWeights,
+    pub migrations: EngineMigrationConfig,
+    pub generation: GenerationCaseWeights,
+}
+
+impl Default for EngineConfig {
+    fn default() -> Self {
+        Self {
+            schema: SchemaProfile::engine_dst(),
+            workload: InteractionWeights::default(),
+            migrations: EngineMigrationConfig::default(),
+            generation: GenerationCaseWeights::default(),
+        }
+    }
+}
+
+pub struct EngineTest {
+    config: EngineConfig,
+}
+
+impl EngineTest {
+    pub fn new(config: EngineConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl Default for EngineTest {
+    fn default() -> Self {
+        Self::new(EngineConfig::default())
+    }
+}
 
 impl TestSuite for EngineTest {
     type Interaction = Interaction;
@@ -290,15 +494,273 @@ impl TestSuite for EngineTest {
 
     type Properties = EngineProperties;
 
-    async fn build(&self, rng: Rng) -> Result<(Self::Interactions, Self::Target, Self::Properties), anyhow::Error> {
-        let schema = default_schema(rng.clone());
-        let runtime_seed = rng.next_u64();
-        let target = EngineTarget::init(schema.clone(), runtime_seed)?;
+    async fn build(
+        &self,
+        rng: Rng,
+        runtime: Handle,
+    ) -> Result<(Self::Interactions, Self::Target, Self::Properties), anyhow::Error> {
+        let schema = schema_with_profile(rng.clone(), self.config.schema.clone());
+        let target = EngineTarget::init(schema, runtime)?;
+        let schema = target.schema.clone();
         let properties = EngineProperties::new(schema.clone());
 
         let model = Model::new(schema);
-        let interactions = WorkloadGen::new(rng, model);
+        let interactions = WorkloadGen::with_config(
+            rng,
+            model,
+            self.config.schema.clone(),
+            self.config.workload,
+            self.config.migrations.clone(),
+            self.config.generation.clone(),
+        );
 
         Ok((interactions, target, properties))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use spacetimedb_lib::AlgebraicValue;
+    use spacetimedb_runtime::sim::Runtime as SimRuntime;
+    use spacetimedb_sats::product;
+
+    use super::migrations::{Migration, MigrationExpectation, SchemaRewrite, TableMigrationOp};
+    use super::*;
+    use crate::schema::{ColumnPlan, IndexAlgorithm, IndexPlan, TablePlan, Type, UniqueConstraintPlan};
+
+    fn migration_replay_schema() -> SchemaPlan {
+        SchemaPlan {
+            tables: vec![TablePlan {
+                name: "items".into(),
+                columns: vec![
+                    ColumnPlan {
+                        name: "id".into(),
+                        ty: Type::U64,
+                    },
+                    ColumnPlan {
+                        name: "kind".into(),
+                        ty: Type::Sum { variants: 1 },
+                    },
+                ],
+                primary_key: Some(0),
+                indexes: vec![IndexPlan {
+                    columns: vec![0],
+                    algorithm: IndexAlgorithm::BTree,
+                }],
+                unique_constraints: vec![UniqueConstraintPlan { columns: vec![0] }],
+                sequences: vec![],
+                is_public: true,
+                is_event: false,
+            }],
+        }
+    }
+
+    fn add_column_replay_schema() -> SchemaPlan {
+        SchemaPlan {
+            tables: vec![TablePlan {
+                name: "items".into(),
+                columns: vec![
+                    ColumnPlan {
+                        name: "id".into(),
+                        ty: Type::U64,
+                    },
+                    ColumnPlan {
+                        name: "score".into(),
+                        ty: Type::U64,
+                    },
+                ],
+                primary_key: Some(0),
+                indexes: vec![IndexPlan {
+                    columns: vec![0],
+                    algorithm: IndexAlgorithm::BTree,
+                }],
+                unique_constraints: vec![UniqueConstraintPlan { columns: vec![0] }],
+                sequences: vec![],
+                is_public: true,
+                is_event: false,
+            }],
+        }
+    }
+
+    fn change_index_replay_schema() -> SchemaPlan {
+        SchemaPlan {
+            tables: vec![TablePlan {
+                name: "items".into(),
+                columns: vec![
+                    ColumnPlan {
+                        name: "id".into(),
+                        ty: Type::U64,
+                    },
+                    ColumnPlan {
+                        name: "score".into(),
+                        ty: Type::U64,
+                    },
+                ],
+                primary_key: Some(0),
+                indexes: vec![
+                    IndexPlan {
+                        columns: vec![0],
+                        algorithm: IndexAlgorithm::BTree,
+                    },
+                    IndexPlan {
+                        columns: vec![1],
+                        algorithm: IndexAlgorithm::BTree,
+                    },
+                ],
+                unique_constraints: vec![UniqueConstraintPlan { columns: vec![0] }],
+                sequences: vec![],
+                is_public: true,
+                is_event: false,
+            }],
+        }
+    }
+
+    fn insert_u64_rows(target: &mut EngineTarget) -> anyhow::Result<()> {
+        target.execute(&Interaction::BeginMutTx)?;
+        for id in 0..128u64 {
+            target.execute(&Interaction::Insert {
+                table: 0,
+                row: product![id, id * 10],
+            })?;
+        }
+        target.execute(&Interaction::CommitTx)?;
+        Ok(())
+    }
+
+    #[test]
+    fn engine_dst_smoke_runs_random_workload() -> anyhow::Result<()> {
+        let mut runtime = SimRuntime::new(0);
+        let runtime_handle = Handle::simulation(runtime.handle());
+        runtime.block_on(EngineTest::default().run(Rng::new(0), runtime_handle, 1_000))?;
+        Ok(())
+    }
+
+    #[test]
+    fn init_installs_raw_schema_and_stores_canonical_schema() -> anyhow::Result<()> {
+        let raw_schema = SchemaPlan {
+            tables: vec![TablePlan {
+                name: "RawTable".into(),
+                columns: vec![ColumnPlan {
+                    name: "SomeValue".into(),
+                    ty: Type::U64,
+                }],
+                primary_key: None,
+                indexes: vec![],
+                unique_constraints: vec![],
+                sequences: vec![],
+                is_public: true,
+                is_event: false,
+            }],
+        };
+
+        let expected = canonical_schema(&raw_schema)?;
+        assert_ne!(expected, raw_schema);
+
+        let target = EngineTarget::init(raw_schema, Handle::simulation(SimRuntime::new(0).handle()))?;
+        assert_eq!(target.schema, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn rejected_migration_is_expected_rejected_by_engine() -> anyhow::Result<()> {
+        let mut target = EngineTarget::init(
+            add_column_replay_schema(),
+            Handle::simulation(SimRuntime::new(0).handle()),
+        )?;
+        let model = Model::new(target.schema.clone());
+        let migration = Migration::choose_rejected(
+            &Rng::new(0),
+            &target.schema,
+            &model,
+            &SchemaProfile::engine_dst(),
+            &EngineMigrationConfig::default(),
+        )
+        .expect("schema should produce a duplicate-object rejected migration");
+
+        assert_eq!(migration.expectation(), MigrationExpectation::Rejected);
+        assert_eq!(
+            target.execute(&Interaction::Migrate(migration))?,
+            Observation::MigrationRejected
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn add_column_migration_replays_with_existing_rows() -> anyhow::Result<()> {
+        let mut target = EngineTarget::init(
+            add_column_replay_schema(),
+            Handle::simulation(SimRuntime::new(0).handle()),
+        )?;
+        insert_u64_rows(&mut target)?;
+
+        target.execute(&Interaction::Migrate(Migration::from_rewrites(
+            &target.schema,
+            vec![SchemaRewrite::AlterTable {
+                table: "items".into(),
+                ops: vec![
+                    TableMigrationOp::ChangeAccess,
+                    TableMigrationOp::AddColumn { ty: Type::U64 },
+                ],
+            }],
+        )?))?;
+        target.execute(&Interaction::Replay)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn change_index_migration_replays_with_existing_rows() -> anyhow::Result<()> {
+        let mut target = EngineTarget::init(
+            change_index_replay_schema(),
+            Handle::simulation(SimRuntime::new(0).handle()),
+        )?;
+        insert_u64_rows(&mut target)?;
+
+        target.execute(&Interaction::Migrate(Migration::from_rewrites(
+            &target.schema,
+            vec![SchemaRewrite::AlterTable {
+                table: "items".into(),
+                ops: vec![
+                    TableMigrationOp::ChangeAccess,
+                    TableMigrationOp::ChangeIndex { columns: vec![1] },
+                ],
+            }],
+        )?))?;
+        target.execute(&Interaction::Replay)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn migration_that_updates_st_table_and_st_column_replays() -> anyhow::Result<()> {
+        let mut target = EngineTarget::init(
+            migration_replay_schema(),
+            Handle::simulation(SimRuntime::new(0).handle()),
+        )?;
+
+        target.execute(&Interaction::BeginMutTx)?;
+        for id in 0..128u64 {
+            target.execute(&Interaction::Insert {
+                table: 0,
+                row: product![id, AlgebraicValue::sum(0, AlgebraicValue::U8(1))],
+            })?;
+        }
+        target.execute(&Interaction::CommitTx)?;
+
+        target.execute(&Interaction::Migrate(Migration::from_rewrites(
+            &target.schema,
+            vec![SchemaRewrite::AlterTable {
+                table: "items".into(),
+                ops: vec![
+                    TableMigrationOp::ChangeAccess,
+                    TableMigrationOp::ChangeColumnType { column: 1 },
+                ],
+            }],
+        )?))?;
+        target.execute(&Interaction::Replay)?;
+
+        Ok(())
     }
 }
