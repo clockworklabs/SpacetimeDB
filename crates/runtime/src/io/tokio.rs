@@ -1,3 +1,8 @@
+use std::io::{Seek, SeekFrom};
+use std::panic;
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::{io, marker::PhantomData, rc::Rc, sync::Arc};
 
 #[cfg(unix)]
@@ -106,6 +111,15 @@ impl SpacetimeIO for TokioIO {
             Ok(())
         })
         .await
+    }
+
+    fn length(&self, fd: Self::Fd) -> Self::Completion<Result<u64, Self::Error>> {
+        self.rt
+            .spawn_blocking(move || {
+                let mut fd = fd.try_clone()?;
+                file_length(&mut fd)
+            })
+            .into()
     }
 }
 

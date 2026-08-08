@@ -198,13 +198,14 @@ impl SpacetimeIO for SimulatorIO {
     }
 
     async fn reserve(&self, fd: Self::Fd, additional: u64) -> Result<(), Self::Error> {
-        let len = self
-            .submit_and_wait(|tx| op::get_len(fd.clone(), tx))
-            .await
-            .expect("`get_len` future cancelled")?;
+        let len = self.length(fd.clone()).await?;
         self.submit_and_wait(|tx| op::set_len(fd, len + additional, tx))
             .await
             .expect("`set_len` future cancelled")
+    }
+
+    fn length(&self, fd: Self::Fd) -> Self::Completion<Result<u64, Self::Error>> {
+        self.submit(op::get_len(fd))
     }
 }
 
