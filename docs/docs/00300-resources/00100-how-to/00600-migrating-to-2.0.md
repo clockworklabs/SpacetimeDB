@@ -107,9 +107,9 @@ conn.Reducers.OnDealDamage += (ctx, _, _) =>
     {
         Console.WriteLine("Reducer succeeded");
     }
-    else if (ctx.Event.Status is Status.Failed failed)
+    else if (ctx.Event.Status is Status.Failed(var reason))
     {
-        Console.WriteLine($"Reducer failed: {failed}");
+        Console.WriteLine($"Reducer failed: {reason}");
     }
     else if (ctx.Event.Status is Status.OutOfEnergy)
     {
@@ -190,15 +190,15 @@ spacetimedb.reducer('deal_damage', { target: t.identity(), amount: t.u32() }, (c
 **Server (module) -- after:**
 ```typescript
 // 2.0 server -- explicitly publish events via an event table
-const damageEvent = table({ event: true }, {
+const damage_event = table({ name: 'damage_event', event: true }, {
     target: t.identity(),
     amount: t.u32(),
 })
-// schema() takes an object: schema({ damageEvent }), never schema(damageEvent)
-const spacetimedb = schema({ damageEvent });
+// schema() takes an object: schema({ damage_event }), never schema(damage_event)
+const spacetimedb = schema({ damage_event });
 
 export const dealDamage = spacetimedb.reducer({ target: t.identity(), amount: t.u32() }, (ctx, { target, amount }) => {
-  ctx.db.damageEvent.insert({ target, amount });
+  ctx.db.damage_event.insert({ target, amount });
 });
 ```
 
@@ -1084,14 +1084,14 @@ SPACETIMEDB_REDUCER(my_reducer, ReducerContext ctx) {
 In 2.0 modules, only columns with a `.primaryKey()` constraint expose an `update` method, whereas previously, `.unique()` constraints also provided that method. The previous behavior led to confusion, as only updates which preserved the value in the primary key column resulted in `onUpdate` callbacks being invoked on the client.
 
 ```typescript
-const myTable = table({ name: 'my_table' }, {
+const my_table = table({ name: 'my_table' }, {
     id: t.u32().unique(),
     name: t.string(),
 }) 
 
 // 1.0 -- REMOVED in 2.0 
 spacetimedb.reducer('my_reducer', ctx => {
-    ctx.db.myTable.id.update({
+    ctx.db.my_table.id.update({
         id: 1,
         name: "Foobar",
     });
@@ -1100,8 +1100,8 @@ spacetimedb.reducer('my_reducer', ctx => {
 // 2.0 -- Perform a delete followed by an insert
 // OR change the `.unique()` constraint into `.primaryKey()` constraint
 spacetimedb.reducer(ctx => {
-    ctx.db.myTable.id.delete(1);
-    ctx.db.myTable.insert({
+    ctx.db.my_table.id.delete(1);
+    ctx.db.my_table.insert({
         id: 1,
         name: "Foobar"
     });
@@ -1366,14 +1366,14 @@ spacetimedb.reducer('runMyTimer', myTimer.rowType, (ctx, timer) => {
 ```
 
 ```typescript
-const myTimer = table({ scheduled: () => runMyTimer }, {
+const my_timer = table({ name: 'my_timer', scheduled: (): any => runMyTimer }, {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });
-const spacetimedb = schema({ myTimer }); // schema({ table }), never schema(table)
+const spacetimedb = schema({ my_timer }); // schema({ table }), never schema(table)
 
 // 2.0 -- Can only be called by the database
-export const runMyTimer = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
+export const runMyTimer = spacetimedb.reducer({ arg: my_timer.rowType }, (ctx, { arg }) => {
   // Do stuff
 })
 ```
@@ -1479,17 +1479,17 @@ In the rare event that you have a reducer or procedure which is intended to be i
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const myTimer = table({ scheduled: () => runMyTimerPrivate }, {
+const my_timer = table({ name: 'my_timer', scheduled: (): any => runMyTimerPrivate }, {
   scheduledId: t.u64().primaryKey().autoInc(),
   scheduledAt: t.scheduleAt(),
 });
-const spacetimedb = schema({ myTimer }); // schema({ table }), never schema(table)
+const spacetimedb = schema({ my_timer }); // schema({ table }), never schema(table)
 
-export const runMyTimerPrivate = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
+export const runMyTimerPrivate = spacetimedb.reducer({ arg: my_timer.rowType }, (ctx, { arg }) => {
   // Do stuff...
 });
 
-export const runMyTimer = spacetimedb.reducer({ arg: myTimer.rowType }, (ctx, { arg }) => {
+export const runMyTimer = spacetimedb.reducer({ arg: my_timer.rowType }, (ctx, { arg }) => {
   // Same logic as runMyTimerPrivate — extract to a helper if needed
 });
 ```

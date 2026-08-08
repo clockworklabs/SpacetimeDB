@@ -53,7 +53,7 @@ export const sessionCount = spacetimedb.procedure(
 );
 
 export const activeSessions = spacetimedb.anonymousView(
-  { name: 'activeSessions', public: true },
+  { name: 'active_sessions', public: true },
   t.array(sessions.rowType),
   (ctx) => [...ctx.db.sessions.iter()]
 );
@@ -114,7 +114,7 @@ Submodule tables appear under a namespace field on `ctx.db`. The field matches t
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.reducer('example', {}, (ctx) => {
+export const example = spacetimedb.reducer((ctx) => {
   // Consumer's own tables (no namespace)
   for (const player of ctx.db.players.iter()) { /* ... */ }
 
@@ -145,7 +145,7 @@ export function sessionCountHelper(ctx: ReducerContext<typeof spacetimedb>): num
 }
 
 // my-database: call submodule reducer and helper from a consumer reducer
-spacetimedb.reducer('onLogin', { token: t.string() }, (ctx, { token }) => {
+export const onLogin = spacetimedb.reducer({ token: t.string() }, (ctx, { token }) => {
   // call a submodule reducer
   authLib.verifyToken(ctx.as.myauth, { token });
 

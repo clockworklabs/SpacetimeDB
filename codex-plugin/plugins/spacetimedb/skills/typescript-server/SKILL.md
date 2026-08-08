@@ -52,7 +52,8 @@ import { ScheduleAt } from 'spacetimedb';        // for scheduled tables only
 
 ## Tables
 
-`table(OPTIONS, COLUMNS)` takes two arguments. The `name` field MUST be snake_case:
+`table(OPTIONS, COLUMNS)` takes two arguments. The `name` field is optional;
+when present, it overrides the canonical SQL name and should be snake_case:
 
 ```typescript
 const entity = table(
@@ -65,9 +66,13 @@ const entity = table(
 );
 ```
 
-Options: `name` (snake_case, recommended), `public: true`, `event: true`, `scheduled: (): any => reducerRef`, `indexes: [...]`
+Options: `name` (optional canonical SQL name override), `public: true`, `event: true`, `scheduled: (): any => reducerRef`, `indexes: [...]`
 
-`ctx.db` accessors are the keys passed to `schema({...})`, verbatim: `schema({ score_record })` → `ctx.db.score_record`. Use snake_case keys matching the table `name`. Client codegen converts case; server `ctx.db` does not.
+`ctx.db` accessors are the keys passed to `schema({ ... })`, verbatim:
+`schema({ score_record })` -> `ctx.db.score_record`. The optional `name`
+field overrides the canonical SQL name; it does not change the server
+`ctx.db` accessor. Use snake_case keys matching the table `name`. Client
+codegen converts case; server `ctx.db` does not.
 
 ## Column Types
 
