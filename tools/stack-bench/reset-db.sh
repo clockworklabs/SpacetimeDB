@@ -27,7 +27,12 @@ case "$BACKEND" in
   spacetime)
     # Republishing with --delete-data clears the module's tables in place, so the
     # client keeps pointing at the same module name.
-    MODULE=$(grep -oE "MODULE_NAME\s*=\s*'[^']+'" "$APP_DIR/client/src/config.ts" 2>/dev/null | grep -oE "'[^']+'" | tr -d "'")
+    # `|| true` is load-bearing under `set -euo pipefail`: an app with no
+    # client/src/config.ts (a stack-free layout, or a build that never got that
+    # far) makes the pipeline fail, and the assignment's non-zero status kills
+    # the script one line BEFORE the fallback that exists for exactly this case.
+    # The whole grading pass then aborts with "could not reset database".
+    MODULE=$(grep -oE "MODULE_NAME\s*=\s*'[^']+'" "$APP_DIR/client/src/config.ts" 2>/dev/null | grep -oE "'[^']+'" | tr -d "'" || true)
     MODULE="${MODULE:-$MODULE_FALLBACK}"
 
     # Reset the host the APP READS, not the one we would prefer it used. These
@@ -35,7 +40,7 @@ case "$BACKEND" in
     # published to :3210 while the app served :3000, reported success, and every
     # later grade ran against an accumulating database. A reset that resets
     # something else is worse than no reset, because it is silent.
-    APP_URI=$(grep -oE "URI\s*=\s*'[^']+'" "$APP_DIR/client/src/config.ts" 2>/dev/null | grep -oE "'[^']+'" | tr -d "'")
+    APP_URI=$(grep -oE "URI\s*=\s*'[^']+'" "$APP_DIR/client/src/config.ts" 2>/dev/null | grep -oE "'[^']+'" | tr -d "'" || true)
     # The SDK connects over ws://, and apps legitimately write that into their
     # config. The CLI publishes over http — handing it a ws URI aborted a whole
     # grading pass with "Invalid protocol: ws". Same host, translated scheme.
