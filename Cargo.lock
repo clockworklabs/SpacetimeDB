@@ -901,8 +901,6 @@ dependencies = [
  "anyhow",
  "ci-common",
  "duct",
- "keynote-bench-harness",
- "spacetimedb-guard",
 ]
 
 [[package]]
@@ -963,6 +961,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "duct",
+]
+
+[[package]]
+name = "ci-keynote-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "keynote-bench-harness",
+ "spacetimedb-guard",
 ]
 
 [[package]]

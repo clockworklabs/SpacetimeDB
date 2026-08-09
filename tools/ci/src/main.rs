@@ -2,8 +2,6 @@
 use anyhow::{bail, Result};
 use ci_common::pnpm;
 use duct::cmd;
-use keynote_bench_harness::KeynoteBenchConfig;
-use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
 use std::fs;
 use std::path::Path;
 
@@ -52,7 +50,7 @@ const COMMANDS: &[Command] = &[
     },
     Command {
         name: "keynote-bench",
-        package: "",
+        package: "ci-keynote-bench",
     },
     Command {
         name: "update-flow",
@@ -116,9 +114,6 @@ fn run_command(command: &Command, forwarded: &[String]) -> Result<()> {
     }
     if command.name == "dlls" {
         return run_dlls(forwarded);
-    }
-    if command.name == "keynote-bench" {
-        return run_keynote_bench(forwarded);
     }
     if command.name == "publish-checks" {
         return run_publish_checks(forwarded);
@@ -230,22 +225,6 @@ fn run_dlls(args: &[String]) -> Result<()> {
     eprintln!("warning: `cargo ci dlls` is deprecated; use `cargo regen csharp dlls` instead");
     cmd!("cargo", "regen", "csharp", "dlls").run()?;
     Ok(())
-}
-
-fn run_keynote_bench(args: &[String]) -> Result<()> {
-    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
-        println!("Usage: cargo ci keynote-bench");
-        return Ok(());
-    }
-    if !args.is_empty() {
-        bail!("cargo ci keynote-bench does not accept arguments");
-    }
-
-    let cli_path = ensure_binaries_built();
-    let server = SpacetimeDbGuard::spawn_in_temp_data_dir();
-    let server_url = server.host_url.clone();
-
-    keynote_bench_harness::run(KeynoteBenchConfig::standalone(".", cli_path, server_url))
 }
 
 fn run_docs_build(args: &[String]) -> Result<()> {
