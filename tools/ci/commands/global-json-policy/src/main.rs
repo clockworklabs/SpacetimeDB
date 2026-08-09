@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, Result};
+use ci_common::ensure_repo_root;
 use clap::Parser;
 use duct::cmd;
 use std::fs;
@@ -10,19 +11,14 @@ use std::path::{Path, PathBuf};
 #[derive(Parser)]
 struct Args {}
 
-fn ensure_repo_root() -> Result<()> {
-    if !Path::new("Cargo.toml").exists() {
-        bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
-    }
-    Ok(())
-}
-
 fn git_tracked_files(pathspec: &str) -> Result<Vec<PathBuf>> {
     let output = cmd!("git", "ls-files", pathspec).read()?;
     Ok(output.lines().map(PathBuf::from).collect())
 }
 
-fn check_global_json_policy() -> Result<()> {
+fn main() -> Result<()> {
+    Args::parse();
+
     ensure_repo_root()?;
 
     let root_json = Path::new("global.json");
@@ -57,10 +53,4 @@ fn check_global_json_policy() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    Args::parse();
-
-    check_global_json_policy()
 }

@@ -1,5 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, ensure, Context, Result};
+use ci_common::ensure_repo_root;
 use clap::{Parser, Subcommand};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
@@ -7,13 +8,6 @@ use std::ffi::OsStr;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::{env, fs};
-
-fn ensure_repo_root() -> Result<()> {
-    if !Path::new("Cargo.toml").exists() {
-        bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
-    }
-    Ok(())
-}
 use tempfile::TempDir;
 
 #[derive(Parser)]
@@ -62,7 +56,10 @@ enum SmoketestCmd {
     CheckModList,
 }
 
-fn run(args: SmoketestsArgs) -> Result<()> {
+fn main() -> Result<()> {
+    env_logger::init();
+
+    let args = SmoketestsArgs::parse();
     match args.cmd {
         Some(SmoketestCmd::Prepare) => {
             build_cli()?;
@@ -360,9 +357,4 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    env_logger::init();
-    run(SmoketestsArgs::parse())
 }
