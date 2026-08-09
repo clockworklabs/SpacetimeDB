@@ -198,7 +198,36 @@ export function appendix(track, level) {
 // Suites are declared per level in the manifest, with spec paths relative to
 // the track directory. A level with no entry of its own falls back to level 1's,
 // which is what grading a higher level did before tracks existed.
+// Guarantees, unlike features, are promises that must not break later. A level
+// adds features; it must not cost you the invariants the earlier levels earned.
+// These suites are therefore re-run at every level above the one that
+// introduced them.
+//
+// This is the measurement the ladder exists for. Cost per level alone cannot
+// distinguish "grew the app" from "grew the app and quietly broke live stock
+// updates"; a stack that maintains propagation by hand pays for every new write
+// path, and the failure shows up here rather than in the feature score. Without
+// it, L3 never re-checks L1's promises and a regression is invisible.
+const CUMULATIVE_KINDS = new Set(['invariants', 'contention', 'systems']);
+
 export function suitesFor(track, level) {
-  const declared = track.suites[String(level)] ?? track.suites['1'] ?? [];
-  return declared.map(s => ({ ...s, spec: join(track.dir, s.spec) }));
+  const at = lvl => (track.suites[String(lvl)] ?? []).map(s => ({ ...s, spec: join(track.dir, s.spec) }));
+  const declared = track.suites[String(level)] ? at(level) : at(1);
+
+  // Earlier levels' guarantee suites, oldest first, deduped by spec: a suite
+  // declared at several levels (01-contention is listed at 1 and 2) is one
+  // suite, and the current level's own declaration always wins so it keeps its
+  // plain id and its points.
+  const seen = new Set(declared.map(s => s.spec));
+  const inherited = [];
+  for (let lvl = 1; lvl < level; lvl++) {
+    for (const s of at(lvl)) {
+      if (!CUMULATIVE_KINDS.has(s.id) || seen.has(s.spec)) continue;
+      seen.add(s.spec);
+      // A distinct id, because the bundle keys suites by id and a collision
+      // would silently overwrite one result with another.
+      inherited.push({ ...s, id: `${s.id}@L${lvl}`, inherited: true, fromLevel: lvl });
+    }
+  }
+  return [...declared, ...inherited];
 }

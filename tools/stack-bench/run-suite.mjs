@@ -303,21 +303,33 @@ async function main() {
 
   bundle.suites.lint = lint(args);
 
-  let total = 0, max = 0, dirty = false;
+  // Two numbers, kept apart on purpose. `score` is this level's own work.
+  // `regression` is whether the guarantees earned at earlier levels still hold.
+  // Summing them would hide the finding: an app that adds every L3 feature and
+  // silently breaks live stock updates from L1 would still read as progress.
+  let total = 0, max = 0, regTotal = 0, regMax = 0, dirty = false;
   for (const suite of suitesFor(track, args.level)) {
     if (!(await freshen())) { console.log(`  ${suite.id}: SKIPPED (reset failed)`); continue; }
     const r = gradeSuite(args, suite);
     bundle.suites[suite.id] = r;
-    if (r) {
-      total += r.total; max += r.max;
-      if (r.environment?.preexistingRooms > 0) dirty = true;
-    }
+    if (!r) continue;
+    if (suite.inherited) { regTotal += r.total; regMax += r.max; }
+    else { total += r.total; max += r.max; }
+    if (r.environment?.preexistingRooms > 0) dirty = true;
   }
 
-  bundle.totals = { score: total, max, dirty, contractPass: bundle.suites.lint?.pass ?? null };
+  bundle.totals = {
+    score: total, max, dirty, contractPass: bundle.suites.lint?.pass ?? null,
+    // null rather than 0/0 at L1, where there is nothing earlier to regress.
+    regression: regMax ? { score: regTotal, max: regMax } : null,
+  };
   writeFileSync(join(args.out, 'bundle.json'), JSON.stringify(bundle, null, 2));
 
   console.log(`  ${'TOTAL'.padEnd(10)} ... ${total}/${max}${dirty ? '  [DIRTY]' : ''}`);
+  if (regMax) {
+    const kept = regTotal === regMax ? 'all earlier guarantees still hold' : `${regMax - regTotal} EARLIER GUARANTEE(S) LOST`;
+    console.log(`  ${'REGRESSION'.padEnd(10)} ... ${regTotal}/${regMax}  — ${kept}`);
+  }
   console.log(`  bundle: ${join(args.out, 'bundle.json')}`);
 }
 
