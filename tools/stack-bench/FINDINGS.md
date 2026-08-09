@@ -164,8 +164,18 @@ rather than to code paths, plus a reconcile-on-reconnect that refetches current
 state instead of resuming a stream. The earlier build got the first half by
 writing four trigger functions and four triggers; neither build got the second.
 
-**Open.** Whether SpacetimeDB passes 901c structurally — its subscriptions are
-derived from committed database state and a reconnect re-reads it — is being
-measured, not assumed. Until that run lands, this entry documents the PostgreSQL
-behaviour only, and 901a/b/c stay at zero points: a criterion that has failed a
-real build still needs to pass one before it can score.
+**Measured, not assumed.** SpacetimeDB was run against the same spec the same
+day and passed 901c: its subscriptions are derived from committed state, so a
+resubscribe after the restart re-read the corrected stock and the storefront
+showed 15. 901c is therefore promoted to score — it has now failed one real
+build and passed another, which discriminates more convincingly than a mutant.
+901a, 901b and 902a pass on both stacks and stay at zero: a criterion nothing
+has ever failed has not shown it can tell anything apart.
+
+**A gap in the other direction.** The contention suite could not score
+SpacetimeDB at all — both point-carrying criteria returned INCONCLUSIVE. 203b
+replays captured HTTP writes, and this backend writes over WebSocket, so
+nothing was contended; 201a lost one of six concurrent clicks before it
+dispatched. SpacetimeDB scored 0/0 there rather than passing or failing. Until
+that is fixed the contention axis measures PostgreSQL and MongoDB only, and no
+cross-stack contention claim can be made from it.

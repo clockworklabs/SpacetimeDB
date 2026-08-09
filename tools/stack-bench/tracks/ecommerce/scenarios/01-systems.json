@@ -81,7 +81,7 @@
         {
           "id": "901c",
           "desc": "a stock correction that lands while the app server is down shows on an open storefront once the server returns: East 5 + West 10 = 15, no reload",
-          "points": 0,
+          "points": 1,
           "note": "WITHHELD — same promotion rule, plus this is the anti-cheat phase: a script that talks to the app server fails here outright. Fire-and-forget event relays (NOTIFY) also fail unless the app refetches on reconnect.",
           "steps": [
             {
@@ -111,7 +111,8 @@
               "equals": 15,
               "within": 20000
             }
-          ]
+          ],
+          "provenBy": "PROMOTED 2026-08-09 on evidence from two real builds rather than a mutant, which is stronger: it FAILED postgres-ecom-run0 (a one-shot build that scored 50/50 on features and invariants) and PASSED spacetime-ecom-run0 the same day. The postgres app calls pg_notify from its route handlers, so a correction written directly to the database while the server was down was never announced and nothing reconciled on reconnect: the database read 15 and the storefront read 50. SpacetimeDB re-reads committed state on resubscribe and showed 15. 901a and 901b pass on both stacks and stay at 0 — a criterion nothing has ever failed has not yet shown it can discriminate."
         }
       ]
     },
