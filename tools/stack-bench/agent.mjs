@@ -382,7 +382,17 @@ async function main() {
         // A CLI that updates itself mid-series changes the thing under test
         // between one backend and the next. The sequential harness has frozen
         // it since April; this one had not.
-        DISABLE_AUTOUPDATER: '1' } });
+        DISABLE_AUTOUPDATER: '1',
+        // Cache reads are ~69% of a run's bill, so cache TTL moves cost more
+        // than anything else measured here. Unpinned, runs were getting the
+        // 1-hour tier: a second run of the same backend within the hour reads
+        // a prefix the first one paid to create and looks cheaper for reasons
+        // that have nothing to do with the database. That is fatal for n=5
+        // parallel trials, which would ALL share one warm prefix, and the
+        // effect differs per backend because the prompts differ in size. The
+        // 5-minute tier makes each trial pay its own way. The sequential
+        // harness has pinned this since April for the same reason.
+        FORCE_PROMPT_CACHING_5M: '1' } });
   } catch (err) {
     raw = (err.stdout || '').toString();
     spawnError = err.code
@@ -430,6 +440,10 @@ async function main() {
     setup: {
       thinkingTokens: Number(args.thinking ?? THINKING_TOKENS),
       permissionMode: 'acceptEdits',
+      // Recorded because it materially changes cost, and because a figure whose
+      // cache tier is unknown cannot be compared with one taken later.
+      cacheTier: '5m',
+      autoUpdater: 'disabled',
       cliVersion: cliVersion(findClaude()),
       node: process.version,
       platform: process.platform,
