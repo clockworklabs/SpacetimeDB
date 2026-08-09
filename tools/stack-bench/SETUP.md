@@ -57,12 +57,18 @@ builds get `typescript-server` and `typescript-client`; PostgreSQL and MongoDB
 get none, because their equivalent knowledge is already in the model's training
 data.
 
-**This is a real asymmetry and it is not neutral.** It makes the SpacetimeDB
-prompt roughly 2.2x larger (42,551 bytes against 19,337 in one measured pair),
-and prompt bytes are re-paid on every turn. Measured, that overhead accounts for
-about 12% of the cache-read gap between the two stacks — roughly 18 cents on a
-$4 difference — so it is not the main driver, but it is not nothing either, and
-any cost claim should state it.
+**This is a real asymmetry, and it is smaller than it looks.** It makes the
+SpacetimeDB prompt roughly 2.2x larger (42,551 bytes against 19,337 in one
+measured pair), and prompt bytes are re-paid on every turn. Multiplied out:
+about 5,800 tokens per turn over 103 turns is 0.60M tokens, roughly **18 cents**
+at cache-read rates. Against a $4.00 gap that is **4.5% of the gap and 1.6% of
+the bill**.
+
+State the denominator whenever this is quoted. It was once written here as
+"12%", which was 12% of the extra cache-read TOKENS — a denominator no reader
+would assume, and about seven times the share of cost it actually represents.
+The asymmetry is worth disclosing for fairness, not because it explains the
+cost difference. It does not: the compiler errors do.
 
 ## The environment
 
