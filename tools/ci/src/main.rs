@@ -88,6 +88,46 @@ fn run_package(package: &str, args: &[String]) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn split_command_help_package(path: &[&str]) -> Option<&'static str> {
+    match path {
+        ["smoketests"] => Some("ci-smoketests"),
+        ["update-flow"] => Some("ci-update-flow"),
+        ["cli-docs"] => Some("ci-cli-docs"),
+        ["other-workflows", "coordinate-internal-tests"] => Some("ci-coordinate-internal-tests"),
+        ["other-workflows", "codeowners-check"] => Some("ci-codeowners-check"),
+        ["other-workflows", "cla-assistant"] => Some("ci-cla-assistant"),
+        _ => None,
+    }
+}
+
+fn split_help_command(args: &[String]) -> Option<(&'static str, Vec<String>)> {
+    if let Some(help_path) = args.strip_prefix(&["help".to_string()]) {
+        for path_len in [2, 1] {
+            if help_path.len() >= path_len {
+                let path = help_path[..path_len].iter().map(String::as_str).collect::<Vec<_>>();
+                if let Some(package) = split_command_help_package(&path) {
+                    return Some((package, vec!["--help".to_string()]));
+                }
+            }
+        }
+    }
+
+    if !args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        return None;
+    }
+
+    for path_len in [2, 1] {
+        if args.len() >= path_len {
+            let path = args[..path_len].iter().map(String::as_str).collect::<Vec<_>>();
+            if let Some(package) = split_command_help_package(&path) {
+                return Some((package, args[path_len..].to_vec()));
+            }
+        }
+    }
+
+    None
+}
+
 fn run_smoketests(args: &[String]) -> Result<()> {
     let mut args = args.to_vec();
     if args.first().is_some_and(|arg| arg.starts_with("--test-")) {
@@ -154,6 +194,11 @@ fn run_all_clap_subcommands(skip: &[String]) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if let Some((package, args)) = split_help_command(&args) {
+        return run_package(package, &args);
+    }
+
     let cli = Cli::parse();
 
     match cli.cmd {
