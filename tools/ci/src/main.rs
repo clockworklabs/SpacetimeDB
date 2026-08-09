@@ -16,14 +16,14 @@ mod ci_docs;
 ///
 /// It may be invoked via `cargo ci <subcommand>`, or simply `cargo ci` to run all subcommands in
 /// sequence. It is mostly designed to be run in CI environments via the github workflows, but can
-/// also be run locally.
+/// also be run locally
 #[derive(Parser)]
 #[command(name = "cargo ci", subcommand_required = false, arg_required_else_help = false)]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<CiCmd>,
 
-    /// Skip specified subcommands when running all.
+    /// Skip specified subcommands when running all
     ///
     /// When no subcommand is specified, all subcommands are run in sequence. This option allows
     /// specifying subcommands to skip when running all. For example, to skip the `unreal-tests`

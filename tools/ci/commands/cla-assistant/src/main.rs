@@ -59,15 +59,11 @@ struct Cli {
     cmd: ClaAssistantCmd,
 }
 
-fn run(cmd: ClaAssistantCmd) -> Result<()> {
-    match cmd {
+fn main() -> Result<()> {
+    match Cli::parse().cmd {
         ClaAssistantCmd::Retry(args) => retry(args),
         ClaAssistantCmd::Status(args) => status(args),
     }
-}
-
-fn main() -> Result<()> {
-    run(Cli::parse().cmd)
 }
 
 fn retry(args: RetryArgs) -> Result<()> {

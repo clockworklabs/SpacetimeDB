@@ -10,7 +10,7 @@ SpacetimeDB CI tasks
 
 This tool provides several subcommands for automating CI workflows in SpacetimeDB.
 
-It may be invoked via `cargo ci <subcommand>`, or simply `cargo ci` to run all subcommands in sequence. It is mostly designed to be run in CI environments via the github workflows, but can also be run locally.
+It may be invoked via `cargo ci <subcommand>`, or simply `cargo ci` to run all subcommands in sequence. It is mostly designed to be run in CI environments via the github workflows, but can also be run locally
 
 **Usage:**
 ```bash
@@ -19,7 +19,7 @@ Usage: cargo ci [OPTIONS] [COMMAND]
 
 **Options:**
 
-- `--skip <SKIP>`: Skip specified subcommands when running all.
+- `--skip <SKIP>`: Skip specified subcommands when running all
 
 When no subcommand is specified, all subcommands are run in sequence. This option allows specifying subcommands to skip when running all. For example, to skip the `unreal-tests` subcommand, use `--skip unreal-tests`.
 
