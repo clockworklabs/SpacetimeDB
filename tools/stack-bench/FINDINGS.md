@@ -120,3 +120,52 @@ node tools/stack-bench/grader/probe-identity.mjs http://localhost:6173
 **Caveat.** Reproduced on one machine (Windows, host launched with
 `--data-dir ...\SpacetimeDB\data --jwt-key-dir ...\SpacetimeDB\config`, restarted
 via `spacetime start`). Worth confirming on Linux.
+
+---
+
+## Two PostgreSQL shops both score 50/50; only one survives a deploy
+
+**Classification:** benchmark finding — what the feature score cannot see.
+
+**Severity:** high for the product argument. The failure is invisible to every
+functional test and shows up only under the withheld systems criteria.
+
+Two one-shot PostgreSQL builds of the same ecommerce L1 spec, graded by the same
+harness, both scored **50/50 on features and invariants**. Both implement live
+updates with `LISTEN`/`NOTIFY`. They differ in where the `NOTIFY` is attached,
+and that difference decides whether the app is correct.
+
+| build | where NOTIFY lives | out-of-band write | deploy window (901c) |
+|---|---|---|---|
+| `postgres-ecom-run0` (earlier) | `CREATE TRIGGER` on the table | fires for any write | not measured — build is not runnable |
+| `postgres-ecom-run0` (2026-08-09) | `pg_notify(...)` called in route handlers | fires only for the app's own writes | **FAILS** |
+
+**Evidence.** 901c writes a stock correction directly to the database while the
+app server is down, then brings the server back and reads an already-open
+storefront. After the restart:
+
+    database:  SELECT SUM(quantity) ... WHERE name = 'Desk Lamp'  ->  15
+    storefront: [data-testid="item-stock"] inside "Desk Lamp"      ->  50
+
+The write landed (15 = 5 East from 901a + 10 West from 901c). The client never
+learned. 901a and 901b passed on the same build, so the app does propagate a
+direct database write *while it is running* — the loss is specific to the window
+where nothing is listening, and nothing reconciles on reconnect.
+
+**Why this matters more than a missed trigger.** An event stream with no
+reconciliation loses whatever happens while the listener is down. Every deploy,
+every restart, every dropped connection is a window in which changes vanish from
+every connected client and stay vanished until something forces a refetch. The
+app cannot tell that it is stale, and neither can a functional test suite: this
+build scored full marks.
+
+**What it costs to get right on PostgreSQL.** Attaching NOTIFY to triggers
+rather than to code paths, plus a reconcile-on-reconnect that refetches current
+state instead of resuming a stream. The earlier build got the first half by
+writing four trigger functions and four triggers; neither build got the second.
+
+**Open.** Whether SpacetimeDB passes 901c structurally — its subscriptions are
+derived from committed database state and a reconnect re-reads it — is being
+measured, not assumed. Until that run lands, this entry documents the PostgreSQL
+behaviour only, and 901a/b/c stay at zero points: a criterion that has failed a
+real build still needs to pass one before it can score.
