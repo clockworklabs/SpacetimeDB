@@ -987,3 +987,66 @@ to reason about, and it never leaves.
 
 Postgres produced zero compiler errors across the entire run. That is the
 comparison.
+
+---
+## 2026-08-09 — the cost gap, attributed per call
+
+Three stacks built the same ecommerce L1 spec to 51/51. PostgreSQL $7.27,
+MongoDB $5.95, SpacetimeDB $11.28. Cost is (calls x context carried per call),
+and both terms are in the usage records:
+
+| stack | calls | start ctx | end ctx | avg ctx | bill |
+|---|---|---|---|---|---|
+| postgres | 154 | 50K | 174K | 96K | $7.27 |
+| mongodb | 90 | 50K | 186K | 121K | $5.95 |
+| spacetime | 146 | 59K | 218K | 132K | $11.28 |
+
+**SpacetimeDB takes FEWER steps than PostgreSQL** — 146 against 154, worth -11%.
+It costs more entirely because each step carries 36K more context: +9K fixed
+(the inlined skill documents, present from the first call) and +35K accumulated.
+Context is re-read on every later call, so accumulated weight is paid ~146
+times: +35K of conversation becomes +5.6M tokens billed.
+
+MongoDB shows the two levers are independent — its context is HEAVIER than
+PostgreSQL's (121K against 96K) and it is still cheapest, because it finished in
+90 calls. PostgreSQL wins on context weight, MongoDB on step count, SpacetimeDB
+neither.
+
+**What filled the extra context.** 21 TypeScript errors against PostgreSQL's
+zero, ten of them TS2344 constraint failures that print expanded structural
+types, and two subagents costing $1.44 — 36% of the gap. PostgreSQL dispatched
+none.
+
+**What the subagent was doing, exactly.** It was sent to read the bindings
+source, and it searched for one thing:
+
+    grep  primaryKey|unique\(|uniqueConstraint|composite
+    grep  primary key|primaryKey|must have|at least one
+    cat   table.ts, table_schema.ts, constraints.ts, indexes.ts
+    grep  RawConstraintDefV10
+
+It was trying to find out whether a unique constraint can span two columns.
+The answer is no:
+
+    // crates/bindings-typescript/src/lib/constraints.ts:48
+    } & { constraint: 'unique'; columns: [AllowedCol] };
+
+`columns` is a one-element tuple, so `.unique()` is single-column only. The
+skill documents describe multi-column INDEXES and never mention this limit. The
+shop needs exactly the missing thing — stock is per item per warehouse — so the
+model spent 36 tool calls and 1.24M tokens discovering a fact that fits in one
+sentence.
+
+**Fixes, cheapest first:**
+
+1. State in the skill document that `.unique()` takes one column, and show how
+   to model a composite-keyed table (surrogate id plus a multi-column index).
+   Free, and it is the thing the subagent went looking for.
+2. Make TS2344 name the offending type instead of expanding it. Ten of these
+   landed in context permanently.
+3. Support multi-column unique constraints. Larger, and the one that removes
+   the modelling problem rather than documenting it.
+
+**Honest scale.** These account for perhaps $1.0-1.5 of a $4.01 gap. The rest is
+diffuse — heavier reasoning throughout rather than one identifiable event — so
+nothing here should be presented as closing the gap on its own.
