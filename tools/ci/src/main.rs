@@ -1,6 +1,5 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, Result};
-use ci_common::pnpm;
 use duct::cmd;
 use std::fs;
 use std::path::Path;
@@ -70,11 +69,11 @@ const COMMANDS: &[Command] = &[
     },
     Command {
         name: "publish-checks",
-        package: "",
+        package: "ci-publish-checks",
     },
     Command {
         name: "typescript-test",
-        package: "",
+        package: "ci-typescript-test",
     },
     Command {
         name: "version-upgrade-check",
@@ -82,7 +81,7 @@ const COMMANDS: &[Command] = &[
     },
     Command {
         name: "docs",
-        package: "",
+        package: "ci-docs-build",
     },
 ];
 const COMMAND_GROUPS: &[CommandGroup] = &[CommandGroup {
@@ -114,15 +113,6 @@ fn run_command(command: &Command, forwarded: &[String]) -> Result<()> {
     }
     if command.name == "dlls" {
         return run_dlls(forwarded);
-    }
-    if command.name == "publish-checks" {
-        return run_publish_checks(forwarded);
-    }
-    if command.name == "docs" {
-        return run_docs_build(forwarded);
-    }
-    if command.name == "typescript-test" {
-        return run_typescript_tests(forwarded);
     }
     let mut cargo_args = vec!["run", "--package", command.package, "--"];
     cargo_args.extend(forwarded.iter().map(String::as_str));
@@ -224,89 +214,6 @@ fn run_dlls(args: &[String]) -> Result<()> {
     }
     eprintln!("warning: `cargo ci dlls` is deprecated; use `cargo regen csharp dlls` instead");
     cmd!("cargo", "regen", "csharp", "dlls").run()?;
-    Ok(())
-}
-
-fn run_docs_build(args: &[String]) -> Result<()> {
-    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
-        println!("Usage: cargo ci docs");
-        return Ok(());
-    }
-    if !args.is_empty() {
-        bail!("cargo ci docs does not accept arguments");
-    }
-
-    pnpm(["install"]).dir("docs").run()?;
-    pnpm(["build"]).dir("docs").run()?;
-    Ok(())
-}
-
-fn run_publish_checks(args: &[String]) -> Result<()> {
-    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
-        println!("Usage: cargo ci publish-checks");
-        return Ok(());
-    }
-    if !args.is_empty() {
-        bail!("cargo ci publish-checks does not accept arguments");
-    }
-
-    cmd!("bash", "-lc", "test -d venv || python3 -m venv venv").run()?;
-    cmd!("venv/bin/pip3", "install", "argparse", "toml").run()?;
-
-    let crates = cmd!(
-        "venv/bin/python3",
-        "tools/find-publish-list.py",
-        "--recursive",
-        "--directories",
-        "--quiet",
-        "spacetimedb",
-        "spacetimedb-sdk"
-    )
-    .read()?;
-
-    let mut failed = Vec::new();
-    for crate_dir in crates.split_whitespace() {
-        if let Err(err) = cmd!("venv/bin/python3", "tools/crate-publish-checks.py", crate_dir).run() {
-            eprintln!("crate publish checks failed for {crate_dir}: {err}");
-            failed.push(crate_dir.to_string());
-        }
-    }
-
-    if !failed.is_empty() {
-        bail!("crate publish checks failed for: {}", failed.join(", "));
-    }
-
-    Ok(())
-}
-
-fn run_typescript_tests(args: &[String]) -> Result<()> {
-    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
-        println!("Usage: cargo ci typescript-test");
-        return Ok(());
-    }
-    if !args.is_empty() {
-        bail!("cargo ci typescript-test does not accept arguments");
-    }
-
-    pnpm(["build"]).dir("crates/bindings-typescript").run()?;
-    pnpm(["test"]).dir("crates/bindings-typescript").run()?;
-    pnpm(["generate"]).dir("templates/chat-react-ts").run()?;
-    let diff_status = cmd!(
-        "bash",
-        "tools/check-diff.sh",
-        "templates/chat-react-ts/src/module_bindings"
-    )
-    .run()?;
-    if !diff_status.status.success() {
-        bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
-    }
-    pnpm(["build"]).dir("templates/chat-react-ts").run()?;
-    pnpm(["-r", "--filter", "./**", "run", "build"])
-        .dir("templates")
-        .run()?;
-    pnpm(["-r", "--filter", "./**", "run", "build"])
-        .dir("crates/bindings-typescript")
-        .run()?;
     Ok(())
 }
 

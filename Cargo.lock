@@ -899,7 +899,6 @@ name = "ci"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-common",
  "duct",
 ]
 
@@ -956,6 +955,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-docs-build"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+]
+
+[[package]]
 name = "ci-global-json-policy"
 version = "0.1.0"
 dependencies = [
@@ -983,6 +990,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-publish-checks"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+]
+
+[[package]]
 name = "ci-smoketests"
 version = "0.1.0"
 dependencies = [
@@ -996,6 +1011,15 @@ dependencies = [
 
 [[package]]
 name = "ci-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "duct",
+]
+
+[[package]]
+name = "ci-typescript-test"
 version = "0.1.0"
 dependencies = [
  "anyhow",
