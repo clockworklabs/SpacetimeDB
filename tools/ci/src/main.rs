@@ -86,6 +86,14 @@ fn run_package(package: &str, args: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn run_smoketests(args: &[String]) -> Result<()> {
+    let mut args = args.to_vec();
+    if args.first().is_some_and(|arg| arg.starts_with("--test-")) {
+        args.insert(0, "--".to_string());
+    }
+    run_package("ci-smoketests", &args)
+}
+
 fn run_self_docs(check: bool) -> Result<()> {
     let readme_content = ci_docs::generate_cli_docs();
     let path = Path::new(README_PATH);
@@ -113,7 +121,7 @@ fn run_command(cmd: CiCmd) -> Result<()> {
         CiCmd::Lint(args) => run_package("ci-lint", &args.args),
         CiCmd::WasmBindings(args) => run_package("ci-wasm-bindings", &args.args),
         CiCmd::Dlls => run_dlls(),
-        CiCmd::Smoketests(args) => run_package("ci-smoketests", &args.args),
+        CiCmd::Smoketests(args) => run_smoketests(&args.args),
         CiCmd::KeynoteBench(args) => run_package("ci-keynote-bench", &args.args),
         CiCmd::UpdateFlow(args) => run_package("ci-update-flow", &args.args),
         CiCmd::CliDocs(args) => run_package("ci-cli-docs", &args.args),
