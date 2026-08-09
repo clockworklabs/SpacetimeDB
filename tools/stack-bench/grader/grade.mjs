@@ -452,13 +452,29 @@ async function runStep(step, actors, ctx) {
     // the result — the cart is simply short one item. Swallowing click errors
     // therefore turns a UI problem into a fabricated concurrency defect, so a
     // click that fails to dispatch is reported as a broken test, not a finding.
-    const outcomes = await Promise.all(targets.map(t => {
-      const a = actors.get(t.actor);
+    // Wait for every target to be ready BEFORE racing them. Readiness and
+    // contention are different questions, and conflating them cost a real
+    // result: on one backend a single actor's button had not painted within the
+    // click timeout, one of six clicks "never dispatched", and the criterion
+    // reported INCONCLUSIVE rather than measuring anything. The barrier gets a
+    // generous budget because it is not the thing under test; the clicks that
+    // follow get a short one, so a genuine dispatch failure still surfaces.
+    const resolved = targets.map(t => {
       const where = t.in ?? step.in;
       const scope = where ? { testid: where.testid, contains: expand(where.contains, ctx) } : undefined;
-      return a.loc(step.testid, { scope }).click({ timeout: step.within ?? DEFAULT_WITHIN })
-        .then(() => null, err => `${t.actor}: ${String(err.message).split('\n')[0]}`);
-    }));
+      return { t, loc: actors.get(t.actor).loc(step.testid, { scope }) };
+    });
+    const notReady = (await Promise.all(resolved.map(({ t, loc }) =>
+      loc.waitFor({ state: 'visible', timeout: step.readyWithin ?? 15000 })
+        .then(() => null, () => t.actor)))).filter(Boolean);
+    if (notReady.length) {
+      throw new Error(`INCONCLUSIVE: ${tid(step.testid)} never became clickable for ${notReady.join(', ')} ` +
+        `— the page was not ready, so nothing could be contended`);
+    }
+
+    const outcomes = await Promise.all(resolved.map(({ t, loc }) =>
+      loc.click({ timeout: step.within ?? DEFAULT_WITHIN })
+        .then(() => null, err => `${t.actor}: ${String(err.message).split('\n')[0]}`)));
     const failed = outcomes.filter(Boolean);
     if (failed.length) {
       throw new Error(`INCONCLUSIVE: ${failed.length} of ${targets.length} concurrent clicks on ` +
