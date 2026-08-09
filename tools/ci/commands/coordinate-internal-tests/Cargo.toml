@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+ci-args = { path = "../../args" }
 duct.workspace = true
 serde.workspace = true
 serde_json.workspace = true

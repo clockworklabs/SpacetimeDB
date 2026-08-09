@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
-use ci_cli_docs::Args;
+use ci_args::cli_docs::Args;
 use ci_common::pnpm;
 use clap::Parser;
 use duct::cmd;

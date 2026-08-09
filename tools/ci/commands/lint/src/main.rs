@@ -1,8 +1,8 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, Context, Result};
+use ci_args::lint::Args;
 use ci_common::{ensure_repo_root, pnpm};
-use ci_lint::Args;
 use clap::Parser;
 use duct::cmd;
 use serde_json::Value;

@@ -8,3 +8,4 @@ anyhow.workspace = true
 duct.workspace = true
 tempfile.workspace = true
 clap.workspace = true
+ci-args = { path = "../../args" }

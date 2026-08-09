@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, ensure, Context, Result};
-use ci_coordinate_internal_tests::Args;
+use ci_args::coordinate_internal_tests::Args;
 use clap::Parser;
 use duct::{cmd, Expression};
 use serde::de::DeserializeOwned;

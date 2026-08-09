@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
-use ci_codeowners_check::Args;
+use ci_args::codeowners_check::Args;
 use ci_common::ensure_repo_root;
 use clap::Parser;
 use duct::cmd;
@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 const REPO: &str = "clockworklabs/SpacetimeDB";
 
-#[command(about = "Checks that sensitive CODEOWNERS-controlled files have the required approvals.")]
 #[derive(Parser)]
+#[command(about = "Checks that sensitive CODEOWNERS-controlled files have the required approvals.")]
 struct Cli {
     #[command(flatten)]
     args: Args,

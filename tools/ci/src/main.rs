@@ -33,46 +33,46 @@ enum CiCmd {
     /// Runs rust tests, codegens csharp sdk and runs csharp tests.
     /// This does not include Unreal tests.
     /// This expects to run in a clean git state.
-    Test(ci_test::Args),
+    Test(ci_args::test::Args),
     /// Lints the codebase
     ///
     /// Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there
     /// are no warnings.
-    Lint(ci_lint::Args),
+    Lint(ci_args::lint::Args),
     /// Tests Wasm bindings
     ///
     /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
-    WasmBindings(ci_wasm_bindings::Args),
+    WasmBindings(ci_args::wasm_bindings::Args),
     /// Deprecated; use `cargo regen csharp dlls`.
     Dlls,
     /// Runs smoketests
     ///
     /// Executes the smoketests suite with some default exclusions.
-    Smoketests(ci_smoketests::SmoketestsArgs),
+    Smoketests(ci_args::smoketests::SmoketestsArgs),
     /// Runs the keynote benchmark as a CI performance regression gate.
     ///
     /// Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the
     /// keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and
     /// fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
-    KeynoteBench(ci_keynote_bench::Args),
+    KeynoteBench(ci_args::keynote_bench::Args),
     /// Tests the update flow
     ///
     /// Tests the self-update flow by building the spacetimedb-update binary for the specified
     /// target, by default the current target, and performing a self-install into a temporary
     /// directory.
-    UpdateFlow(ci_update_flow::Args),
+    UpdateFlow(ci_args::update_flow::Args),
     /// Generates CLI documentation and checks for changes
-    CliDocs(ci_cli_docs::Args),
+    CliDocs(ci_args::cli_docs::Args),
     /// Verify that any non-root global.json files are symlinks to the root global.json.
-    GlobalJsonPolicy(ci_global_json_policy::Args),
+    GlobalJsonPolicy(ci_args::global_json_policy::Args),
     /// Checks that publishable crates satisfy publish constraints.
-    PublishChecks(ci_publish_checks::Args),
+    PublishChecks(ci_args::publish_checks::Args),
     /// Runs TypeScript workspace tests and template build checks.
-    TypescriptTest(ci_typescript_test::Args),
+    TypescriptTest(ci_args::typescript_test::Args),
     /// Verifies that the repository version upgrade tool still works.
-    VersionUpgradeCheck(ci_version_upgrade_check::Args),
+    VersionUpgradeCheck(ci_args::version_upgrade_check::Args),
     /// Builds the docs site.
-    Docs(ci_docs_build::Args),
+    Docs(ci_args::docs::Args),
     OtherWorkflows {
         #[command(subcommand)]
         cmd: OtherWorkflowsCmd,
@@ -82,11 +82,11 @@ enum CiCmd {
 #[derive(Subcommand)]
 enum OtherWorkflowsCmd {
     /// Selects or starts the private workflow for a public Internal Tests run.
-    CoordinateInternalTests(ci_coordinate_internal_tests::Args),
+    CoordinateInternalTests(ci_args::coordinate_internal_tests::Args),
     /// Checks that sensitive CODEOWNERS-controlled files have the required approvals.
-    CodeownersCheck(ci_codeowners_check::Args),
+    CodeownersCheck(ci_args::codeowners_check::Args),
     /// Interacts with CLA Assistant.
-    ClaAssistant(ci_cla_assistant::Args),
+    ClaAssistant(ci_args::cla_assistant::Args),
 }
 
 fn run_package(package: &str, args: &[String]) -> Result<()> {

@@ -68,6 +68,7 @@ members = [
   "sdks/rust/tests/procedural-view-pk-client",
   "sdks/rust/tests/event-table-client",
   "tools/ci",
+  "tools/ci/args",
   "tools/ci/commands/test",
   "tools/ci/commands/lint",
   "tools/ci/commands/wasm-bindings",

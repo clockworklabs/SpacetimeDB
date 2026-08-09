@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
-use ci_version_upgrade_check::Args;
+use ci_args::version_upgrade_check::Args;
 use clap::Parser;
 use duct::cmd;
 

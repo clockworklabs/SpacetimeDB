@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
+use ci_args::wasm_bindings::Args;
 use ci_common::pnpm;
-use ci_wasm_bindings::Args;
 use clap::Parser;
 use duct::cmd;
 

@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, Result};
+use ci_args::typescript_test::Args;
 use ci_common::pnpm;
-use ci_typescript_test::Args;
 use clap::Parser;
 use duct::cmd;
 

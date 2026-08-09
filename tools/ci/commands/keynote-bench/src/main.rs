@@ -1,5 +1,5 @@
 use anyhow::Result;
-use ci_keynote_bench::Args;
+use ci_args::keynote_bench::Args;
 use clap::Parser;
 use keynote_bench_harness::KeynoteBenchConfig;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};

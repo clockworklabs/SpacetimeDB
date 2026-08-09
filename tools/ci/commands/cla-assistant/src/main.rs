@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::env;
 
 use anyhow::{anyhow, bail, Context, Result};
-use ci_cla_assistant::{Args, ClaAssistantCmd, RetryArgs, StatusArgs};
+use ci_args::cla_assistant::{Args, ClaAssistantCmd, RetryArgs, StatusArgs};
 use clap::Parser;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};

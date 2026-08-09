@@ -1,8 +1,8 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, Result};
+use ci_args::global_json_policy::Args;
 use ci_common::ensure_repo_root;
-use ci_global_json_policy::Args;
 use clap::Parser;
 use duct::cmd;
 use std::fs;

@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, ensure, Context, Result};
+use ci_args::smoketests::{SmoketestCmd, SmoketestsArgs};
 use ci_common::ensure_repo_root;
-use ci_smoketests::{SmoketestCmd, SmoketestsArgs};
 use clap::Parser;
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;

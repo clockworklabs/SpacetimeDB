@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, Result};
-use ci_publish_checks::Args;
+use ci_args::publish_checks::Args;
 use clap::Parser;
 use duct::cmd;
 
