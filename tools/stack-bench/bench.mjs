@@ -465,6 +465,12 @@ async function main() {
       turns: build.turns ?? null,
       promptBytes: build.promptBytes ?? null,
       tokensPerTurn: build.tokensPerTurn ?? null,
+      // Reasoning actually produced. The budget is deliberately unpinned so runs
+      // measure what a customer gets; that is only defensible if a shift in the
+      // CLI default is visible afterwards rather than silently absorbed into
+      // every score. agent.mjs measured this from the session transcript and the
+      // level record was dropping it, so the guarantee was not holding.
+      thinking: build.thinking ?? null,
       fixRounds,
       stalled,
       regressed,
