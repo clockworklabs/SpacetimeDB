@@ -1027,7 +1027,6 @@ dependencies = [
  "ci-common",
  "clap 4.5.50",
  "duct",
- "env_logger 0.10.2",
  "spacetimedb-guard",
  "tempfile",
 ]
