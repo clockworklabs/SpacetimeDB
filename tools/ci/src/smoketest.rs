@@ -197,6 +197,7 @@ fn run_smoketest_archive(archive_file: &Path, args: Vec<String>) -> Result<()> {
 
     let mut cmd = Command::new("cargo");
     set_env(&mut cmd, None, true, false, &base_config_path);
+    cmd.env("SPACETIMEDB_WORKSPACE_ROOT", &workspace_root);
     cmd.args(["nextest", "run", "--archive-file"])
         .arg(archive_file)
         .args(["--workspace-remap"])

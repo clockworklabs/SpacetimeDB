@@ -82,7 +82,8 @@ jobs:
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
     steps: &upload-build-artifact-steps
-      - name: Find Git ref
+      - &find-git-ref
+        name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -95,16 +96,19 @@ jobs:
           fi
           echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
 
-      - name: Checkout sources
+      - &checkout-sources
+        name: Checkout sources
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
+      - &set-default-rust-toolchain
+        name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
+      - &cache-rust-dependencies
+        name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ${{ github.workspace }}
@@ -183,37 +187,14 @@ jobs:
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
     steps: &smoketest-build-steps
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+      - *find-git-ref
 
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
+      - *checkout-sources
 
       - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - *set-default-rust-toolchain
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          cache-on-failure: false
-          cache-all-crates: true
-          cache-workspace-crates: true
-          prefix-key: v1
+      - *cache-rust-dependencies
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
@@ -280,31 +261,15 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
-      SPACETIMEDB_WORKSPACE_ROOT: ${{ github.workspace }}
       ARTIFACT_SUFFIX: linux
       PARTITION_COUNT: 2
     steps: &smoketest-partition-steps
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+      - *find-git-ref
 
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
+      - *checkout-sources
 
       - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - *set-default-rust-toolchain
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -381,9 +346,22 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
-      - uses: ./.github/actions/download-build-artifacts
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
         with:
-          artifact-suffix: ${{ env.ARTIFACT_SUFFIX }}
+          name: build-artifacts-${{ env.ARTIFACT_SUFFIX }}
+          path: ${{ runner.temp }}/build-artifacts
+
+      - name: Extract build artifacts
+        shell: bash
+        run: |
+          tar -xzf "${RUNNER_TEMP}/build-artifacts/build-support.tar.gz"
+          exe_suffix=""
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            exe_suffix=".exe"
+          fi
+          test -f "${CARGO_TARGET_DIR}/release/spacetimedb-cli${exe_suffix}"
+          test -f "${CARGO_TARGET_DIR}/release/spacetimedb-standalone${exe_suffix}"
 
       - name: Download smoketest build
         uses: actions/download-artifact@v4
@@ -433,7 +411,6 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
-      SPACETIMEDB_WORKSPACE_ROOT: ${{ github.workspace }}
       ARTIFACT_SUFFIX: windows
       PARTITION_COUNT: 4
     steps: *smoketest-partition-steps
