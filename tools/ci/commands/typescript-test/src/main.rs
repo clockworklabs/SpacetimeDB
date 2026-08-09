@@ -26,6 +26,5 @@ fn run_typescript_tests() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
     run_typescript_tests()
 }

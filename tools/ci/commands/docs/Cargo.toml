@@ -5,5 +5,4 @@ edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-duct.workspace = true
 ci-common = { path = "../../common" }

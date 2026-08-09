@@ -324,7 +324,6 @@ fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
     ensure_repo_root()?;
     check_pnpm_release_age_policy()?;
     check_codex_plugin_skills_sync()?;

@@ -6,9 +6,3 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 duct.workspace = true
-clap.workspace = true
-regex.workspace = true
-serde_json.workspace = true
-tempfile.workspace = true
-env_logger.workspace = true
-log.workspace = true
