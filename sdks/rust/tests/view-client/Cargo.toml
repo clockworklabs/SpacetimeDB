@@ -46,7 +46,7 @@ wasm-bindgen-futures = { version = "0.4.45", optional = true }
 console_error_panic_hook = { version = "0.1.7", optional = true }
 
 [package.metadata.cargo-machete]
-# Used through the `wasm` feature's `dep:` entries.
+# Used through the `browser` feature's `dep:` entries.
 ignored = ["futures", "wasm-bindgen-futures"]
 
 [lints]
