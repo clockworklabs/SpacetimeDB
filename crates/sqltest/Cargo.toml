@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 spacetimedb-lib.workspace = true
-spacetimedb-core = { workspace = true,  features = ["test"] }
+spacetimedb-core.workspace = true
 spacetimedb-sats.workspace = true
 
 anyhow.workspace = true
@@ -18,19 +18,19 @@ clap.workspace = true
 console.workspace = true
 derive_more.workspace = true
 fs-err.workspace = true
-futures.workspace = true
 glob.workspace = true
 itertools.workspace = true
-parking_lot.workspace = true
 postgres-types.workspace = true
 quick-junit.workspace = true
 rusqlite.workspace = true
 rust_decimal.workspace = true
-sqllogictest-engines.workspace = true
 sqllogictest.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true
+
+[package.metadata.cargo-machete]
+ignored = ["spacetimedb-core"]
 
 [lints]
 workspace = true

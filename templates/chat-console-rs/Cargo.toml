@@ -6,5 +6,8 @@ edition = "2024"
 [workspace]
 exclude = ["spacetimedb"]
 
+[workspace.dependencies]
+log = "0.4"
+
 [dependencies]
 spacetimedb-sdk = { path = "../../sdks/rust" }

@@ -22,7 +22,6 @@ spacetimedb-commitlog.workspace = true
 spacetimedb-fs-utils.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-runtime.workspace = true
-spacetimedb-sats.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

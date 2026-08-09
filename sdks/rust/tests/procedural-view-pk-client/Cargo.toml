@@ -38,5 +38,8 @@ wasm-bindgen = { version = "0.2.100", optional = true }
 wasm-bindgen-futures = { version = "0.4.45", optional = true }
 console_error_panic_hook = { version = "0.1.7", optional = true }
 
+[package.metadata.cargo-machete]
+ignored = ["wasm-bindgen-futures"]
+
 [lints]
 workspace = true
