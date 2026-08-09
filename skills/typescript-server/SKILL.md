@@ -130,7 +130,7 @@ export { default } from './schema';   // re-export the schema for the module ent
 
 ## Reducers
 
-Reducers are created with `spacetimedb.reducer(...)`; the export name becomes the reducer name:
+Reducers are created with `spacetimedb.reducer(...)`; the export name becomes the reducer name. Clients call it by that name, but the **wire name is snake_case**, so `spacetime call` and `describe` want `sign_up` for an exported `signUp`:
 
 ```typescript
 export const createEntity = spacetimedb.reducer(
@@ -278,12 +278,26 @@ const Shape = t.enum('Shape', {
 A client subscribing to a view receives only the rows it returns. Use a per-user view
 (keyed on `ctx.sender`) for per-viewer access control: deleting a row it depends on
 (e.g. a membership row) automatically drops the rows it was exposing from that client.
-A view re-evaluates whenever the rows it reads change, for each subscribed client; index
-accessors keep that work proportional to the rows returned. A view covering several keys
-reads the index once per key: `for (const roomId of myRoomIds) for (const m of
-ctx.db.message.roomId.filter(roomId)) out.push(m);`.
+Index accessors keep a view's work proportional to the rows it returns. A view covering
+several keys reads the index once per key: `for (const roomId of myRoomIds) for (const m
+of ctx.db.message.roomId.filter(roomId)) out.push(m);`.
 
 `t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`. A named output type must not reuse the generated PascalCase name of its view accessor (for example, reserve `DiscountedProduct` for a `discounted_product` view).
+
+A view context is `ViewCtx<S>` (and `AnonymousViewCtx<S>`), both exported from
+`spacetimedb/server`. It carries `sender`, a read-only `db`, and `from`; it is
+not a `ReducerCtx`, so a helper shared between a reducer and a view must accept
+either:
+
+```typescript
+import type { ReducerCtx, ViewCtx, InferSchema } from 'spacetimedb/server';
+type S = InferSchema<typeof spacetimedb>;
+function stockOf(ctx: ReducerCtx<S> | ViewCtx<S>, itemId: bigint) { ... }
+```
+
+Passing a view context where a `ReducerCtx` is expected reports the mismatch as
+a fully expanded structural type, not as the name `ViewCtx` — so read the
+parameter, not the error.
 
 Both `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take three arguments: view options, the declared return schema, and the callback.
 
