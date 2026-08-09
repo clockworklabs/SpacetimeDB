@@ -452,8 +452,8 @@ fn write_github_output(name: &str, value: impl std::fmt::Display) -> Result<()> 
     writeln!(output, "{name}={value}").context("failed to write GITHUB_OUTPUT")
 }
 
-/// Coordinates the public Internal Tests run without checking out or executing private code.
-fn coordinate(args: Args) -> Result<()> {
+fn main() -> Result<()> {
+    let args = Args::parse();
     let private_source = resolve_private_source(args.public_pr_number)?;
 
     let coordinated = match private_source {
@@ -466,10 +466,6 @@ fn coordinate(args: Args) -> Result<()> {
     write_github_output("run_url", &coordinated.selected.url)?;
     write_github_output("did_start", coordinated.did_start)?;
     Ok(())
-}
-
-fn main() -> Result<()> {
-    coordinate(Args::parse())
 }
 
 #[cfg(test)]
