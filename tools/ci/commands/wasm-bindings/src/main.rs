@@ -3,7 +3,6 @@ use anyhow::Result;
 use ci_common::pnpm;
 use duct::cmd;
 fn main() -> Result<()> {
-    env_logger::init();
     pnpm([
         "install",
         "--filter",

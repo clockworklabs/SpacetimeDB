@@ -17,6 +17,5 @@ fn run_version_upgrade_check() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
     run_version_upgrade_check()
 }

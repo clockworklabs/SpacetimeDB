@@ -1037,7 +1037,6 @@ dependencies = [
  "anyhow",
  "ci-common",
  "duct",
- "env_logger 0.10.2",
 ]
 
 [[package]]
@@ -1057,8 +1056,6 @@ dependencies = [
  "anyhow",
  "clap 4.5.50",
  "duct",
- "env_logger 0.10.2",
- "log",
  "tempfile",
 ]
 
@@ -1068,7 +1065,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "duct",
- "env_logger 0.10.2",
 ]
 
 [[package]]
@@ -1078,7 +1074,6 @@ dependencies = [
  "anyhow",
  "ci-common",
  "duct",
- "env_logger 0.10.2",
 ]
 
 [[package]]

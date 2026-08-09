@@ -6,5 +6,4 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 duct.workspace = true
-env_logger.workspace = true
 ci-common = { path = "../../common" }

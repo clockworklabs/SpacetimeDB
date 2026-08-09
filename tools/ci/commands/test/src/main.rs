@@ -3,7 +3,6 @@ use anyhow::Result;
 use ci_common::pnpm;
 use duct::cmd;
 fn main() -> Result<()> {
-    env_logger::init();
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 
     // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?

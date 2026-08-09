@@ -19,7 +19,6 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
     let Args {
         target,
         github_token_auth,
@@ -28,9 +27,6 @@ fn main() -> Result<()> {
     if let Some(target) = target.as_ref() {
         common_args.push("--target");
         common_args.push(target);
-        log::info!("checking update flow for target: {target}");
-    } else {
-        log::info!("checking update flow");
     }
     if github_token_auth {
         common_args.push("--features");
