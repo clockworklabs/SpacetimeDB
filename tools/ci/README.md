@@ -260,7 +260,44 @@ Usage: docs
 
 - `--help`: Print help
 
-### `cla-assistant`
+### `other-workflows`
+
+**Usage:**
+```bash
+Usage: other-workflows <COMMAND>
+```
+
+**Options:**
+
+- `--help`: Print help
+
+#### `coordinate-internal-tests`
+
+**Usage:**
+```bash
+Usage: coordinate-internal-tests [OPTIONS] --public-sha <PUBLIC_SHA>
+```
+
+**Options:**
+
+- `--public-sha <PUBLIC_SHA>`: Immutable public commit to test
+- `--public-pr-number <PUBLIC_PR_NUMBER>`: Public pull request number, when coordinating a pull request run
+- `--help`: Print help
+
+#### `codeowners-check`
+
+**Usage:**
+```bash
+Usage: codeowners-check --base-ref <BASE_REF> --pr-number <PR_NUMBER>
+```
+
+**Options:**
+
+- `--base-ref <BASE_REF>`: Git ref to compare against, usually origin/<pull request base branch>
+- `--pr-number <PR_NUMBER>`: Pull request number to inspect for approval state
+- `--help`: Print help
+
+#### `cla-assistant`
 
 **Usage:**
 ```bash
@@ -271,7 +308,7 @@ Usage: cla-assistant <COMMAND>
 
 - `--help`: Print help
 
-#### `retry`
+##### `retry`
 
 **Usage:**
 ```bash
@@ -284,7 +321,7 @@ Usage: retry [OPTIONS] --pr-number <PR_NUMBER>
 - `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
 - `--help`: Print help
 
-#### `status`
+##### `status`
 
 **Usage:**
 ```bash
@@ -297,6 +334,17 @@ Usage: status [OPTIONS] <--pr <PR>|--sha <SHA>>
 - `--sha <SHA>`: Commit SHA to check
 - `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
 - `--help`: Print help
+
+##### `help`
+
+**Usage:**
+```bash
+Usage: help [COMMAND]...
+```
+
+**Options:**
+
+- `subcommand <COMMAND>`: Print help for the subcommand(s)
 
 #### `help`
 

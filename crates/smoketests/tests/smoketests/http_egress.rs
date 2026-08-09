@@ -5,29 +5,6 @@ use std::time::{Duration, Instant};
 
 use spacetimedb_smoketests::{require_local_server, Smoketest};
 
-fn module_code_http_disallowed_ip(addr: &str, port: u16) -> String {
-    format!(
-        r#"
-use spacetimedb::ProcedureContext;
-
-#[spacetimedb::procedure]
-pub fn request_disallowed_ip(ctx: &mut ProcedureContext) -> Result<(), String> {{
-    match ctx.http.get("http://{addr}:{port}/") {{
-        Ok(_) => Err("request unexpectedly succeeded".to_owned()),
-        Err(err) => {{
-            let message = err.to_string();
-            if message.contains("refusing to connect to private or special-purpose addresses") {{
-                Ok(())
-            }} else {{
-                Err(format!("unexpected error from http request: {{message}}"))
-            }}
-        }}
-    }}
-}}
-"#
-    )
-}
-
 fn spawn_redirect_server(location: &str) -> (u16, JoinHandle<std::io::Result<()>>) {
     let listener = TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind test redirect server");
     listener
@@ -66,10 +43,9 @@ fn spawn_redirect_server(location: &str) -> (u16, JoinHandle<std::io::Result<()>
 
 #[test]
 fn test_http_disallowed_ip_is_blocked() {
-    let module_code = module_code_http_disallowed_ip("10.0.0.1", 80);
-    let test = Smoketest::builder().module_code(&module_code).build();
+    let test = Smoketest::builder().precompiled_module("http-egress").build();
 
-    let output = test.call_output("request_disallowed_ip", &[]);
+    let output = test.call_output("request_disallowed_ip", &["http://10.0.0.1:80/"]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -84,10 +60,10 @@ fn test_http_disallowed_ip_is_blocked() {
 fn test_http_redirect_to_disallowed_ip_is_blocked() {
     require_local_server!();
     let (port, redirect_server) = spawn_redirect_server("http://10.0.0.1:80/");
-    let module_code = module_code_http_disallowed_ip("localhost", port);
-    let test = Smoketest::builder().module_code(&module_code).build();
+    let test = Smoketest::builder().precompiled_module("http-egress").build();
+    let url = format!("http://localhost:{port}/");
 
-    let output = test.call_output("request_disallowed_ip", &[]);
+    let output = test.call_output("request_disallowed_ip", &[&url]);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
