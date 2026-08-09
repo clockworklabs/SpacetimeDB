@@ -687,3 +687,119 @@ By SpacetimeDB surface: server API (schema / reducers) (16), other (9), CLI / pu
 <sub>Discarded (evidence not found verbatim): 'server add' requires interactive fingerprint confirmation with no non-interactive bypass</sub>
 
 ---
+## 2026-08-09 01:44 — spacetime-run0 (chat) L1
+
+**Result:** 0/49, $16.3767, 0 fix round(s)
+
+**Tokens** (from the CLI's own usage, 1 session(s), 346 turns)
+
+| | tokens | share of input |
+|---|---:|---:|
+| cache read | 70,636,444 | 99% |
+| cache write | 667,101 | 1% |
+| fresh input | 692 | 0% |
+| output | 481,799 | — |
+
+**Where it got stuck** — 12 build failure(s) of 183 tool calls (plus 3 refused by the sandbox — harness, not SpacetimeDB)
+
+| times | error |
+|---:|---|
+| 2 | Error: Invalid arguments provided for reducer `sign_up` for database `stackbench-run0` resolving to identity `…`. |
+| 1 | Exit code 1 D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/templates/basic-react/spacetimedb/d |
+| 1 | TS2322: Type '…' is not assignable to type '…'. |
+| 1 | Error: Unsupported expression: message_id IN (SELECT id FROM message WHERE author_username = 'nonexistent_test_user_xyz' |
+| 1 | Error: Unsupported expression: message_id IN (1, 2, 3) |
+| 1 | TS2352: Conversion of type 'readonly { id: bigint; kind: string; name: string \| undefined; ownerUsername: string \| undefined; cr |
+| 1 | [31merror when starting dev server: |
+| 1 | New-Object instantiates .NET type 'System.IO.StreamReader' outside the ConstrainedLanguage allowlist |
+
+By SpacetimeDB surface: server API (schema / reducers) (7), other (5)
+
+**Re-read** — 0 read(s) of generated bindings
+
+- 1x `spacetimedb/src/index.ts`
+- 1x `spacetimedb/src/index.ts`
+- 1x `client/src/ChatApp.tsx`
+- 1x `75e4cef4-2c2b-4282-a6a2-b426a35f1cef/scratchpad/after-signup.png`
+- 1x `client/src/AuthScreen.tsx`
+- 1x `client/src/App.tsx`
+
+---
+**Behavioural review** — 5 finding(s) with verified evidence
+
+- **connectionId typed null but tables require undefined** *(generated bindings)*
+  - cost: Publish attempt failed tsc twice; required manual `?? undefined` fix at every call site
+  - evidence: `src/index.ts(99,52): error TS2322: Type 'ConnectionId | null' is not assignable to type 'ConnectionId | undefined'. Type 'null' is not assignable to type 'ConnectionId | undefined'. src/index.ts(104,9): error TS2322: Typ`
+  - possible fix: Make generated ctx.connectionId and table optional-field types consistent (both null or both undefined) so no manual conversion is needed
+- **Generated row types don't structurally match hand-written interfaces, forcing unsafe double-casts** *(generated bindings)*
+  - cost: tsc TS2352 error; fixed by widening to `as unknown as X[]`, which silently defeats type safety instead of a real fix
+  - evidence: `src/ChatApp.tsx(76,12): error TS2352: Conversion of type 'readonly { id: bigint; kind: string; name: string | undefined; ownerUsername: string | undefined; createdAt: Timestamp; }[]' to type 'ConversationRow[]' may be a `
+  - possible fix: Emit exported row interfaces from codegen that app code can reference directly, or ensure query-result types are assignable to the shapes described in docs/examples without a double cast
+- **SDK retries forever on stale auth token with no error surfaced** *(client SDK)*
+  - cost: ~80 actions of debugging across an hour (IPv4 binding red herring, toggle button red herring, viewport tests, etc.) before finding the real cause
+  - evidence: `A stale/invalid 'auth_token' causes an infinite 401 retry loop with no fallback, hanging the app on the connecting screen forever.`
+  - possible fix: Surface a distinguishable auth/token error via onConnectError (or reject the connect promise) instead of retrying indefinitely, so apps can react without guesswork
+- **CLI sql rejects IN expressions entirely, even literal lists** *(CLI/publish)*
+  - cost: Two failed DELETE attempts; had to restructure cascading-delete script around single-equality statements only
+  - evidence: `WARNING: This command is UNSTABLE and subject to breaking changes. Error: Unsupported expression: message_id IN (1, 2, 3`
+  - possible fix: Support IN (...) in the CLI/HTTP SQL surface, at minimum for literal lists
+- **CLI call argument syntax undiscoverable from error message** *(CLI/publish)*
+  - cost: Two failed `call` attempts (JSON object, then JSON array) before finding the correct bare-positional-JSON-scalar syntax
+  - evidence: `Error: Invalid arguments provided for reducer 'sign_up' for database 'stackbench-run0' resolving to identity 'c20085b1bb93350b0c31f05135dfd4bcaac26110bd906aaa23cf16196c78600a'. The reducer has the following signature: si`
+  - possible fix: Include a concrete example invocation (e.g. `call db sign_up "alice" "pw"`) in the error message, not just the reducer type signature
+
+---
+
+---
+## 2026-08-09 — spacetime-run0 (chat) L1 — ROOT CAUSE, investigated by hand
+
+The automated entry above records 0/49 at $16.38. That score is real — the app
+never worked — but the cause is not the model's reasoning. It is a defect in the
+TypeScript codegen, and it makes `spacetimedb.view` unusable from a client.
+
+**What happens.** Codegen emits a module view into the client bindings as a
+*table* handle:
+
+    myAccount: __table({ name: 'my_account' })    // module_bindings/index.ts:98
+
+So `subscriptionBuilder().subscribe([tables.myAccount])` type-checks — views sit
+in the same `tables.*` namespace as real tables and are indistinguishable to the
+compiler. At runtime the SDK turns that handle into SQL, and the host rejects it:
+
+    no such table: `my_account`. If the table exists, it may be marked private.,
+    executing: `SELECT * FROM "my_account"`
+
+Verified directly: host up (ping 200), module published, raw WebSocket to it
+opens in 3ms. Nothing was down. The subscription itself is what fails.
+
+**Why it costs a whole run.** The failure is invisible three times over:
+
+1. No compile-time signal — a view is typed exactly like a table.
+2. The app hangs rather than errors. The build wired `.onApplied()` with no
+   `.onError()`, so a rejected subscription is indistinguishable from one still
+   loading. The UI sits on "Connecting to SpacetimeDB…" forever.
+3. Every graded criterion then reports `setup failed`, because sign-up never
+   completes. A codegen defect reads as 49 unrelated feature failures.
+
+Reproduced with StrictMode removed, so React double-mounting is not involved.
+An earlier `Client not found` message in the same log is teardown noise, not the
+cause.
+
+**Our own documents lead the model into it.** `skills/typescript-server` teaches
+views prominently (16 mentions, `spacetimedb.view`, `anonymousView`, `ViewCtx<S>`,
+worked examples). `skills/typescript-client` does not mention views once — its
+only subscription example is `.subscribe([tables.entity, tables.record])`. A model
+that reads both builds its schema on views, then subscribes the only documented
+way, and ships a dead app. This build followed both documents correctly.
+
+**Possible fixes**, in the order they remove the trap:
+
+- Make views subscribable from the client, or emit them under a namespace of
+  their own so `subscribe([...])` cannot accept one. Today the type system
+  actively endorses the broken call.
+- Failing that, reject a view handle in `subscribe()` at build time with a
+  message naming the view.
+- Document the client-side story for views at all, and show `.onError` in every
+  subscription example — without it, any subscription failure becomes a hang.
+
+**Cost of this defect on one run:** $16.38, 184 turns, 46.3 min, 0/49.
