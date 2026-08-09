@@ -64,7 +64,14 @@ function parseArgs(argv) {
 }
 
 // Source only — node_modules and build output are large and reproducible.
-const SOURCE_DIRS = ['backend', 'server', 'client/src', 'client/index.html', 'client/vite.config.ts',
+//
+// `client` is copied whole rather than cherry-picked. Naming src, index.html
+// and vite.config.ts individually left out client/package.json and the
+// tsconfigs, which meant the snapshot could not be installed, built or run —
+// so the only runnable copy of any run was the stale results/<run>/app from an
+// older layout, and an investigation that needed to RUN the app got pushed onto
+// the wrong build. Evidence that cannot be executed is not evidence.
+const SOURCE_DIRS = ['backend', 'server', 'client',
   // The back-office script is evidence — it is how each stack's model
   // interpreted "write the database directly", and the first run to require
   // one lost it to cleanup because it was not on this list.
@@ -77,7 +84,11 @@ function snapshotSource(appDir, to) {
     if (!existsSync(from)) continue;
     cpSync(from, join(to, rel), {
       recursive: true,
-      filter: src => !/node_modules|[\/]dist([\/]|$)/.test(src),
+      // Both separators: on Windows the path is `client\dist\out.js`, which a
+      // forward-slash-only class does not match, so build output was being
+      // snapshotted here all along. It went unnoticed while `client` was
+      // cherry-picked and dist was never walked.
+      filter: src => !/node_modules|[\\/]dist([\\/]|$)/.test(src),
     });
   }
 }
