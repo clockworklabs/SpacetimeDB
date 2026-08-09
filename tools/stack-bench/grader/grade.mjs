@@ -40,6 +40,8 @@ function parseArgs(argv) {
       // which track declares the action names.
       case '--backend': args.backend = argv[++i]; break;
       case '--track': args.track = argv[++i]; break;
+      // Which database to write to directly for out-of-band writes.
+      case '--db-name': args.dbName = argv[++i]; break;
       case '--app': args.app = argv[++i]; break;
       case '--media': args.media = argv[++i]; break;
       case '--trace': args.trace = true; break;
@@ -308,6 +310,7 @@ function describeStep(step) {
       return `expect ${step.testid} ${want}`;
     }
     case 'expectAgreement': return `expect all clients agree on ${step.testid}`;
+    case 'dbSetStock': return `set ${step.item}'s ${step.warehouse} stock to ${step.quantity}, straight in the database`;
     case 'callConcurrently': return `${step.actors.length} actors issue "${step.action}" at the same instant`;
     case 'expectCallOutcomes': return `expect exactly ${step.accepted} of those requests were accepted`;
     case 'expectActorsWith': {
@@ -357,6 +360,54 @@ async function enterRoom(actor, roomName) {
     if (!(await input.isVisible().catch(() => false))) await item.click();
   }
   await input.waitFor({ state: 'visible', timeout: DEFAULT_WITHIN });
+}
+
+
+// Write to the database with nothing of the app's in the loop.
+//
+// This used to run a script the app itself shipped. That was the app taking
+// part in its own testing, and it showed: one build's script ended with
+// `NOTIFY app_data_changed`, so the write announced itself and the app passed
+// without ever having the property being tested — a real ERP sync or warehouse
+// scanner does not call your NOTIFY. The model's job is to write the app; the
+// writing-from-outside is ours.
+//
+// Three tables are fixed by the spec (item, warehouse, stock) precisely so this
+// can be done on any build without asking the app anything. Everything else is
+// still the app's to model.
+async function dbSetStock(step, ctx) {
+  const { execFileSync } = await import('node:child_process');
+  const item = expand(step.item, ctx), warehouse = expand(step.warehouse, ctx);
+  const qty = Number(step.quantity);
+  if (!Number.isInteger(qty)) throw new Error(`dbSetStock: quantity must be a whole number, got ${step.quantity}`);
+
+  const sql = ctx.backend === 'spacetime'
+    // No subqueries here: resolve the ids first, then write by primary key.
+    ? null
+    : `UPDATE stock SET quantity = ${qty} WHERE item_id = (SELECT id FROM item WHERE name = '${item}') ` +
+      `AND warehouse_id = (SELECT id FROM warehouse WHERE name = '${warehouse}')`;
+
+  if (ctx.backend === 'spacetime') {
+    const bin = process.env.SPACETIME_BIN ?? 'spacetime';
+    const q = t => execFileSync(bin, ['sql', ctx.spacetime.mod, '-s', ctx.spacetime.uri, t],
+      { encoding: 'utf8', stdio: 'pipe', timeout: 60000 });
+    const idOf = (table, name) => {
+      const out = q(`select id from ${table} where name = '${name}'`);
+      const m = out.match(/^\s*(\d+)\s*$/m);
+      if (!m) throw new Error(`dbSetStock: no ${table} named "${name}" — is the schema as the spec requires?`);
+      return m[1];
+    };
+    const i = idOf('item', item), w = idOf('warehouse', warehouse);
+    q(`update stock set quantity = ${qty} where item_id = ${i} and warehouse_id = ${w}`);
+    return;
+  }
+
+  const container = ctx.backend === 'mongodb'
+    ? (process.env.MONGO_CONTAINER ?? 'stack-bench-mongodb')
+    : (process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres');
+  if (ctx.backend === 'mongodb') throw new Error('dbSetStock: not implemented for mongodb yet');
+  execFileSync('docker', ['exec', container, 'psql', '-U', 'stackbench', '-d', ctx.dbName, '-c', sql],
+    { encoding: 'utf8', stdio: 'pipe', timeout: 60000 });
 }
 
 // Issue one of the spec's named actions as several actors at the same instant.
@@ -496,6 +547,7 @@ async function runStep(step, actors, ctx) {
   if (step.do === 'expectOrderMatches') return expectOrderMatches(step, actors);
   if (step.do === 'expectAgreement') return expectAgreement(step, actors, ctx);
   if (step.do === 'expectActorsWith') return expectActorsWith(step, actors, ctx);
+  if (step.do === 'dbSetStock') return dbSetStock(step, ctx);
   if (step.do === 'callConcurrently') return callConcurrently(step, actors, ctx);
   if (step.do === 'expectCallOutcomes') {
     const r = ctx.lastCalls;
@@ -1535,7 +1587,7 @@ async function main() {
   }
 
   const ctx = { runId, roomName: base => `${base}-${runId}`, restartCmd: args.restartCmd, url: args.url,
-    backend: args.backend, actions, spacetime,
+    backend: args.backend, actions, spacetime, dbName: args.dbName,
     appDir: args.app };
 
   const browser = await chromium.launch({ headless: !args.headed });

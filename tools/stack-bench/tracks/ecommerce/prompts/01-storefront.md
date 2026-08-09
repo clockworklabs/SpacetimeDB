@@ -164,32 +164,33 @@ This is the same idea as the back-office script below: a way in that does not
 depend on a browser. It exists because some things can only be tested by making
 several requests land at the same instant, which clicking cannot do.
 
-### Back office
+### Data written from outside the app
 
 **Your app does not own its data.** Real stores have other systems writing to
 the same database: nightly stock corrections, an ERP sync, a warehouse scanner.
-The app must remain correct — and its open pages current — when data changes by
-a path its server never saw. This is a property of your architecture, not a
-feature to bolt on.
-
-As the concrete instance of that property, ship a script at
-`scripts/backoffice.mjs` (run with `node`, from the app directory) supporting:
-
-```
-node scripts/backoffice.mjs set-stock <item name> <warehouse name> <quantity>
-```
-
-It sets that item's stock in that warehouse **by writing to the database
-directly** — it must work even when the web server is not running, and it must
-not talk to the web server. Every open browser must reflect the change like any
-other: storefront stock, item detail and admin numbers update live, without a
-reload.
+None of them call your code. The app must remain correct — and its open pages
+current — when data changes by a path its server never saw. This is a property
+of your architecture, not a feature to bolt on.
 
 Including changes made while your server was down. A page that was open across
 a restart must end up showing the current numbers once the server is back —
 whether it learns them by being told or by asking again is your choice, but a
 client that only replays events it was present for will stay wrong, and there
 is no reload coming to save it.
+
+So that such a write can actually be made, three tables are fixed. Everything
+else — orders, carts, reviews, accounts, sessions — you model however you like.
+
+| Table | Columns |
+|---|---|
+| `item` | `id`, `name`, `price` |
+| `warehouse` | `id`, `name` |
+| `stock` | `item_id`, `warehouse_id`, `quantity` |
+
+Use exactly these names, singular, in this shape. An item's storefront stock is
+the sum of its `stock` rows, as described above. Nothing needs to be exposed for
+this — no endpoint, no script, no hook. The rows are simply expected to be
+there, and to be the truth about stock.
 
 ### Starting data
 

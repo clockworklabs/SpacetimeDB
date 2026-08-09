@@ -199,13 +199,16 @@ function checkActions(args) {
   return r;
 }
 
-function gradeSuite(args, suite) {
+function gradeSuite(args, suite, track) {
   process.stdout.write(`  ${suite.id.padEnd(10)} ... `);
   const out = join(args.out, `grading-${suite.id}.json`);
   const argv = [join(ROOT, 'grader', 'grade.mjs'), '--url', args.url, '--level', args.level,
     '--label', `${args.label}-${suite.id}`, '--out', out];
   if (suite.spec) argv.push('--spec', suite.spec);
   argv.push('--backend', args.backend, '--track', args.track);
+  // The out-of-band write goes straight to this run's database, with no
+  // app code in the loop; only the harness knows which one that is.
+  argv.push('--db-name', `stackbench${track.slug ? '_' + track.slug : ''}_run${args.runIndex ?? 0}`);
   if (args.restartCmd) argv.push('--restart-cmd', args.restartCmd);
   // The systems criteria run scripts the app itself ships (back-office writes),
   // so the grader has to know where the app lives.
@@ -345,7 +348,7 @@ async function main() {
   let total = 0, max = 0, regTotal = 0, regMax = 0, dirty = false;
   for (const suite of suitesFor(track, args.level)) {
     if (!(await freshen())) { console.log(`  ${suite.id}: SKIPPED (reset failed)`); continue; }
-    const r = gradeSuite(args, suite);
+    const r = gradeSuite(args, suite, track);
     bundle.suites[suite.id] = r;
     if (!r) continue;
     if (suite.inherited) { regTotal += r.total; regMax += r.max; }

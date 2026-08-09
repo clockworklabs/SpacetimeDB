@@ -31,14 +31,10 @@
           "note": "WITHHELD until proven against a mutant (backoffice-writes-via-server) and a real failing build. The script is the app's own scripts/backoffice.mjs, required by the spec to write to the database without the web server's help — the way a cron job or another team's service would.",
           "steps": [
             {
-              "do": "runScript",
-              "script": "scripts/backoffice.mjs",
-              "args": [
-                "set-stock",
-                "Desk Lamp",
-                "East",
-                "5"
-              ],
+              "do": "dbSetStock",
+              "item": "Desk Lamp",
+              "warehouse": "East",
+              "quantity": 5,
               "settleMs": 4000
             },
             {
@@ -88,14 +84,11 @@
               "do": "stopAppServer"
             },
             {
-              "do": "runScript",
-              "script": "scripts/backoffice.mjs",
-              "args": [
-                "set-stock",
-                "Desk Lamp",
-                "West",
-                "10"
-              ]
+              "do": "dbSetStock",
+              "item": "Desk Lamp",
+              "warehouse": "West",
+              "quantity": 10,
+              "settleMs": 4000
             },
             {
               "do": "startAppServer"
@@ -125,15 +118,11 @@
               "offline": true
             },
             {
-              "do": "runScript",
-              "script": "scripts/backoffice.mjs",
-              "args": [
-                "set-stock",
-                "Desk Lamp",
-                "East",
-                "7"
-              ],
-              "settleMs": 2000
+              "do": "dbSetStock",
+              "item": "Desk Lamp",
+              "warehouse": "East",
+              "quantity": 7,
+              "settleMs": 4000
             },
             {
               "do": "setOffline",
