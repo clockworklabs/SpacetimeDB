@@ -220,7 +220,17 @@ function authFor(actor) {
 const expand = (s, ctx) =>
   typeof s === 'string'
     ? s.replace(/\{room:([^}]+)\}/g, (_, b) => ctx.roomName(b))
-       .replace(/\{user:([^}]+)\}/g, (_, n) => `${n}-${ctx.scope}`)
+       // Scoped account names are alphanumeric ON PURPOSE. This used to join
+       // the name and the scope with a hyphen, so the harness signed up as
+       // "Alice-l1features". The level spec never states which characters a
+       // username must accept, so an app validating them as letters, digits and
+       // underscore — GitHub's rule, an ordinary choice — rejected every account
+       // the harness tried to create, and all 49 criteria reported "setup
+       // failed" for a defensible implementation. uniq() is base36, so dropping
+       // the separator leaves the identifier alphanumeric, which every
+       // reasonable rule accepts. Room names are unaffected: they are display
+       // text, and their bases ({room:room-a}) already contain hyphens.
+       .replace(/\{user:([^}]+)\}/g, (_, n) => `${n}${ctx.scope}`)
     : s;
 
 
@@ -546,7 +556,7 @@ async function runStep(step, actors, ctx) {
       // reproduce them without the scenario restating the credential.
       // `exact` opts out of scoping, for an account the application seeds
       // under a fixed name rather than one this run creates.
-      const user = step.exact ? step.name : `${step.name}-${ctx.scope}`;
+      const user = step.exact ? step.name : `${step.name}${ctx.scope}`;
       const pass = step.password ?? `pw-${user}`;
       await page.locator(tid('signup-username')).first().fill(user);
       await page.locator(tid('signup-password')).first().fill(pass);
@@ -560,7 +570,7 @@ async function runStep(step, actors, ctx) {
       return;
     }
     case 'signIn': {
-      const user = step.exact ? step.name : `${step.name}-${ctx.scope}`;
+      const user = step.exact ? step.name : `${step.name}${ctx.scope}`;
       const pass = step.password ?? `pw-${user}`;
       const toggle = actor.loc('signin-toggle');
       if (await toggle.count()) await toggle.click({ timeout: DEFAULT_WITHIN }).catch(() => {});
@@ -853,7 +863,7 @@ async function runStep(step, actors, ctx) {
       // rather than re-measuring session persistence.
       const nameInput = page.locator(tid('signup-username')).first();
       if (await nameInput.isVisible().catch(() => false)) {
-        const user = step.exact ? step.name : `${step.name}-${ctx.scope}`;
+        const user = step.exact ? step.name : `${step.name}${ctx.scope}`;
         await nameInput.fill(user);
         await page.locator(tid('signup-password')).first().fill(step.password ?? `pw-${user}`);
         await page.locator(tid('signup-submit')).first().click();

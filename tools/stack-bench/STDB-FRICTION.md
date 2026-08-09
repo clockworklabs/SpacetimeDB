@@ -780,8 +780,39 @@ the run's application, sits beside the copy that IS the run, and silently
 answers questions about the wrong build. It should be removed at the start of
 a run, or never left behind.
 
-**Why this run scored 0/49 is still open.** The lint got 8 auth hooks passing
-and then reported `golden path aborted` -- sign-up never reached a signed-in
-state -- and every suite then reported `setup failed`. That has not been
-diagnosed against the correct source, and nothing above should be read as
-having explained it.
+**Cause of the 0/49, established.** The harness signed up with a hyphenated
+username and the app rejects hyphens. Proven against the run's own module:
+
+    sign_up "lint-ab12cd"       -> rejected (530)   <- the linter's name
+    sign_up "Alice-l1features"  -> rejected (530)   <- the grader's name
+    sign_up "lintab12cd"        -> accepted         <- same name, no hyphen
+
+The app validates usernames as `^[A-Za-z0-9_]+$` (index.ts:124) -- GitHub's
+rule, and an ordinary choice. The level spec never states which characters a
+username must accept; it says only "create an account with a username and
+password" and "usernames are unique". So the harness demanded something the
+contract never asked for, sign-up failed, and all 49 criteria reported
+"setup failed" for a defensible implementation.
+
+This is a fairness bug in the benchmark, not a SpacetimeDB defect and not
+really a model defect. Any app that validates usernames conservatively scored
+zero regardless of quality, on any backend -- the other backends passed only
+because their builds happened not to validate.
+
+Fixed by making harness-generated account names alphanumeric: the scope
+separator is gone from grade.mjs (four sites) and from both linter walks.
+`uniq()` is base36, so the whole identifier is now alphanumeric and every
+reasonable rule accepts it. Verified against the same module that rejected the
+old names: `lintcd34ef` and `Alicel1features` are both accepted. Room names are
+deliberately unchanged -- they are display text and their bases already contain
+hyphens ({room:room-a}).
+
+**This run's score is void as a measure of SpacetimeDB.** It measures the
+harness. It should not be compared with any earlier or later number.
+
+**Separately, a real behavioural finding:** the model ran its own hook check and
+saw the same 8-pass-then-blocked result at least eight times (transcript lines
+386 through 603) without resolving it, then ended the session saying it had
+"scheduled a check in about a minute" that it never performed. Shipping while
+its own verifier reported failure is worth addressing regardless of the
+username bug.

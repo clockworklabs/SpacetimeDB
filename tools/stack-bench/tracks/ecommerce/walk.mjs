@@ -27,8 +27,12 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
   for (const h of byStage('landing')) ok = (await checkHook(page, h, results)) && ok;
 
   if (ok) {
-    await page.locator(tid('signup-username')).first().fill(`lint-${uniq}`);
-    await page.locator(tid('signup-password')).first().fill(`pw-lint-${uniq}`);
+    // Alphanumeric on purpose. This was `lint-${uniq}`; the spec never states
+    // which characters a username must accept, so an app validating them as
+    // letters, digits and underscore rejected every account the linter made,
+    // and the whole golden path aborted at sign-up.
+    await page.locator(tid('signup-username')).first().fill(`lint${uniq}`);
+    await page.locator(tid('signup-password')).first().fill(`pwlint${uniq}`);
     await page.locator(tid('signup-submit')).first().click();
   }
 
