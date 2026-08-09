@@ -98,6 +98,33 @@ Every column is a `t` builder value:
 
 Modifiers: `.primaryKey()`, `.autoInc()`, `.unique()`, `.index('btree')`, `.default(value)`.
 
+`.primaryKey()` and `.unique()` apply to **one column**. There is no composite
+primary key and no multi-column unique constraint — a uniqueness rule spanning
+two columns cannot be declared, and the database will not enforce it for you.
+
+For a table that is naturally keyed by a pair — stock per item per warehouse,
+membership per group per user — give it a surrogate key, add a multi-column
+index for lookups, and enforce the pair's uniqueness in the reducer that
+inserts:
+
+```typescript
+export const stock = table(
+  { name: 'stock', indexes: [{ accessor: 'by_item_warehouse', algorithm: 'btree',
+                               columns: ['itemId', 'warehouseId'] }] },
+  {
+    id: t.u64().primaryKey().autoInc(),   // surrogate: the pair cannot be the key
+    itemId: t.u64(),
+    warehouseId: t.u64(),
+    quantity: t.i32(),
+  }
+);
+
+// The reducer is what keeps the pair unique:
+const existing = ctx.db.stock.by_item_warehouse.filter([itemId, warehouseId])[0];
+if (existing) ctx.db.stock.id.update({ ...existing, quantity: existing.quantity + n });
+else ctx.db.stock.insert({ id: 0n, itemId, warehouseId, quantity: n });
+```
+
 Use `.default(value)` only for a newly appended migration-safe field. Do not put defaults on primary-key, unique, or auto-increment columns.
 
 Optional columns: `nickname: t.option(t.string())`
