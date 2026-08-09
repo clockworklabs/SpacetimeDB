@@ -13,6 +13,7 @@ pub mod metrics;
 pub mod prometheus;
 pub mod subscribe;
 
+pub use self::internal::TaskDumpRegistry;
 use self::{database::DatabaseRoutes, identity::IdentityRoutes};
 
 /// This API call is just designed to allow clients to determine whether or not they can
@@ -29,13 +30,20 @@ pub fn router<S>(
 where
     S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
 {
-    use axum::routing::get;
+    use axum::routing::{get, post};
     let router = axum::Router::new()
         .nest("/database", database_routes.into_router(ctx.clone()))
         .nest("/identity", identity_routes.into_router())
         .nest("/energy", energy::router())
         .nest("/prometheus", prometheus::router())
         .nest("/metrics", metrics::router())
+        .route(
+            "/mcp",
+            post(mcp::mcp_root::<S>).route_layer(axum::middleware::from_fn_with_state(
+                ctx.clone(),
+                crate::auth::anon_auth_middleware::<S>,
+            )),
+        )
         .route("/ping", get(ping))
         .merge(extra);
 
