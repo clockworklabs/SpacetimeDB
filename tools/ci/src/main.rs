@@ -95,7 +95,7 @@ fn run_smoketests(args: &[String]) -> Result<()> {
 }
 
 fn run_self_docs(check: bool) -> Result<()> {
-    let readme_content = ci_docs::generate_cli_docs();
+    let readme_content = ci_docs::generate_cli_docs()?;
     let path = Path::new(README_PATH);
 
     if check {
