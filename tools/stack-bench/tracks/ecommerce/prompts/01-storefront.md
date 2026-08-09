@@ -160,6 +160,12 @@ not talk to the web server. Every open browser must reflect the change like any
 other: storefront stock, item detail and admin numbers update live, without a
 reload.
 
+Including changes made while your server was down. A page that was open across
+a restart must end up showing the current numbers once the server is back —
+whether it learns them by being told or by asking again is your choice, but a
+client that only replays events it was present for will stay wrong, and there
+is no reload coming to save it.
+
 ### Starting data
 
 The store ships with a fixed catalogue so it is never empty. On startup, if there
