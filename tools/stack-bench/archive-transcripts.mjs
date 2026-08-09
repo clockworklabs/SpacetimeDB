@@ -76,9 +76,21 @@ for (const [name, appDir] of jobs) {
 
   const dest = join(OUT, run.name);
   mkdirSync(dest, { recursive: true });
-  for (const f of readdirSync(store)) {
-    if (!f.endsWith('.jsonl')) continue;
-    const from = join(store, f), to = join(dest, f);
+  // Subagent transcripts live at <store>/<sessionId>/subagents/agent-*.jsonl.
+  // Copying only the top level left them behind, and with them their cost: a
+  // SpacetimeDB run reconciled $1.44 short until they were found by hand. A
+  // session that spawns help is not cheaper for it.
+  const collect = (dir, out = []) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) collect(p, out);
+      else if (e.name.endsWith('.jsonl')) out.push(p);
+    }
+    return out;
+  };
+  for (const abs of collect(store)) {
+    const f = abs.slice(store.length + 1).replace(/[\/]/g, '__');
+    const from = abs, to = join(dest, f);
     // Re-running must not silently overwrite an archived copy with a shorter
     // live one; the archive is the record of last resort.
     if (existsSync(to) && statSync(to).size >= statSync(from).size) continue;
