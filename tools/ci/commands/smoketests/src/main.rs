@@ -57,8 +57,6 @@ enum SmoketestCmd {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
-
     let args = SmoketestsArgs::parse();
     match args.cmd {
         Some(SmoketestCmd::Prepare) => {
