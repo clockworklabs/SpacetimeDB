@@ -816,3 +816,174 @@ saw the same 8-pass-then-blocked result at least eight times (transcript lines
 "scheduled a check in about a minute" that it never performed. Shipping while
 its own verifier reported failure is worth addressing regardless of the
 username bug.
+## 2026-08-09 06:19 — spacetime-ecom-run0 (ecommerce) L1
+
+**Result:** 48/48, $7.0554, 0 fix round(s)
+
+**Tokens** (from the CLI's own usage, 1 session(s), 206 turns)
+
+| | tokens | share of input |
+|---|---:|---:|
+| cache read | 28,371,960 | 99% |
+| cache write | 366,751 | 1% |
+| fresh input | 412 | 0% |
+| output | 178,589 | — |
+
+**Where it got stuck** — 3 build failure(s) of 120 tool calls (plus 3 refused by the sandbox — harness, not SpacetimeDB)
+
+| times | error |
+|---:|---|
+| 1 | TS2345: Argument of type '…' is not assignable to parameter of type '…'. |
+| 1 | TS2554: Expected 1 arguments, but got 0. |
+| 1 | ERROR: Invalid argument/option - 'V:/'. |
+
+By SpacetimeDB surface: server API (schema / reducers) (1), other (1), CLI / publish (1)
+
+**Re-read** — 0 read(s) of generated bindings
+
+- 4x `client/src/App.tsx`
+- 1x `test-app/src/App.tsx`
+- 1x `client/src/App.css`
+
+---
+**Behavioural review** — 4 finding(s) with verified evidence
+
+- **Zero-arg reducers require an explicit empty object argument** *(generated bindings)*
+  - cost: TypeScript build failure (TS2554) at two call sites, requiring two separate Edit calls and a rebuild to add `{}` to `signOut()` and `checkout()` calls
+  - evidence: `src/App.tsx(211,20): error TS2554: Expected 1 arguments, but got 0. src/App.tsx(243,20): error TS2554: Expected 1 arguments, but got 0.`
+  - possible fix: Generate a zero-argument, argument-less call signature for reducers with no parameters instead of requiring callers to pass `{}`.
+- **Option<f64> not accepted as a view/column return type by the TypeBuilder API** *(generated bindings)*
+  - cost: First publish attempt failed to compile; required two Edit calls to work around before a successful publish
+  - evidence: `src/index.ts(198,3): error TS2345: Argument of type 'OptionBuilder<F64Builder>' is not assignable to parameter of type 'ViewReturnTypeBuilder'.`
+  - possible fix: Either accept OptionBuilder<F64Builder> as a valid ViewReturnTypeBuilder, or emit a clearer diagnostic explaining what return-type shapes are valid for views.
+- **`spacetimedb-cli dev` generated bindings to the wrong directory on first run** *(CLI/publish)*
+  - cost: The dev watcher had to be killed and restarted with corrected paths after bindings landed at the project root instead of the client's module_bindings folder; a stray `src` directory had to be removed
+  - evidence: `Now let's restart 'dev' with the correct project path pointing bindings to 'client/src/module_bindings'.`
+  - possible fix: Make the bindings output destination for `dev` explicit/obvious by default (e.g. infer from an existing client project) rather than defaulting relative to CWD.
+- **SenderError/InternalError classes are not discoverable from the SDK's main type declaration files** *(docs)*
+  - cost: Five separate grep/cat commands across dist/*.d.ts, dist/sdk/*.d.ts, and compiled .mjs bundles before finding the class under dist/lib/errors.d.ts
+  - evidence: `D="D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/crates/bindings-typescript/dist"; grep -rn "SenderError" "$D"/*.d.ts "$D"/sdk/*.d.ts 2>&1 | head -20`
+  - possible fix: Re-export reducer error classes (SenderError, InternalError) from the SDK's main entry point / sdk barrel file, and document them in the client error-handling docs.
+
+---
+## 2026-08-09 22:51 — spacetime-ecom-run0 (ecommerce) L1
+
+**Result:** 51/51, $11.2764, 1 fix round(s)
+
+**Tokens** (from the CLI's own usage, 2 session(s), 266 turns)
+
+| | tokens | share of input |
+|---|---:|---:|
+| cache read | 34,397,503 | 98% |
+| cache write | 663,935 | 2% |
+| fresh input | 532 | 0% |
+| output | 246,984 | — |
+
+**Where it got stuck** — 9 build failure(s) of 149 tool calls (plus 4 refused by the sandbox — harness, not SpacetimeDB)
+
+| times | error |
+|---:|---|
+| 1 | TS2345: Argument of type '…' is not assignable to parameter of type '…'. |
+| 1 | TS2345: Argument of type '…' is not assignable to parameter of type '…' |
+| 1 | TS2339: Property '…' does not exist on type 'readonly { id: bigint; itemId: bigint; createdAt: Timestamp; accountId: bigint; |
+| 1 | Error: Publishing aborted by user |
+| 1 | TS1005: '…' expected. |
+| 1 | Error: Aggregate expressions must have column aliases |
+| 1 | <tool_use_error>Blocked: sleep 30 followed by: cd "C:/Users/bradl/AppData/Local/Temp/stack-bench-runs/spacetime-ecom-run |
+| 1 | Error: Cannot find module 'playwright' |
+
+By SpacetimeDB surface: server API (schema / reducers) (5), other (2), generated bindings (1), client SDK (subscriptions) (1)
+
+**Re-read** — 1 read(s) of generated bindings
+
+- 6x `src/components/ItemDetail.tsx`
+- 3x `client/src/App.tsx`
+- 2x `spacetimedb/src/index.ts`
+- 1x `.templates/basic-react_spacetimedb/tsconfig.json`
+- 1x `src/server/views.ts`
+- 1x `src/module_bindings/index.ts`
+
+---
+**Behavioural review** — 5 finding(s) with verified evidence
+
+- **View return-type errors surface as deep generic-type mismatches, not a clear message** *(generated bindings)*
+  - cost: Two failed `spacetime build`/publish attempts (TS2345 errors) before the fix; had to grep the framework's own views.ts source to figure out what ViewReturnTypeBuilder actually requires instead of getting a clear error or finding it in docs
+  - evidence: `src/index.ts(271,3): error TS2345: Argument of type 'F64Builder' is not assignable to parameter of type 'ViewReturnTypeBuilder'. Type 'F64Builder' is not assignable to type 'TypeBuilder<object | undefined, OptionAlgebrai`
+  - possible fix: Emit a direct diagnostic for invalid view return types (e.g. "views must return t.object/t.array/t.option of an object type, got F64Builder") instead of letting it surface as a nested structural-typing mismatch against an internal type.
+- **Reducer error/rejection contract isn't documented — model had to read SDK source to learn it** *(docs)*
+  - cost: Multiple greps/reads across reducers.ts, db_connection_impl.ts and errors.ts just to learn how a failed reducer call rejects and what shape/message the client receives, before it could write .catch(err => ...) error handling in the UI
+  - evidence: `Bash: grep -rn "reject\|Promise<void>\|message" "D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/crates/bindings-typescript/src/sdk/reducers.ts" 2>/dev/null | he`
+  - possible fix: Document the reducer promise rejection contract (SenderError -> Error.message shape) in the TypeScript SDK client docs so this doesn't require reading db_connection_impl.ts/errors.ts source.
+- **Publish prompts for interactive confirmation on schema changes with no non-interactive flag used** *(CLI/publish)*
+  - cost: Had to pipe `echo y |` into the publish command to get past a breaking-change confirmation prompt instead of using a documented non-interactive flag
+  - evidence: `Bash: cd "C:/Users/bradl/AppData/Local/Temp/stack-bench-runs/spacetime-ecom-run0-20260809215454/app" && echo y | D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/`
+  - possible fix: Document (or surface in --help) a --yes/-y flag for `spacetime publish` so scripted/agent workflows don't need to pipe stdin to answer the breaking-change prompt.
+- **Client-disconnect lifecycle reducer fires on reload/reconnect, silently wiping session state** *(docs)*
+  - cost: An entire second session (~60 actions, including writing a bespoke Playwright test harness) was spent diagnosing 6 separate reported bugs that all traced back to one root cause: the disconnect lifecycle reducer deleting the session row on every websocket drop, including page reloads that reconnect with the same identity/token
+  - evidence: `The clearest bug: 'onDisconnect' in 'backend/spacetimedb/src/index.ts' deletes the session row whenever the connection drops — including on a page reload/reconnect using the same identity/token, which would wipe out the `
+  - possible fix: Document explicitly that the disconnect lifecycle callback fires on every dropped websocket connection (including reloads/reconnects with the same identity) and is not a reliable 'user logged out' signal, with guidance not to key session cleanup off it directly.
+- **SQL aggregate queries fail without column aliases, with only a bare error** *(CLI/publish)*
+  - cost: One failed `spacetime sql` invocation before the model figured out it needed to alias the aggregate column
+  - evidence: `WARNING: This command is UNSTABLE and subject to breaking changes. Error: Aggregate expressions must have column aliases`
+  - possible fix: Either infer a default alias for unaliased aggregate expressions or have the error message state the required syntax (e.g. `SELECT COUNT(*) AS cnt FROM ...`).
+
+---
+
+---
+## 2026-08-09 — why a SpacetimeDB build costs more, measured
+
+Both stacks built the same L1 ecommerce spec to a full score. PostgreSQL cost
+$7.27, SpacetimeDB $11.28 — a $4.01 gap. This is where it went, from the
+transcripts of those two runs rather than from a ratio.
+
+**Not code volume.** Output tokens are identical: 0.097M on both. SpacetimeDB
+writes LESS code — 78KB of `Write` input against 84KB. It also makes FEWER tool
+calls, 149 against 167.
+
+**Not the guidance pack.** Inlining the skill documents makes the SpacetimeDB
+prompt 2.2x larger (42,551 bytes against 19,337), and that is real, but it is
+~5,750 tokens re-read over 103 turns: 592K tokens, about 18 cents at cache-read
+rates. Roughly 12% of the gap. An earlier note here claimed it was most of the
+gap; that was wrong and is retracted.
+
+**It is the TypeScript compiler.**
+
+| | postgres | spacetime |
+|---|---|---|
+| compile attempts | 3 | 10 |
+| compiler output | 1KB | 21KB |
+| TypeScript errors | **0** | **21** |
+
+The errors are almost all generated-bindings friction:
+
+- **TS2344 x10** — a generic constraint failure on the generated schema types.
+  These print as expanded structural dumps, 414 characters for a single line:
+  `Type 'Readonly<{ type: "table"; sourceName: string; accessorName: string;
+  cols: Readonly<{ readonly itemId: ColumnExpr<TableToSchema<"myCart",
+  TableSchema<CoerceRow<{ itemId: U64ColumnBuilder<{ name: "item_id"; }>; ...`
+  does not satisfy the constraint `UntypedTableDef`.
+- **TS4104 x3 and TS2339 x2** — query results are `readonly` arrays, so the
+  obvious `.push` does not compile: "Property 'push' does not exist on type
+  'readonly { id: bigint; itemId: bigint; ... }[]'".
+- **TS2345 x2** — `Argument of type 'F64Builder' is not assignable to parameter
+  of type 'ViewReturnTypeBuilder'`. A view cannot return a plain f64.
+
+**Why that becomes dollars.** 97-98% of every bill is cache reads: the whole
+conversation re-read on each turn. An error dump does not cost once, it costs on
+every subsequent turn for the rest of the run. Ten compile attempts returning
+expanded structural types is a permanent tax on the remaining context, which is
+also why SpacetimeDB carries +22% thinking (284KB against 233KB) — there is more
+to reason about, and it never leaves.
+
+**What would actually reduce it**, in order of how much noise each removes:
+
+1. Make the generated table types satisfy their own constraints without
+   expanding, or give `UntypedTableDef` a nominal shape, so a mismatch prints a
+   name instead of the whole structure.
+2. Accept the scalar builders where a view return type is expected, or say in
+   the error which builders are valid.
+3. Return arrays that can be worked with, or make the readonly-ness obvious at
+   the call site rather than at the compile step.
+
+Postgres produced zero compiler errors across the entire run. That is the
+comparison.
