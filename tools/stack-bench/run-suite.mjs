@@ -271,7 +271,14 @@ async function main() {
       // the server is answering, so that is what we wait for, and the command
       // itself is given a deadline rather than the benefit of the doubt.
       try {
-        run('bash', ['-c', args.restartCmd], { timeout: 200_000 });
+        // stdio 'ignore' is what makes the timeout mean anything. The restart
+        // script leaves a server running as a backgrounded descendant, and that
+        // grandchild inherits the pipe: execFileSync then blocks reading a pipe
+        // nobody will ever close, and the timeout does not rescue it because the
+        // wait is on the pipe rather than the process. A re-baseline sat here
+        // for eight hours with its server up and answering. grade.mjs already
+        // does this for exactly the same command — see restartBackend.
+        run('bash', ['-c', args.restartCmd], { stdio: 'ignore', timeout: 200_000 });
         console.log('ok');
       } catch (err) {
         if (args.reseedProbe && await answers(args.reseedProbe)) {
