@@ -108,13 +108,13 @@ This is required for servers that reject direct server-issued logins for privile
 
 Optionally accepts an auth host to pass through to `spacetime login`, for example `--auth-host=https://spacetimedb.com`.
 
-- `--dotnet <DOTNET>`:
+- `--dotnet <DOTNET>`: Run .NET smoketests
 - `args <ARGS>`: Additional arguments to pass to the test runner
 - `--help`: Print help (see a summary with '-h')
 
 #### `prepare`
 
-Only build binaries without running tests
+Local helper: only build binaries without running tests.
 
 Use this before running `cargo test --all` to ensure binaries are built.
 
@@ -136,6 +136,31 @@ Usage: check-mod-list
 
 **Options:**
 
+- `--help`: Print help
+
+#### `archive`
+
+**Usage:**
+```bash
+Usage: archive --archive-file <ARCHIVE_FILE>
+```
+
+**Options:**
+
+- `--archive-file <ARCHIVE_FILE>`: Path to the nextest archive to create
+- `--help`: Print help
+
+#### `run-archive`
+
+**Usage:**
+```bash
+Usage: run-archive --archive-file <ARCHIVE_FILE> [ARGS]...
+```
+
+**Options:**
+
+- `--archive-file <ARCHIVE_FILE>`: Path to the nextest archive to run
+- `args <ARGS>`: Additional arguments to pass to nextest
 - `--help`: Print help
 
 #### `help`

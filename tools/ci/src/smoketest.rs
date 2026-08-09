@@ -36,6 +36,7 @@ pub struct SmoketestsArgs {
     #[arg(long, num_args = 0..=1, require_equals = true, default_missing_value = "")]
     auth_host: Option<String>,
 
+    /// Run .NET smoketests.
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     dotnet: bool,
 
@@ -54,12 +55,14 @@ enum SmoketestCmd {
 
     /// CI build job: build dependencies and archive the smoketest binaries.
     Archive {
+        /// Path to the nextest archive to create.
         #[arg(long)]
         archive_file: PathBuf,
     },
 
     /// CI partition job: run smoketests from an existing nextest archive.
     RunArchive {
+        /// Path to the nextest archive to run.
         #[arg(long)]
         archive_file: PathBuf,
 

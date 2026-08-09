@@ -122,7 +122,19 @@ jobs:
           cache-workspace-crates: true
           prefix-key: v1
 
+      # Some runner caches contain V8 metadata without the corresponding static library.
+      - name: Check v8 outputs
+        shell: bash
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean --release -p v8 || true
+            cargo build --timings --release -p v8
+          fi
+
       - name: Build smoketest binaries
+        shell: bash
         run: |
           cargo build --timings --release \
             -p spacetimedb-cli \
