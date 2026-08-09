@@ -15,6 +15,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, levelPrompt, appendix, dbName, moduleName, portsFor, DEFAULT_TRACK } from './tracks.mjs';
 import { writeSandbox } from './sandbox.mjs';
@@ -39,16 +40,59 @@ const LOCAL_PKG = process.env.STDB_PACKAGE ?? join(REPO, 'crates', 'bindings-typ
 // the model are written the one way every tool agrees on.
 const fwd = p => p.split('\\').join('/');
 
-// How hard the model is allowed to think, pinned rather than left to whatever
-// the installed CLI defaults to. Reasoning budget changes answers, so an
-// unpinned default means a CLI update can move every score with nothing in the
-// record to show why — and a backend comparison is only fair if all three sides
-// got the same budget. Recorded in run.json with the model and CLI version.
+// The thinking budget is deliberately NOT set. Customers do not set
+// MAX_THINKING_TOKENS, so pinning it measures a configuration nobody runs --
+// and it is the single largest cost component here (43% more reasoning volume
+// on SpacetimeDB than postgres), which makes an arbitrary value the worst
+// possible thing to guess at. A pin of 10000 was tried and changed nothing
+// measurable: signature volume ranged 2.4-6.0KB per block both before and
+// after, driven by the task rather than the setting.
 //
-// Note the reasoning TEXT is not retrievable at any budget: `thinking` blocks
-// come back with `thinking: ""` and a signature, in every output mode. The
-// budget still changes behaviour; it just cannot be read afterwards.
-const THINKING_TOKENS = process.env.STACK_BENCH_THINKING ?? '10000';
+// Reproducibility is preserved by MEASURING instead: run.json records the
+// thinking blocks and bytes each run actually produced, so a CLI default that
+// moves shows up in the data rather than silently shifting every score.
+// STACK_BENCH_THINKING still forces a value for a deliberate experiment.
+const THINKING_TOKENS = process.env.STACK_BENCH_THINKING ?? null;
+
+// What the session ACTUALLY thought, read back from its own transcript.
+//
+// This is the measurement that replaces the pin. Reasoning volume is the
+// largest single component of the cost gap between backends, so leaving the
+// budget at the CLI default is only defensible if a shift in that default is
+// visible afterwards rather than silently absorbed into every score.
+//
+// The text of a thinking block is redacted at the wire level -- `thinking` is
+// an empty string and the content survives only as an opaque signature -- so
+// this counts blocks and signature bytes. Neither is a token count, but both
+// move with reasoning volume, and they are what the transcript actually has.
+function thinkingVolume(appDir, sessionId) {
+  if (!sessionId) return null;
+  try {
+    const store = join(homedir(), '.claude', 'projects');
+    if (!existsSync(store)) return null;
+    const want = resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase();
+    const dir = readdirSync(store).find(d => {
+      const n = d.toLowerCase();
+      return n === want || n === want.replace(/^-+/, '');
+    });
+    const file = dir && join(store, dir, `${sessionId}.jsonl`);
+    if (!file || !existsSync(file)) return null;
+
+    let blocks = 0, bytes = 0;
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      if (!line.includes('"thinking"')) continue;   // cheap filter before parsing
+      let rec;
+      try { rec = JSON.parse(line); } catch { continue; }
+      for (const c of rec?.message?.content ?? []) {
+        if (c.type !== 'thinking') continue;
+        blocks++;
+        bytes += (c.signature ?? '').length;
+      }
+    }
+    return { blocks, signatureBytes: bytes,
+             bytesPerBlock: blocks ? Math.round(bytes / blocks) : 0 };
+  } catch { return null; }
+}
 
 function cliVersion(bin) {
   try {
@@ -378,7 +422,10 @@ async function main() {
       '--add-dir', args.app,
     ], { cwd: args.app, input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
       env: { ...process.env,
-        MAX_THINKING_TOKENS: String(args.thinking ?? THINKING_TOKENS),
+        // Absent unless deliberately overridden — see THINKING_TOKENS above.
+        ...((args.thinking ?? THINKING_TOKENS)
+          ? { MAX_THINKING_TOKENS: String(args.thinking ?? THINKING_TOKENS) }
+          : {}),
         // A CLI that updates itself mid-series changes the thing under test
         // between one backend and the next. The sequential harness has frozen
         // it since April; this one had not.
@@ -438,7 +485,7 @@ async function main() {
     // permission mode or CLI version is unknown cannot be compared with a later
     // one — the run would look identical in the record and not be.
     setup: {
-      thinkingTokens: Number(args.thinking ?? THINKING_TOKENS),
+      thinkingTokens: (args.thinking ?? THINKING_TOKENS) ? Number(args.thinking ?? THINKING_TOKENS) : 'cli default',
       permissionMode: 'acceptEdits',
       // Recorded because it materially changes cost, and because a figure whose
       // cache tier is unknown cannot be compared with one taken later.
@@ -457,6 +504,9 @@ async function main() {
     // every per-turn cost, and the axis the benchmark is least fair on.
     promptBytes: prompt.length,
     tokensPerTurn: turns ? Math.round((input + output + cacheWrite + cacheRead) / turns) : null,
+    // Reasoning volume, measured rather than assumed — the budget is unpinned,
+    // so this is how a change in the CLI default becomes visible in the record.
+    thinking: thinkingVolume(args.app, result.session_id),
     durationMs: Date.now() - started,
     sessionId: result.session_id ?? null,
     ok: result.is_error === false,
