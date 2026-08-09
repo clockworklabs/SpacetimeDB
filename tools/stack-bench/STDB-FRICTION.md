@@ -751,55 +751,37 @@ By SpacetimeDB surface: server API (schema / reducers) (7), other (5)
 ---
 
 ---
-## 2026-08-09 — spacetime-run0 (chat) L1 — ROOT CAUSE, investigated by hand
+## 2026-08-09 — spacetime-run0 (chat) L1 — RETRACTED, then corrected
 
-The automated entry above records 0/49 at $16.38. That score is real — the app
-never worked — but the cause is not the model's reasoning. It is a defect in the
-TypeScript codegen, and it makes `spacetimedb.view` unusable from a client.
+An earlier version of this entry claimed `spacetimedb.view` is not subscribable
+from a TypeScript client, and that codegen emitting views as table handles is
+what cost this run. **That was wrong and is retracted.** Views work.
 
-**What happens.** Codegen emits a module view into the client bindings as a
-*table* handle:
+What actually happened: the investigation was run against
+`results/spacetime-run0/app`, which is a leftover directory from a DIFFERENT
+run two days earlier (mtime 2026-08-06; the app itself now builds outside the
+results tree, see bench.mjs:274). Its schema, its bindings and its missing
+`onError` all belonged to that older app. The run actually graded here is in
+`results/spacetime-run0/source`, and it is internally consistent: its module
+views and its client bindings match exactly, and it does wire `onError`.
 
-    myAccount: __table({ name: 'my_account' })    // module_bindings/index.ts:98
+Established while chasing it, and worth keeping:
 
-So `subscriptionBuilder().subscribe([tables.myAccount])` type-checks — views sit
-in the same `tables.*` namespace as real tables and are indistinguishable to the
-compiler. At runtime the SDK turns that handle into SQL, and the host rejects it:
+- Views ARE queryable and subscribable. The host has passing SQL tests over
+  views (`test_view`, `test_anonymous_view` in crates/core/src/sql/execute.rs),
+  a fresh publish registers them, `select * from account_directory` returns a
+  result, and the older app -- once pointed at a module built from its own
+  source -- connects, signs up, and renders its room list end to end.
+- `reset-db.sh` republishes correctly from the app it is given. Run by hand
+  against a matching app dir it produced exactly the expected view set.
 
-    no such table: `my_account`. If the table exists, it may be marked private.,
-    executing: `SELECT * FROM "my_account"`
+The hazard is the stale `results/<run>/app` directory. It looks exactly like
+the run's application, sits beside the copy that IS the run, and silently
+answers questions about the wrong build. It should be removed at the start of
+a run, or never left behind.
 
-Verified directly: host up (ping 200), module published, raw WebSocket to it
-opens in 3ms. Nothing was down. The subscription itself is what fails.
-
-**Why it costs a whole run.** The failure is invisible three times over:
-
-1. No compile-time signal — a view is typed exactly like a table.
-2. The app hangs rather than errors. The build wired `.onApplied()` with no
-   `.onError()`, so a rejected subscription is indistinguishable from one still
-   loading. The UI sits on "Connecting to SpacetimeDB…" forever.
-3. Every graded criterion then reports `setup failed`, because sign-up never
-   completes. A codegen defect reads as 49 unrelated feature failures.
-
-Reproduced with StrictMode removed, so React double-mounting is not involved.
-An earlier `Client not found` message in the same log is teardown noise, not the
-cause.
-
-**Our own documents lead the model into it.** `skills/typescript-server` teaches
-views prominently (16 mentions, `spacetimedb.view`, `anonymousView`, `ViewCtx<S>`,
-worked examples). `skills/typescript-client` does not mention views once — its
-only subscription example is `.subscribe([tables.entity, tables.record])`. A model
-that reads both builds its schema on views, then subscribes the only documented
-way, and ships a dead app. This build followed both documents correctly.
-
-**Possible fixes**, in the order they remove the trap:
-
-- Make views subscribable from the client, or emit them under a namespace of
-  their own so `subscribe([...])` cannot accept one. Today the type system
-  actively endorses the broken call.
-- Failing that, reject a view handle in `subscribe()` at build time with a
-  message naming the view.
-- Document the client-side story for views at all, and show `.onError` in every
-  subscription example — without it, any subscription failure becomes a hang.
-
-**Cost of this defect on one run:** $16.38, 184 turns, 46.3 min, 0/49.
+**Why this run scored 0/49 is still open.** The lint got 8 auth hooks passing
+and then reported `golden path aborted` -- sign-up never reached a signed-in
+state -- and every suite then reported `setup failed`. That has not been
+diagnosed against the correct source, and nothing above should be read as
+having explained it.
