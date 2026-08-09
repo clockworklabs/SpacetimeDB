@@ -1,14 +1,8 @@
 #![allow(clippy::disallowed_macros)]
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use clap::{Args, Command, CommandFactory, FromArgMatches, Parser, Subcommand};
 use duct::cmd;
-use std::fs;
-use std::path::Path;
-
-const README_PATH: &str = "tools/ci/README.md";
-
-mod ci_docs;
 
 /// SpacetimeDB CI tasks
 ///
@@ -83,11 +77,6 @@ enum CiCmd {
     /// Generates CLI documentation and checks for changes
     #[command(override_help = "")]
     CliDocs(ForwardedArgs),
-    SelfDocs {
-        /// Only check for changes, do not generate the docs.
-        #[arg(long)]
-        check: bool,
-    },
     /// Verify that any non-root global.json files are symlinks to the root global.json.
     #[command(override_help = "")]
     GlobalJsonPolicy(ForwardedArgs),
@@ -182,7 +171,6 @@ pub(crate) fn command_with_split_help_overrides() -> Result<Command> {
 
 fn should_load_split_help(args: &[String]) -> bool {
     args.iter().any(|arg| arg == "--help" || arg == "-h" || arg == "help")
-        || args.get(1).is_some_and(|arg| arg == "self-docs")
 }
 
 fn parse_cli() -> Result<Cli> {
@@ -203,21 +191,6 @@ fn run_smoketests(args: &[String]) -> Result<()> {
     run_package("ci-smoketests", &args)
 }
 
-fn run_self_docs(check: bool) -> Result<()> {
-    let readme_content = ci_docs::generate_cli_docs()?;
-    let path = Path::new(README_PATH);
-
-    if check {
-        let existing = fs::read_to_string(path).unwrap_or_default();
-        if existing != readme_content {
-            bail!("README.md is out of date. Please run `cargo ci self-docs` to update it.");
-        }
-    } else {
-        fs::write(path, readme_content)?;
-    }
-    Ok(())
-}
-
 fn run_dlls() -> Result<()> {
     eprintln!("warning: `cargo ci dlls` is deprecated; use `cargo regen csharp dlls` instead");
     cmd!("cargo", "regen", "csharp", "dlls").run()?;
@@ -234,7 +207,6 @@ fn run_command(cmd: CiCmd) -> Result<()> {
         CiCmd::KeynoteBench(args) => run_package("ci-keynote-bench", &args.args),
         CiCmd::UpdateFlow(args) => run_package("ci-update-flow", &args.args),
         CiCmd::CliDocs(args) => run_package("ci-cli-docs", &args.args),
-        CiCmd::SelfDocs { check } => run_self_docs(check),
         CiCmd::GlobalJsonPolicy(args) => run_package("ci-global-json-policy", &args.args),
         CiCmd::PublishChecks(args) => run_package("ci-publish-checks", &args.args),
         CiCmd::TypescriptTest(args) => run_package("ci-typescript-test", &args.args),
