@@ -22,6 +22,18 @@ Use the `spacetimedb.reducer` function:
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
+const user = table(
+  { name: 'user', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    name: t.string().index('btree'),
+    email: t.string().unique(),
+  }
+);
+
+const spacetimedb = schema({ user });
+export default spacetimedb;
+
 export const create_user = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
   // Validate input
   if (name === '') {
@@ -69,7 +81,7 @@ public static partial class Module
 }
 ```
 
-Reducers must be static methods with `ReducerContext` as the first parameter. Additional parameters must be types marked with `[SpacetimeDB.Type]`. Reducers should return `void`.
+Reducers must be static methods with `ReducerContext` as the first parameter. Additional parameters may be built-in SpacetimeDB types, primitive types, or custom types marked with `[SpacetimeDB.Type]`. Reducers should return `void`.
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -470,7 +482,7 @@ console.log(`Total users: ${total}`);
 <TabItem value="csharp" label="C#">
 
 ```csharp
-var total = ctx.Db.User.Count();
+var total = ctx.Db.User.Count;
 Log.Info($"Total users: {total}");
 ```
 
