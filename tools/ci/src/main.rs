@@ -1,214 +1,104 @@
 #![allow(clippy::disallowed_macros)]
+
 use anyhow::{bail, Result};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use std::fs;
 use std::path::Path;
 
-struct Command {
-    name: &'static str,
-    package: &'static str,
-}
-struct CommandGroup {
-    name: &'static str,
-    commands: &'static [Command],
-}
-const OTHER_WORKFLOWS_COMMANDS: &[Command] = &[
-    Command {
-        name: "coordinate-internal-tests",
-        package: "ci-coordinate-internal-tests",
-    },
-    Command {
-        name: "codeowners-check",
-        package: "ci-codeowners-check",
-    },
-    Command {
-        name: "cla-assistant",
-        package: "ci-cla-assistant",
-    },
-];
-const COMMANDS: &[Command] = &[
-    Command {
-        name: "test",
-        package: "ci-test",
-    },
-    Command {
-        name: "lint",
-        package: "ci-lint",
-    },
-    Command {
-        name: "wasm-bindings",
-        package: "ci-wasm-bindings",
-    },
-    Command {
-        name: "dlls",
-        package: "",
-    },
-    Command {
-        name: "smoketests",
-        package: "ci-smoketests",
-    },
-    Command {
-        name: "keynote-bench",
-        package: "ci-keynote-bench",
-    },
-    Command {
-        name: "update-flow",
-        package: "ci-update-flow",
-    },
-    Command {
-        name: "cli-docs",
-        package: "ci-cli-docs",
-    },
-    Command {
-        name: "self-docs",
-        package: "",
-    },
-    Command {
-        name: "global-json-policy",
-        package: "ci-global-json-policy",
-    },
-    Command {
-        name: "publish-checks",
-        package: "ci-publish-checks",
-    },
-    Command {
-        name: "typescript-test",
-        package: "ci-typescript-test",
-    },
-    Command {
-        name: "version-upgrade-check",
-        package: "ci-version-upgrade-check",
-    },
-    Command {
-        name: "docs",
-        package: "ci-docs-build",
-    },
-];
-const COMMAND_GROUPS: &[CommandGroup] = &[CommandGroup {
-    name: "other-workflows",
-    commands: OTHER_WORKFLOWS_COMMANDS,
-}];
-const DEFAULT_SKIP: &[&str] = &["other-workflows"];
+const README_PATH: &str = "tools/ci/README.md";
 
-fn print_help() {
-    println!("Usage: cargo ci [--skip <COMMAND>] [COMMAND] [ARGS]...");
-    println!();
-    println!("Commands:");
-    for command in COMMANDS {
-        println!("  {}", command.name);
-    }
-    for group in COMMAND_GROUPS {
-        println!("  {}", group.name);
-    }
+/// SpacetimeDB CI tasks
+///
+/// This tool provides several subcommands for automating CI workflows in SpacetimeDB.
+///
+/// It may be invoked via `cargo ci <subcommand>`, or simply `cargo ci` to run all subcommands in
+/// sequence. It is mostly designed to be run in CI environments via the github workflows, but can
+/// also be run locally.
+#[derive(Parser)]
+#[command(name = "cargo ci", subcommand_required = false, arg_required_else_help = false)]
+struct Cli {
+    #[command(subcommand)]
+    cmd: Option<CiCmd>,
+
+    /// Skip specified subcommands when running all.
+    ///
+    /// When no subcommand is specified, all subcommands are run in sequence. This option allows
+    /// specifying subcommands to skip when running all. For example, to skip the `unreal-tests`
+    /// subcommand, use `--skip unreal-tests`.
+    #[arg(long, default_value = "other-workflows")]
+    skip: Vec<String>,
 }
-fn command_for(name: &str) -> Option<&'static Command> {
-    COMMANDS.iter().find(|candidate| candidate.name == name)
+
+#[derive(Args)]
+struct ForwardedArgs {
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<String>,
 }
-fn command_group_for(name: &str) -> Option<&'static CommandGroup> {
-    COMMAND_GROUPS.iter().find(|candidate| candidate.name == name)
+
+#[derive(Subcommand)]
+enum CiCmd {
+    /// Runs tests.
+    Test(ForwardedArgs),
+    /// Lints the codebase.
+    Lint(ForwardedArgs),
+    /// Tests Wasm bindings.
+    WasmBindings(ForwardedArgs),
+    /// Deprecated; use `cargo regen csharp dlls`.
+    Dlls(ForwardedArgs),
+    /// Runs smoketests.
+    Smoketests(ForwardedArgs),
+    /// Runs the keynote benchmark as a CI performance regression gate.
+    KeynoteBench(ForwardedArgs),
+    /// Tests the update flow.
+    UpdateFlow(ForwardedArgs),
+    CliDocs(ForwardedArgs),
+    SelfDocs {
+        /// Only check for changes, do not generate the docs.
+        #[arg(long)]
+        check: bool,
+    },
+    GlobalJsonPolicy(ForwardedArgs),
+    PublishChecks(ForwardedArgs),
+    TypescriptTest(ForwardedArgs),
+    VersionUpgradeCheck(ForwardedArgs),
+    Docs(ForwardedArgs),
+    OtherWorkflows {
+        #[command(subcommand)]
+        cmd: OtherWorkflowsCmd,
+    },
 }
-fn run_command(command: &Command, forwarded: &[String]) -> Result<()> {
-    if command.name == "self-docs" {
-        return run_self_docs(forwarded);
-    }
-    if command.name == "dlls" {
-        return run_dlls(forwarded);
-    }
-    let mut cargo_args = vec!["run", "--package", command.package, "--"];
-    cargo_args.extend(forwarded.iter().map(String::as_str));
+
+#[derive(Subcommand)]
+enum OtherWorkflowsCmd {
+    CoordinateInternalTests(ForwardedArgs),
+    CodeownersCheck(ForwardedArgs),
+    ClaAssistant(ForwardedArgs),
+}
+
+fn run_package(package: &str, args: &[String]) -> Result<()> {
+    let mut cargo_args = vec!["run", "--package", package, "--"];
+    cargo_args.extend(args.iter().map(String::as_str));
     cmd("cargo", cargo_args).run()?;
     Ok(())
 }
-fn main() -> Result<()> {
-    let mut raw = std::env::args().skip(1).collect::<Vec<_>>();
-    if raw.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
-        print_help();
-        return Ok(());
-    }
-    let mut skips = DEFAULT_SKIP.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    let mut i = 0;
-    while i < raw.len() {
-        if raw[i] == "--skip" {
-            if i + 1 >= raw.len() {
-                bail!("--skip requires a command name");
-            }
-            skips.push(raw.remove(i + 1));
-            raw.remove(i);
-        } else {
-            i += 1;
-        }
-    }
-    if raw.is_empty() {
-        for command in COMMANDS {
-            if !skips.iter().any(|skip| skip == command.name) {
-                run_command(command, &[])?;
-            }
-        }
-        return Ok(());
-    }
-    let command_name = raw.remove(0);
-    if let Some(group) = command_group_for(&command_name) {
-        return run_command_group(group, raw);
-    }
-    let Some(command) = command_for(&command_name) else {
-        bail!("unknown cargo ci command `{command_name}`");
-    };
-    run_command(command, &raw)
-}
-fn run_command_group(group: &CommandGroup, mut forwarded: Vec<String>) -> Result<()> {
-    if forwarded.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
-        println!("Usage: cargo ci {} <COMMAND>", group.name);
-        println!();
-        println!("Commands:");
-        for command in group.commands {
-            println!("  {}", command.name);
-        }
-        return Ok(());
-    }
-    if forwarded.is_empty() {
-        bail!("cargo ci {} requires a command name", group.name);
-    }
-    let command_name = forwarded.remove(0);
-    let Some(command) = group.commands.iter().find(|candidate| candidate.name == command_name) else {
-        bail!("unknown cargo ci {} command `{command_name}`", group.name);
-    };
-    run_command(command, &forwarded)
-}
 
-fn run_self_docs(args: &[String]) -> Result<()> {
-    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
-        println!("Usage: cargo ci self-docs [--check]");
-        println!();
-        println!("Options:");
-        println!("      --check  Only check for changes, do not generate the docs");
-        println!("  -h, --help   Print help");
-        return Ok(());
-    }
+fn run_self_docs(check: bool) -> Result<()> {
+    let readme_content = include_str!("../README.md");
+    let path = Path::new(README_PATH);
 
-    let check = match args {
-        [] => false,
-        [arg] if arg == "--check" => true,
-        _ => bail!("cargo ci self-docs accepts only --check"),
-    };
-
-    let readme = generate_cli_docs();
-    let path = Path::new("tools/ci/README.md");
     if check {
         let existing = fs::read_to_string(path).unwrap_or_default();
-        if existing != readme {
+        if existing != readme_content {
             bail!("README.md is out of date. Please run `cargo ci self-docs` to update it.");
         }
     } else {
-        fs::write(path, readme)?;
+        fs::write(path, readme_content)?;
     }
     Ok(())
 }
 
 fn run_dlls(args: &[String]) -> Result<()> {
-    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
-        println!("Usage: cargo ci dlls");
-        return Ok(());
-    }
     if !args.is_empty() {
         bail!("cargo ci dlls does not accept arguments");
     }
@@ -217,6 +107,46 @@ fn run_dlls(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn generate_cli_docs() -> String {
-    include_str!("../README.md").to_owned()
+fn run_command(cmd: CiCmd) -> Result<()> {
+    match cmd {
+        CiCmd::Test(args) => run_package("ci-test", &args.args),
+        CiCmd::Lint(args) => run_package("ci-lint", &args.args),
+        CiCmd::WasmBindings(args) => run_package("ci-wasm-bindings", &args.args),
+        CiCmd::Dlls(args) => run_dlls(&args.args),
+        CiCmd::Smoketests(args) => run_package("ci-smoketests", &args.args),
+        CiCmd::KeynoteBench(args) => run_package("ci-keynote-bench", &args.args),
+        CiCmd::UpdateFlow(args) => run_package("ci-update-flow", &args.args),
+        CiCmd::CliDocs(args) => run_package("ci-cli-docs", &args.args),
+        CiCmd::SelfDocs { check } => run_self_docs(check),
+        CiCmd::GlobalJsonPolicy(args) => run_package("ci-global-json-policy", &args.args),
+        CiCmd::PublishChecks(args) => run_package("ci-publish-checks", &args.args),
+        CiCmd::TypescriptTest(args) => run_package("ci-typescript-test", &args.args),
+        CiCmd::VersionUpgradeCheck(args) => run_package("ci-version-upgrade-check", &args.args),
+        CiCmd::Docs(args) => run_package("ci-docs-build", &args.args),
+        CiCmd::OtherWorkflows { cmd } => match cmd {
+            OtherWorkflowsCmd::CoordinateInternalTests(args) => run_package("ci-coordinate-internal-tests", &args.args),
+            OtherWorkflowsCmd::CodeownersCheck(args) => run_package("ci-codeowners-check", &args.args),
+            OtherWorkflowsCmd::ClaAssistant(args) => run_package("ci-cla-assistant", &args.args),
+        },
+    }
+}
+
+fn run_all_clap_subcommands(skip: &[String]) -> Result<()> {
+    for subcommand in Cli::command().get_subcommands() {
+        let name = subcommand.get_name();
+        if skip.iter().any(|skip| skip == name) {
+            continue;
+        }
+        cmd!("cargo", "ci", name).run()?;
+    }
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    match cli.cmd {
+        Some(cmd) => run_command(cmd),
+        None => run_all_clap_subcommands(&cli.skip),
+    }
 }
