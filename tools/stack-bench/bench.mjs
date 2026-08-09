@@ -18,7 +18,7 @@
 // unless --keep-spacetime.
 
 import { execFileSync, spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync, renameSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -267,6 +267,37 @@ async function main() {
   const runDir = resultsName(track, args.backend, args.runIndex);
   args.out ??= join(ROOT, 'results', runDir);
   mkdirSync(args.out, { recursive: true });
+
+  // The app used to live at results/<run>/app and now builds outside the
+  // results tree, so anything still sitting there belongs to an older run under
+  // the old layout. It is not harmless clutter: it looks exactly like this
+  // run's application, sits directly beside `source/` which IS this run's
+  // application, and answers questions about the wrong build without saying so.
+  // One investigation compared a two-day-old app against a correctly-published
+  // current module, concluded the schemas had drifted, and filed a defect
+  // against SpacetimeDB that did not exist. Delete it on the way in.
+  // Deleting is only safe where source/ already holds that run's code. Some
+  // older runs have an app/ and no source/, and there app/ is the only copy
+  // there is — those get renamed out of the way instead of destroyed.
+  const staleApp = join(args.out, 'app');
+  if (existsSync(staleApp)) {
+    const supersededBySource = existsSync(join(args.out, 'source'));
+    try {
+      if (supersededBySource) {
+        rmSync(staleApp, { recursive: true, force: true });
+        console.log('  results    ... removed a stale app/ from an earlier run (source/ has that code)');
+      } else {
+        const parked = join(args.out, 'app-from-earlier-run');
+        rmSync(parked, { recursive: true, force: true });
+        renameSync(staleApp, parked);
+        console.log('  results    ... an earlier run left app/ with no source/; kept it as app-from-earlier-run/');
+      }
+    } catch (err) {
+      // Naming it is the point — a leftover nobody knows about is the hazard.
+      console.log(`  results    ... WARNING: could not clear stale ${staleApp}: ${String(err.message).split('\n')[0]}`);
+      console.log("               it is NOT this run's app — read source/ instead.");
+    }
+  }
 
   const weStartedSpacetime = args.backend === 'spacetime' ? ensureSpacetime() : false;
 
