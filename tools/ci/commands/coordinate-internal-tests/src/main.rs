@@ -452,6 +452,7 @@ fn write_github_output(name: &str, value: impl std::fmt::Display) -> Result<()> 
     writeln!(output, "{name}={value}").context("failed to write GITHUB_OUTPUT")
 }
 
+/// Coordinates the public Internal Tests run without checking out or executing private code.
 fn main() -> Result<()> {
     let args = Args::parse();
     let private_source = resolve_private_source(args.public_pr_number)?;
