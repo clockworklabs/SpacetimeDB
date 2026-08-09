@@ -29,24 +29,14 @@ cargo ci self-docs
     ))
 }
 
-fn split_command_package(path: &[String]) -> Option<&'static str> {
-    match path {
-        [cmd] if cmd == "smoketests" => Some("ci-smoketests"),
-        [cmd] if cmd == "update-flow" => Some("ci-update-flow"),
-        [cmd] if cmd == "cli-docs" => Some("ci-cli-docs"),
-        [group, cmd] if group == "other-workflows" && cmd == "coordinate-internal-tests" => {
-            Some("ci-coordinate-internal-tests")
-        }
-        [group, cmd] if group == "other-workflows" && cmd == "codeowners-check" => Some("ci-codeowners-check"),
-        [group, cmd] if group == "other-workflows" && cmd == "cla-assistant" => Some("ci-cla-assistant"),
-        _ => None,
-    }
-}
+fn command_help(path: &[String]) -> Result<String> {
+    let mut args = vec!["run", "--quiet", "--package", "ci", "--"];
+    args.extend(path.iter().map(String::as_str));
+    args.push("--help");
 
-fn package_help(package: &str) -> Result<String> {
-    let help = cmd!("cargo", "run", "--quiet", "--package", package, "--", "--help")
+    let help = cmd("cargo", args)
         .read()
-        .with_context(|| format!("failed to render help for {package}"))?;
+        .with_context(|| format!("failed to render help for `cargo ci {}`", path.join(" ")))?;
     Ok(help.lines().map(str::trim_end).collect::<Vec<_>>().join("\n"))
 }
 
@@ -56,8 +46,9 @@ fn generate_markdown(cmd: &mut Command, heading_level: usize, path: &[String]) -
     let heading = "#".repeat(heading_level);
     out.push_str(&format!("{} `{}`\n\n", heading, cmd.get_name()));
 
-    if let Some(package) = split_command_package(path) {
-        let help = package_help(package)?;
+    let path_parts = path.iter().map(String::as_str).collect::<Vec<_>>();
+    if crate::split_command_help_package(&path_parts).is_some() {
+        let help = command_help(path)?;
         out.push_str("**Help:**\n```text\n");
         out.push_str(help.trim_end());
         out.push_str("\n```\n\n");
