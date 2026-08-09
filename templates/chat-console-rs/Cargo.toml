@@ -6,9 +6,5 @@ edition = "2024"
 [workspace]
 exclude = ["spacetimedb"]
 
-[workspace.dependencies]
-# Required by the nested `spacetimedb` package's `log.workspace = true`.
-log = "0.4"
-
 [dependencies]
 spacetimedb-sdk = { path = "../../sdks/rust" }
