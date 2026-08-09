@@ -31,11 +31,15 @@ Runs tests
 
 Runs rust tests, codegens csharp sdk and runs csharp tests. This does not include Unreal tests. This expects to run in a clean git state.
 
-Usage: ci-test
+**Usage:**
+```bash
+Usage: test [ARGS]...
+```
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
+**Options:**
+
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help (see a summary with '-h')
 
 ### `lint`
 
@@ -43,11 +47,15 @@ Lints the codebase
 
 Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there are no warnings.
 
-Usage: ci-lint
+**Usage:**
+```bash
+Usage: lint [ARGS]...
+```
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
+**Options:**
+
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help (see a summary with '-h')
 
 ### `wasm-bindings`
 
@@ -55,11 +63,15 @@ Tests Wasm bindings
 
 Runs tests for the codegen crate and builds a test module with the wasm bindings.
 
-Usage: ci-wasm-bindings
+**Usage:**
+```bash
+Usage: wasm-bindings [ARGS]...
+```
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
+**Options:**
+
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help (see a summary with '-h')
 
 ### `dlls`
 
@@ -117,11 +129,15 @@ Runs the keynote benchmark as a CI performance regression gate.
 
 Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
 
-Usage: ci-keynote-bench
+**Usage:**
+```bash
+Usage: keynote-bench [ARGS]...
+```
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
+**Options:**
+
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help (see a summary with '-h')
 
 ### `update-flow`
 
@@ -168,48 +184,63 @@ Usage: self-docs [OPTIONS]
 
 ### `global-json-policy`
 
-Verify that any non-root global.json files are symlinks to the root global.json
+**Usage:**
+```bash
+Usage: global-json-policy [ARGS]...
+```
 
-Usage: ci-global-json-policy
+**Options:**
 
-Options:
-  -h, --help  Print help
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
 
 ### `publish-checks`
 
-Checks that publishable crates satisfy publish constraints
+**Usage:**
+```bash
+Usage: publish-checks [ARGS]...
+```
 
-Usage: ci-publish-checks
+**Options:**
 
-Options:
-  -h, --help  Print help
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
 
 ### `typescript-test`
 
-Runs TypeScript workspace tests and template build checks
+**Usage:**
+```bash
+Usage: typescript-test [ARGS]...
+```
 
-Usage: ci-typescript-test
+**Options:**
 
-Options:
-  -h, --help  Print help
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
 
 ### `version-upgrade-check`
 
-Verifies that the repository version upgrade tool still works
+**Usage:**
+```bash
+Usage: version-upgrade-check [ARGS]...
+```
 
-Usage: ci-version-upgrade-check
+**Options:**
 
-Options:
-  -h, --help  Print help
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
 
 ### `docs`
 
-Builds the docs site
+**Usage:**
+```bash
+Usage: docs [ARGS]...
+```
 
-Usage: ci-docs-build
+**Options:**
 
-Options:
-  -h, --help  Print help
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
 
 ### `other-workflows`
 
@@ -260,8 +291,6 @@ Options:
 
 #### `help`
 
-Print this message or the help of the given subcommand(s)
-
 **Usage:**
 ```bash
 Usage: help [COMMAND]...
@@ -272,8 +301,6 @@ Usage: help [COMMAND]...
 - `subcommand <COMMAND>`: Print help for the subcommand(s)
 
 ### `help`
-
-Print this message or the help of the given subcommand(s)
 
 **Usage:**
 ```bash

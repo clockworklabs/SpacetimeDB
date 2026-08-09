@@ -129,27 +129,6 @@ fn run_package(package: &str, args: &[String]) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn split_command_help_package(path: &[&str]) -> Option<&'static str> {
-    match path {
-        ["test"] => Some("ci-test"),
-        ["lint"] => Some("ci-lint"),
-        ["wasm-bindings"] => Some("ci-wasm-bindings"),
-        ["smoketests"] => Some("ci-smoketests"),
-        ["keynote-bench"] => Some("ci-keynote-bench"),
-        ["update-flow"] => Some("ci-update-flow"),
-        ["cli-docs"] => Some("ci-cli-docs"),
-        ["global-json-policy"] => Some("ci-global-json-policy"),
-        ["publish-checks"] => Some("ci-publish-checks"),
-        ["typescript-test"] => Some("ci-typescript-test"),
-        ["version-upgrade-check"] => Some("ci-version-upgrade-check"),
-        ["docs"] => Some("ci-docs-build"),
-        ["other-workflows", "coordinate-internal-tests"] => Some("ci-coordinate-internal-tests"),
-        ["other-workflows", "codeowners-check"] => Some("ci-codeowners-check"),
-        ["other-workflows", "cla-assistant"] => Some("ci-cla-assistant"),
-        _ => None,
-    }
-}
-
 fn split_command_help(package: &str) -> Result<String> {
     let help = cmd!("cargo", "run", "--quiet", "--package", package, "--", "--help")
         .env("COLUMNS", "1000")

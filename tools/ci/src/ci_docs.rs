@@ -33,14 +33,21 @@ fn generate_markdown(cmd: &mut Command, heading_level: usize, path: &[String]) -
     out.push_str(&format!("{} `{}`\n\n", heading, cmd.get_name()));
 
     let path_parts = path.iter().map(String::as_str).collect::<Vec<_>>();
-    if crate::split_command_help_package(&path_parts).is_some() {
+    if should_render_split_help(&path_parts) {
         let help = cmd.render_long_help().to_string();
         out.push_str(help.trim_end());
         out.push_str("\n\n");
         return Ok(out);
     }
 
-    if let Some(about) = cmd.get_long_about().or_else(|| cmd.get_about()) {
+    let about = cmd.get_long_about().or_else(|| {
+        if path_parts.as_slice() == ["dlls"] {
+            cmd.get_about()
+        } else {
+            None
+        }
+    });
+    if let Some(about) = about {
         out.push_str(&format!("{}\n\n", about));
     }
 
@@ -91,4 +98,16 @@ fn generate_markdown(cmd: &mut Command, heading_level: usize, path: &[String]) -
     }
 
     Ok(out)
+}
+
+fn should_render_split_help(path: &[&str]) -> bool {
+    matches!(
+        path,
+        ["smoketests"]
+            | ["update-flow"]
+            | ["cli-docs"]
+            | ["other-workflows", "coordinate-internal-tests"]
+            | ["other-workflows", "codeowners-check"]
+            | ["other-workflows", "cla-assistant"]
+    )
 }
