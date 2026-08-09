@@ -79,7 +79,9 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-    steps:
+      ARTIFACT_SUFFIX: linux
+      EXE_SUFFIX: ""
+    steps: &upload-build-artifact-steps
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -135,14 +137,14 @@ jobs:
         shell: bash
         run: |
           tar -czf build-support.tar.gz \
-            target/release/spacetimedb-cli \
-            target/release/spacetimedb-standalone
+            "target/release/spacetimedb-cli${EXE_SUFFIX}" \
+            "target/release/spacetimedb-standalone${EXE_SUFFIX}"
 
       - name: Upload Cargo timing reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts-cargo-timings-linux
+          name: build-artifacts-cargo-timings-${{ env.ARTIFACT_SUFFIX }}
           path: ${{ github.workspace }}/target/cargo-timings/
           if-no-files-found: warn
           overwrite: true
@@ -151,7 +153,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts-linux
+          name: build-artifacts-${{ env.ARTIFACT_SUFFIX }}
           path: build-support.tar.gz
           if-no-files-found: error
           overwrite: true
@@ -166,83 +168,9 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-    steps:
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
-
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          cache-on-failure: false
-          cache-all-crates: true
-          cache-workspace-crates: true
-          prefix-key: v1
-
-      # Some runner caches contain V8 metadata without the corresponding static library.
-      - name: Check v8 outputs
-        shell: bash
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --timings --release -p v8
-          fi
-
-      - name: Build smoketest binaries
-        shell: bash
-        run: |
-          cargo build --timings --release \
-            -p spacetimedb-cli \
-            -p spacetimedb-standalone \
-            --features spacetimedb-standalone/allow_loopback_http_for_tests
-
-      - name: Package build artifacts
-        shell: bash
-        run: |
-          tar -czf build-support.tar.gz \
-            target/release/spacetimedb-cli.exe \
-            target/release/spacetimedb-standalone.exe
-
-      - name: Upload Cargo timing reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts-cargo-timings-windows
-          path: ${{ github.workspace }}/target/cargo-timings/
-          if-no-files-found: warn
-          overwrite: true
-          retention-days: 14
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts-windows
-          path: build-support.tar.gz
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 14
+      ARTIFACT_SUFFIX: windows
+      EXE_SUFFIX: .exe
+    steps: *upload-build-artifact-steps
 
   smoketest_build_linux:
     needs: [upload-build-artifacts-linux]
@@ -252,7 +180,9 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-    steps:
+      ARTIFACT_SUFFIX: linux
+      EXE_SUFFIX: ""
+    steps: &smoketest-build-steps
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -301,14 +231,14 @@ jobs:
           fi
 
           tar -czf smoketest-support.tar.gz \
-            target/debug/ci \
+            "target/debug/ci${EXE_SUFFIX}" \
             "${precompiled_modules[@]}"
 
       - name: Upload Cargo timing reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoketest-build-cargo-timings-linux
+          name: smoketest-build-cargo-timings-${{ env.ARTIFACT_SUFFIX }}
           path: ${{ github.workspace }}/target/cargo-timings/
           if-no-files-found: warn
           overwrite: true
@@ -317,7 +247,7 @@ jobs:
       - name: Upload smoketest build
         uses: actions/upload-artifact@v4
         with:
-          name: smoketest-build-linux
+          name: smoketest-build-${{ env.ARTIFACT_SUFFIX }}
           path: |
             smoketest-nextest.tar.zst
             smoketest-support.tar.gz
@@ -333,78 +263,9 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-    steps:
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
-
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          cache-on-failure: false
-          cache-all-crates: true
-          cache-workspace-crates: true
-          prefix-key: v1
-
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@nextest
-
-      - name: Build smoketest dependencies and archive test binaries
-        shell: bash
-        run: |
-          cargo ci smoketests archive --archive-file smoketest-nextest.tar.zst
-
-          shopt -s nullglob
-          precompiled_modules=(target/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
-          if (( ${#precompiled_modules[@]} == 0 )); then
-            echo "No precompiled smoketest modules were produced."
-            exit 1
-          fi
-
-          tar -czf smoketest-support.tar.gz \
-            target/debug/ci.exe \
-            "${precompiled_modules[@]}"
-
-      - name: Upload Cargo timing reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoketest-build-cargo-timings-windows
-          path: ${{ github.workspace }}/target/cargo-timings/
-          if-no-files-found: warn
-          overwrite: true
-          retention-days: 14
-
-      - name: Upload smoketest build
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoketest-build-windows
-          path: |
-            smoketest-nextest.tar.zst
-            smoketest-support.tar.gz
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 14
+      ARTIFACT_SUFFIX: windows
+      EXE_SUFFIX: .exe
+    steps: *smoketest-build-steps
 
   smoketest_partitions_linux:
     needs: [smoketest_build_linux]
@@ -420,7 +281,9 @@ jobs:
       RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
       SPACETIMEDB_WORKSPACE_ROOT: ${{ github.workspace }}
-    steps:
+      ARTIFACT_SUFFIX: linux
+      PARTITION_COUNT: 2
+    steps: &smoketest-partition-steps
       - name: Find Git ref
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -458,7 +321,8 @@ jobs:
           run_install: true
 
       # Install emscripten for C++ module compilation tests.
-      - name: Install emscripten
+      - name: Install emscripten (Linux)
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
@@ -466,95 +330,8 @@ jobs:
           ./emsdk install 4.0.21
           ./emsdk activate 4.0.21
 
-      - name: Override NuGet packages
-        shell: bash
-        run: |
-          dotnet pack -c Release crates/bindings-csharp/BSATN.Runtime
-          dotnet pack -c Release crates/bindings-csharp/Runtime
-          cd sdks/csharp
-          ./tools~/write-nuget-config.sh ../..
-
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@nextest
-
-      - uses: ./.github/actions/download-build-artifacts
-        with:
-          artifact-suffix: linux
-
-      - name: Download smoketest build
-        uses: actions/download-artifact@v4
-        with:
-          name: smoketest-build-linux
-
-      - name: Extract smoketest support files
-        shell: bash
-        run: tar -xzf smoketest-support.tar.gz
-
-      # Serial execution avoids contention between the C# tests over generated bindings.
-      - name: Run smoketest partition
-        shell: bash
-        run: |
-          if [ -f ~/emsdk/emsdk_env.sh ]; then
-            source ~/emsdk/emsdk_env.sh
-          fi
-          ./target/debug/ci smoketests run-archive \
-            --archive-file smoketest-nextest.tar.zst \
-            -- \
-            --partition hash:${{ matrix.partition }}/2
-
-  smoketest_partitions_windows:
-    needs: [smoketest_build_windows]
-    name: Smoketests (Windows ${{ matrix.partition }}/4)
-    strategy:
-      fail-fast: false
-      matrix:
-        partition: [1, 2, 3, 4]
-    runs-on: spacetimedb-windows-runner
-    timeout-minutes: 120
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
-      RUST_BACKTRACE: full
-      SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
-      SPACETIMEDB_WORKSPACE_ROOT: ${{ github.workspace }}
-    steps:
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
-
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-
-      # nodejs and pnpm are required for the typescript quickstart smoketest
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
-      - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
-
-      # Install emscripten for C++ module compilation tests.
       - name: Install emscripten (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           git clone https://github.com/emscripten-core/emsdk.git $env:USERPROFILE\emsdk
@@ -563,6 +340,7 @@ jobs:
           .\emsdk activate 4.0.21
 
       - name: Install psql
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           # Fail properly if any individual command fails
@@ -574,6 +352,8 @@ jobs:
           Get-Command psql
 
       - name: Update dotnet workloads
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           # Fail properly if any individual command fails
           $ErrorActionPreference = 'Stop'
@@ -603,20 +383,33 @@ jobs:
 
       - uses: ./.github/actions/download-build-artifacts
         with:
-          artifact-suffix: windows
+          artifact-suffix: ${{ env.ARTIFACT_SUFFIX }}
 
       - name: Download smoketest build
         uses: actions/download-artifact@v4
         with:
-          name: smoketest-build-windows
+          name: smoketest-build-${{ env.ARTIFACT_SUFFIX }}
 
       - name: Extract smoketest support files
         shell: bash
         run: tar -xzf smoketest-support.tar.gz
 
       # Serial execution avoids contention between the C# tests over generated bindings.
+      - name: Run smoketest partition (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          if [ -f ~/emsdk/emsdk_env.sh ]; then
+            source ~/emsdk/emsdk_env.sh
+          fi
+          ./target/debug/ci smoketests run-archive \
+            --archive-file smoketest-nextest.tar.zst \
+            -- \
+            --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }}
+
       # Due to Emscripten PATH issues this remains separate from the Linux command.
-      - name: Run smoketest partition
+      - name: Run smoketest partition (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
@@ -625,7 +418,25 @@ jobs:
           .\target\debug\ci.exe smoketests run-archive `
             --archive-file smoketest-nextest.tar.zst `
             -- `
-            --partition hash:${{ matrix.partition }}/4
+            --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }}
+
+  smoketest_partitions_windows:
+    needs: [smoketest_build_windows]
+    name: Smoketests (Windows ${{ matrix.partition }}/4)
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2, 3, 4]
+    runs-on: spacetimedb-windows-runner
+    timeout-minutes: 120
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+      SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
+      SPACETIMEDB_WORKSPACE_ROOT: ${{ github.workspace }}
+      ARTIFACT_SUFFIX: windows
+      PARTITION_COUNT: 4
+    steps: *smoketest-partition-steps
 
   # this is a no-op version of the above check with a trivially-passing body.
   # we can't just let the check be entirely skipped because each matrix target is a required check,
