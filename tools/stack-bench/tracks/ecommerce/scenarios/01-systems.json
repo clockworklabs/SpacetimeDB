@@ -113,6 +113,46 @@
             }
           ],
           "provenBy": "PROMOTED 2026-08-09 on evidence from two real builds rather than a mutant, which is stronger: it FAILED postgres-ecom-run0 (a one-shot build that scored 50/50 on features and invariants) and PASSED spacetime-ecom-run0 the same day. The postgres app calls pg_notify from its route handlers, so a correction written directly to the database while the server was down was never announced and nothing reconciled on reconnect: the database read 15 and the storefront read 50. SpacetimeDB re-reads committed state on resubscribe and showed 15. 901a and 901b pass on both stacks and stay at 0 — a criterion nothing has ever failed has not yet shown it can discriminate."
+        },
+        {
+          "id": "901d",
+          "desc": "the client, not the server, misses the window: a correction lands while this browser is disconnected, and the page is current again once it reconnects",
+          "points": 0,
+          "steps": [
+            {
+              "do": "setOffline",
+              "actor": "viewer",
+              "offline": true
+            },
+            {
+              "do": "runScript",
+              "script": "scripts/backoffice.mjs",
+              "args": [
+                "set-stock",
+                "Desk Lamp",
+                "East",
+                "7"
+              ],
+              "settleMs": 2000
+            },
+            {
+              "do": "setOffline",
+              "actor": "viewer",
+              "offline": false
+            },
+            {
+              "do": "expectNumber",
+              "actor": "viewer",
+              "testid": "item-stock",
+              "in": {
+                "testid": "item-card",
+                "contains": "Desk Lamp"
+              },
+              "equals": 17,
+              "within": 20000
+            }
+          ],
+          "withheld": "WITHHELD until it has failed one real build and passed another, the same gate 901c cleared. Distinct from 901c: there the SERVER was down, so nothing was listening at all. Here the server stays up and sees the write; it is this CLIENT that was disconnected. An app that resumes its stream on reconnect without asking for current state stays wrong, and a dropped connection is far more common than a deploy — a closed laptop, a tunnel, a flaky phone."
         }
       ]
     },

@@ -179,3 +179,19 @@ nothing was contended; 201a lost one of six concurrent clicks before it
 dispatched. SpacetimeDB scored 0/0 there rather than passing or failing. Until
 that is fixed the contention axis measures PostgreSQL and MongoDB only, and no
 cross-stack contention claim can be made from it.
+
+**Confirmed independently, and it is not just slowness.** Re-run by hand against
+the same build outside a graded pass, 901c failed again — and failed with the
+assertion window raised from 20s to 90s. The page open across the restart never
+reaches the right number.
+
+**And the app can reconcile; it just never does it on that path.** 901d, added
+to test the opposite window, PASSES on this build: with the server up and the
+CLIENT disconnected, the correction appears as soon as the browser comes back.
+So a client-initiated reconnect triggers a refetch and converges. A server
+restart does not. 901d therefore discriminates nothing yet and stays at zero
+points — but it is what proves 901c is a missing reconciliation path rather
+than a missing capability.
+
+Postgres systems result on this build: 901a pass, 901b pass, 901c FAIL,
+901d pass, 902a pass.
