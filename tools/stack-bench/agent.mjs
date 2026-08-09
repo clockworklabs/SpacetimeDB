@@ -107,6 +107,46 @@ function thinkingVolume(appDir, sessionId) {
   } catch { return null; }
 }
 
+
+// The versions of the things actually under test. `cliVersion` is Claude Code;
+// it says nothing about which SpacetimeDB produced a number, and a benchmark of
+// SpacetimeDB that does not record which SpacetimeDB is not reproducible.
+function spacetimeVersion(bin) {
+  try {
+    const out = execFileSync(bin, ['--version'], { encoding: 'utf8', stdio: 'pipe' });
+    const commit = out.match(/Commit:\s*([0-9a-f]+)/i)?.[1] ?? null;
+    return { commit, raw: out.trim().split(/\r?\n/).slice(0, 2).join(' ') };
+  } catch { return { commit: null, raw: 'unknown' }; }
+}
+
+function bindingsVersion(pkgDir) {
+  try {
+    const p = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
+    return `${p.name}@${p.version}`;
+  } catch { return 'unknown'; }
+}
+
+function containerImage(name) {
+  try {
+    return execFileSync('docker', ['inspect', '-f', '{{.Config.Image}}', name],
+      { encoding: 'utf8', stdio: 'pipe' }).trim();
+  } catch { return 'unknown'; }
+}
+
+// Anything ambient that could change how the model behaves. We cannot prove no
+// environment variable influenced a run, but we can record which ones were
+// present so the question is answerable later. CLAUDE_EFFORT was set on this
+// machine for every run in the project before anyone noticed.
+function ambientEnv() {
+  const seen = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!/^(CLAUDE|ANTHROPIC|MAX_THINKING|DISABLE_AUTOUPDATER|FORCE_PROMPT)/.test(k)) continue;
+    // Never record a credential, only that one was present.
+    seen[k] = /KEY|TOKEN|SECRET/i.test(k) ? '<redacted, present>' : v;
+  }
+  return seen;
+}
+
 function cliVersion(bin) {
   try {
     return execFileSync(bin, ['--version'], { encoding: 'utf8', stdio: 'pipe' }).trim().split('\n')[0];
@@ -525,6 +565,15 @@ async function main() {
       cacheTier: '5m',
       autoUpdater: 'disabled',
       cliVersion: cliVersion(findClaude()),
+      // What is actually being benchmarked, not just what drove it.
+      spacetime: args.backend === 'spacetime' ? spacetimeVersion(STDB_BIN) : null,
+      spacetimeBindings: args.backend === 'spacetime' ? bindingsVersion(LOCAL_PKG) : null,
+      database: args.backend === 'postgres' ? containerImage(process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres')
+        : args.backend === 'mongodb' ? containerImage(process.env.MONGO_CONTAINER ?? 'stack-bench-mongodb')
+        : null,
+      // Ambient variables that could have influenced the model, recorded so the
+      // question "what settings produced this" has an answer.
+      env: ambientEnv(),
       node: process.version,
       platform: process.platform,
     },
