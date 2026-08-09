@@ -75,6 +75,7 @@ members = [
   "tools/ci/commands/keynote-bench",
   "tools/ci/commands/update-flow",
   "tools/ci/commands/cli-docs",
+  "tools/ci/commands/dep-check",
   "tools/ci/commands/global-json-policy",
   "tools/ci/commands/publish-checks",
   "tools/ci/commands/typescript-test",

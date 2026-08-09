@@ -56,6 +56,8 @@ enum CiCmd {
     /// Tests the update flow.
     UpdateFlow(ForwardedArgs),
     CliDocs(ForwardedArgs),
+    /// Checks Rust manifests for unused dependencies.
+    DepCheck(ForwardedArgs),
     SelfDocs {
         /// Only check for changes, do not generate the docs.
         #[arg(long)]
@@ -125,6 +127,7 @@ fn run_command(cmd: CiCmd) -> Result<()> {
         CiCmd::KeynoteBench(args) => run_package("ci-keynote-bench", &args.args),
         CiCmd::UpdateFlow(args) => run_package("ci-update-flow", &args.args),
         CiCmd::CliDocs(args) => run_package("ci-cli-docs", &args.args),
+        CiCmd::DepCheck(args) => run_package("ci-dep-check", &args.args),
         CiCmd::SelfDocs { check } => run_self_docs(check),
         CiCmd::GlobalJsonPolicy(args) => run_package("ci-global-json-policy", &args.args),
         CiCmd::PublishChecks(args) => run_package("ci-publish-checks", &args.args),

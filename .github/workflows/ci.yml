@@ -445,6 +445,12 @@ jobs:
       - name: Run ci lint
         run: cargo ci lint
 
+      - name: Install cargo-machete
+        run: cargo install cargo-machete --version 0.9.2 --locked
+
+      - name: Run dependency check
+        run: cargo ci dep-check
+
       - name: Upload public lint Cargo timing reports
         if: always()
         uses: actions/upload-artifact@v4

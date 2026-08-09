@@ -1,0 +1,9 @@
+[package]
+name = "ci-dep-check"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+ci-common = { path = "../../common" }
+duct.workspace = true

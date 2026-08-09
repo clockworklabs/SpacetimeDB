@@ -120,6 +120,18 @@ Usage: cli-docs [ARGS]...
 - `args <ARGS>`: Arguments forwarded to the split CI command package
 - `--help`: Print help
 
+### `dep-check`
+
+**Usage:**
+```bash
+Usage: dep-check [ARGS]...
+```
+
+**Options:**
+
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
+
 ### `self-docs`
 
 **Usage:**
