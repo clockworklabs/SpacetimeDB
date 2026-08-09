@@ -10,3 +10,4 @@ clap.workspace = true
 tempfile.workspace = true
 spacetimedb-guard.workspace = true
 env_logger.workspace = true
+ci-common = { path = "../../common" }

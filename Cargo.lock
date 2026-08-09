@@ -969,6 +969,7 @@ name = "ci-global-json-policy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-common",
  "clap 4.5.50",
  "duct",
 ]
@@ -1008,6 +1009,7 @@ name = "ci-smoketests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-common",
  "clap 4.5.50",
  "duct",
  "env_logger 0.10.2",
