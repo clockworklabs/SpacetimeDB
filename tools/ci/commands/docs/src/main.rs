@@ -8,6 +8,5 @@ fn run_docs_build() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
     run_docs_build()
 }

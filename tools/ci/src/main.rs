@@ -41,7 +41,7 @@ const COMMANDS: &[Command] = &[
     },
     Command {
         name: "dlls",
-        package: "ci-dlls",
+        package: "",
     },
     Command {
         name: "smoketests",
@@ -110,6 +110,9 @@ fn command_group_for(name: &str) -> Option<&'static CommandGroup> {
 fn run_command(command: &Command, forwarded: &[String]) -> Result<()> {
     if command.name == "self-docs" {
         return run_self_docs(forwarded);
+    }
+    if command.name == "dlls" {
+        return run_dlls(forwarded);
     }
     let mut cargo_args = vec!["run", "--package", command.package, "--"];
     cargo_args.extend(forwarded.iter().map(String::as_str));
@@ -198,6 +201,19 @@ fn run_self_docs(args: &[String]) -> Result<()> {
     } else {
         fs::write(path, readme)?;
     }
+    Ok(())
+}
+
+fn run_dlls(args: &[String]) -> Result<()> {
+    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
+        println!("Usage: cargo ci dlls");
+        return Ok(());
+    }
+    if !args.is_empty() {
+        bail!("cargo ci dlls does not accept arguments");
+    }
+    eprintln!("warning: `cargo ci dlls` is deprecated; use `cargo regen csharp dlls` instead");
+    cmd!("cargo", "regen", "csharp", "dlls").run()?;
     Ok(())
 }
 

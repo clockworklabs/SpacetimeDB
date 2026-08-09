@@ -71,7 +71,6 @@ members = [
   "tools/ci/commands/test",
   "tools/ci/commands/lint",
   "tools/ci/commands/wasm-bindings",
-  "tools/ci/commands/dlls",
   "tools/ci/commands/smoketests",
   "tools/ci/commands/keynote-bench",
   "tools/ci/commands/update-flow",

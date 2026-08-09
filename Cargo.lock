@@ -957,22 +957,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "ci-dlls"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "duct",
- "env_logger 0.10.2",
-]
-
-[[package]]
 name = "ci-docs-build"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "ci-common",
  "duct",
- "env_logger 0.10.2",
 ]
 
 [[package]]
