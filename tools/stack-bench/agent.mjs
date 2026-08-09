@@ -54,6 +54,19 @@ const fwd = p => p.split('\\').join('/');
 // STACK_BENCH_THINKING still forces a value for a deliberate experiment.
 const THINKING_TOKENS = process.env.STACK_BENCH_THINKING ?? null;
 
+// Reasoning effort, pinned and recorded rather than inherited.
+//
+// The CLI takes --effort low|medium|high|xhigh|max. The harness never passed it,
+// so every run so far took whatever the environment happened to carry — and
+// this machine has CLAUDE_EFFORT=high, which agent.mjs forwards with the rest
+// of process.env. The comparisons stayed fair because both stacks got the same
+// level, but nothing recorded which level produced a number, and anyone else
+// running this would silently get different ones.
+//
+// Pinned to high to match every result collected so far. STACK_BENCH_EFFORT
+// changes it deliberately.
+const EFFORT = process.env.STACK_BENCH_EFFORT ?? 'high';
+
 // What the session ACTUALLY thought, read back from its own transcript.
 //
 // This is the measurement that replaces the pin. Reasoning volume is the
@@ -434,6 +447,7 @@ async function main() {
       // Everything the model legitimately needs (backend guidance, skill
       // documents, the level spec, the contract appendix) is inlined into the
       // prompt, and the linter is reached over loopback rather than by path.
+      '--effort', EFFORT,
       '--add-dir', args.app,
     ], { cwd: args.app, input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
       env: { ...process.env,
@@ -502,6 +516,7 @@ async function main() {
     setup: {
       thinkingTokens: (args.thinking ?? THINKING_TOKENS) ? Number(args.thinking ?? THINKING_TOKENS) : 'cli default',
       permissionMode: 'acceptEdits',
+      effort: EFFORT,
       // Which reference documents the model was handed. The cost work varies
       // this deliberately, so a number is meaningless without it.
       skills: args.backend === 'spacetime' ? (args.skills ?? DEFAULT_SKILLS) : [],
