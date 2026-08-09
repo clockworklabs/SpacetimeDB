@@ -48,6 +48,9 @@ function parseArgs(argv) {
       case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
       case '--skip-probe': a.skipProbe = true; break;
+      // Which reference documents to inline (spacetime only). The variable
+      // under test in the cost work; passed straight through to agent.mjs.
+      case '--skills': a.skills = argv[++i]; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
   }
@@ -202,7 +205,8 @@ function runAgent(args, mode, level, appDir) {
   const out = sh('node', [args.agent ?? AGENT, '--mode', mode, '--backend', args.backend,
     '--level', String(level), '--app', appDir, '--track', args.track,
     '--run-index', String(args.runIndex), '--model', args.model,
-    '--guidance', args.guidance], { stdio: 'pipe' });
+    '--guidance', args.guidance,
+    ...(args.skills ? ['--skills', args.skills] : [])], { stdio: 'pipe' });
   return JSON.parse(out.trim().split('\n').pop());
 }
 

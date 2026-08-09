@@ -120,6 +120,9 @@ function parseArgs(argv) {
       case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
       case '--thinking': a.thinking = argv[++i]; break;
+      // Comma-separated skill directories to inline, e.g.
+      //   --skills typescript-server,typescript-client,cli
+      case '--skills': a.skills = argv[++i].split(',').map(x => x.trim()).filter(Boolean); break;
       case '--print-prompt': a.printPrompt = true; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
@@ -229,10 +232,22 @@ function backendDoc(args, p, track) {
 // SpacetimeDB is young enough that models have little of it in training data;
 // the skill documents are its API reference, equivalent to what the other stacks
 // get from having been on the internet for a decade.
-function skillDocs(backend) {
+// Which documents are inlined is the variable under test in the cost work, so
+// it is a flag rather than an edit: both arms of a comparison then come from
+// one binary, and run.json records which arm produced each number.
+//
+// The default omits `cli`, which is the state every result so far was measured
+// in -- so the default keeps history comparable. `cli` is what teaches
+// `spacetime dev` (auto-rebuild, auto-publish, regenerate bindings); without
+// it a build hand-rolls that loop, and one run that had the knowledge came in
+// at $10.29/32min against $22.51/127min without. That was n=1 and is exactly
+// what --skills exists to settle.
+const DEFAULT_SKILLS = ['typescript-server', 'typescript-client'];
+
+function skillDocs(backend, skills) {
   if (backend !== 'spacetime') return '';
   const strip = md => md.replace(/^---\n[\s\S]*?\n---\n/, '');
-  return ['typescript-server', 'typescript-client']
+  return skills
     .map(s => strip(readFileSync(join(REPO, 'skills', s, 'SKILL.md'), 'utf8')))
     .join('\n\n---\n\n');
 }
@@ -291,7 +306,7 @@ function buildPrompt(args, p, track, lintPort) {
     '',
     backendDoc(args, p, track),
   ];
-  const skills = skillDocs(args.backend);
+  const skills = skillDocs(args.backend, args.skills ?? DEFAULT_SKILLS);
   if (skills) common.push('', '---', '', skills);
 
   if (args.mode === 'fix') {
@@ -487,6 +502,9 @@ async function main() {
     setup: {
       thinkingTokens: (args.thinking ?? THINKING_TOKENS) ? Number(args.thinking ?? THINKING_TOKENS) : 'cli default',
       permissionMode: 'acceptEdits',
+      // Which reference documents the model was handed. The cost work varies
+      // this deliberately, so a number is meaningless without it.
+      skills: args.backend === 'spacetime' ? (args.skills ?? DEFAULT_SKILLS) : [],
       // Recorded because it materially changes cost, and because a figure whose
       // cache tier is unknown cannot be compared with one taken later.
       cacheTier: '5m',
