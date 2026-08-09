@@ -205,6 +205,7 @@ function gradeSuite(args, suite) {
   const argv = [join(ROOT, 'grader', 'grade.mjs'), '--url', args.url, '--level', args.level,
     '--label', `${args.label}-${suite.id}`, '--out', out];
   if (suite.spec) argv.push('--spec', suite.spec);
+  argv.push('--backend', args.backend, '--track', args.track);
   if (args.restartCmd) argv.push('--restart-cmd', args.restartCmd);
   // The systems criteria run scripts the app itself ships (back-office writes),
   // so the grader has to know where the app lives.

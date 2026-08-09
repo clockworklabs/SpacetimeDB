@@ -18,7 +18,7 @@
 // Exit codes: 0 = graded (any score), 2 = usage/infra error.
 
 import { chromium } from 'playwright';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,6 +36,10 @@ function parseArgs(argv) {
       case '--feature': args.feature = parseInt(argv[++i], 10); break;
       case '--spec': args.spec = argv[++i]; break;
       case '--restart-cmd': args.restartCmd = argv[++i]; break;
+      // Needed to issue the spec's named actions: which stack to talk to, and
+      // which track declares the action names.
+      case '--backend': args.backend = argv[++i]; break;
+      case '--track': args.track = argv[++i]; break;
       case '--app': args.app = argv[++i]; break;
       case '--media': args.media = argv[++i]; break;
       case '--trace': args.trace = true; break;
@@ -304,6 +308,8 @@ function describeStep(step) {
       return `expect ${step.testid} ${want}`;
     }
     case 'expectAgreement': return `expect all clients agree on ${step.testid}`;
+    case 'callConcurrently': return `${step.actors.length} actors issue "${step.action}" at the same instant`;
+    case 'expectCallOutcomes': return `expect exactly ${step.accepted} of those requests were accepted`;
     case 'expectActorsWith': {
       const parts = [
         step.equals !== undefined ? `exactly ${step.equals} of ${step.actors.length} actors have` : `actors have`,
@@ -353,6 +359,83 @@ async function enterRoom(actor, roomName) {
   await input.waitFor({ state: 'visible', timeout: DEFAULT_WITHIN });
 }
 
+// Issue one of the spec's named actions as several actors at the same instant.
+//
+// Clicking cannot contend: browser clicks arrive milliseconds apart and each
+// request finishes before the next starts. replayConcurrently solved that by
+// replaying writes captured from HTTP traffic, which works for server-based
+// stacks and not at all for SpacetimeDB — that client writes over WebSocket, so
+// nothing is captured and the criterion reports INCONCLUSIVE. Two contention
+// criteria were therefore never measured on one stack, and the two backends
+// were scored out of different totals.
+//
+// The spec names the write actions instead, so the harness can issue them
+// directly on either stack. Verified from the SpacetimeDB source that this is
+// the same execution path the app's own client uses: the HTTP route and the
+// WebSocket handler both call ModuleHost::call_reducer with the caller's
+// identity, differing only in whether a success notification is pushed back to
+// that socket. Transactions and concurrency semantics are identical.
+//
+// Identity comes out of the actor's own browser rather than being minted here,
+// so these really are that customer's requests: the session cookie for a
+// server-based stack, and the token the SDK persists for SpacetimeDB. Neither
+// reads an app-specific name — any cookie the app set, and any JWT it stored.
+async function actorAuth(actor, backend) {
+  if (backend === 'spacetime') {
+    const token = await actor.page.evaluate(() => {
+      for (let i = 0; i < localStorage.length; i++) {
+        const v = localStorage.getItem(localStorage.key(i)) ?? '';
+        if (/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\./.test(v)) return v;   // a JWT
+      }
+      return null;
+    }).catch(() => null);
+    return token ? { Authorization: `Bearer ${token}` } : null;
+  }
+  const cookies = await actor.context.cookies().catch(() => []);
+  if (!cookies.length) return null;
+  return { Cookie: cookies.map(c => `${c.name}=${c.value}`).join('; ') };
+}
+
+async function callConcurrently(step, actors, ctx) {
+  const action = (ctx.actions ?? []).find(a => a.id === step.action);
+  if (!action) {
+    throw new Error(`INCONCLUSIVE: the track names no action "${step.action}", so nothing could be issued`);
+  }
+  const backend = ctx.backend;
+  const target = backend === 'spacetime'
+    ? (ctx.spacetime && `${ctx.spacetime.uri}/v1/database/${ctx.spacetime.mod}/call/${action.reducer}`)
+    : `${String(ctx.url).replace(/\/$/, '')}${action.path}`;
+  if (!target) {
+    throw new Error('INCONCLUSIVE: could not resolve where to send the action for this backend');
+  }
+
+  const prepared = [];
+  for (const name of step.actors) {
+    const actor = actors.get(name);
+    if (!actor) throw new Error(`callConcurrently: no actor "${name}"`);
+    const auth = await actorAuth(actor, backend);
+    // No credentials means we would be issuing an anonymous request, which is a
+    // different test entirely — say so rather than quietly measuring the wrong
+    // thing.
+    if (!auth) throw new Error(`INCONCLUSIVE: no session found in ${name}'s browser, so the action could not be issued as them`);
+    prepared.push({ name, auth });
+  }
+  if (prepared.length < 2) throw new Error('INCONCLUSIVE: fewer than two actors, so nothing was contended');
+
+  const body = backend === 'spacetime'
+    ? JSON.stringify(step.args ?? action.args ?? [])
+    : JSON.stringify(step.body ?? {});
+
+  const t0 = Date.now();
+  const outcomes = await Promise.all(prepared.map(p =>
+    fetch(target, { method: 'POST', headers: { 'Content-Type': 'application/json', ...p.auth }, body })
+      .then(async r => ({ name: p.name, status: r.status, ok: r.ok, text: r.ok ? '' : (await r.text()).slice(0, 120) }))
+      .catch(e => ({ name: p.name, status: 0, ok: false, text: String(e.message).slice(0, 120) }))));
+
+  ctx.lastCalls = { action: step.action, fired: prepared.length, ms: Date.now() - t0, outcomes };
+  await actors.get(step.actors[0]).page.waitForTimeout(step.settleMs ?? 3000);
+}
+
 // How many of these people ended up with the thing — and did anyone get it
 // twice? A contention criterion is about the population, not one participant:
 // "exactly three of six customers got an order" cannot be expressed by asking
@@ -396,6 +479,18 @@ async function runStep(step, actors, ctx) {
   if (step.do === 'expectOrderMatches') return expectOrderMatches(step, actors);
   if (step.do === 'expectAgreement') return expectAgreement(step, actors, ctx);
   if (step.do === 'expectActorsWith') return expectActorsWith(step, actors, ctx);
+  if (step.do === 'callConcurrently') return callConcurrently(step, actors, ctx);
+  if (step.do === 'expectCallOutcomes') {
+    const r = ctx.lastCalls;
+    if (!r) throw new Error('no callConcurrently ran before this assertion');
+    const accepted = r.outcomes.filter(o => o.ok).length;
+    if (step.accepted !== undefined && accepted !== step.accepted) {
+      const detail = r.outcomes.map(o => `${o.name}:${o.status}`).join(' ');
+      throw new Error(`${accepted} of ${r.fired} concurrent "${r.action}" requests were accepted, expected exactly ` +
+        `${step.accepted} (${detail}) — issued within ${r.ms}ms`);
+    }
+    return;
+  }
   if (step.do === 'replayConcurrently') {
     // Browser clicks arrive milliseconds apart and each request finishes in
     // less, so a race never happens. Replaying each actor's own captured write
@@ -1403,7 +1498,27 @@ async function main() {
 
   const features = args.feature ? spec.features.filter(f => f.id === args.feature) : spec.features;
   const runId = uniq();
+  // Where the named actions live. Resolved once: the track declares their
+  // names, and a SpacetimeDB module is addressed by name on its host rather
+  // than through the app's URL — the same two values reset-db.sh reads.
+  let actions = [], spacetime = null;
+  if (args.track) {
+    try { actions = JSON.parse(readFileSync(join(ROOT, 'tracks', args.track, 'track.json'), 'utf8')).actions ?? []; }
+    catch { /* a track without named actions simply has none */ }
+  }
+  if (args.backend === 'spacetime' && args.app) {
+    const cfg = join(args.app, 'client', 'src', 'config.ts');
+    if (existsSync(cfg)) {
+      const src = readFileSync(cfg, 'utf8');
+      const mod = src.match(/MODULE_NAME\s*=\s*'([^']+)'/)?.[1] ?? null;
+      const uri = (src.match(/URI\s*=\s*'([^']+)'/)?.[1] ?? 'http://127.0.0.1:3210')
+        .replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
+      if (mod) spacetime = { mod, uri };
+    }
+  }
+
   const ctx = { runId, roomName: base => `${base}-${runId}`, restartCmd: args.restartCmd, url: args.url,
+    backend: args.backend, actions, spacetime,
     appDir: args.app };
 
   const browser = await chromium.launch({ headless: !args.headed });
