@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Context, Result};
+use ci_codeowners_check::Args;
 use ci_common::ensure_repo_root;
 use clap::Parser;
 use duct::cmd;
@@ -8,16 +9,11 @@ use std::path::{Path, PathBuf};
 
 const REPO: &str = "clockworklabs/SpacetimeDB";
 
-#[derive(Parser)]
 #[command(about = "Checks that sensitive CODEOWNERS-controlled files have the required approvals.")]
-struct Args {
-    /// Git ref to compare against, usually origin/<pull request base branch>.
-    #[arg(long)]
-    base_ref: String,
-
-    /// Pull request number to inspect for approval state.
-    #[arg(long)]
-    pr_number: u64,
+#[derive(Parser)]
+struct Cli {
+    #[command(flatten)]
+    args: Args,
 }
 
 fn run(base_ref: &str, pr_number: u64) -> Result<()> {
@@ -35,7 +31,7 @@ fn run(base_ref: &str, pr_number: u64) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = Cli::parse().args;
     run(&args.base_ref, args.pr_number)
 }
 

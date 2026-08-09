@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
 use ci_common::pnpm;
+use ci_test::Args;
 use clap::Parser;
 use duct::cmd;
 
@@ -10,10 +11,13 @@ use duct::cmd;
 /// This does not include Unreal tests.
 /// This expects to run in a clean git state.
 #[derive(Parser)]
-struct Args {}
+struct Cli {
+    #[command(flatten)]
+    args: Args,
+}
 
 fn main() -> Result<()> {
-    Args::parse();
+    Cli::parse();
 
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 

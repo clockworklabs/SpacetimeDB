@@ -1,15 +1,19 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, Result};
 use ci_common::pnpm;
+use ci_typescript_test::Args;
 use clap::Parser;
 use duct::cmd;
 
 /// Runs TypeScript workspace tests and template build checks.
 #[derive(Parser)]
-struct Args {}
+struct Cli {
+    #[command(flatten)]
+    args: Args,
+}
 
 fn main() -> Result<()> {
-    Args::parse();
+    Cli::parse();
 
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
     pnpm(["test"]).dir("crates/bindings-typescript").run()?;

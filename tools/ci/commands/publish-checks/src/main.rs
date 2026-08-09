@@ -1,14 +1,18 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, Result};
+use ci_publish_checks::Args;
 use clap::Parser;
 use duct::cmd;
 
 /// Checks that publishable crates satisfy publish constraints.
 #[derive(Parser)]
-struct Args {}
+struct Cli {
+    #[command(flatten)]
+    args: Args,
+}
 
 fn main() -> Result<()> {
-    Args::parse();
+    Cli::parse();
 
     cmd!("bash", "-lc", "test -d venv || python3 -m venv venv").run()?;
     cmd!("venv/bin/pip3", "install", "argparse", "toml").run()?;

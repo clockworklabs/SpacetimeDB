@@ -2,6 +2,7 @@
 
 use anyhow::{bail, Context, Result};
 use ci_common::{ensure_repo_root, pnpm};
+use ci_lint::Args;
 use clap::Parser;
 use duct::cmd;
 use serde_json::Value;
@@ -16,7 +17,10 @@ use std::path::PathBuf;
 /// Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there
 /// are no warnings.
 #[derive(Parser)]
-struct Args {}
+struct Cli {
+    #[command(flatten)]
+    args: Args,
+}
 
 fn package_json_pnpm_version(package_manager: &str) -> Option<&str> {
     package_manager.strip_prefix("pnpm@")
@@ -288,7 +292,7 @@ fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
 }
 
 fn main() -> Result<()> {
-    Args::parse();
+    Cli::parse();
 
     ensure_repo_root()?;
     check_pnpm_release_age_policy()?;

@@ -7,3 +7,18 @@ edition.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 duct.workspace = true
+ci-cla-assistant = { path = "commands/cla-assistant" }
+ci-cli-docs = { path = "commands/cli-docs" }
+ci-codeowners-check = { path = "commands/codeowners-check" }
+ci-coordinate-internal-tests = { path = "commands/coordinate-internal-tests" }
+ci-docs-build = { path = "commands/docs" }
+ci-global-json-policy = { path = "commands/global-json-policy" }
+ci-keynote-bench = { path = "commands/keynote-bench" }
+ci-lint = { path = "commands/lint" }
+ci-publish-checks = { path = "commands/publish-checks" }
+ci-smoketests = { path = "commands/smoketests" }
+ci-test = { path = "commands/test" }
+ci-typescript-test = { path = "commands/typescript-test" }
+ci-update-flow = { path = "commands/update-flow" }
+ci-version-upgrade-check = { path = "commands/version-upgrade-check" }
+ci-wasm-bindings = { path = "commands/wasm-bindings" }

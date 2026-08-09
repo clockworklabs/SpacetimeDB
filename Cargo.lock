@@ -899,6 +899,21 @@ name = "ci"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-cla-assistant",
+ "ci-cli-docs",
+ "ci-codeowners-check",
+ "ci-coordinate-internal-tests",
+ "ci-docs-build",
+ "ci-global-json-policy",
+ "ci-keynote-bench",
+ "ci-lint",
+ "ci-publish-checks",
+ "ci-smoketests",
+ "ci-test",
+ "ci-typescript-test",
+ "ci-update-flow",
+ "ci-version-upgrade-check",
+ "ci-wasm-bindings",
  "clap 4.5.50",
  "duct",
 ]

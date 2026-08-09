@@ -2,6 +2,7 @@
 
 use anyhow::{bail, Result};
 use ci_common::ensure_repo_root;
+use ci_global_json_policy::Args;
 use clap::Parser;
 use duct::cmd;
 use std::fs;
@@ -9,7 +10,10 @@ use std::path::{Path, PathBuf};
 
 /// Verify that any non-root global.json files are symlinks to the root global.json.
 #[derive(Parser)]
-struct Args {}
+struct Cli {
+    #[command(flatten)]
+    args: Args,
+}
 
 fn git_tracked_files(pathspec: &str) -> Result<Vec<PathBuf>> {
     let output = cmd!("git", "ls-files", pathspec).read()?;
@@ -17,7 +21,7 @@ fn git_tracked_files(pathspec: &str) -> Result<Vec<PathBuf>> {
 }
 
 fn main() -> Result<()> {
-    Args::parse();
+    Cli::parse();
 
     ensure_repo_root()?;
 
