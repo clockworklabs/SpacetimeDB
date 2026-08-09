@@ -173,6 +173,32 @@ function lint(args) {
   return r;
 }
 
+// The spec names the write actions so contention tests can issue several at the
+// same instant, which clicking cannot do. When one is missing the symptom is a
+// criterion reporting INCONCLUSIVE and being subtracted from this run's
+// denominator — which is how one backend was scored out of 48 and another out
+// of 50 for the same level. Say it here instead, where it is one line and
+// obviously about the app rather than about the database.
+//
+// Not fatal: features and invariants still grade perfectly well without it, and
+// aborting would throw away a run over tests that were going to be excluded
+// anyway.
+function checkActions(args) {
+  process.stdout.write(`  ${'actions'.padEnd(10)} ... `);
+  const out = join(args.out, 'actions.json');
+  try {
+    run('node', [join(ROOT, 'check-actions.mjs'), '--backend', args.backend,
+      '--url', args.url, '--app', args.app ?? '.', '--track', args.track, '--out', out, '--quiet']);
+  } catch { /* non-zero exit means something is missing; the report still lands */ }
+  if (!existsSync(out)) { console.log('NO REPORT'); return null; }
+  const r = JSON.parse(readFileSync(out, 'utf8'));
+  if (!r.missing.length) { console.log(`all ${r.results.length} present`); return r; }
+  console.log(`${r.missing.length} MISSING — ${r.missing.join(', ')}`);
+  console.log('             contention and volume criteria cannot be issued against this app,');
+  console.log('             and will be excluded rather than failed.');
+  return r;
+}
+
 function gradeSuite(args, suite) {
   process.stdout.write(`  ${suite.id.padEnd(10)} ... `);
   const out = join(args.out, `grading-${suite.id}.json`);
@@ -302,6 +328,7 @@ async function main() {
   }
 
   bundle.suites.lint = lint(args);
+  bundle.actions = checkActions(args);
 
   // Two numbers, kept apart on purpose. `score` is this level's own work.
   // `regression` is whether the guarantees earned at earlier levels still hold.

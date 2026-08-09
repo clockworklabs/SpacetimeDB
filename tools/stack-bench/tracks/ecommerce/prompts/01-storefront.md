@@ -139,6 +139,31 @@ grant access to it.
 - Admin sees **total revenue**: the sum of all order totals, which must always equal
   what the orders themselves add up to
 
+### Named actions
+
+Every write below already appears in the features above. Give each one the name
+in this table, so the same request can be made without going through a browser.
+Use your stack's ordinary write path — do not add a transport you would not
+otherwise have:
+
+| Action | Server-based stacks (Express and similar) | SpacetimeDB |
+|---|---|---|
+| buy one unit of an item | `POST /api/items/:id/buy` | reducer `buyNow` |
+| add an item to the cart | `POST /api/cart` | reducer `addToCart` |
+| check out the cart | `POST /api/checkout` | reducer `checkout` |
+| restock a warehouse | `POST /api/admin/restock` | reducer `adminRestock` |
+| create an account | `POST /api/auth/signup` | reducer `signUp` |
+| sign in | `POST /api/auth/signin` | reducer `signIn` |
+
+The rules do not change because a request arrived this way. Authentication,
+authorisation, stock limits, price integrity and every guarantee above apply
+exactly as they do to a click — a caller with no session still cannot buy, and a
+customer still cannot restock.
+
+This is the same idea as the back-office script below: a way in that does not
+depend on a browser. It exists because some things can only be tested by making
+several requests land at the same instant, which clicking cannot do.
+
 ### Back office
 
 **Your app does not own its data.** Real stores have other systems writing to

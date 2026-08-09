@@ -51,5 +51,58 @@
         "spec": "scenarios/01-systems.json"
       }
     ]
-  }
+  },
+  "actions": [
+    {
+      "id": "buy",
+      "path": "/api/items/00000000-0000-0000-0000-000000000000/buy",
+      "reducer": "buy_now",
+      "args": [
+        0
+      ]
+    },
+    {
+      "id": "addToCart",
+      "path": "/api/cart",
+      "reducer": "add_to_cart",
+      "args": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "checkout",
+      "path": "/api/checkout",
+      "reducer": "checkout",
+      "args": []
+    },
+    {
+      "id": "restock",
+      "path": "/api/admin/restock",
+      "reducer": "admin_restock",
+      "args": [
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "signUp",
+      "path": "/api/auth/signup",
+      "reducer": "sign_up",
+      "args": [
+        "",
+        ""
+      ]
+    },
+    {
+      "id": "signIn",
+      "path": "/api/auth/signin",
+      "reducer": "sign_in",
+      "args": [
+        "",
+        ""
+      ]
+    }
+  ]
 }
