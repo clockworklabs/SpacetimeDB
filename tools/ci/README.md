@@ -179,9 +179,11 @@ cargo ci docs
 Usage: ci-other-workflows <COMMAND>
 
 Commands:
-  codeowners-check  Checks that sensitive CODEOWNERS-controlled files have the required approvals
-  cla-assistant     Interacts with CLA Assistant
-  help              Print this message or the help of the given subcommand(s)
+  coordinate-internal-tests  Selects or starts the private workflow for a public Internal Tests run
+  codeowners-check           Checks that sensitive CODEOWNERS-controlled files have the required
+                             approvals
+  cla-assistant              Interacts with CLA Assistant
+  help                       Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help  Print help

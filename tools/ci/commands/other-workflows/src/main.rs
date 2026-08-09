@@ -12,6 +12,7 @@ fn ensure_repo_root() -> Result<()> {
 
 mod cla_assistant;
 mod codeowners_check;
+mod internal_tests;
 
 #[derive(Parser)]
 struct Args {
@@ -20,6 +21,8 @@ struct Args {
 }
 #[derive(Subcommand)]
 enum OtherWorkflowsCmd {
+    /// Selects or starts the private workflow for a public Internal Tests run.
+    CoordinateInternalTests(internal_tests::CoordinateArgs),
     /// Checks that sensitive CODEOWNERS-controlled files have the required approvals.
     CodeownersCheck {
         #[arg(long)]
@@ -36,6 +39,7 @@ enum OtherWorkflowsCmd {
 fn main() -> Result<()> {
     env_logger::init();
     match Args::parse().cmd {
+        OtherWorkflowsCmd::CoordinateInternalTests(args) => internal_tests::coordinate(args),
         OtherWorkflowsCmd::CodeownersCheck { base_ref, pr_number } => codeowners_check::run(&base_ref, pr_number),
         OtherWorkflowsCmd::ClaAssistant { cmd } => cla_assistant::run(cmd),
     }
