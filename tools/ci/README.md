@@ -10,7 +10,7 @@ SpacetimeDB CI tasks
 
 This tool provides several subcommands for automating CI workflows in SpacetimeDB.
 
-It may be invoked via `cargo ci <subcommand>`, or simply `cargo ci` to run all subcommands in sequence. It is mostly designed to be run in CI environments via the github workflows, but can also be run locally
+It may be invoked via `cargo ci <subcommand>`, or simply `cargo ci` to run all subcommands in sequence. It is mostly designed to be run in CI environments via the github workflows, but can also be run locally.
 
 **Usage:**
 ```bash
@@ -19,7 +19,7 @@ Usage: cargo ci [OPTIONS] [COMMAND]
 
 **Options:**
 
-- `--skip <SKIP>`: Skip specified subcommands when running all
+- `--skip <SKIP>`: Skip specified subcommands when running all.
 
 When no subcommand is specified, all subcommands are run in sequence. This option allows specifying subcommands to skip when running all. For example, to skip the `unreal-tests` subcommand, use `--skip unreal-tests`.
 
@@ -27,54 +27,41 @@ When no subcommand is specified, all subcommands are run in sequence. This optio
 
 ### `test`
 
-Runs tests
-
-Runs rust tests, codegens csharp sdk and runs csharp tests. This does not include Unreal tests. This expects to run in a clean git state.
-
 **Usage:**
 ```bash
-Usage: test
+Usage: test [ARGS]...
 ```
 
 **Options:**
 
-- `--help`: Print help (see a summary with '-h')
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
 
 ### `lint`
 
-Lints the codebase
-
-Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there are no warnings.
-
 **Usage:**
 ```bash
-Usage: lint
+Usage: lint [ARGS]...
 ```
 
 **Options:**
 
-- `--help`: Print help (see a summary with '-h')
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
 
 ### `wasm-bindings`
 
-Tests Wasm bindings
-
-Runs tests for the codegen crate and builds a test module with the wasm bindings.
-
 **Usage:**
 ```bash
-Usage: wasm-bindings
+Usage: wasm-bindings [ARGS]...
 ```
 
 **Options:**
 
-- `--help`: Print help (see a summary with '-h')
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
 
 ### `dlls`
-
-Deprecated; use `cargo regen csharp dlls`.
-
-Builds and packs C# DLLs and NuGet packages for local Unity workflows.
 
 **Usage:**
 ```bash
@@ -83,115 +70,55 @@ Usage: dlls
 
 **Options:**
 
-- `--help`: Print help (see a summary with '-h')
+- `--help`: Print help
 
 ### `smoketests`
 
-Runs smoketests
-
-Executes the smoketests suite with some default exclusions.
-
 **Usage:**
 ```bash
-Usage: smoketests [OPTIONS] [ARGS]... [COMMAND]
+Usage: smoketests [ARGS]...
 ```
 
 **Options:**
 
-- `--server <SERVER>`: Run tests against a remote server instead of spawning local servers.
-
-When specified, tests will connect to the given URL instead of starting local server instances. Tests that require local server control (like restart tests) will be skipped.
-
-- `--auth-host <AUTH_HOST>`: Use a SpacetimeAuth-issued login for remote-server tests.
-
-This is required for servers that reject direct server-issued logins for privileged operations.
-
-Optionally accepts an auth host to pass through to `spacetime login`, for example `--auth-host=https://spacetimedb.com`.
-
-- `--dotnet <DOTNET>`:
-- `args <ARGS>`: Additional arguments to pass to the test runner
-- `--help`: Print help (see a summary with '-h')
-
-#### `prepare`
-
-Only build binaries without running tests
-
-Use this before running `cargo test --all` to ensure binaries are built.
-
-**Usage:**
-```bash
-Usage: prepare
-```
-
-**Options:**
-
-- `--help`: Print help (see a summary with '-h')
-
-#### `check-mod-list`
-
-**Usage:**
-```bash
-Usage: check-mod-list
-```
-
-**Options:**
-
+- `args <ARGS>`: Arguments forwarded to the split CI command package
 - `--help`: Print help
-
-#### `help`
-
-**Usage:**
-```bash
-Usage: help [COMMAND]...
-```
-
-**Options:**
-
-- `subcommand <COMMAND>`: Print help for the subcommand(s)
 
 ### `keynote-bench`
 
-Runs the keynote benchmark as a CI performance regression gate.
-
-Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
-
 **Usage:**
 ```bash
-Usage: keynote-bench
+Usage: keynote-bench [ARGS]...
 ```
 
 **Options:**
 
-- `--help`: Print help (see a summary with '-h')
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
 
 ### `update-flow`
 
-Tests the update flow
-
-Tests the self-update flow by building the spacetimedb-update binary for the specified target, by default the current target, and performing a self-install into a temporary directory.
-
 **Usage:**
 ```bash
-Usage: update-flow [OPTIONS]
+Usage: update-flow [ARGS]...
 ```
 
 **Options:**
 
-- `--target <TARGET>`: Target triple to build for, by default the current target. Used by github workflows to check the update flow on multiple platforms.
-- `--github-token-auth`: Whether to enable github token authentication feature when building the update binary. By default this is disabled.
-- `--help`: Print help (see a summary with '-h')
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
 
 ### `cli-docs`
 
 **Usage:**
 ```bash
-Usage: cli-docs [OPTIONS]
+Usage: cli-docs [ARGS]...
 ```
 
 **Options:**
 
-- `--spacetime-path <SPACETIME_PATH>`: specify a custom path to the SpacetimeDB repository root (where the main Cargo.toml is located)
-- `--help`: Print help (see a summary with '-h')
+- `args <ARGS>`: Arguments forwarded to the split CI command package
+- `--help`: Print help
 
 ### `self-docs`
 
@@ -203,61 +130,66 @@ Usage: self-docs [OPTIONS]
 **Options:**
 
 - `--check`: Only check for changes, do not generate the docs
-- `--help`: Print help (see a summary with '-h')
+- `--help`: Print help
 
 ### `global-json-policy`
 
 **Usage:**
 ```bash
-Usage: global-json-policy
+Usage: global-json-policy [ARGS]...
 ```
 
 **Options:**
 
+- `args <ARGS>`: Arguments forwarded to the split CI command package
 - `--help`: Print help
 
 ### `publish-checks`
 
 **Usage:**
 ```bash
-Usage: publish-checks
+Usage: publish-checks [ARGS]...
 ```
 
 **Options:**
 
+- `args <ARGS>`: Arguments forwarded to the split CI command package
 - `--help`: Print help
 
 ### `typescript-test`
 
 **Usage:**
 ```bash
-Usage: typescript-test
+Usage: typescript-test [ARGS]...
 ```
 
 **Options:**
 
+- `args <ARGS>`: Arguments forwarded to the split CI command package
 - `--help`: Print help
 
 ### `version-upgrade-check`
 
 **Usage:**
 ```bash
-Usage: version-upgrade-check
+Usage: version-upgrade-check [ARGS]...
 ```
 
 **Options:**
 
+- `args <ARGS>`: Arguments forwarded to the split CI command package
 - `--help`: Print help
 
 ### `docs`
 
 **Usage:**
 ```bash
-Usage: docs
+Usage: docs [ARGS]...
 ```
 
 **Options:**
 
+- `args <ARGS>`: Arguments forwarded to the split CI command package
 - `--help`: Print help
 
 ### `other-workflows`
@@ -275,76 +207,37 @@ Usage: other-workflows <COMMAND>
 
 **Usage:**
 ```bash
-Usage: coordinate-internal-tests [OPTIONS] --public-sha <PUBLIC_SHA>
+Usage: coordinate-internal-tests [ARGS]...
 ```
 
 **Options:**
 
-- `--public-sha <PUBLIC_SHA>`: Immutable public commit to test
-- `--public-pr-number <PUBLIC_PR_NUMBER>`: Public pull request number, when coordinating a pull request run
+- `args <ARGS>`: Arguments forwarded to the split CI command package
 - `--help`: Print help
 
 #### `codeowners-check`
 
 **Usage:**
 ```bash
-Usage: codeowners-check --base-ref <BASE_REF> --pr-number <PR_NUMBER>
+Usage: codeowners-check [ARGS]...
 ```
 
 **Options:**
 
-- `--base-ref <BASE_REF>`: Git ref to compare against, usually origin/<pull request base branch>
-- `--pr-number <PR_NUMBER>`: Pull request number to inspect for approval state
+- `args <ARGS>`: Arguments forwarded to the split CI command package
 - `--help`: Print help
 
 #### `cla-assistant`
 
 **Usage:**
 ```bash
-Usage: cla-assistant <COMMAND>
+Usage: cla-assistant [ARGS]...
 ```
 
 **Options:**
 
+- `args <ARGS>`: Arguments forwarded to the split CI command package
 - `--help`: Print help
-
-##### `retry`
-
-**Usage:**
-```bash
-Usage: retry [OPTIONS] --pr-number <PR_NUMBER>
-```
-
-**Options:**
-
-- `--pr-number <PR_NUMBER>`: Pull request number to check
-- `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
-- `--help`: Print help
-
-##### `status`
-
-**Usage:**
-```bash
-Usage: status [OPTIONS] <--pr <PR>|--sha <SHA>>
-```
-
-**Options:**
-
-- `--pr <PR>`: Pull request number whose head commit should be checked
-- `--sha <SHA>`: Commit SHA to check
-- `--repo <REPO>`: Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY
-- `--help`: Print help
-
-##### `help`
-
-**Usage:**
-```bash
-Usage: help [COMMAND]...
-```
-
-**Options:**
-
-- `subcommand <COMMAND>`: Print help for the subcommand(s)
 
 #### `help`
 

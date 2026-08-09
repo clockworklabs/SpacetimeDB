@@ -8,6 +8,8 @@ use std::path::Path;
 
 const README_PATH: &str = "tools/ci/README.md";
 
+mod ci_docs;
+
 /// SpacetimeDB CI tasks
 ///
 /// This tool provides several subcommands for automating CI workflows in SpacetimeDB.
@@ -32,6 +34,7 @@ struct Cli {
 
 #[derive(Args)]
 struct ForwardedArgs {
+    /// Arguments forwarded to the split CI command package.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
 }
@@ -45,7 +48,7 @@ enum CiCmd {
     /// Tests Wasm bindings.
     WasmBindings(ForwardedArgs),
     /// Deprecated; use `cargo regen csharp dlls`.
-    Dlls(ForwardedArgs),
+    Dlls,
     /// Runs smoketests.
     Smoketests(ForwardedArgs),
     /// Runs the keynote benchmark as a CI performance regression gate.
@@ -84,7 +87,7 @@ fn run_package(package: &str, args: &[String]) -> Result<()> {
 }
 
 fn run_self_docs(check: bool) -> Result<()> {
-    let readme_content = include_str!("../README.md");
+    let readme_content = ci_docs::generate_cli_docs();
     let path = Path::new(README_PATH);
 
     if check {
@@ -98,10 +101,7 @@ fn run_self_docs(check: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_dlls(args: &[String]) -> Result<()> {
-    if !args.is_empty() {
-        bail!("cargo ci dlls does not accept arguments");
-    }
+fn run_dlls() -> Result<()> {
     eprintln!("warning: `cargo ci dlls` is deprecated; use `cargo regen csharp dlls` instead");
     cmd!("cargo", "regen", "csharp", "dlls").run()?;
     Ok(())
@@ -112,7 +112,7 @@ fn run_command(cmd: CiCmd) -> Result<()> {
         CiCmd::Test(args) => run_package("ci-test", &args.args),
         CiCmd::Lint(args) => run_package("ci-lint", &args.args),
         CiCmd::WasmBindings(args) => run_package("ci-wasm-bindings", &args.args),
-        CiCmd::Dlls(args) => run_dlls(&args.args),
+        CiCmd::Dlls => run_dlls(),
         CiCmd::Smoketests(args) => run_package("ci-smoketests", &args.args),
         CiCmd::KeynoteBench(args) => run_package("ci-keynote-bench", &args.args),
         CiCmd::UpdateFlow(args) => run_package("ci-update-flow", &args.args),

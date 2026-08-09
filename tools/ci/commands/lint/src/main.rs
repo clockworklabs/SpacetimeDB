@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, Context, Result};
-use ci_common::pnpm;
+use ci_common::{ensure_repo_root, pnpm};
 use duct::cmd;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -270,12 +270,6 @@ fn check_codex_plugin_skills_sync() -> Result<()> {
     Ok(())
 }
 
-fn ensure_repo_root() -> Result<()> {
-    if !Path::new("Cargo.toml").exists() {
-        bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
-    }
-    Ok(())
-}
 fn tracked_rs_files_under(path: &str) -> Result<Vec<PathBuf>> {
     let output = cmd!("git", "ls-files", "--", path).read()?;
     Ok(output
