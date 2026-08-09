@@ -8,7 +8,6 @@ publish = false
 
 [dependencies]
 spacetimedb-lib.workspace = true
-spacetimedb-core.workspace = true
 spacetimedb-sats.workspace = true
 
 anyhow.workspace = true
@@ -28,9 +27,6 @@ sqllogictest.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 tokio-postgres.workspace = true
-
-[package.metadata.cargo-machete]
-ignored = ["spacetimedb-core"]
 
 [lints]
 workspace = true

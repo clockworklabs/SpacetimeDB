@@ -445,12 +445,6 @@ jobs:
       - name: Run ci lint
         run: cargo ci lint
 
-      - name: Install cargo-machete
-        run: cargo install cargo-machete --locked
-
-      - name: Run dependency check
-        run: cargo ci dep-check
-
       - name: Upload public lint Cargo timing reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -458,6 +452,37 @@ jobs:
           name: cargo-timings-public-lints
           path: ${{ github.workspace }}/target/cargo-timings/
           retention-days: 30
+
+  dep_check:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Dependency Check
+    runs-on: spacetimedb-new-runner-2
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          save-if: false
+          prefix-key: v1
+
+      - name: Install cargo-machete
+        run: cargo install cargo-machete --locked
+
+      - name: Run dependency check
+        run: cargo ci dep-check
 
   codeowners_check:
     if: ${{ github.event_name == 'pull_request' }}

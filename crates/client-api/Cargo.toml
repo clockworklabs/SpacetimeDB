@@ -8,7 +8,6 @@ rust-version.workspace = true
 
 [dependencies]
 spacetimedb-client-api-messages.workspace = true
-spacetimedb-core.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde"] }
 spacetimedb-paths.workspace = true
@@ -60,9 +59,6 @@ pretty_assertions = { workspace = true, features = ["unstable"] }
 proptest.workspace = true
 tokio = { workspace = true, features = ["full", "test-util"] }
 toml.workspace = true
-
-[package.metadata.cargo-machete]
-ignored = ["spacetimedb-core"]
 
 [lints]
 workspace = true

@@ -38,7 +38,6 @@ bench = false
 
 [dependencies]
 spacetimedb-client-api-messages = { path = "../client-api-messages" }
-spacetimedb-core = { path = "../core", features = ["test"] }
 spacetimedb-data-structures.workspace = true
 spacetimedb-datastore.workspace = true
 spacetimedb-execution = { path = "../execution" }
@@ -89,9 +88,6 @@ tikv-jemalloc-ctl = { workspace = true }
 iai-callgrind = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
 iai-callgrind-runner = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
 iai-callgrind-macros = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
-
-[package.metadata.cargo-machete]
-ignored = ["spacetimedb-core"]
 
 [lints]
 workspace = true

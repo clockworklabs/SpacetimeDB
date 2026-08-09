@@ -12,7 +12,6 @@ allow_loopback_http_for_tests = ["spacetimedb-standalone/allow_loopback_http_for
 spacetimedb-cli.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-lib.workspace = true
-spacetimedb-core.workspace = true
 spacetimedb-standalone.workspace = true
 spacetimedb-client-api.workspace = true
 spacetimedb-client-api-messages.workspace = true
@@ -36,9 +35,6 @@ futures.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
-
-[package.metadata.cargo-machete]
-ignored = ["spacetimedb-core"]
 
 [lints]
 workspace = true

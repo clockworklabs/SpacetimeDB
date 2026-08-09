@@ -75,6 +75,7 @@ shlex = "1.3.0"
 spacetimedb-testing = { path = "../../crates/testing" }
 
 [package.metadata.cargo-machete]
+# Used through the `wasm` feature's `dep:getrandom` entry.
 ignored = ["getrandom"]
 
 [lints]
