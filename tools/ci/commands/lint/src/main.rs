@@ -2,31 +2,14 @@
 #![allow(dead_code)]
 
 use anyhow::{bail, Context, Result};
-use duct::{cmd, Expression};
+use ci_common::pnpm;
+use duct::cmd;
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
-
-/// On Windows, `pnpm` is installed as a `.cmd` shim which `CreateProcess` cannot
-/// find without going through the shell.  Wrapping with `cmd /c` fixes this.
-/// On Unix, we invoke `pnpm` directly.
-fn pnpm<I, S>(args: I) -> Expression
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<std::ffi::OsStr>,
-{
-    let args: Vec<std::ffi::OsString> = args.into_iter().map(|a| a.as_ref().to_os_string()).collect();
-    if cfg!(windows) {
-        let mut full: Vec<std::ffi::OsString> = vec!["/c".into(), "pnpm".into()];
-        full.extend(args);
-        cmd("cmd", full)
-    } else {
-        cmd("pnpm", args)
-    }
-}
 
 fn check_global_json_policy() -> Result<()> {
     ensure_repo_root()?;

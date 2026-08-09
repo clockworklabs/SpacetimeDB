@@ -32,6 +32,5 @@ fn run_publish_checks() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
     run_publish_checks()
 }

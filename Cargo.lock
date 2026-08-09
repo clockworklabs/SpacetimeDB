@@ -918,6 +918,7 @@ name = "ci-cli-docs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-common",
  "clap 4.5.50",
  "duct",
  "env_logger 0.10.2",
@@ -941,6 +942,7 @@ name = "ci-common"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "duct",
 ]
 
 [[package]]
@@ -968,6 +970,7 @@ name = "ci-docs-build"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-common",
  "duct",
  "env_logger 0.10.2",
 ]
@@ -1001,6 +1004,7 @@ name = "ci-lint"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-common",
  "duct",
  "env_logger 0.10.2",
  "serde_json",
@@ -1011,16 +1015,6 @@ name = "ci-publish-checks"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "duct",
- "env_logger 0.10.2",
-]
-
-[[package]]
-name = "ci-self-docs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap 4.5.50",
  "duct",
 ]
 
@@ -1041,6 +1035,7 @@ name = "ci-test"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-common",
  "duct",
  "env_logger 0.10.2",
 ]
@@ -1050,6 +1045,7 @@ name = "ci-typescript-test"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-common",
  "duct",
  "env_logger 0.10.2",
 ]

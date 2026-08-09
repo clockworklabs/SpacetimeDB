@@ -127,14 +127,7 @@ Options:
 
 **Usage:**
 ```bash
-Usage: ci-self-docs [OPTIONS]
-
-Options:
-      --check
-          Only check for changes, do not generate the docs
-
-  -h, --help
-          Print help (see a summary with '-h')
+cargo ci self-docs [--check]
 ```
 
 ### `global-json-policy`
