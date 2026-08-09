@@ -402,11 +402,33 @@ async function dbSetStock(step, ctx) {
     return;
   }
 
-  const container = ctx.backend === 'mongodb'
-    ? (process.env.MONGO_CONTAINER ?? 'stack-bench-mongodb')
-    : (process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres');
-  if (ctx.backend === 'mongodb') throw new Error('dbSetStock: not implemented for mongodb yet');
-  execFileSync('docker', ['exec', container, 'psql', '-U', 'stackbench', '-d', ctx.dbName, '-c', sql],
+  if (ctx.backend === 'mongodb') {
+    // Same three collections, and the same refusal to involve the app. Both
+    // field spellings are accepted: the spec names the columns in snake_case,
+    // but camelCase is idiomatic in this stack and a naming preference is not
+    // the property under test — we have lost enough criteria to the harness
+    // being fussy rather than to apps being wrong.
+    const js = `
+      const it = db.item.findOne({ name: ${JSON.stringify(item)} });
+      const wh = db.warehouse.findOne({ name: ${JSON.stringify(warehouse)} });
+      if (!it || !wh) { print('MISSING'); quit(1); }
+      const iid = it._id ?? it.id, wid = wh._id ?? wh.id;
+      const r = db.stock.updateOne(
+        { $or: [ { item_id: iid, warehouse_id: wid }, { itemId: iid, warehouseId: wid } ] },
+        { $set: { quantity: ${qty} } });
+      print(r.matchedCount === 1 ? 'OK' : 'NOMATCH');
+    `;
+    const out = execFileSync('docker', ['exec', process.env.MONGO_CONTAINER ?? 'stack-bench-mongodb',
+      'mongosh', ctx.dbName, '--quiet', '--eval', js], { encoding: 'utf8', stdio: 'pipe', timeout: 60000 });
+    if (!/OK/.test(out)) {
+      throw new Error(`dbSetStock: could not find ${item} / ${warehouse} in the item, warehouse and stock ` +
+        `collections the spec requires (${out.trim().slice(0, 80)})`);
+    }
+    return;
+  }
+
+  execFileSync('docker', ['exec', process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres',
+    'psql', '-U', 'stackbench', '-d', ctx.dbName, '-c', sql],
     { encoding: 'utf8', stdio: 'pipe', timeout: 60000 });
 }
 
