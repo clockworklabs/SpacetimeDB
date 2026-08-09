@@ -152,6 +152,7 @@ pub(crate) fn split_command_help_package(path: &[&str]) -> Option<&'static str> 
 
 fn split_command_help(package: &str) -> Result<String> {
     let help = cmd!("cargo", "run", "--quiet", "--package", package, "--", "--help")
+        .env("COLUMNS", "1000")
         .read()
         .with_context(|| format!("failed to render help for `{package}`"))?;
     Ok(help.lines().map(str::trim_end).collect::<Vec<_>>().join("\n"))

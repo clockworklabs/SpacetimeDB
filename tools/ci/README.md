@@ -27,40 +27,30 @@ When no subcommand is specified, all subcommands are run in sequence. This optio
 
 ### `test`
 
-**Help:**
-```text
 Runs tests
 
-Runs rust tests, codegens csharp sdk and runs csharp tests. This does not include Unreal tests. This
-expects to run in a clean git state.
+Runs rust tests, codegens csharp sdk and runs csharp tests. This does not include Unreal tests. This expects to run in a clean git state.
 
 Usage: ci-test
 
 Options:
   -h, --help
           Print help (see a summary with '-h')
-```
 
 ### `lint`
 
-**Help:**
-```text
 Lints the codebase
 
-Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there are no
-warnings.
+Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there are no warnings.
 
 Usage: ci-lint
 
 Options:
   -h, --help
           Print help (see a summary with '-h')
-```
 
 ### `wasm-bindings`
 
-**Help:**
-```text
 Tests Wasm bindings
 
 Runs tests for the codegen crate and builds a test module with the wasm bindings.
@@ -70,9 +60,10 @@ Usage: ci-wasm-bindings
 Options:
   -h, --help
           Print help (see a summary with '-h')
-```
 
 ### `dlls`
+
+Deprecated; use `cargo regen csharp dlls`
 
 **Usage:**
 ```bash
@@ -85,8 +76,6 @@ Usage: dlls
 
 ### `smoketests`
 
-**Help:**
-```text
 Runs smoketests
 
 Executes the smoketests suite with some default exclusions.
@@ -106,17 +95,14 @@ Options:
       --server <SERVER>
           Run tests against a remote server instead of spawning local servers.
 
-          When specified, tests will connect to the given URL instead of starting local server
-          instances. Tests that require local server control (like restart tests) will be skipped.
+          When specified, tests will connect to the given URL instead of starting local server instances. Tests that require local server control (like restart tests) will be skipped.
 
       --auth-host[=<AUTH_HOST>]
           Use a SpacetimeAuth-issued login for remote-server tests.
 
-          This is required for servers that reject direct server-issued logins for privileged
-          operations.
+          This is required for servers that reject direct server-issued logins for privileged operations.
 
-          Optionally accepts an auth host to pass through to `spacetime login`, for example
-          `--auth-host=https://spacetimedb.com`.
+          Optionally accepts an auth host to pass through to `spacetime login`, for example `--auth-host=https://spacetimedb.com`.
 
       --dotnet <DOTNET>
           [default: true]
@@ -124,65 +110,49 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
-```
 
 ### `keynote-bench`
 
-**Help:**
-```text
 Runs the keynote benchmark as a CI performance regression gate.
 
-Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the keynote
-SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and fails if
-throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
+Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
 
 Usage: ci-keynote-bench
 
 Options:
   -h, --help
           Print help (see a summary with '-h')
-```
 
 ### `update-flow`
 
-**Help:**
-```text
 Tests the update flow
 
-Tests the self-update flow by building the spacetimedb-update binary for the specified target, by
-default the current target, and performing a self-install into a temporary directory.
+Tests the self-update flow by building the spacetimedb-update binary for the specified target, by default the current target, and performing a self-install into a temporary directory.
 
 Usage: ci-update-flow [OPTIONS]
 
 Options:
       --target <TARGET>
-          Target triple to build for, by default the current target. Used by github workflows to
-          check the update flow on multiple platforms.
+          Target triple to build for, by default the current target. Used by github workflows to check the update flow on multiple platforms.
 
       --github-token-auth
-          Whether to enable github token authentication feature when building the update binary. By
-          default this is disabled.
+          Whether to enable github token authentication feature when building the update binary. By default this is disabled.
 
   -h, --help
           Print help (see a summary with '-h')
-```
 
 ### `cli-docs`
 
-**Help:**
-```text
 Generates CLI documentation and checks for changes
 
 Usage: ci-cli-docs [OPTIONS]
 
 Options:
       --spacetime-path <SPACETIME_PATH>
-          specify a custom path to the SpacetimeDB repository root (where the main Cargo.toml is
-          located)
+          specify a custom path to the SpacetimeDB repository root (where the main Cargo.toml is located)
 
   -h, --help
           Print help (see a summary with '-h')
-```
 
 ### `self-docs`
 
@@ -198,63 +168,48 @@ Usage: self-docs [OPTIONS]
 
 ### `global-json-policy`
 
-**Help:**
-```text
 Verify that any non-root global.json files are symlinks to the root global.json
 
 Usage: ci-global-json-policy
 
 Options:
   -h, --help  Print help
-```
 
 ### `publish-checks`
 
-**Help:**
-```text
 Checks that publishable crates satisfy publish constraints
 
 Usage: ci-publish-checks
 
 Options:
   -h, --help  Print help
-```
 
 ### `typescript-test`
 
-**Help:**
-```text
 Runs TypeScript workspace tests and template build checks
 
 Usage: ci-typescript-test
 
 Options:
   -h, --help  Print help
-```
 
 ### `version-upgrade-check`
 
-**Help:**
-```text
 Verifies that the repository version upgrade tool still works
 
 Usage: ci-version-upgrade-check
 
 Options:
   -h, --help  Print help
-```
 
 ### `docs`
 
-**Help:**
-```text
 Builds the docs site
 
 Usage: ci-docs-build
 
 Options:
   -h, --help  Print help
-```
 
 ### `other-workflows`
 
@@ -269,25 +224,17 @@ Usage: other-workflows <COMMAND>
 
 #### `coordinate-internal-tests`
 
-**Help:**
-```text
 Selects or starts the private workflow for a public Internal Tests run.
 
 Usage: ci-coordinate-internal-tests [OPTIONS] --public-sha <PUBLIC_SHA>
 
 Options:
-      --public-sha <PUBLIC_SHA>
-          Immutable public commit to test
-      --public-pr-number <PUBLIC_PR_NUMBER>
-          Public pull request number, when coordinating a pull request run
-  -h, --help
-          Print help
-```
+      --public-sha <PUBLIC_SHA>              Immutable public commit to test
+      --public-pr-number <PUBLIC_PR_NUMBER>  Public pull request number, when coordinating a pull request run
+  -h, --help                                 Print help
 
 #### `codeowners-check`
 
-**Help:**
-```text
 Checks that sensitive CODEOWNERS-controlled files have the required approvals.
 
 Usage: ci-codeowners-check --base-ref <BASE_REF> --pr-number <PR_NUMBER>
@@ -296,12 +243,9 @@ Options:
       --base-ref <BASE_REF>    Git ref to compare against, usually origin/<pull request base branch>
       --pr-number <PR_NUMBER>  Pull request number to inspect for approval state
   -h, --help                   Print help
-```
 
 #### `cla-assistant`
 
-**Help:**
-```text
 Interacts with CLA Assistant.
 
 Usage: ci-cla-assistant <COMMAND>
@@ -313,9 +257,10 @@ Commands:
 
 Options:
   -h, --help  Print help
-```
 
 #### `help`
+
+Print this message or the help of the given subcommand(s)
 
 **Usage:**
 ```bash
@@ -327,6 +272,8 @@ Usage: help [COMMAND]...
 - `subcommand <COMMAND>`: Print help for the subcommand(s)
 
 ### `help`
+
+Print this message or the help of the given subcommand(s)
 
 **Usage:**
 ```bash

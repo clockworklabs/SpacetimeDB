@@ -35,14 +35,13 @@ fn generate_markdown(cmd: &mut Command, heading_level: usize, path: &[String]) -
     let path_parts = path.iter().map(String::as_str).collect::<Vec<_>>();
     if crate::split_command_help_package(&path_parts).is_some() {
         let help = cmd.render_long_help().to_string();
-        out.push_str("**Help:**\n```text\n");
         out.push_str(help.trim_end());
-        out.push_str("\n```\n\n");
+        out.push_str("\n\n");
         return Ok(out);
     }
 
-    if let Some(long_about) = cmd.get_long_about() {
-        out.push_str(&format!("{}\n\n", long_about));
+    if let Some(about) = cmd.get_long_about().or_else(|| cmd.get_about()) {
+        out.push_str(&format!("{}\n\n", about));
     }
 
     out.push_str(&format!("**Usage:**\n```bash\n{}\n```\n\n", cmd.render_usage()));
