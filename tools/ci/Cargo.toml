@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+ci-common = { path = "common" }
 duct.workspace = true
 keynote-bench-harness = { path = "../keynote-bench-harness" }
 spacetimedb-guard.workspace = true

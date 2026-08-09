@@ -15,7 +15,6 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
     let Args { spacetime_path } = Args::parse();
     if let Some(path) = spacetime_path {
         env::set_current_dir(path).ok();
@@ -30,7 +29,7 @@ fn main() -> Result<()> {
     pnpm(["generate-cli-docs"]).dir("docs").run()?;
     let out = cmd!("git", "status", "--porcelain", "--", "docs").read()?;
     if out.is_empty() {
-        log::info!("No docs changes detected");
+        println!("No docs changes detected");
     } else {
         anyhow::bail!("CLI docs are out of date:\n{out}");
     }

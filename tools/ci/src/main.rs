@@ -1,5 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, Result};
+use ci_common::pnpm;
 use duct::cmd;
 use keynote_bench_harness::KeynoteBenchConfig;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
@@ -71,7 +72,7 @@ const COMMANDS: &[Command] = &[
     },
     Command {
         name: "publish-checks",
-        package: "ci-publish-checks",
+        package: "",
     },
     Command {
         name: "typescript-test",
@@ -83,7 +84,7 @@ const COMMANDS: &[Command] = &[
     },
     Command {
         name: "docs",
-        package: "ci-docs-build",
+        package: "",
     },
 ];
 const COMMAND_GROUPS: &[CommandGroup] = &[CommandGroup {
@@ -118,6 +119,12 @@ fn run_command(command: &Command, forwarded: &[String]) -> Result<()> {
     }
     if command.name == "keynote-bench" {
         return run_keynote_bench(forwarded);
+    }
+    if command.name == "publish-checks" {
+        return run_publish_checks(forwarded);
+    }
+    if command.name == "docs" {
+        return run_docs_build(forwarded);
     }
     let mut cargo_args = vec!["run", "--package", command.package, "--"];
     cargo_args.extend(forwarded.iter().map(String::as_str));
@@ -236,6 +243,58 @@ fn run_keynote_bench(args: &[String]) -> Result<()> {
     let server_url = server.host_url.clone();
 
     keynote_bench_harness::run(KeynoteBenchConfig::standalone(".", cli_path, server_url))
+}
+
+fn run_docs_build(args: &[String]) -> Result<()> {
+    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
+        println!("Usage: cargo ci docs");
+        return Ok(());
+    }
+    if !args.is_empty() {
+        bail!("cargo ci docs does not accept arguments");
+    }
+
+    pnpm(["install"]).dir("docs").run()?;
+    pnpm(["build"]).dir("docs").run()?;
+    Ok(())
+}
+
+fn run_publish_checks(args: &[String]) -> Result<()> {
+    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
+        println!("Usage: cargo ci publish-checks");
+        return Ok(());
+    }
+    if !args.is_empty() {
+        bail!("cargo ci publish-checks does not accept arguments");
+    }
+
+    cmd!("bash", "-lc", "test -d venv || python3 -m venv venv").run()?;
+    cmd!("venv/bin/pip3", "install", "argparse", "toml").run()?;
+
+    let crates = cmd!(
+        "venv/bin/python3",
+        "tools/find-publish-list.py",
+        "--recursive",
+        "--directories",
+        "--quiet",
+        "spacetimedb",
+        "spacetimedb-sdk"
+    )
+    .read()?;
+
+    let mut failed = Vec::new();
+    for crate_dir in crates.split_whitespace() {
+        if let Err(err) = cmd!("venv/bin/python3", "tools/crate-publish-checks.py", crate_dir).run() {
+            eprintln!("crate publish checks failed for {crate_dir}: {err}");
+            failed.push(crate_dir.to_string());
+        }
+    }
+
+    if !failed.is_empty() {
+        bail!("crate publish checks failed for: {}", failed.join(", "));
+    }
+
+    Ok(())
 }
 
 fn generate_cli_docs() -> String {

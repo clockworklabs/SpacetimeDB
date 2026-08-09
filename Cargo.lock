@@ -899,6 +899,7 @@ name = "ci"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ci-common",
  "duct",
  "keynote-bench-harness",
  "spacetimedb-guard",
@@ -923,8 +924,6 @@ dependencies = [
  "ci-common",
  "clap 4.5.50",
  "duct",
- "env_logger 0.10.2",
- "log",
 ]
 
 [[package]]
@@ -959,14 +958,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ci-docs-build"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ci-common",
-]
-
-[[package]]
 name = "ci-global-json-policy"
 version = "0.1.0"
 dependencies = [
@@ -982,14 +973,6 @@ dependencies = [
  "ci-common",
  "duct",
  "serde_json",
-]
-
-[[package]]
-name = "ci-publish-checks"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "duct",
 ]
 
 [[package]]

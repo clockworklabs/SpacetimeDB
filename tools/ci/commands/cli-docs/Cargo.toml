@@ -7,6 +7,4 @@ edition.workspace = true
 anyhow.workspace = true
 duct.workspace = true
 clap.workspace = true
-log.workspace = true
-env_logger.workspace = true
 ci-common = { path = "../../common" }
