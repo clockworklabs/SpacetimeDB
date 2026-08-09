@@ -76,7 +76,7 @@ const COMMANDS: &[Command] = &[
     },
     Command {
         name: "typescript-test",
-        package: "ci-typescript-test",
+        package: "",
     },
     Command {
         name: "version-upgrade-check",
@@ -125,6 +125,9 @@ fn run_command(command: &Command, forwarded: &[String]) -> Result<()> {
     }
     if command.name == "docs" {
         return run_docs_build(forwarded);
+    }
+    if command.name == "typescript-test" {
+        return run_typescript_tests(forwarded);
     }
     let mut cargo_args = vec!["run", "--package", command.package, "--"];
     cargo_args.extend(forwarded.iter().map(String::as_str));
@@ -294,6 +297,37 @@ fn run_publish_checks(args: &[String]) -> Result<()> {
         bail!("crate publish checks failed for: {}", failed.join(", "));
     }
 
+    Ok(())
+}
+
+fn run_typescript_tests(args: &[String]) -> Result<()> {
+    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
+        println!("Usage: cargo ci typescript-test");
+        return Ok(());
+    }
+    if !args.is_empty() {
+        bail!("cargo ci typescript-test does not accept arguments");
+    }
+
+    pnpm(["build"]).dir("crates/bindings-typescript").run()?;
+    pnpm(["test"]).dir("crates/bindings-typescript").run()?;
+    pnpm(["generate"]).dir("templates/chat-react-ts").run()?;
+    let diff_status = cmd!(
+        "bash",
+        "tools/check-diff.sh",
+        "templates/chat-react-ts/src/module_bindings"
+    )
+    .run()?;
+    if !diff_status.status.success() {
+        bail!("Bindings are dirty. Please generate bindings again and commit them to this branch.");
+    }
+    pnpm(["build"]).dir("templates/chat-react-ts").run()?;
+    pnpm(["-r", "--filter", "./**", "run", "build"])
+        .dir("templates")
+        .run()?;
+    pnpm(["-r", "--filter", "./**", "run", "build"])
+        .dir("crates/bindings-typescript")
+        .run()?;
     Ok(())
 }
 

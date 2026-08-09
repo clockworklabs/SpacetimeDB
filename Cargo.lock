@@ -997,15 +997,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ci-typescript-test"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ci-common",
- "duct",
-]
-
-[[package]]
 name = "ci-update-flow"
 version = "0.1.0"
 dependencies = [
