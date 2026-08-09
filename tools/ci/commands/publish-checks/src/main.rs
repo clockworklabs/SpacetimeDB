@@ -3,15 +3,6 @@ use anyhow::{bail, Result};
 use duct::cmd;
 
 fn main() -> Result<()> {
-    let args = std::env::args().skip(1).collect::<Vec<_>>();
-    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
-        println!("Usage: cargo ci publish-checks");
-        return Ok(());
-    }
-    if !args.is_empty() {
-        bail!("cargo ci publish-checks does not accept arguments");
-    }
-
     cmd!("bash", "-lc", "test -d venv || python3 -m venv venv").run()?;
     cmd!("venv/bin/pip3", "install", "argparse", "toml").run()?;
 

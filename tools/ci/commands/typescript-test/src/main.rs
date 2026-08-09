@@ -4,15 +4,6 @@ use ci_common::pnpm;
 use duct::cmd;
 
 fn main() -> Result<()> {
-    let args = std::env::args().skip(1).collect::<Vec<_>>();
-    if args.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
-        println!("Usage: cargo ci typescript-test");
-        return Ok(());
-    }
-    if !args.is_empty() {
-        bail!("cargo ci typescript-test does not accept arguments");
-    }
-
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
     pnpm(["test"]).dir("crates/bindings-typescript").run()?;
     pnpm(["generate"]).dir("templates/chat-react-ts").run()?;
