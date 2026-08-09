@@ -380,20 +380,37 @@ async function enterRoom(actor, roomName) {
 // so these really are that customer's requests: the session cookie for a
 // server-based stack, and the token the SDK persists for SpacetimeDB. Neither
 // reads an app-specific name — any cookie the app set, and any JWT it stored.
-async function actorAuth(actor, backend) {
-  if (backend === 'spacetime') {
-    const token = await actor.page.evaluate(() => {
-      for (let i = 0; i < localStorage.length; i++) {
-        const v = localStorage.getItem(localStorage.key(i)) ?? '';
-        if (/^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\./.test(v)) return v;   // a JWT
-      }
-      return null;
-    }).catch(() => null);
-    return token ? { Authorization: `Bearer ${token}` } : null;
-  }
+// How an app carries a session is its own choice, and two PostgreSQL builds of
+// the same spec chose differently — one set a `sid` cookie, the next put a JWT
+// in localStorage. Looking only for cookies made the second report "no session
+// found" and lose the criterion. So collect whatever is there and send both;
+// an app ignores the one it does not use.
+async function actorAuth(actor) {
+  const headers = {};
   const cookies = await actor.context.cookies().catch(() => []);
-  if (!cookies.length) return null;
-  return { Cookie: cookies.map(c => `${c.name}=${c.value}`).join('; ') };
+  if (cookies.length) headers.Cookie = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+  // A JWT in web storage, wherever the app decided to keep it. SpacetimeDB's
+  // SDK persists its identity token this way, and server-based apps often do
+  // the same with their own.
+  const token = await actor.page.evaluate(() => {
+    const jwt = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\./;
+    for (const store of [localStorage, sessionStorage]) {
+      for (let i = 0; i < store.length; i++) {
+        const v = store.getItem(store.key(i)) ?? '';
+        if (jwt.test(v)) return v;
+        // Some apps wrap it: {"token":"eyJ..."}.
+        try {
+          const o = JSON.parse(v);
+          for (const x of Object.values(o ?? {})) if (typeof x === 'string' && jwt.test(x)) return x;
+        } catch { /* not JSON */ }
+      }
+    }
+    return null;
+  }).catch(() => null);
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  return Object.keys(headers).length ? headers : null;
 }
 
 async function callConcurrently(step, actors, ctx) {
@@ -413,7 +430,7 @@ async function callConcurrently(step, actors, ctx) {
   for (const name of step.actors) {
     const actor = actors.get(name);
     if (!actor) throw new Error(`callConcurrently: no actor "${name}"`);
-    const auth = await actorAuth(actor, backend);
+    const auth = await actorAuth(actor);
     // No credentials means we would be issuing an anonymous request, which is a
     // different test entirely — say so rather than quietly measuring the wrong
     // thing.
