@@ -304,6 +304,14 @@ function describeStep(step) {
       return `expect ${step.testid} ${want}`;
     }
     case 'expectAgreement': return `expect all clients agree on ${step.testid}`;
+    case 'expectActorsWith': {
+      const parts = [
+        step.equals !== undefined ? `exactly ${step.equals} of ${step.actors.length} actors have` : `actors have`,
+        `${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`,
+        step.maxEach !== undefined ? `and none has more than ${step.maxEach}` : null,
+      ].filter(Boolean);
+      return `expect ${parts.join(' ')}`;
+    }
     case 'race': return `two things happen at once (${(step.branches ?? []).length} branches)`;
     case 'runScript': return `run the app's ${step.script}${step.args?.length ? ` ${step.args.join(' ')}` : ''}`;
     case 'expectElementCount': return `expect exactly ${step.equals} ${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`;
@@ -345,10 +353,49 @@ async function enterRoom(actor, roomName) {
   await input.waitFor({ state: 'visible', timeout: DEFAULT_WITHIN });
 }
 
+// How many of these people ended up with the thing — and did anyone get it
+// twice? A contention criterion is about the population, not one participant:
+// "exactly three of six customers got an order" cannot be expressed by asking
+// one customer about their own orders. Asking only actor `a` whether it has at
+// most one order passes when NOBODY got one, which is the exact failure an
+// oversell test must catch, so that phrasing was scoring nothing.
+async function expectActorsWith(step, actors, ctx) {
+  const contains = expand(step.contains, ctx);
+  const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
+  const counts = [];
+  for (const name of step.actors) {
+    const actor = actors.get(name);
+    if (!actor) throw new Error(`expectActorsWith: no actor "${name}"`);
+    // Give the UI the same settling budget a single expect would get, then
+    // count. A zero here is a real zero, not an impatient one.
+    const loc = actor.loc(step.testid, { contains, scope });
+    await loc.waitFor({ state: 'visible', timeout: step.within ?? DEFAULT_WITHIN }).catch(() => {});
+    const all = scope
+      ? actor.page.locator(tid(scope.testid), { hasText: scope.contains }).first().locator(tid(step.testid))
+      : (contains ? actor.page.locator(tid(step.testid), { hasText: contains }) : actor.page.locator(tid(step.testid)));
+    counts.push([name, await all.count().catch(() => 0)]);
+  }
+
+  const held = counts.filter(([, n]) => n > 0);
+  const detail = counts.map(([n, c]) => `${n}=${c}`).join(' ');
+  if (step.equals !== undefined && held.length !== step.equals) {
+    throw new Error(`expected exactly ${step.equals} actor(s) with ${tid(step.testid)}` +
+      `${contains ? ` containing "${contains}"` : ''}, found ${held.length} (${detail})`);
+  }
+  if (step.maxEach !== undefined) {
+    const greedy = counts.filter(([, n]) => n > step.maxEach);
+    if (greedy.length) {
+      throw new Error(`${greedy.map(([n, c]) => `${n} has ${c}`).join(', ')} ` +
+        `— no actor may hold more than ${step.maxEach} (${detail})`);
+    }
+  }
+}
+
 async function runStep(step, actors, ctx) {
   // Cross-actor steps act on several actors at once, so they resolve first.
   if (step.do === 'expectOrderMatches') return expectOrderMatches(step, actors);
   if (step.do === 'expectAgreement') return expectAgreement(step, actors, ctx);
+  if (step.do === 'expectActorsWith') return expectActorsWith(step, actors, ctx);
   if (step.do === 'replayConcurrently') {
     // Browser clicks arrive milliseconds apart and each request finishes in
     // less, so a race never happens. Replaying each actor's own captured write

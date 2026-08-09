@@ -1,45 +1,58 @@
 {
-  "note": "Defects injected into the generated PostgreSQL shop to prove the ecommerce contention criteria can actually fail. A criterion in tracks/ecommerce/scenarios/01-contention.json stays at zero points until it CATCHES its mutant here and still passes on the unmutated build. Anchors are specific to this app; regenerate for another. NOTE: breaks must be the numeric FEATURE id — mutation-test.mjs indexes per-feature scores; a criterion id silently resolves to undefined and every mutant reads as SURVIVED.",
+  "note": "Defects injected into the generated PostgreSQL shop to prove the ecommerce contention criteria can actually fail. A criterion in tracks/ecommerce/scenarios/01-contention.json stays at zero points until it CATCHES its mutant here and still passes on the unmutated build. NOTE: breaks must be the numeric FEATURE id — mutation-test.mjs indexes per-feature scores; a criterion id silently resolves to undefined and every mutant reads as SURVIVED.",
+  "anchoredTo": "results/postgres-ecom-run0/source (scored 50/50 one-shot, $6.40). Anchors are exact source strings from THAT build and were verified to match before this file was written. The previous version of this file pointed at server/src/index.ts and a table called item_stock; neither exists in this app, so every mutation silently failed to apply and no criterion could ever be promoted. Re-verify with a find-in-file check before trusting any result here.",
   "mutations": [
     {
       "id": "oversell-no-row-lock",
-      "desc": "Drop FOR UPDATE from the stock read in the purchase transaction, so concurrent buyers each see the same pre-decrement quantity, both pass the availability check, and the shelf goes below zero or sells the last unit twice",
+      "desc": "Drop FOR UPDATE from the stock read inside the purchase transaction. Concurrent buyers then read the same pre-decrement quantity, all pass the availability check, and the shelf sells more units than it has.",
       "breaks": 201,
-      "file": "server/src/index.ts",
+      "breaksCriterion": "201a",
+      "file": "server/src/stockOps.js",
       "edits": [
         {
-          "find": "`SELECT id, quantity FROM item_stock WHERE item_id = $1 ORDER BY warehouse_id FOR UPDATE`",
-          "replace": "`SELECT id, quantity FROM item_stock WHERE item_id = $1 ORDER BY warehouse_id`"
+          "find": "`SELECT warehouse_id, quantity FROM stock WHERE item_id = $1 ORDER BY warehouse_id FOR UPDATE`",
+          "replace": "`SELECT warehouse_id, quantity FROM stock WHERE item_id = $1 ORDER BY warehouse_id`"
         }
-      ],
-      "breaksCriterion": "201a"
+      ]
+    },
+    {
+      "id": "oversell-no-total-check",
+      "desc": "Keep the lock but remove the availability check, so the decrement runs regardless of what is on the shelf. Aimed at 201b: the population assertion should see more than three customers walk away with an order.",
+      "breaks": 201,
+      "breaksCriterion": "201b",
+      "file": "server/src/stockOps.js",
+      "edits": [
+        {
+          "find": "  if (total < qty) {\n    throw new InsufficientStockError(itemId, total, qty);\n  }",
+          "replace": "  // mutant: availability no longer enforced"
+        }
+      ]
+    },
+    {
+      "id": "cart-add-lost-update",
+      "desc": "Replace the atomic upsert on cart_items with a read, then a write of read+qty. Two tabs adding the same item at once both read the same quantity and both write the same value, so one add is lost and the line shows 1 instead of 2.",
+      "breaks": 203,
+      "breaksCriterion": "203a",
+      "file": "server/src/routes/cart.js",
+      "edits": [
+        {
+          "find": "    await client.query(\n      `INSERT INTO cart_items (cart_id, item_id, quantity) VALUES ($1, $2, $3)\n       ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = cart_items.quantity + EXCLUDED.quantity`,\n      [cartId, itemId, qty]\n    );",
+          "replace": "    const existing = await client.query('SELECT quantity FROM cart_items WHERE cart_id = $1 AND item_id = $2', [cartId, itemId]);\n    const current = existing.rows[0]?.quantity ?? 0;\n    if (existing.rows.length) {\n      await client.query('UPDATE cart_items SET quantity = $1 WHERE cart_id = $2 AND item_id = $3', [current + qty, cartId, itemId]);\n    } else {\n      await client.query('INSERT INTO cart_items (cart_id, item_id, quantity) VALUES ($1, $2, $3) ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = $3', [cartId, itemId, qty]);\n    }"
+        }
+      ]
     },
     {
       "id": "restock-lost-update",
-      "desc": "DISCARDED — EQUIVALENT MUTANT. Rewriting `quantity = quantity + N` as a subselect against the same row is semantically identical in PostgreSQL: both read the row's current version under the statement's snapshot, so nothing observable changes. It proved nothing, and an equivalent mutant is indistinguishable from an oracle hole. A real lost update needs the read and the write split across two statements with the value carried in application memory.",
+      "desc": "Replace the atomic `quantity = stock.quantity + EXCLUDED.quantity` restock with a read-then-write in application code. A restock landing while buyers are decrementing the same rows overwrites their decrements with a stale base, so units reappear that were already sold. The earlier attempt at this mutant rewrote the addition as a subselect, which is EQUIVALENT in PostgreSQL — both read the row under the same statement snapshot — and so proved nothing.",
       "breaks": 202,
-      "disabled": true,
-      "file": "server/src/index.ts",
+      "breaksCriterion": "202a",
+      "file": "server/src/routes/admin.js",
       "edits": [
         {
-          "find": "`UPDATE item_stock SET quantity = quantity + $1 WHERE item_id = $2 AND warehouse_id = $3",
-          "replace": "`UPDATE item_stock SET quantity = (SELECT quantity FROM item_stock s WHERE s.item_id = $2 AND s.warehouse_id = $3) + $1 WHERE item_id = $2 AND warehouse_id = $3"
+          "find": "  await pool.query(\n    `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n     ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + EXCLUDED.quantity`,\n    [itemId, warehouseId, qty]\n  );",
+          "replace": "  const prior = await pool.query('SELECT quantity FROM stock WHERE item_id = $1 AND warehouse_id = $2', [itemId, warehouseId]);\n  const base = prior.rows[0]?.quantity ?? 0;\n  await new Promise(r => setTimeout(r, 150));\n  if (prior.rows.length) {\n    await pool.query('UPDATE stock SET quantity = $1 WHERE item_id = $2 AND warehouse_id = $3', [base + qty, itemId, warehouseId]);\n  } else {\n    await pool.query('INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)', [itemId, warehouseId, qty]);\n  }"
         }
-      ],
-      "breaksCriterion": "202a"
-    },
-    {
-      "id": "checkout-not-idempotent",
-      "desc": "Drop FOR UPDATE from the cart read at checkout, so two simultaneous checkouts of one cart both see its lines and each create an order",
-      "breaks": 203,
-      "file": "server/src/index.ts",
-      "edits": [
-        {
-          "find": "`SELECT item_id as \"itemId\", quantity FROM cart_items WHERE user_id = $1 ORDER BY item_id FOR UPDATE`",
-          "replace": "`SELECT item_id as \"itemId\", quantity FROM cart_items WHERE user_id = $1 ORDER BY item_id`"
-        }
-      ],
-      "breaksCriterion": "203b"
+      ]
     }
   ]
 }

@@ -151,23 +151,39 @@
         },
         {
           "id": "201b",
-          "desc": "exactly three of the six customers end up with an order",
+          "desc": "exactly three of the six customers end up with an order, and none is charged twice",
           "points": 0,
-          "withheld": "passes clean but no mutant has yet made it fail; maxCount is satisfied by absence, so it can pass vacuously.",
           "steps": [
             {
-              "do": "click",
-              "actor": "a",
-              "testid": "orders-toggle"
+              "do": "clickConcurrently",
+              "testid": "orders-toggle",
+              "actors": [
+                "a",
+                "b",
+                "c",
+                "d",
+                "e",
+                "f"
+              ],
+              "settleMs": 2500
             },
             {
-              "do": "expect",
-              "actor": "a",
+              "do": "expectActorsWith",
+              "actors": [
+                "a",
+                "b",
+                "c",
+                "d",
+                "e",
+                "f"
+              ],
               "testid": "order-item",
               "contains": "Mirrorless Camera",
-              "maxCount": 1
+              "equals": 3,
+              "maxEach": 1
             }
-          ]
+          ],
+          "withheld": "rewritten to count the population instead of one participant: the old phrasing asked actor a for at most one order, which passes when nobody got one. Stays at 0 points until it kills a mutant on a real build."
         },
         {
           "id": "201c",
