@@ -6,6 +6,7 @@ use duct::cmd;
 use std::env;
 
 #[derive(Parser)]
+#[command(about = "Generates CLI documentation and checks for changes")]
 struct Args {
     #[arg(
         long,

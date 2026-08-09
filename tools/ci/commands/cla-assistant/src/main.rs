@@ -54,6 +54,7 @@ struct StatusArgs {
 }
 
 #[derive(Parser)]
+#[command(about = "Interacts with CLA Assistant.")]
 struct Cli {
     #[command(subcommand)]
     cmd: ClaAssistantCmd,

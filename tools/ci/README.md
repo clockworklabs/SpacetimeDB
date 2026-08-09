@@ -27,39 +27,50 @@ When no subcommand is specified, all subcommands are run in sequence. This optio
 
 ### `test`
 
-**Usage:**
-```bash
-Usage: test [ARGS]...
+**Help:**
+```text
+Runs tests
+
+Runs rust tests, codegens csharp sdk and runs csharp tests. This does not include Unreal tests. This
+expects to run in a clean git state.
+
+Usage: ci-test
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
 ```
-
-**Options:**
-
-- `args <ARGS>`: Arguments forwarded to the split CI command package
-- `--help`: Print help
 
 ### `lint`
 
-**Usage:**
-```bash
-Usage: lint [ARGS]...
+**Help:**
+```text
+Lints the codebase
+
+Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there are no
+warnings.
+
+Usage: ci-lint
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
 ```
-
-**Options:**
-
-- `args <ARGS>`: Arguments forwarded to the split CI command package
-- `--help`: Print help
 
 ### `wasm-bindings`
 
-**Usage:**
-```bash
-Usage: wasm-bindings [ARGS]...
+**Help:**
+```text
+Tests Wasm bindings
+
+Runs tests for the codegen crate and builds a test module with the wasm bindings.
+
+Usage: ci-wasm-bindings
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
 ```
-
-**Options:**
-
-- `args <ARGS>`: Arguments forwarded to the split CI command package
-- `--help`: Print help
 
 ### `dlls`
 
@@ -76,9 +87,9 @@ Usage: dlls
 
 **Help:**
 ```text
-This command builds the binaries needed by the smoketests, then runs them. This prevents race
-conditions when running tests in parallel with nextest, where multiple test processes might try to
-build the same binaries simultaneously
+Runs smoketests
+
+Executes the smoketests suite with some default exclusions.
 
 Usage: ci-smoketests [OPTIONS] [ARGS]... [COMMAND]
 
@@ -117,20 +128,30 @@ Options:
 
 ### `keynote-bench`
 
-**Usage:**
-```bash
-Usage: keynote-bench [ARGS]...
+**Help:**
+```text
+Runs the keynote benchmark as a CI performance regression gate.
+
+Assumes release SpacetimeDB binaries and the TypeScript SDK are already built, runs the keynote
+SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and fails if
+throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
+
+Usage: ci-keynote-bench
+
+Options:
+  -h, --help
+          Print help (see a summary with '-h')
 ```
-
-**Options:**
-
-- `args <ARGS>`: Arguments forwarded to the split CI command package
-- `--help`: Print help
 
 ### `update-flow`
 
 **Help:**
 ```text
+Tests the update flow
+
+Tests the self-update flow by building the spacetimedb-update binary for the specified target, by
+default the current target, and performing a self-install into a temporary directory.
+
 Usage: ci-update-flow [OPTIONS]
 
 Options:
@@ -150,6 +171,8 @@ Options:
 
 **Help:**
 ```text
+Generates CLI documentation and checks for changes
+
 Usage: ci-cli-docs [OPTIONS]
 
 Options:
@@ -175,63 +198,63 @@ Usage: self-docs [OPTIONS]
 
 ### `global-json-policy`
 
-**Usage:**
-```bash
-Usage: global-json-policy [ARGS]...
+**Help:**
+```text
+Verify that any non-root global.json files are symlinks to the root global.json
+
+Usage: ci-global-json-policy
+
+Options:
+  -h, --help  Print help
 ```
-
-**Options:**
-
-- `args <ARGS>`: Arguments forwarded to the split CI command package
-- `--help`: Print help
 
 ### `publish-checks`
 
-**Usage:**
-```bash
-Usage: publish-checks [ARGS]...
+**Help:**
+```text
+Checks that publishable crates satisfy publish constraints
+
+Usage: ci-publish-checks
+
+Options:
+  -h, --help  Print help
 ```
-
-**Options:**
-
-- `args <ARGS>`: Arguments forwarded to the split CI command package
-- `--help`: Print help
 
 ### `typescript-test`
 
-**Usage:**
-```bash
-Usage: typescript-test [ARGS]...
+**Help:**
+```text
+Runs TypeScript workspace tests and template build checks
+
+Usage: ci-typescript-test
+
+Options:
+  -h, --help  Print help
 ```
-
-**Options:**
-
-- `args <ARGS>`: Arguments forwarded to the split CI command package
-- `--help`: Print help
 
 ### `version-upgrade-check`
 
-**Usage:**
-```bash
-Usage: version-upgrade-check [ARGS]...
+**Help:**
+```text
+Verifies that the repository version upgrade tool still works
+
+Usage: ci-version-upgrade-check
+
+Options:
+  -h, --help  Print help
 ```
-
-**Options:**
-
-- `args <ARGS>`: Arguments forwarded to the split CI command package
-- `--help`: Print help
 
 ### `docs`
 
-**Usage:**
-```bash
-Usage: docs [ARGS]...
+**Help:**
+```text
+Builds the docs site
+
+Usage: ci-docs-build
+
+Options:
+  -h, --help  Print help
 ```
-
-**Options:**
-
-- `args <ARGS>`: Arguments forwarded to the split CI command package
-- `--help`: Print help
 
 ### `other-workflows`
 
@@ -248,7 +271,7 @@ Usage: other-workflows <COMMAND>
 
 **Help:**
 ```text
-Selects or starts the private workflow for a public Internal Tests run
+Selects or starts the private workflow for a public Internal Tests run.
 
 Usage: ci-coordinate-internal-tests [OPTIONS] --public-sha <PUBLIC_SHA>
 
@@ -265,6 +288,8 @@ Options:
 
 **Help:**
 ```text
+Checks that sensitive CODEOWNERS-controlled files have the required approvals.
+
 Usage: ci-codeowners-check --base-ref <BASE_REF> --pr-number <PR_NUMBER>
 
 Options:
@@ -277,6 +302,8 @@ Options:
 
 **Help:**
 ```text
+Interacts with CLA Assistant.
+
 Usage: ci-cla-assistant <COMMAND>
 
 Commands:

@@ -4,6 +4,10 @@ use clap::Parser;
 use duct::cmd;
 
 #[derive(Parser)]
+#[command(
+    about = "Tests the update flow",
+    long_about = "Tests the update flow\n\nTests the self-update flow by building the spacetimedb-update binary for the specified target, by default the current target, and performing a self-install into a temporary directory."
+)]
 struct Args {
     #[arg(
         long,

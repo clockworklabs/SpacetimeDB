@@ -18,6 +18,7 @@ const PRIVATE_DEFAULT_BRANCH: &str = "master";
 
 /// Selects or starts the private workflow for a public Internal Tests run.
 #[derive(Parser)]
+#[command(about = "Selects or starts the private workflow for a public Internal Tests run.")]
 struct Args {
     /// Immutable public commit to test.
     #[arg(long)]

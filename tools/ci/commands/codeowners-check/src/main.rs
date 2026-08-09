@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 const REPO: &str = "clockworklabs/SpacetimeDB";
 
 #[derive(Parser)]
+#[command(about = "Checks that sensitive CODEOWNERS-controlled files have the required approvals.")]
 struct Args {
     /// Git ref to compare against, usually origin/<pull request base branch>.
     #[arg(long)]

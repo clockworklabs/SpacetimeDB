@@ -1,9 +1,16 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, Result};
 use ci_common::pnpm;
+use clap::Parser;
 use duct::cmd;
 
+/// Runs TypeScript workspace tests and template build checks.
+#[derive(Parser)]
+struct Args {}
+
 fn main() -> Result<()> {
+    Args::parse();
+
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
     pnpm(["test"]).dir("crates/bindings-typescript").run()?;
     pnpm(["generate"]).dir("templates/chat-react-ts").run()?;

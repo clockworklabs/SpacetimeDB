@@ -1,12 +1,9 @@
-use anyhow::{Context, Result};
-use clap::{Command, CommandFactory};
-use duct::cmd;
-
-use crate::Cli;
+use anyhow::Result;
+use clap::Command;
 
 // TODO: use clap_markdown instead of this custom implementation in the future
 pub fn generate_cli_docs() -> Result<String> {
-    let mut cli = Cli::command();
+    let mut cli = crate::command_with_split_help_overrides()?;
     let usage = generate_markdown(&mut cli, 2, &[])?;
 
     Ok(format!(
@@ -29,17 +26,6 @@ cargo ci self-docs
     ))
 }
 
-fn command_help(path: &[String]) -> Result<String> {
-    let mut args = vec!["run", "--quiet", "--package", "ci", "--"];
-    args.extend(path.iter().map(String::as_str));
-    args.push("--help");
-
-    let help = cmd("cargo", args)
-        .read()
-        .with_context(|| format!("failed to render help for `cargo ci {}`", path.join(" ")))?;
-    Ok(help.lines().map(str::trim_end).collect::<Vec<_>>().join("\n"))
-}
-
 fn generate_markdown(cmd: &mut Command, heading_level: usize, path: &[String]) -> Result<String> {
     let mut out = String::new();
 
@@ -48,7 +34,7 @@ fn generate_markdown(cmd: &mut Command, heading_level: usize, path: &[String]) -
 
     let path_parts = path.iter().map(String::as_str).collect::<Vec<_>>();
     if crate::split_command_help_package(&path_parts).is_some() {
-        let help = command_help(path)?;
+        let help = cmd.render_long_help().to_string();
         out.push_str("**Help:**\n```text\n");
         out.push_str(help.trim_end());
         out.push_str("\n```\n\n");

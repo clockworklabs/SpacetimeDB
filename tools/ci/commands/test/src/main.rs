@@ -1,8 +1,20 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
 use ci_common::pnpm;
+use clap::Parser;
 use duct::cmd;
+
+/// Runs tests
+///
+/// Runs rust tests, codegens csharp sdk and runs csharp tests.
+/// This does not include Unreal tests.
+/// This expects to run in a clean git state.
+#[derive(Parser)]
+struct Args {}
+
 fn main() -> Result<()> {
+    Args::parse();
+
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 
     // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?

@@ -961,6 +961,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ci-common",
+ "clap 4.5.50",
 ]
 
 [[package]]
@@ -968,6 +969,7 @@ name = "ci-global-json-policy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap 4.5.50",
  "duct",
 ]
 
@@ -976,6 +978,7 @@ name = "ci-keynote-bench"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap 4.5.50",
  "keynote-bench-harness",
  "spacetimedb-guard",
 ]
@@ -986,6 +989,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ci-common",
+ "clap 4.5.50",
  "duct",
  "serde_json",
 ]
@@ -995,6 +999,7 @@ name = "ci-publish-checks"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap 4.5.50",
  "duct",
 ]
 
@@ -1016,6 +1021,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ci-common",
+ "clap 4.5.50",
  "duct",
 ]
 
@@ -1025,6 +1031,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ci-common",
+ "clap 4.5.50",
  "duct",
 ]
 
@@ -1043,6 +1050,7 @@ name = "ci-version-upgrade-check"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap 4.5.50",
  "duct",
 ]
 
@@ -1052,6 +1060,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ci-common",
+ "clap 4.5.50",
  "duct",
 ]
 

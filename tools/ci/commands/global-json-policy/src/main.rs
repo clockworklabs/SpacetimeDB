@@ -1,9 +1,14 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, Result};
+use clap::Parser;
 use duct::cmd;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// Verify that any non-root global.json files are symlinks to the root global.json.
+#[derive(Parser)]
+struct Args {}
 
 fn ensure_repo_root() -> Result<()> {
     if !Path::new("Cargo.toml").exists() {
@@ -55,5 +60,7 @@ fn check_global_json_policy() -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    Args::parse();
+
     check_global_json_policy()
 }

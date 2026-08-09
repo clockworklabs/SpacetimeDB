@@ -1,8 +1,18 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
 use ci_common::pnpm;
+use clap::Parser;
 use duct::cmd;
+
+/// Tests Wasm bindings
+///
+/// Runs tests for the codegen crate and builds a test module with the wasm bindings.
+#[derive(Parser)]
+struct Args {}
+
 fn main() -> Result<()> {
+    Args::parse();
+
     pnpm([
         "install",
         "--filter",

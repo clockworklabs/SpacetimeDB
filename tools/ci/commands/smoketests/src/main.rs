@@ -17,6 +17,10 @@ fn ensure_repo_root() -> Result<()> {
 use tempfile::TempDir;
 
 #[derive(Parser)]
+#[command(
+    about = "Runs smoketests",
+    long_about = "Runs smoketests\n\nExecutes the smoketests suite with some default exclusions."
+)]
 /// This command builds the binaries needed by the smoketests, then runs them. This prevents
 /// race conditions when running tests in parallel with nextest, where multiple test processes
 /// might try to build the same binaries simultaneously.
