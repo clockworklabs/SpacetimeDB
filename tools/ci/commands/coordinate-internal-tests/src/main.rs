@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use anyhow::{bail, ensure, Context, Result};
 use clap::Parser;
 use duct::{cmd, Expression};
