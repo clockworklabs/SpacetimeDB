@@ -903,6 +903,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-cla-assistant"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "reqwest 0.12.24",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ci-cli-docs"
 version = "0.1.0"
 dependencies = [
@@ -914,8 +925,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-codeowners-check"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
+ "regex",
+ "serde_json",
+]
+
+[[package]]
 name = "ci-common"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+]
+
+[[package]]
+name = "ci-coordinate-internal-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "ci-dlls"
@@ -964,26 +1001,8 @@ name = "ci-lint"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap 4.5.50",
  "duct",
  "env_logger 0.10.2",
- "log",
- "regex",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "ci-other-workflows"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap 4.5.50",
- "duct",
- "env_logger 0.10.2",
- "regex",
- "reqwest 0.12.24",
- "serde",
  "serde_json",
 ]
 

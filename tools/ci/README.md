@@ -176,14 +176,48 @@ cargo ci docs
 
 **Usage:**
 ```bash
-Usage: ci-other-workflows <COMMAND>
+cargo ci other-workflows <COMMAND>
+```
+
+#### `coordinate-internal-tests`
+
+**Usage:**
+```bash
+Selects or starts the private workflow for a public Internal Tests run
+
+Usage: ci-coordinate-internal-tests [OPTIONS] --public-sha <PUBLIC_SHA>
+
+Options:
+      --public-sha <PUBLIC_SHA>
+          Immutable public commit to test
+      --public-pr-number <PUBLIC_PR_NUMBER>
+          Public pull request number, when coordinating a pull request run
+  -h, --help
+          Print help
+```
+
+#### `codeowners-check`
+
+**Usage:**
+```bash
+Usage: ci-codeowners-check --base-ref <BASE_REF> --pr-number <PR_NUMBER>
+
+Options:
+      --base-ref <BASE_REF>    Git ref to compare against, usually origin/<pull request base branch>
+      --pr-number <PR_NUMBER>  Pull request number to inspect for approval state
+  -h, --help                   Print help
+```
+
+#### `cla-assistant`
+
+**Usage:**
+```bash
+Usage: ci-cla-assistant <COMMAND>
 
 Commands:
-  coordinate-internal-tests  Selects or starts the private workflow for a public Internal Tests run
-  codeowners-check           Checks that sensitive CODEOWNERS-controlled files have the required
-                             approvals
-  cla-assistant              Interacts with CLA Assistant
-  help                       Print this message or the help of the given subcommand(s)
+  retry   Retries CLA Assistant if `license/cla` is the only remaining PR blocker
+  status  Returns the `license/cla` status for a pull request or commit SHA
+  help    Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help  Print help

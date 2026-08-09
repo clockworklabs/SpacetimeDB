@@ -1,5 +1,6 @@
-use crate::ensure_repo_root;
 use anyhow::{anyhow, bail, Context, Result};
+use ci_common::ensure_repo_root;
+use clap::Parser;
 use duct::cmd;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -7,7 +8,18 @@ use std::path::{Path, PathBuf};
 
 const REPO: &str = "clockworklabs/SpacetimeDB";
 
-pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
+#[derive(Parser)]
+struct Args {
+    /// Git ref to compare against, usually origin/<pull request base branch>.
+    #[arg(long)]
+    base_ref: String,
+
+    /// Pull request number to inspect for approval state.
+    #[arg(long)]
+    pr_number: u64,
+}
+
+fn run(base_ref: &str, pr_number: u64) -> Result<()> {
     ensure_repo_root()?;
 
     fetch_base_ref(base_ref)?;
@@ -19,6 +31,11 @@ pub fn run(base_ref: &str, pr_number: u64) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+    run(&args.base_ref, args.pr_number)
 }
 
 fn file_review_requirements(base_ref: &str, path: &Path, review: &ReviewStatus) -> Result<()> {

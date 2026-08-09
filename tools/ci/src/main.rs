@@ -6,6 +6,24 @@ struct Command {
     name: &'static str,
     package: &'static str,
 }
+struct CommandGroup {
+    name: &'static str,
+    commands: &'static [Command],
+}
+const OTHER_WORKFLOWS_COMMANDS: &[Command] = &[
+    Command {
+        name: "coordinate-internal-tests",
+        package: "ci-coordinate-internal-tests",
+    },
+    Command {
+        name: "codeowners-check",
+        package: "ci-codeowners-check",
+    },
+    Command {
+        name: "cla-assistant",
+        package: "ci-cla-assistant",
+    },
+];
 const COMMANDS: &[Command] = &[
     Command {
         name: "test",
@@ -63,11 +81,11 @@ const COMMANDS: &[Command] = &[
         name: "docs",
         package: "ci-docs-build",
     },
-    Command {
-        name: "other-workflows",
-        package: "ci-other-workflows",
-    },
 ];
+const COMMAND_GROUPS: &[CommandGroup] = &[CommandGroup {
+    name: "other-workflows",
+    commands: OTHER_WORKFLOWS_COMMANDS,
+}];
 const DEFAULT_SKIP: &[&str] = &["other-workflows"];
 
 fn print_help() {
@@ -77,9 +95,15 @@ fn print_help() {
     for command in COMMANDS {
         println!("  {}", command.name);
     }
+    for group in COMMAND_GROUPS {
+        println!("  {}", group.name);
+    }
 }
 fn command_for(name: &str) -> Option<&'static Command> {
     COMMANDS.iter().find(|candidate| candidate.name == name)
+}
+fn command_group_for(name: &str) -> Option<&'static CommandGroup> {
+    COMMAND_GROUPS.iter().find(|candidate| candidate.name == name)
 }
 fn run_command(command: &Command, forwarded: &[String]) -> Result<()> {
     let mut cargo_args = vec!["run", "--package", command.package, "--"];
@@ -115,8 +139,30 @@ fn main() -> Result<()> {
         return Ok(());
     }
     let command_name = raw.remove(0);
+    if let Some(group) = command_group_for(&command_name) {
+        return run_command_group(group, raw);
+    }
     let Some(command) = command_for(&command_name) else {
         bail!("unknown cargo ci command `{command_name}`");
     };
     run_command(command, &raw)
+}
+fn run_command_group(group: &CommandGroup, mut forwarded: Vec<String>) -> Result<()> {
+    if forwarded.first().is_some_and(|arg| arg == "-h" || arg == "--help") {
+        println!("Usage: cargo ci {} <COMMAND>", group.name);
+        println!();
+        println!("Commands:");
+        for command in group.commands {
+            println!("  {}", command.name);
+        }
+        return Ok(());
+    }
+    if forwarded.is_empty() {
+        bail!("cargo ci {} requires a command name", group.name);
+    }
+    let command_name = forwarded.remove(0);
+    let Some(command) = group.commands.iter().find(|candidate| candidate.name == command_name) else {
+        bail!("unknown cargo ci {} command `{command_name}`", group.name);
+    };
+    run_command(command, &forwarded)
 }

@@ -9,7 +9,7 @@ LICENSE.txt @cloutiertyler
 /crates/cli/src/ @bfops @cloutiertyler @jdetter
 /tools/ci/ @bfops @cloutiertyler @jdetter
 /tools/ci/commands/keynote-bench/ @joshua-spacetime @cloutiertyler @jdetter
-/tools/ci/commands/other-workflows/src/codeowners_check.rs @cloutiertyler
+/tools/ci/commands/codeowners-check/ @cloutiertyler
 /tools/upgrade-version/ @bfops @jdetter @cloutiertyler @rekhoff
 /tools/release/ @bfops @jdetter @cloutiertyler @rekhoff
 /tools/license-check/ @bfops @jdetter @cloutiertyler

@@ -1,5 +1,5 @@
 use anyhow::{bail, ensure, Context, Result};
-use clap::Args;
+use clap::Parser;
 use duct::{cmd, Expression};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -14,9 +14,9 @@ const PRIVATE_REPO: &str = "clockworklabs/SpacetimeDBPrivate";
 const PRIVATE_WORKFLOW: &str = "ci.yml";
 const PRIVATE_DEFAULT_BRANCH: &str = "master";
 
-#[derive(Args)]
 /// Selects or starts the private workflow for a public Internal Tests run.
-pub(crate) struct CoordinateArgs {
+#[derive(Parser)]
+struct Args {
     /// Immutable public commit to test.
     #[arg(long)]
     public_sha: String,
@@ -451,7 +451,7 @@ fn write_github_output(name: &str, value: impl std::fmt::Display) -> Result<()> 
 }
 
 /// Coordinates the public Internal Tests run without checking out or executing private code.
-pub(crate) fn coordinate(args: CoordinateArgs) -> Result<()> {
+fn coordinate(args: Args) -> Result<()> {
     let private_source = resolve_private_source(args.public_pr_number)?;
 
     let coordinated = match private_source {
@@ -464,6 +464,10 @@ pub(crate) fn coordinate(args: CoordinateArgs) -> Result<()> {
     write_github_output("run_url", &coordinated.selected.url)?;
     write_github_output("did_start", coordinated.did_start)?;
     Ok(())
+}
+
+fn main() -> Result<()> {
+    coordinate(Args::parse())
 }
 
 #[cfg(test)]
