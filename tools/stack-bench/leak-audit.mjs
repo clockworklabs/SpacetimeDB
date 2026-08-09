@@ -172,7 +172,12 @@ for (const root of ROOTS) {
       const p = join(d, e.name);
       if (e.isDirectory()) { if (!/node_modules/.test(p)) stack.push(p); continue; }
       if (!/\.jsonl$/.test(e.name)) continue;
-      if (!/transcript|^[0-9a-f-]{36}\.jsonl$/.test(e.name)) continue;
+      // `agent-*.jsonl` is a subagent's transcript, filed under
+      // <session>/subagents/. They were excluded by this pattern, so the one
+      // channel the sandbox does not govern went unaudited exactly where it
+      // mattered: a SpacetimeDB build dispatched a subagent that made 29 Bash
+      // calls, and none of them were ever checked.
+      if (!/transcript|^agent-|^[0-9a-f-]{36}\.jsonl$/.test(e.name)) continue;
       if (statSync(p).size < 2000) continue;
       results.push({ ...auditTranscript(p, APP_BOUNDARY), root });
     }
