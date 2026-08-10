@@ -543,6 +543,18 @@ function buildPrompt(args, p, track, lintPort) {
   const lint = args.printPrompt ? './check-hooks.sh' : writeLintShim(args.app, lintPort);
   const common = [
     `The app lives in ${CONTAINER ? '/app' : args.app.replace(/\\/g, '/')} — work there.`,
+    // Container runs only, and identical for every backend so no stack gets
+    // more guidance than another.
+    //
+    // Vite binds `localhost` by default. Inside a container that is the
+    // container's own loopback, which a published port does not forward to —
+    // measured: a server on 127.0.0.1 in a container is unreachable from the
+    // host through -p, the same server on 0.0.0.0 answers 200. Without this
+    // every containerised run would build a working app the grader cannot
+    // reach, and fail for a reason that has nothing to do with the database.
+    ...(CONTAINER ? ['',
+      'Dev servers must listen on 0.0.0.0, not localhost, or nothing outside '
+      + 'can reach them. For Vite set `server.host: true` in vite.config.ts.'] : []),
     '',
     backendDoc(args, p, track),
   ];
