@@ -6,7 +6,6 @@ LICENSE.txt @cloutiertyler
 /licenses/ @cloutiertyler
 /crates/client-api-messages/src/websocket.rs @centril @gefjon
 
-/crates/cli/src/ @bfops @cloutiertyler @jdetter
 /tools/ci/ @bfops @cloutiertyler @jdetter
 /tools/ci/src/keynote_bench.rs @joshua-spacetime @cloutiertyler @jdetter
 /tools/ci/src/codeowners_check.rs @cloutiertyler
