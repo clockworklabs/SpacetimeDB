@@ -67,6 +67,8 @@ https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git
 
 (See also the [Unity Tutorial](../../00100-intro/00300-tutorials/00300-unity-tutorial/00200-part-1.md))
 
+The Unity package includes a `SpacetimeDBNetworkManager` component. Add one instance to a scene GameObject if you want the SDK to advance active connections from Unity's `Update` loop automatically. If you do not use the manager, call [`FrameTick`](#method-frametick) yourself every frame.
+
 ## Generate module bindings
 
 Each SpacetimeDB client depends on some bindings specific to your module. Create a `module_bindings` directory in your project's directory and generate the C# interface files using the Spacetime CLI. From your project directory, run:
@@ -219,6 +221,8 @@ class DbConnection {
 ```
 
 `FrameTick` will advance the connection until no work remains or until it is disconnected, then return rather than blocking. Games might arrange for this message to be called every frame.
+
+In Unity projects, a `SpacetimeDBNetworkManager` component can call `FrameTick` for active connections automatically. Use either the manager or your own update loop; without one of them, callbacks will not be invoked.
 
 It is not advised to run `FrameTick` on a background thread, since it modifies [`dbConnection.Db`](#property-db). If main thread code is also accessing the `Db`, it may observe data races when `FrameTick` runs on another thread.
 
