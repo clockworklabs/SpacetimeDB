@@ -248,19 +248,27 @@ export type NamespacedQueryBuilder<SchemaDef extends UntypedSchemaDef> =
  * A runtime reference to a table. This materializes the RowExpr for us.
  * TODO: Maybe add the full SchemaDef to the type signature depending on how joins will work.
  */
-export type TableRef<TableDef extends TypedTableDef> = Readonly<{
-  type: 'table';
-  sourceName: TableDef['sourceName'];
-  accessorName: string;
-  cols: RowExpr<TableDef>;
-  indexedCols: IndexedRowExpr<TableDef>;
-  tableDef: TableDef;
+// Declared as an interface, not `Readonly<{ ... }>`, and that is load-bearing:
+// TypeScript prints anonymous object types STRUCTURALLY and interfaces BY NAME.
+// As an anonymous type, every constraint failure involving a table reference
+// recited all ten members with `cols` expanding through four levels of type
+// functions — 637 characters even after TypeScript's own truncation had fired.
+// As an interface the same error reads
+// `Type 'TableRef<...>' does not satisfy the constraint 'UntypedTableDef'`.
+// See tests/table_ref_error_message.test.ts.
+export interface TableRef<TableDef extends TypedTableDef> {
+  readonly type: 'table';
+  readonly sourceName: TableDef['sourceName'];
+  readonly accessorName: string;
+  readonly cols: RowExpr<TableDef>;
+  readonly indexedCols: IndexedRowExpr<TableDef>;
+  readonly tableDef: TableDef;
   // Delegated UntypedTableDef properties for compatibility.
-  columns: TableDef['columns'];
-  indexes: TableDef['indexes'];
-  rowType: TableDef['rowType'];
-  constraints: any;
-}>;
+  readonly columns: TableDef['columns'];
+  readonly indexes: TableDef['indexes'];
+  readonly rowType: TableDef['rowType'];
+  readonly constraints: any;
+}
 
 class TableRefImpl<TableDef extends TypedTableDef>
   implements TableRef<TableDef>, From<TableDef>

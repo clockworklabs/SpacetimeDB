@@ -145,9 +145,7 @@ class ConnectionManagerImpl {
         clearTimeout(managed.reconnectTimer);
         managed.reconnectTimer = null;
         managed.reconnectAttempt = 0;
-        if (managed.builder) {
-          this.#buildManagedConnection(managed, managed.builder);
-        }
+        this.#reconnectManagedConnection(managed);
         continue;
       }
 
@@ -179,9 +177,7 @@ class ConnectionManagerImpl {
     connection.disconnect();
     this.#updateState(managed, { isActive: false });
     managed.reconnectAttempt = 0;
-    if (managed.builder) {
-      this.#buildManagedConnection(managed, managed.builder);
-    }
+    this.#reconnectManagedConnection(managed);
   }
 
   /** Generates a unique key for a connection based on URI and module name. */
@@ -294,6 +290,33 @@ class ConnectionManagerImpl {
     }
   }
 
+  /**
+   * Reconnect as the identity we were last issued.
+   *
+   * A client that first connects anonymously builds its builder *before* it has
+   * a token, so that builder's token stays `undefined` for the lifetime of the
+   * page. Rebuilding from it presents no credentials, the host mints a **new**
+   * identity, and every row owned by the previous one silently becomes
+   * invisible — no error, and no callback in between for the application to
+   * intervene. Saving the token diligently does not help, because the stale
+   * builder is what gets rebuilt.
+   *
+   * The token is already known here: the connection adopts it on
+   * `IdentityToken` and `#updateState` records it, one line from where it was
+   * needed.
+   *
+   * Only the automatic reconnect paths use this. `retain()` and `rebuild()`
+   * take the caller's builder verbatim, because supplying a *different* token is
+   * exactly what `rebuild()` is for — swapping an anonymous session for a
+   * signed-in one, or logging out.
+   */
+  #reconnectManagedConnection(managed: ManagedConnection): void {
+    if (!managed.builder) return;
+    const token = managed.state?.token;
+    if (token) managed.builder.withToken(token);
+    this.#buildManagedConnection(managed, managed.builder);
+  }
+
   #buildManagedConnection<T extends DbConnectionImpl<any>>(
     managed: ManagedConnection,
     builder: DbConnectionBuilder<T>
@@ -349,7 +372,7 @@ class ConnectionManagerImpl {
         return;
       }
 
-      this.#buildManagedConnection(managed, managed.builder);
+      this.#reconnectManagedConnection(managed);
     }, delay);
   }
 
