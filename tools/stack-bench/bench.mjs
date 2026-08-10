@@ -109,6 +109,22 @@ function restoreSource(from, appDir) {
     const src = join(from, rel);
     if (!existsSync(src)) continue;
     const dest = join(appDir, rel);
+
+    // Keep the installed dependencies. A snapshot holds source only, so
+    // deleting the whole directory and copying it back took node_modules with
+    // it — the rolled-back app could no longer run, its database reset failed
+    // with "you may have forgotten to install dependencies", and the level
+    // ended NOT GRADED. A regressed fix round destroyed its own run instead of
+    // falling back to the better source, which is the one thing rollback exists
+    // to do.
+    const mods = join(dest, 'node_modules');
+    const parked = join(appDir, `.node_modules-${rel.replace(/[\\/]/g, '_')}`);
+    let stashed = false;
+    if (existsSync(mods)) {
+      try { rmSync(parked, { recursive: true, force: true }); renameSync(mods, parked); stashed = true; }
+      catch { /* fall through: a reinstall is better than a failed restore */ }
+    }
+
     for (let attempt = 0; ; attempt++) {
       try { rmSync(dest, { recursive: true, force: true }); break; }
       catch (err) {
@@ -117,6 +133,11 @@ function restoreSource(from, appDir) {
       }
     }
     cpSync(src, dest, { recursive: true });
+
+    if (stashed) {
+      try { renameSync(parked, mods); }
+      catch { rmSync(parked, { recursive: true, force: true }); }
+    }
   }
 }
 
@@ -466,6 +487,7 @@ async function main() {
       if (!wroteReport) break;
 
       const before = bundle?.totals?.score ?? 0;
+      const beforeMax = bundle?.totals?.max ?? 0;
       // A fix can break more than it mends. Keep the source that produced the
       // best score so far, and roll back to it if a round regresses.
       // Kept outside the results tree: a snapshot is a known-good copy of the
@@ -489,8 +511,20 @@ async function main() {
       // often the harness is wrong, not the app. Stop rather than pay again for
       // the same result.
       const after = bundle?.totals?.score ?? 0;
-      if (after < before) {
-        console.log(`    regressed (${before} -> ${after}); rolling back and stopping`);
+      const afterMax = bundle?.totals?.max ?? 0;
+      // Compare what the scores MEAN, not their numerators. `max` moves between
+      // passes whenever a criterion becomes measurable or stops being — one run
+      // read 48/54 then 46/53 and was called a regression on 48 > 46, when the
+      // rates are 88.9% and 86.8%. The direction happened to hold there; it does
+      // not in general, and a rollback triggered by arithmetic on unlike
+      // denominators throws away a fix round for no reason.
+      const rate = (n, d) => (d > 0 ? n / d : 0);
+      const beforeRate = rate(before, beforeMax), afterRate = rate(after, afterMax);
+      if (afterMax !== beforeMax) {
+        console.log(`    note: scored out of ${afterMax} this round, ${beforeMax} last — comparing rates, not totals`);
+      }
+      if (afterRate < beforeRate) {
+        console.log(`    regressed (${before}/${beforeMax} -> ${after}/${afterMax}); rolling back and stopping`);
         // Stop the servers BEFORE deleting what they are watching. Without
         // this, rolling back a regressed postgres run threw EBUSY on
         // app/server and took the whole finished run down with it.
@@ -501,7 +535,7 @@ async function main() {
         stalled = true;
         break;
       }
-      if (after === before) {
+      if (afterRate === beforeRate) {
         console.log(`    no improvement (${before}); stopping fix rounds`);
         stalled = true;
         break;
