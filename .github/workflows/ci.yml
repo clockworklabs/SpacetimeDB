@@ -350,12 +350,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts-${{ env.ARTIFACT_SUFFIX }}
-          path: ${{ runner.temp }}/build-artifacts
+          path: build-artifacts
 
       - name: Extract build artifacts
         shell: bash
         run: |
-          tar -xzf "${RUNNER_TEMP}/build-artifacts/build-support.tar.gz"
+          tar -xzf build-artifacts/build-support.tar.gz
           exe_suffix=""
           if [[ "${RUNNER_OS}" == "Windows" ]]; then
             exe_suffix=".exe"
