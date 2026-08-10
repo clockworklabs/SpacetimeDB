@@ -3,11 +3,11 @@ use std::panic::{catch_unwind, take_hook, AssertUnwindSafe};
 use serial_test::serial;
 use spacetimedb_testing::sdk::Test;
 
-const TEST_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/sdk-test-client");
-const CONNECT_DISCONNECT_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/connect-disconnect-client");
-const PROCEDURE_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedure-client");
-const VIEW_PK_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-pk-client");
-const PROCEDURAL_VIEW_PK_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedural-view-pk-client");
+const TEST_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test-harness~/sdk-test-client");
+const CONNECT_DISCONNECT_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test-harness~/connect-disconnect-client");
+const PROCEDURE_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test-harness~/procedure-client");
+const VIEW_PK_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test-harness~/view-pk-client");
+const PROCEDURAL_VIEW_PK_CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test-harness~/procedural-view-pk-client");
 
 fn make_test(subcommand: &str) -> Test {
     Test::builder()
