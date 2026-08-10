@@ -5,6 +5,10 @@ edition.workspace = true
 license-file = "LICENSE.txt"
 description = "A C# SDK test harness for SpacetimeDB clients"
 
+[[test]]
+name = "sdk_csharp"
+path = "test-harness~/sdk_csharp.rs"
+
 [dev-dependencies]
 spacetimedb-testing = { path = "../../crates/testing" }
 serial_test.workspace = true
