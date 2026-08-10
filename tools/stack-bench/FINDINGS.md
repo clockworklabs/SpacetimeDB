@@ -305,3 +305,37 @@ scores across passes whose denominators differ: unaided 48/54 against fix-round
 46/53. Those are 88.9% and 86.8% — the direction happened to be right, but
 comparing numerators when max can move is not a valid test, and it is what
 triggered the rollback.
+
+---
+## 2026-08-10 — L2 sweep: two of three runs lost to one harness defect
+
+| stack | L2 features | L1 guarantees | outcome | cost |
+|---|---|---|---|---|
+| postgres | 37/54 -> 54/54 (2 rounds) | 20/20 held | VALID | $13.84 |
+| spacetime | 48/54 unaided | 20/20 held | VOID — read the grader | $12.66 |
+| mongodb | 54/54 unaided | **18/20 — 2 LOST** | NOT GRADED — rollback broke | $21.40 |
+
+$34 of the $48 spent produced no usable score, and both failures trace to
+defects fixed after the sweep had already started (Node loads bench.mjs once).
+
+**MongoDB is the result worth keeping even though the run is unusable.** Its
+FIRST pass scored 54/54 on everything L2 asked for while losing two L1
+guarantees, one of them 109a — one customer's cart request replayed by another
+leaves the owner's cart untouched. A benchmark scoring only the current level
+would have called that a flawless upgrade. The inherited-guarantee suites are
+the only reason it is visible. That is the clearest evidence so far that
+guarantees erode as an app grows, and it appeared on MongoDB rather than on the
+stack the thesis expected.
+
+Its fix round then regressed the app catastrophically — 54/54 to 20/54, features
+36 to 10 — trying to repair those two guarantees. Rollback fired correctly and
+then failed, because restoreSource deleted node_modules along with the source.
+
+**Not yet established.** Whether MongoDB's two lost guarantees are genuine app
+regressions or oracle flakiness. 109a passes at `unverified` depth on some
+stacks, meaning the hostile replay could not be issued and the criterion rests
+on DOM assertions — a criterion in that state can fail for reasons that are not
+the app's fault. This needs the re-grade before it is quoted as a finding.
+
+**SpacetimeDB has no valid L2 arm**, so the comparison that motivates the whole
+ladder is still missing its most important column.
