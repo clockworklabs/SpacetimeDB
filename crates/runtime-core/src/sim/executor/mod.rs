@@ -20,6 +20,8 @@ pub use task::{AbortHandle, JoinError, JoinHandle};
 
 type Runnable = async_task::Runnable<NodeId>;
 
+const READY_TASK_BUDGET: usize = 256;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuntimeConfig {
     pub seed: u64,
@@ -603,9 +605,10 @@ impl Executor {
     #[track_caller]
     /// Run the top-level future until completion.
     ///
-    /// The executor repeatedly drains runnable tasks, then advances virtual
-    /// time to the next timer when the queue is empty. If neither runnable work
-    /// nor timers remain, the simulation is considered deadlocked.
+    /// The executor polls a bounded random batch of runnable tasks, samples
+    /// simulated fault sources at one captured instant, then advances virtual
+    /// time only when no current-time source can make progress. If neither
+    /// runnable work nor timers remain, the simulation is considered deadlocked.
     fn block_on<F: Future>(&self, future: F) -> F::Output {
         let sender = self.sender.clone();
         let (runnable, mut task) = unsafe {
@@ -616,20 +619,24 @@ impl Executor {
         runnable.schedule();
 
         loop {
-            loop {
-                self.run_all_ready();
-                if let Some(output) = poll_finished_task(&mut task) {
-                    return output;
-                }
-
-                let node_progress = self.node_fault_ticks();
-                let network_progress = self.net_tick();
-                if !node_progress && !network_progress {
-                    break;
-                }
+            if let Some(output) = poll_finished_task(&mut task) {
+                return output;
             }
 
-            if self.advance_to_next_network_deadline() || self.time.wake_next_timer() {
+            let task_progress = self.run_ready_budget(READY_TASK_BUDGET);
+            if let Some(output) = poll_finished_task(&mut task) {
+                return output;
+            }
+
+            let now = self.time.now();
+            let node_progress = self.node_fault_ticks(now);
+            let network_progress = self.net_tick(now);
+            let timer_progress = self.time.wake_due_timers();
+            if task_progress || node_progress || network_progress || timer_progress {
+                continue;
+            }
+
+            if self.advance_to_next_network_deadline(now) || self.time.wake_next_timer() {
                 continue;
             }
 
@@ -637,20 +644,20 @@ impl Executor {
         }
     }
 
-    fn net_tick(&self) -> bool {
+    fn net_tick(&self, now: Duration) -> bool {
         if let Some(net) = &self.net {
-            net.tick()
+            net.tick(now)
         } else {
             false
         }
     }
 
-    fn next_network_delivery_deadline(&self) -> Option<Duration> {
-        self.net.as_ref().and_then(net::Network::next_delivery_deadline)
+    fn next_network_delivery_deadline(&self, now: Duration) -> Option<Duration> {
+        self.net.as_ref().and_then(|net| net.next_delivery_deadline(now))
     }
 
-    fn advance_to_next_network_deadline(&self) -> bool {
-        let Some(network_deadline) = self.next_network_delivery_deadline() else {
+    fn advance_to_next_network_deadline(&self, now: Duration) -> bool {
+        let Some(network_deadline) = self.next_network_delivery_deadline(now) else {
             return false;
         };
 
@@ -663,7 +670,7 @@ impl Executor {
         self.time.advance_to(network_deadline)
     }
 
-    fn node_fault_ticks(&self) -> bool {
+    fn node_fault_ticks(&self, now: Duration) -> bool {
         let options = self.node_faults;
 
         let nodes = {
@@ -676,7 +683,7 @@ impl Executor {
         };
 
         for node in nodes {
-            if self.node_crash_tick(node, options) || self.node_pause_tick(node, options) {
+            if self.node_crash_tick(node, options, now) || self.node_pause_tick(node, options, now) {
                 return true;
             }
         }
@@ -684,7 +691,7 @@ impl Executor {
         false
     }
 
-    fn node_crash_tick(&self, node: NodeId, options: NodeFaultOptions) -> bool {
+    fn node_crash_tick(&self, node: NodeId, options: NodeFaultOptions, _now: Duration) -> bool {
         let record = self.node_state(node);
         if record.crashed.load(Ordering::Acquire) {
             if self.rng.buggify_ratio(options.restart_node_probability) {
@@ -699,7 +706,7 @@ impl Executor {
         false
     }
 
-    fn node_pause_tick(&self, node: NodeId, options: NodeFaultOptions) -> bool {
+    fn node_pause_tick(&self, node: NodeId, options: NodeFaultOptions, _now: Duration) -> bool {
         let record = self.node_state(node);
         if record.crashed.load(Ordering::Acquire) {
             return false;
@@ -720,12 +727,22 @@ impl Executor {
         }
     }
 
-    /// Drain the runnable queue, selecting tasks in deterministic RNG order.
+    /// Poll a bounded batch from the runnable queue in deterministic RNG order.
     ///
-    /// Paused-node tasks are diverted into that node's paused buffer instead of
-    /// being polled immediately.
-    fn run_all_ready(&self) {
-        while let Some(runnable) = self.queue.try_recv_random(&self.rng) {
+    /// Returning to the outer scheduler after a fixed quantum lets timers and
+    /// network deliveries make progress even when CPU-ready tasks keep
+    /// re-scheduling themselves. Paused-node tasks are diverted into that node's
+    /// paused buffer instead of being polled immediately.
+    fn run_ready_budget(&self, budget: usize) -> bool {
+        assert!(budget > 0, "ready task budget must be non-zero");
+
+        let mut progressed = false;
+        for _ in 0..budget {
+            let Some(runnable) = self.queue.try_recv_random(&self.rng) else {
+                break;
+            };
+
+            progressed = true;
             let node = *runnable.metadata();
             let state = self.node_state(node);
             if state.is_crashed() {
@@ -741,6 +758,7 @@ impl Executor {
             let nanos = 100 + (self.rng.next_u64() % 901);
             self.time.advance(Duration::from_nanos(nanos));
         }
+        progressed
     }
 
     /// Look up the record for a node, panicking if the node is unknown.
@@ -1019,6 +1037,25 @@ mod tests {
         });
 
         assert_eq!(value, 17);
+    }
+
+    #[test]
+    fn block_on_returns_while_background_task_stays_ready() {
+        let mut runtime = Runtime::new(10);
+        let handle = runtime.handle();
+        let node = runtime.create_node().name("hot").build();
+        let _hot = node.spawn(async {
+            loop {
+                yield_now().await;
+            }
+        });
+
+        let value = runtime.block_on(async move {
+            handle.sleep(Duration::from_micros(1)).await;
+            42
+        });
+
+        assert_eq!(value, 42);
     }
 
     #[test]

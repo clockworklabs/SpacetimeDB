@@ -85,6 +85,17 @@ impl TimeHandle {
         self.inner.lock().timers.values().map(|timer| timer.deadline).min()
     }
 
+    /// Wake timers whose deadlines are already at or before the current time.
+    pub(crate) fn wake_due_timers(&self) -> bool {
+        let wakers = {
+            let mut state = self.inner.lock();
+            state.take_due_wakers()
+        };
+        let woke = !wakers.is_empty();
+        wake_all(wakers);
+        woke
+    }
+
     pub(crate) fn advance_to(&self, deadline: Duration) -> bool {
         let wakers = {
             let mut state = self.inner.lock();

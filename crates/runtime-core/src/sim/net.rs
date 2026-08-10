@@ -201,9 +201,8 @@ impl Network {
         self.inner.lock().send(Path::new(from, to), now, payload, &self.rng)
     }
 
-    /// Drain simulated network deliveries ready at the current virtual time.
-    pub(crate) fn tick(&self) -> bool {
-        let now = self.time.now();
+    /// Drain simulated network deliveries ready at `now`.
+    pub(crate) fn tick(&self, now: Duration) -> bool {
         let Some(wakers) = self.inner.lock().tick(now, &self.rng) else {
             return false;
         };
@@ -213,8 +212,7 @@ impl Network {
         true
     }
 
-    pub(crate) fn next_delivery_deadline(&self) -> Option<Duration> {
-        let now = self.time.now();
+    pub(crate) fn next_delivery_deadline(&self, now: Duration) -> Option<Duration> {
         self.inner.lock().next_delivery_deadline(now)
     }
 
@@ -685,6 +683,43 @@ mod tests {
     }
 
     #[test]
+    fn path_clog_never_shortens_existing_clog() {
+        let options = Options {
+            path_clog_duration_mean: Duration::from_nanos(1),
+            ..Options::default()
+        };
+        let runtime = Runtime::new(0);
+        let handle = runtime.handle();
+        let a = handle.create_node().build();
+        let b = handle.create_node().build();
+        let path = Path::new(a.id(), b.id());
+        let existing_until = Duration::from_secs(10);
+        let mut state = NetworkState::new(options);
+
+        state.path_clogs.insert(path, existing_until);
+        state.clog_path(path, Duration::ZERO, &Rng::new(0));
+
+        assert_eq!(state.path_clogs.get(&path).copied(), Some(existing_until));
+    }
+
+    #[test]
+    fn manual_node_clog_survives_pause_resume() {
+        let runtime = Runtime::with_config(RuntimeConfig::new(0).with_network(Options::default()));
+        let handle = runtime.handle();
+        let a = handle.create_node().build();
+        let b = handle.create_node().build();
+        let net = handle.network().expect("test runtime should have a simulated network");
+
+        net.clog_node(b.id());
+        b.pause();
+        b.resume();
+
+        assert!(net.is_blocked(a.id(), b.id()));
+        net.unclog_node(b.id());
+        assert!(!net.is_blocked(a.id(), b.id()));
+    }
+
+    #[test]
     fn delayed_packet_advances_virtual_time() {
         let options = Options {
             one_way_delay_min: Duration::from_millis(5),
@@ -708,7 +743,12 @@ mod tests {
 
     #[test]
     fn same_deadline_packets_are_delivered_before_receiver_runs() {
-        let mut runtime = Runtime::with_config(RuntimeConfig::new(0).with_network(Options::default()));
+        let options = Options {
+            one_way_delay_min: Duration::from_millis(5),
+            one_way_delay_mean: Duration::from_millis(5),
+            ..Options::default()
+        };
+        let mut runtime = Runtime::with_config(RuntimeConfig::new(0).with_network(options));
         let handle = runtime.handle();
         let a = handle.create_node().build();
         let b = handle.create_node().build();
@@ -736,7 +776,12 @@ mod tests {
 
     #[test]
     fn zero_delay_packet_sent_by_woken_task_is_delivered_without_deadlock() {
-        let mut runtime = Runtime::with_config(RuntimeConfig::new(0).with_network(Options::default()));
+        let options = Options {
+            one_way_delay_min: Duration::ZERO,
+            one_way_delay_mean: Duration::ZERO,
+            ..Options::default()
+        };
+        let mut runtime = Runtime::with_config(RuntimeConfig::new(0).with_network(options));
         let handle = runtime.handle();
         let a = handle.create_node().build();
         let b = handle.create_node().build();
@@ -799,6 +844,8 @@ mod tests {
     #[test]
     fn automatic_partition_heals_blocked_packet_on_later_timer_tick() {
         let options = Options {
+            one_way_delay_min: Duration::ZERO,
+            one_way_delay_mean: Duration::ZERO,
             partition_probability: Ratio::new(1, 1),
             unpartition_probability: Ratio::new(1, 1),
             ..Options::default()
@@ -817,8 +864,11 @@ mod tests {
 
         runtime.block_on(async {
             a_net.send(b.id(), vec![1]).unwrap();
+            assert_eq!(b_net.recv().await.payload, vec![1]);
+
+            a_net.send(b.id(), vec![2]).unwrap();
             let packet = b_net.recv().await;
-            assert_eq!(packet.payload, vec![1]);
+            assert_eq!(packet.payload, vec![2]);
         });
     }
 }
