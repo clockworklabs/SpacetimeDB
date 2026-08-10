@@ -77,20 +77,19 @@ const EFFORT = process.env.STACK_BENCH_EFFORT ?? 'high';
 // is what every number collected before this change was measured on — useful
 // for reproducing an old result, and the reason this is a default rather than
 // a hard requirement.
-// TEMPORARILY DEFAULTED OFF (2026-08-10).
+// Back on by default (2026-08-10), after the run-survives-the-build rewrite.
 //
-// The container isolates the build session correctly, but the run does not
-// survive it: `docker run --rm` takes the app's dev servers down with the build,
-// and the grader then has nothing to talk to. `restart-backend.sh` cannot fix
-// that from the host either — a container install produces linux-x64 esbuild and
-// rollup binaries, so the Windows host cannot run the app's node_modules at all.
-// One sweep died this way after spending $9.46 and grading nothing.
+// It was briefly defaulted off: `docker run --rm` took the app's dev servers
+// down with the build session, so the grader had nothing to talk to, and one
+// sweep died that way after spending $9.46 and grading nothing. The container is
+// now long-lived and each round execs into it — see CONTAINER-DESIGN.md.
 //
-// Flip back to '1' once the harness starts a long-lived serve container after
-// the build and restart-backend.sh drives it with docker restart/stop/start —
-// and once that path has been proven end-to-end on one cheap run, reseed and
-// grading included, rather than on the build step alone. That was the gap.
-const USE_CONTAINER = (process.env.STACK_BENCH_CONTAINER ?? '0') !== '0';
+// Re-enabled only after the step that failed was proven, not just the build:
+// a containerised app was stood up and graded end to end (reseed ok on all five
+// suites, 46/50), restart/stop/start were shown to really restart (listener PID
+// changed), and run-build.mjs was shown to create the container on the first
+// round and reuse it on the second.
+const USE_CONTAINER = (process.env.STACK_BENCH_CONTAINER ?? '1') !== '0';
 const IMAGE = process.env.STACK_BENCH_IMAGE ?? 'stack-bench-build:2.1.226';
 
 // Set once in main(), because the addresses a build is TOLD to use depend on
