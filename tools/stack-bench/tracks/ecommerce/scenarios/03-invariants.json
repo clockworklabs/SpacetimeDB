@@ -8,22 +8,64 @@
     {
       "id": 311,
       "name": "Scheduled work survives a restart",
-      "actors": ["admin", "watcher"],
+      "actors": [
+        "admin",
+        "watcher"
+      ],
       "setup": [
-        { "do": "signIn", "actor": "admin", "name": "admin", "exact": true, "password": "stackbench-admin-2026" },
-        { "do": "click", "actor": "admin", "testid": "admin-link", "settleMs": 1500 },
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "exact": true,
+          "password": "stackbench-admin-2026"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link",
+          "settleMs": 1500
+        },
         {
           "do": "recordNumber",
           "actor": "watcher",
           "testid": "item-stock",
-          "in": { "testid": "item-card", "contains": "Air Purifier" },
+          "in": {
+            "testid": "item-card",
+            "contains": "Air Purifier"
+          },
           "as": "air-before"
         },
-        { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Air Purifier" },
-        { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" },
-        { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "5" },
-        { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "70" },
-        { "do": "click", "actor": "admin", "testid": "schedule-restock-submit", "settleMs": 2000 }
+        {
+          "do": "fill",
+          "actor": "admin",
+          "testid": "schedule-restock-item",
+          "text": "Air Purifier"
+        },
+        {
+          "do": "fill",
+          "actor": "admin",
+          "testid": "schedule-restock-warehouse",
+          "text": "East"
+        },
+        {
+          "do": "fill",
+          "actor": "admin",
+          "testid": "schedule-restock-qty",
+          "text": "5"
+        },
+        {
+          "do": "fill",
+          "actor": "admin",
+          "testid": "schedule-restock-delay",
+          "text": "70"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "schedule-restock-submit",
+          "settleMs": 2000
+        }
       ],
       "criteria": [
         {
@@ -31,56 +73,117 @@
           "desc": "a restock scheduled before a restart still fires after it, once, at its own time — an in-memory timer does not survive and must not be how this was built",
           "points": 4,
           "steps": [
-            { "do": "restartBackend", "settleMs": 15000 },
-            { "do": "reload", "actor": "watcher", "settleMs": 5000 },
+            {
+              "do": "restartBackend",
+              "settleMs": 15000
+            },
+            {
+              "do": "reload",
+              "actor": "watcher",
+              "settleMs": 5000
+            },
             {
               "do": "expectNumber",
               "actor": "watcher",
               "testid": "item-stock",
-              "in": { "testid": "item-card", "contains": "Air Purifier" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Air Purifier"
+              },
               "relativeTo": "air-before",
               "plus": 5,
               "within": 90000
             }
-          ]
+          ],
+          "statedBy": "work scheduled\nbefore a restart fires after it, once, at the right time"
         },
         {
           "id": "311b",
           "desc": "it fired exactly once — the restart did not replay it",
           "points": 3,
           "steps": [
-            { "do": "wait", "actor": "watcher", "ms": 20000 },
+            {
+              "do": "wait",
+              "actor": "watcher",
+              "ms": 20000
+            },
             {
               "do": "expectNumber",
               "actor": "watcher",
               "testid": "item-stock",
-              "in": { "testid": "item-card", "contains": "Air Purifier" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Air Purifier"
+              },
               "relativeTo": "air-before",
               "plus": 5
             }
-          ]
+          ],
+          "statedBy": "must never double-apply\na scheduled restock or advance an order twice"
         }
       ]
     },
     {
       "id": 312,
       "name": "A restart does not make pending work fire early",
-      "actors": ["admin", "watcher"],
+      "actors": [
+        "admin",
+        "watcher"
+      ],
       "setup": [
-        { "do": "signIn", "actor": "admin", "name": "admin", "exact": true, "password": "stackbench-admin-2026" },
-        { "do": "click", "actor": "admin", "testid": "admin-link", "settleMs": 1500 },
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "exact": true,
+          "password": "stackbench-admin-2026"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link",
+          "settleMs": 1500
+        },
         {
           "do": "recordNumber",
           "actor": "watcher",
           "testid": "item-stock",
-          "in": { "testid": "item-card", "contains": "Espresso Machine" },
+          "in": {
+            "testid": "item-card",
+            "contains": "Espresso Machine"
+          },
           "as": "esp-before"
         },
-        { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Espresso Machine" },
-        { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "West" },
-        { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "4" },
-        { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "180" },
-        { "do": "click", "actor": "admin", "testid": "schedule-restock-submit", "settleMs": 2000 }
+        {
+          "do": "fill",
+          "actor": "admin",
+          "testid": "schedule-restock-item",
+          "text": "Espresso Machine"
+        },
+        {
+          "do": "fill",
+          "actor": "admin",
+          "testid": "schedule-restock-warehouse",
+          "text": "West"
+        },
+        {
+          "do": "fill",
+          "actor": "admin",
+          "testid": "schedule-restock-qty",
+          "text": "4"
+        },
+        {
+          "do": "fill",
+          "actor": "admin",
+          "testid": "schedule-restock-delay",
+          "text": "180"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "schedule-restock-submit",
+          "settleMs": 2000
+        }
       ],
       "criteria": [
         {
@@ -88,34 +191,70 @@
           "desc": "a restock due in three minutes has not applied thirty seconds after a restart — re-reading pending work must not run it",
           "points": 3,
           "steps": [
-            { "do": "restartBackend", "settleMs": 15000 },
-            { "do": "reload", "actor": "watcher", "settleMs": 5000 },
-            { "do": "wait", "actor": "watcher", "ms": 25000 },
+            {
+              "do": "restartBackend",
+              "settleMs": 15000
+            },
+            {
+              "do": "reload",
+              "actor": "watcher",
+              "settleMs": 5000
+            },
+            {
+              "do": "wait",
+              "actor": "watcher",
+              "ms": 25000
+            },
             {
               "do": "expectNumber",
               "actor": "watcher",
               "testid": "item-stock",
-              "in": { "testid": "item-card", "contains": "Espresso Machine" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Espresso Machine"
+              },
               "relativeTo": "esp-before",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "a restart must not cause pending work to run\nimmediately"
         }
       ]
     },
     {
       "id": 313,
       "name": "Time does not create or destroy stock",
-      "actors": ["shopper", "admin"],
+      "actors": [
+        "shopper",
+        "admin"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "shopper", "name": "consv" },
-        { "do": "signIn", "actor": "admin", "name": "admin", "exact": true, "password": "stackbench-admin-2026" },
-        { "do": "click", "actor": "admin", "testid": "admin-link", "settleMs": 1500 },
+        {
+          "do": "signUp",
+          "actor": "shopper",
+          "name": "consv"
+        },
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "exact": true,
+          "password": "stackbench-admin-2026"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link",
+          "settleMs": 1500
+        },
         {
           "do": "recordNumber",
           "actor": "admin",
           "testid": "admin-stock",
-          "in": { "testid": "admin-item-row", "contains": "Bluetooth Speaker" },
+          "in": {
+            "testid": "admin-item-row",
+            "contains": "Bluetooth Speaker"
+          },
           "as": "spk-before"
         }
       ],
@@ -129,29 +268,43 @@
               "do": "click",
               "actor": "shopper",
               "testid": "add-to-cart",
-              "in": { "testid": "item-card", "contains": "Bluetooth Speaker" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              },
               "settleMs": 1500
             },
             {
               "do": "expectNumber",
               "actor": "admin",
               "testid": "admin-stock",
-              "in": { "testid": "admin-item-row", "contains": "Bluetooth Speaker" },
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Bluetooth Speaker"
+              },
               "relativeTo": "spk-before",
               "plus": -1,
               "within": 10000
             },
-            { "do": "wait", "actor": "shopper", "ms": 100000 },
+            {
+              "do": "wait",
+              "actor": "shopper",
+              "ms": 100000
+            },
             {
               "do": "expectNumber",
               "actor": "admin",
               "testid": "admin-stock",
-              "in": { "testid": "admin-item-row", "contains": "Bluetooth Speaker" },
+              "in": {
+                "testid": "admin-item-row",
+                "contains": "Bluetooth Speaker"
+              },
               "relativeTo": "spk-before",
               "plus": 0,
               "within": 30000
             }
-          ]
+          ],
+          "statedBy": "units are never created or destroyed by the\npassage of time"
         }
       ]
     }

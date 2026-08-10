@@ -8,14 +8,24 @@
     {
       "id": 301,
       "name": "A reservation holds stock and then releases it",
-      "actors": ["shopper", "watcher"],
+      "actors": [
+        "shopper",
+        "watcher"
+      ],
       "setup": [
-        { "do": "signUp", "actor": "shopper", "name": "resa" },
+        {
+          "do": "signUp",
+          "actor": "shopper",
+          "name": "resa"
+        },
         {
           "do": "recordNumber",
           "actor": "watcher",
           "testid": "item-stock",
-          "in": { "testid": "item-card", "contains": "Desk Lamp" },
+          "in": {
+            "testid": "item-card",
+            "contains": "Desk Lamp"
+          },
           "as": "lamp-before"
         }
       ],
@@ -29,34 +39,50 @@
               "do": "click",
               "actor": "shopper",
               "testid": "add-to-cart",
-              "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Desk Lamp"
+              },
               "settleMs": 1500
             },
             {
               "do": "expectNumber",
               "actor": "watcher",
               "testid": "item-stock",
-              "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Desk Lamp"
+              },
               "relativeTo": "lamp-before",
               "plus": -1,
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "storefront stock drops immediately, for everyone"
         },
         {
           "id": "301b",
           "desc": "the cart line shows the reservation counting down",
           "points": 1,
           "steps": [
-            { "do": "click", "actor": "shopper", "testid": "cart-toggle", "settleMs": 1200 },
+            {
+              "do": "click",
+              "actor": "shopper",
+              "testid": "cart-toggle",
+              "settleMs": 1200
+            },
             {
               "do": "expect",
               "actor": "shopper",
               "testid": "cart-reservation-timer",
-              "in": { "testid": "cart-item", "contains": "Desk Lamp" },
+              "in": {
+                "testid": "cart-item",
+                "contains": "Desk Lamp"
+              },
               "within": 8000
             }
-          ]
+          ],
+          "statedBy": "the cart line shows the reservation's remaining time, live"
         },
         {
           "id": "301c",
@@ -64,12 +90,19 @@
           "points": 3,
           "note": "waits out the spec's 90-second window plus slack; slow by nature.",
           "steps": [
-            { "do": "wait", "actor": "shopper", "ms": 100000 },
+            {
+              "do": "wait",
+              "actor": "shopper",
+              "ms": 100000
+            },
             {
               "do": "expectNumber",
               "actor": "watcher",
               "testid": "item-stock",
-              "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Desk Lamp"
+              },
               "relativeTo": "lamp-before",
               "plus": 0,
               "within": 30000
@@ -78,25 +111,46 @@
               "do": "expect",
               "actor": "shopper",
               "testid": "cart-item-expired",
-              "in": { "testid": "cart-item", "contains": "Desk Lamp" },
+              "in": {
+                "testid": "cart-item",
+                "contains": "Desk Lamp"
+              },
               "within": 15000
             }
-          ]
+          ],
+          "statedBy": "the reservation expires on its own and the unit returns to\nstorefront stock - visibly, without anyone reloading"
         }
       ]
     },
     {
       "id": 302,
       "name": "A restock scheduled for later applies itself",
-      "actors": ["admin", "watcher"],
+      "actors": [
+        "admin",
+        "watcher"
+      ],
       "setup": [
-        { "do": "signIn", "actor": "admin", "name": "admin", "exact": true, "password": "stackbench-admin-2026" },
-        { "do": "click", "actor": "admin", "testid": "admin-link", "settleMs": 1500 },
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "exact": true,
+          "password": "stackbench-admin-2026"
+        },
+        {
+          "do": "click",
+          "actor": "admin",
+          "testid": "admin-link",
+          "settleMs": 1500
+        },
         {
           "do": "recordNumber",
           "actor": "watcher",
           "testid": "item-stock",
-          "in": { "testid": "item-card", "contains": "Webcam" },
+          "in": {
+            "testid": "item-card",
+            "contains": "Webcam"
+          },
           "as": "webcam-before"
         }
       ],
@@ -106,11 +160,36 @@
           "desc": "a scheduled restock appears as pending with time remaining, and has not yet changed stock",
           "points": 2,
           "steps": [
-            { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Webcam" },
-            { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" },
-            { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "7" },
-            { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "45" },
-            { "do": "click", "actor": "admin", "testid": "schedule-restock-submit", "settleMs": 2000 },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "schedule-restock-item",
+              "text": "Webcam"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "schedule-restock-warehouse",
+              "text": "East"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "schedule-restock-qty",
+              "text": "7"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "schedule-restock-delay",
+              "text": "45"
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "schedule-restock-submit",
+              "settleMs": 2000
+            },
             {
               "do": "expect",
               "actor": "admin",
@@ -122,30 +201,44 @@
               "do": "expect",
               "actor": "admin",
               "testid": "pending-restock-remaining",
-              "in": { "testid": "pending-restock-item", "contains": "Webcam" },
+              "in": {
+                "testid": "pending-restock-item",
+                "contains": "Webcam"
+              },
               "within": 8000
             },
             {
               "do": "expectNumber",
               "actor": "watcher",
               "testid": "item-stock",
-              "in": { "testid": "item-card", "contains": "Webcam" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Webcam"
+              },
               "relativeTo": "webcam-before",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "the pending restocks list shows each one with its remaining time, live"
         },
         {
           "id": "302b",
           "desc": "when the delay elapses it applies itself: stock rises for a viewer who did nothing, and it leaves the pending list",
           "points": 3,
           "steps": [
-            { "do": "wait", "actor": "admin", "ms": 55000 },
+            {
+              "do": "wait",
+              "actor": "admin",
+              "ms": 55000
+            },
             {
               "do": "expectNumber",
               "actor": "watcher",
               "testid": "item-stock",
-              "in": { "testid": "item-card", "contains": "Webcam" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Webcam"
+              },
               "relativeTo": "webcam-before",
               "plus": 7,
               "within": 30000
@@ -158,43 +251,83 @@
               "absent": true,
               "within": 15000
             }
-          ]
+          ],
+          "statedBy": "the entry leaves the pending list, and it appears in the stock ledger\nwith the time it actually ran"
         },
         {
           "id": "302c",
           "desc": "a cancelled restock never applies",
           "points": 2,
           "steps": [
-            { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Keyboard" },
-            { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "West" },
-            { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "9" },
-            { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "40" },
-            { "do": "click", "actor": "admin", "testid": "schedule-restock-submit", "settleMs": 2000 },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "schedule-restock-item",
+              "text": "Keyboard"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "schedule-restock-warehouse",
+              "text": "West"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "schedule-restock-qty",
+              "text": "9"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "schedule-restock-delay",
+              "text": "40"
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "schedule-restock-submit",
+              "settleMs": 2000
+            },
             {
               "do": "recordNumber",
               "actor": "watcher",
               "testid": "item-stock",
-              "in": { "testid": "item-card", "contains": "Keyboard" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Keyboard"
+              },
               "as": "kbd-before"
             },
             {
               "do": "click",
               "actor": "admin",
               "testid": "pending-restock-cancel",
-              "in": { "testid": "pending-restock-item", "contains": "Keyboard" },
+              "in": {
+                "testid": "pending-restock-item",
+                "contains": "Keyboard"
+              },
               "settleMs": 2000
             },
-            { "do": "wait", "actor": "admin", "ms": 50000 },
+            {
+              "do": "wait",
+              "actor": "admin",
+              "ms": 50000
+            },
             {
               "do": "expectNumber",
               "actor": "watcher",
               "testid": "item-stock",
-              "in": { "testid": "item-card", "contains": "Keyboard" },
+              "in": {
+                "testid": "item-card",
+                "contains": "Keyboard"
+              },
               "relativeTo": "kbd-before",
               "plus": 0,
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "an admin can cancel a pending restock before it fires; cancelled restocks\nnever apply"
         }
       ]
     }

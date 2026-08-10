@@ -17,6 +17,8 @@ never really scheduled.
 - If they do not, the reservation **expires on its own** and the unit returns to
   storefront stock — visibly, without anyone reloading or clicking
 - A cart line whose reservation expired is marked expired, not silently removed
+- The cart line shows the reservation's remaining time, live, the way the
+  pending restocks list does
 - Extending is allowed: touching the quantity renews the 90 seconds
 
 ## Scheduled restocks
