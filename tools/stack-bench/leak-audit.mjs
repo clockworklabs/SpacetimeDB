@@ -107,7 +107,19 @@ function pathsFromBash(cmd) {
 // unless the command itself failed; that asymmetry is the point of auditing it.
 function auditTranscript(file, boundary) {
   const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
-  const cwd = boundary ?? sessionCwd(lines);
+  // --app names a HOST directory, but a containerised build worked at /app and
+  // its transcript records container paths. Held against the host boundary,
+  // every legitimate read of the app's own source resolves as an escape and the
+  // run is voided for existing.
+  //
+  // The test is deliberately the exact literal /app — container/run-build.mjs
+  // mounts the app there and nothing else — rather than "cwd is outside the
+  // boundary". The looser rule would have re-broken the case this audit exists
+  // for: the contaminated run cd'd into the harness to run the grader, and
+  // falling back to the session's own shallowest cwd could have adopted the
+  // harness directory as the boundary and reported that run clean.
+  const own = sessionCwd(lines);
+  const cwd = own === '/app' ? own : (boundary ?? own);
   const hits = [], refused = [];
   const pending = new Map();
   let fileTool = 0, bashReads = 0;

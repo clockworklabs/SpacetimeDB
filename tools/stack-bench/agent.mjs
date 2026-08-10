@@ -13,8 +13,9 @@
 // Prints a JSON line: { appDir, costUsd, tokens, durationMs, sessionId, ok }
 
 import { execFileSync, spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync,
+         openSync, readSync, closeSync } from 'node:fs';
+import { join, dirname, resolve, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, levelPrompt, appendix, dbName, moduleName, portsFor, DEFAULT_TRACK } from './tracks.mjs';
@@ -66,6 +67,41 @@ const THINKING_TOKENS = process.env.STACK_BENCH_THINKING ?? null;
 // Pinned to high to match every result collected so far. STACK_BENCH_EFFORT
 // changes it deliberately.
 const EFFORT = process.env.STACK_BENCH_EFFORT ?? 'high';
+
+// Where a build session runs. The container is the default because the harness
+// is not on its filesystem: a fix round once read the scenario file defining
+// the criteria it was failing, then ran grade.mjs, and denying those paths is a
+// blocklist against an agent that only needed grep and sed.
+//
+// STACK_BENCH_CONTAINER=0 (or --no-container) runs on the host instead, which
+// is what every number collected before this change was measured on — useful
+// for reproducing an old result, and the reason this is a default rather than
+// a hard requirement.
+const USE_CONTAINER = (process.env.STACK_BENCH_CONTAINER ?? '1') !== '0';
+const IMAGE = process.env.STACK_BENCH_IMAGE ?? 'stack-bench-build:2.1.226';
+
+// Set once in main(), because the addresses a build is TOLD to use depend on
+// where the build runs.
+//
+// Host services — the databases, the SpacetimeDB host, the lint server — stay on
+// the machine, and `localhost` inside a container is the container. Those
+// addresses are rewritten to Docker's host alias. Dev-server ports are NOT
+// rewritten: those servers start inside the container and are published back
+// out, so the grader on the host still reaches them at localhost.
+let CONTAINER = false;
+let HOST_ADDR = '127.0.0.1';
+const hostUrl = u => (CONTAINER ? u.replace(/127\.0\.0\.1|localhost/g, HOST_ADDR) : u);
+
+// Where the two artifacts under test are mounted. Container paths also keep the
+// repository root out of the prompt, which is what the contaminated run followed
+// to reach the grader.
+const C_PKG = '/deps/bindings-typescript';
+const C_BIN = '/deps/spacetimedb-cli';
+
+// The Linux build of the repository's CLI, which is what a container mounts at
+// C_BIN. Built by container/build-linux-cli.sh; target/release holds the
+// Windows binary and the two must not be confused for each other.
+const LINUX_CLI = join(ROOT, 'container', 'bin', 'spacetimedb-cli');
 
 // What the session ACTUALLY thought, read back from its own transcript.
 //
@@ -119,10 +155,35 @@ function spacetimeVersion(bin) {
   } catch { return { commit: null, raw: 'unknown' }; }
 }
 
+// The version of the CLI a container actually ran, which is a Linux binary the
+// host cannot execute. Reporting the Windows build's version instead would
+// attribute the run to whatever happens to be sitting in target/release — and
+// the two go stale independently, which is exactly how a stale CLI produced a
+// retracted finding here before.
+function linuxSpacetimeVersion() {
+  try {
+    const out = execFileSync('docker',
+      ['run', '--rm', '-v', `${LINUX_CLI}:/deps/spacetimedb-cli:ro`,
+        '--entrypoint', '/deps/spacetimedb-cli', IMAGE, '--version'],
+      { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' } });
+    const commit = out.match(/Commit:\s*([0-9a-f]+)/i)?.[1] ?? null;
+    return { commit, raw: out.trim().split(/\r?\n/).slice(0, 2).join(' ') };
+  } catch { return { commit: null, raw: 'unknown' }; }
+}
+
 function bindingsVersion(pkgDir) {
   try {
     const p = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
     return `${p.name}@${p.version}`;
+  } catch { return 'unknown'; }
+}
+
+// The CLI version inside the build image. Read by running it, not by trusting
+// the tag: the image is pinned by ARG and a tag can be moved.
+function imageCliVersion(image) {
+  try {
+    return execFileSync('docker', ['run', '--rm', '--entrypoint', 'claude', image, '--version'],
+      { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' } }).trim();
   } catch { return 'unknown'; }
 }
 
@@ -176,6 +237,14 @@ function parseArgs(argv) {
       // Comma-separated skill directories to inline, e.g.
       //   --skills typescript-server,typescript-client,cli
       case '--skills': a.skills = argv[++i].split(',').map(x => x.trim()).filter(Boolean); break;
+      case '--no-container': a.noContainer = true; break;
+      case '--container': a.noContainer = false; break;
+      // Container or nothing. For sweeps whose claim is that no build could
+      // reach the grader — there, a silent fallback would be a false claim.
+      case '--require-container': a.requireContainer = true; a.noContainer = false; break;
+      // An API key, when supplied, is used instead of the mounted plan
+      // credential — it keeps a rotating token off the build's filesystem.
+      case '--api-key': a.apiKey = argv[++i]; break;
       case '--print-prompt': a.printPrompt = true; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
@@ -199,9 +268,9 @@ function findClaude() {
 }
 
 const dbUrl = (backend, runIndex, dbPort, track) =>
-  backend === 'postgres'
+  hostUrl(backend === 'postgres'
     ? `postgresql://stackbench:stackbench@localhost:${dbPort}/${dbName(track, runIndex)}`
-    : `mongodb://localhost:${dbPort}/${dbName(track, runIndex)}`;
+    : `mongodb://localhost:${dbPort}/${dbName(track, runIndex)}`);
 
 // Per-run databases must exist before the app connects, or the agent will go
 // looking for one that does — which has led to apps silently using a foreign
@@ -277,9 +346,9 @@ function backendDoc(args, p, track) {
     .replaceAll('<APP_NOUN>', track.title)
     .replaceAll('<MODULE_NAME>', moduleName(track, args.runIndex))
     .replaceAll('<DATABASE_URL>', p.dbPort ? dbUrl(args.backend, args.runIndex, p.dbPort, track) : '')
-    .replaceAll('<STDB_URI>', STDB_URI)
-    .replaceAll('<STDB_BIN>', fwd(STDB_BIN))
-    .replaceAll('<STDB_PACKAGE>', `file:${fwd(LOCAL_PKG)}`);
+    .replaceAll('<STDB_URI>', hostUrl(STDB_URI))
+    .replaceAll('<STDB_BIN>', CONTAINER ? C_BIN : fwd(STDB_BIN))
+    .replaceAll('<STDB_PACKAGE>', `file:${CONTAINER ? C_PKG : fwd(LOCAL_PKG)}`);
 }
 
 // SpacetimeDB is young enough that models have little of it in training data;
@@ -344,18 +413,136 @@ function startLintServer(cmd, appDir) {
   throw new Error('the lint server did not come up; a build without its hook check is not worth running');
 }
 
+// Whether a containerised run can actually work, checked before anything is
+// spent rather than discovered an hour in as a build error the model gets
+// blamed for. Returns a reason instead of throwing, because the default and the
+// explicit request are answered differently — see resolveIsolation.
+//
+// SpacetimeDB needs a CLI the container can execute. `target/release/
+// spacetimedb-cli.exe` is a Windows PE binary, so container/build-linux-cli.sh
+// compiles a Linux one from this same checkout. The benchmark deliberately
+// tests the CLI in THIS repository rather than a published release, so falling
+// back to a `spacetime` from the image would measure different software and
+// report it under the same name.
+function containerBlocker(backend) {
+  try {
+    execFileSync('docker', ['image', 'inspect', IMAGE], { stdio: 'pipe' });
+  } catch {
+    return `image ${IMAGE} is not built — docker build -t ${IMAGE} ${fwd(join(ROOT, 'container'))}`;
+  }
+  if (backend !== 'spacetime') return null;
+  if (!existsSync(LINUX_CLI)) {
+    return `no Linux SpacetimeDB CLI at ${fwd(LINUX_CLI)} — `
+      + 'bash tools/stack-bench/container/build-linux-cli.sh';
+  }
+  // ELF magic, checked rather than assumed: the path existing says nothing
+  // about which platform the file was built for, and a Windows binary copied
+  // there would fail deep inside a build as an unexplained publish error.
+  const magic = Buffer.alloc(4);
+  try {
+    const fd = openSync(LINUX_CLI, 'r');
+    try { readSync(fd, magic, 0, 4, 0); } finally { closeSync(fd); }
+  } catch {
+    return `cannot read the Linux SpacetimeDB CLI at ${fwd(LINUX_CLI)}`;
+  }
+  if (magic.toString('binary') !== '\x7fELF') {
+    return `${fwd(LINUX_CLI)} is not a Linux binary; rebuild it with `
+      + 'container/build-linux-cli.sh';
+  }
+  return null;
+}
+
+// The container is the default, but a default that kills a run it cannot serve
+// is worse than no default. So:
+//
+//   default (or --container / STACK_BENCH_CONTAINER=1) blocked -> run on the
+//   host, say so loudly, and record why in run.json, because the host is what
+//   every number so far was measured on and falling back changes nothing except
+//   the isolation guarantee.
+//
+//   --require-container blocked -> refuse. That is the mode for a sweep whose
+//   whole point is that no build could reach the grader; degrading it silently
+//   would produce numbers claiming an isolation they did not have.
+function decideIsolation(args) {
+  if (!USE_CONTAINER || args.noContainer) return { container: false, reason: 'requested' };
+  const blocker = containerBlocker(args.backend);
+  if (!blocker) return { container: true, reason: null };
+  if (args.requireContainer) {
+    console.error(`agent.mjs: --require-container, but ${blocker}`);
+    process.exit(2);
+  }
+  console.error(`  WARNING: running on the host, not in a container — ${blocker}`);
+  console.error('  the build can reach the harness; the leak audit is the only control');
+  return { container: false, reason: blocker };
+}
+
+// A run's fix rounds must happen wherever its build round happened. Host and
+// container are different filesystems and different CLI builds, so a run that
+// switches partway is two measurements reported as one — and the switch would
+// happen silently, triggered by nothing the run did.
+//
+// So the decision is made once, at `build`, and recorded beside the app rather
+// than inside it (the app directory is what gets copied into source/ and
+// audited). Later modes read it back. An explicit flag always wins, because
+// someone naming a mode on the command line means it.
+//
+// The marker lives outside the app because `build` wipes the app directory.
+// That also means an app with work in it and NO marker is a run that started
+// before this existed: it ran on the host, and adopting the new default
+// underneath it would corrupt the run in progress.
+function resolveIsolation(args) {
+  const explicit = args.noContainer === true || args.noContainer === false
+    || args.requireContainer === true;
+  const marker = resolve(args.app, '..', '.stack-bench-isolation');
+
+  if (args.mode === 'build' || explicit) {
+    const decided = decideIsolation(args);
+    if (!args.printPrompt) {
+      try {
+        mkdirSync(dirname(marker), { recursive: true });
+        writeFileSync(marker, decided.container ? 'container' : 'host');
+      } catch { /* a pin we cannot write is not worth failing a run over */ }
+    }
+    return decided;
+  }
+
+  if (existsSync(marker)) {
+    const pinned = readFileSync(marker, 'utf8').trim() === 'container';
+    if (!pinned) return { container: false, reason: 'pinned to the host by this run\'s build' };
+    const blocker = containerBlocker(args.backend);
+    if (blocker) {
+      console.error(`agent.mjs: this run's build ran in a container, but ${blocker}`);
+      console.error('  continuing on the host would make the fix rounds a different measurement');
+      process.exit(2);
+    }
+    return { container: true, reason: null };
+  }
+
+  // No marker. `.stack-bench-backend` is written by every agent round, so its
+  // presence means a previous round already worked in this directory — one that
+  // predates the pin, and therefore ran on the host. (A seeded upgrade does not
+  // have it: restoreSource copies source directories, not dotfiles, so the
+  // first round of a new run still decides fresh.)
+  if (existsSync(join(args.app, '.stack-bench-backend'))) {
+    console.error('  running on the host: this app was built before isolation was pinned,');
+    console.error('  and switching a run to a container partway changes what is measured');
+    return { container: false, reason: 'run started before isolation was pinned' };
+  }
+  return decideIsolation(args);
+}
+
 function writeLintShim(appDir, port) {
   const sh = join(appDir, 'check-hooks.sh');
   writeFileSync(sh, '#!/usr/bin/env bash\n'
     + '# Verifies the required data-testid hooks resolve in the running app.\n'
-    + `curl -sS --fail-with-body http://127.0.0.1:${port}/lint\n`);
+    + `curl -sS --fail-with-body http://${HOST_ADDR}:${port}/lint\n`);
   return './check-hooks.sh';
 }
 
 function buildPrompt(args, p, track, lintPort) {
   const lint = args.printPrompt ? './check-hooks.sh' : writeLintShim(args.app, lintPort);
   const common = [
-    `The app lives in ${args.app.replace(/\\/g, '/')} — work there.`,
+    `The app lives in ${CONTAINER ? '/app' : args.app.replace(/\\/g, '/')} — work there.`,
     '',
     backendDoc(args, p, track),
   ];
@@ -413,9 +600,18 @@ async function main() {
   const args = parseArgs(process.argv);
   const track = loadTrack(args.track);
   const p = portsFor(track, args.backend, args.runIndex);
+  // Everything the prompt says about addresses and paths depends on where the
+  // build will run, so this is settled before any prompt is rendered — printed
+  // or sent. Resolving it after --print-prompt would make the regression gate
+  // compare a prompt nobody is ever given.
+  const isolation = resolveIsolation(args);
+  CONTAINER = isolation.container;
+  if (CONTAINER) HOST_ADDR = process.env.STACK_BENCH_HOST_ALIAS ?? 'host.docker.internal';
+
   // Renders what the model would be given, without spending anything or
   // touching the app directory. The regression gate for harness changes is a
-  // diff of this against a saved copy.
+  // diff of this against a saved copy — captured with the same isolation flags,
+  // since host and container prompts differ by design.
   if (args.printPrompt) { process.stdout.write(buildPrompt(args, p, track)); return; }
   // Only a build wipes: an upgrade or a fix must find the data the previous
   // level left, which is the whole point of a cumulative ladder.
@@ -467,6 +663,44 @@ async function main() {
     // line at 32767 characters, and the SpacetimeDB prompt carries the skill
     // documents on top of the level spec — it crossed that line as soon as L1
     // grew, and the spawn fails with a bare ENOENT that reads as "CLI missing".
+    // The sandbox settings file is written into the app directory, so it reaches
+    // a container through the same mount at a path that is known either way.
+    const settings = writeSandbox(args.app);
+    const cliEnv = { ...process.env,
+      // Absent unless deliberately overridden — see THINKING_TOKENS above.
+      ...((args.thinking ?? THINKING_TOKENS)
+        ? { MAX_THINKING_TOKENS: String(args.thinking ?? THINKING_TOKENS) }
+        : {}),
+      // A CLI that updates itself mid-series changes the thing under test
+      // between one backend and the next. The sequential harness has frozen
+      // it since April; this one had not.
+      DISABLE_AUTOUPDATER: '1',
+      // Cache reads are ~69% of a run's bill, so cache TTL moves cost more
+      // than anything else measured here. Unpinned, runs were getting the
+      // 1-hour tier: a second run of the same backend within the hour reads
+      // a prefix the first one paid to create and looks cheaper for reasons
+      // that have nothing to do with the database. That is fatal for n=5
+      // parallel trials, which would ALL share one warm prefix, and the
+      // effect differs per backend because the prompts differ in size. The
+      // 5-minute tier makes each trial pay its own way. The sequential
+      // harness has pinned this since April for the same reason.
+      FORCE_PROMPT_CACHING_5M: '1' };
+
+    if (CONTAINER) {
+      // Same CLI arguments, run somewhere the harness does not exist. The
+      // container path is a separate script so that what a build can reach is
+      // stated in one place — see container/run-build.mjs.
+      raw = execFileSync(process.execPath, [
+        join(ROOT, 'container', 'run-build.mjs'),
+        '--app', args.app,
+        '--image', IMAGE,
+        '--effort', EFFORT,
+        '--model', args.model,
+        '--settings', `/app/${basename(settings)}`,
+        '--ports', [p.vite, p.express].filter(Boolean).join(','),
+        ...(args.apiKey ? ['--api-key', args.apiKey] : []),
+      ], { input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: cliEnv });
+    } else {
     raw = execFileSync(findClaude(), [
       '--print', '--output-format', 'json',
       // NOT --dangerously-skip-permissions: that is bypassPermissions, which
@@ -476,7 +710,7 @@ async function main() {
       // refused. The mode must be named explicitly, because the default mode
       // withholds approval from Write and Edit and a build cannot write files.
       '--permission-mode', 'acceptEdits',
-      '--settings', writeSandbox(args.app),
+      '--settings', settings,
       '--model', args.model,
       // Narrows what the session is POINTED at, which is hygiene rather than
       // isolation: `--dangerously-skip-permissions` makes `--add-dir` advisory,
@@ -490,25 +724,8 @@ async function main() {
       '--effort', EFFORT,
       '--add-dir', args.app,
     ], { cwd: args.app, input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
-      env: { ...process.env,
-        // Absent unless deliberately overridden — see THINKING_TOKENS above.
-        ...((args.thinking ?? THINKING_TOKENS)
-          ? { MAX_THINKING_TOKENS: String(args.thinking ?? THINKING_TOKENS) }
-          : {}),
-        // A CLI that updates itself mid-series changes the thing under test
-        // between one backend and the next. The sequential harness has frozen
-        // it since April; this one had not.
-        DISABLE_AUTOUPDATER: '1',
-        // Cache reads are ~69% of a run's bill, so cache TTL moves cost more
-        // than anything else measured here. Unpinned, runs were getting the
-        // 1-hour tier: a second run of the same backend within the hour reads
-        // a prefix the first one paid to create and looks cheaper for reasons
-        // that have nothing to do with the database. That is fatal for n=5
-        // parallel trials, which would ALL share one warm prefix, and the
-        // effect differs per backend because the prompts differ in size. The
-        // 5-minute tier makes each trial pay its own way. The sequential
-        // harness has pinned this since April for the same reason.
-        FORCE_PROMPT_CACHING_5M: '1' } });
+      env: cliEnv });
+    }
   } catch (err) {
     raw = (err.stdout || '').toString();
     spawnError = err.code
@@ -564,9 +781,26 @@ async function main() {
       // cache tier is unknown cannot be compared with one taken later.
       cacheTier: '5m',
       autoUpdater: 'disabled',
-      cliVersion: cliVersion(findClaude()),
+      // In a container the host CLI is not the one that ran, so the version is
+      // read from the image. Reporting the host's would attribute a number to
+      // software that took no part in producing it.
+      cliVersion: CONTAINER ? imageCliVersion(IMAGE) : cliVersion(findClaude()),
+      // Where the session ran. Host and container are different filesystems and
+      // different CLI builds, so two numbers are only comparable when this
+      // matches — it is the field that says whether they are.
+      isolation: CONTAINER
+        ? { mode: 'container', image: IMAGE, hostAlias: HOST_ADDR, fellBackBecause: null }
+        : { mode: 'host', image: null, hostAlias: null,
+            // Null when the host was asked for; a reason when the container was
+            // the intent and could not be honoured. Without this a fallback
+            // looks identical to a deliberate host run.
+            fellBackBecause: isolation.reason === 'requested' ? null : isolation.reason },
+      // Whether the run billed to a key or to the plan. Cost figures from the
+      // two are not the same measurement.
+      auth: (args.apiKey ?? process.env.ANTHROPIC_API_KEY) ? 'api-key' : 'credentials',
       // What is actually being benchmarked, not just what drove it.
-      spacetime: args.backend === 'spacetime' ? spacetimeVersion(STDB_BIN) : null,
+      spacetime: args.backend !== 'spacetime' ? null
+        : CONTAINER ? linuxSpacetimeVersion() : spacetimeVersion(STDB_BIN),
       spacetimeBindings: args.backend === 'spacetime' ? bindingsVersion(LOCAL_PKG) : null,
       database: args.backend === 'postgres' ? containerImage(process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres')
         : args.backend === 'mongodb' ? containerImage(process.env.MONGO_CONTAINER ?? 'stack-bench-mongodb')

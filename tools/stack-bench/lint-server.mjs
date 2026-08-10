@@ -10,7 +10,7 @@
 // shipped with 14 missing hooks after three fix rounds. A server in a process
 // that is not free to serve is not a server.
 //
-// Usage: node lint-server.mjs --port-file <path> --cmd <command>
+// Usage: node lint-server.mjs --port-file <path> --cmd <command> [--host <addr>]
 
 import { createServer } from 'node:http';
 import { execSync } from 'node:child_process';
@@ -40,7 +40,13 @@ server.headersTimeout = 0;
 server.requestTimeout = 0;
 server.timeout = 0;
 
-server.listen(0, '127.0.0.1', () => {
+// Loopback, including for containerised builds. Docker Desktop proxies
+// host.docker.internal through to the host's 127.0.0.1 — measured, because the
+// obvious guess is the opposite and widening the bind to 0.0.0.0 would put the
+// hook server on the LAN for nothing. --host exists for a Docker that does not
+// do that (plain Linux with --add-host=host.docker.internal:host-gateway
+// reaches the host's gateway address, where a loopback listener is invisible).
+server.listen(0, arg('--host') ?? '127.0.0.1', () => {
   // The port file is how the parent learns the port without an async wait: it
   // is written only once the socket is actually accepting.
   writeFileSync(portFile, String(server.address().port));

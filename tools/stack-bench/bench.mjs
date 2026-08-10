@@ -51,6 +51,12 @@ function parseArgs(argv) {
       // Which reference documents to inline (spacetime only). The variable
       // under test in the cost work; passed straight through to agent.mjs.
       case '--skills': a.skills = argv[++i]; break;
+      // Builds run in a container by default; these pin it for the whole run.
+      // --require-container refuses rather than falling back to the host, which
+      // is what a sweep claiming isolation needs.
+      case '--no-container': a.noContainer = true; break;
+      case '--require-container': a.requireContainer = true; break;
+      case '--api-key': a.apiKey = argv[++i]; break;
       // Start from an existing built app (a preserved L1 source) and UPGRADE it,
       // instead of rebuilding the lower level. The correct L1 that scored 51/51
       // is the right foundation for L2 — rebuilding it costs money and adds
@@ -264,7 +270,13 @@ function runAgent(args, mode, level, appDir) {
     '--level', String(level), '--app', appDir, '--track', args.track,
     '--run-index', String(args.runIndex), '--model', args.model,
     '--guidance', args.guidance,
-    ...(args.skills ? ['--skills', args.skills] : [])], { stdio: 'pipe' });
+    ...(args.skills ? ['--skills', args.skills] : []),
+    // Isolation is pinned for the whole run, not per round: a sweep whose fix
+    // rounds ran somewhere other than its build round is two measurements
+    // reported as one.
+    ...(args.noContainer ? ['--no-container'] : []),
+    ...(args.requireContainer ? ['--require-container'] : []),
+    ...(args.apiKey ? ['--api-key', args.apiKey] : [])], { stdio: 'pipe' });
   return JSON.parse(out.trim().split('\n').pop());
 }
 

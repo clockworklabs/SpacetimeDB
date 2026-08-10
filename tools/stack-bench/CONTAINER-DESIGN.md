@@ -33,6 +33,7 @@ Checked on this machine before designing:
 | Does a container see the repo by default? | No — `ls /d` fails; only mounts exist |
 | Do bind mounts work from Git Bash? | Yes, with `MSYS_NO_PATHCONV=1` (paths are otherwise mangled to `C:/Program Files/Git/...`) |
 | Can a container reach the host services? | Yes — SpacetimeDB answered 200 on `host.docker.internal:3210` |
+| …even a listener bound to 127.0.0.1? | Yes — Docker Desktop proxies through to the host's loopback, so the lint server keeps its loopback bind. The obvious guess is the opposite; it was measured. On plain Linux Docker (`--add-host=host.docker.internal:host-gateway`) it would not, and `lint-server.mjs --host` exists for that |
 | Does the CLI work from outside the repo? | Yes — same commit reported (`4aa1fda3`) |
 | Does an app install the local bindings from a copy? | Yes — `spacetimedb@2.8.0` |
 
@@ -68,30 +69,100 @@ by the grader, which stays on the host: publish the track's port window
 (`-p 6473:6473 -p 6573:6573 …`, per backend and run index) so
 `portsFor()` keeps working unchanged.
 
-## What has to change in the harness
+## How the harness uses it
 
-1. `agent.mjs` spawns the CLI with `cwd: args.app`. It would instead spawn
-   `docker run` with the mounts above and the prompt on stdin. The prompt's
-   `<STDB_PACKAGE>` and `<STDB_BIN>` become container paths, which also removes
-   the repo-root disclosure that the contaminated run followed.
-2. Auth: the CLI needs credentials inside the container. Mounting the host
-   `~/.claude` would re-expose the host filesystem shape and the transcripts, so
-   it should be a token passed by environment, scoped to the run.
-3. `reset-db.sh` and `restart-backend.sh` run on the host and address the app by
-   path; the app's files remain visible on the host through the same work dir,
-   so these keep working, but each needs checking rather than assuming.
-4. Transcripts are written inside the container and must land somewhere the
-   host can archive — a mounted transcript directory, kept out of the app dir so
-   a build cannot read its own audit trail.
+The container is the **default**. `--no-container` (or `STACK_BENCH_CONTAINER=0`)
+runs on the host, which is what every number collected before this change was
+measured on.
+
+1. `agent.mjs` spawns `container/run-build.mjs` instead of the CLI, with the same
+   CLI arguments and the prompt still on stdin. `<STDB_PACKAGE>` and `<STDB_BIN>`
+   become `/deps/...`, and the app is named as `/app` — which also removes the
+   repo-root disclosure the contaminated run followed.
+2. Host services are rewritten to `host.docker.internal`: the database URL, the
+   SpacetimeDB URI, and the lint shim. Dev-server ports are *not* rewritten —
+   those servers start inside and are published back out, so the grader on the
+   host still reaches them at `localhost`. Both directions verified: the host
+   read a container server on a published 6573, and the container got 200 from
+   `host.docker.internal:3210`.
+3. Auth: `--api-key`/`ANTHROPIC_API_KEY` when supplied, otherwise the host
+   credential is bind-mounted at `/root/.claude/.credentials.json` so runs bill
+   to the plan. Only that one file is mounted, not `~/.claude`. A key is
+   preferred when present because it keeps a rotating credential off the build's
+   filesystem; the plan credential is the default because plan usage is the
+   requirement.
+4. Transcripts: the host folder `leak-audit --app` already looks in is mounted
+   onto `/root/.claude/projects/-app`, so the audit trail survives `--rm` and
+   `leak-audit.mjs`, `cost-ledger.mjs` and `thinkingVolume()` work with no
+   argument changes. The host's whole `~/.claude/projects` is deliberately not
+   mounted — it holds every other run's transcripts.
+5. `leak-audit.mjs` uses `/app` as the boundary when the transcript says the
+   session ran there. Without this every legitimate read of the app's own source
+   resolves as an escape and each containerised run is voided for existing. The
+   test is the exact literal `/app`, not "cwd outside the boundary": the looser
+   rule could have adopted the harness directory as the boundary for the run
+   that cd'd into it, and reported that run clean.
+6. `reset-db.sh` and `restart-backend.sh` still run on the host and address the
+   app by path; the app's files remain visible on the host through the same work
+   dir.
+
+## SpacetimeDB: the CLI has to be built for Linux
+
+`target/release/spacetimedb-cli.exe` is a Windows PE binary (`MZ`), so mounting
+it into a Linux container mounts something unrunnable. Substituting a
+`spacetime` from the image was rejected — the benchmark publishes modules with
+the CLI built from **this repository**, and a release build is different
+software reported under the same name.
+
+So the CLI is built for Linux from the same checkout:
+
+```bash
+bash tools/stack-bench/container/build-linux-cli.sh
+```
+
+It compiles `spacetimedb-cli` in a `rust:1.93-slim-bookworm` container (the
+toolchain comes from `rust-toolchain.toml`, so the pin moving needs no edit
+here) and writes `container/bin/spacetimedb-cli`. Cargo's target directory is a
+named Docker volume rather than a path in the repo: a Rust build against a
+Windows bind mount is far slower, and it would put a Linux binary next to the
+Windows artifacts in `target/` where picking the wrong one is easy — this
+project has already retracted a finding that came from a stale CLI.
+
+Nothing else is needed inside the container. The TypeScript module build shells
+out only to `tsc` from the module's own `node_modules`; the bundler (rolldown)
+is linked into the CLI.
+
+Two SpacetimeDB-specific mounts follow from this:
+
+- `container/bin/spacetimedb-cli` at `/deps/spacetimedb-cli`, read-only.
+- `<run>/.spacetime-cli-config` at `/root/.config/spacetime`. The CLI keeps the
+  identity and token it mints on first publish there (`$XDG_CONFIG_HOME/spacetime`
+  on Linux, per `crates/paths`). Under `--rm` that would be discarded every
+  round, so a fix round would arrive as a different identity and be refused
+  ownership of the module the build round published. On the host this config
+  persists globally; persisting it per run reproduces that rather than inventing
+  it. It sits beside the app, not inside it — the app directory is what gets
+  copied into `source/` and audited, and a token belongs in neither.
+
+`run.json` records the version of the **Linux** CLI, read by running it in the
+image, because the Windows and Linux builds go stale independently.
+
+If the Linux CLI is missing or is not an ELF binary, a SpacetimeDB run falls
+back to the host, warns, and records `isolation.fellBackBecause` — a fallback
+must not read like a deliberate host run. `--require-container` refuses instead,
+which is what a sweep claiming isolation needs.
 
 ## Cost, honestly
 
-- Auth forwarding is the main risk and the main unknown.
-- It re-baselines: different filesystem, possibly different Node, so L1 and L2
-  numbers taken today are not strictly comparable to numbers taken after. It
-  should therefore land with a planned sweep, not between two halves of one.
+- It re-baselines: different filesystem, and the image pins CLI 2.1.226 against
+  the host's 2.1.222, so numbers taken before and after are not strictly
+  comparable. `run.json` records `isolation` and the image's own CLI version
+  (read by running it, not from the tag) so the two are never silently mixed.
 - Per-run overhead is a container start and a dependency install; the install
   already happens.
+- The build can still read the credential mounted into it. That is a real
+  residual risk, accepted for now because the alternative is not running on the
+  plan.
 
 ## What it does not fix
 
