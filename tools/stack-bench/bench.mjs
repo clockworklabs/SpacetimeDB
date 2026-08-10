@@ -120,6 +120,27 @@ function restoreSource(from, appDir) {
   }
 }
 
+// Did this build read the thing that grades it? Prevention has holes we know
+// about — permission rules do not govern a bash `cat` — so this is checked
+// after EVERY session rather than once at the end. A fix round that read the
+// scenario file and ran grade.mjs was caught only in the closing summary, by
+// which point the rollback grade had already been paid for and the level was
+// unusable anyway. Catching it at the session that did it stops the spend.
+function auditContamination(appDir) {
+  try {
+    const audit = sh('node', [join(ROOT, 'leak-audit.mjs'), '--app', appDir, '--json'], { stdio: 'pipe' });
+    const escapes = JSON.parse(audit).flatMap(r => r.hits ?? []);
+    const serious = escapes.filter(h => /GRADER|CONTRACT|BENCHMARK NOTES|PROMPTS/.test(h.kind));
+    if (!serious.length) return null;
+    return { evidence: [...new Set(serious.map(h => `${h.kind}: ${h.path.split('/').slice(-2).join('/')}`))].slice(0, 8),
+      verdict: 'SCORES NOT USABLE — the build read the harness that grades it.' };
+  } catch (e) {
+    // An audit that could not run is not a pass.
+    return { evidence: [`audit did not run: ${String(e.message).split(/\r?\n/)[0]}`],
+      verdict: 'SCORES NOT USABLE — nothing verified this build stayed inside its directory.' };
+  }
+}
+
 // The agent starts dev servers so grading can reach them, but nothing owned
 // their lifetime — runs were leaving vite and Express processes behind, which is
 // how ports and app directories ended up occupied by finished work.
@@ -373,12 +394,32 @@ async function main() {
   const run = { track: args.track, backend: args.backend, model: args.model,
     guidance: args.guidance, stack: args.guidance === 'minimal' ? 'free' : 'prescribed', levels: [] };
 
+  // A contaminated session ends the run at the session that did it. Continuing
+  // spends money on a level whose score may not be quoted, and the previous
+  // occurrence paid for a fix round, a grade, a rollback and a second grade
+  // before the closing summary mentioned it. Exit 4 so a sweep records it as a
+  // failure rather than a quiet zero.
+  const abortContaminated = (whichSession, contamination) => {
+    run.contaminated = true;
+    run.contamination = { ...contamination, detectedAt: whichSession };
+    console.log(`\n  !! CONTAMINATED at ${whichSession} — this session read the harness that grades it:`);
+    for (const e of contamination.evidence) console.log(`     ${e}`);
+    console.log('     Scores from this run must not be quoted. Stopping now rather than');
+    console.log('     paying to grade a level that cannot be used.');
+    try { writeFileSync(join(args.out, 'run.json'), JSON.stringify(run, null, 2)); } catch { /* best effort */ }
+    try { sh('node', [join(ROOT, 'archive-transcripts.mjs'), '--app', appDir, '--label', runDir], { stdio: 'pipe' }); } catch { /* best effort */ }
+    teardown();
+    process.exit(4);
+  };
+
   for (const level of args.levelList) {
     const t0 = Date.now();
     console.log(`\n================ ${args.backend} — level ${level} ================`);
 
     const firstMode = args.seedFrom ? 'upgrade' : 'build';
     const build = runAgent(args, level === args.levelList[0] ? firstMode : 'upgrade', level, appDir);
+    const buildLeak = auditContamination(appDir);
+    if (buildLeak) abortContaminated(`level ${level} build`, buildLeak);
     // Carry the agent's own record of the setup up to the run. Comparing two
     // scores is only meaningful if the reasoning budget, permission mode and
     // CLI version behind them were the same, and that is not knowable after the
@@ -436,6 +477,12 @@ async function main() {
       console.log(`--- fix round ${fixRounds}/${args.fixRounds} ---`);
       const fix = runAgent(args, 'fix', level, appDir);
       fixCost += fix.costUsd;
+
+      // Check the round that just ran, before paying to grade it. A fix session
+      // that read the scenario file is not going to be redeemed by another
+      // round, and grading it only produces a number nobody may quote.
+      const fixLeak = auditContamination(appDir);
+      if (fixLeak) abortContaminated(`fix round ${fixRounds}`, fixLeak);
       bundle = grade(args, appDir, url, `${args.backend}-l${level}-fix${fixRounds}`, level, track);
 
       // A round that moves nothing usually means the finding is not actionable —
