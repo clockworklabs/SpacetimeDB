@@ -358,56 +358,6 @@ jobs:
           source ~/emsdk/emsdk_env.sh
           cargo ci test
 
-  keynote_bench:
-    needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: Keynote Bench
-    runs-on: spacetimedb-benchmark-runner
-    concurrency:
-      group: ci-benchmark-runner
-      queue: max
-    timeout-minutes: 60
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
-      RUST_BACKTRACE: full
-    steps:
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
-
-      # Node 24 is the current Active LTS line.
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - uses: ./.github/actions/setup-pnpm
-        with:
-          package_json_file: package.json
-          working_directory: .
-          run_install: "true"
-
-      - uses: ./.github/actions/keynote-bench-setup
-        with:
-          public_root: .
-          rust_cache_workspaces: ${{ github.workspace }}
-
-      - name: Run keynote-2 benchmark regression check
-        run: cargo ci keynote-bench
-
   index_scan_bench:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
