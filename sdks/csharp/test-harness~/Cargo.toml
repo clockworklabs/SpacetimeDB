@@ -2,15 +2,15 @@
 name = "sdk-csharp-test-harness"
 version.workspace = true
 edition.workspace = true
-license-file = "LICENSE.txt"
+license-file = "../../../licenses/apache2.txt"
 description = "A C# SDK test harness for SpacetimeDB clients"
 
 [[test]]
 name = "sdk_csharp"
-path = "test-harness~/sdk_csharp.rs"
+path = "sdk_csharp.rs"
 
 [dev-dependencies]
-spacetimedb-testing = { path = "../../crates/testing" }
+spacetimedb-testing = { path = "../../../crates/testing" }
 serial_test.workspace = true
 
 [lints]
