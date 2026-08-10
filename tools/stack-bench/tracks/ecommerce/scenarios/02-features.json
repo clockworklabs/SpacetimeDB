@@ -82,7 +82,8 @@
               "relativeTo": "depth-before",
               "plus": 1
             }
-          ]
+          ],
+          "statedBy": "appears in the fulfilment queue in the order it was placed"
         },
         {
           "id": "1b",
@@ -98,7 +99,8 @@
                 "contains": "Desk Lamp"
               }
             }
-          ]
+          ],
+          "statedBy": "which warehouse each will ship from"
         },
         {
           "id": "1c",
@@ -138,7 +140,8 @@
               "contains": "hipped",
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "it leaves the queue for everyone watching the queue, and the customer's order history shows it as shipped, live"
         },
         {
           "id": "1d",
@@ -155,6 +158,67 @@
               "actor": "customer",
               "testid": "staff-link",
               "absent": true
+            }
+          ],
+          "statedBy": "a staff account signs in like anyone else but sees the fulfilment area instead of the admin area"
+        },
+        {
+          "id": "1e",
+          "desc": "the server refuses a ship request from a customer, not just the button",
+          "points": 2,
+          "statedBy": "staff cannot change prices or create items; admins can do everything staff can",
+          "steps": [
+            {
+              "do": "fill",
+              "actor": "customer",
+              "testid": "search-input",
+              "text": "Webcam",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Webcam"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "customer",
+              "ms": 2500
+            },
+            {
+              "do": "replayAs",
+              "actor": "customer",
+              "from": "staff",
+              "match": "ship",
+              "swap": {
+                "find": "Desk Lamp",
+                "with": "Webcam"
+              },
+              "settleMs": 2500
+            },
+            {
+              "do": "expectReplayRejected",
+              "actor": "customer"
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "customer",
+              "testid": "order-status",
+              "in": {
+                "testid": "order-item",
+                "contains": "Webcam"
+              },
+              "notContains": "hipped"
             }
           ]
         }
@@ -291,7 +355,8 @@
               "relativeTo": "total-before",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "a transfer moves stock, it does not create or destroy it"
         },
         {
           "id": "2b",
@@ -310,7 +375,8 @@
               "plus": 10,
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "the per-warehouse numbers staff and admins see both move at once"
         },
         {
           "id": "2c",
@@ -383,7 +449,8 @@
               "relativeTo": "total-guard",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "a transfer that would leave a warehouse short is refused and changes nothing"
         }
       ]
     },
@@ -521,7 +588,8 @@
               "relativeTo": "stock-before",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "the stock goes back to the warehouse it came from, the order leaves the fulfilment queue, and revenue falls"
         },
         {
           "id": "3b",
@@ -545,7 +613,8 @@
               "contains": "ancel",
               "within": 8000
             }
-          ]
+          ],
+          "statedBy": "a customer can cancel an order that has not shipped"
         },
         {
           "id": "3c",
@@ -647,7 +716,8 @@
               "relativeTo": "kb-before",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "the stock comes back, revenue falls by what was paid for it, and the order shows the item as returned"
         }
       ]
     },
@@ -745,7 +815,8 @@
               },
               "atLeast": 189
             }
-          ]
+          ],
+          "statedBy": "past orders keep the price that was paid"
         },
         {
           "id": "4b",
@@ -771,7 +842,8 @@
               "equals": 1,
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "the storefront shows the new price immediately, to everyone"
         }
       ]
     },
@@ -822,7 +894,8 @@
               "contains": "Webcam",
               "absent": true
             }
-          ]
+          ],
+          "statedBy": "every item whose total is at or below 10 units"
         },
         {
           "id": "5b",
@@ -890,7 +963,8 @@
               "plus": 79.5,
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "for each\ncategory, how many units have been sold and the revenue they earned, live"
         },
         {
           "id": "5c",
@@ -909,7 +983,8 @@
               "contains": "Headphones",
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "the items from categories\nthey have bought from"
         },
         {
           "id": "5d",
@@ -922,7 +997,8 @@
               "testid": "recommended-item",
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "for a signed-out visitor this is simply the best sellers"
         }
       ]
     }

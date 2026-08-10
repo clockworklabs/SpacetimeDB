@@ -121,7 +121,8 @@
               "relativeTo": "after-admin-move",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "an admin can transfer a number of units of an item from one warehouse to another"
         },
         {
           "id": "201b",
@@ -177,12 +178,13 @@
               },
               "atLeast": 77
             }
-          ]
+          ],
+          "statedBy": "an admin can change an item's price"
         },
         {
           "id": "201c",
           "desc": "a customer cannot ship their own order",
-          "points": 2,
+          "points": 0,
           "steps": [
             {
               "do": "pressKey",
@@ -232,7 +234,9 @@
               },
               "notContains": "hipped"
             }
-          ]
+          ],
+          "statedBy": "staff cannot change prices or create items; admins can do everything staff can",
+          "note": "DOM diagnostic: checks the ship control is absent for a customer. The SERVER-side refusal of a customer's ship request is now criterion 1e, which replays a real ship as the customer and requires the server to reject it. Kept at 0 points so hiding the button is never mistaken for enforcement."
         }
       ]
     },
@@ -333,7 +337,8 @@
               "relativeTo": "espresso-total",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "a transfer moves stock, it does not create or destroy it"
         },
         {
           "id": "202b",
@@ -418,7 +423,8 @@
               "relativeTo": "cooktop-before",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "the stock goes back to the warehouse it came from"
         },
         {
           "id": "202c",
@@ -448,7 +454,8 @@
               "relativeTo": "cooktop-before",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "every one of these numbers is the same for every person looking at it"
         },
         {
           "id": "202d",
@@ -536,7 +543,8 @@
               "plus": -1,
               "within": 12000
             }
-          ]
+          ],
+          "statedBy": "a transfer moves stock, it does not create or destroy it"
         }
       ]
     },
@@ -635,7 +643,8 @@
               "plus": 0,
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "revenue always equals the sum of orders that are still standing"
         },
         {
           "id": "203b",
@@ -706,7 +715,8 @@
               "relativeTo": "rev-after-sale",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "changing a price never alters the history, the revenue already recorded"
         }
       ]
     },
@@ -807,7 +817,8 @@
               "contains": "Laptop Stand",
               "absent": true
             }
-          ]
+          ],
+          "statedBy": "a customer can cancel an order that has not shipped"
         }
       ]
     }
