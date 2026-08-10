@@ -28,4 +28,5 @@ packages:
   - 'modules/sdk-test-ts'
   - 'modules/sdk-test-case-conversion-ts'
   - 'docs'
+  - 'codex-plugin/scripts'
 minimumReleaseAge: 1440

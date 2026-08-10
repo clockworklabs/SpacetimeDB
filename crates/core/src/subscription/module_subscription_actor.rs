@@ -794,14 +794,16 @@ impl ModuleSubscriptions {
             )
         };
 
-        let mut subscriptions = self.subscriptions.write();
+        let queries = {
+            let mut subscriptions = self.subscriptions.write();
+            return_on_err!(
+                subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id),
+                // Apparently we ignore errors sending messages.
+                send_err_msg,
+                None
+            )
+        };
 
-        let queries = return_on_err!(
-            subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id),
-            // Apparently we ignore errors sending messages.
-            send_err_msg,
-            None
-        );
         // This is technically a bug, since this could be empty if the client has another duplicate subscription.
         // This whole function should be removed soon, so I don't think we need to fix it.
         let [query] = &*queries else {
