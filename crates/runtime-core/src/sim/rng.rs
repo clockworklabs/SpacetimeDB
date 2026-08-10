@@ -89,6 +89,10 @@ impl GlobalRng {
         (self.next_u64() as usize) % len
     }
 
+    /// Sample a Bernoulli event using one deterministic RNG word.
+    ///
+    /// Probabilities less than or equal to zero never fire, and probabilities
+    /// greater than or equal to one always fire.
     pub fn sample_probability(&self, probability: f64) -> bool {
         probability_sample(self.next_u64(), probability)
     }
@@ -111,6 +115,11 @@ impl GlobalRng {
 
     pub fn buggify_with_prob(&self, probability: f64) -> bool {
         self.is_buggify_enabled() && self.sample_probability(probability)
+    }
+
+    /// Sample `ratio` only when runtime buggify fault injection is enabled.
+    pub fn buggify_ratio(&self, ratio: Ratio) -> bool {
+        self.is_buggify_enabled() && ratio.sample(self)
     }
 
     #[allow(dead_code)]
@@ -189,6 +198,10 @@ impl GlobalRng {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DeterminismLog(Vec<u8>);
 
+/// Convert `value` into a unit interval sample and compare it to `probability`.
+///
+/// The top 53 bits are used because that is the precision available in an
+/// `f64` mantissa, yielding a deterministic value in `[0.0, 1.0)`.
 fn probability_sample(value: u64, probability: f64) -> bool {
     if probability <= 0.0 {
         return false;
@@ -203,4 +216,33 @@ fn probability_sample(value: u64, probability: f64) -> bool {
 
 fn checksum(value: u64) -> u8 {
     value.to_ne_bytes().into_iter().fold(0, |acc, byte| acc ^ byte)
+}
+
+/// Probability represented as an exact rational number.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Ratio {
+    /// Probability numerator.
+    pub numerator: u64,
+    /// Probability denominator; must be non-zero when sampled.
+    pub denominator: u64,
+}
+
+impl Ratio {
+    pub const ZERO: Self = Self {
+        numerator: 0,
+        denominator: 1,
+    };
+
+    pub const fn new(numerator: u64, denominator: u64) -> Self {
+        Self { numerator, denominator }
+    }
+
+    pub fn is_zero(self) -> bool {
+        self.numerator == 0
+    }
+
+    pub fn sample(self, rng: &Rng) -> bool {
+        assert!(self.denominator > 0, "ratio denominator must be non-zero");
+        self.numerator > 0 && rng.next_u64() % self.denominator < self.numerator.min(self.denominator)
+    }
 }

@@ -81,6 +81,23 @@ impl TimeHandle {
         woke
     }
 
+    pub(crate) fn next_timer_deadline(&self) -> Option<Duration> {
+        self.inner.lock().timers.values().map(|timer| timer.deadline).min()
+    }
+
+    pub(crate) fn advance_to(&self, deadline: Duration) -> bool {
+        let wakers = {
+            let mut state = self.inner.lock();
+            if deadline <= state.now {
+                return false;
+            }
+            state.now = deadline;
+            state.take_due_wakers()
+        };
+        wake_all(wakers);
+        true
+    }
+
     /// Register or refresh a timer entry for a sleeping future.
     ///
     /// Sleep futures keep a stable `TimerId` across polls. Re-registering with

@@ -10,10 +10,12 @@ use core::{
 
 use spin::Mutex;
 
-use super::{time::TimeHandle, Rng};
+use crate::sim::executor::task::Abortable;
+
+use super::rng::Ratio;
+use super::{net, time::TimeHandle, Rng};
 
 mod task;
-use task::Abortable;
 pub use task::{AbortHandle, JoinError, JoinHandle};
 
 type Runnable = async_task::Runnable<NodeId>;
@@ -21,17 +23,56 @@ type Runnable = async_task::Runnable<NodeId>;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuntimeConfig {
     pub seed: u64,
+    pub network: Option<net::Options>,
+    pub node_faults: NodeFaultOptions,
 }
 
 impl RuntimeConfig {
-    pub const fn new(seed: u64) -> Self {
-        Self { seed }
+    pub fn new(seed: u64) -> Self {
+        Self {
+            seed,
+            network: None,
+            node_faults: NodeFaultOptions::default(),
+        }
+    }
+
+    pub fn with_network(mut self, network: net::Options) -> Self {
+        self.network = network.into();
+        self
+    }
+
+    pub fn with_node_faults(mut self, node_faults: NodeFaultOptions) -> Self {
+        self.node_faults = node_faults;
+        self
     }
 }
 
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self::new(0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NodeFaultOptions {
+    /// Probability per fault tick that a running node crashes.
+    pub crash_node_probability: Ratio,
+    /// Probability per fault tick that a crashed node restarts.
+    pub restart_node_probability: Ratio,
+    /// Probability per fault tick that a running node pauses.
+    pub pause_node_probability: Ratio,
+    /// Probability per fault tick that a paused node resumes.
+    pub unpause_node_probability: Ratio,
+}
+
+impl Default for NodeFaultOptions {
+    fn default() -> Self {
+        Self {
+            crash_node_probability: Ratio::ZERO,
+            restart_node_probability: Ratio::ZERO,
+            pause_node_probability: Ratio::ZERO,
+            unpause_node_probability: Ratio::ZERO,
+        }
     }
 }
 
@@ -94,6 +135,16 @@ impl Node {
         self.config.name.as_deref()
     }
 
+    /// Return the simulated network endpoint for this node.
+    pub fn net(&self) -> Option<net::NodeNetwork> {
+        self.handle.network().map(|net| net.on_node(self.id))
+    }
+
+    /// Crash this node and invalidate all tasks spawned before the crash.
+    pub fn crash(&self) {
+        self.handle.crash_node(self.id);
+    }
+
     /// Pause scheduling for this node.
     pub fn pause(&self) {
         self.handle.pause(self.id);
@@ -102,6 +153,11 @@ impl Node {
     /// Resume scheduling for this node.
     pub fn resume(&self) {
         self.handle.resume(self.id);
+    }
+
+    /// Restart this node and invalidate all tasks spawned before the restart.
+    pub fn restart(&self) {
+        self.handle.restart_node(self.id);
     }
 
     /// Spawn a `Send` future onto this simulated node.
@@ -251,6 +307,11 @@ pub struct Handle {
 }
 
 impl Handle {
+    /// Return the shared simulated network for this runtime.
+    pub fn network(&self) -> Option<net::Network> {
+        self.executor.net.clone()
+    }
+
     /// Create a new simulated node owned by this runtime.
     pub fn create_node(&self) -> NodeBuilder {
         NodeBuilder {
@@ -259,9 +320,13 @@ impl Handle {
         }
     }
 
+    fn node_config(&self, node: NodeId) -> Arc<NodeConfig> {
+        self.executor.node_config(node)
+    }
+
     fn build_node(&self, config: NodeConfig) -> Node {
-        let id = self.executor.create_node(config.clone());
-        let config = self.executor.node_config(id);
+        let id = self.executor.create_node(config);
+        let config = self.node_config(id);
         Node {
             id,
             handle: self.clone(),
@@ -274,9 +339,19 @@ impl Handle {
         self.executor.pause(node);
     }
 
+    /// Crash a node until it is restarted.
+    pub fn crash_node(&self, node: NodeId) {
+        self.executor.crash_node(node);
+    }
+
     /// Resume scheduling for a node and requeue any buffered tasks for it.
     pub fn resume(&self, node: NodeId) {
         self.executor.resume(node);
+    }
+
+    /// Restart a node and invalidate all tasks spawned before the restart.
+    pub fn restart_node(&self, node: NodeId) {
+        self.executor.restart_node(node);
     }
 
     /// Spawn a `Send` future onto a specific simulated node.
@@ -323,6 +398,15 @@ impl Handle {
         self.executor.time.timeout(duration, future).await
     }
 
+    /// Yield this task back to the simulation scheduler once.
+    pub async fn yield_now(&self) {
+        yield_now().await
+    }
+
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        self.executor.block_on(future)
+    }
+
     pub fn enable_buggify(&self) {
         self.executor.enable_buggify();
     }
@@ -357,9 +441,11 @@ struct Executor {
     queue: Receiver,
     sender: Sender,
     nodes: spin::Mutex<BTreeMap<NodeId, Arc<NodeRecord>>>,
+    node_faults: NodeFaultOptions,
     next_node: AtomicU64,
     rng: Rng,
     time: TimeHandle,
+    net: Option<net::Network>,
 }
 
 impl Executor {
@@ -367,14 +453,27 @@ impl Executor {
     fn new(config: RuntimeConfig) -> Self {
         let queue = Queue::new();
         let mut nodes = BTreeMap::new();
-        nodes.insert(NodeId::MAIN, Arc::new(NodeRecord::default()));
+        let time = TimeHandle::new();
+        let rng = Rng::new(config.seed);
+
+        nodes.insert(NodeId::MAIN, Arc::new(NodeRecord::new(NodeConfig::default())));
+
+        let net = config
+            .network
+            .map(|config| net::Network::new(time.clone(), rng.clone(), config));
+        if let Some(net) = &net {
+            net.register_node(NodeId::MAIN);
+        }
+
         Self {
             queue: queue.receiver(),
             sender: queue.sender(),
             nodes: spin::Mutex::new(nodes),
+            node_faults: config.node_faults,
             next_node: AtomicU64::new(1),
-            rng: Rng::new(config.seed),
-            time: TimeHandle::new(),
+            rng,
+            time,
+            net,
         }
     }
 
@@ -404,33 +503,60 @@ impl Executor {
 
     fn create_node(&self, config: NodeConfig) -> NodeId {
         let id = NodeId(self.next_node.fetch_add(1, Ordering::Relaxed));
-        self.nodes.lock().insert(
-            id,
-            Arc::new(NodeRecord {
-                config: Arc::new(config),
-                state: NodeState::default(),
-            }),
-        );
-        id
-    }
+        self.nodes.lock().insert(id, Arc::new(NodeRecord::new(config)));
 
-    fn node_config(&self, node: NodeId) -> Arc<NodeConfig> {
-        self.node_record(node).config.clone()
+        if let Some(net) = &self.net {
+            net.register_node(id);
+        }
+
+        id
     }
 
     /// Mark a node as paused so newly selected runnables are buffered.
     fn pause(&self, node: NodeId) {
-        self.node_record(node).state.paused.store(true, Ordering::Relaxed);
+        assert_ne!(node, NodeId::MAIN, "cannot pause the main simulation node");
+
+        self.node_state(node).paused.store(true, Ordering::Relaxed);
+        if let Some(net) = &self.net {
+            net.isolate_node(node);
+        }
+    }
+
+    /// Mark a node as crashed until it is restarted.
+    fn crash_node(&self, node: NodeId) {
+        assert_ne!(node, NodeId::MAIN, "cannot crash the main simulation node");
+
+        let state = self.node_state(node);
+        state.crashed.store(true, Ordering::Release);
+        state.paused.store(false, Ordering::Release);
+        state.paused_queue.lock().clear();
+        if let Some(net) = &self.net {
+            net.isolate_node(node);
+        }
     }
 
     /// Mark a node as runnable again and requeue any buffered tasks for it.
     fn resume(&self, node: NodeId) {
-        let record = self.node_record(node);
-        record.state.paused.store(false, Ordering::Relaxed);
-
-        let mut paused = record.state.paused_queue.lock();
-        for runnable in paused.drain(..) {
+        let state = self.node_state(node);
+        state.paused.store(false, Ordering::Relaxed);
+        let runnables = core::mem::take(&mut *state.paused_queue.lock());
+        for runnable in runnables {
             self.sender.send(runnable);
+        }
+        if let Some(net) = &self.net {
+            net.unisolate_node(node);
+        }
+    }
+
+    /// Mark a crashed node as running again.
+    fn restart_node(&self, node: NodeId) {
+        assert_ne!(node, NodeId::MAIN, "cannot restart the main simulation node");
+
+        let state = self.node_state(node);
+        state.crashed.store(false, Ordering::Release);
+        state.paused.store(false, Ordering::Release);
+        if let Some(net) = &self.net {
+            net.unisolate_node(node);
         }
     }
 
@@ -490,20 +616,107 @@ impl Executor {
         runnable.schedule();
 
         loop {
-            self.run_all_ready();
-            if task.is_finished() {
-                let waker = Waker::noop();
-                return match Pin::new(&mut task).poll(&mut Context::from_waker(waker)) {
-                    Poll::Ready(output) => output,
-                    Poll::Pending => unreachable!("task.is_finished() was true"),
-                };
+            loop {
+                self.run_all_ready();
+                if let Some(output) = poll_finished_task(&mut task) {
+                    return output;
+                }
+
+                let node_progress = self.node_fault_ticks();
+                let network_progress = self.net_tick();
+                if !node_progress && !network_progress {
+                    break;
+                }
             }
 
-            if self.time.wake_next_timer() {
+            if self.advance_to_next_network_deadline() || self.time.wake_next_timer() {
                 continue;
             }
 
             panic!("no runnable tasks; all simulated tasks are blocked");
+        }
+    }
+
+    fn net_tick(&self) -> bool {
+        if let Some(net) = &self.net {
+            net.tick()
+        } else {
+            false
+        }
+    }
+
+    fn next_network_delivery_deadline(&self) -> Option<Duration> {
+        self.net.as_ref().and_then(net::Network::next_delivery_deadline)
+    }
+
+    fn advance_to_next_network_deadline(&self) -> bool {
+        let Some(network_deadline) = self.next_network_delivery_deadline() else {
+            return false;
+        };
+
+        if let Some(timer_deadline) = self.time.next_timer_deadline()
+            && network_deadline > timer_deadline
+        {
+            return false;
+        }
+
+        self.time.advance_to(network_deadline)
+    }
+
+    fn node_fault_ticks(&self) -> bool {
+        let options = self.node_faults;
+
+        let nodes = {
+            let nodes = self.nodes.lock();
+            nodes
+                .keys()
+                .copied()
+                .filter(|node| *node != NodeId::MAIN)
+                .collect::<Vec<_>>()
+        };
+
+        for node in nodes {
+            if self.node_crash_tick(node, options) || self.node_pause_tick(node, options) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn node_crash_tick(&self, node: NodeId, options: NodeFaultOptions) -> bool {
+        let record = self.node_state(node);
+        if record.crashed.load(Ordering::Acquire) {
+            if self.rng.buggify_ratio(options.restart_node_probability) {
+                self.restart_node(node);
+                return true;
+            }
+        } else if !record.paused.load(Ordering::Relaxed) && self.rng.buggify_ratio(options.crash_node_probability) {
+            self.crash_node(node);
+            return true;
+        }
+
+        false
+    }
+
+    fn node_pause_tick(&self, node: NodeId, options: NodeFaultOptions) -> bool {
+        let record = self.node_state(node);
+        if record.crashed.load(Ordering::Acquire) {
+            return false;
+        }
+
+        if record.paused.load(Ordering::Relaxed) {
+            if self.rng.buggify_ratio(options.unpause_node_probability) {
+                self.resume(node);
+                true
+            } else {
+                false
+            }
+        } else if self.rng.buggify_ratio(options.pause_node_probability) {
+            self.pause(node);
+            true
+        } else {
+            false
         }
     }
 
@@ -514,13 +727,16 @@ impl Executor {
     fn run_all_ready(&self) {
         while let Some(runnable) = self.queue.try_recv_random(&self.rng) {
             let node = *runnable.metadata();
-            let record = self.node_record(node);
-            if record.state.paused.load(Ordering::Relaxed) {
-                record.state.paused_queue.lock().push(runnable);
+            let state = self.node_state(node);
+            if state.is_crashed() {
+                continue;
+            }
+            if state.is_paused() {
+                state.paused_queue.lock().push(runnable);
                 continue;
             }
             runnable.run();
-            // Advance virtual time by 100ns–1μs per task poll to model execution cost.
+            // Advance virtual time by 100ns-1us per task poll to model execution cost.
             // Using the runtime RNG keeps overhead deterministic by seed.
             let nanos = 100 + (self.rng.next_u64() % 901);
             self.time.advance(Duration::from_nanos(nanos));
@@ -536,23 +752,72 @@ impl Executor {
             .unwrap_or_else(|| panic!("unknown simulated node {node}"))
     }
 
+    fn node_config(&self, node: NodeId) -> Arc<NodeConfig> {
+        self.node_record(node).config.clone()
+    }
+
+    fn node_state(&self, node: NodeId) -> Arc<NodeState> {
+        self.node_record(node).state.clone()
+    }
+
     fn assert_known_node(&self, node: NodeId) {
-        let _ = self.node_record(node);
+        let _ = self.node_state(node);
     }
 }
 
-/// One simulated node's immutable metadata plus scheduler state.
-#[derive(Clone, Default)]
+fn poll_finished_task<T>(task: &mut async_task::Task<T, NodeId>) -> Option<T> {
+    if !task.is_finished() {
+        return None;
+    }
+
+    let waker = Waker::noop();
+    match Pin::new(task).poll(&mut Context::from_waker(waker)) {
+        Poll::Ready(output) => Some(output),
+        Poll::Pending => unreachable!("task.is_finished() was true"),
+    }
+}
+
+/// Complete executor record for a simulated node.
 struct NodeRecord {
     config: Arc<NodeConfig>,
-    state: NodeState,
+    state: Arc<NodeState>,
+}
+
+impl NodeRecord {
+    fn new(config: NodeConfig) -> Self {
+        Self {
+            config: Arc::new(config),
+            state: Arc::new(NodeState::default()),
+        }
+    }
 }
 
 /// Per-node scheduler state shared by tasks assigned to that node.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct NodeState {
     paused: Arc<AtomicBool>,
+    crashed: Arc<AtomicBool>,
     paused_queue: Arc<Mutex<Vec<Runnable>>>,
+}
+
+impl Default for NodeState {
+    fn default() -> Self {
+        Self {
+            paused: Arc::new(AtomicBool::new(false)),
+            crashed: Arc::new(AtomicBool::new(false)),
+            paused_queue: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+impl NodeState {
+    fn is_crashed(&self) -> bool {
+        self.crashed.load(Ordering::Relaxed)
+    }
+
+    fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Relaxed)
+    }
 }
 
 /// Yield back to the scheduler once.
