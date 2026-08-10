@@ -195,3 +195,50 @@ than a missing capability.
 
 Postgres systems result on this build: 901a pass, 901b pass, 901c FAIL,
 901d pass, 902a pass.
+
+---
+## 2026-08-09 — grading audit: what each L1 invariant actually proves
+
+Re-graded the preserved PostgreSQL build with the instrumented grader, which now
+records per criterion whether an authorization check was `verified` (a hostile
+request was issued and refused), `structural` (the write carries no
+client-supplied identity, so there is nothing to forge), or `unverified` (the
+replay could not be attempted; the pass rests on DOM assertions).
+
+Of 13 L1 invariant criteria on PostgreSQL:
+
+| depth | criteria | what a pass means |
+|---|---|---|
+| structural | 102a | the write path carries no client identity — the server must derive it |
+| unverified | 101a, 103a, 104a, 109a | the hostile request could not be issued; DOM assertions only |
+| DOM assertion | the remaining 8 | observed state (books balance, isolation, persistence) |
+
+**Zero criteria are `verified` on this build.** Not one authorization invariant
+actually issued a request the server then refused. That is not necessarily the
+app being unsafe — for 104a (price integrity) and 102a it is the opposite: the
+app is safe *because* it puts no price and no caller identity in the request, so
+there is nothing to tamper with, and the replay correctly finds nothing to
+retarget. Safety and "unverified" are the same fact here.
+
+But it does mean the L1 invariant score is weaker evidence than 19/19 suggests.
+It confirms the app behaves correctly through its own interface; it does not, on
+this build, confirm the server refuses a request the interface would never send.
+
+**What this changes:**
+
+1. 104a and 109a now also assert `expectReplayRejected`, so when a replay CAN be
+   issued the server's refusal is required, not just the resulting number. On
+   this build the replay is still inconclusive (nothing to retarget), so the
+   assertion is a no-op here and becomes real on an app that does carry the
+   field.
+2. The verified/structural/unverified label is now in every criterion record.
+   A criterion record still does not copy the ctx-level reason string, so the
+   label is trustworthy but its one-line explanation is not yet persisted —
+   fix before leaning on the detail text.
+
+**The honest headline:** L1 = 51/51 on all three stacks, and it means "builds a
+correct app against a stated spec." It does NOT yet mean "the servers refuse
+hostile requests," because on the reference build the hostile requests could not
+even be constructed. Whether that is strength (nothing to attack) or a gap in
+the test (we never confirmed refusal) differs per criterion and is now visible
+per criterion instead of hidden inside a number.

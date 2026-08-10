@@ -285,6 +285,10 @@
               "settleMs": 2500
             },
             {
+              "do": "expectReplayRejected",
+              "actor": "buyer"
+            },
+            {
               "do": "click",
               "actor": "buyer",
               "testid": "orders-toggle"
@@ -785,6 +789,10 @@
               "from": "owner",
               "match": "cart",
               "settleMs": 2500
+            },
+            {
+              "do": "expectReplayRejected",
+              "actor": "stranger"
             },
             {
               "do": "click",
