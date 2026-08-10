@@ -51,6 +51,11 @@ function parseArgs(argv) {
       // Which reference documents to inline (spacetime only). The variable
       // under test in the cost work; passed straight through to agent.mjs.
       case '--skills': a.skills = argv[++i]; break;
+      // Start from an existing built app (a preserved L1 source) and UPGRADE it,
+      // instead of rebuilding the lower level. The correct L1 that scored 51/51
+      // is the right foundation for L2 — rebuilding it costs money and adds
+      // variance that confounds the L1->L2 comparison.
+      case '--seed-from': a.seedFrom = argv[++i]; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
   }
@@ -349,6 +354,21 @@ async function main() {
   process.on('SIGINT', () => { console.log('interrupted — stopping servers'); teardown(); process.exit(130); });
   process.on('SIGTERM', () => { teardown(); process.exit(143); });
 
+  // Seed the work dir from an existing app, so the first level upgrades it
+  // rather than building from nothing. Source only (SOURCE_DIRS); the upgrade
+  // session installs its own dependencies exactly as a developer checking out
+  // the L1 code would.
+  if (args.seedFrom) {
+    const from = resolve(args.seedFrom);
+    if (!existsSync(from)) { console.error(`--seed-from path does not exist: ${from}`); process.exit(2); }
+    mkdirSync(appDir, { recursive: true });
+    for (const rel of SOURCE_DIRS) {
+      const src = join(from, rel);
+      if (existsSync(src)) cpSync(src, join(appDir, rel), { recursive: true });
+    }
+    console.log(`  seeded from ${from} — level ${args.levelList[0]} will UPGRADE it, not rebuild`);
+  }
+
   const started = Date.now();
   const run = { track: args.track, backend: args.backend, model: args.model,
     guidance: args.guidance, stack: args.guidance === 'minimal' ? 'free' : 'prescribed', levels: [] };
@@ -357,7 +377,8 @@ async function main() {
     const t0 = Date.now();
     console.log(`\n================ ${args.backend} — level ${level} ================`);
 
-    const build = runAgent(args, level === args.levelList[0] ? 'build' : 'upgrade', level, appDir);
+    const firstMode = args.seedFrom ? 'upgrade' : 'build';
+    const build = runAgent(args, level === args.levelList[0] ? firstMode : 'upgrade', level, appDir);
     // Carry the agent's own record of the setup up to the run. Comparing two
     // scores is only meaningful if the reasoning budget, permission mode and
     // CLI version behind them were the same, and that is not knowable after the
@@ -454,6 +475,11 @@ async function main() {
       graded,
       score: graded ? bundle.totals.score : null,
       max: graded ? bundle.totals.max : null,
+      // Whether the guarantees earned at earlier levels still hold at this one —
+      // the whole point of growing the app level by level. It reached the
+      // console and the bundle but not run.json, so the thesis metric was
+      // missing from the durable record.
+      regression: bundle?.totals?.regression ?? null,
       firstBuild,
       contractPass: bundle?.totals?.contractPass ?? null,
       code: bundle?.code ?? null,
