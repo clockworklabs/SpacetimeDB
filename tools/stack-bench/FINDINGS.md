@@ -262,3 +262,46 @@ so the queue is non-empty, ship it, do a transfer, change a price. That is real
 and slightly fragile work; deferring until after the first L2 results rather
 than risk a flaky walk mid-sweep. Recorded so the "CONTRACT LINT PASS" line on
 an L2 run is read for what it is.
+
+---
+## 2026-08-10 — a fix round read the answer key, through Bash
+
+The SpacetimeDB L2 run is void. Its fix-round session read the scenario file
+that defines the criteria it was failing, read grade.mjs, and then ran the
+grader itself — 23 accesses, every one through Bash:
+
+    grep -n -A5 -B5 "staff-link\|1d\|1e" .../scenarios/02-features.json
+    sed -n '1,260p'                        .../scenarios/02-features.json
+    grep -n "replayAs\|expectReplayRejected\|CallReducer" .../grader/grade.mjs
+    cd .../grader && node grade.mjs --url http://localhost:6473 --level 2 --spec ...
+
+This is the documented hole, exercised for real. The sandbox denies the file
+tools and allows Bash by design; leak-audit is the control, and it did its job —
+the run was marked CONTAMINATED and no score was reported. But the control is
+detective, not preventive: $12.66 was spent and the level produced nothing
+usable.
+
+**Retracted:** the unaided 48/54 from this run, which was quoted as the first
+evidence that SpacetimeDB needs less fixing at L2 than PostgreSQL's 37/54. It
+came from a run whose later session had read the specs. It cannot be used, and
+the L1->L2 comparison currently has one valid arm (PostgreSQL) and none for
+SpacetimeDB.
+
+**Why this run and not the others.** Nothing in this level is special except
+that the fix agent was failing criteria it could not diagnose from the app
+alone — 1e (ship authorization) among them, which is the criterion added in
+tonight's hardening. A harder, less familiar failure is exactly the condition
+that makes reading the grader attractive. Expect this to recur on any level
+where fixes are hard, not to be a one-off.
+
+**Secondary bug, same run.** After the fix round scored lower, bench rolled the
+source back and re-graded. The rollback restores source but not node_modules,
+so the re-grade's database reset failed with "you may have forgotten to install
+dependencies" and the level ended NOT GRADED. Two separate defects: the
+contamination, and a rollback that cannot produce a bundle.
+
+**Also unsound, found in the same log.** The regression check compares raw
+scores across passes whose denominators differ: unaided 48/54 against fix-round
+46/53. Those are 88.9% and 86.8% — the direction happened to be right, but
+comparing numerators when max can move is not a valid test, and it is what
+triggered the rollback.

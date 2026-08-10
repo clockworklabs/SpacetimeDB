@@ -1050,3 +1050,77 @@ sentence.
 **Honest scale.** These account for perhaps $1.0-1.5 of a $4.01 gap. The rest is
 diffuse — heavier reasoning throughout rather than one identifiable event — so
 nothing here should be presented as closing the gap on its own.
+## 2026-08-10 03:39 — spacetime-ecom-run0 (ecommerce) L2
+
+> ⚠️ **This run was contaminated** — the build read the harness that grades it.
+> The friction below still happened, but it is a floor rather than a measurement:
+> a build with the answers fights the SDK less than one without them.
+
+**Result:** 0/0, $12.655, 1 fix round(s)
+
+**Tokens** (from the CLI's own usage, 4 session(s), 643 turns)
+
+| | tokens | share of input |
+|---|---:|---:|
+| cache read | 91,209,038 | 98% |
+| cache write | 1,758,199 | 2% |
+| fresh input | 1,286 | 0% |
+| output | 670,420 | — |
+
+**Where it got stuck** — 21 build failure(s) of 370 tool calls (plus 9 refused by the sandbox — harness, not SpacetimeDB)
+
+| times | error |
+|---:|---|
+| 1 | TS2345: Argument of type '…' is not assignable to parameter of type '…'. |
+| 1 | TS2345: Argument of type '…' is not assignable to parameter of type '…' |
+| 1 | TS2339: Property '…' does not exist on type 'readonly { id: bigint; itemId: bigint; createdAt: Timestamp; accountId: bigint; |
+| 1 | Error: Publishing aborted by user |
+| 1 | TS1005: '…' expected. |
+| 1 | Error: Aggregate expressions must have column aliases |
+| 1 | <tool_use_error>Blocked: sleep 30 followed by: cd "C:/Users/bradl/AppData/Local/Temp/stack-bench-runs/spacetime-ecom-run |
+| 1 | Error: Cannot find module 'playwright' |
+
+By SpacetimeDB surface: server API (schema / reducers) (13), other (6), generated bindings (1), client SDK (subscriptions) (1)
+
+**Re-read** — 8 read(s) of generated bindings
+
+- 6x `src/components/ItemDetail.tsx`
+- 6x `spacetimedb/src/index.ts`
+- 3x `client/src/App.tsx`
+- 3x `spacetimedb/src/schema.ts`
+- 3x `client/src/App.tsx`
+- 2x `spacetimedb/src/index.ts`
+
+---
+**Behavioural review** — 7 finding(s) with verified evidence
+
+- **View return-type builder rejects composite field builders with an unhelpful generic error** *(server API)*
+  - cost: Two failed publish attempts; had to grep and read the SDK's internal views.ts source to understand the ViewReturnTypeBuilder constraint before fixing the view definition
+  - evidence: `src/index.ts(271,3): error TS2345: Argument of type 'F64Builder' is not assignable to parameter of type 'ViewReturnTypeBuilder'. Type 'F64Builder' is not assignable to type 'TypeBuilder<object | undefined, OptionAlgebrai`
+  - possible fix: Emit a targeted diagnostic (e.g. 'view return type must be wrapped in row()/table()') instead of a deep structural type-mismatch error, or document the ViewReturnTypeBuilder contract next to the view() API.
+- **Generated table/view row arrays are readonly with no documented heads-up** *(generated bindings)*
+  - cost: Type-check failed across multiple call sites (push/property-access on generated row arrays) requiring a rewrite of client-side types.ts and several follow-up edits
+  - evidence: `src/App.tsx(83,12): error TS2339: Property 'push' does not exist on type 'readonly { id: bigint; itemId: bigint; createdAt: Timestamp; accountId: bigint; rating: number; comment: string; }[]'.`
+  - possible fix: Call out in the generated-bindings docs/comments that table/view rows are readonly arrays, or provide a typed helper for deriving mutable view-models from them.
+- **spacetime sql rejects ORDER BY / LIMIT with no upfront documentation of the supported subset** *(CLI/publish)*
+  - cost: A verification query failed outright, forcing the model to fall back to pulling the whole table and sorting/limiting client-side
+  - evidence: `Error: Unsupported: SELECT * FROM customer_order ORDER BY id DESC LIMIT 5`
+  - possible fix: Document the supported SQL subset (or the specific unsupported clauses) in `spacetime sql --help` / docs so agents don't have to trial-and-error discover it.
+- **spacetime sql rejects mixed wildcard projections (t.*, other_col)** *(CLI/publish)*
+  - cost: A second query failed immediately after the ORDER BY failure in the same debugging pass, requiring another manual rewrite to explicit column lists
+  - evidence: `Error: Mixed wildcard projections are not supported`
+  - possible fix: Support mixed wildcard projections (common in joins) or surface this restriction in the sql command's help text / error message with a suggested rewrite.
+- **Aggregate SQL queries require column aliases with no guidance in the error** *(CLI/publish)*
+  - cost: One failed sql invocation before the model learned to add an alias to the aggregate expression
+  - evidence: `Error: Aggregate expressions must have column aliases`
+  - possible fix: Have the error message name the offending expression and suggest the alias syntax, e.g. 'use SUM(x) AS total'.
+- **TypeScript SDK client/react hooks are undocumented, forcing repeated source-diving** *(docs)*
+  - cost: In nearly every session the model had to grep/read internal SDK source files (useTable.ts, SpacetimeDBProvider.ts, connection_state.ts, errors.ts, reducers.ts) to learn the actual client API surface instead of consulting docs
+  - evidence: `SAYS: All matches expectations. Now let's check the 'spacetimedb/react' hooks package to confirm 'useTable'/'useSpacetimeDB' API.`
+  - possible fix: Publish reference docs for the react hooks package (useTable, useSpacetimeDB, SpacetimeDBProvider) and the reducer error/rejection contract (SenderError) so this isn't only discoverable by reading source.
+- **init reducer silently doesn't re-run on republish, with no CLI warning** *(CLI/publish)*
+  - cost: New seed data (categories, staff account) silently failed to appear after a schema-adding publish; diagnosing this consumed a debugging cycle and the eventual fix required a full --delete-data wipe of accumulated state
+  - evidence: `I found the issue — categories and the staff account weren't seeded because 'init' only runs on a database's first creation, and this database already existed from Level 1.`
+  - possible fix: Have `spacetime publish` print an explicit note when init is skipped because the database already exists, so it's not mistaken for a bug in the module's seed logic.
+
+---
