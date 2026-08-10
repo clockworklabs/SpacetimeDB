@@ -174,6 +174,21 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   isDisconnectRequested = false;
 
   /**
+   * Whether the initial connection handshake completed, i.e. the
+   * `InitialConnection` message was received and `onConnect` was invoked.
+   * Used to route websocket errors on an established connection to the
+   * `disconnect` path instead of `connectError`.
+   */
+  #everConnected = false;
+
+  /**
+   * The websocket error that ended an established connection, if any.
+   * Passed to the `disconnect` emit so `onDisconnect` callbacks receive
+   * the error that caused the disconnect, per their documented contract.
+   */
+  #connectionError?: ErrorEvent = undefined;
+
+  /**
    * Whether the underlying websocket has entered `CLOSING` (2) or `CLOSED`
    * (3). This becomes true even when the browser never delivered an
    * `onclose` event, for example if the socket was torn down while the tab was
@@ -378,10 +393,19 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
         this.ws.onclose = () => {
           this.isActive = false;
-          this.#emitter.emit('disconnect', this);
+          this.#emitter.emit('disconnect', this, this.#connectionError);
         };
         this.ws.onerror = (e: ErrorEvent) => {
           this.isActive = false;
+          if (this.#everConnected) {
+            // An error on an established connection is not a connect
+            // failure. Record it and close the socket so the `onclose` ->
+            // 'disconnect' path handles teardown, per the documented
+            // `onDisconnect` contract.
+            this.#connectionError = e;
+            this.ws?.close();
+            return;
+          }
           this.#emitter.emit('connectError', this, e);
         };
         this.ws.onopen = this.#handleOnOpen.bind(this);
@@ -909,6 +933,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           this.token = serverMessage.value.token;
         }
         this.#setConnectionId(serverMessage.value.connectionId);
+        this.#everConnected = true;
         this.#emitter.emit('connect', this, this.identity, this.token);
         break;
       }
