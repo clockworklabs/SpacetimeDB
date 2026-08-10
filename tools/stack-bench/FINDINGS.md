@@ -6,8 +6,100 @@ Issues surfaced by the benchmark harness, with reproduction steps.
 
 ## 1. Client skill doc: token is read once, so a first-session user loses identity on reconnect
 
-**Classification:** documentation / guidance gap. **Not** an SDK or host defect —
-see "Why this is not a bug" below.
+**Classification:** ~~documentation / guidance gap. **Not** an SDK or host defect~~
+— **REOPENED 2026-08-10. Half of this is an SDK defect.** The original
+classification is correct about the *host*: minting a fresh identity for a
+connection that presents no credentials is what "anonymous" means, and the
+builder's contract says so explicitly — `withToken` is documented as *"optional.
+You can store the token returned by the `onConnect` callback to use in future
+connections."* Storing it is the application's job, by design.
+
+**But that contract covers the application's next connection, not the SDK's
+own.** `ConnectionManager` reconnects by rebuilding from the stored builder:
+
+```
+connection_manager.ts:149   this.#buildManagedConnection(managed, managed.builder)
+connection_manager.ts:302   const connection = builder.build();
+```
+
+and `grep withToken src/sdk/connection_manager.ts` returns **nothing**. The
+manager records the issued token in its own state (`:309 token: connection.token`)
+and the connection adopts it (`db_connection_impl.ts:909`) — then throws it away,
+because the rebuild re-presents `builder.#token`, which for a first-session
+client is `undefined`.
+
+So on an automatic reconnect the SDK **discards the identity it was just issued**
+and silently acquires a new one. The application never initiated that reconnect
+and cannot intervene before it happens; no callback fires in between, and no
+error is raised. Saving the token diligently does not help, because the stale
+builder is what gets rebuilt.
+
+**FIXED 2026-08-10 in `1f77a6985`.** The three automatic reconnect paths now
+re-present the token through `#reconnectManagedConnection`. `retain()` and
+`rebuild()` still take the caller's builder verbatim, because supplying a
+*different* token is exactly what `rebuild()` is for — swapping an anonymous
+session for a signed-in one, or logging out. Ships with
+`tests/connection_manager_token_reuse.test.ts`, which was checked to **fail when
+the change is reverted** (`expected undefined to be 'token-from-host'`) rather
+than passing vacuously. Suite green at 290; typecheck unchanged at its 17
+pre-existing errors.
+
+Two things deliberately left alone, and worth a decision by whoever owns the SDK:
+
+- **A stale token now fails loudly.** If the module was republished with
+  `--delete-data` or the key rotated, re-presenting the old token errors through
+  `onConnectError` instead of quietly becoming a new user. Better failure, but it
+  is a behaviour change.
+- **An identity change is still silent.** Even with the fix a reconnect can
+  legitimately yield a different identity, and nothing tells the app. A warning
+  or callback when the identity changes across a reconnect would turn silent
+  data-loss into something an application can handle, and is worth doing
+  independently.
+
+**Scope — narrower than first written.** `ConnectionManager` is used by the
+**React / Solid / Svelte providers**, not by a plain `DbConnection.builder()`
+app. That is not a reprieve: it is the recommended path, it is what the client
+skill doc prescribes, and it is what every generated app uses.
+
+**Not new.** `ConnectionManager` landed 2026-02-19 (#4028), with reconnect fixes
+in June (#5185, #5375). Roughly six months old and shipped.
+
+**The prescribed pattern walks straight into it.** From the generated app's
+`main.tsx` — and the client skill doc says the same thing:
+
+```js
+const connectionBuilder = useMemo(
+  () => DbConnection.builder()
+    .withUri(SPACETIMEDB_URI)
+    .withDatabaseName(MODULE_NAME)
+    .withToken(localStorage.getItem('auth_token') || undefined),
+  []                       // built once, at first render
+);
+```
+
+On a first-ever visit `localStorage` is empty, so the builder is frozen with
+`#token = undefined` **forever**. The app then saves its token correctly, and it
+makes no difference: `ConnectionManager` rebuilds from that same frozen builder.
+
+**Which criteria this actually explains — corrected.** Of the six identity points
+SpacetimeDB lost on first try, this mechanism accounts for **105b** ("across the
+connection dropping and re-establishing"), which is precisely the automatic
+reconnect. The reload criteria (1e, 4b, 105a) should *not* be affected: a page
+reload re-runs `main.tsx`, so `useMemo` re-reads `localStorage` and picks the
+token up. Those are more likely the app never saving the token at all — a
+separate failure the skill doc already warns about at line 59. **The first-build
+source is not preserved, so which of the two it was cannot be confirmed.**
+
+The skill doc has been revised three times around this behaviour (`15e666e38`,
+`edd8e8a27`, `fe9ba42d8`). When documentation has been "fixed" three times and
+generated apps still get it wrong, the API shape deserves the scrutiny.
+
+**Not yet proven for the benchmark specifically.** The first-build source and
+first-build grading detail are not preserved — only the missed criterion IDs — so
+the link between this mechanism and those six points is inference from what the
+criteria assert, not a traced failure. **That is itself a harness gap:** we do
+not keep the artifact needed to diagnose first-try failures, which is the thing
+that most determines cost-to-correct.
 
 **Severity:** medium — affects every app generated from the current client skill,
 but only users who obtained their identity in the current page session.

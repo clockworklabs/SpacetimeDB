@@ -519,6 +519,38 @@ async function main() {
           (f.criteria ?? []).filter(c => !c.passed).map(c => `${f.name}/${c.id}`))),
     };
 
+    // Keep the first attempt before a fix round overwrites it.
+    //
+    // Until now a finished run kept only the FINAL source and the LAST grading
+    // pass, so `firstBuild` above survived as a score and a list of criterion
+    // ids and nothing else. That is the wrong thing to throw away: cost-to-
+    // correct is mostly decided at the first attempt — SpacetimeDB opened at
+    // 42/50 where PostgreSQL opened at 48/50 and MongoDB at 51/51 — so the
+    // artifact that explains the headline number was the one being deleted.
+    //
+    // It has already blocked two diagnoses: whether SpacetimeDB's lost identity
+    // points came from the SDK's reconnect defect or from the app never saving
+    // its token, and what the TS2344 errors looked like in context. Both answers
+    // were in a `main.tsx` that no longer existed.
+    //
+    // Source only, and grading without media — the same rules the end-of-run
+    // copies use, so this adds a few MB per level rather than a run's worth of
+    // traces and video.
+    try {
+      snapshotSource(appDir, join(args.out, `first-build-l${level}`));
+      const gradingFrom = join(appDir, 'stack-bench');
+      if (existsSync(gradingFrom)) {
+        cpSync(gradingFrom, join(args.out, `first-build-l${level}-grading`), {
+          recursive: true,
+          filter: src => !/[\\/]media([\\/]|$)/.test(src),
+        });
+      }
+      console.log(`  kept the unaided attempt at ${join(args.out, `first-build-l${level}`)}`);
+    } catch (e) {
+      // Never worth losing a run over: the score is already recorded.
+      console.log(`  !! could not keep the first build: ${String(e.message).split('\n')[0]}`);
+    }
+
     let fixRounds = 0;
     let fixCost = 0;
     let stalled = false;
