@@ -242,3 +242,23 @@ hostile requests," because on the reference build the hostile requests could not
 even be constructed. Whether that is strength (nothing to attack) or a gap in
 the test (we never confirmed refusal) differs per criterion and is now visible
 per criterion instead of hidden inside a number.
+
+---
+## 2026-08-09 — L2 lint under-verifies (not a blocker, recorded before first run)
+
+The L2 contract adds two lint stages, `fulfilment` (5 hooks) and `operations`
+(11), which the ecommerce walk never visits — it covers the L1 golden path only.
+Because lint.mjs only fails on hooks it actually marked FAIL or BLOCKED, and an
+unvisited hook is never added to results, lint PASSES at L2 while silently
+checking 8 of 24 hooks. It is a false pass, not an abort.
+
+It does not corrupt scores: the grader's L2 scenarios click those hooks directly
+(ship-submit, transfer-submit, queue-item, ...), so a missing hook fails its
+criterion where it should. What is lost is fail-fast — a missing L2 control is
+found during grading rather than in one cheap lint pass up front.
+
+Fixing it means an L2 golden path in the walk: sign in as staff, place an order
+so the queue is non-empty, ship it, do a transfer, change a price. That is real
+and slightly fragile work; deferring until after the first L2 results rather
+than risk a flaky walk mid-sweep. Recorded so the "CONTRACT LINT PASS" line on
+an L2 run is read for what it is.
