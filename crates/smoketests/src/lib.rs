@@ -56,7 +56,6 @@ pub mod modules;
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
-use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -181,12 +180,6 @@ macro_rules! timed {
 
 /// Returns the workspace root directory.
 pub fn workspace_root() -> PathBuf {
-    // Archived tests run in a different checkout from the build job. CI supplies
-    // the runtime root; local Cargo runs continue to use the compile-time path.
-    if let Some(root) = env::var_os("SPACETIMEDB_WORKSPACE_ROOT") {
-        return root.into();
-    }
-
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
         .parent()
