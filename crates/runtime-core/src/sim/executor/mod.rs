@@ -18,7 +18,20 @@ use super::{net, time::TimeHandle, Rng};
 mod task;
 pub use task::{AbortHandle, JoinError, JoinHandle};
 
-type Runnable = async_task::Runnable<NodeId>;
+type Runnable = async_task::Runnable<TaskMeta>;
+
+/// Immutable scheduling metadata attached to every simulated task.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TaskMeta {
+    node: NodeId,
+    generation: u64,
+}
+
+impl TaskMeta {
+    fn new(node: NodeId, generation: u64) -> Self {
+        Self { node, generation }
+    }
+}
 
 const READY_TASK_BUDGET: usize = 256;
 
@@ -531,7 +544,9 @@ impl Executor {
         let state = self.node_state(node);
         state.crashed.store(true, Ordering::Release);
         state.paused.store(false, Ordering::Release);
-        state.paused_queue.lock().clear();
+        state.bump_generation();
+        let stale_runnables = core::mem::take(&mut *state.paused_queue.lock());
+        drop(stale_runnables);
         if let Some(net) = &self.net {
             net.isolate_node(node);
         }
@@ -541,6 +556,11 @@ impl Executor {
     fn resume(&self, node: NodeId) {
         let state = self.node_state(node);
         state.paused.store(false, Ordering::Relaxed);
+        if state.is_crashed() {
+            let stale_runnables = core::mem::take(&mut *state.paused_queue.lock());
+            drop(stale_runnables);
+            return;
+        }
         let runnables = core::mem::take(&mut *state.paused_queue.lock());
         for runnable in runnables {
             self.sender.send(runnable);
@@ -557,6 +577,9 @@ impl Executor {
         let state = self.node_state(node);
         state.crashed.store(false, Ordering::Release);
         state.paused.store(false, Ordering::Release);
+        state.bump_generation();
+        let stale_runnables = core::mem::take(&mut *state.paused_queue.lock());
+        drop(stale_runnables);
         if let Some(net) = &self.net {
             net.unisolate_node(node);
         }
@@ -568,17 +591,18 @@ impl Executor {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        self.assert_known_node(node);
-
         let abort = AbortHandle::new();
         let abortable = Abortable::new(future, abort.clone());
         let sender = self.sender.clone();
         let (runnable, task) = async_task::Builder::new()
-            .metadata(node)
+            .metadata(self.task_meta(node))
             .spawn(move |_| abortable, move |runnable| sender.send(runnable));
         runnable.schedule();
 
-        JoinHandle { task, abort }
+        JoinHandle {
+            task: task.fallible(),
+            abort,
+        }
     }
 
     /// Spawn a non-`Send` task on the single-threaded runtime.
@@ -587,19 +611,20 @@ impl Executor {
         F: Future + 'static,
         F::Output: 'static,
     {
-        self.assert_known_node(node);
-
         let abort = AbortHandle::new();
         let abortable = Abortable::new(future, abort.clone());
         let sender = self.sender.clone();
         let (runnable, task) = unsafe {
             async_task::Builder::new()
-                .metadata(node)
+                .metadata(self.task_meta(node))
                 .spawn_unchecked(move |_| abortable, move |runnable| sender.send(runnable))
         };
         runnable.schedule();
 
-        JoinHandle { task, abort }
+        JoinHandle {
+            task: task.fallible(),
+            abort,
+        }
     }
 
     #[track_caller]
@@ -613,7 +638,7 @@ impl Executor {
         let sender = self.sender.clone();
         let (runnable, mut task) = unsafe {
             async_task::Builder::new()
-                .metadata(NodeId::MAIN)
+                .metadata(self.task_meta(NodeId::MAIN))
                 .spawn_unchecked(move |_| future, move |runnable| sender.send(runnable))
         };
         runnable.schedule();
@@ -743,9 +768,10 @@ impl Executor {
             };
 
             progressed = true;
-            let node = *runnable.metadata();
-            let state = self.node_state(node);
-            if state.is_crashed() {
+            let meta = *runnable.metadata();
+            let state = self.node_state(meta.node);
+            if !state.is_current_generation(meta.generation) || state.is_crashed() {
+                drop(runnable);
                 continue;
             }
             if state.is_paused() {
@@ -774,16 +800,17 @@ impl Executor {
         self.node_record(node).config.clone()
     }
 
+    fn task_meta(&self, node: NodeId) -> TaskMeta {
+        let state = self.node_state(node);
+        TaskMeta::new(node, state.generation())
+    }
+
     fn node_state(&self, node: NodeId) -> Arc<NodeState> {
         self.node_record(node).state.clone()
     }
-
-    fn assert_known_node(&self, node: NodeId) {
-        let _ = self.node_state(node);
-    }
 }
 
-fn poll_finished_task<T>(task: &mut async_task::Task<T, NodeId>) -> Option<T> {
+fn poll_finished_task<T>(task: &mut async_task::Task<T, TaskMeta>) -> Option<T> {
     if !task.is_finished() {
         return None;
     }
@@ -815,6 +842,7 @@ impl NodeRecord {
 struct NodeState {
     paused: Arc<AtomicBool>,
     crashed: Arc<AtomicBool>,
+    generation: Arc<AtomicU64>,
     paused_queue: Arc<Mutex<Vec<Runnable>>>,
 }
 
@@ -823,12 +851,25 @@ impl Default for NodeState {
         Self {
             paused: Arc::new(AtomicBool::new(false)),
             crashed: Arc::new(AtomicBool::new(false)),
+            generation: Arc::new(AtomicU64::new(0)),
             paused_queue: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
 
 impl NodeState {
+    fn bump_generation(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    fn is_current_generation(&self, generation: u64) -> bool {
+        self.generation() == generation
+    }
+
     fn is_crashed(&self) -> bool {
         self.crashed.load(Ordering::Relaxed)
     }
@@ -932,12 +973,32 @@ impl Receiver {
 #[cfg(test)]
 mod tests {
     use std::sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     };
 
     use super::*;
     use crate::sim::RuntimeConfig;
+
+    struct DropFlag(Arc<AtomicUsize>);
+
+    impl Drop for DropFlag {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct PendingUntilDropped {
+        _drop: DropFlag,
+    }
+
+    impl Future for PendingUntilDropped {
+        type Output = u32;
+
+        fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+            Poll::Pending
+        }
+    }
 
     #[test]
     fn paused_node_does_not_run_until_resumed() {
@@ -1019,6 +1080,110 @@ mod tests {
             .block_on(task)
             .expect_err("aborted task should surface JoinError instead of panicking");
         assert_eq!(err, JoinError);
+    }
+
+    #[test]
+    fn crashed_node_drops_sleeping_task_and_join_errors() {
+        let mut runtime = Runtime::new(11);
+        let handle = runtime.handle();
+        let node = runtime.create_node().name("crash").build();
+        let started = Arc::new(AtomicBool::new(false));
+        let dropped = Arc::new(AtomicUsize::new(0));
+
+        let task = node.spawn({
+            let handle = handle.clone();
+            let started = Arc::clone(&started);
+            let dropped = Arc::clone(&dropped);
+            async move {
+                let _drop = DropFlag(dropped);
+                started.store(true, Ordering::SeqCst);
+                handle.sleep(Duration::from_secs(1)).await;
+                99
+            }
+        });
+
+        runtime.block_on({
+            let started = Arc::clone(&started);
+            async move {
+                while !started.load(Ordering::SeqCst) {
+                    yield_now().await;
+                }
+            }
+        });
+        assert_eq!(dropped.load(Ordering::SeqCst), 0);
+
+        node.crash();
+        let err = runtime.block_on(task).expect_err("crashed task should be cancelled");
+
+        assert_eq!(err, JoinError);
+        assert_eq!(dropped.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn task_spawned_on_crashed_node_is_dropped_and_join_errors() {
+        let mut runtime = Runtime::new(12);
+        let node = runtime.create_node().name("crashed").build();
+        let dropped = Arc::new(AtomicUsize::new(0));
+
+        node.crash();
+        let task = node.spawn(PendingUntilDropped {
+            _drop: DropFlag(Arc::clone(&dropped)),
+        });
+
+        let err = runtime.block_on(task).expect_err("crashed task should be cancelled");
+
+        assert_eq!(err, JoinError);
+        assert_eq!(dropped.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn restart_invalidates_tasks_from_previous_generations() {
+        let mut runtime = Runtime::new(13);
+        let node = runtime.create_node().name("restart").build();
+        let runs = Arc::new(AtomicUsize::new(0));
+
+        let before_crash = node.spawn({
+            let runs = Arc::clone(&runs);
+            async move {
+                runs.fetch_add(1, Ordering::SeqCst);
+                1
+            }
+        });
+        node.crash();
+        node.restart();
+        let err = runtime
+            .block_on(before_crash)
+            .expect_err("pre-crash task should be cancelled after restart");
+        assert_eq!(err, JoinError);
+        assert_eq!(runs.load(Ordering::SeqCst), 0);
+
+        node.crash();
+        let during_crash = node.spawn({
+            let runs = Arc::clone(&runs);
+            async move {
+                runs.fetch_add(1, Ordering::SeqCst);
+                2
+            }
+        });
+        node.restart();
+        let err = runtime
+            .block_on(during_crash)
+            .expect_err("task spawned while crashed should be cancelled after restart");
+        assert_eq!(err, JoinError);
+        assert_eq!(runs.load(Ordering::SeqCst), 0);
+
+        let after_restart = node.spawn({
+            let runs = Arc::clone(&runs);
+            async move {
+                runs.fetch_add(1, Ordering::SeqCst);
+                3
+            }
+        });
+        assert_eq!(
+            runtime.block_on(after_restart).expect("post-restart task should run"),
+            3
+        );
+        assert_eq!(runs.load(Ordering::SeqCst), 1);
     }
 
     #[test]
