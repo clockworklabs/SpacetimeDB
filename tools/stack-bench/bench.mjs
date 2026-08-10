@@ -147,6 +147,41 @@ function restoreSource(from, appDir) {
   }
 }
 
+// Score two grading passes on the criteria they BOTH scored conclusively.
+//
+// Totals cannot be compared directly across rounds: a criterion that comes back
+// inconclusive is subtracted from the denominator, so `max` moves on its own.
+// Contention criteria are the usual cause — whether six concurrent clicks all
+// land, or the page crashes mid-assertion, is not deterministic.
+//
+// A criterion counts here only if it appears in both passes AND was conclusive
+// in both. Withheld criteria (points: 0) contribute nothing either way, so they
+// are left in — they cannot move the comparison.
+function compareOnSharedCriteria(before, after) {
+  const index = bundle => {
+    const m = new Map();
+    for (const suite of Object.values(bundle?.suites ?? {})) {
+      for (const feature of suite?.features ?? []) {
+        for (const c of feature.criteria ?? []) {
+          if (c.inconclusive) continue;
+          m.set(`${feature.name}/${c.id}`, { passed: !!c.passed, points: c.points ?? 1 });
+        }
+      }
+    }
+    return m;
+  };
+  const a = index(before), b = index(after);
+  let scoreBefore = 0, scoreAfter = 0, count = 0;
+  for (const [key, was] of a) {
+    const now = b.get(key);
+    if (!now) continue;
+    count += 1;
+    scoreBefore += was.passed ? was.points : 0;
+    scoreAfter += now.passed ? now.points : 0;
+  }
+  return { before: scoreBefore, after: scoreAfter, count };
+}
+
 // Did this build read the thing that grades it? Prevention has holes we know
 // about — permission rules do not govern a bash `cat` — so this is checked
 // after EVERY session rather than once at the end. A fix round that read the
@@ -571,6 +606,10 @@ async function main() {
 
       const before = bundle?.totals?.score ?? 0;
       const beforeMax = bundle?.totals?.max ?? 0;
+      // Kept whole, not just its total: the regression check compares
+      // per-criterion, because totals are scored out of a denominator that
+      // moves between rounds.
+      const beforeBundle = bundle;
       // A fix can break more than it mends. Keep the source that produced the
       // best score so far, and roll back to it if a round regresses.
       // Kept outside the results tree: a snapshot is a known-good copy of the
@@ -595,19 +634,34 @@ async function main() {
       // the same result.
       const after = bundle?.totals?.score ?? 0;
       const afterMax = bundle?.totals?.max ?? 0;
-      // Compare what the scores MEAN, not their numerators. `max` moves between
-      // passes whenever a criterion becomes measurable or stops being — one run
-      // read 48/54 then 46/53 and was called a regression on 48 > 46, when the
-      // rates are 88.9% and 86.8%. The direction happened to hold there; it does
-      // not in general, and a rollback triggered by arithmetic on unlike
-      // denominators throws away a fix round for no reason.
-      const rate = (n, d) => (d > 0 ? n / d : 0);
-      const beforeRate = rate(before, beforeMax), afterRate = rate(after, afterMax);
-      if (afterMax !== beforeMax) {
-        console.log(`    note: scored out of ${afterMax} this round, ${beforeMax} last — comparing rates, not totals`);
+      // Compare the SAME criteria in both rounds, not the totals.
+      //
+      // `max` moves between passes whenever a criterion becomes measurable or
+      // stops being: an inconclusive criterion is subtracted from the
+      // denominator, and whether a contention test concludes is genuinely
+      // flaky ("2 of 6 concurrent clicks landed", "Page crashed").
+      //
+      // Rates were the previous attempt at this and are also wrong. A round
+      // scored 49/50 and then 49/51 — the same 49 criteria passing, with one
+      // extra criterion becoming measurable and failing. The rate fell from
+      // 0.980 to 0.961, so it was called a regression, the app was rolled back,
+      // and the level was lost. Nothing had got worse.
+      //
+      // Scoring the intersection removes the question: only criteria that were
+      // conclusively scored in BOTH rounds count, so the denominator cannot
+      // move underneath the comparison.
+      const shared = compareOnSharedCriteria(beforeBundle, bundle);
+      if (shared.count === 0) {
+        console.log('    no criteria were conclusively scored in both rounds; stopping');
+        stalled = true;
+        break;
       }
-      if (afterRate < beforeRate) {
-        console.log(`    regressed (${before}/${beforeMax} -> ${after}/${afterMax}); rolling back and stopping`);
+      if (shared.count < Math.min(beforeMax, afterMax)) {
+        console.log(`    comparing the ${shared.count} criteria scored in both rounds`
+          + ` (${before}/${beforeMax} -> ${after}/${afterMax} overall)`);
+      }
+      if (shared.after < shared.before) {
+        console.log(`    regressed (${shared.before} -> ${shared.after} on shared criteria); rolling back and stopping`);
         // Stop the servers BEFORE deleting what they are watching. Without
         // this, rolling back a regressed postgres run threw EBUSY on
         // app/server and took the whole finished run down with it.
@@ -618,8 +672,8 @@ async function main() {
         stalled = true;
         break;
       }
-      if (afterRate === beforeRate) {
-        console.log(`    no improvement (${before}); stopping fix rounds`);
+      if (shared.after === shared.before) {
+        console.log(`    no improvement (${shared.before} on shared criteria); stopping fix rounds`);
         stalled = true;
         break;
       }
