@@ -950,10 +950,31 @@ async function runStep(step, actors, ctx) {
       // Only an ACCEPTED forgery is a failure here. "Could not replay" is not
       // evidence of safety, so it never scores a point on its own — the
       // universal DOM assertion that follows is what actually earns it.
-      if (f.inconclusive || f.structurallySafe) return;
+      //
+      // But WHICH of those happened must be on the record. This step backed six
+      // points of "an attacker's request is refused" and, unlike
+      // expectReplayRejected, recorded nothing — so a pass where the forge
+      // never ran was indistinguishable from a pass where the server actually
+      // refused a hostile request. Three runs were graded before anyone could
+      // say which kind of pass 102a, 104a and 109a were.
+      if (f.inconclusive) {
+        ctx.unverified.push(`${actor.name}: ${f.reason}`);
+        ctx.serverCheck = 'unverified';
+        return;
+      }
+      if (f.structurallySafe) {
+        // A write path that carries no client-supplied identity at all is a
+        // real property, distinct from "we could not check" — record it as its
+        // own class rather than lumping it either way.
+        ctx.verified?.push(`${actor.name}: ${f.reason}`);
+        ctx.serverCheck = ctx.serverCheck ?? 'structural';
+        return;
+      }
       if (f.accepted) {
         throw new Error(`server ACCEPTED a write with a tampered "${f.tamperedField}" (HTTP ${f.status}) — the client chooses who it is`);
       }
+      ctx.verified?.push(`${actor.name}: server refused the tampered "${f.tamperedField}" (HTTP ${f.status})`);
+      ctx.serverCheck = 'verified';
       return;
     }
     case 'replayAs': {
