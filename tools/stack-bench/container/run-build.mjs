@@ -22,7 +22,7 @@
 // script ever sees them. agent.mjs spawns it without a shell and is unaffected.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, mkdirSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, basename, dirname } from 'node:path';
 import { homedir } from 'node:os';
 
 const argv = process.argv.slice(2);
@@ -93,19 +93,73 @@ mkdirSync(projects, { recursive: true });
 const stdbConfig = resolve(appDir, '..', '.spacetime-cli-config');
 mkdirSync(stdbConfig, { recursive: true });
 
-const args = [
-  'run', '--rm', '-i',
-  '-v', `${resolve(appDir)}:/app`,
-  '-v', `${projects}:/root/.claude/projects/-app`,
-  '-v', `${stdbConfig}:/root/.config/spacetime`,
-];
-if (!apiKey) args.push('-v', `${creds}:/root/.claude/.credentials.json`);
-if (existsSync(bindings)) args.push('-v', `${bindings}:/deps/bindings-typescript:ro`);
-if (existsSync(cli)) args.push('-v', `${cli}:/deps/spacetimedb-cli:ro`);
+// The container OUTLIVES the build session, and that is the whole point.
+//
+// The first version used `docker run --rm`, so the container died the moment the
+// coding session returned — taking the app's dev servers with it. The grader
+// runs afterwards and had nothing to talk to: "reseed FAILED (server did not
+// come back)", then "ABORTED: could not reset database", after a sweep spent
+// $9.46 and graded nothing.
+//
+// Running the app from the host instead is not an option either: a container
+// install produces linux-x64 esbuild and rollup binaries, so a Windows host
+// cannot execute the app's node_modules at all (checked, not assumed).
+//
+// So the container is long-lived and the session is exec'd into it. The build
+// starts its own dev servers exactly as it does on the host, and they keep
+// running afterwards for exactly the same reason — the process that owns them
+// is still alive.
+//
+// The name is derived from the run's work directory, which already carries a
+// timestamp, so it is unique per run and reconstructible from the app path alone
+// — restart-backend.sh needs the same name and is given only the app dir.
+const containerName = `stack-bench-${basename(dirname(resolve(appDir)))}`;
+const dockerEnv = { ...process.env, MSYS_NO_PATHCONV: '1' };
 
-// Dev servers start inside the container and the grader runs on the host, so
-// the track's port window has to be published or nothing can be graded.
-for (const p of ports) args.push('-p', `${p}:${p}`);
+function containerState(name) {
+  const r = spawnSync('docker', ['inspect', '-f', '{{.State.Running}}', name],
+    { encoding: 'utf8', env: dockerEnv });
+  if (r.status !== 0) return 'absent';
+  return r.stdout.trim() === 'true' ? 'running' : 'stopped';
+}
+
+// Create it if this is the first round of the run; reuse it for every round
+// after, so a fix round finds the app, its node_modules and its servers exactly
+// where the build round left them.
+if (containerState(containerName) !== 'running') {
+  // A stopped container of the same name would refuse the create and cannot be
+  // reused anyway — its published ports are gone.
+  spawnSync('docker', ['rm', '-f', containerName], { stdio: 'ignore', env: dockerEnv });
+
+  const create = [
+    'run', '-d', '--init', '--name', containerName,
+    '-v', `${resolve(appDir)}:/app`,
+    '-v', `${projects}:/root/.claude/projects/-app`,
+    '-v', `${stdbConfig}:/root/.config/spacetime`,
+  ];
+  if (!apiKey) create.push('-v', `${creds}:/root/.claude/.credentials.json`);
+  if (existsSync(bindings)) create.push('-v', `${bindings}:/deps/bindings-typescript:ro`);
+  if (existsSync(cli)) create.push('-v', `${cli}:/deps/spacetimedb-cli:ro`);
+
+  // Dev servers start inside the container and the grader runs on the host, so
+  // the track's port window has to be published. Publishing happens at create
+  // time only — a port cannot be added to a running container, which is the
+  // other reason the session cannot own the container's lifetime.
+  for (const p of ports) create.push('-p', `${p}:${p}`);
+
+  // `--init` gives the container a real PID 1. Without it the dev servers the
+  // build leaves behind are reparented to `sleep`, which never reaps them.
+  create.push('-w', '/app', image, 'sleep', 'infinity');
+
+  const made = spawnSync('docker', create, { encoding: 'utf8', env: dockerEnv });
+  if (made.status !== 0) {
+    console.error(`run-build.mjs: could not start ${containerName}`);
+    console.error(made.stderr || made.stdout || '');
+    process.exit(2);
+  }
+}
+
+const args = ['exec', '-i', '-w', '/app'];
 
 args.push('-e', 'DISABLE_AUTOUPDATER=1', '-e', 'FORCE_PROMPT_CACHING_5M=1');
 if (apiKey) args.push('-e', `ANTHROPIC_API_KEY=${apiKey}`);
@@ -118,8 +172,7 @@ if (process.env.MAX_THINKING_TOKENS) {
 }
 
 args.push(
-  '-w', '/app',
-  image,
+  containerName,
   'claude', '--print', '--output-format', 'json',
   '--permission-mode', 'acceptEdits',
   '--effort', effort,

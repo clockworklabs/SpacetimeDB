@@ -35,6 +35,34 @@ wait_for() {  # wait_for <url> <seconds>
   done
 }
 
+# A containerised run keeps the app — and its Express server — inside a
+# long-lived container, so restarting it from the host cannot work: the process
+# is in another namespace, and the app's node_modules hold linux-x64 esbuild and
+# rollup binaries that this host cannot execute anyway.
+#
+# The same logic therefore runs INSIDE the container. The script is piped in on
+# stdin rather than mounted, so no harness file ever appears on the filesystem
+# the build can read — the property the container exists for.
+#
+# Only the app tier redirects. The spacetime branch below restarts the
+# SpacetimeDB host, which is a machine-level service and stays on the host.
+if [ -z "${STACK_BENCH_IN_CONTAINER:-}" ] && [ "$BACKEND" != "spacetime" ]; then
+  ISO_FILE="$(dirname "$APP_DIR")/.stack-bench-isolation"
+  if [ -f "$ISO_FILE" ] && [ "$(cat "$ISO_FILE")" = "container" ]; then
+    NAME="stack-bench-$(basename "$(dirname "$APP_DIR")")"
+    # Git Bash rewrites a container-side /app into a Windows path before docker
+    # ever sees it.
+    export MSYS_NO_PATHCONV=1
+    # `tr -d '\r'`: this file is checked out with CRLF on Windows (git reports
+    # i/lf w/crlf). Git Bash tolerates that; the container's Linux bash does not
+    # — it reads `set -euo pipefail\r` and rejects "pipefail\r" as an option
+    # name, so the script dies on line 21 and the restart silently does nothing.
+    tr -d '\r' < "$0" | docker exec -i -e STACK_BENCH_IN_CONTAINER=1 "$NAME" \
+      bash -s -- "$BACKEND" /app "$PORT" "$PROBE" "$MODE"
+    exit $?
+  fi
+fi
+
 case "$BACKEND" in
   postgres|mongodb)
     [ -n "$PORT" ] || { echo "express port required for $BACKEND" >&2; exit 2; }
@@ -42,6 +70,16 @@ case "$BACKEND" in
       echo "stopping Express on :$PORT"
       npx --yes kill-port "$PORT" >/dev/null 2>&1 || true
       sleep 3
+      # Verify it actually died, because kill-port reports success when it
+      # cannot see the process at all: with no lsof on the box it printed
+      # "Process on port N killed", exited 0, and left the server running. A
+      # restart that silently does nothing turns every durability and
+      # deploy-window test into a pass that means nothing, so this is a hard
+      # failure rather than a warning.
+      if curl -s -o /dev/null -m 3 "http://localhost:$PORT$PROBE"; then
+        echo "still answering on :$PORT after kill-port — refusing to report a restart that did not happen" >&2
+        exit 3
+      fi
     fi
     [ "$MODE" = "stop" ] && exit 0
     # Where the server lives is a prescribed-stack assumption. A stack-free app

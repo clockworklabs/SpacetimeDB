@@ -19,7 +19,7 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync, renameSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, resultsName, portsFor, workDirFor, sweepWorkRoot, assertNoPortCollisions, PORT_BASES, DEFAULT_TRACK } from './tracks.mjs';
@@ -187,8 +187,43 @@ function stopByAppDir(appDir) {
   for (const pid of pidsMatching(appDir)) killTree(pid);
 }
 
+// Did this run's build session run in a container? agent.mjs pins the answer
+// beside the app at build time, so every later step agrees with the build.
+function isContainerRun(appDir) {
+  try {
+    return readFileSync(join(dirname(resolve(appDir)), '.stack-bench-isolation'), 'utf8')
+      .trim() === 'container';
+  } catch { return false; }
+}
+
+// A containerised run keeps its app, and its dev servers, inside a long-lived
+// container that outlives each build session on purpose. Nothing else removes
+// it: `docker run` is no longer `--rm`, precisely so the grader has something to
+// talk to afterwards. Named from the run's work directory, so this removes only
+// this run's container and never a concurrent one's.
+//
+// Called at the end of a run and before one starts — NOT from stopServers, which
+// also runs mid-run before a rollback grade that still needs the app up.
+function stopRunContainer(appDir) {
+  const name = `stack-bench-${basename(dirname(resolve(appDir)))}`;
+  try {
+    execFileSync('docker', ['rm', '-f', name],
+      { stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' } });
+    console.log(`  removed the run container ${name}`);
+  } catch { /* never created, or already gone */ }
+}
+
 function stopServers(backend, runIndex, appDir, track) {
   stopByAppDir(appDir);
+  // In a containerised run the app's servers are not host processes, and the
+  // host side of a published port is held by Docker's own proxy. Killing what
+  // sits on that port kills the proxy — which took the Docker daemon down once
+  // today, mid-run. There is also nothing to kill for the usual reason: the
+  // EBUSY this function exists to prevent is a Windows file lock held by a host
+  // watcher, and a containerised run's watchers are Linux processes that do not
+  // lock the mounted files at all. So leave them running; the rollback grade
+  // below depends on them being up.
+  if (isContainerRun(appDir)) return;
   for (const port of portsForRun(backend, runIndex, track)) {
     for (const pid of pidsOnPort(port)) {
       killTree(pid);
@@ -400,11 +435,15 @@ async function main() {
   // what this run brought up.
   const teardown = () => {
     stopServers(args.backend, args.runIndex, appDir, track);
+    // The run's container is deliberately not removed by stopServers, so the
+    // run itself has to end it. This is the only place that should.
+    stopRunContainer(appDir);
     if (weStartedSpacetime && !args.keepSpacetime) stopSpacetime();
   };
   // A previous run may have left a watcher holding the app directory, which the
   // build's wipe would trip over.
   stopServers(args.backend, args.runIndex, appDir, track);
+  stopRunContainer(appDir);
   process.on('SIGINT', () => { console.log('interrupted — stopping servers'); teardown(); process.exit(130); });
   process.on('SIGTERM', () => { teardown(); process.exit(143); });
 

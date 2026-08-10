@@ -15,8 +15,13 @@ FROM node:22-slim
 # curl: readiness probes against the app's own dev server.
 # ca-certificates: TLS for npm and the API.
 # procps: the build starts and stops its own dev servers.
+# lsof: `kill-port` locates a listener with lsof on Linux, and finds nothing
+# without it — it then prints "Process on port N killed" and exits 0 while the
+# server keeps running. Every durability and deploy-window test would pass
+# without restarting anything, which is worse than failing. None of lsof, fuser,
+# ss or netstat is present in node:22-slim.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git curl ca-certificates procps \
+      git curl ca-certificates procps lsof \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned, and the auto-updater disabled: a CLI that updates itself mid-series

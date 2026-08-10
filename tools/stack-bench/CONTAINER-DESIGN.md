@@ -75,6 +75,36 @@ The container is the **default**. `--no-container` (or `STACK_BENCH_CONTAINER=0`
 runs on the host, which is what every number collected before this change was
 measured on.
 
+0. **The container outlives the build session.** This is the load-bearing
+   decision and the first version got it wrong. `docker run --rm` ended the
+   container when the coding session returned, taking the app's dev servers with
+   it, and the grader that runs afterwards had nothing to talk to. A sweep died
+   exactly there — *"reseed FAILED (server did not come back)"*, then *"ABORTED:
+   could not reset database"* — after spending $9.46 and grading nothing.
+
+   Serving the app from the host instead is not available: a container install
+   produces `@esbuild/linux-x64` and `@rollup/rollup-linux-x64-gnu`, so a Windows
+   host cannot execute the app's `node_modules` at all (measured).
+
+   So the container is long-lived (`docker run -d --init … sleep infinity`) and
+   each round is `docker exec`'d into it. The build starts its own dev servers
+   exactly as it does on the host and they survive for the same reason: the
+   process that owns them is still alive. `--init` gives a real PID 1, so the
+   servers left behind are reaped rather than accumulating as zombies under
+   `sleep`.
+
+   The name is `stack-bench-<work-dir>`, derived from the run's timestamped work
+   directory: unique per run, and reconstructible from the app path alone — which
+   is all `restart-backend.sh` is given. Ports are published at create time only,
+   which is the other reason the session cannot own the container's lifetime.
+
+   `bench.mjs` removes it at the end of the run, and `stopServers` deliberately
+   does **not** — that runs mid-run before a rollback grade that still needs the
+   app up. `stopServers` also skips its port-killing entirely for a containerised
+   run: the host side of a published port is held by Docker's own proxy, and
+   killing that takes the daemon's port forwarding down. (It took Docker Desktop
+   itself down once, mid-run.)
+
 1. `agent.mjs` spawns `container/run-build.mjs` instead of the CLI, with the same
    CLI arguments and the prompt still on stdin. `<STDB_PACKAGE>` and `<STDB_BIN>`
    become `/deps/...`, and the app is named as `/app` — which also removes the
@@ -102,9 +132,44 @@ measured on.
    test is the exact literal `/app`, not "cwd outside the boundary": the looser
    rule could have adopted the harness directory as the boundary for the run
    that cd'd into it, and reported that run clean.
-6. `reset-db.sh` and `restart-backend.sh` still run on the host and address the
-   app by path; the app's files remain visible on the host through the same work
-   dir.
+6. `reset-db.sh` still runs on the host. **`restart-backend.sh` does not** — the
+   app tier now lives in the container, so the script re-runs its own logic
+   inside via `docker exec`, piping itself in on **stdin** rather than being
+   mounted, so no harness file ever appears on the filesystem the build can read.
+   Only the app tier redirects; the `spacetime` branch restarts the SpacetimeDB
+   host, which is a machine-level service and stays on the host.
+
+   Two Windows/Linux boundary bugs had to be fixed to make that work, both of
+   which fail silently rather than loudly:
+
+   - **CRLF.** This repo checks the script out with CRLF (`git ls-files --eol`
+     reports `i/lf w/crlf`). Git Bash tolerates it; the container's Linux bash
+     reads `set -euo pipefail\r`, rejects `pipefail\r` as an option name, and
+     dies on line 21 — so the restart did nothing and said nothing. The script is
+     piped through `tr -d '\r'`.
+   - **No `lsof`.** `kill-port` locates a listener with `lsof` on Linux, and
+     `node:22-slim` ships none of `lsof`, `fuser`, `ss` or `netstat`. It printed
+     *"Process on port N killed"*, exited 0, and left the server running. Every
+     durability and deploy-window test would have passed without restarting
+     anything — a pass that means nothing, which is worse than a failure.
+     `lsof` is now in the image, **and** the script verifies the port is actually
+     dead after the kill and exits 3 if it is not. A restart that cannot be
+     proven is now a hard error.
+
+## Verified end to end (2026-08-10)
+
+Checked after the rewrite, with no LLM spend:
+
+| behaviour | result |
+|---|---|
+| Dev server survives the build session exiting | host reached it after `docker exec` returned |
+| `restart-backend.sh` restart | real restart — listener PID changed 107 → 186 |
+| `restart-backend.sh` stop | port genuinely stops answering |
+| `restart-backend.sh` start | comes back, reachable from the host |
+
+Still outstanding: one cheap real build, end to end through reseed and grading,
+before the container becomes the default again. Verifying the build step alone is
+what produced the $9.46 loss.
 
 ## SpacetimeDB: the CLI has to be built for Linux
 
