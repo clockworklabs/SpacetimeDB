@@ -33,7 +33,8 @@
               "contains": "ann",
               "within": 6000
             }
-          ]
+          ],
+          "statedBy": "a visitor can create an account with a username and password"
         },
         {
           "id": "1b",
@@ -59,7 +60,8 @@
               "testid": "current-user",
               "absent": true
             }
-          ]
+          ],
+          "statedBy": "signing up with a taken username fails with a visible error and\nmust never sign the visitor in as the existing account"
         },
         {
           "id": "1c",
@@ -85,7 +87,8 @@
               "testid": "current-user",
               "absent": true
             }
-          ]
+          ],
+          "statedBy": "signing in with a wrong password fails with a visible error"
         },
         {
           "id": "1d",
@@ -115,7 +118,8 @@
               "contains": "ann",
               "within": 6000
             }
-          ]
+          ],
+          "statedBy": "a signed-in user can sign out, returning to the signed-out state"
         },
         {
           "id": "1e",
@@ -134,7 +138,8 @@
               "contains": "ann",
               "within": 6000
             }
-          ]
+          ],
+          "statedBy": "a signed-in session persists across a page reload"
         }
       ]
     },
@@ -183,7 +188,8 @@
               },
               "atLeast": 1
             }
-          ]
+          ],
+          "statedBy": "every item shows its name, price and current stock"
         },
         {
           "id": "2b",
@@ -215,7 +221,8 @@
               "contains": "Mirrorless Camera",
               "absent": true
             }
-          ]
+          ],
+          "statedBy": "the storefront shows the 10 most-purchased items"
         },
         {
           "id": "2c",
@@ -258,7 +265,8 @@
               },
               "numeric": true
             }
-          ]
+          ],
+          "statedBy": "when anyone buys something, every\nvisitor's storefront updates without a reload"
         },
         {
           "id": "2d",
@@ -282,7 +290,8 @@
                 "testid": "search-results"
               }
             }
-          ]
+          ],
+          "statedBy": "search covers the whole catalogue, not just the items currently on the storefront"
         }
       ]
     },
@@ -324,7 +333,8 @@
               "testid": "add-to-cart",
               "absent": true
             }
-          ]
+          ],
+          "statedBy": "a signed-out visitor sees no buy or\nadd-to-cart action"
         },
         {
           "id": "3b",
@@ -370,7 +380,8 @@
               },
               "equals": 99
             }
-          ]
+          ],
+          "statedBy": "buying an item reduces its stock by one for everyone"
         },
         {
           "id": "3c",
@@ -413,7 +424,8 @@
               "key": "Escape",
               "settleMs": 800
             }
-          ]
+          ],
+          "statedBy": "it creates an order for the buyer,\nvisible in their order history"
         },
         {
           "id": "3d",
@@ -550,7 +562,8 @@
               },
               "equals": 0
             }
-          ]
+          ],
+          "statedBy": "an item with zero stock cannot be bought"
         }
       ]
     },
@@ -625,7 +638,8 @@
               "key": "Escape",
               "settleMs": 800
             }
-          ]
+          ],
+          "statedBy": "adding an item that is already in the cart raises its quantity"
         },
         {
           "id": "4b",
@@ -671,7 +685,8 @@
               "key": "Escape",
               "settleMs": 800
             }
-          ]
+          ],
+          "statedBy": "the cart survives a reload"
         },
         {
           "id": "4c",
@@ -718,7 +733,8 @@
               "contains": "Induction Cooktop",
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "the same account signed\nin twice sees one cart, and a change made in one place appears in the other without a\nreload"
         },
         {
           "id": "4d",
@@ -780,7 +796,8 @@
               "testid": "order-item",
               "contains": "Headphones"
             }
-          ]
+          ],
+          "statedBy": "checkout turns the cart into one order, reduces stock for every line, and\nempties the cart"
         }
       ]
     },
@@ -894,7 +911,8 @@
               "contains": "solid mold",
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "reviews are visible to everyone, including signed-out visitors"
         },
         {
           "id": "6b",
@@ -930,7 +948,8 @@
               "contains": "solid mold",
               "absent": true
             }
-          ]
+          ],
+          "statedBy": "one review per customer per item"
         },
         {
           "id": "6c",
@@ -987,7 +1006,8 @@
               "testid": "review-average",
               "numeric": true
             }
-          ]
+          ],
+          "statedBy": "each item shows its average rating, which updates live as reviews arrive"
         }
       ],
       "note": "Both reviewers buy the item in setup: reviews are gated on a purchase, so an unpurchased reviewer would be refused by a compliant app."
@@ -1037,7 +1057,8 @@
               "testid": "admin-panel",
               "absent": true
             }
-          ]
+          ],
+          "statedBy": "admin accounts see an admin area; customers do not"
         },
         {
           "id": "7b",
@@ -1077,7 +1098,8 @@
               },
               "equals": 100
             }
-          ]
+          ],
+          "statedBy": "admin lists every item with its stock, every warehouse, and the stock of\neach item in each warehouse"
         },
         {
           "id": "7c",
@@ -1148,7 +1170,8 @@
               },
               "equals": 125
             }
-          ]
+          ],
+          "statedBy": "an item's stock on the storefront is the sum of that item's units across all\nwarehouses"
         }
       ]
     }
