@@ -78,6 +78,7 @@ import type { SubmoduleDispatchInfo, SchemaInner } from './schema';
 import { HttpRequest, HttpResponse } from '../lib/autogen/types';
 
 const { freeze } = Object;
+const EMPTY_ALIAS_VIEWS = freeze({});
 
 export const sys = { ..._syscalls2_0, ..._syscalls2_1 };
 
@@ -253,7 +254,7 @@ export const ReducerCtxImpl = class ReducerCtx<
     timestamp: Timestamp,
     connectionId: ConnectionId | null,
     dbView: DbView<any>,
-    asViews: object = {}
+    asViews: object = EMPTY_ALIAS_VIEWS
   ) {
     Object.seal(this);
     this.sender = sender;
@@ -263,15 +264,8 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.as = asViews as AliasViews<SchemaDef>;
   }
 
-  /**
-   * Reset transaction-local state for a module with no mounted submodules.
-   *
-   * Such a module always uses the same `db` and `as` views, so rewriting those
-   * properties and checking optional arguments on every reducer call is wasted
-   * work. Keep this hot path separate from `reset` below rather than adding
-   * submodule bookkeeping to all reducer calls.
-   */
-  static resetForRootModule(
+  /** Reset the `ReducerCtx` to be used for a new root-module transaction. */
+  static reset(
     me: InstanceType<typeof this>,
     sender: Identity,
     timestamp: Timestamp,
@@ -285,29 +279,25 @@ export const ReducerCtxImpl = class ReducerCtx<
   }
 
   /**
-   * Reset the reusable `ReducerCtx` for the next reducer call. `dbView` and
-   * `asViews` replace `ctx.db` and `ctx.as` with the table accessors and
-   * submodule-alias contexts belonging to the reducer being called.
+   * Reset the reusable `ReducerCtx` for a reducer mounted in a namespace.
+   * `dbView` and `asViews` select the table and alias views belonging to that
+   * reducer's module.
    */
-  static reset(
+  static resetForNamespace(
     me: InstanceType<typeof this>,
     sender: Identity,
     timestamp: Timestamp,
     connectionId: ConnectionId | null,
-    dbView?: DbView<any>,
-    asViews?: object
+    dbView: DbView<any>,
+    asViews: object
   ) {
     me.sender = sender;
     me.timestamp = timestamp;
     me.connectionId = connectionId;
     me.#uuidCounter = undefined;
     me.#senderAuth = undefined;
-    if (dbView !== undefined) {
-      me.db = dbView;
-    }
-    if (asViews !== undefined) {
-      me.as = asViews as AliasViews<any>;
-    }
+    me.db = dbView;
+    me.as = asViews as AliasViews<any>;
   }
 
   get databaseIdentity() {
@@ -438,14 +428,15 @@ function flattenSubmoduleDispatches(
 }
 
 export const makeHooks = (schema: SchemaInner): ModuleHooks =>
-  new ModuleHooksImpl(schema);
+  schema.submoduleDispatchInfos.length === 0
+    ? new RootModuleHooksImpl(schema)
+    : new ModuleHooksImpl(schema);
 
 class ModuleHooksImpl implements ModuleHooks {
   #schema: SchemaInner;
   #dbView_: DbView<any> | undefined;
   #consumerAs_: object | undefined;
   #reducerArgsDeserializers;
-  #hasSubmodules: boolean;
   #consumerReducerCount: number;
   #consumerProcedureCount: number;
   #flatSubmodules: FlatSubmoduleDispatch[];
@@ -458,7 +449,6 @@ class ModuleHooksImpl implements ModuleHooks {
 
   constructor(schema: SchemaInner) {
     this.#schema = schema;
-    this.#hasSubmodules = schema.submoduleDispatchInfos.length !== 0;
     this.#consumerReducerCount = schema.reducers.length;
     this.#consumerProcedureCount = schema.procedures.length;
     this.#consumerAnonViewCount = schema.anonViews.length;
@@ -579,23 +569,6 @@ class ModuleHooksImpl implements ModuleHooks {
     BINARY_READER.reset(argsBuf);
     const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
-    const reducerTimestamp = new Timestamp(timestamp);
-    const connectionId = ConnectionId.nullIfZero(new ConnectionId(connId));
-
-    // With no mounted submodules, every reducer uses the same `ctx.db` table
-    // accessors and an empty `ctx.as`. Skip namespace dispatch and avoid
-    // rewriting those unchanged context properties on every reducer call.
-    if (!this.#hasSubmodules) {
-      const ctx = this.#reducerCtx;
-      ReducerCtxImpl.resetForRootModule(
-        ctx,
-        senderIdentity,
-        reducerTimestamp,
-        connectionId
-      );
-      callUserFunction(this.#schema.reducers[reducerId], ctx, args);
-      return;
-    }
 
     let fn: ((...args: any[]) => any) | undefined;
     let dbView: DbView<any>;
@@ -623,11 +596,11 @@ class ModuleHooksImpl implements ModuleHooks {
     }
 
     const ctx = this.#reducerCtx;
-    ReducerCtxImpl.reset(
+    ReducerCtxImpl.resetForNamespace(
       ctx,
       senderIdentity,
-      reducerTimestamp,
-      connectionId,
+      new Timestamp(timestamp),
+      ConnectionId.nullIfZero(new ConnectionId(connId)),
       dbView!,
       asViews!
     );
@@ -808,6 +781,71 @@ class ModuleHooksImpl implements ModuleHooks {
     );
     HttpResponse.serialize(responseBuf, responseMetadata);
     return [responseBuf.getBuffer(), responseBody];
+  }
+}
+
+/**
+ * Hooks for modules without mounted submodules.
+ *
+ * Keep reducer dispatch in a separate, small function so these modules retain
+ * the pre-submodules hot path. `ctx.as` is initialized once to a shared empty
+ * object when the cached reducer context is created; it requires no per-call
+ * namespace dispatch or context updates.
+ */
+class RootModuleHooksImpl extends ModuleHooksImpl {
+  #schema: SchemaInner;
+  #dbView_: DbView<any> | undefined;
+  #reducerArgsDeserializers;
+  #reducerCtx_: InstanceType<typeof ReducerCtxImpl> | undefined;
+
+  constructor(schema: SchemaInner) {
+    super(schema);
+    this.#schema = schema;
+    this.#reducerArgsDeserializers = schema.moduleDef.reducers.map(
+      ({ params }) => ProductType.makeDeserializer(params, schema.typespace)
+    );
+  }
+
+  get #dbView() {
+    return (this.#dbView_ ??= freeze(
+      Object.fromEntries(
+        Object.values(this.#schema.schemaType.tables).map(table => [
+          table.accessorName,
+          makeTableView(this.#schema.typespace, table.tableDef),
+        ])
+      )
+    ));
+  }
+
+  get #reducerCtx() {
+    return (this.#reducerCtx_ ??= new ReducerCtxImpl(
+      Identity.zero(),
+      Timestamp.UNIX_EPOCH,
+      null,
+      this.#dbView
+    ));
+  }
+
+  override __call_reducer__(
+    reducerId: u32,
+    sender: u256,
+    connId: u128,
+    timestamp: bigint,
+    argsBuf: DataView
+  ): void {
+    const moduleCtx = this.#schema;
+    const deserializeArgs = this.#reducerArgsDeserializers[reducerId];
+    BINARY_READER.reset(argsBuf);
+    const args = deserializeArgs(BINARY_READER);
+    const senderIdentity = new Identity(sender);
+    const ctx = this.#reducerCtx;
+    ReducerCtxImpl.reset(
+      ctx,
+      senderIdentity,
+      new Timestamp(timestamp),
+      ConnectionId.nullIfZero(new ConnectionId(connId))
+    );
+    callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
   }
 }
 
