@@ -25,6 +25,30 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_WITHIN = 5000;
 
+// Truncate a failure detail without throwing away the part that explains it.
+//
+// A blunt `slice(0, 300)` kept the wrong half. Playwright leads with ~200
+// characters of `waiting for locator(...)` and only then says WHY —
+// "<div class=backdrop> intercepts pointer events", "element is not enabled".
+// One L2 detail was stored 188 characters long, cut off immediately before the
+// line naming the cause, and the fix round was sent after a phantom.
+//
+// Keep the opening line, then the diagnostic lines from the call log, and drop
+// the "waiting for / retrying / scrolling" noise in between.
+function keepReason(detail, limit = 600) {
+  const s = String(detail ?? '');
+  if (s.length <= limit) return s;
+  const [head, ...rest] = s.split('\n');
+  const reasons = rest
+    .map(l => l.trim())
+    .filter(l => /^-\s/.test(l))
+    .map(l => l.replace(/^-\s*/, ''))
+    .filter(l => !/^(waiting for|retrying|attempting|scrolling|done scrolling|locator resolved to|\d+ ×)/i.test(l));
+  const kept = [...new Set(reasons)].slice(0, 4);
+  const out = kept.length ? `${head}\n  - ${kept.join('\n  - ')}` : s.slice(0, limit);
+  return out.length > limit ? out.slice(0, limit) : out;
+}
+
 function parseArgs(argv) {
   const args = { level: 1, headed: false };
   for (let i = 2; i < argv.length; i++) {
@@ -1485,8 +1509,32 @@ async function gradeFeature(browser, feature, args, runCtx) {
   } catch (err) {
     result.setupError = err.message;
     result.caps.push('setup-failed → 0');
+    // Carry the REASON onto every criterion, not just onto the feature.
+    //
+    // This wrote a bare 'setup failed' for months while the actual error sat in
+    // `result.setupError` one line above, unread. report-bugs.mjs reads
+    // criterion details, so the fix agent was told "the feature could not be
+    // reached at all" for 110 of 150 recorded failures — 73% of everything —
+    // when the grader knew, every time, that (for example) sign-in never
+    // completed because the signed-in user never appeared.
+    //
+    // A browser that crashes or a harness step that times out is not the app
+    // failing, so those are marked inconclusive rather than scored as defects:
+    // the same rule the contention criteria already follow.
+    const why = keepReason(String(err.message ?? '').trim());
+    const harnessFault = /Page crashed|Target (page|closed)|browser has been closed|ECONNREFUSED/i.test(why);
     for (const c of feature.criteria) {
-      result.criteria.push({ id: c.id, points: c.points, passed: false, detail: 'setup failed' });
+      // Mark an untestable criterion the way the rest of the harness already
+      // does — by prefixing the detail — AND with the field. compare-runs.mjs
+      // reads the prefix, bench.mjs and report-bugs.mjs read the field; setting
+      // only one of them would make a harness fault count as an app defect in
+      // whichever tool reads the other.
+      const base = why ? `setup failed: ${why}` : 'setup failed';
+      result.criteria.push({
+        id: c.id, points: c.points, passed: false,
+        detail: harnessFault ? `INCONCLUSIVE: ${base}` : base,
+        ...(harnessFault ? { inconclusive: true } : {}),
+      });
     }
     await closeAll();
     return result;
@@ -1540,13 +1588,13 @@ async function gradeFeature(browser, feature, args, runCtx) {
     // the scored total, and is reported separately so the gap is visible.
     const inconclusive = !passed && /^INCONCLUSIVE/.test(String(detail));
     result.criteria.push({ id: criterion.id, desc: criterion.desc, points: criterion.points,
-      passed, inconclusive: inconclusive || undefined, detail,
+      passed, inconclusive: inconclusive || undefined, detail: keepReason(detail),
       ...(ctx.serverCheck ? { serverCheck: ctx.serverCheck } : {}) });
     if (passed) result.score += criterion.points;
     else if (inconclusive) {
       result.max -= criterion.points;
       result.inconclusive = [...(result.inconclusive ?? []),
-        { id: criterion.id, points: criterion.points, detail: String(detail).slice(0, 300) }];
+        { id: criterion.id, points: criterion.points, detail: keepReason(detail) }];
     }
   }
 
