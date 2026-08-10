@@ -4,6 +4,10 @@ use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
+fn healthcheck_version(release_version: &str) -> &str {
+    release_version.strip_prefix('v').unwrap_or(release_version)
+}
+
 pub struct DockerRelease {
     pub version: String,
     pub dry_run: bool,
@@ -111,7 +115,7 @@ impl DockerRelease {
         println!("Building for platforms: linux/amd64, linux/arm64");
 
         let version_tag = format!("{}:{}", image_repo, self.version);
-        let healthcheck_version = self.version.strip_prefix('v').unwrap_or(&self.version);
+        let healthcheck_version = healthcheck_version(&self.version);
 
         // Build and push the multi-platform image
         let mut cmd = Command::new("docker");
@@ -210,5 +214,20 @@ impl ReleaseTarget for DockerRelease {
 
     fn name(&self) -> &'static str {
         "docker"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::healthcheck_version;
+
+    #[test]
+    fn healthcheck_version_strips_leading_v() {
+        assert_eq!(healthcheck_version("v2.7.0-hotfix3"), "2.7.0-hotfix3");
+    }
+
+    #[test]
+    fn healthcheck_version_keeps_version_without_leading_v() {
+        assert_eq!(healthcheck_version("2.7.0-hotfix3"), "2.7.0-hotfix3");
     }
 }

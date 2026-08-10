@@ -591,6 +591,7 @@ fn main() -> Result<()> {
                 "unreal"
             )
             .run()?;
+            cmd!("cargo", "test", "--manifest-path", "tools/release/Cargo.toml").run()?;
             // Bindings snapshot tests rely on the unstable feature,
             // as they compile and test APIs which are gated behind that feature,
             // e.g. procedures, HTTP handlers.
