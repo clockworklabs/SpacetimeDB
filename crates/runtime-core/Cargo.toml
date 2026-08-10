@@ -11,7 +11,6 @@ workspace = true
 
 [features]
 default = []
-std = []
 sim = ["dep:async-task", "dep:spin"]
 
 [dependencies]
