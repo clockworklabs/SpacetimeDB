@@ -68,28 +68,28 @@ const THINKING_TOKENS = process.env.STACK_BENCH_THINKING ?? null;
 // changes it deliberately.
 const EFFORT = process.env.STACK_BENCH_EFFORT ?? 'high';
 
-// Where a build session runs. The container is the default because the harness
-// is not on its filesystem: a fix round once read the scenario file defining
-// the criteria it was failing, then ran grade.mjs, and denying those paths is a
-// blocklist against an agent that only needed grep and sed.
+// Where a build session runs. HOST by default, container behind
+// --require-container.
 //
-// STACK_BENCH_CONTAINER=0 (or --no-container) runs on the host instead, which
-// is what every number collected before this change was measured on — useful
-// for reproducing an old result, and the reason this is a default rather than
-// a hard requirement.
-// Back on by default (2026-08-10), after the run-survives-the-build rewrite.
+// The container gives a property the sandbox never had — the harness is not on
+// the filesystem the build can see — and the post-build half now works: an app
+// was stood up in one and graded end to end, and restart/stop/start really
+// restart. What does NOT work is SpacetimeDB. A containerised `spacetime dev`
+// blocked a build session for 1:01:17 and the run produced nothing. The shell
+// backgrounding pattern was ruled out (the same shape returns in 5s under
+// docker exec, redirected or not), so the cause is in `spacetime dev` itself and
+// is not yet understood.
 //
-// It was briefly defaulted off: `docker run --rm` took the app's dev servers
-// down with the build session, so the grader had nothing to talk to, and one
-// sweep died that way after spending $9.46 and grading nothing. The container is
-// now long-lived and each round execs into it — see CONTAINER-DESIGN.md.
+// Ledger, because it decides the default: containerisation has cost a day, a
+// $9.46 sweep that graded nothing, and an hour-long hang. The contamination it
+// prevents has happened once, was CAUGHT by leak-audit, and cost one voided run.
+// Until the SpacetimeDB hang is understood, the host is where numbers come from
+// — it is where every valid result in this project was measured.
 //
-// Re-enabled only after the step that failed was proven, not just the build:
-// a containerised app was stood up and graded end to end (reseed ok on all five
-// suites, 46/50), restart/stop/start were shown to really restart (listener PID
-// changed), and run-build.mjs was shown to create the container on the first
-// round and reuse it on the second.
-const USE_CONTAINER = (process.env.STACK_BENCH_CONTAINER ?? '1') !== '0';
+// Nothing is lost by this: --require-container still forces it, and the
+// reproduction to run is a `spacetime dev` from a CLEAN module against a
+// disposable host, which needs no model spend.
+const USE_CONTAINER = (process.env.STACK_BENCH_CONTAINER ?? '0') !== '0';
 const IMAGE = process.env.STACK_BENCH_IMAGE ?? 'stack-bench-build:2.1.226';
 
 // Set once in main(), because the addresses a build is TOLD to use depend on
