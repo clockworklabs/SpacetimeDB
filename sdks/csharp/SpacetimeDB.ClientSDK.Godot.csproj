@@ -18,7 +18,7 @@
     <RepositoryUrl>https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk</RepositoryUrl>
     <AssemblyVersion>2.8.0</AssemblyVersion>
     <Version>2.8.0</Version>
-    <DefaultItemExcludes>$(DefaultItemExcludes);*~/**;tests/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
     <RestorePackagesPath>obj~/godot/packages</RestorePackagesPath>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <DefineConstants>$(DefineConstants);GODOT</DefineConstants>
