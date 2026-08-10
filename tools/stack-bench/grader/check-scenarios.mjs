@@ -46,6 +46,25 @@ function hooksByLevel(track) {
   return byLevel;
 }
 
+// A point-carrying criterion must be licensed by an explicit statement in the
+// level prompt, and `statedBy` is the machine-checkable form of that rule: the
+// quote has to actually appear there. This exists because scoring an invariant
+// the spec never stated is a gotcha - an app is failed for a requirement it was
+// never given - and the only way the rule survives L2/L3 authoring is if a
+// checker holds it rather than a convention. A wrong quote FAILS; a missing
+// quote on a point-carrier warns, so older tracks keep validating while new
+// levels are annotated.
+import { existsSync } from 'node:fs';
+const norm = t => t.replace(/\*\*/g, '').replace(/—/g, '-').toLowerCase().replace(/\s+/g, ' ').trim();
+function promptFor(track, level) {
+  const dir = join(track.dir, 'prompts');
+  if (!existsSync(dir)) return null;
+  const f = readdirSync(dir).find(f => f.startsWith(level + '-') && f.endsWith('.md'));
+  return f ? norm(readFileSync(join(dir, f), 'utf8')) : null;
+}
+
+let unstatedWarnings = 0;
+
 for (const name of trackNames) {
  const track = loadTrack(name);
  console.log(`# track: ${name}`);
@@ -56,7 +75,18 @@ for (const name of trackNames) {
   const hooks = contracts[level] ?? null;
 
   console.log(`${file}`);
+  const prompt = promptFor(track, level);
   for (const f of spec.features ?? []) {
+    for (const c of f.criteria ?? []) {
+      if (c.statedBy) {
+        if (prompt && !prompt.includes(norm(c.statedBy))) {
+          fail(`F${f.id} ${c.id}`, `statedBy quote is not in the level ${level} prompt: "${String(c.statedBy).slice(0, 60)}..."`);
+        }
+      } else if ((c.points ?? 0) > 0) {
+        unstatedWarnings++;
+        console.log(`  warn F${f.id} ${c.id}: carries ${c.points} point(s) with no statedBy - the requirement may be unstated`);
+      }
+    }
     const actors = new Set(f.actors ?? []);
     const steps = [...(f.setup ?? []), ...(f.criteria ?? []).flatMap(c => c.steps ?? [])];
     for (const s of steps) {
@@ -81,5 +111,6 @@ for (const name of trackNames) {
  }
 }
 
-console.log(problems ? `\n${problems} problem(s)` : '\nno problems');
+console.log(problems ? `\n${problems} problem(s)`
+  : `\nno problems${unstatedWarnings ? ` (${unstatedWarnings} point-carrying criteria still lack statedBy)` : ''}`);
 process.exit(problems ? 1 : 0);

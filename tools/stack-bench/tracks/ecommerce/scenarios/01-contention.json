@@ -147,7 +147,8 @@
               "numeric": true
             }
           ],
-          "provenBy": "Proven on all three backends it scores, each by removing that stack’s own oversell protection: postgres (FOR UPDATE on the stock read) and mongodb (the quantity:{$gte} filter on the conditional update) both drove stock to -3; spacetime, whose reducers are transactional and have no lock to remove, was mutated by dropping the stock guard and read 4294967293 — the same -3 wrapped by u32 underflow. Every unmutated build passes. NOTE the asymmetry: the postgres and mongodb mutants inject a RACE; the spacetime one injects a missing validation, because the race is not expressible in a reducer. See grader/mutations/spacetime-ecom-l1.json."
+          "provenBy": "Proven on all three backends it scores, each by removing that stack’s own oversell protection: postgres (FOR UPDATE on the stock read) and mongodb (the quantity:{$gte} filter on the conditional update) both drove stock to -3; spacetime, whose reducers are transactional and have no lock to remove, was mutated by dropping the stock guard and read 4294967293 — the same -3 wrapped by u32 underflow. Every unmutated build passes. NOTE the asymmetry: the postgres and mongodb mutants inject a RACE; the spacetime one injects a missing validation, because the race is not expressible in a reducer. See grader/mutations/spacetime-ecom-l1.json.",
+          "statedBy": "stock may never go negative, and two customers must never both get the last unit"
         },
         {
           "id": "201b",
@@ -183,14 +184,16 @@
               "maxEach": 1
             }
           ],
-          "withheld": "rewritten to count the population instead of one participant: the old phrasing asked actor a for at most one order, which passes when nobody got one. Stays at 0 points until it kills a mutant on a real build."
+          "withheld": "rewritten to count the population instead of one participant: the old phrasing asked actor a for at most one order, which passes when nobody got one. Stays at 0 points until it kills a mutant on a real build.",
+          "statedBy": "two customers must never both get the last unit"
         },
         {
           "id": "201c",
           "desc": "revenue counts three sales, not six",
           "points": 0,
           "withheld": "needs an admin actor; wire once 201a has demonstrably failed somewhere",
-          "steps": []
+          "steps": [],
+          "statedBy": "stock must never leave a warehouse without a corresponding order"
         }
       ]
     },
@@ -387,7 +390,8 @@
               "plus": 2,
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "a restock in one warehouse raises the storefront number live"
         }
       ],
       "note": "The rush assertion only means something if a restock works at all, so the control runs first and has to move the number. Without it a restock that never reached the server and a restock lost to a race look identical: both leave stock at start - purchases. The control also separates the two, by reading what the server stored (admin-location-qty) before what the buyer sees (item-stock). Totals are asserted as CHANGES rather than absolute values, because earlier features buy from the same catalogue."
@@ -475,7 +479,8 @@
               },
               "equals": 2
             }
-          ]
+          ],
+          "statedBy": "raises its quantity rather than adding a second line"
         },
         {
           "id": "203b",
@@ -579,7 +584,8 @@
           ],
           "note": "replayConcurrently replays each actor's LAST POST, so a racing tab must not touch the cart after its checkout is captured — that would overwrite the captured request with an add-to-cart. A third session on the same account fills the cart instead, leaving tab1 and tab2 holding nothing but their checkouts. A checkout carries no JSON body, so it never lands in lastWrites — the replay must select it by URL with the match option, or it silently races the last add-to-cart instead.",
           "provenBy": "checkout-not-idempotent (postgres-ecom-l1.json): stripping FOR UPDATE from the cart read at checkout made two replayed checkout requests each create an order — the criterion failed on its own assertion (expected exactly 1 order containing Keyboard, found 2). The unmutated app passes, refusing the second checkout with a 400.",
-          "withheld": "uses the spec's named `checkout` action so it can be issued on either stack. It previously replayed a captured HTTP write, which SpacetimeDB never produces — that client writes over WebSocket — so the criterion reported INCONCLUSIVE there and the two backends were scored out of different totals. Points retained: it has already failed a mutant on the stacks that could run it."
+          "withheld": "uses the spec's named `checkout` action so it can be issued on either stack. It previously replayed a captured HTTP write, which SpacetimeDB never produces — that client writes over WebSocket — so the criterion reported INCONCLUSIVE there and the two backends were scored out of different totals. Points retained: it has already failed a mutant on the stacks that could run it.",
+          "statedBy": "checking out twice must not produce two orders"
         }
       ],
       "note": "Both tabs reach the item by search rather than trusting the storefront: earlier features in this suite buy things, which re-ranks the top ten. Each tab opens its OWN cart — panel state belongs to a browser context, not to the feature."

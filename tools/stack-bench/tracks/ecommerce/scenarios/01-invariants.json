@@ -70,7 +70,8 @@
               },
               "equals": 99
             }
-          ]
+          ],
+          "statedBy": "the server must refuse a purchase request that arrives without a valid session"
         }
       ]
     },
@@ -135,7 +136,8 @@
               "contains": "Desk Lamp",
               "absent": true
             }
-          ]
+          ],
+          "statedBy": "knowing someone's username must never grant access to it"
         }
       ]
     },
@@ -233,7 +235,8 @@
               "relativeTo": "purifier-after-admin-restock",
               "plus": 0
             }
-          ]
+          ],
+          "statedBy": "the server must refuse admin actions from a non-admin account"
         }
       ]
     },
@@ -296,7 +299,8 @@
               },
               "atLeast": 449
             }
-          ]
+          ],
+          "statedBy": "the price at the time of purchase"
         }
       ]
     },
@@ -370,7 +374,8 @@
               "testid": "order-item",
               "contains": "Headphones"
             }
-          ]
+          ],
+          "statedBy": "persists across a page reload"
         },
         {
           "id": "105b",
@@ -405,7 +410,8 @@
               "testid": "cart-item",
               "contains": "Keyboard"
             }
-          ]
+          ],
+          "statedBy": "across the connection dropping and re-establishing"
         }
       ]
     },
@@ -460,7 +466,8 @@
               "contains": "Coffee Grinder",
               "absent": true
             }
-          ]
+          ],
+          "statedBy": "a customer sees only their own orders"
         }
       ]
     },
@@ -554,7 +561,8 @@
               "plus": 58,
               "within": 10000
             }
-          ]
+          ],
+          "statedBy": "the sum of all order totals"
         },
         {
           "id": "107b",
@@ -587,7 +595,8 @@
               "relativeTo": "brick-before",
               "plus": -2
             }
-          ]
+          ],
+          "statedBy": "must always equal what the orders themselves add up to"
         }
       ]
     },
@@ -663,7 +672,8 @@
               "contains": "never bought this",
               "absent": true
             }
-          ]
+          ],
+          "statedBy": "refuses a review from someone who has never ordered the item"
         },
         {
           "id": "108b",
@@ -725,7 +735,8 @@
               "contains": "bought and used it",
               "within": 8000
             }
-          ]
+          ],
+          "statedBy": "a review of an item they have bought"
         }
       ]
     },
@@ -790,7 +801,8 @@
               },
               "equals": 1
             }
-          ]
+          ],
+          "statedBy": "nobody else can read or change it"
         },
         {
           "id": "109b",
@@ -824,7 +836,8 @@
               },
               "atLeast": 1
             }
-          ]
+          ],
+          "statedBy": "a request carrying zero or a negative quantity is refused and changes nothing"
         }
       ]
     }
