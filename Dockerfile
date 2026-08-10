@@ -4,6 +4,8 @@ FROM rust:bookworm AS builder
 WORKDIR /usr/src/app
 COPY . .
 
+ARG SPACETIMEDB_RELEASE_VERSION
+
 # If we're in a git submodule, we'll have a corrupted/nonfunctional .git file instead of a proper .git directory.
 # To make the errors more sane, remove .git entirely.
 RUN if [ -f .git ]; then \
@@ -13,7 +15,11 @@ RUN if [ -f .git ]; then \
       exit 1; \
     fi
 
-RUN cargo build -p spacetimedb-standalone -p spacetimedb-cli --release --locked
+RUN if [ -n "$SPACETIMEDB_RELEASE_VERSION" ]; then \
+      SPACETIMEDB_VERSION="$SPACETIMEDB_RELEASE_VERSION" cargo build -p spacetimedb-standalone -p spacetimedb-cli --release --locked; \
+    else \
+      cargo build -p spacetimedb-standalone -p spacetimedb-cli --release --locked; \
+    fi
 
 FROM rust:bookworm
 
@@ -62,4 +68,3 @@ EXPOSE 3000
 
 # Define the entrypoint
 ENTRYPOINT ["spacetime"]
-

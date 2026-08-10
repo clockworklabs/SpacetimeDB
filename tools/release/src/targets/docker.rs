@@ -111,6 +111,7 @@ impl DockerRelease {
         println!("Building for platforms: linux/amd64, linux/arm64");
 
         let version_tag = format!("{}:{}", image_repo, self.version);
+        let healthcheck_version = self.version.strip_prefix('v').unwrap_or(&self.version);
 
         // Build and push the multi-platform image
         let mut cmd = Command::new("docker");
@@ -121,6 +122,8 @@ impl DockerRelease {
             "linux/amd64,linux/arm64",
             "-t",
             &version_tag,
+            "--build-arg",
+            &format!("SPACETIMEDB_RELEASE_VERSION={healthcheck_version}"),
             "--push",
             ".",
         ]);

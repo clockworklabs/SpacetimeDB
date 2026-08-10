@@ -64,6 +64,11 @@ jobs:
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
 
+      - name: Set release version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: echo "SPACETIMEDB_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
       - name: Add signtool.exe to PATH
         if: ${{ runner.os == 'Windows' }}
         shell: pwsh

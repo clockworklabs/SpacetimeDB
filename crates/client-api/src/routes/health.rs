@@ -3,7 +3,10 @@ use axum::extract::State;
 use axum::response::IntoResponse;
 use http::StatusCode;
 
-static VERSION: &str = env!("CARGO_PKG_VERSION");
+static VERSION: &str = match option_env!("SPACETIMEDB_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
 static PACKAGE_NAME: &str = env!("CARGO_PKG_NAME");
 
 pub async fn health<S: ControlStateDelegate + NodeDelegate>(
