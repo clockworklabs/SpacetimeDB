@@ -263,7 +263,32 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.as = asViews as AliasViews<SchemaDef>;
   }
 
-  /** Reset the `ReducerCtx` to be used for a new transaction */
+  /**
+   * Reset transaction-local state for a module with no mounted submodules.
+   *
+   * Such a module always uses the same `db` and `as` views, so rewriting those
+   * properties and checking optional arguments on every reducer call is wasted
+   * work. Keep this hot path separate from `reset` below rather than adding
+   * submodule bookkeeping to all reducer calls.
+   */
+  static resetForRootModule(
+    me: InstanceType<typeof this>,
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null
+  ) {
+    me.sender = sender;
+    me.timestamp = timestamp;
+    me.connectionId = connectionId;
+    me.#uuidCounter = undefined;
+    me.#senderAuth = undefined;
+  }
+
+  /**
+   * Reset the reusable `ReducerCtx` for the next reducer call. `dbView` and
+   * `asViews` replace `ctx.db` and `ctx.as` with the table accessors and
+   * submodule-alias contexts belonging to the reducer being called.
+   */
   static reset(
     me: InstanceType<typeof this>,
     sender: Identity,
@@ -420,6 +445,7 @@ class ModuleHooksImpl implements ModuleHooks {
   #dbView_: DbView<any> | undefined;
   #consumerAs_: object | undefined;
   #reducerArgsDeserializers;
+  #hasSubmodules: boolean;
   #consumerReducerCount: number;
   #consumerProcedureCount: number;
   #flatSubmodules: FlatSubmoduleDispatch[];
@@ -432,6 +458,7 @@ class ModuleHooksImpl implements ModuleHooks {
 
   constructor(schema: SchemaInner) {
     this.#schema = schema;
+    this.#hasSubmodules = schema.submoduleDispatchInfos.length !== 0;
     this.#consumerReducerCount = schema.reducers.length;
     this.#consumerProcedureCount = schema.procedures.length;
     this.#consumerAnonViewCount = schema.anonViews.length;
@@ -552,6 +579,23 @@ class ModuleHooksImpl implements ModuleHooks {
     BINARY_READER.reset(argsBuf);
     const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
+    const reducerTimestamp = new Timestamp(timestamp);
+    const connectionId = ConnectionId.nullIfZero(new ConnectionId(connId));
+
+    // With no mounted submodules, every reducer uses the same `ctx.db` table
+    // accessors and an empty `ctx.as`. Skip namespace dispatch and avoid
+    // rewriting those unchanged context properties on every reducer call.
+    if (!this.#hasSubmodules) {
+      const ctx = this.#reducerCtx;
+      ReducerCtxImpl.resetForRootModule(
+        ctx,
+        senderIdentity,
+        reducerTimestamp,
+        connectionId
+      );
+      callUserFunction(this.#schema.reducers[reducerId], ctx, args);
+      return;
+    }
 
     let fn: ((...args: any[]) => any) | undefined;
     let dbView: DbView<any>;
@@ -582,8 +626,8 @@ class ModuleHooksImpl implements ModuleHooks {
     ReducerCtxImpl.reset(
       ctx,
       senderIdentity,
-      new Timestamp(timestamp),
-      ConnectionId.nullIfZero(new ConnectionId(connId)),
+      reducerTimestamp,
+      connectionId,
       dbView!,
       asViews!
     );
