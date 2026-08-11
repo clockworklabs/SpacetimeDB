@@ -10,9 +10,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::{env, fs};
 
-const README_PATH: &str = "tools/ci/README.md";
-
-mod ci_docs;
 mod cla_assistant;
 mod codeowners_check;
 mod internal_tests;
