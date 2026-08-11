@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
-use duct::cmd;
 use serde::Deserialize;
+use std::process::Command;
 
 #[derive(Deserialize)]
 struct WorkflowRunView {
@@ -9,10 +9,34 @@ struct WorkflowRunView {
 }
 
 fn get_workflow_run(repo: &str, run_id: u64) -> Result<WorkflowRunView> {
-    let raw = cmd!("gh", "api", format!("repos/{repo}/actions/runs/{run_id}"))
-        .read()
-        .with_context(|| format!("failed to read workflow run {run_id} in {repo}"))?;
-    serde_json::from_str(&raw).with_context(|| format!("failed to parse workflow run {run_id} in {repo}"))
+    let path = format!("repos/{repo}/actions/runs/{run_id}");
+    let output = Command::new("gh")
+        .args(["api", "--include", &path])
+        .output()
+        .with_context(|| format!("failed to run gh api for workflow run {run_id} in {repo}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        eprintln!("gh api failed while reading workflow run {run_id} in {repo}:");
+        if !stdout.is_empty() {
+            eprintln!("--- gh api stdout ---\n{stdout}");
+        }
+        if !stderr.is_empty() {
+            eprintln!("--- gh api stderr ---\n{stderr}");
+        }
+        bail!("gh api {path} exited with {}", output.status);
+    }
+
+    let body = response_body(&stdout);
+    serde_json::from_str(body).with_context(|| format!("failed to parse workflow run {run_id} in {repo}"))
+}
+
+fn response_body(response: &str) -> &str {
+    response
+        .rsplit_once("\r\n\r\n")
+        .or_else(|| response.rsplit_once("\n\n"))
+        .map_or(response, |(_, body)| body)
 }
 
 pub(crate) fn watch_workflow_run(
