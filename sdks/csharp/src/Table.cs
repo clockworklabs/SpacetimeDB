@@ -212,18 +212,8 @@ namespace SpacetimeDB
         // I didn't do that because that delays the index updates until after the row is processed.
         // In theory, that shouldn't be the issue, but I didn't want to break it right before leaving :)
         //          - Ingvar
-        private AbstractEventHandler<Row> OnInternalInsertHandler { get; } = new();
-        private event Action<Row> OnInternalInsert
-        {
-            add => OnInternalInsertHandler.AddListener(value);
-            remove => OnInternalInsertHandler.RemoveListener(value);
-        }
-        private AbstractEventHandler<Row> OnInternalDeleteHandler { get; } = new();
-        private event Action<Row> OnInternalDelete
-        {
-            add => OnInternalDeleteHandler.AddListener(value);
-            remove => OnInternalDeleteHandler.RemoveListener(value);
-        }
+        private event Action<Row> OnInternalInsert;
+        private event Action<Row> OnInternalDelete;
 
         // These are implementations of the type-erased interface.
         object? IRemoteTableHandle.GetPrimaryKey(IStructuralReadWrite row) => GetPrimaryKey((Row)row);
@@ -514,14 +504,14 @@ namespace SpacetimeDB
             {
                 if (value is Row oldRow)
                 {
-                    OnInternalDeleteHandler.Invoke(oldRow);
+                    OnInternalDelete?.Invoke(oldRow);
                 }
             }
             foreach (var (_, value) in wasInserted)
             {
                 if (value is Row newRow)
                 {
-                    OnInternalInsertHandler.Invoke(newRow);
+                    OnInternalInsert?.Invoke(newRow);
                 }
                 else
                 {
@@ -532,7 +522,7 @@ namespace SpacetimeDB
             {
                 if (oldValue is Row oldRow)
                 {
-                    OnInternalDeleteHandler.Invoke(oldRow);
+                    OnInternalDelete?.Invoke(oldRow);
                 }
                 else
                 {
@@ -542,7 +532,7 @@ namespace SpacetimeDB
 
                 if (newValue is Row newRow)
                 {
-                    OnInternalInsertHandler.Invoke(newRow);
+                    OnInternalInsert?.Invoke(newRow);
                 }
                 else
                 {

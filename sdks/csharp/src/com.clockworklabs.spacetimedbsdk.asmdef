@@ -1,3 +1,11 @@
 {
     "name": "com.clockworklabs.spacetimedbsdk"
+    "rootNamespace": "SpacetimeDB",
+    "versionDefines": [
+        {
+            "name": "io.clockworklabs.sappy",
+            "expression": "1.0.1",
+            "define": "SAPPY"
+        }
+    ],
 }
