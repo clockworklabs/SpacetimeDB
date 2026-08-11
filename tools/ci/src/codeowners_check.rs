@@ -229,6 +229,40 @@ diff --git a/LICENSE.txt b/LICENSE.txt
         }
 
         #[test]
+        fn rejects_entirely_added_license_file() {
+            let diff = "\
+diff --git a/licenses/new.txt b/licenses/new.txt
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/licenses/new.txt
+@@ -0,0 +1,3 @@
++Licensed Work:        SpacetimeDB 2.4.0
++Change Date:          2031-06-01
++New license term
+";
+
+            assert!(!diff_only_changes_version_or_date(diff));
+        }
+
+        #[test]
+        fn rejects_entirely_removed_license_file() {
+            let diff = "\
+diff --git a/licenses/old.txt b/licenses/old.txt
+deleted file mode 100644
+index 1111111..0000000
+--- a/licenses/old.txt
++++ /dev/null
+@@ -1,3 +0,0 @@
+-Licensed Work:        SpacetimeDB 2.3.0
+-Change Date:          2031-05-26
+-Old license term
+";
+
+            assert!(!diff_only_changes_version_or_date(diff));
+        }
+
+        #[test]
         fn rejects_non_version_license_edit() {
             let diff = "\
 diff --git a/LICENSE.txt b/LICENSE.txt
