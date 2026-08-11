@@ -1,5 +1,5 @@
 {
-    "name": "com.clockworklabs.spacetimedbsdk"
+    "name": "com.clockworklabs.spacetimedbsdk",
     "rootNamespace": "SpacetimeDB",
     "versionDefines": [
         {
@@ -7,5 +7,5 @@
             "expression": "1.0.1",
             "define": "SAPPY"
         }
-    ],
+    ]
 }
