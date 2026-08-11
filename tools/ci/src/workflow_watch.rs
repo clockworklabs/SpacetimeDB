@@ -6,38 +6,13 @@ use serde::Deserialize;
 struct WorkflowRunView {
     status: String,
     conclusion: Option<String>,
-    jobs: Vec<WorkflowJobView>,
-}
-
-#[derive(Deserialize)]
-struct WorkflowJobView {
-    name: String,
-    status: String,
-    conclusion: Option<String>,
 }
 
 fn get_workflow_run(repo: &str, run_id: u64) -> Result<WorkflowRunView> {
-    let raw = cmd!(
-        "gh",
-        "run",
-        "view",
-        run_id.to_string(),
-        "--repo",
-        repo,
-        "--json",
-        "status,conclusion,jobs",
-    )
-    .read()
-    .with_context(|| format!("failed to read workflow run {run_id} in {repo}"))?;
+    let raw = cmd!("gh", "api", format!("repos/{repo}/actions/runs/{run_id}"))
+        .read()
+        .with_context(|| format!("failed to read workflow run {run_id} in {repo}"))?;
     serde_json::from_str(&raw).with_context(|| format!("failed to parse workflow run {run_id} in {repo}"))
-}
-
-fn print_workflow_job_summary(run: &WorkflowRunView) {
-    println!("Job summary:");
-    for job in &run.jobs {
-        let result = job.conclusion.as_deref().unwrap_or(&job.status);
-        println!("  {result:>11} {}", job.name);
-    }
 }
 
 pub(crate) fn watch_workflow_run(
@@ -53,7 +28,6 @@ pub(crate) fn watch_workflow_run(
         attempts += 1;
         let run = get_workflow_run(repo, run_id)?;
         if run.status == "completed" {
-            print_workflow_job_summary(&run);
             let conclusion = run.conclusion.as_deref().unwrap_or("success");
             if conclusion == "success" {
                 return Ok(());
