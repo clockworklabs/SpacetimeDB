@@ -33,17 +33,18 @@ The template includes a basic React app connected to SpacetimeDB.
 
 Your project contains both server and client code.
 
-Edit `spacetimedb/src/index.ts` to add tables and reducers. Edit `client/src/App.tsx` to build your UI.
+Edit `spacetimedb/src/index.ts` to add tables and reducers. Edit `src/App.tsx` to build your UI.
 
 ```
 my-spacetime-app/
 ├── spacetimedb/          # Your SpacetimeDB module
 │   └── src/
 │       └── index.ts      # Server-side logic
-├── client/               # React frontend
-│   └── src/
-│       ├── App.tsx
-│       └── module_bindings/  # Auto-generated types
+├── src/                  # React frontend
+│   ├── App.tsx
+│   └── module_bindings/  # Auto-generated types
+├── spacetime.json        # Shared SpacetimeDB dev config
+├── spacetime.local.json  # Local database name
 └── package.json
 ```
 
