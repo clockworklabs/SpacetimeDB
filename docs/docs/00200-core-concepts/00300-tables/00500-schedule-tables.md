@@ -25,17 +25,17 @@ The table attribute uses `scheduled` (with a "d") because it refers to the **sch
 
 ```typescript
 const reminder = table(
-  { name: 'reminder', scheduled: (): any => send_reminder },
+  { name: 'reminder', scheduled: (): any => sendReminder },
   {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
     message: t.string(),
   }
 );
 
-export const send_reminder = spacetimedb.reducer({ arg: reminder.rowType }, (_ctx, { arg }) => {
+export const sendReminder = spacetimedb.reducer({ arg: reminder.rowType }, (_ctx, { arg }) => {
   // Invoked automatically by the scheduler
-  // arg.message, arg.scheduled_at, arg.scheduled_id
+  // arg.message, arg.scheduledAt, arg.scheduledId
 });
 ```
 
@@ -157,18 +157,18 @@ import { schema } from 'spacetimedb/server';
 const spacetimedb = schema({ reminder }); // reminder table defined above
 export default spacetimedb;
 
-export const schedule_periodic_tasks = spacetimedb.reducer((ctx) => {
+export const schedulePeriodicTasks = spacetimedb.reducer((ctx) => {
   // Schedule to run every 5 seconds (5,000,000 microseconds)
   ctx.db.reminder.insert({
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.interval(5_000_000n),
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.interval(5_000_000n),
     message: "Check for updates",
   });
 
   // Schedule to run every 100 milliseconds
   ctx.db.reminder.insert({
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.interval(100_000n), // 100ms in microseconds
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.interval(100_000n), // 100ms in microseconds
     message: "Game tick",
   });
 });
@@ -232,14 +232,14 @@ fn schedule_periodic_tasks(ctx: &ReducerContext) {
 // Schedule to run every 5 seconds
 ctx.db[reminder].insert(Reminder{
     0,
-    ScheduleAt::interval(TimeDuration::from_seconds(5)),
+    ScheduleAt(TimeDuration::from_seconds(5)),
     "Check for updates"
 });
 
 // Schedule to run every 100 milliseconds
 ctx.db[reminder].insert(Reminder{
     0,
-    ScheduleAt::interval(TimeDuration::from_millis(100)),
+    ScheduleAt(TimeDuration::from_millis(100)),
     "Game tick"
 });
 ```
@@ -260,20 +260,20 @@ import { schema } from 'spacetimedb/server';
 const spacetimedb = schema({ reminder }); // reminder table defined above
 export default spacetimedb;
 
-export const schedule_timed_tasks = spacetimedb.reducer((ctx) => {
+export const scheduleTimedTasks = spacetimedb.reducer((ctx) => {
   // Schedule for 10 seconds from now
   const tenSecondsFromNow = ctx.timestamp.microsSinceUnixEpoch + 10_000_000n;
   ctx.db.reminder.insert({
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.time(tenSecondsFromNow),
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.time(tenSecondsFromNow),
     message: "Your auction has ended",
   });
 
   // Schedule for a specific Unix timestamp (microseconds since epoch)
   const targetTime = 1735689600_000_000n; // Jan 1, 2025 00:00:00 UTC
   ctx.db.reminder.insert({
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.time(targetTime),
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.time(targetTime),
     message: "Happy New Year!",
   });
 });
@@ -343,14 +343,14 @@ fn schedule_timed_tasks(ctx: &ReducerContext) {
 Timestamp tenSecondsFromNow = ctx.timestamp + TimeDuration::from_seconds(10);
 ctx.db[reminder].insert(Reminder{
     0,
-    ScheduleAt::time(tenSecondsFromNow),
+    ScheduleAt(tenSecondsFromNow),
     "Your auction has ended"
 });
 
 // Schedule for immediate execution (current timestamp)
 ctx.db[reminder].insert(Reminder{
     0,
-    ScheduleAt::time(ctx.timestamp),
+    ScheduleAt(ctx.timestamp),
     "Process now"
 });
 ```

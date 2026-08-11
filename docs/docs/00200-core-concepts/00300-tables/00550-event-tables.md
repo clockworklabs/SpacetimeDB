@@ -21,18 +21,18 @@ To declare a table as an event table, add the `event` attribute to the table def
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const damage_event = table({
+const damageEvent = table({
   name: 'damage_event',
   public: true,
   event: true,
 }, {
-  entity_id: t.identity(),
+  entityId: t.identity(),
   damage: t.u32(),
   source: t.string(),
 });
 
 const spacetimedb = schema({
-  damage_event,
+  damageEvent,
 });
 export default spacetimedb;
 ```
@@ -93,13 +93,13 @@ To publish an event, simply insert a row into the event table from within a redu
 
 ```typescript
 export const attack = spacetimedb.reducer(
-  { target_id: t.identity(), damage: t.u32() },
-  (ctx, { target_id, damage }) => {
+  { targetId: t.identity(), damage: t.u32() },
+  (ctx, { targetId, damage }) => {
     // Game logic...
 
     // Publish the event
-    ctx.db.damage_event.insert({
-      entity_id: target_id,
+    ctx.db.damageEvent.insert({
+      entityId: targetId,
       damage,
       source: "melee_attack",
     });

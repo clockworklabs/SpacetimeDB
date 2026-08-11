@@ -558,21 +558,21 @@ import { ScheduleAt } from 'spacetimedb';
 import { schema, t, table } from 'spacetimedb/server';
 
 // Define a schedule table for the procedure
-const fetch_schedule = table(
-  { name: 'fetch_schedule', scheduled: (): any => fetch_external_data },
+const fetchSchedule = table(
+  { name: 'fetch_schedule', scheduled: (): any => fetchExternalData },
   {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
     url: t.string(),
   }
 );
 
-const spacetimedb = schema({ fetch_schedule });
+const spacetimedb = schema({ fetchSchedule });
 export default spacetimedb;
 
 // The procedure to be scheduled
-export const fetch_external_data = spacetimedb.procedure(
-  { arg: fetch_schedule.rowType },
+export const fetchExternalData = spacetimedb.procedure(
+  { arg: fetchSchedule.rowType },
   t.unit(),
   (ctx, { arg }) => {
     const response = ctx.http.fetch(arg.url);
@@ -583,9 +583,9 @@ export const fetch_external_data = spacetimedb.procedure(
 
 // From a reducer, schedule the procedure by inserting into the schedule table
 export const queueFetch = spacetimedb.reducer({ url: t.string() }, (ctx, { url }) => {
-  ctx.db.fetch_schedule.insert({
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.interval(0n), // Run immediately
+  ctx.db.fetchSchedule.insert({
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.interval(0n), // Run immediately
     url,
   });
 });
@@ -698,7 +698,7 @@ SPACETIMEDB_PROCEDURE(uint32_t, fetch_external_data, ProcedureContext ctx, Fetch
 
 // From a reducer, schedule the procedure by inserting into the schedule table
 SPACETIMEDB_REDUCER(queue_fetch, ReducerContext ctx, std::string url) {
-    auto scheduled_at = ScheduleAt::interval(TimeDuration::from_seconds(0));  // Run immediately
+    auto scheduled_at = ScheduleAt(TimeDuration::from_seconds(0));  // Run immediately
     FetchSchedule fetch_task{
         0,                // scheduled_id - auto-increment will assign
         scheduled_at,     // When to execute
