@@ -399,7 +399,7 @@ Conn->Disconnect();
 
 :::note[Reconnection behavior]
 
-Lower-level `DbConnection` objects do not reconnect themselves. If you create a `DbConnection` directly and the connection is interrupted, create a new `DbConnection` to re-establish connectivity.
+Lower-level `DbConnection` objects do not reconnect themselves. If you create a `DbConnection` directly and the connection is interrupted, create a new `DbConnection` to re-establish connectivity. We recommend implementing reconnection logic in your application if reliable connectivity is critical.
 
 The TypeScript React, Solid, and Svelte providers manage their connections through the SDK's shared connection manager. While a provider is mounted, that manager automatically rebuilds unexpectedly closed connections with exponential backoff and re-checks connection liveness when the page becomes visible, regains focus, returns online, or is restored from the back-forward cache.
 

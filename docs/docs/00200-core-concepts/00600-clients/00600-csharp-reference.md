@@ -1095,6 +1095,8 @@ For a reducer named `send_message`, generated C# bindings use PascalCase names:
 - An invoke method, like `SendMessage(...)`. This requests that the module run the reducer.
 - A result event, like `OnSendMessage`. This event fires on the calling connection when SpacetimeDB reports that reducer call's result, including committed, failed, and out-of-energy statuses.
 
+Subscribe to reducer result events with `+=` and unsubscribe with `-=`, as with any C# event.
+
 Reducer result events are not global notifications. They are for reducer calls made by this connection. To notify other clients that something happened, write to a public table or event table and subscribe to it.
 
 ## Identify a client

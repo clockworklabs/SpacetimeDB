@@ -345,11 +345,9 @@ ctx.procedures.makeRequest().then(
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-C# procedures are currently unstable. To use them, add `#pragma warning disable STDB_UNSTABLE` at the top of your file:
+C# modules can define procedures:
 
 ```csharp
-#pragma warning disable STDB_UNSTABLE
-
 [SpacetimeDB.Procedure]
 public static string MakeRequest(ProcedureContext ctx)
 {
