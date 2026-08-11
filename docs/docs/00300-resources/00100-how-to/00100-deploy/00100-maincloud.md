@@ -46,7 +46,7 @@ spacetime publish my-database --server maincloud --delete-data
 
 ## Connecting Clients to Maincloud
 
-To connect your client application to a module running on Maincloud, use `https://maincloud.spacetimedb.com` as the host URL and your database name as the module name:
+To connect your client application to a module running on Maincloud, use `https://maincloud.spacetimedb.com` as the host URL and pass the database name to `withDatabaseName` / `WithDatabaseName`:
 
 <Tabs groupId="syntax" queryString>
 <TabItem value="typescript" label="TypeScript">

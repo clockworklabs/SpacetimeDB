@@ -2042,7 +2042,10 @@ void PrintMessage(RemoteTables tables, Message message)
 
 #### Warn if our name was rejected
 
-We can also register callbacks to run each time a reducer is invoked. We register these callbacks using the `OnReducerEvent` method of the `Reducer` namespace, which is automatically implemented for each reducer by `spacetime generate`.
+We can also register callbacks for reducer results. We register these callbacks
+using generated events on `conn.Reducers`, such as `conn.Reducers.OnSetName`
+and `conn.Reducers.OnSendMessage`, which are automatically implemented for
+each reducer by `spacetime generate`.
 
 Each reducer callback takes one fixed argument:
 
@@ -2054,14 +2057,15 @@ The `ReducerEventContext` of the callback, which contains an `Event` that contai
 
 It also takes a variable amount of additional arguments that match the reducer's arguments.
 
-These callbacks will be invoked in one of two cases:
+These callbacks are invoked for reducer calls made by this connection, whether the reducer commits successfully or fails.
 
-1. If the reducer was successful and altered any of our subscribed rows.
-2. If we requested an invocation which failed.
+Note that the caller identity is our own identity for these callbacks.
 
-Note that a status of `Failed` or `OutOfEnergy` implies that the caller identity is our own identity.
-
-We already handle successful `SetName` invocations using our `User.OnUpdate` callback, but if the module rejects a user's chosen name, we'd like that user's client to let them know. We define a function `Reducer_OnSetNameEvent` as a `Reducer.OnSetNameEvent` callback which checks if the reducer failed, and if it did, prints an error message including the rejected name.
+We already handle successful `SetName` invocations using our `User.OnUpdate`
+callback, but if the module rejects a user's chosen name, we'd like that user's
+client to let them know. We define a function `Reducer_OnSetNameEvent` and
+register it with `conn.Reducers.OnSetName`; the callback checks if the reducer
+failed, and if it did, prints an error message including the rejected name.
 
 We'll test both that our identity matches the sender and that the status is `Failed`, even though the latter implies the former, for demonstration purposes.
 

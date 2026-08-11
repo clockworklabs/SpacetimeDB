@@ -22,6 +22,18 @@ Use the `spacetimedb.reducer` function:
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
+const user = table(
+  { name: 'user', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    name: t.string().index('btree'),
+    email: t.string().unique(),
+  }
+);
+
+const spacetimedb = schema({ user });
+export default spacetimedb;
+
 export const create_user = spacetimedb.reducer({ name: t.string(), email: t.string() }, (ctx, { name, email }) => {
   // Validate input
   if (name === '') {
@@ -69,7 +81,7 @@ public static partial class Module
 }
 ```
 
-Reducers must be static methods with `ReducerContext` as the first parameter. Additional parameters must be types marked with `[SpacetimeDB.Type]`. Reducers should return `void`.
+Reducers must be static methods with `ReducerContext` as the first parameter. Additional parameters may be built-in SpacetimeDB types, primitive types, or custom types marked with `[SpacetimeDB.Type]`. Reducers should return `void`.
 
 </TabItem>
 <TabItem value="rust" label="Rust">
@@ -470,7 +482,7 @@ console.log(`Total users: ${total}`);
 <TabItem value="csharp" label="C#">
 
 ```csharp
-var total = ctx.Db.User.Count();
+var total = ctx.Db.User.Count;
 Log.Info($"Total users: {total}");
 ```
 
@@ -547,10 +559,10 @@ import { schema, t, table } from 'spacetimedb/server';
 
 // Define a schedule table for the procedure
 const fetchSchedule = table(
-  { name: 'fetch_schedule', scheduled: (): any => fetch_external_data },
+  { name: 'fetch_schedule', scheduled: (): any => fetchExternalData },
   {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
     url: t.string(),
   }
 );
@@ -559,7 +571,7 @@ const spacetimedb = schema({ fetchSchedule });
 export default spacetimedb;
 
 // The procedure to be scheduled
-export const fetch_external_data = spacetimedb.procedure(
+export const fetchExternalData = spacetimedb.procedure(
   { arg: fetchSchedule.rowType },
   t.unit(),
   (ctx, { arg }) => {
@@ -572,8 +584,8 @@ export const fetch_external_data = spacetimedb.procedure(
 // From a reducer, schedule the procedure by inserting into the schedule table
 export const queueFetch = spacetimedb.reducer({ url: t.string() }, (ctx, { url }) => {
   ctx.db.fetchSchedule.insert({
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.interval(0n), // Run immediately
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.interval(0n), // Run immediately
     url,
   });
 });
