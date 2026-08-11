@@ -90,13 +90,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
           RUN_ID: ${{ steps.dispatch.outputs.run_id }}
-          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
         run: |
           set -euo pipefail
           cargo ci other-workflows watch \
             --repo "$TARGET_OWNER/$TARGET_REPO" \
-            --run-id "$RUN_ID" \
-            --run-url "$RUN_URL"
+            --run-id "$RUN_ID"
 
       - name: Cancel invoked run if workflow cancelled
         if: ${{ cancelled() && steps.dispatch.outputs.run_id }}

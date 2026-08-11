@@ -466,15 +466,12 @@ enum OtherWorkflowsCmd {
         /// GitHub Actions workflow run ID.
         #[arg(long)]
         run_id: u64,
-        /// Optional URL printed while waiting for the run.
-        #[arg(long)]
-        run_url: Option<String>,
         /// Seconds to sleep between polls.
         #[arg(long, default_value_t = 30)]
         interval_seconds: u64,
-        /// Maximum number of polls before timing out.
-        #[arg(long, default_value_t = 240)]
-        max_attempts: u64,
+        /// Maximum number of polls before timing out. Polls forever by default.
+        #[arg(long)]
+        max_attempts: Option<u64>,
     },
 }
 
@@ -482,7 +479,6 @@ enum OtherWorkflowsCmd {
 struct WorkflowRunView {
     status: String,
     conclusion: Option<String>,
-    url: Option<String>,
     jobs: Vec<WorkflowJobView>,
 }
 
@@ -502,7 +498,7 @@ fn get_workflow_run(repo: &str, run_id: u64) -> Result<WorkflowRunView> {
         "--repo",
         repo,
         "--json",
-        "status,conclusion,url,jobs",
+        "status,conclusion,jobs",
     )
     .read()
     .with_context(|| format!("failed to read workflow run {run_id} in {repo}"))?;
@@ -517,22 +513,12 @@ fn print_workflow_job_summary(run: &WorkflowRunView) {
     }
 }
 
-fn watch_workflow_run(
-    repo: &str,
-    run_id: u64,
-    run_url: Option<String>,
-    interval_seconds: u64,
-    max_attempts: u64,
-) -> Result<()> {
-    let run_url = run_url.or_else(|| get_workflow_run(repo, run_id).ok().and_then(|run| run.url));
+fn watch_workflow_run(repo: &str, run_id: u64, interval_seconds: u64, max_attempts: Option<u64>) -> Result<()> {
+    println!("Waiting for workflow result... https://github.com/{repo}/actions/runs/{run_id}");
 
-    if let Some(run_url) = run_url {
-        println!("Waiting for workflow result... {run_url}");
-    } else {
-        println!("Waiting for workflow result: {repo}/actions/runs/{run_id}");
-    }
-
-    for _ in 0..max_attempts {
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
         let run = get_workflow_run(repo, run_id)?;
         if run.status == "completed" {
             print_workflow_job_summary(&run);
@@ -543,10 +529,12 @@ fn watch_workflow_run(
             bail!("workflow run {run_id} completed with conclusion: {conclusion}");
         }
 
+        if max_attempts.is_some_and(|max| attempts >= max) {
+            bail!("timed out waiting for workflow run {run_id} to complete")
+        }
+
         std::thread::sleep(std::time::Duration::from_secs(interval_seconds));
     }
-
-    bail!("timed out waiting for workflow run {run_id} to complete")
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -995,12 +983,11 @@ fn main() -> Result<()> {
                 OtherWorkflowsCmd::Watch {
                     repo,
                     run_id,
-                    run_url,
                     interval_seconds,
                     max_attempts,
                 },
         }) => {
-            watch_workflow_run(&repo, run_id, run_url, interval_seconds, max_attempts)?;
+            watch_workflow_run(&repo, run_id, interval_seconds, max_attempts)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

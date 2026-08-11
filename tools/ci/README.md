@@ -344,9 +344,8 @@ Usage: watch [OPTIONS] --repo <REPO> --run-id <RUN_ID>
 
 - `--repo <REPO>`: Repository containing the workflow run, in owner/repo form
 - `--run-id <RUN_ID>`: GitHub Actions workflow run ID
-- `--run-url <RUN_URL>`: Optional URL printed while waiting for the run
 - `--interval-seconds <INTERVAL_SECONDS>`: Seconds to sleep between polls
-- `--max-attempts <MAX_ATTEMPTS>`: Maximum number of polls before timing out
+- `--max-attempts <MAX_ATTEMPTS>`: Maximum number of polls before timing out. Polls forever by default
 - `--help`: Print help
 
 #### `help`
