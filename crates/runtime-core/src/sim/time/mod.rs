@@ -268,14 +268,14 @@ mod tests {
             async move {
                 let slow_order = Arc::clone(&order);
                 let slow_handle = handle.clone();
-                let slow = handle.spawn_on(sim::NodeId::MAIN, async move {
+                let slow = handle.spawn(async move {
                     slow_handle.sleep(Duration::from_millis(10)).await;
                     slow_order.lock().push(10);
                 });
 
                 let fast_order = Arc::clone(&order);
                 let fast_handle = handle.clone();
-                let fast = handle.spawn_on(sim::NodeId::MAIN, async move {
+                let fast = handle.spawn(async move {
                     fast_handle.sleep(Duration::from_millis(3)).await;
                     fast_order.lock().push(3);
                 });
