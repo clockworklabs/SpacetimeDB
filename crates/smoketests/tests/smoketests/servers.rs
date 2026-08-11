@@ -1,5 +1,5 @@
 use regex::Regex;
-use spacetimedb_smoketests::{require_local_server, Smoketest};
+use spacetimedb_smoketests::Smoketest;
 
 /// Verify that we can add and list server configurations
 #[test]
