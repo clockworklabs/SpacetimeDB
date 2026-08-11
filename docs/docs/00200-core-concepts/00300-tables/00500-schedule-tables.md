@@ -56,7 +56,7 @@ public static partial class Module
     {
         [SpacetimeDB.PrimaryKey]
         [SpacetimeDB.AutoInc]
-        public ulong Id;
+        public ulong ScheduledId;
         public uint UserId;
         public string Message;
         public ScheduleAt ScheduledAt;
@@ -81,7 +81,7 @@ use std::time::Duration;
 pub struct Reminder {
     #[primary_key]
     #[auto_inc]
-    id: u64,
+    scheduled_id: u64,
     user_id: u32,
     message: String,
     scheduled_at: ScheduleAt,
@@ -96,7 +96,7 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
 #[reducer(init)]
 fn init(ctx: &ReducerContext) {
     ctx.db.reminder_schedule().insert(Reminder {
-        id: 0,
+        scheduled_id: 0,
         user_id: 0,
         message: "Game tick".to_string(),
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
@@ -186,6 +186,7 @@ public static partial class Module
         // Schedule to run every 5 seconds
         ctx.Db.Reminder.Insert(new Reminder
         {
+            ScheduledId = 0,
             Message = "Check for updates",
             ScheduledAt = new ScheduleAt.Interval(TimeSpan.FromSeconds(5))
         });
@@ -193,6 +194,7 @@ public static partial class Module
         // Schedule to run every 100 milliseconds
         ctx.Db.Reminder.Insert(new Reminder
         {
+            ScheduledId = 0,
             Message = "Game tick",
             ScheduledAt = new ScheduleAt.Interval(TimeSpan.FromMilliseconds(100))
         });
@@ -211,14 +213,14 @@ use std::time::Duration;
 fn schedule_periodic_tasks(ctx: &ReducerContext) {
     // Schedule to run every 5 seconds
     ctx.db.reminder().insert(Reminder {
-        id: 0,
+        scheduled_id: 0,
         message: "Check for updates".to_string(),
         scheduled_at: ScheduleAt::Interval(Duration::from_secs(5).into()),
     });
 
     // Schedule to run every 100 milliseconds
     ctx.db.reminder().insert(Reminder {
-        id: 0,
+        scheduled_id: 0,
         message: "Game tick".to_string(),
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(100).into()),
     });
@@ -294,6 +296,7 @@ public static partial class Module
         var tenSecondsFromNow = ctx.Timestamp + new TimeDuration(10_000_000);
         ctx.Db.Reminder.Insert(new Reminder
         {
+            ScheduledId = 0,
             Message = "Your auction has ended",
             ScheduledAt = new ScheduleAt.Time(tenSecondsFromNow)
         });
@@ -302,6 +305,7 @@ public static partial class Module
         var targetTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
         ctx.Db.Reminder.Insert(new Reminder
         {
+            ScheduledId = 0,
             Message = "Happy New Year!",
             ScheduledAt = new ScheduleAt.Time(targetTime)
         });
@@ -321,14 +325,14 @@ fn schedule_timed_tasks(ctx: &ReducerContext) {
     // Schedule for 10 seconds from now
     let ten_seconds_from_now = ctx.timestamp + Duration::from_secs(10);
     ctx.db.reminder().insert(Reminder {
-        id: 0,
+        scheduled_id: 0,
         message: "Your auction has ended".to_string(),
         scheduled_at: ScheduleAt::Time(ten_seconds_from_now),
     });
 
     // Schedule for immediate execution (current timestamp)
     ctx.db.reminder().insert(Reminder {
-        id: 0,
+        scheduled_id: 0,
         message: "Process now".to_string(),
         scheduled_at: ScheduleAt::Time(ctx.timestamp.clone()),
     });
