@@ -82,6 +82,11 @@ public class SpacetimeManager : MonoBehaviour
             .Build();
     }
 
+    void Update()
+    {
+        Connection?.FrameTick();
+    }
+
     void OnDestroy()
     {
         Connection?.Disconnect();
@@ -109,9 +114,9 @@ public class SpacetimeManager : MonoBehaviour
 
 ---
 
-## FrameTick / Network Manager (Critical)
+## FrameTick (Critical)
 
-The Unity package includes `SpacetimeDBNetworkManager`, a MonoBehaviour that advances active connections from Unity's `Update` loop. Add exactly one `SpacetimeDBNetworkManager` component to a scene GameObject, or call `Connection.FrameTick()` yourself every frame. Without one of these, no callbacks fire and the client appears frozen.
+**`FrameTick()` must be called every frame in `Update()`.** The SDK queues all network messages and only processes them when you call `FrameTick()`. Without it, no callbacks fire and the client appears frozen. See the `Update()` method in the SpacetimeManager above.
 
 **Thread safety**: `FrameTick()` processes messages on the calling thread (the main thread in Unity). Do NOT call it from a background thread. Do NOT access `conn.Db` from background threads.
 
@@ -207,9 +212,6 @@ All SpacetimeDB SDK calls (`FrameTick`, `conn.Db` access, reducer calls) must ha
 ### Scene Loading
 Use `DontDestroyOnLoad(gameObject)` on the SpacetimeManager to prevent the connection from being destroyed during scene transitions. Without it, the connection drops every time you load a new scene.
 
-### Domain Reloading
-The SDK resets its own internal static Unity state when entering Play Mode, including projects that disable Domain Reloading in Unity's Enter Play Mode Options. Reset any static fields and singleton references in your own game code separately.
-
 ### IL2CPP / AOT
 The SpacetimeDB SDK uses code generation. If you encounter issues with IL2CPP builds:
 - Ensure generated bindings are up to date
@@ -217,3 +219,4 @@ The SpacetimeDB SDK uses code generation. If you encounter issues with IL2CPP bu
 
 ### Token Persistence
 Token save/load via `PlayerPrefs` is demonstrated in the SpacetimeManager singleton above. Persisting the server-issued token and passing it back on reconnect keeps the same identity; without a saved token the server issues a new identity in the `OnConnect` callback. This token does not expire and a lost one can't be recovered, so self-issued identities are for development. For production, authenticate with an OIDC provider such as SpacetimeAuth, which handles token lifecycle.
+
