@@ -787,19 +787,19 @@ class ModuleHooksImpl implements ModuleHooks {
 /**
  * Hooks for modules without mounted submodules.
  *
- * Keep reducer dispatch in a separate, small function so these modules retain
- * the pre-submodules hot path. `ctx.as` is initialized once to a shared empty
- * object when the cached reducer context is created; it requires no per-call
- * namespace dispatch or context updates.
+ * This intentionally does not extend `ModuleHooksImpl`. Selecting this class
+ * in `makeHooks` gives root-only modules the pre-submodules hook-object field
+ * set and root-only dispatch methods. The only intentional shape difference in
+ * the cached reducer context is the empty `ctx.as` view required by the current
+ * API.
  */
-class RootModuleHooksImpl extends ModuleHooksImpl {
+class RootModuleHooksImpl implements ModuleHooks {
   #schema: SchemaInner;
   #dbView_: DbView<any> | undefined;
   #reducerArgsDeserializers;
   #reducerCtx_: InstanceType<typeof ReducerCtxImpl> | undefined;
 
   constructor(schema: SchemaInner) {
-    super(schema);
     this.#schema = schema;
     this.#reducerArgsDeserializers = schema.moduleDef.reducers.map(
       ({ params }) => ProductType.makeDeserializer(params, schema.typespace)
@@ -826,7 +826,24 @@ class RootModuleHooksImpl extends ModuleHooksImpl {
     ));
   }
 
-  override __call_reducer__(
+  __describe_module__() {
+    const writer = new BinaryWriter(128);
+    RawModuleDef.serialize(
+      writer,
+      RawModuleDef.V10(this.#schema.rawModuleDefV10())
+    );
+    return writer.getBuffer();
+  }
+
+  __get_error_constructor__(code: number): new (msg: string) => Error {
+    return getErrorConstructor(code);
+  }
+
+  get __sender_error_class__() {
+    return SenderError;
+  }
+
+  __call_reducer__(
     reducerId: u32,
     sender: u256,
     connId: u128,
@@ -846,6 +863,101 @@ class RootModuleHooksImpl extends ModuleHooksImpl {
       ConnectionId.nullIfZero(new ConnectionId(connId))
     );
     callUserFunction(moduleCtx.reducers[reducerId], ctx, args);
+  }
+
+  __call_view__(
+    id: u32,
+    sender: u256,
+    argsBuf: Uint8Array
+  ): { data: Uint8Array } {
+    const moduleCtx = this.#schema;
+    const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
+      moduleCtx.views[id];
+    const ctx: ViewCtx<any> = freeze({
+      sender: new Identity(sender),
+      // This is the mutable DbView, but the user-facing type is readonly. Any
+      // attempted mutation still fails at runtime because this is a view call.
+      db: this.#dbView,
+      from: makeQueryBuilder(moduleCtx.schemaType),
+    });
+    const args = deserializeParams(new BinaryReader(argsBuf));
+    const ret = callUserFunction(fn, ctx, args);
+    const retBuf = new BinaryWriter(returnTypeBaseSize);
+    if (isRowTypedQuery(ret)) {
+      const query = toSql(ret);
+      ViewResultHeader.serialize(retBuf, ViewResultHeader.RawSql(query));
+    } else {
+      ViewResultHeader.serialize(retBuf, ViewResultHeader.RowData);
+      serializeReturn(retBuf, ret);
+    }
+    return { data: retBuf.getBuffer() };
+  }
+
+  __call_view_anon__(id: u32, argsBuf: Uint8Array): { data: Uint8Array } {
+    const moduleCtx = this.#schema;
+    const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
+      moduleCtx.anonViews[id];
+    const ctx: AnonymousViewCtx<any> = freeze({
+      // This is the mutable DbView, but the user-facing type is readonly. Any
+      // attempted mutation still fails at runtime because this is a view call.
+      db: this.#dbView,
+      from: makeQueryBuilder(moduleCtx.schemaType),
+    });
+    const args = deserializeParams(new BinaryReader(argsBuf));
+    const ret = callUserFunction(fn, ctx, args);
+    const retBuf = new BinaryWriter(returnTypeBaseSize);
+    if (isRowTypedQuery(ret)) {
+      const query = toSql(ret);
+      ViewResultHeader.serialize(retBuf, ViewResultHeader.RawSql(query));
+    } else {
+      ViewResultHeader.serialize(retBuf, ViewResultHeader.RowData);
+      serializeReturn(retBuf, ret);
+    }
+    return { data: retBuf.getBuffer() };
+  }
+
+  __call_procedure__(
+    id: u32,
+    sender: u256,
+    connection_id: u128,
+    timestamp: bigint,
+    args: Uint8Array
+  ): Uint8Array {
+    return callProcedure(
+      this.#schema.procedures,
+      id,
+      new Identity(sender),
+      ConnectionId.nullIfZero(new ConnectionId(connection_id)),
+      new Timestamp(timestamp),
+      args,
+      () => this.#dbView
+    );
+  }
+
+  __call_http_handler__(
+    id: u32,
+    timestamp: bigint,
+    request: Uint8Array,
+    body: Uint8Array
+  ): [response: Uint8Array, body: Uint8Array] {
+    const moduleCtx = this.#schema;
+    const handler = moduleCtx.httpHandlers[id];
+    const ctx = new HandlerContextImpl(
+      new Timestamp(timestamp),
+      () => this.#dbView
+    );
+    const requestMetadata = HttpRequest.deserialize(new BinaryReader(request));
+    const response = callUserFunction(
+      handler,
+      ctx,
+      requestFromWire(requestMetadata, body)
+    );
+    const [responseMetadata, responseBody] = responseIntoWire(response);
+    const responseBuf = new BinaryWriter(
+      bsatnBaseSize(moduleCtx.typespace, HttpResponse.algebraicType)
+    );
+    HttpResponse.serialize(responseBuf, responseMetadata);
+    return [responseBuf.getBuffer(), responseBody];
   }
 }
 
