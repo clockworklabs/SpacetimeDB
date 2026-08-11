@@ -190,6 +190,7 @@ struct PullRequest {
 struct TimelineIssue {
     number: u64,
     repository: Option<Repository>,
+    draft: Option<bool>,
     pull_request: Option<serde_json::Value>,
 }
 
@@ -292,7 +293,7 @@ fn related_private_pr(public_pr_number: Option<u64>) -> Result<Option<PullReques
         .filter_map(|event| event.source.and_then(|source| source.issue))
         .filter(|issue| issue.repository.as_ref().map(|repo| repo.full_name.as_str()) == Some(PRIVATE_REPO))
         .filter(|issue| issue.pull_request.is_some())
-        .filter(|issue| issue.draft == false)
+        .filter(|issue| issue.draft != Some(true))
         .map(|issue| issue.number)
         .collect::<BTreeSet<_>>();
 
