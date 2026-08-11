@@ -19,6 +19,7 @@ mod internal_tests;
 mod keynote_bench;
 mod smoketest;
 mod util;
+mod workflow_watch;
 
 use util::ensure_repo_root;
 
@@ -497,6 +498,21 @@ enum OtherWorkflowsCmd {
         #[command(subcommand)]
         cmd: cla_assistant::ClaAssistantCmd,
     },
+    /// Waits for a GitHub Actions workflow run to complete.
+    Watch {
+        /// Repository containing the workflow run, in owner/repo form.
+        #[arg(long)]
+        repo: String,
+        /// GitHub Actions workflow run ID.
+        #[arg(long)]
+        run_id: u64,
+        /// Seconds to sleep between polls.
+        #[arg(long, default_value_t = 30)]
+        interval_seconds: u64,
+        /// Maximum number of polls before timing out. Polls forever by default.
+        #[arg(long)]
+        max_attempts: Option<u64>,
+    },
 }
 
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
@@ -944,6 +960,18 @@ fn main() -> Result<()> {
             cmd: OtherWorkflowsCmd::ClaAssistant { cmd },
         }) => {
             cla_assistant::run(cmd)?;
+        }
+
+        Some(CiCmd::OtherWorkflows {
+            cmd:
+                OtherWorkflowsCmd::Watch {
+                    repo,
+                    run_id,
+                    interval_seconds,
+                    max_attempts,
+                },
+        }) => {
+            workflow_watch::watch_workflow_run(&repo, run_id, interval_seconds, max_attempts)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,
