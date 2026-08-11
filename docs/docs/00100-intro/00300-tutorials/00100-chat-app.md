@@ -2057,12 +2057,9 @@ The `ReducerEventContext` of the callback, which contains an `Event` that contai
 
 It also takes a variable amount of additional arguments that match the reducer's arguments.
 
-These callbacks will be invoked in one of two cases:
+These callbacks are invoked for reducer calls made by this connection, whether the reducer commits successfully or fails.
 
-1. If the reducer was successful and altered any of our subscribed rows.
-2. If we requested an invocation which failed.
-
-Note that a status of `Failed` or `OutOfEnergy` implies that the caller identity is our own identity.
+Note that the caller identity is our own identity for these callbacks.
 
 We already handle successful `SetName` invocations using our `User.OnUpdate`
 callback, but if the module rejects a user's chosen name, we'd like that user's

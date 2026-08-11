@@ -424,7 +424,7 @@ Conn->SubscriptionBuilder()
 - On the client, `count()` always returns 0 and `iter()` is always empty.
 - Only `on_insert` callbacks are generated (no `on_delete` or `on_update`).
 - The `event` keyword in `#[table(..., event)]` marks the table as transient.
-- Event tables must be subscribed to explicitly (they are excluded from `subscribeToAllTables` / `SubscribeToAllTables` / `subscribe_to_all_tables`).
+- Event tables can be subscribed to with subscribe-all helpers or explicit typed queries, but clients observe them only through insert callbacks.
 
 ## Event Type Changes
 
@@ -605,13 +605,13 @@ Unreal 2.0 now supports typed query-builder subscriptions in C++. Use `AddQuery(
 </TabItem>
 </Tabs>
 
-Note that subscribing to event tables requires an explicit query:
+Use explicit queries when you want to subscribe to event tables without subscribing to every public table:
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-// Event tables are excluded from subscribe_to_all_tables(), so subscribe explicitly:
+// Subscribe explicitly to an event table:
 import { tables } from "./module_bindings";
 ctx.subscriptionBuilder()
     .onApplied((ctx) => { /* ... */ })
@@ -633,7 +633,7 @@ conn.SubscriptionBuilder()
 <TabItem value="rust" label="Rust">
 
 ```rust
-// Event tables are excluded from subscribe_to_all_tables(), so subscribe explicitly:
+// Subscribe explicitly to an event table:
 ctx.subscription_builder()
     .on_applied(|ctx| { /* ... */ })
     .add_query(|q| q.from.damage_event())
@@ -644,7 +644,7 @@ ctx.subscription_builder()
 <TabItem value="cpp-unreal" label="Unreal C++">
 
 ```cpp
-// Event tables are excluded from SubscribeToAllTables(), so subscribe explicitly:
+// Subscribe explicitly to an event table:
 Conn->SubscriptionBuilder()
     ->OnApplied(OnAppliedDelegate)
     ->OnError(OnErrorDelegate)
