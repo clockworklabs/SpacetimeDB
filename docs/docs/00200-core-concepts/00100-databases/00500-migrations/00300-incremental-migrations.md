@@ -106,7 +106,7 @@ We'll play around a bit with `spacetime call` to set up a character:
 ```sh
 $ spacetime logs incr-migration-demo -f &
 
-$ spacetime call incr-migration-demo create_character '{ "Fighter": {} }' "Phoebe"
+$ spacetime call incr-migration-demo create_character '{ "fighter": {} }' "Phoebe"
 
 2025-01-07T15:32:57.447286Z  INFO: src/lib.rs:21: Creating new level 1 Fighter named Phoebe
 
@@ -122,7 +122,7 @@ $ spacetime sql incr-migration-demo 'SELECT * FROM character'
 
  player_id | nickname | level | class
 -----------+----------+-------+----------------
- <snip>    | "Gefjon" | 2     | (Fighter = ())
+ <snip>    | "Gefjon" | 2     | (fighter = ())
 ```
 
 See [the SATS JSON reference](../../../00300-resources/00200-reference/00300-internals/00200-sats-json.md) for more on the encoding of arguments to `spacetime call`.
@@ -323,7 +323,7 @@ $ spacetime sql incr-migration-demo 'SELECT * FROM character'
 
  player_id | nickname | level | class
 -----------+----------+-------+----------------
- <snip>    | "Gefjon" | 2     | (Fighter = ())
+ <snip>    | "Gefjon" | 2     | (fighter = ())
 
 # We haven't triggered the "Gefjon" row to migrate yet, so `character_v2` is empty:
 $ spacetime sql -s local incr-migration-demo 'SELECT * FROM character_v2'
@@ -341,7 +341,7 @@ $ spacetime sql incr-migration-demo 'SELECT * FROM character_v2'
 
  player_id | nickname | level | class          | alliance
 -----------+----------+-------+----------------+----------------
- <snip>    | "Gefjon" | 3     | (Fighter = ()) | (Neutral = ())
+ <snip>    | "Gefjon" | 3     | (fighter = ()) | (neutral = ())
 
 # The original row in `character` still got updated by `level_up_character`,
 # so outdated clients can continue to function:
@@ -349,10 +349,10 @@ $ spacetime sql incr-migration-demo 'SELECT * FROM character'
 
  player_id | nickname | level | class
 -----------+----------+-------+----------------
- <snip>    | "Gefjon" | 3     | (Fighter = ())
+ <snip>    | "Gefjon" | 3     | (fighter = ())
 
 # We can set our alliance:
-$ spacetime call incr-migration-demo choose_alliance '{ "Good": {} }'
+$ spacetime call incr-migration-demo choose_alliance '{ "good": {} }'
 
 2025-01-07T16:13:53.816501Z  INFO: src/lib.rs:129: Setting alliance of Gefjon to Good
 
@@ -361,14 +361,14 @@ $ spacetime sql incr-migration-demo 'SELECT * FROM character_v2'
 
  player_id | nickname | level | class          | alliance
 -----------+----------+-------+----------------+-------------
- <snip>    | "Gefjon" | 3     | (Fighter = ()) | (Good = ())
+ <snip>    | "Gefjon" | 3     | (fighter = ()) | (good = ())
 
 # But `character` is not changed, since it doesn't know about alliances:
 $ spacetime sql incr-migration-demo 'SELECT * FROM character'
 
  player_id | nickname | level | class
 -----------+----------+-------+----------------
- <snip>    | "Gefjon" | 3     | (Fighter = ())
+ <snip>    | "Gefjon" | 3     | (fighter = ())
 ```
 
 Now that we know how to define incremental migrations, we can add new features that would seem to require breaking schema changes without cumbersome external migration tools and while maintaining compatibility of outdated clients! The complete for this tutorial is on GitHub in the `clockworklabs/incr-migration-demo` repository, in branches [`v1`](https://github.com/clockworklabs/incr-migration-demo/tree/v1), [`fails-publish`](https://github.com/clockworklabs/incr-migration-demo/tree/fails-publish) and [`v2`](https://github.com/clockworklabs/incr-migration-demo/tree/v2).

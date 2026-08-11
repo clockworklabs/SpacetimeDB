@@ -48,19 +48,19 @@ otherwise it must be qualified with the appropriate table name.
 
 ```sql
 -- Subscribe to all rows of a table
-SELECT * FROM Inventory
+SELECT * FROM inventory
 
 -- Qualify the `*` projection with the table
-SELECT item.* from Inventory item
+SELECT item.* from inventory item
 
 -- Subscribe to all customers who have orders totaling more than $1000
 SELECT customer.*
-FROM Customers customer JOIN Orders o ON customer.id = o.customer_id
+FROM customers customer JOIN orders o ON customer.id = o.customer_id
 WHERE o.amount > 1000
 
--- INVALID: Must return `Customers` or `Orders`, but not both
+-- INVALID: Must return `customers` or `orders`, but not both
 SELECT *
-FROM Customers customer JOIN Orders o ON customer.id = o.customer_id
+FROM customers customer JOIN orders o ON customer.id = o.customer_id
 WHERE o.amount > 1000
 ```
 
@@ -87,18 +87,18 @@ subscriptions require an index to be defined on both join columns.
 
 ```sql
 -- Subscribe to all orders of products with less than 10 items in stock.
--- Must have an index on the `product_id` column of the `Orders` table,
--- as well as the `id` column of the `Product` table.
+-- Must have an index on the `product_id` column of the `orders` table,
+-- as well as the `id` column of the `inventory` table.
 SELECT o.*
-FROM Orders o JOIN Inventory product ON o.product_id = product.id
+FROM orders o JOIN inventory product ON o.product_id = product.id
 WHERE product.quantity < 10
 
 -- Subscribe to all products that have at least one purchase
 SELECT product.*
-FROM Orders o JOIN Inventory product ON o.product_id = product.id
+FROM orders o JOIN inventory product ON o.product_id = product.id
 
 -- INVALID: Must qualify the column names referenced in `ON`
-SELECT product.* FROM Orders JOIN Inventory product ON product_id = id
+SELECT product.* FROM orders JOIN inventory product ON product_id = id
 ```
 
 ### WHERE
@@ -144,10 +144,10 @@ Arithmetic expressions are not supported.
 
 ```sql
 -- Find products that sell for more than $X
-SELECT * FROM Inventory WHERE price > {X}
+SELECT * FROM inventory WHERE price > {X}
 
 -- Find products that sell for more than $X and have fewer than Y items in stock
-SELECT * FROM Inventory WHERE price > {X} AND amount < {Y}
+SELECT * FROM inventory WHERE price > {X} AND amount < {Y}
 ```
 
 ## Query and DML (Data Manipulation Language)
@@ -203,10 +203,10 @@ The `SELECT` clause determines the columns that are returned.
 
 ```sql
 -- Select the items in my inventory
-SELECT * FROM Inventory;
+SELECT * FROM inventory;
 
 -- Select the names and prices of the items in my inventory
-SELECT item_name, price FROM Inventory
+SELECT item_name, price FROM inventory
 ```
 
 It also allows for counting the number of input rows via the `COUNT` function.
@@ -216,7 +216,7 @@ It also allows for counting the number of input rows via the `COUNT` function.
 
 ```sql
 -- Count the items in my inventory
-SELECT COUNT(*) AS n FROM Inventory
+SELECT COUNT(*) AS n FROM inventory
 ```
 
 #### FROM Clause
@@ -232,9 +232,9 @@ Unlike [subscriptions](#from), the query api supports joining more than two tabl
 ```sql
 -- Find all customers who ordered a particular product and when they ordered it
 SELECT customer.first_name, customer.last_name, o.date
-FROM Customers customer
-JOIN Orders o ON customer.id = o.customer_id
-JOIN Inventory product ON o.product_id = product.id
+FROM customers customer
+JOIN orders o ON customer.id = o.customer_id
+JOIN inventory product ON o.product_id = product.id
 WHERE product.name = {product_name}
 ```
 
@@ -252,7 +252,7 @@ The `LIMIT` may return fewer rows if the query itself returns fewer rows.
 
 ```sql
 -- Fetch an example row from my inventory
-SELECT * FROM Inventory LIMIT 1
+SELECT * FROM inventory LIMIT 1
 ```
 
 ### INSERT
@@ -265,10 +265,10 @@ INSERT INTO table [ '(' column { ',' column } ')' ] VALUES '(' literal { ',' lit
 
 ```sql
 -- Inserting one row
-INSERT INTO Inventory (item_id, item_name) VALUES (1, 'health1');
+INSERT INTO inventory (item_id, item_name) VALUES (1, 'health1');
 
 -- Inserting two rows
-INSERT INTO Inventory (item_id, item_name) VALUES (1, 'health1'), (2, 'health2');
+INSERT INTO inventory (item_id, item_name) VALUES (1, 'health1'), (2, 'health2');
 ```
 
 ### DELETE
@@ -286,10 +286,10 @@ If `WHERE` is specified, only the matching rows are deleted.
 
 ```sql
 -- Delete all rows
-DELETE FROM Inventory;
+DELETE FROM inventory;
 
 -- Delete all rows with a specific item_id
-DELETE FROM Inventory WHERE item_id = 1;
+DELETE FROM inventory WHERE item_id = 1;
 ```
 
 ### UPDATE
@@ -309,7 +309,7 @@ The rows are updated after the `WHERE` condition is evaluated for all rows.
 
 ```sql
 -- Update the item_name for all rows with a specific item_id
-UPDATE Inventory SET item_name = 'new name' WHERE item_id = 1;
+UPDATE inventory SET item_name = 'new name' WHERE item_id = 1;
 ```
 
 ### SET
@@ -393,9 +393,9 @@ The concrete type of a literal is inferred from the context.
 
 ```sql
 -- All products that sell for more than $1000
-SELECT * FROM Inventory WHERE price > 1000
-SELECT * FROM Inventory WHERE price > 1e3
-SELECT * FROM Inventory WHERE price > 1E3
+SELECT * FROM inventory WHERE price > 1000
+SELECT * FROM inventory WHERE price > 1e3
+SELECT * FROM inventory WHERE price > 1E3
 ```
 
 ### Floats
@@ -414,9 +414,9 @@ The concrete type of a literal is inferred from the context.
 
 ```sql
 -- All measurements where the temperature is greater than 105.3
-SELECT * FROM Measurements WHERE temperature > 105.3
-SELECT * FROM Measurements WHERE temperature > 1053e-1
-SELECT * FROM Measurements WHERE temperature > 1053E-1
+SELECT * FROM measurements WHERE temperature > 105.3
+SELECT * FROM measurements WHERE temperature > 1053e-1
+SELECT * FROM measurements WHERE temperature > 1053E-1
 ```
 
 ### Strings
@@ -432,7 +432,7 @@ STRING
 #### Examples
 
 ```sql
-SELECT * FROM Customers WHERE first_name = 'John'
+SELECT * FROM customers WHERE first_name = 'John'
 ```
 
 ### Hex
@@ -454,7 +454,7 @@ The type is ultimately inferred from the context.
 #### Examples
 
 ```sql
-SELECT * FROM Program WHERE hash_value = 0xABCD1234
+SELECT * FROM program WHERE hash_value = 0xABCD1234
 ```
 
 ## Identifiers
@@ -526,20 +526,20 @@ Take the following query that was used in a previous example:
 ```sql
 -- Find all customers who ordered a particular product and when they ordered it
 SELECT customer.first_name, customer.last_name, o.date
-FROM Customers customer
-JOIN Orders o ON customer.id = o.customer_id
-JOIN Inventory product ON o.product_id = product.id
+FROM customers customer
+JOIN orders o ON customer.id = o.customer_id
+JOIN inventory product ON o.product_id = product.id
 WHERE product.name = {product_name}
 ```
 
 In order to conform with the best practices for optimizing performance and scalability:
 
-- An index should be defined on `Inventory.name` because we are filtering on that column.
-- `Inventory.id` and `Customers.id` should be defined as primary keys.
-- Additionally non-unique indexes should be defined on `Orders.product_id` and `Orders.customer_id`.
-- `Inventory` should appear first in the `FROM` clause because it is the only table mentioned in the `WHERE` clause.
-- `Orders` should come next because it joins directly with `Inventory`.
-- `Customers` should come next because it joins directly with `Orders`.
+- An index should be defined on `inventory.name` because we are filtering on that column.
+- `inventory.id` and `customers.id` should be defined as primary keys.
+- Additionally non-unique indexes should be defined on `orders.product_id` and `orders.customer_id`.
+- `inventory` should appear first in the `FROM` clause because it is the only table mentioned in the `WHERE` clause.
+- `orders` should come next because it joins directly with `inventory`.
+- `customers` should come next because it joins directly with `orders`.
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="csharp" label="C#">
@@ -583,7 +583,7 @@ public partial struct Orders
 
 ```rust
 #[table(
-    accessor = Inventory,
+    accessor = inventory,
     index(accessor = product_name, btree = [name]),
     public
 )]
@@ -595,7 +595,7 @@ struct Inventory {
 }
 
 #[table(
-    accessor = Customers,
+    accessor = customers,
     public
 )]
 struct Customers {
@@ -607,7 +607,7 @@ struct Customers {
 }
 
 #[table(
-    accessor = Orders,
+    accessor = orders,
     public
 )]
 struct Orders {
@@ -627,9 +627,9 @@ struct Orders {
 ```sql
 -- Find all customers who ordered a particular product and when they ordered it
 SELECT c.first_name, c.last_name, o.date
-FROM Inventory product
-JOIN Orders o ON product.id = o.product_id
-JOIN Customers c ON c.id = o.customer_id
+FROM inventory product
+JOIN orders o ON product.id = o.product_id
+JOIN customers c ON c.id = o.customer_id
 WHERE product.name = {product_name};
 ```
 
