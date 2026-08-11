@@ -359,6 +359,43 @@ fn check_codex_plugin_skills_sync() -> Result<()> {
     Ok(())
 }
 
+fn check_claude_marketplace_skills() -> Result<()> {
+    // Claude catalog lists each skill explicitly, so a new skill under `skills/` is
+    // invisible to Claude until it is added there
+    let catalog_path = Path::new(".claude-plugin/marketplace.json");
+    let contents = fs::read_to_string(catalog_path).with_context(|| format!("reading {}", catalog_path.display()))?;
+    let catalog: Value =
+        serde_json::from_str(&contents).with_context(|| format!("parsing {}", catalog_path.display()))?;
+    let listed: BTreeSet<String> = catalog["plugins"][0]["skills"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("{} plugins[0].skills must be an array", catalog_path.display()))?
+        .iter()
+        .filter_map(|value| value.as_str())
+        .map(|entry| entry.trim_start_matches("./").to_owned())
+        .collect();
+
+    let mut present = BTreeSet::new();
+    for entry in fs::read_dir("skills").with_context(|| "reading skills")? {
+        let entry = entry?;
+        if entry.path().join("SKILL.md").is_file() {
+            present.insert(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+
+    if listed != present {
+        let missing: Vec<_> = present.difference(&listed).cloned().collect();
+        let extraneous: Vec<_> = listed.difference(&present).cloned().collect();
+        bail!(
+            "{} skills list does not match skills/:\n  missing: {:?}\n  extraneous: {:?}\nUpdate the skills list in {}",
+            catalog_path.display(),
+            missing,
+            extraneous,
+            catalog_path.display()
+        );
+    }
+    Ok(())
+}
+
 #[derive(Subcommand)]
 enum CiCmd {
     /// Runs tests
@@ -683,6 +720,7 @@ fn main() -> Result<()> {
             ensure_repo_root()?;
             check_pnpm_release_age_policy()?;
             check_codex_plugin_skills_sync()?;
+            check_claude_marketplace_skills()?;
             // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
             // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
             // so this approach properly catches all the files, where `cargo fmt` does not.
