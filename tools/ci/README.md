@@ -271,6 +271,19 @@ Usage: other-workflows <COMMAND>
 
 - `--help`: Print help
 
+#### `coordinate-internal-tests`
+
+**Usage:**
+```bash
+Usage: coordinate-internal-tests [OPTIONS] --public-sha <PUBLIC_SHA>
+```
+
+**Options:**
+
+- `--public-sha <PUBLIC_SHA>`: Immutable public commit to test
+- `--public-pr-number <PUBLIC_PR_NUMBER>`: Public pull request number, when coordinating a pull request run
+- `--help`: Print help
+
 #### `codeowners-check`
 
 **Usage:**
