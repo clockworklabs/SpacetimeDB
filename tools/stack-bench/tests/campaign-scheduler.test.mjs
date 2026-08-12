@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -54,6 +54,12 @@ test('a plausible run artifact cannot hide a failed attempt process', () => {
   assert.equal(state.attempts[0].status, 'invalid');
   assert.equal(state.attempts[0].executions[0].outcome, 'harness_failure');
   assert.match(state.attempts[0].executions[0].reason, /exited 7/);
+  const explained = claimed();
+  const explainedState = finishCampaignExecution(explained.state, explained.claim.executionId, {
+    exitCode: 9, run: { outcome: { kind: 'harness_failure', reason: 'cleanup was quarantined' } },
+  }, { now: '2026-08-12T00:04:00.000Z' });
+  assert.match(explainedState.attempts[0].executions[0].reason,
+    /exited 9: cleanup was quarantined/);
 });
 
 test('interrupted and missing-artifact executions fail closed without invented results', () => {
@@ -108,4 +114,18 @@ test('malformed state and inconsistent summaries never become resumable', () => 
     output: `attempts/${historicalRunning.attempts[0].plan.id}/execution-2`,
   });
   assert.throws(() => validateCampaignState(historicalRunning), /historical but not invalid/);
+});
+
+test('interrupted initialization recreates only missing state from the exact stored plan', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-init-recovery-'));
+  try {
+    const campaign = plan();
+    const initialized = initializeCampaignDirectory(campaign, root,
+      { now: '2026-08-12T00:00:00.000Z' });
+    unlinkSync(initialized.paths.state);
+    const recovered = initializeCampaignDirectory(campaign, root,
+      { now: '2026-08-12T00:01:00.000Z' });
+    assert.equal(recovered.state.status, 'prepared');
+    assert.equal(recovered.state.summary.executions, 0);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

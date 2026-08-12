@@ -611,8 +611,11 @@ In progress. Typed campaign plan/state artifacts now materialize the exact
 attempt schedule, allow only one active execution, append retry evidence, bind
 derived output directories, and fail closed on malformed identity, schedule,
 timestamps, transitions, summaries, missing artifacts, or nonzero process exit.
-Remaining work is exclusive campaign-directory ownership, bounded attempt
-launch/termination, preflight admission, and proven interruption reconciliation.
+The execution slice now provides token-bound exclusive ownership, plan-derived
+bounded launches, exact run-artifact binding, append-only retries, frozen image
+enforcement, and explicit supervisor-proven interruption reconciliation.
+Campaign-wide admission evidence and Docker acceptance remain before SB-502 is
+complete.
 
 ### SB-503: Deterministic report
 

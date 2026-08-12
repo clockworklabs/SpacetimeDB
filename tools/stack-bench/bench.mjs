@@ -231,7 +231,7 @@ function runAgent(args, adapter, mode, level, appDir) {
   if (remainingBudget !== null && remainingBudget <= 0) {
     throw new Error(`attempt cost cap of $${args.maxBudgetUsd} was exhausted before ${mode} L${level}`);
   }
-  if (remainingBudget !== null && adapter.id !== 'claude-code') {
+  if (remainingBudget !== null && adapter.costLimit === 'unsupported') {
     throw new Error(`agent adapter ${adapter.id} cannot enforce --max-budget-usd`);
   }
   const request = { mode, level, app: appDir, backend: args.backend, track: args.track,
@@ -436,7 +436,7 @@ async function main() {
     attempt: { id: `${runId}-preflight`, parentId: runId },
     identities: emptyArtifactIdentities({
       agentAdapter: agentAdapterIdentity(agentAdapter),
-      stackAdapter: { id: args.backend },
+      stackAdapter: { id: stackAdapter.id, version: stackAdapter.version },
     }),
     payload: preflight,
   });
@@ -679,10 +679,12 @@ async function main() {
     parentAttemptId: args.parentAttemptId ?? null,
     identities: emptyArtifactIdentities({
       agentAdapter: agentAdapterIdentity(agentAdapter),
-      stackAdapter: { id: args.backend },
+      stackAdapter: { id: stackAdapter.id, version: stackAdapter.version },
     }),
     track: args.track, backend: args.backend, model: args.model,
     guidance: args.guidance, stack: args.guidance === 'minimal' ? 'free' : 'prescribed',
+    skills: args.skills?.split(',').filter(Boolean) ?? [],
+    runtime: { buildImage: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE },
     selectionRequest: { packs: [...args.packIds], checks: [...args.checkKeys] },
     backendLease: publicBackendLease(readBackendLease(leasePath,
       { token: initialLease.ownershipToken, backend: args.backend, runId })),

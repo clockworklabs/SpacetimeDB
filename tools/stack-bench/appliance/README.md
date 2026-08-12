@@ -96,6 +96,29 @@ the compiler refuses to fill those in from ambient state.
 `campaign.example.json` is a zero-cost deterministic draft showing the complete
 shape; copy it outside the image and replace its study inputs before use.
 
+Prepare durable state without launching an attempt, then run that exact frozen
+plan (or resume its remaining attempts) from the same persistent directory:
+
+```sh
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  campaign prepare /var/lib/stack-bench/plans/campaign.json \
+  --out /var/lib/stack-bench/results/campaign-001
+
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  campaign run /var/lib/stack-bench/plans/campaign.json \
+  --out /var/lib/stack-bench/results/campaign-001
+```
+
+`campaign status /var/lib/stack-bench/results/campaign-001` reads the durable
+state. Two controllers cannot own the directory at once. Failed harness
+attempts remain visible and retries append new execution records. If a
+controller ends while an attempt is still marked running, automatic resume
+refuses. Run `campaign reconcile <campaign.json> --out <campaign-directory>`;
+it advances the record only if the private supervisor evidence proves exact-
+owned cleanup. It never invents a result or silently starts a duplicate.
+
 To run one already-decided attempt directly:
 
 ```sh

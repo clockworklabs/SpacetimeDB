@@ -172,9 +172,13 @@ export function claimNextAttempt(input, { now = new Date().toISOString() } = {})
 
 export function classifyCampaignExecution({ exitCode = null, timedOut = false, run = null } = {}) {
   if (timedOut) return { status: 'invalid', outcome: 'timed_out', reason: 'attempt deadline expired' };
-  if (!run) return { status: 'invalid', outcome: 'missing_artifact', reason: 'run.json was not produced' };
+  if (exitCode !== 0 && run?.outcome?.kind === 'harness_failure') {
+    return { status: 'invalid', outcome: 'harness_failure',
+      reason: `attempt process exited ${exitCode ?? 'without a code'}: ${run.outcome.reason ?? 'harness failed'}` };
+  }
   if (exitCode !== 0) return { status: 'invalid', outcome: 'harness_failure',
     reason: `attempt process exited ${exitCode ?? 'without a code'}` };
+  if (!run) return { status: 'invalid', outcome: 'missing_artifact', reason: 'run.json was not produced' };
   if (run.contaminated === true) return { status: 'invalid', outcome: 'contaminated',
     reason: run.contamination?.verdict ?? 'run was contaminated' };
   const outcome = run.outcome?.kind ?? 'ungraded';
@@ -245,15 +249,23 @@ export function initializeCampaignDirectory(plan, directory, options = {}) {
   plan = validateCompiledCampaignPlan(plan);
   const target = paths(directory);
   mkdirSync(target.root, { recursive: true });
-  if (existsSync(target.plan) || existsSync(target.state)) {
+  if (existsSync(target.plan)) {
     const existingPlan = validateCompiledCampaignPlan(
       readArtifact(target.plan, { expectedKind: 'campaign_plan' }).payload);
-    const existingState = readArtifact(target.state, { expectedKind: 'campaign_state' }).payload;
     if (canonicalDefinitionJson(existingPlan) !== canonicalDefinitionJson(plan)) {
       throw new Error('campaign directory belongs to a different campaign identity');
     }
+    if (!existsSync(target.state)) {
+      const recovered = createCampaignState(existingPlan, options);
+      writeCampaignState(target.state, existingPlan, recovered);
+      return { paths: target, plan: existingPlan, state: recovered };
+    }
+    const existingState = readArtifact(target.state, { expectedKind: 'campaign_state' }).payload;
     return { paths: target, plan: existingPlan,
       state: assertStateMatchesPlan(validateCampaignState(existingState), existingPlan) };
+  }
+  if (existsSync(target.state)) {
+    throw new Error('campaign state exists without its compiled plan; refusing to guess its identity');
   }
   const state = createCampaignState(plan, options);
   writeArtifact(target.plan, { kind: 'campaign_plan', id: `${plan.id}-plan`,
