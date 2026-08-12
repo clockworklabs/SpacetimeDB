@@ -65,6 +65,15 @@ function conditionKey(attempt) {
     model: attempt.model, guidance: attempt.guidance, skills: attempt.skills }).trim();
 }
 
+function exactFields(value, fields, at) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${at} must be an object`);
+  }
+  for (const key of Object.keys(value)) {
+    if (!fields.has(key)) throw new Error(`${at}.${key} is unknown`);
+  }
+}
+
 export function validateCampaignReport(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('campaign report must be an object');
@@ -78,6 +87,22 @@ export function validateCampaignReport(input) {
     || !Array.isArray(input.attempts) || !Array.isArray(input.conditions)
     || !Array.isArray(input.limitations) || !input.summary || typeof input.summary !== 'object') {
     throw new Error('campaign report structure is invalid');
+  }
+  exactFields(input.campaign, new Set(['id', 'version', 'state', 'sha256', 'title']),
+    'campaign report.campaign');
+  exactFields(input.scope, new Set(['track', 'levels', 'selection', 'bindings', 'stacks',
+    'agents', 'repetitions', 'runtime', 'pricing']), 'campaign report.scope');
+  exactFields(input.policy, new Set(['primaryMetric', 'secondaryMetrics', 'dispersion',
+    'invalidAttempts', 'missingData', 'comparisonUnit']), 'campaign report.policy');
+  if (typeof input.campaign.id !== 'string' || !input.campaign.id
+    || typeof input.campaign.title !== 'string' || !input.campaign.title
+    || typeof input.scope.track !== 'string' || !input.scope.track
+    || !Array.isArray(input.scope.levels) || !Array.isArray(input.scope.bindings)
+    || !Array.isArray(input.scope.stacks) || !Array.isArray(input.scope.agents)
+    || !Number.isInteger(input.scope.repetitions) || input.scope.repetitions < 1
+    || !input.scope.runtime || typeof input.scope.runtime !== 'object'
+    || !input.scope.pricing || typeof input.scope.pricing !== 'object') {
+    throw new Error('campaign report exact scope is invalid');
   }
   const { contentSha256, ...body } = canonicalizeDefinition(input);
   if (typeof contentSha256 !== 'string'
@@ -104,6 +129,7 @@ export function buildCampaignReport(plan, state, readRun) {
         outcome: execution.outcome, reason: execution.reason, exitCode: execution.exitCode,
         startedAt: execution.startedAt, completedAt: execution.completedAt,
         admissionId: execution.admissionId,
+        admissionEvidence: `admissions/${execution.admissionId}.json`,
         evidence: execution.status === 'completed' ? `${execution.output}/run.json` : 'state.json',
         metrics: run ? metrics(run) : null,
       };
@@ -149,8 +175,9 @@ export function buildCampaignReport(plan, state, readRun) {
     campaign: { id: plan.id, version: plan.version, state: plan.state,
       sha256: plan.contentSha256, title: plan.title },
     scope: { track: plan.definition.track, levels: plan.definition.levels,
-      selection: plan.definition.selection, stacks: plan.stacks,
-      agents: plan.agents, repetitions: plan.definition.repetitions },
+      selection: plan.definition.selection, bindings: plan.bindings, stacks: plan.stacks,
+      agents: plan.agents, repetitions: plan.definition.repetitions,
+      runtime: plan.definition.runtime, pricing: plan.definition.pricing },
     policy: plan.definition.analysis,
     attempts: rows,
     conditions,
@@ -185,7 +212,7 @@ export function renderCampaignHtml(report, { evidencePrefix = '..' } = {}) {
     + `<td>${condition.sample.completedAttempts}/${condition.sample.plannedAttempts}</td>`
     + `<td>${condition.sample.invalidExecutions}/${condition.sample.executions}</td>`
     + `<td>${escape(condition.metrics[report.policy.primaryMetric]?.center ?? '—')}</td></tr>`).join('');
-  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p><p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Completed</th><th>Invalid executions</th><th>${escape(report.policy.primaryMetric)}</th></tr></thead><tbody>${rows}</tbody></table><h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)})`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
+  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p><p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Completed</th><th>Invalid executions</th><th>${escape(report.policy.primaryMetric)}</th></tr></thead><tbody>${rows}</tbody></table><h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
 }
 
 export function generateCampaignReport(directory, { output = join(resolve(directory), 'report') } = {}) {

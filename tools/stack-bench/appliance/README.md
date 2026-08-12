@@ -130,8 +130,9 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
 
 This writes `report/report.json` and self-contained `report/report.html`. The
 report states the exact scope and campaign status, keeps invalid executions and
-retries visible, links raw run artifacts, applies the declared dispersion, and
-does not impute missing metrics. Deleting only the `report` directory and
+retries visible, links raw run and admission artifacts, includes exact recipe,
+fixture, calibration, runtime-image, release, and pricing identities, applies
+the declared dispersion, and does not impute missing metrics. Deleting only the `report` directory and
 running the command again produces the same report identity and bytes.
 
 To run one already-decided attempt directly:

@@ -45,6 +45,11 @@ test('report read model keeps invalid evidence separate and computes declared di
   assert.equal(condition.metrics.finalScoreRate.center, 0.8);
   assert.equal(condition.metrics.totalCostUsd.center, 2);
   assert.equal(condition.sample.invalidExecutionRate, 0.5);
+  assert.deepEqual(report.scope.bindings, plan.bindings);
+  assert.deepEqual(report.scope.runtime, plan.definition.runtime);
+  assert.deepEqual(report.scope.pricing, plan.definition.pricing);
+  assert.equal(report.attempts[0].executions[0].admissionEvidence,
+    'admissions/admission-1.json');
   assert.match(report.contentSha256, /^[a-f0-9]{64}$/);
   assert.throws(() => validateCampaignReport({ ...report,
     summary: { ...report.summary, completedAttempts: 99 } }), /content identity/);
@@ -92,6 +97,7 @@ test('report generation is byte-for-byte reproducible and links immutable raw ev
     const artifact = readArtifact(second.reportPath, { expectedKind: 'campaign_report' });
     assert.equal(artifact.payload.contentSha256, first.report.contentSha256);
     assert.match(readFileSync(second.htmlPath, 'utf8'), /\.\.\/attempts\//);
+    assert.match(readFileSync(second.htmlPath, 'utf8'), /\.\.\/admissions\//);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -102,4 +108,9 @@ test('HTML escapes caller-controlled labels and reports exact scope', () => {
   const html = renderCampaignHtml(report);
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
+  const malformedScope = structuredClone(report);
+  malformedScope.scope.surprise = true;
+  const { contentSha256: _old, ...body } = malformedScope;
+  assert.throws(() => validateCampaignReport({ ...body, contentSha256: 'a'.repeat(64) }),
+    /scope\.surprise is unknown/);
 });
