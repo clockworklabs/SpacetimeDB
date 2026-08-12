@@ -11,7 +11,7 @@ import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNot
 Tables can trigger [reducers](../00200-functions/00300-reducers/00300-reducers.md) or [procedures](../00200-functions/00400-procedures.md) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
 
 :::tip Scheduling Procedures
-Procedures use the same scheduling pattern as reducers. Simply reference the procedure name in the `scheduled` attribute. This is particularly useful when you need scheduled tasks that make HTTP requests or perform other side effects. See [Scheduling Procedures](../00200-functions/00300-reducers/00300-reducers.md#scheduling-procedures) for an example.
+Procedures use the same scheduling pattern as reducers: pass the `onSchedule` option in TypeScript, or reference the procedure name in the `scheduled` attribute in other languages. This is particularly useful when you need scheduled tasks that make HTTP requests or perform other side effects. See [Scheduling Procedures](../00200-functions/00300-reducers/00300-reducers.md#scheduling-procedures) for an example.
 :::
 
 ## Defining a Schedule Table
@@ -22,6 +22,35 @@ The table attribute uses `scheduled` (with a "d") because it refers to the **sch
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
+
+In TypeScript, declare the binding on the reducer with the `onSchedule` option:
+
+```typescript
+const reminder = table(
+  { name: 'reminder' },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    message: t.string(),
+  }
+);
+
+export const sendReminder = spacetimedb.reducer(
+  { onSchedule: reminder },
+  { arg: reminder.rowType },
+  (_ctx, { arg }) => {
+    // Invoked automatically by the scheduler
+    // arg.message, arg.scheduledAt, arg.scheduledId
+  }
+);
+```
+
+`onSchedule` registers the reducer as the schedule table's target. Because the table definition does not reference the reducer, the table and the reducer can live in separate files without a circular import. A schedule table can be bound to at most one reducer or procedure; binding a second one is a schema error.
+
+The same option works on procedures, provided the procedure's return type is `t.unit()`. See [Scheduling Procedures](../00200-functions/00300-reducers/00300-reducers.md#scheduling-procedures).
+
+:::note Legacy `scheduled` table option
+Older code declares the binding on the table instead, using a thunk that forward-references the scheduled reducer:
 
 ```typescript
 const reminder = table(
@@ -35,9 +64,11 @@ const reminder = table(
 
 export const sendReminder = spacetimedb.reducer({ arg: reminder.rowType }, (_ctx, { arg }) => {
   // Invoked automatically by the scheduler
-  // arg.message, arg.scheduledAt, arg.scheduledId
 });
 ```
+
+This form still works, but the forward reference forces the table and reducer into the same file and defeats type inference (hence the `(): any =>` cast). Prefer `onSchedule` in new code.
+:::
 
 </TabItem>
 <TabItem value="csharp" label="C#">
