@@ -1,12 +1,13 @@
 /crates/core/src/db/datastore/traits.rs @cloutiertyler
 /rust-toolchain.toml @cloutiertyler
-LICENSE @cloutiertyler
-LICENSE.txt @cloutiertyler
-/LICENSE.txt @cloutiertyler @jdetter
-/licenses/ @cloutiertyler
+
+# These license files are all covered by the `CODEOWNERS check` CI check as well
+LICENSE @cloutiertyler @jdetter
+LICENSE.txt @cloutiertyler @jdetter
+/licenses/ @cloutiertyler @jdetter
+
 /crates/client-api-messages/src/websocket.rs @centril @gefjon
 
-/crates/cli/src/ @bfops @cloutiertyler @jdetter
 /tools/ci/ @bfops @cloutiertyler @jdetter
 /tools/ci/src/keynote_bench.rs @joshua-spacetime @cloutiertyler @jdetter
 /tools/ci/src/codeowners_check.rs @cloutiertyler
