@@ -10,9 +10,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::{env, fs};
 
-const README_PATH: &str = "tools/ci/README.md";
-
-mod ci_docs;
 mod cla_assistant;
 mod codeowners_check;
 mod internal_tests;
@@ -454,15 +451,6 @@ enum CiCmd {
         )]
         spacetime_path: Option<String>,
     },
-    SelfDocs {
-        #[arg(
-            long,
-            default_value_t = false,
-            long_help = "Only check for changes, do not generate the docs"
-        )]
-        check: bool,
-    },
-
     /// Verify that any non-root global.json files are symlinks to the root global.json.
     GlobalJsonPolicy,
     /// Checks that publishable crates satisfy publish constraints.
@@ -905,23 +893,6 @@ fn main() -> Result<()> {
                 log::info!("No docs changes detected");
             } else {
                 anyhow::bail!("CLI docs are out of date:\n{out}");
-            }
-        }
-
-        Some(CiCmd::SelfDocs { check }) => {
-            let readme_content = ci_docs::generate_cli_docs();
-            let path = Path::new(README_PATH);
-
-            if check {
-                let existing = fs::read_to_string(path).unwrap_or_default();
-                if existing != readme_content {
-                    bail!("README.md is out of date. Please run `cargo ci self-docs` to update it.");
-                } else {
-                    log::info!("README.md is up to date.");
-                }
-            } else {
-                fs::write(path, readme_content)?;
-                log::info!("Wrote CLI docs to {}", path.display());
             }
         }
 
