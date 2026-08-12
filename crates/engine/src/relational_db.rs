@@ -22,7 +22,7 @@ use spacetimedb_datastore::locking_tx_datastore::{
     ApplyHistoryCounters, IndexScanPointOrRange, MutTxId, TxId, ViewCallInfo,
 };
 use spacetimedb_datastore::system_tables::{
-    system_table_schema_rows, system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
+    system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
 };
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
@@ -297,7 +297,7 @@ impl RelationalDB {
             .map(|p| p.durable_tx_offset())
             .transpose()?
             .flatten();
-        let (min_commitlog_offset, _) = history.tx_range_hint();
+        let (min_commitlog_offset, max_commitlog_offset) = history.tx_range_hint();
 
         log::info!("[{database_identity}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
 
@@ -338,8 +338,9 @@ impl RelationalDB {
             persistence,
             metrics_recorder_queue,
         );
-        // This will just no op if the commitlog is not empty.
-        db.persist_system_table_schemas_to_empty_commitlog();
+        if max_commitlog_offset.is_none() {
+            db.persist_system_table_schemas_to_empty_commitlog()?;
+        }
         db.migrate_system_tables()?;
 
         if let Some(meta) = db.metadata()? {
@@ -433,16 +434,17 @@ impl RelationalDB {
     /// learn the schemas of system tables which are newer than the replaying
     /// binary. Existing databases are left alone because offset 0 has already
     /// been consumed.
-    fn persist_system_table_schemas_to_empty_commitlog(&self) {
+    fn persist_system_table_schemas_to_empty_commitlog(&self) -> Result<(), DBError> {
         let Some(durability) = &self.durability else {
-            return;
+            return Ok(());
         };
+        let system_schema_rows = self.inner.committed_system_table_schema_rows()?;
         let Some(tx_offset) = self.inner.reserve_system_schema_bootstrap_tx_offset() else {
-            return;
+            return Ok(());
         };
 
         let mut rows_by_table = std::collections::BTreeMap::<_, Vec<_>>::new();
-        for (table_id, row) in system_table_schema_rows() {
+        for (table_id, row) in system_schema_rows {
             rows_by_table.entry(table_id).or_default().push(row);
         }
         let inserts: Box<[_]> = rows_by_table
@@ -467,6 +469,7 @@ impl RelationalDB {
             offset: tx_offset,
             txdata,
         }));
+        Ok(())
     }
 
     /// Mark the database as initialized with the given module parameters.
@@ -992,6 +995,8 @@ impl RelationalDB {
         if let Some(snapshot_worker) = &self.snapshot_worker
             && let Some(tx_offset) = tx_data.tx_offset()
             && tx_offset % SNAPSHOT_FREQUENCY == 0
+        // TODO: Consider shifting by 1, so that we snapshot after the module is initialized.
+        // && tx_offset % SNAPSHOT_FREQUENCY == 1
         {
             snapshot_worker.request_snapshot();
         }
@@ -3868,6 +3873,17 @@ mod tests {
         let mut expected_table_ids = vec![ST_TABLE_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SEQUENCE_ID];
         expected_table_ids.sort();
         assert_eq!(bootstrap_rows.keys().copied().collect::<Vec<_>>(), expected_table_ids);
+        Ok(())
+    }
+
+    #[test]
+    fn committed_system_table_schema_rows_match_schema_helper() -> ResultTest<()> {
+        let stdb = TestDB::in_memory()?;
+
+        assert_eq!(
+            stdb.inner.committed_system_table_schema_rows()?,
+            system_table_schema_rows(),
+        );
         Ok(())
     }
 

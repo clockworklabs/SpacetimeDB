@@ -240,6 +240,7 @@ pub fn system_tables() -> [TableSchema; 20] {
 /// them into the commit log before the first ordinary transaction so replay
 /// from offset 0 can learn about system tables which are newer than the replay
 /// binary's built-in catalog.
+#[cfg(any(test, feature = "test"))]
 pub fn system_table_schema_rows() -> Vec<(TableId, ProductValue)> {
     let schemas = system_tables();
     let mut rows = Vec::new();
