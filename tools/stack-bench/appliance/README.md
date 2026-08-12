@@ -153,6 +153,17 @@ Each scoped qualification artifact binds the executable calibration identity.
 Evidence from another recipe, fixture, mutation set, control policy, or declared
 repetition plan cannot be substituted during promotion.
 
+Before launching the official repetitions, inspect the exact go/no-go record:
+
+```sh
+controller qualification status --track ecommerce --level 1
+```
+
+It is read-only. The JSON separates launch blockers, required evidence and
+commands, promotion blockers, and the governance states promotion would change.
+It never supplies a missing runtime budget or treats an absent artifact as a
+pass.
+
 To run one already-decided attempt directly:
 
 ```sh

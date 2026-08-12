@@ -25,5 +25,8 @@ test('controller exposes a small explicit operator command surface', () => {
   assert.match(reference.args[0], /reference-live\.mjs$/);
   const nullControl = resolveControllerCommand(['qualify-null', '--track', 'ecommerce', '--level', '1']);
   assert.match(nullControl.args[0], /null-control\.mjs$/);
+  const qualification = resolveControllerCommand(['qualification', 'status',
+    '--track', 'ecommerce', '--level', '1']);
+  assert.match(qualification.args[0], /qualification-cli\.mjs$/);
   assert.throws(() => resolveControllerCommand(['shell']), /unknown controller command/);
 });

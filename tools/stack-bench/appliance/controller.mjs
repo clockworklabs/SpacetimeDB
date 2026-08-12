@@ -12,6 +12,7 @@ const COMMANDS = Object.freeze({
   'preflight': [join(ROOT, 'preflight.mjs')],
   'qualify-reference': [join(ROOT, 'reference-live.mjs')],
   'qualify-null': [join(ROOT, 'null-control.mjs')],
+  'qualification': [join(ROOT, 'qualification-cli.mjs')],
   'campaign': [join(ROOT, 'campaign-cli.mjs')],
   'run': [join(ROOT, 'bench.mjs')],
   'verify-release': [join(ROOT, 'release-manifest.mjs'), 'verify'],
@@ -32,6 +33,7 @@ function help() {
     + '  preflight <exact run options>  verify the runner without a model call\n'
     + '  qualify-reference <scope>      repeat a pristine or mutation reference gate\n'
     + '  qualify-null <scope>           run the exact null-oracle gate\n'
+    + '  qualification status <scope>  show exact launch and promotion blockers\n'
     + '  campaign validate|show <file>  compile the exact comparison plan without running it\n'
     + '  campaign prepare|run <file> --out <dir>  checkpoint or execute a frozen plan\n'
     + '  campaign reconcile <file> --out <dir>  prove cleanup for interrupted work\n'
