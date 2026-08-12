@@ -12,6 +12,7 @@ const COMMANDS = Object.freeze({
   'preflight': [join(ROOT, 'preflight.mjs')],
   'run': [join(ROOT, 'bench.mjs')],
   'verify-release': [join(ROOT, 'release-manifest.mjs'), 'verify'],
+  'recover': [join(ROOT, 'recovery.mjs'), 'recover'],
   'test': ['--test', join(ROOT, 'tests', '*.test.mjs')],
 });
 
@@ -28,6 +29,7 @@ function help() {
     + '  preflight <exact run options>  verify the runner without a model call\n'
     + '  run <exact run options>        execute and retain one requested run\n'
     + '  verify-release <manifest>      verify candidate files or a qualified signed release\n'
+    + '  recover <private-state>        retry authenticated cleanup or retain quarantine\n'
     + '  init-deps | verify-deps        initialize or verify the release dependency volume\n'
     + '  test                           run the model-free harness test suite\n');
 }

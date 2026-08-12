@@ -8,6 +8,7 @@
   "scripts": {
     "bootstrap:browsers": "playwright install chromium",
     "preflight": "node preflight.mjs",
+    "recover": "node recovery.mjs recover",
     "release:bundle": "node release-bundle.mjs",
     "release:source": "node release-source.mjs --json",
     "verify:release": "node release-manifest.mjs verify",

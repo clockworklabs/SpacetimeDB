@@ -22,7 +22,7 @@ export function stopSpacetimeHost({ leasePath, leaseToken, retainHost = false })
     return true;
   }
   if (['stopped', 'released'].includes(lease.state)) return true;
-  if (!['active', 'restarting'].includes(lease.state)) {
+  if (!['active', 'restarting', 'retained'].includes(lease.state)) {
     console.error(`  REFUSED to stop SpacetimeDB from lease state ${lease.state}`);
     return false;
   }

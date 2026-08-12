@@ -36,6 +36,8 @@ services:
       STACK_BENCH_COMPOSE_FILE: /opt/stack-bench/appliance/docker-compose.yaml
       STACK_BENCH_WORK_DIR: /var/lib/stack-bench/work
       STACK_BENCH_RESULTS_DIR: /var/lib/stack-bench/results
+      STACK_BENCH_SUPERVISOR_DIR: /var/lib/stack-bench/controller-home/supervisor
+      STACK_BENCH_RUNTIME_DIR: /var/lib/stack-bench/controller-home/runtime
       STACK_BENCH_RELEASE_DEPS_VOLUME: stack-bench-release-deps
       STACK_BENCH_LINUX_CLI: /opt/stack-bench-release-deps/spacetimedb-cli
       STDB_PACKAGE: /opt/stack-bench-release-deps/bindings-typescript

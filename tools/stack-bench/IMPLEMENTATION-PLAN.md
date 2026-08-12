@@ -569,6 +569,14 @@ was supplied, so no image signature or qualification claim was fabricated.
 Persist attempt state, clean only exact leased resources, and emit deterministic
 quarantine/recovery instructions when cleanup cannot be proven.
 
+Implemented. Appliance runs persist a private versioned supervisor handoff under
+`controller-home` and a public typed `recovery.json` beside run artifacts.
+Normal exact-owned cleanup removes the private handoff. A container/listener/
+lock identity refusal keeps it, marks the attempt quarantined, names the still
+claimed resources and lock keys, and supplies deterministic recovery steps.
+The controller `recover` command re-authenticates that private lease and retries
+the same fail-closed cleanup; no same-name or same-port fallback exists.
+
 E4 exit: a clean dedicated runner can pull by digest, run `preflight`, complete a
 no-model smoke, preserve artifacts, and remove the controller without losing
 results.
@@ -663,6 +671,7 @@ them. Live qualification does not run concurrently with executable harness edits
 17. [ ] SB-402 distributable OCI/Compose release (runtime packaging and strict
     candidate/qualified supply-chain tooling proven; image publication, real
     signing, and two clean-runner reproductions remain).
+18. [x] SB-403 interruption quarantine and authenticated recovery.
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.

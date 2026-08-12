@@ -43,6 +43,7 @@ import { agentRequestArgv, validateAgentResult } from './agent-adapter-contract.
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from './agent-adapters.mjs';
 import { runPreflight } from './preflight.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
+import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from './recovery.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
@@ -435,7 +436,9 @@ async function main() {
   // started. The token prevents a stale sibling process from presenting a
   // different lease accidentally; the targets themselves come only from the
   // lease, never from generated application files.
-  const runtimeDir = join(tmpdir(), 'stack-bench-runtime', runId);
+  const runtimeRoot = resolve(process.env.STACK_BENCH_RUNTIME_DIR
+    ?? join(tmpdir(), 'stack-bench-runtime'));
+  const runtimeDir = join(runtimeRoot, runId);
   const leasePath = join(runtimeDir, 'backend-lease.json');
   const preparedLease = executeStackCapability(stackAdapter, 'lease', 'prepare', {
     track,
@@ -455,18 +458,24 @@ async function main() {
   const lockRoot = join(tmpdir(), 'stack-bench-resource-locks');
   const lockKeys = [`slot:${args.track}:${args.backend}:run${args.runIndex}`,
     ...preparedLease.lockKeys];
+  let privateSupervisorStatePath = null;
   try {
     for (const key of lockKeys.sort()) {
       initialLease.resources.locks.push(acquireResourceLock({ root: lockRoot, key, lease: initialLease }));
     }
     writeBackendLease(leasePath, initialLease);
-    const supervisorState = process.env.STACK_BENCH_SUPERVISOR_STATE;
+    const supervisorState = process.env.STACK_BENCH_SUPERVISOR_STATE
+      ?? (process.env.STACK_BENCH_SUPERVISOR_DIR
+        ? join(resolve(process.env.STACK_BENCH_SUPERVISOR_DIR), `${runId}.json`) : null);
     if (supervisorState) {
       // Private handoff to an outer timeout supervisor. It contains the lease
       // token, so create it once with owner-only permissions and never place it
       // in the results tree.
-      writeFileSync(resolve(supervisorState), `${JSON.stringify({
-        version: 1, runId, leasePath, ownershipToken: initialLease.ownershipToken,
+      privateSupervisorStatePath = resolve(supervisorState);
+      mkdirSync(dirname(privateSupervisorStatePath), { recursive: true, mode: 0o700 });
+      writeFileSync(privateSupervisorStatePath, `${JSON.stringify({
+        version: SUPERVISOR_STATE_VERSION, runId, backend: args.backend, runtimeDir, leasePath,
+        ownershipToken: initialLease.ownershipToken, output: resolve(args.out),
       })}\n`, { flag: 'wx', mode: 0o600 });
     }
   } catch (error) {
@@ -549,8 +558,9 @@ async function main() {
   // what this run brought up.
   let tornDown = false;
   let activeRun = null;
-  const writeLeaseEvidence = () => {
-    const lease = readBackendLease(leasePath,
+  const recoveryPath = join(args.out, 'recovery.json');
+  const writeLeaseEvidence = (knownLease = null) => {
+    const lease = knownLease ?? readBackendLease(leasePath,
       { token: initialLease.ownershipToken, backend: args.backend, runId });
     const out = join(args.out, 'backend-lease.json');
     const evidence = publicBackendLease(lease);
@@ -564,7 +574,7 @@ async function main() {
     });
     return evidence;
   };
-  const teardown = () => {
+  const teardown = ({ reason = null } = {}) => {
     if (tornDown) return;
     if (activeAgentChild?.pid) {
       killTree(activeAgentChild.pid);
@@ -581,24 +591,46 @@ async function main() {
           reason: String(error.message).split(/\r?\n/)[0] };
       }
     }
-    const released = releaseBackendLease(leasePath, initialLease.ownershipToken,
-      { retainBackend: args.retainBackend });
-    const evidence = writeLeaseEvidence();
+    let released = false;
+    let cleanupError = null;
+    try {
+      released = releaseBackendLease(leasePath, initialLease.ownershipToken,
+        { retainBackend: args.retainBackend });
+    } catch (error) { cleanupError = error; }
+    let finalLease = initialLease;
+    try {
+      finalLease = readBackendLease(leasePath,
+        { token: initialLease.ownershipToken, backend: args.backend, runId });
+    } catch (error) { cleanupError ??= error; released = false; }
+    const evidence = writeLeaseEvidence(finalLease);
+    writeRecoveryArtifact(recoveryPath, finalLease, { cleanupSucceeded: released,
+      retained: Boolean(args.retainBackend),
+      reason: cleanupError?.message ?? reason ?? (released ? null : 'authenticated cleanup refused') });
     if (activeRun) {
       activeRun.backendLease = evidence;
       activeRun.outcome ??= aggregateRunOutcome(activeRun.levels);
       writeRunJson(join(args.out, 'run.json'), activeRun);
     }
     tornDown = released;
-    if (released && !args.retainBackend) rmSync(runtimeDir, { recursive: true, force: true });
+    if (released && !args.retainBackend) {
+      rmSync(runtimeDir, { recursive: true, force: true });
+      if (privateSupervisorStatePath) rmSync(privateSupervisorStatePath, { force: true });
+    }
+    if (cleanupError) throw cleanupError;
     if (!released) throw new Error(`backend teardown refused: listener no longer matches lease ${runId}`);
   };
   emergencyTeardown = teardown;
   // This run's work path is unique. There is no legitimate pre-existing build
   // container to delete; teardown removes one only after run-build records its
   // immutable id in the lease.
-  process.on('SIGINT', () => { console.log('interrupted — stopping servers'); teardown(); process.exit(130); });
-  process.on('SIGTERM', () => { teardown(); process.exit(143); });
+  const interrupt = (signal, exitCode) => {
+    console.log(`interrupted by ${signal} — stopping exact owned resources`);
+    try { teardown({ reason: `interrupted by ${signal}` }); }
+    catch (error) { console.error(`  cleanup quarantined: ${String(error.message).split(/\r?\n/)[0]}`); }
+    process.exit(exitCode);
+  };
+  process.on('SIGINT', () => interrupt('SIGINT', 130));
+  process.on('SIGTERM', () => interrupt('SIGTERM', 143));
   process.on('exit', () => {
     if (!tornDown) {
       try { teardown(); } catch (error) {

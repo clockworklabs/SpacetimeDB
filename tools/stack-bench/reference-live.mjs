@@ -17,9 +17,9 @@ import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { emptyArtifactIdentities, readArtifactPayload, writeRunJson } from './artifacts.mjs';
 import { hashDirectory } from './provenance.mjs';
 import { inspectImportedReference, loadReferenceRegistry, validateReferenceRegistry } from './reference-fixtures.mjs';
-import { releaseBackendLease } from './backend-teardown.mjs';
 import { killTree } from './platform.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
+import { recoverSupervisedRun } from './recovery.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const BENCH = join(ROOT, 'bench.mjs');
@@ -89,10 +89,6 @@ export function runBounded(command, argv,
 export function rescueSupervisedLease(path, output) {
   if (!existsSync(path)) return;
   const state = readJson(path);
-  if (state.version !== 1 || typeof state.runId !== 'string'
-    || typeof state.leasePath !== 'string' || typeof state.ownershipToken !== 'string') {
-    throw new Error('invalid private supervisor state');
-  }
   if (!existsSync(state.leasePath)) {
     const runPath = join(output, 'run.json');
     if (!existsSync(runPath)) throw new Error(`backend lease disappeared without released run evidence: ${state.runId}`);
@@ -104,9 +100,8 @@ export function rescueSupervisedLease(path, output) {
     if (!released) throw new Error(`backend lease disappeared without released run evidence: ${state.runId}`);
     return;
   }
-  if (!releaseBackendLease(state.leasePath, state.ownershipToken)) {
-    throw new Error(`supervisor could not release backend lease ${state.runId}`);
-  }
+  const result = recoverSupervisedRun(path, { removeState: false });
+  if (!result.ok) throw new Error(`supervisor could not release backend lease ${state.runId}`);
 }
 
 function readJson(path) {

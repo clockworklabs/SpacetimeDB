@@ -22,6 +22,7 @@ export const ARTIFACT_KINDS = Object.freeze([
   'preflight',
   'reference_build',
   'reference_qualification',
+  'recovery',
 ]);
 
 const KIND_SET = new Set(ARTIFACT_KINDS);
@@ -56,6 +57,8 @@ const PAYLOAD_FIELDS = Object.freeze({
   reference_build: new Set(['isolation', 'image', 'fixtures', 'ok']),
   reference_qualification: new Set(['fixture', 'fixtureSha256', 'requiredRepetitions', 'isolation',
     'mutationControl', 'runs', 'stable', 'sameImage', 'sameHarness', 'harnessSha256', 'ok']),
+  recovery: new Set(['schemaVersion', 'status', 'runId', 'backend', 'reason', 'cleanup',
+    'resources', 'instructions']),
 });
 const HASH = /^[a-f0-9]{64}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -174,6 +177,8 @@ function validatePayload(kind, payload) {
   if (kind === 'performance_run') { objectWhenPresent('deliveryLatencyMs'); objectWhenPresent('server'); }
   if (kind === 'reference_build') arrayWhenPresent('fixtures');
   if (kind === 'reference_qualification') arrayWhenPresent('runs');
+  if (kind === 'recovery') { objectWhenPresent('cleanup'); objectWhenPresent('resources');
+    arrayWhenPresent('instructions'); }
   if (kind === 'contract_lint') { arrayWhenPresent('results'); objectWhenPresent('counts'); }
   if (kind === 'action_check') { arrayWhenPresent('results'); arrayWhenPresent('missing'); }
   return payload;

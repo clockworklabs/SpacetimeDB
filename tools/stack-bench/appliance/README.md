@@ -95,6 +95,9 @@ infer a special label from a partial selection; it states what was run.
 
 Results remain under `/var/lib/stack-bench/results` after the controller exits.
 Do not delete that directory until its artifact manifest has been verified and
-copied off the runner. The dependency and database volumes are release-owned,
-but interruption-safe cleanup and quarantine instructions are SB-403 work and
-are not yet a production release guarantee.
+copied off the runner. Every run writes a public recovery status and keeps
+private authenticated recovery authority until exact-owned cleanup succeeds.
+Follow [`RECOVERY.md`](RECOVERY.md) for interruption, quarantine, safe retry, and
+intentional retention. Dependency and database volume destruction remains an
+operator action after verified result export; no run recursively deletes the
+shared state root.

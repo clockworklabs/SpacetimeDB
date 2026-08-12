@@ -141,7 +141,8 @@ manifest digest. A mutable tag alone can never satisfy preflight.
    directory.
 5. Generate digest-bound SBOM/checksum/signature inputs and validate them in CI.
 6. Run preflight and the full model-free Docker smoke from a clean Linux runner.
-7. Exercise interruption handling before calling the bundle production-ready.
+7. Exercise interruption handling and deterministic authenticated recovery
+   before calling the bundle production-ready.
 
 The first five steps are SB-402. Interruption recovery is SB-403; the frozen
 multi-stack campaign and deterministic static report are SB-501 through SB-503.
@@ -157,5 +158,7 @@ bundle alone:
 - prove the coding container cannot read definitions or results;
 - preserve artifacts after the controller container is removed;
 - remove only exact benchmark-owned resources;
+- emit a public quarantine artifact and retain private authenticated recovery
+  state whenever exact cleanup cannot be proven;
 - emit no provider, registry, database, or lease secret in public artifacts;
 - reproduce the same release identity on a second runner.
