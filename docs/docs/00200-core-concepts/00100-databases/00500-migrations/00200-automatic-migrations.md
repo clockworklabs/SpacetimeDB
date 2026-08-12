@@ -33,8 +33,8 @@ These changes are allowed by automatic migration, but may cause runtime errors f
 - **Changing or removing reducers.** Clients attempting to call the old version of a changed reducer or a removed reducer will receive runtime errors.
 - **Changing tables from public to private.** Clients subscribed to a newly-private table will receive runtime errors.
 - **Changing table or column accessor names while preserving canonical names.** The stored data can be migrated, but module and client code generated from the old accessors must be updated.
-- **Changing an index source name while preserving the index accessor.** SQL or migration output may refer to the new canonical name.
-- **Removing empty tables.** SpacetimeDB can remove a table only if it has no rows. Clients subscribed to the removed table will receive runtime errors.
+- **Changing an index source name while preserving the index accessor.** The index source name is the generated or explicit raw schema name used to look up the index, not the canonical index name used to match it across module versions. The stored index can be migrated in place, but SQL or migration output may refer to the new source name.
+- **Removing empty tables.** SpacetimeDB can remove a table only if it has no rows. Removing a table disconnects active clients. Clients using bindings or subscription queries generated from the old schema must be updated before reconnecting, because the removed table no longer exists.
 - **Removing `Primary Key` annotations.** Non-updated clients will still use the old primary key as a unique key in their local cache, which can result in non-deterministic behavior when updates are received.
 - **Removing indexes.** This is only breaking in specific situations. The main issue occurs with subscription queries involving semijoins, such as:
 
@@ -95,6 +95,7 @@ For complex schema changes that aren't supported by automatic migration:
 During automatic migrations, active client connections are maintained and subscriptions continue to function. However:
 
 - Clients may witness brief interruptions in scheduled reducers (such as game loops)
+- Some migrations, such as removing a table, disconnect active clients so they reconnect against the new schema
 - New module versions may remove or change reducers, causing runtime errors for clients calling those reducers
 - Clients won't automatically know about schema changes - you may need to regenerate and update client bindings
 
