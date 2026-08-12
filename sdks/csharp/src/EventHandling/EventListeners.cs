@@ -1,58 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
+#if SAPPY
+using Sappy;
+#endif
 
 namespace SpacetimeDB.EventHandling
 {
+    public interface IEventListeners<T> where T : Delegate
+    {
+        T this[int index] { get; }
+        
+    }
+
     public class EventListeners<T> where T : Delegate
     {
-#if SAPPY
-        public SapDelegate<T> Targets { get; } = new();
-        private Dictionary<int, SapTarget<T>> Cache { get; } = new(4);
-
-        public void Add(SapTarget<T> listener) => Targets.Add(listener);
-        public void Remove(SapTarget<T> listener) => Targets.Remove(listener);
-
-        public int Count => Targets.Count;
-        
-        public T this[int index] => Targets[index];
-
-        public void Add(T listener)
-        {
-            if(listener == null) return;
-            var hashCode = listener.GetHashCode();
-            if(!Cache.TryGetValue(hashCode, out var target)) {
-                target = new SapTarget<T>(listener);
-                Cache.Add(hashCode, target);
-            }
-            Add(target);
-        }
-        public void Remove(T listener)
-        {
-            if(listener == null || !Cache.TryGetValue(listener.GetHashCode(), out var target)) return;
-            Remove(target);
-        }
-
-        public static EventListeners<T> operator +(EventListeners<T> a, SapTarget<T> b)
-        {
-            a.Add(b);
-            return a;
-        }
-        public static EventListeners<T> operator -(EventListeners<T> a, SapTarget<T> b)
-        {
-            a.Remove(b);
-            return a;
-        }
-        public static EventListeners<T> operator +(EventListeners<T> a, T b)
-        {
-            a.Add(b);
-            return a;
-        }
-        public static EventListeners<T> operator -(EventListeners<T> a, T b)
-        {
-            a.Remove(b);
-            return a;
-        }
-#else
         private const int SmallListenerThreshold = 8;
         private const int CollisionBucket = -1;
 
@@ -304,6 +265,5 @@ namespace SpacetimeDB.EventHandling
         }
 
         private static bool DelegateEquals(T a, T b) => EqualityComparer<T>.Default.Equals(a, b);
-#endif
     }
 }
