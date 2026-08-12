@@ -899,7 +899,6 @@ name = "ci"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "clap 4.5.50",
  "duct",
 ]

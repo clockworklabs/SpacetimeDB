@@ -16,23 +16,20 @@ struct Cli {
     args: Args,
 }
 
-fn run(base_ref: &str, pr_number: u64) -> Result<()> {
+fn main() -> Result<()> {
+    let args = Cli::parse().args;
+
     ensure_repo_root()?;
 
-    fetch_base_ref(base_ref)?;
-    let review = ReviewStatus::fetch(pr_number)?;
+    fetch_base_ref(&args.base_ref)?;
+    let review = ReviewStatus::fetch(args.pr_number)?;
 
-    for path in changed_files(base_ref)? {
-        file_review_requirements(base_ref, &path, &review)
+    for path in changed_files(&args.base_ref)? {
+        file_review_requirements(&args.base_ref, &path, &review)
             .with_context(|| format!("review requirements failed for {}", path.display()))?;
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    let args = Cli::parse().args;
-    run(&args.base_ref, args.pr_number)
 }
 
 fn file_review_requirements(base_ref: &str, path: &Path, review: &ReviewStatus) -> Result<()> {
