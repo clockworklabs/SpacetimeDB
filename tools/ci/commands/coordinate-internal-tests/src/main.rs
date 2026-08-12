@@ -19,7 +19,7 @@ const PRIVATE_DEFAULT_BRANCH: &str = "master";
 /// Selects or starts the private workflow for a public Internal Tests run.
 #[derive(Parser)]
 #[command(about = "Selects or starts the private workflow for a public Internal Tests run.")]
-struct Args {
+struct Cli {
     /// Immutable public commit to test.
     #[arg(long)]
     public_sha: String,
@@ -455,7 +455,7 @@ fn write_github_output(name: &str, value: impl std::fmt::Display) -> Result<()> 
 
 /// Coordinates the public Internal Tests run without checking out or executing private code.
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = Cli::parse();
     let private_source = resolve_private_source(args.public_pr_number)?;
 
     let coordinated = match private_source {

@@ -7,7 +7,7 @@ use std::env;
 
 #[derive(Parser)]
 #[command(about = "Generates CLI documentation and checks for changes")]
-struct Args {
+struct Cli {
     #[arg(
         long,
         long_help = "specify a custom path to the SpacetimeDB repository root (where the main Cargo.toml is located)"
@@ -16,7 +16,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let Args { spacetime_path } = Args::parse();
+    let Cli { spacetime_path } = Cli::parse();
     if let Some(path) = spacetime_path {
         env::set_current_dir(path).ok();
     }
