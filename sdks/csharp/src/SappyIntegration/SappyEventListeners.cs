@@ -34,22 +34,22 @@ namespace SpacetimeDB.SappyIntegration
             Remove(target);
         }
 
-        public static BasicEventListeners<T> operator +(SappyEventListeners<T> a, SapTarget<T> b)
+        public static SappyEventListeners<T> operator +(SappyEventListeners<T> a, SapTarget<T> b)
         {
             a.Add(b);
             return a;
         }
-        public static BasicEventListeners<T> operator -(SappyEventListeners<T> a, SapTarget<T> b)
+        public static SappyEventListeners<T> operator -(SappyEventListeners<T> a, SapTarget<T> b)
         {
             a.Remove(b);
             return a;
         }
-        public static BasicEventListeners<T> operator +(SappyEventListeners<T> a, T b)
+        public static SappyEventListeners<T> operator +(SappyEventListeners<T> a, T b)
         {
             a.Add(b);
             return a;
         }
-        public static BasicEventListeners<T> operator -(SappyEventListeners<T> a, T b)
+        public static SappyEventListeners<T> operator -(SappyEventListeners<T> a, T b)
         {
             a.Remove(b);
             return a;
