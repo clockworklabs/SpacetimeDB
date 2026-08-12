@@ -100,14 +100,17 @@ The delivered bundle must include:
 
 - controller and build-sandbox images by registry digest;
 - PostgreSQL and MongoDB images by registry digest;
+- every digest names the exact Linux/amd64 platform manifest, not a
+  multi-architecture index;
 - the SpacetimeDB runtime, CLI, standalone binary, and TypeScript SDK source by
   checksum;
 - exact engine, recipe, pack, fixture, calibration, reference, mutation, and
   experiment inputs;
 - Compose files and a secrets template;
 - a release manifest binding every file and image;
-- SPDX or CycloneDX SBOMs for first-party images;
-- signatures/attestations for images and the manifest;
+- SPDX 2.3 SBOMs bound to every exact first- and third-party image digest;
+- registry-attached signatures for images and a detached signature bundle for
+  the manifest;
 - an operator guide and recovery/quarantine instructions;
 - a persistent results directory containing raw artifacts and generated report
   output.
@@ -136,7 +139,7 @@ manifest digest. A mutable tag alone can never satisfy preflight.
 3. Build the controller image and one-shot dependency initializer.
 4. Add the dedicated-runner Compose file, secret templates, and fixed state
    directory.
-5. Generate SBOM/checksum/signature inputs and validate them in CI.
+5. Generate digest-bound SBOM/checksum/signature inputs and validate them in CI.
 6. Run preflight and the full model-free Docker smoke from a clean Linux runner.
 7. Exercise interruption handling before calling the bundle production-ready.
 

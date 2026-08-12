@@ -1,3 +1,15 @@
 **/target
 # we do our own version pinning in the Dockerfile
 rust-toolchain.toml
+
+# Stack Bench release images must not absorb local state, ignored evidence, or
+# historical generated applications from the root build context.
+tools/stack-bench/JOURNAL.local.md
+tools/stack-bench/node_modules
+tools/stack-bench/**/node_modules
+crates/bindings-typescript/**/node_modules
+tools/stack-bench/results
+tools/stack-bench/transcripts
+tools/stack-bench/.spacetime-data*
+tools/stack-bench/.loop-test
+tools/stack-bench/archive/pre-v1/results

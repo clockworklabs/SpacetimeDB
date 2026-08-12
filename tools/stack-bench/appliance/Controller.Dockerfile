@@ -8,9 +8,13 @@ ENV NODE_ENV=production \
 
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker-cli /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
+ADD --checksum=sha256:4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71 \
+    https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-amd64 \
+    /usr/local/bin/cosign
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends lsof=4.95.0-1build3 \
+    && chmod 0555 /usr/local/bin/cosign \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/stack-bench

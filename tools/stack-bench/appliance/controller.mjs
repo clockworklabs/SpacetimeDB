@@ -27,7 +27,7 @@ function help() {
     + 'Commands:\n'
     + '  preflight <exact run options>  verify the runner without a model call\n'
     + '  run <exact run options>        execute and retain one requested run\n'
-    + '  verify-release <manifest>      verify delivered files (candidate integrity)\n'
+    + '  verify-release <manifest>      verify candidate files or a qualified signed release\n'
     + '  init-deps | verify-deps        initialize or verify the release dependency volume\n'
     + '  test                           run the model-free harness test suite\n');
 }

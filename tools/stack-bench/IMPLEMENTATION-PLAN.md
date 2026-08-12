@@ -522,11 +522,15 @@ SBOMs, signatures, checksums, secrets template, and persistent artifact storage.
 In progress. `APPLIANCE-DESIGN.md` selects the supported v1 topology: a
 dedicated disposable Linux x86-64 runner, host-networked controller, local
 Docker socket, fixed persistent state path, release dependency volume, and
-Compose secrets. Release-manifest schema v1 now requires digest-only
-controller/build/PostgreSQL/MongoDB images, one SBOM and signature per image,
-checksummed operator/dependency/Compose/secrets/support files, HTTPS-only
-declared destinations, and safe secret targets. Bundle verification detects
-missing, changed, non-regular, or escaping files.
+Compose secrets. Release-manifest schema v2 now separates honest unsigned
+candidates from qualified releases. Both bind exact Linux/amd64 platform
+manifest references, digest-bearing SPDX 2.3 SBOMs, checksummed
+operator/dependency/Compose/secrets/support files, HTTPS-only destinations, and
+safe secret targets. Candidates cannot claim a signing key. Qualified
+verification requires an external matching trust key, verifies a detached
+Cosign bundle over the exact on-disk manifest, and verifies every registry image
+signature. Bundle verification also detects missing, changed, non-regular,
+escaping, and wrong-image SBOM files.
 
 The runtime packaging slice is implemented. The digest-pinned controller base
 contains Playwright, Docker CLI/Compose, and the harness; a one-shot initializer
@@ -546,11 +550,19 @@ real Playwright grades. That Linux run exposed and fixed checkout-byte reference
 hash drift, a Windows-only test path, namespace-blind port checking, and
 mutation validation that happened after ambient preflight.
 
-This is still not a distributable release. Image publication, real SBOM and
-signature generation/verification, release bundle assembly, and two clean
-dedicated-runner reproductions remain. The current verifier labels
-its result `candidate-file-integrity` and explicitly refuses a `qualified`
-manifest until real cryptographic signature verification is implemented.
+The supply-chain commands now generate registry-resolved SPDX SBOMs, reject a
+tool result that does not bind the exact requested digest, materialize file
+hashes from a strict release specification, and verify qualified releases with
+Cosign without a candidate fallback. Live Docker Scout runs proved the
+PostgreSQL and MongoDB SBOM path; they also caught that the original Compose
+pins named multi-architecture indexes, so the appliance now pins the actual
+Linux/amd64 child manifests.
+
+This is still not a distributable release. First-party image publication, real
+key-controlled signing, candidate assembly, and two clean dedicated-runner
+reproductions remain. Cosign is now checksum-pinned in the controller and a real
+ephemeral blob-signing round trip passes, but no release registry/key authority
+was supplied, so no image signature or qualification claim was fabricated.
 
 ### SB-403: Interruption and recovery
 
@@ -648,8 +660,9 @@ them. Live qualification does not run concurrently with executable harness edits
 14. [x] SB-303 versioned agent adapter contract and deterministic fake/fault proof.
 15. [x] SB-304 shared classification and rendering cleanup.
 16. [x] SB-401 exact-scope preflight and mandatory no-model paid-run admission.
-17. [ ] SB-402 distributable OCI/Compose release (runtime packaging proven;
-    signed bundle and clean-runner reproduction remain).
+17. [ ] SB-402 distributable OCI/Compose release (runtime packaging and strict
+    candidate/qualified supply-chain tooling proven; image publication, real
+    signing, and two clean-runner reproductions remain).
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.

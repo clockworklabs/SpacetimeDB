@@ -8,6 +8,8 @@
   "scripts": {
     "bootstrap:browsers": "playwright install chromium",
     "preflight": "node preflight.mjs",
+    "release:bundle": "node release-bundle.mjs",
+    "release:source": "node release-source.mjs --json",
     "verify:release": "node release-manifest.mjs verify",
     "check:scenarios": "node grader/check-scenarios.mjs",
     "check:definition-goldens": "node definition-goldens.mjs",

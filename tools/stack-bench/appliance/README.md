@@ -11,8 +11,9 @@ destroy it after copying verified results elsewhere.
 
 ## What is packaged
 
-- `Controller.Dockerfile` builds the grader/controller with Playwright and a
-  digest-pinned Docker CLI.
+- `Controller.Dockerfile` builds the grader/controller with Playwright, a
+  digest-pinned Docker CLI, and checksum-pinned Cosign 3.1.3 for qualified
+  release verification.
 - `dependency-volume.mjs` copies the release's exact SDK, CLI, and standalone
   runtime into one checksummed named volume. It refuses unmarked, changed, or
   wrong-release content.
@@ -28,21 +29,31 @@ manifest.
 
 ## Build a development candidate
 
-From the repository root, compute an exact source identity and build Linux/amd64:
+From a clean repository checkout, compute the exact tracked release-source
+identity and build Linux/amd64:
 
 ```powershell
-$revision = (git rev-parse HEAD).Trim()
-$sourceHash = (node --input-type=module -e "import {hashDirectory} from './tools/stack-bench/provenance.mjs'; const x=hashDirectory('tools/stack-bench', {exclude:n=>/(^|\/)(node_modules|results|\.spacetime-data[^/]*|\.loop-test|transcripts)(\/|$)|^archive\/pre-v1\/results\//.test(n)}); console.log(x.sha256)").Trim()
+$source = node tools/stack-bench/release-source.mjs --json | ConvertFrom-Json
 docker build --platform linux/amd64 `
   -f tools/stack-bench/appliance/Controller.Dockerfile `
-  --build-arg SOURCE_REVISION=$revision `
-  --build-arg SOURCE_SHA256=$sourceHash `
+  --build-arg SOURCE_REVISION=$($source.revision) `
+  --build-arg SOURCE_SHA256=$($source.sha256) `
   -t stack-bench-controller:development .
 ```
 
 This creates a local development candidate only. A distributable release still
 requires registry digests, generated SBOMs, signatures/attestations, and a
 verified release manifest.
+
+The identity command refuses changed or untracked release inputs. The root
+Docker ignore file also excludes the local journal, dependencies, generated
+results, transcripts, runtime state, and archived applications so those bytes
+cannot leak into the image or make otherwise identical builds diverge.
+
+Candidate assembly and qualified Cosign verification are documented in
+[`RELEASE.md`](RELEASE.md). Candidate integrity is not a release signature, and
+a qualified verification requires a trusted public key supplied from outside
+the downloaded bundle.
 
 ## Run on the dedicated runner
 
