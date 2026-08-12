@@ -1,9 +1,10 @@
 #![allow(clippy::disallowed_macros)]
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
-use lookup_pr_release::{lookup, references, release_section, Gh, Github};
+use lookup_pr_release::{lookup, references, validated_release_section, Gh, Github};
 use serde::Deserialize;
+use std::fs;
 
 #[derive(Parser)]
 #[command(about = "Checks that every PR in the `Must be released` section has been released.")]
@@ -24,7 +25,11 @@ fn main() -> Result<()> {
     let github = Gh;
     let pr: PullRequest = github.get(&format!("repos/{}/pulls/{}", args.repo, args.pr_number))?;
     let body = pr.body.as_deref().unwrap_or_default();
-    let dependencies = references(release_section(body)?, &args.repo)?;
+    let template = fs::read_to_string(".github/pull_request_template.md")
+        .context("failed to read .github/pull_request_template.md")?;
+    let section =
+        validated_release_section(body, &template).context("failed to validate the `Must be released` section")?;
+    let dependencies = references(section, &args.repo)?;
     let mut unreleased = Vec::new();
     let mut errors = Vec::new();
 

@@ -220,6 +220,26 @@ pub fn release_section(body: &str) -> Result<&str> {
         .ok_or_else(|| anyhow!("PR description is missing the `Must be released` section"))
 }
 
+pub fn normalized_release_section(body: &str) -> Result<String> {
+    Ok(release_section(body)?
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_owned())
+}
+
+pub fn validated_release_section<'a>(body: &'a str, template: &str) -> Result<&'a str> {
+    let section = release_section(body)?;
+    if normalized_release_section(body)? == normalized_release_section(template)? {
+        bail!(
+            "the `Must be released` section is unchanged from the pull request template; remove the instructional comment if there are no dependencies"
+        );
+    }
+    Ok(section)
+}
+
 pub fn references(section: &str, current_repo: &str) -> Result<BTreeSet<PullRequestRef>> {
     static REFERENCE: OnceLock<Regex> = OnceLock::new();
     let regex = REFERENCE.get_or_init(|| {
@@ -371,6 +391,21 @@ mod tests {
             release_section(body).unwrap(),
             "#12 repo#13 owner/repo#14\n## Detail\n#15\n"
         );
+    }
+
+    #[test]
+    fn normalizes_release_section_whitespace() {
+        let body = "# Must be released\r\n\r\n<!-- default -->   \r\n\r\n# Next\r\n";
+        assert_eq!(normalized_release_section(body).unwrap(), "<!-- default -->");
+    }
+
+    #[test]
+    fn rejects_unchanged_template_but_accepts_an_intentionally_empty_section() {
+        let template = "# Must be released\n\n<!-- default instructions -->\n";
+        let unchanged = "# Must be released\r\n\r\n<!-- default instructions -->   \r\n";
+        let empty = "# Must be released\n";
+        assert!(validated_release_section(unchanged, template).is_err());
+        assert_eq!(validated_release_section(empty, template).unwrap(), "");
     }
 
     #[test]
