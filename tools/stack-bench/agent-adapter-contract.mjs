@@ -1,7 +1,8 @@
 export const AGENT_ADAPTER_SCHEMA_VERSION = 1;
 
 const FIELDS = new Set(['schemaVersion', 'id', 'version', 'entrypoint', 'modes', 'deadlineMs',
-  'defaultModel', 'apiKeyEnvironmentVariable', 'credentialFiles', 'outboundDestinations']);
+  'defaultModel', 'apiKeyEnvironmentVariable', 'credentialFiles', 'outboundDestinations',
+  'costLimit']);
 const RESULT_FIELDS = new Set(['appDir', 'mode', 'level', 'track', 'backend', 'model', 'guidance',
   'stack', 'setup', 'costUsd', 'tokens', 'outputTokens', 'usage', 'provenance', 'turns',
   'promptBytes', 'tokensPerTurn', 'thinking', 'durationMs', 'sessionId', 'ok',
@@ -9,6 +10,7 @@ const RESULT_FIELDS = new Set(['appDir', 'mode', 'level', 'track', 'backend', 'm
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
 const MODES = new Set(['build', 'upgrade', 'fix']);
+const COST_LIMITS = new Set(['native', 'non-billable', 'unsupported']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 export function defineAgentAdapter(value) {
@@ -31,6 +33,9 @@ export function defineAgentAdapter(value) {
   }
   if (typeof value.defaultModel !== 'string' || !value.defaultModel) {
     throw new Error(`agent adapter ${value.id}.defaultModel is required`);
+  }
+  if (!COST_LIMITS.has(value.costLimit)) {
+    throw new Error(`agent adapter ${value.id}.costLimit is invalid`);
   }
   if (value.apiKeyEnvironmentVariable !== null
     && (typeof value.apiKeyEnvironmentVariable !== 'string'
@@ -123,13 +128,17 @@ export function validateAgentResult(value, request) {
   }
   const usage = Object.fromEntries(['input', 'output', 'cacheWrite', 'cacheRead']
     .map(key => [key, finite(value.usage[key], `usage.${key}`)]));
+  const costUsd = finite(value.costUsd, 'costUsd');
+  if (request.maxBudgetUsd != null && request.adapterCostLimit === 'unsupported') {
+    throw new Error('agent result came from an adapter that cannot enforce a cost limit');
+  }
   return {
     ...value,
     backend: request.backend,
     track: request.track,
     model: request.model,
     guidance: value.guidance ?? request.guidance,
-    costUsd: finite(value.costUsd, 'costUsd'),
+    costUsd,
     tokens: finite(value.tokens, 'tokens'),
     outputTokens: finite(value.outputTokens, 'outputTokens'),
     turns: finite(value.turns, 'turns'),
@@ -146,9 +155,14 @@ export function agentRequestArgv(adapter, request) {
   if (!adapter.modes.includes(request.mode)) {
     throw new Error(`agent adapter ${adapter.id} does not support mode ${request.mode}`);
   }
+  if (request.maxBudgetUsd != null && adapter.costLimit === 'unsupported') {
+    throw new Error(`agent adapter ${adapter.id} cannot enforce a cost limit`);
+  }
   return [adapter.entrypoint, '--mode', request.mode, '--backend', request.backend,
     '--level', String(request.level), '--app', request.app, '--track', request.track,
     '--run-index', String(request.runIndex), '--model', request.model,
     '--guidance', request.guidance,
-    ...(request.skills ? ['--skills', request.skills] : [])];
+    ...(request.skills ? ['--skills', request.skills] : []),
+    ...(request.maxBudgetUsd != null && adapter.costLimit === 'native'
+      ? ['--max-budget-usd', String(request.maxBudgetUsd)] : [])];
 }

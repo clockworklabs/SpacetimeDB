@@ -57,6 +57,11 @@ catch (error) {
 const image = imageIdentity.id;
 const effort = opt('--effort', 'high');
 const model = opt('--model', 'claude-sonnet-5');
+const maxBudgetUsd = opt('--max-budget-usd');
+if (maxBudgetUsd !== null && (!Number.isFinite(Number(maxBudgetUsd)) || Number(maxBudgetUsd) <= 0)) {
+  console.error('run-build.mjs: --max-budget-usd must be a positive number');
+  process.exit(2);
+}
 const ports = (opt('--ports', '') || '').split(',').filter(Boolean);
 
 const containerPlan = executeStackCapability(adapter, 'build-container', 'plan', {
@@ -292,6 +297,7 @@ args.push(
   '--permission-mode', 'acceptEdits',
   '--effort', effort,
   '--model', model,
+  ...(maxBudgetUsd !== null ? ['--max-budget-usd', maxBudgetUsd] : []),
   // The app is the only directory a session may reach; inside the container
   // that is all there is, but the flag is kept so host and container runs are
   // configured identically.

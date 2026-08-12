@@ -211,6 +211,9 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     for (const field of ['releaseManifestSha256', 'controllerImage', 'buildImage']) {
       if (value.runtime[field] === null) fail(`${source}.runtime.${field}`, 'is required for a frozen campaign');
     }
+    if (value.agents.some(agent => agent.adapter !== 'claude-code')) {
+      fail(`${source}.state`, 'cannot freeze an agent adapter that does not enforce maxCostUsdPerAttempt');
+    }
   }
   return canonicalizeDefinition(value);
 }
@@ -289,8 +292,11 @@ export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
   const agents = definition.agents.map(selection => {
     const adapter = AGENT_ADAPTER_REGISTRY.get(selection.adapter);
     if (adapter.version !== selection.adapterVersion) fail('agents', `${adapter.id} adapter is ${adapter.version}, not ${selection.adapterVersion}`);
-    return { ...selection, identity: agentAdapterIdentity(adapter) };
+    return { ...selection, costLimit: adapter.costLimit, identity: agentAdapterIdentity(adapter) };
   });
+  if (definition.state === 'frozen' && agents.some(agent => agent.costLimit === 'unsupported')) {
+    fail('state', 'cannot freeze an agent adapter that does not enforce maxCostUsdPerAttempt');
+  }
   for (const agent of agents) {
     for (const stack of stacks) {
       if (agent.guidance === 'minimal' && !executeStackCapability(

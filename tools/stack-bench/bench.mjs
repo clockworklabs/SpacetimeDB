@@ -61,6 +61,7 @@ function parseArgs(argv) {
       case '--check': a.checkKeys.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--model': a.model = argv[++i]; break;
       case '--fix-rounds': a.fixRounds = parseInt(argv[++i], 10); break;
+      case '--max-budget-usd': a.maxBudgetUsd = Number(argv[++i]); break;
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--out': a.out = argv[++i]; break;
       case '--app': a.app = argv[++i]; break;
@@ -102,6 +103,9 @@ function parseArgs(argv) {
   }
   const [from, to] = a.levels.split('-').map(Number);
   a.levelList = Array.from({ length: (to ?? from) - from + 1 }, (_, i) => from + i);
+  if (a.maxBudgetUsd !== undefined && (!Number.isFinite(a.maxBudgetUsd) || a.maxBudgetUsd <= 0)) {
+    throw new Error('--max-budget-usd must be a positive number');
+  }
   return a;
 }
 
@@ -222,8 +226,17 @@ let activeAgentChild = null;
 let emergencyTeardown = null;
 
 function runAgent(args, adapter, mode, level, appDir) {
+  const remainingBudget = args.maxBudgetUsd == null ? null
+    : Number((args.maxBudgetUsd - (args.spentBudgetUsd ?? 0)).toFixed(6));
+  if (remainingBudget !== null && remainingBudget <= 0) {
+    throw new Error(`attempt cost cap of $${args.maxBudgetUsd} was exhausted before ${mode} L${level}`);
+  }
+  if (remainingBudget !== null && adapter.id !== 'claude-code') {
+    throw new Error(`agent adapter ${adapter.id} cannot enforce --max-budget-usd`);
+  }
   const request = { mode, level, app: appDir, backend: args.backend, track: args.track,
-    runIndex: args.runIndex, model: args.model, guidance: args.guidance, skills: args.skills };
+    runIndex: args.runIndex, model: args.model, guidance: args.guidance, skills: args.skills,
+    maxBudgetUsd: remainingBudget, adapterCostLimit: adapter.costLimit };
   const argv = agentRequestArgv(adapter, request);
   if (args.apiKey && !adapter.apiKeyEnvironmentVariable) {
     throw new Error(`agent adapter ${adapter.id} does not accept an API key`);
@@ -243,7 +256,11 @@ function runAgent(args, adapter, mode, level, appDir) {
           rejectRun(error);
           return;
         }
-        try { resolveRun(validateAgentResult(JSON.parse(stdout.trim().split('\n').pop()), request)); }
+        try {
+          const result = validateAgentResult(JSON.parse(stdout.trim().split('\n').pop()), request);
+          args.spentBudgetUsd = Number(((args.spentBudgetUsd ?? 0) + result.costUsd).toFixed(6));
+          resolveRun(result);
+        }
         catch (parseError) {
           // Empty/malformed agent output used to discard stderr, turning a
           // failed deploy into the content-free claim "invalid JSON". Preserve

@@ -252,6 +252,7 @@ function parseArgs(argv) {
       case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
       case '--thinking': a.thinking = argv[++i]; break;
+      case '--max-budget-usd': a.maxBudgetUsd = Number(argv[++i]); break;
       // Comma-separated skill directories to inline, e.g.
       //   --skills typescript-server,typescript-client,cli
       case '--skills': a.skills = argv[++i].split(',').map(x => x.trim()).filter(Boolean); break;
@@ -267,6 +268,9 @@ function parseArgs(argv) {
   if (!a.mode || !a.backend || !a.app) {
     console.error('Usage: node agent.mjs --mode build|upgrade|fix --backend <b> --app <dir> [--level N]');
     process.exit(2);
+  }
+  if (a.maxBudgetUsd !== undefined && (!Number.isFinite(a.maxBudgetUsd) || a.maxBudgetUsd <= 0)) {
+    throw new Error('--max-budget-usd must be a positive number');
   }
   return a;
 }
@@ -685,6 +689,7 @@ async function main() {
       '--image', imageIdentity.id,
       '--effort', EFFORT,
       '--model', args.model,
+      ...(args.maxBudgetUsd != null ? ['--max-budget-usd', String(args.maxBudgetUsd)] : []),
       '--settings', `/app/${basename(settings)}`,
       '--ports', [p.vite, p.express].filter(Boolean).join(','),
       ...(args.apiKey ? ['--api-key', args.apiKey] : []),

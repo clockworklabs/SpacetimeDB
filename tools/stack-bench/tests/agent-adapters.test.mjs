@@ -23,6 +23,11 @@ test('requests are normalized and unsupported modes fail before launch', () => {
   const deterministic = AGENT_ADAPTER_REGISTRY.get('deterministic');
   assert.deepEqual(agentRequestArgv(deterministic, request).slice(1, 7),
     ['--mode', 'build', '--backend', 'stub', '--level', '1']);
+  assert.deepEqual(agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('claude-code'),
+    { ...request, maxBudgetUsd: 12.5 }).slice(-2),
+    ['--max-budget-usd', '12.5']);
+  assert.equal(agentRequestArgv(deterministic, { ...request, maxBudgetUsd: 12.5 })
+    .includes('--max-budget-usd'), false);
   const reference = AGENT_ADAPTER_REGISTRY.get('reference-fixture');
   assert.throws(() => agentRequestArgv(reference, { ...request, mode: 'fix' }), /does not support mode fix/);
 });
@@ -46,7 +51,7 @@ test('malformed and duplicate agent adapters fail at registry construction', () 
   const source = { schemaVersion: AGENT_ADAPTER_SCHEMA_VERSION, id: 'fake', version: '1.0.0',
     entrypoint: 'fake.mjs', modes: ['build'], deadlineMs: 1000,
     defaultModel: 'fake-model', apiKeyEnvironmentVariable: null,
-    credentialFiles: [], outboundDestinations: [] };
+    credentialFiles: [], outboundDestinations: [], costLimit: 'unsupported' };
   assert.equal(defineAgentAdapter(source).id, 'fake');
   assert.throws(() => createAgentAdapterRegistry([source, source]), /duplicate/);
   assert.throws(() => defineAgentAdapter({ ...source, version: 'latest' }), /version/);

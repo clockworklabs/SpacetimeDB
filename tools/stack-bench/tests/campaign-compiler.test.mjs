@@ -130,7 +130,14 @@ test('a campaign cannot be frozen before every selected definition is qualified 
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
-  assert.throws(() => compile(definition({ state: 'frozen', runtime,
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.0.0',
+    model: 'claude-sonnet-5', guidance: 'prescribed', skills: [] }];
+  const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
+    source: 'test snapshot', models: { 'claude-sonnet-5': {
+      inputPerMillion: 1, outputPerMillion: 1, cacheWritePerMillion: 1, cacheReadPerMillion: 1,
+    } } };
+  assert.throws(() => compile(definition({ state: 'frozen', runtime, agents: claudeAgent,
+    pricing: claudePricing,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } })),
   /cannot freeze with unqualified L1/);
 });
