@@ -10,6 +10,7 @@ const COMMANDS = Object.freeze({
   'init-deps': [join(ROOT, 'appliance', 'dependency-volume.mjs'), 'init'],
   'verify-deps': [join(ROOT, 'appliance', 'dependency-volume.mjs'), 'verify'],
   'preflight': [join(ROOT, 'preflight.mjs')],
+  'campaign': [join(ROOT, 'campaign-cli.mjs')],
   'run': [join(ROOT, 'bench.mjs')],
   'verify-release': [join(ROOT, 'release-manifest.mjs'), 'verify'],
   'recover': [join(ROOT, 'recovery.mjs'), 'recover'],
@@ -27,6 +28,7 @@ function help() {
   process.stdout.write('Stack Bench controller\n\n'
     + 'Commands:\n'
     + '  preflight <exact run options>  verify the runner without a model call\n'
+    + '  campaign validate|show <file>  compile the exact comparison plan without running it\n'
     + '  run <exact run options>        execute and retain one requested run\n'
     + '  verify-release <manifest>      verify candidate files or a qualified signed release\n'
     + '  recover <private-state>        retry authenticated cleanup or retain quarantine\n'

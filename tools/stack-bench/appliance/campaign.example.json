@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "kind": "campaign-manifest",
+  "id": "ecommerce-l1-example",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Ecommerce L1 model-free example",
+  "track": "ecommerce",
+  "levels": [1],
+  "selection": {
+    "packs": [],
+    "checks": []
+  },
+  "stacks": [
+    { "id": "spacetime", "adapterVersion": "1.0.0" },
+    { "id": "postgres", "adapterVersion": "1.0.0" },
+    { "id": "mongodb", "adapterVersion": "1.0.0" }
+  ],
+  "agents": [
+    {
+      "adapter": "deterministic",
+      "adapterVersion": "1.0.0",
+      "model": "deterministic",
+      "guidance": "prescribed",
+      "skills": []
+    }
+  ],
+  "repetitions": 3,
+  "ordering": {
+    "method": "balanced-rotation",
+    "seed": "replace-before-measurement"
+  },
+  "budgets": {
+    "fixRounds": 3,
+    "attemptTimeoutMinutes": 240,
+    "maxCostUsdPerAttempt": null
+  },
+  "attemptPolicy": {
+    "retries": 1,
+    "retryOn": ["harness_failure"],
+    "excludeFromAnalysis": ["contaminated", "harness_failure", "ungraded"]
+  },
+  "runtime": {
+    "releaseManifestSha256": null,
+    "controllerImage": null,
+    "buildImage": null,
+    "platform": "linux/amd64"
+  },
+  "pricing": {
+    "currency": "USD",
+    "capturedAt": "2026-08-12T00:00:00.000Z",
+    "source": "deterministic adapter makes no billable provider calls",
+    "models": {
+      "deterministic": {
+        "inputPerMillion": 0,
+        "outputPerMillion": 0,
+        "cacheWritePerMillion": 0,
+        "cacheReadPerMillion": 0
+      }
+    }
+  },
+  "analysis": {
+    "primaryMetric": "firstBuildScoreRate",
+    "secondaryMetrics": [
+      "finalScoreRate",
+      "totalCostUsd",
+      "totalDurationMs",
+      "invalidAttemptRate"
+    ],
+    "dispersion": "median-iqr",
+    "invalidAttempts": "report-separately",
+    "missingData": "no-imputation",
+    "comparisonUnit": "stack-agent-recipe"
+  }
+}

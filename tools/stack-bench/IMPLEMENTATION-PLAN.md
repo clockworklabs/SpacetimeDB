@@ -592,6 +592,15 @@ Bind an exact recipe, fixtures, and calibration to stacks, models, settings,
 repetitions, counterbalanced order, budgets, retry/exclusion policy, pricing
 snapshot, and analysis plan before runs.
 
+In progress. A strict campaign schema and compiler now bind all of those inputs,
+resolve current recipe/fixture/calibration and adapter identities, and expand a
+seeded balanced rotation into immutable attempts without starting a model. Draft
+plans may expose incomplete qualification honestly. Frozen plans fail unless
+every selected recipe, fixture, calibration and alias is qualified/promoted and
+the exact release manifest, controller/build image digests, timeout, cost cap,
+retry/exclusion rules, pricing, and analysis policy are present. Scheduler state,
+campaign artifact envelopes, and appliance execution remain SB-502 work.
+
 ### SB-502: Idempotent scheduler
 
 Materialize immutable attempts, enforce resource admission, resume safely, and
@@ -675,6 +684,8 @@ them. Live qualification does not run concurrently with executable harness edits
     candidate/qualified supply-chain tooling proven; image publication, real
     signing, and two clean-runner reproductions remain).
 18. [x] SB-403 interruption quarantine and authenticated recovery.
+19. [ ] SB-501 frozen campaign manifest (strict compiler and deterministic plan
+    expansion implemented; current definition qualification and scheduler handoff remain).
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.

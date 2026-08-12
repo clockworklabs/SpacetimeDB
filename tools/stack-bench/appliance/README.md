@@ -81,6 +81,23 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
 
 After preflight is green, run only the scope the operator decided to test:
 
+Compile and inspect a campaign without starting model work:
+
+```sh
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  campaign show /var/lib/stack-bench/plans/campaign.json
+```
+
+The campaign file is caller-owned under `/var/lib/stack-bench`. A draft can be
+inspected while definitions are still candidates. A frozen campaign additionally
+requires qualified/promoted definitions plus exact release and image identities;
+the compiler refuses to fill those in from ambient state.
+`campaign.example.json` is a zero-cost deterministic draft showing the complete
+shape; copy it outside the image and replace its study inputs before use.
+
+To run one already-decided attempt directly:
+
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml run --rm controller \

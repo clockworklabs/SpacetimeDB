@@ -13,5 +13,8 @@ test('controller exposes a small explicit operator command surface', () => {
   const recovery = resolveControllerCommand(['recover', '/private/supervisor.json']);
   assert.match(recovery.args[0], /recovery\.mjs$/);
   assert.deepEqual(recovery.args.slice(1), ['recover', '/private/supervisor.json']);
+  const campaign = resolveControllerCommand(['campaign', 'show', '/plans/campaign.json']);
+  assert.match(campaign.args[0], /campaign-cli\.mjs$/);
+  assert.deepEqual(campaign.args.slice(1), ['show', '/plans/campaign.json']);
   assert.throws(() => resolveControllerCommand(['shell']), /unknown controller command/);
 });
