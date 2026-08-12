@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileCampaignFile } from '../campaign-compiler.mjs';
+import { readArtifact } from '../artifacts.mjs';
 import { attemptArgv, campaignExecutionEnvironment, executeCampaign,
-  reconcileCampaign } from '../campaign-runner.mjs';
+  reconcileCampaign, runCampaignAdmission } from '../campaign-runner.mjs';
 import { claimNextAttempt, initializeCampaignDirectory,
   writeCampaignState } from '../campaign-scheduler.mjs';
 
@@ -33,6 +34,20 @@ test('draft campaigns cannot start unless an explicit test-only caller permits t
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('failed campaign admission leaves every attempt pending and unclaimed', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runner-admission-fail-'));
+  try {
+    await assert.rejects(() => executeCampaign(example, root, { allowDraft: true,
+      admit: () => ({ id: 'failed-admission', payload: { ok: false } }),
+      execute: async () => { throw new Error('must not launch'); },
+    }), /admission failed/);
+    const { readCampaignState } = await import('../campaign-scheduler.mjs');
+    const state = readCampaignState(root).state;
+    assert.equal(state.status, 'prepared');
+    assert.equal(state.summary.executions, 0);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('a frozen runtime image cannot be replaced by ambient controller state', () => {
   const buildImage = `registry.example/build@sha256:${'c'.repeat(64)}`;
   const plan = { definition: { runtime: { buildImage } } };
@@ -47,6 +62,7 @@ test('model-free campaign execution checkpoints a retry and every completed atte
   const planned = compileCampaignFile(example);
   try {
     const state = await executeCampaign(example, root, { allowDraft: true,
+      admit: () => ({ id: 'admission-1', payload: { ok: true } }),
       execute: async (command, argv, options) => {
         calls.push({ command, argv, options });
         const output = argv[argv.indexOf('--out') + 1];
@@ -83,7 +99,17 @@ test('interrupted work advances only after exact supervisor cleanup is proven', 
     const plan = compileCampaignFile(example);
     const initialized = initializeCampaignDirectory(plan, root,
       { now: '2026-08-12T00:00:00.000Z' });
-    const running = claimNextAttempt(initialized.state, { now: '2026-08-12T00:01:00.000Z' }).state;
+    const admission = runCampaignAdmission(plan, root, {
+      env: {}, now: '2026-08-12T00:00:30.000Z', uuid: () => 'reconcile',
+      preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
+        request: { backends: request.backends, track: request.track, levels: request.levelList,
+          runIndex: request.runIndex, agentAdapter: request.agentAdapter,
+          packs: request.packIds, checks: request.checkKeys, image: request.image,
+          resultsDir: request.resultsDir, smoke: request.smoke },
+        ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] }),
+    });
+    const running = claimNextAttempt(initialized.state, { now: '2026-08-12T00:01:00.000Z',
+      admissionId: admission.id }).state;
     writeCampaignState(initialized.paths.state, plan, running);
     assert.throws(() => reconcileCampaign(example, root, { rescue: () => {} }), /no private supervisor/);
     const execution = running.attempts[0].executions[0];
@@ -95,5 +121,31 @@ test('interrupted work advances only after exact supervisor cleanup is proven', 
     assert.equal(rescued, true);
     assert.equal(state.attempts[0].status, 'invalid');
     assert.equal(state.attempts[0].executions[0].outcome, 'scheduler_interrupted');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('campaign admission covers every stack once per distinct agent adapter and writes typed evidence', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-admission-'));
+  try {
+    const plan = compileCampaignFile(example);
+    const calls = [];
+    const admission = runCampaignAdmission(plan, root, {
+      env: {}, now: '2026-08-12T00:00:00.000Z', uuid: () => 'test',
+      preflight: request => {
+        calls.push(request);
+        return { schemaVersion: 1, generatedAt: '2026-08-12T00:00:00.000Z',
+          request: { backends: request.backends, track: request.track, levels: request.levelList,
+            runIndex: request.runIndex, agentAdapter: request.agentAdapter,
+            packs: request.packIds, checks: request.checkKeys, image: request.image,
+            resultsDir: request.resultsDir, smoke: request.smoke },
+          ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] };
+      },
+    });
+    assert.equal(admission.payload.ok, true);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].backends, ['mongodb', 'postgres', 'spacetime']);
+    assert.equal(calls[0].smoke, true);
+    assert.equal(readArtifact(admission.path,
+      { expectedKind: 'campaign_admission' }).payload.campaignSha256, plan.contentSha256);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

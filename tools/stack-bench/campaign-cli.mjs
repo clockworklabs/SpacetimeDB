@@ -4,8 +4,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { compileCampaignFile } from './campaign-compiler.mjs';
-import { executeCampaign, prepareCampaign, reconcileCampaign } from './campaign-runner.mjs';
-import { readCampaignState } from './campaign-scheduler.mjs';
+import { executeCampaign, inspectCampaign, prepareCampaign, reconcileCampaign } from './campaign-runner.mjs';
 
 export function parseCampaignArgs(argv) {
   const [command, path, ...rest] = argv.slice(2);
@@ -24,7 +23,7 @@ export function parseCampaignArgs(argv) {
 async function main() {
   const args = parseCampaignArgs(process.argv);
   if (args.command === 'status') {
-    console.log(JSON.stringify(readCampaignState(args.directory).state, null, 2));
+    console.log(JSON.stringify(inspectCampaign(args.directory).state, null, 2));
     return;
   }
   if (args.command === 'prepare') {

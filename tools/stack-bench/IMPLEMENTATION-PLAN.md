@@ -615,7 +615,10 @@ The execution slice now provides token-bound exclusive ownership, plan-derived
 bounded launches, exact run-artifact binding, append-only retries, frozen image
 enforcement, and explicit supervisor-proven interruption reconciliation.
 Campaign-wide admission evidence and Docker acceptance remain before SB-502 is
-complete.
+complete. Admission now writes a typed campaign artifact covering every selected
+stack for each distinct agent adapter, requires the no-model container smoke,
+and binds each execution to that exact successful artifact. Docker acceptance
+of this final admission slice remains.
 
 ### SB-503: Deterministic report
 

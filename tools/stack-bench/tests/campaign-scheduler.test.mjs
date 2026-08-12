@@ -12,14 +12,16 @@ import { claimNextAttempt, createCampaignState, finishCampaignExecution,
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
 const plan = () => compileCampaignFile(example);
 const prepared = () => createCampaignState(plan(), { now: '2026-08-12T00:00:00.000Z' });
-const claimed = () => claimNextAttempt(prepared(), { now: '2026-08-12T00:01:00.000Z' });
+const claimed = () => claimNextAttempt(prepared(), { now: '2026-08-12T00:01:00.000Z',
+  admissionId: 'admission-1' });
 
 test('campaign state materializes every attempt and claims one exact slot at a time', () => {
   const campaign = plan();
   const initial = createCampaignState(campaign, { now: '2026-08-12T00:00:00.000Z' });
   assert.deepEqual(initial.summary, { completed: 0, executions: 0, invalid: 0, pending: 9,
     running: 0, total: 9 });
-  const claimed = claimNextAttempt(initial, { now: '2026-08-12T00:01:00.000Z' });
+  const claimed = claimNextAttempt(initial, { now: '2026-08-12T00:01:00.000Z',
+    admissionId: 'admission-1' });
   assert.equal(claimed.claim.attempt.id, campaign.attempts[0].id);
   assert.equal(claimed.claim.executionId, `${campaign.attempts[0].id}-execution1`);
   assert.equal(claimed.state.summary.running, 1);
@@ -29,14 +31,15 @@ test('campaign state materializes every attempt and claims one exact slot at a t
 test('invalid executions remain visible and retries append rather than overwrite', () => {
   const campaign = plan();
   const first = claimNextAttempt(createCampaignState(campaign, { now: '2026-08-12T00:00:00.000Z' }),
-    { now: '2026-08-12T00:01:00.000Z' }).state;
+    { now: '2026-08-12T00:01:00.000Z', admissionId: 'admission-1' }).state;
   const executionId = first.attempts[0].executions[0].id;
   const retryable = finishCampaignExecution(first, executionId, {
     exitCode: 1, run: { outcome: { kind: 'harness_failure', reason: 'browser crashed' } },
   }, { retries: 1, retryOn: ['harness_failure'], now: '2026-08-12T00:02:00.000Z' });
   assert.equal(retryable.attempts[0].status, 'pending');
   assert.equal(retryable.attempts[0].executions[0].status, 'invalid');
-  const second = claimNextAttempt(retryable, { now: '2026-08-12T00:03:00.000Z' });
+  const second = claimNextAttempt(retryable, { now: '2026-08-12T00:03:00.000Z',
+    admissionId: 'admission-1' });
   assert.equal(second.claim.executionId, `${campaign.attempts[0].id}-execution2`);
   const complete = finishCampaignExecution(second.state, second.claim.executionId, {
     exitCode: 0, run: { outcome: { kind: 'passed' } },
@@ -83,7 +86,8 @@ test('campaign directory initialization is identity-bound and resumes exact stat
     const campaign = plan();
     const initialized = initializeCampaignDirectory(campaign, root,
       { now: '2026-08-12T00:00:00.000Z' });
-    const claimed = claimNextAttempt(initialized.state, { now: '2026-08-12T00:01:00.000Z' });
+    const claimed = claimNextAttempt(initialized.state, { now: '2026-08-12T00:01:00.000Z',
+      admissionId: 'admission-1' });
     writeCampaignState(initialized.paths.state, campaign, claimed.state);
     const resumed = readCampaignState(root);
     assert.equal(resumed.plan.contentSha256, campaign.contentSha256);
@@ -98,13 +102,13 @@ test('malformed state and inconsistent summaries never become resumable', () => 
   const state = createCampaignState(plan());
   state.status = 'completed';
   assert.throws(() => validateCampaignState(state), /summary or status/);
-  const running = claimNextAttempt(createCampaignState(plan())).state;
+  const running = claimNextAttempt(createCampaignState(plan()), { admissionId: 'admission-1' }).state;
   running.attempts[1].status = 'running';
   running.attempts[1].executions.push({ ...running.attempts[0].executions[0],
     id: `${running.attempts[1].plan.id}-execution1`,
     output: `attempts/${running.attempts[1].plan.id}/execution-1` });
   assert.throws(() => validateCampaignState(running), /more than one execution/);
-  const wrongPath = claimNextAttempt(createCampaignState(plan())).state;
+  const wrongPath = claimNextAttempt(createCampaignState(plan()), { admissionId: 'admission-1' }).state;
   wrongPath.attempts[0].executions[0].output = '../../outside';
   assert.throws(() => validateCampaignState(wrongPath), /exact execution directory/);
   const historicalRunning = claimed().state;

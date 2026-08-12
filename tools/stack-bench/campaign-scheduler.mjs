@@ -71,10 +71,11 @@ export function validateCampaignState(input) {
     for (const [executionIndex, execution] of attempt.executions.entries()) {
       const executionAt = `${at}.executions[${executionIndex}]`;
       const executionFields = new Set(['id', 'ordinal', 'status', 'output', 'startedAt',
-        'completedAt', 'exitCode', 'outcome', 'reason']);
+        'completedAt', 'exitCode', 'outcome', 'reason', 'admissionId']);
       if (!object(execution)) fail(`${executionAt} must be an object`);
       for (const key of Object.keys(execution)) if (!executionFields.has(key)) fail(`${executionAt}.${key} is unknown`);
       string(execution.id, `${executionAt}.id`);
+      string(execution.admissionId, `${executionAt}.admissionId`);
       if (execution.ordinal !== executionIndex + 1) fail(`${executionAt}.ordinal is not contiguous`);
       if (execution.id !== `${attempt.plan.id}-execution${execution.ordinal}`) {
         fail(`${executionAt}.id does not match its attempt and ordinal`);
@@ -153,11 +154,12 @@ export function createCampaignState(plan, { now = new Date().toISOString() } = {
   return validateCampaignState(recalculate(state, now));
 }
 
-export function claimNextAttempt(input, { now = new Date().toISOString() } = {}) {
+export function claimNextAttempt(input, { now = new Date().toISOString(), admissionId } = {}) {
   const state = validateCampaignState(input);
   if (state.attempts.some(attempt => attempt.status === 'running')) {
     throw new Error('campaign already has a running attempt');
   }
+  string(admissionId, 'admissionId');
   const attempt = state.attempts.find(candidate => candidate.status === 'pending');
   if (!attempt) return { state, claim: null };
   const ordinal = attempt.executions.length + 1;
@@ -165,7 +167,7 @@ export function claimNextAttempt(input, { now = new Date().toISOString() } = {})
   const output = `attempts/${attempt.plan.id}/execution-${ordinal}`;
   attempt.status = 'running';
   attempt.executions.push({ id, ordinal, status: 'running', output, startedAt: now,
-    completedAt: null, exitCode: null, outcome: null, reason: null });
+    completedAt: null, exitCode: null, outcome: null, reason: null, admissionId });
   return { state: validateCampaignState(recalculate(state, now)),
     claim: { attempt: structuredClone(attempt.plan), executionId: id, output } };
 }

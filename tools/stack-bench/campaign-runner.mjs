@@ -1,14 +1,16 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { readArtifactPayload } from './artifacts.mjs';
+import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from './artifacts.mjs';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.mjs';
 import { compileCampaignFile } from './campaign-compiler.mjs';
 import { claimNextAttempt, finishCampaignExecution, initializeCampaignDirectory,
   markInterruptedExecution, readCampaignState, writeCampaignState } from './campaign-scheduler.mjs';
 import { rescueSupervisedLease, runBounded } from './reference-live.mjs';
 import { canonicalDefinitionJson } from './definition-plan.mjs';
+import { runPreflight } from './preflight.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const BENCH = join(ROOT, 'bench.mjs');
@@ -99,6 +101,121 @@ export function campaignExecutionEnvironment(plan, env = process.env) {
   return executionEnv;
 }
 
+function validateCampaignAdmission(input, plan, directory) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('campaign admission payload must be an object');
+  }
+  const fields = new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
+    'ok', 'agents', 'reports']);
+  for (const key of Object.keys(input)) if (!fields.has(key)) throw new Error(`campaign admission.${key} is unknown`);
+  if (input.schemaVersion !== 1 || input.campaignId !== plan.id
+    || input.campaignSha256 !== plan.contentSha256
+    || typeof input.createdAt !== 'string' || Number.isNaN(Date.parse(input.createdAt))
+    || typeof input.ok !== 'boolean') throw new Error('campaign admission identity or metadata is invalid');
+  const expectedAgents = plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
+    guidance: agent.guidance, skills: agent.skills, identity: agent.identity }));
+  if (canonicalDefinitionJson(input.agents) !== canonicalDefinitionJson(expectedAgents)) {
+    throw new Error('campaign admission agents do not match the compiled plan');
+  }
+  if (!Array.isArray(input.reports)) throw new Error('campaign admission reports must be an array');
+  const adapters = [...new Set(plan.agents.map(agent => agent.adapter))].sort();
+  if (input.reports.length !== adapters.length) throw new Error('campaign admission reports are incomplete');
+  const expectedBackends = plan.stacks.map(stack => stack.id);
+  const expectedResultsDir = resolve(directory);
+  for (const adapter of adapters) {
+    const matches = input.reports.filter(report => report?.request?.agentAdapter === adapter);
+    if (matches.length !== 1) throw new Error(`campaign admission must contain one ${adapter} report`);
+    const report = matches[0];
+    if (report.schemaVersion !== 1 || typeof report.ok !== 'boolean' || !Array.isArray(report.checks)
+      || !report.summary || typeof report.summary !== 'object'
+      || !report.checks.every(check => check && typeof check === 'object'
+        && typeof check.id === 'string' && ['pass', 'warn', 'fail'].includes(check.status)
+        && typeof check.summary === 'string')
+      || report.summary.passed !== report.checks.filter(check => check.status === 'pass').length
+      || report.summary.failed !== report.checks.filter(check => check.status === 'fail').length
+      || report.summary.warnings !== report.checks.filter(check => check.status === 'warn').length
+      || report.ok !== !report.checks.some(check => check.status === 'fail')) {
+      throw new Error(`campaign admission report for ${adapter} is malformed`);
+    }
+    const request = report.request;
+    if (canonicalDefinitionJson(request.backends) !== canonicalDefinitionJson(expectedBackends)
+      || request.track !== plan.definition.track
+      || canonicalDefinitionJson(request.levels) !== canonicalDefinitionJson(plan.definition.levels)
+      || request.runIndex !== 0
+      || canonicalDefinitionJson(request.packs) !== canonicalDefinitionJson(plan.definition.selection.packs)
+      || canonicalDefinitionJson(request.checks) !== canonicalDefinitionJson(plan.definition.selection.checks)
+      || request.smoke !== true
+      || (plan.definition.runtime.buildImage !== null
+        && request.image !== plan.definition.runtime.buildImage)
+      || resolve(request.resultsDir) !== expectedResultsDir) {
+      throw new Error(`campaign admission report for ${adapter} does not match the compiled scope`);
+    }
+  }
+  if (input.ok !== input.reports.every(report => report.ok)) {
+    throw new Error('campaign admission verdict does not match its reports');
+  }
+  return structuredClone(input);
+}
+
+function readCampaignAdmission(directory, id, plan) {
+  const path = contained(directory, join('admissions', `${id}.json`), 'campaign admission');
+  const artifact = readArtifact(path, { expectedKind: 'campaign_admission', expectedId: id });
+  if (artifact.identities.experiment?.sha256 !== plan.contentSha256) {
+    throw new Error(`campaign admission ${id} has the wrong experiment identity`);
+  }
+  return validateCampaignAdmission(artifact.payload, plan, directory);
+}
+
+function assertAdmissionReferences(plan, directory, state) {
+  const ids = [...new Set(state.attempts.flatMap(attempt =>
+    attempt.executions.map(execution => execution.admissionId)))];
+  for (const id of ids) {
+    const admission = readCampaignAdmission(directory, id, plan);
+    if (!admission.ok) throw new Error(`campaign execution references failed admission ${id}`);
+  }
+  return state;
+}
+
+export function inspectCampaign(directory) {
+  const current = readCampaignState(directory);
+  return { ...current,
+    state: assertAdmissionReferences(current.plan, current.paths.root, current.state) };
+}
+
+export function runCampaignAdmission(plan, directory,
+  { env = process.env, preflight = runPreflight, now = new Date().toISOString(),
+    uuid = randomUUID } = {}) {
+  const reports = [];
+  for (const adapter of [...new Set(plan.agents.map(agent => agent.adapter))].sort()) {
+    reports.push(preflight({
+      backends: plan.stacks.map(stack => stack.id),
+      track: plan.definition.track,
+      levels: `${Math.min(...plan.definition.levels)}-${Math.max(...plan.definition.levels)}`,
+      levelList: plan.definition.levels,
+      runIndex: 0,
+      agentAdapter: adapter,
+      packIds: plan.definition.selection.packs,
+      checkKeys: plan.definition.selection.checks,
+      smoke: true,
+      image: plan.definition.runtime.buildImage ?? env.STACK_BENCH_IMAGE,
+      resultsDir: resolve(directory),
+    }, { env }));
+  }
+  const id = `${plan.id}-admission-${now.replace(/[-:.TZ]/g, '').slice(0, 14)}-${uuid()}`;
+  const payload = validateCampaignAdmission({ schemaVersion: 1, campaignId: plan.id,
+    campaignSha256: plan.contentSha256, createdAt: now,
+    ok: reports.every(report => report.ok),
+    agents: plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
+      guidance: agent.guidance, skills: agent.skills, identity: agent.identity })),
+    reports }, plan, directory);
+  const path = contained(directory, join('admissions', `${id}.json`), 'campaign admission');
+  writeArtifact(path, { kind: 'campaign_admission', id,
+    identities: emptyArtifactIdentities({ experiment: {
+      id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state,
+    } }), payload });
+  return { id, path, payload };
+}
+
 export function prepareCampaign(campaignFile, directory) {
   const plan = compileCampaignFile(resolve(campaignFile));
   const lock = acquireCampaignLock(directory, plan);
@@ -112,7 +229,7 @@ export function reconcileCampaign(campaignFile, directory,
   const lock = acquireCampaignLock(directory, plan);
   try {
     const initialized = initializeCampaignDirectory(plan, directory);
-    const { state } = readCampaignState(initialized.paths.root);
+    const { state } = inspectCampaign(initialized.paths.root);
     const attempt = state.attempts.find(item => item.status === 'running');
     if (!attempt) throw new Error('campaign has no running attempt to reconcile');
     const execution = attempt.executions.at(-1);
@@ -132,7 +249,8 @@ export function reconcileCampaign(campaignFile, directory,
 }
 
 export async function executeCampaign(campaignFile, directory,
-  { allowDraft = false, env = process.env, execute = runBounded } = {}) {
+  { allowDraft = false, env = process.env, execute = runBounded,
+    admit = runCampaignAdmission } = {}) {
   const plan = compileCampaignFile(resolve(campaignFile));
   if (plan.state !== 'frozen' && !allowDraft) {
     throw new Error('campaign execution requires a frozen plan; draft plans are inspection-only');
@@ -141,13 +259,18 @@ export async function executeCampaign(campaignFile, directory,
   const lock = acquireCampaignLock(directory, plan);
   try {
     const initialized = initializeCampaignDirectory(plan, directory);
-    let { state } = readCampaignState(initialized.paths.root);
+    let { state } = inspectCampaign(initialized.paths.root);
     if (state.attempts.some(attempt => attempt.status === 'running')) {
       throw new Error('campaign has an unresolved running attempt; prove its owned resources are clean before reconciliation');
     }
+    if (!state.attempts.some(attempt => attempt.status === 'pending')) return state;
+    const admission = admit(plan, initialized.paths.root, { env: executionEnv });
+    if (!admission?.payload?.ok || typeof admission.id !== 'string' || !admission.id) {
+      throw new Error('campaign-wide preflight admission failed; no attempt was claimed');
+    }
     const invalidAtStart = state.summary.invalid;
     while (true) {
-      const next = claimNextAttempt(state);
+      const next = claimNextAttempt(state, { admissionId: admission.id });
       if (!next.claim) return next.state;
       state = next.state;
       writeCampaignState(initialized.paths.state, plan, state);
