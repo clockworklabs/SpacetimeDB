@@ -23,7 +23,7 @@ use pgwire::messages::startup::Authentication;
 use pgwire::messages::{PgWireBackendMessage, PgWireFrontendMessage};
 use pgwire::tokio::process_socket;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
-use spacetimedb_client_api::auth::validate_token;
+use spacetimedb_client_api::auth::{validate_token, TokenValidationError, TokenValidationErrorCategory};
 use spacetimedb_client_api::routes::database;
 use spacetimedb_client_api::routes::database::SqlQueryParams;
 use spacetimedb_client_api::{Authorization, ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
@@ -37,6 +37,8 @@ use thiserror::Error;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, Notify};
 
+use crate::authentication_logging::{log_authentication_failure, AuthenticationFailureKind};
+
 #[derive(Error, Debug)]
 pub(crate) enum PgError {
     #[error("(metadata) {0}")]
@@ -49,6 +51,14 @@ pub(crate) enum PgError {
     Pg(#[from] PgWireError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+fn authentication_failure_kind(err: &TokenValidationError) -> AuthenticationFailureKind {
+    match err.category() {
+        TokenValidationErrorCategory::InvalidCredentials => AuthenticationFailureKind::InvalidCredentials,
+        TokenValidationErrorCategory::IdentityProvider => AuthenticationFailureKind::IdentityProvider,
+        TokenValidationErrorCategory::Internal => AuthenticationFailureKind::Internal,
+    }
 }
 
 impl From<PgError> for PgWireError {
@@ -282,10 +292,8 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 let claims = match validate_token(&self.ctx, &pwd.password).await {
                     Ok(claims) => claims,
                     Err(err) => {
-                        log::error!(
-                            "PG: Authentication failed for identity `{}` on database {database}: {err}",
-                            pwd.password
-                        );
+                        let kind = authentication_failure_kind(&err);
+                        log_authentication_failure(&database, kind, &err);
                         let err = ErrorInfo::new("FATAL".to_owned(), "28P01".to_owned(), err.to_string());
                         return close_client(client, err).await;
                     }
