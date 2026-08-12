@@ -415,6 +415,7 @@ impl ActorState {
         ws_idle_timer(self.last_activity.clone(), self.config.idle_timeout)
     }
 
+    #[cfg(test)]
     pub fn get_last_activity(&self) -> Instant {
         let last_activity = self.last_activity.lock().unwrap();
         *last_activity
@@ -442,10 +443,8 @@ pub struct WebSocketOptions {
     pub ping_interval: Duration,
     /// Amount of time after which an idle connection is closed.
     ///
-    /// A connection is considered idle if no data is received from the client
-    /// (including `Pong` frames answering our keep-alive `Ping`s) *and* no
-    /// send progress is made towards it. A slow client that keeps accepting
-    /// data is not idle, no matter how long it takes to drain a large message.
+    /// A connection is considered idle if no data is received from the client,
+    /// including `Pong` frames answering our keep-alive `Ping`s.
     ///
     /// Value must be greater than `ping_interval`.
     ///
@@ -602,10 +601,9 @@ const SERVER_CLOSE_GRACE: Duration = Duration::from_secs(10);
 ///
 /// - Initiating a close handshake if the connection is idle for longer than
 ///   [`ActorConfig::idle_timeout`]. The connection becomes idle if nothing is
-///   received from the socket and no send progress is made. The close carries
-///   an "idle timeout" reason so that clients can tell why they were
-///   disconnected; if the handshake does not complete within
-///   [`SERVER_CLOSE_GRACE`], the connection is torn down.
+///   received from the socket. The close carries an "idle timeout" reason so
+///   that clients can tell why they were disconnected; if the handshake does
+///   not complete within [`SERVER_CLOSE_GRACE`], the connection is torn down.
 ///
 /// - Periodically sending `Ping` frames to prevent the connection from becoming
 ///   idle (the client is supposed to respond with `Pong`, which resets the
@@ -656,12 +654,6 @@ const SERVER_CLOSE_GRACE: Duration = Duration::from_secs(10);
 ///   It is polled here for its error return value: if the output of the future
 ///   is `Err(NoSuchModule)`, the database was shut down and existing clients
 ///   must be disconnected.
-///
-/// * **idle_timer**:
-///   Abstraction for [`ws_idle_timer`]: if and when the future completes, the
-///   connection is considered unresponsive, and the connection is closed.
-///
-///   The idle timer should be reset whenever data is received from the websocket.
 ///
 /// * **send_task**:
 ///   Task handling outgoing messages. Holds the receive end of `unordered_tx`.
@@ -843,8 +835,8 @@ async fn ws_idle_timer(last_activity: Arc<Mutex<Instant>>, idle_timeout: Duratio
 /// Consumes `ws` by composing [`ws_recv_queue`], [`ws_recv_loop`],
 /// [`ws_client_message_handler`] and `message_handler`.
 ///
-/// `idle_tx` is the sending end of a [`ws_idle_timer`]. The [`ws_recv_loop`]
-/// sends a new, extended deadline whenever it receives a message.
+/// The [`ws_recv_loop`] records activity on the shared [`ActorState`] whenever
+/// it receives a message, extending the idle deadline.
 ///
 /// `unordered_tx` is used to send message execution errors
 /// or to initiate a close handshake.
@@ -1372,7 +1364,6 @@ async fn ws_send_loop_inner<T, U, Encoder>(
                         log::warn!("error sending frame: {e:#}");
                         break 'outer;
                     }
-                    state.record_activity();
                 }
             },
 
@@ -2217,11 +2208,11 @@ mod tests {
         assert_matches!(input.next().await, Some(Ok(WsMessage::Pong(_))));
     }
 
-    #[tokio::test]
-    async fn recv_loop_updates_idle_channel() {
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
+    async fn recv_loop_updates_last_activity() {
         let state = Arc::new(dummy_actor_state());
         let mut prev_activity = state.get_last_activity();
-        tokio::time::advance(Duration::from_millis(1));
+        tokio::time::advance(Duration::from_millis(1)).await;
 
         let input = stream::iter(vec![
             Ok(WsMessage::Ping(Bytes::new())),
@@ -2233,8 +2224,9 @@ mod tests {
         while let Some(message) = recv_loop.next().await {
             let last_activity = state.get_last_activity();
             drop(message);
-            tokio::time::advance(Duration::from_millis(1));
             assert!(last_activity > prev_activity);
+            prev_activity = last_activity;
+            tokio::time::advance(Duration::from_millis(1)).await;
         }
     }
 
