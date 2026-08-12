@@ -1,3 +1,4 @@
+#if SAPPY
 using System;
 using System.Collections.Generic;
 using Sappy;
@@ -5,7 +6,7 @@ using SpacetimeDB.EventHandling;
 
 namespace SpacetimeDB.SappyIntegration
 {
-    public class SappyEventListeners<T> : EventListeners<T> where T : Delegate
+    public class SappyEventListeners<T> : IEventListeners<T> where T : Delegate
     {
         private SapDelegate<T> Targets { get; } = new();
         private Dictionary<int, SapTarget<T>> Cache { get; } = new(4);
@@ -33,25 +34,26 @@ namespace SpacetimeDB.SappyIntegration
             Remove(target);
         }
 
-        public static EventListeners<T> operator +(SappyEventListeners<T> a, SapTarget<T> b)
+        public static BasicEventListeners<T> operator +(SappyEventListeners<T> a, SapTarget<T> b)
         {
             a.Add(b);
             return a;
         }
-        public static EventListeners<T> operator -(SappyEventListeners<T> a, SapTarget<T> b)
+        public static BasicEventListeners<T> operator -(SappyEventListeners<T> a, SapTarget<T> b)
         {
             a.Remove(b);
             return a;
         }
-        public static EventListeners<T> operator +(SappyEventListeners<T> a, T b)
+        public static BasicEventListeners<T> operator +(SappyEventListeners<T> a, T b)
         {
             a.Add(b);
             return a;
         }
-        public static EventListeners<T> operator -(SappyEventListeners<T> a, T b)
+        public static BasicEventListeners<T> operator -(SappyEventListeners<T> a, T b)
         {
             a.Remove(b);
             return a;
         }
     }
 }
+#endif

@@ -4,7 +4,7 @@
     "versionDefines": [
         {
             "name": "io.clockworklabs.sappy",
-            "expression": "1.0.1",
+            "expression": "1.1.0",
             "define": "SAPPY"
         }
     ]
