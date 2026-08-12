@@ -87,6 +87,8 @@ enum OtherWorkflowsCmd {
     CodeownersCheck(ci_args::codeowners_check::Args),
     /// Interacts with CLA Assistant.
     ClaAssistant(ci_args::cla_assistant::Args),
+    /// Waits for a GitHub Actions workflow run to complete.
+    Watch(ci_args::workflow_watch::Args),
 }
 
 fn run_package(package: &str, args: &[String]) -> Result<()> {
@@ -161,6 +163,10 @@ fn run_command(cmd: CiCmd, raw_args: &[String]) -> Result<()> {
             OtherWorkflowsCmd::ClaAssistant(_) => run_package(
                 "ci-cla-assistant",
                 &forwarded_args(raw_args, &["other-workflows", "cla-assistant"]),
+            ),
+            OtherWorkflowsCmd::Watch(_) => run_package(
+                "ci-workflow-watch",
+                &forwarded_args(raw_args, &["other-workflows", "watch"]),
             ),
         },
     }

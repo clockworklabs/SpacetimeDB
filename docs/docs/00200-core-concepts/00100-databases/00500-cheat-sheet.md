@@ -775,7 +775,7 @@ SPACETIMEDB_VIEW(std::optional<PlayerCount>, player_count, Public, AnonymousView
 ```typescript
 ctx.db                  // Database access
 ctx.sender              // Identity of caller
-ctx.connectionId        // ConnectionId | undefined
+ctx.connectionId        // ConnectionId | null
 ctx.timestamp           // Timestamp
 ctx.databaseIdentity    // Module's identity
 ```

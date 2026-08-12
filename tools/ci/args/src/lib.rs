@@ -218,3 +218,26 @@ pub mod wasm_bindings {
     #[derive(ClapArgs)]
     pub struct Args {}
 }
+
+pub mod workflow_watch {
+    use clap::Args as ClapArgs;
+
+    #[derive(ClapArgs)]
+    pub struct Args {
+        /// Repository containing the workflow run, in owner/repo form.
+        #[arg(long)]
+        pub repo: String,
+
+        /// GitHub Actions workflow run ID.
+        #[arg(long)]
+        pub run_id: u64,
+
+        /// Seconds to sleep between polls.
+        #[arg(long, default_value_t = 30)]
+        pub interval_seconds: u64,
+
+        /// Maximum number of polls before timing out. Polls forever by default.
+        #[arg(long)]
+        pub max_attempts: Option<u64>,
+    }
+}
