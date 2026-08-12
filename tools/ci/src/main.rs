@@ -14,15 +14,15 @@ struct Command {
 const COMMANDS: &[Command] = &[
     Command {
         path: &["test"],
-        package: Some("ci-test"),
+        package: "ci-test",
     },
     Command {
         path: &["lint"],
-        package: Some("ci-lint"),
+        package: "ci-lint",
     },
     Command {
         path: &["wasm-bindings"],
-        package: Some("ci-wasm-bindings"),
+        package: "ci-wasm-bindings",
     },
     Command {
         path: &["dlls"],
@@ -30,55 +30,55 @@ const COMMANDS: &[Command] = &[
     },
     Command {
         path: &["smoketests"],
-        package: Some("ci-smoketests"),
+        package: "ci-smoketests",
     },
     Command {
         path: &["keynote-bench"],
-        package: Some("ci-keynote-bench"),
+        package: "ci-keynote-bench",
     },
     Command {
         path: &["update-flow"],
-        package: Some("ci-update-flow"),
+        package: "ci-update-flow",
     },
     Command {
         path: &["cli-docs"],
-        package: Some("ci-cli-docs"),
+        package: "ci-cli-docs",
     },
     Command {
         path: &["global-json-policy"],
-        package: Some("ci-global-json-policy"),
+        package: "ci-global-json-policy",
     },
     Command {
         path: &["publish-checks"],
-        package: Some("ci-publish-checks"),
+        package: "ci-publish-checks",
     },
     Command {
         path: &["typescript-test"],
-        package: Some("ci-typescript-test"),
+        package: "ci-typescript-test",
     },
     Command {
         path: &["version-upgrade-check"],
-        package: Some("ci-version-upgrade-check"),
+        package: "ci-version-upgrade-check",
     },
     Command {
         path: &["docs"],
-        package: Some("ci-docs-build"),
+        package: "ci-docs-build",
     },
     Command {
         path: &["other-workflows", "coordinate-internal-tests"],
-        package: Some("ci-coordinate-internal-tests"),
+        package: "ci-coordinate-internal-tests",
     },
     Command {
         path: &["other-workflows", "codeowners-check"],
-        package: Some("ci-codeowners-check"),
+        package: "ci-codeowners-check",
     },
     Command {
         path: &["other-workflows", "cla-assistant"],
-        package: Some("ci-cla-assistant"),
+        package: "ci-cla-assistant",
     },
     Command {
         path: &["other-workflows", "watch"],
-        package: Some("ci-workflow-watch"),
+        package: "ci-workflow-watch",
     },
 ];
 
@@ -118,26 +118,12 @@ fn run_package(package: &str, args: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn run_dlls() -> Result<()> {
-    eprintln!("warning: `cargo ci dlls` is deprecated; use `cargo regen csharp dlls` instead");
-    cmd!("cargo", "regen", "csharp", "dlls").run()?;
-    Ok(())
-}
-
-fn run_command(command: &Command, args: &[String]) -> Result<()> {
-    if let Some(package) = command.package {
-        run_package(package, args)
-    } else {
-        run_dlls()
-    }
-}
-
 fn run_all(skip: &[String]) -> Result<()> {
     for command in COMMANDS {
         if is_skipped(command, skip) {
             continue;
         }
-        run_command(command, &[])?;
+        run_package(command.package, &[])?;
     }
     Ok(())
 }
@@ -165,5 +151,5 @@ fn main() -> Result<()> {
         bail!("unknown cargo ci command `{}`", args[0]);
     };
 
-    run_command(command, &args[consumed..])
+    run_package(command.package, &args[consumed..])
 }
