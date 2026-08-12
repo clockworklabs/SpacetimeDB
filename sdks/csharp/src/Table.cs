@@ -575,8 +575,8 @@ namespace SpacetimeDB
 
         protected class CustomRowEventHandler
         {
-            private EventListeners<RowEventHandler> _listeners = new();
-            public EventListeners<RowEventHandler> Listeners
+            private IEventListeners<RowEventHandler> _listeners = EventListenersProvider.Create<RowEventHandler>();
+            public IEventListeners<RowEventHandler> Listeners
             {
                 get => _listeners;
                 set
@@ -599,8 +599,8 @@ namespace SpacetimeDB
         }
         protected class CustomUpdateEventHandler
         {
-            private EventListeners<UpdateEventHandler> _listeners = new();
-            public EventListeners<UpdateEventHandler> Listeners
+            private IEventListeners<UpdateEventHandler> _listeners = EventListenersProvider.Create<UpdateEventHandler>();
+            public IEventListeners<UpdateEventHandler> Listeners
             {
                 get => _listeners;
                 set

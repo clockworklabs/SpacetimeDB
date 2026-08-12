@@ -1,18 +1,36 @@
 ﻿using System;
 using System.Collections.Generic;
-#if SAPPY
-using Sappy;
-#endif
 
 namespace SpacetimeDB.EventHandling
 {
     public interface IEventListeners<T> where T : Delegate
     {
+        int Count { get; }
         T this[int index] { get; }
-        
+
+        void Add(T listener);
+        void Remove(T listener);
     }
 
-    public class EventListeners<T> where T : Delegate
+    public interface IEventListenersFactory
+    {
+        IEventListeners<T> Create<T>() where T : Delegate;
+    }
+
+    public static class EventListenersProvider
+    {
+        private static IEventListenersFactory? CustomFactory { get; set; }
+
+        public static IEventListeners<T> Create<T>() where T : Delegate => CustomFactory?.Create<T>() ?? new BasicEventListeners<T>();
+        
+        public static void SetFactory(IEventListenersFactory factory)
+        {
+            if(CustomFactory != null) throw new InvalidOperationException("EventListenersFactory can only be set once.");
+            CustomFactory = factory;
+        }
+    }
+
+    public class BasicEventListeners<T> : IEventListeners<T> where T : Delegate
     {
         private const int SmallListenerThreshold = 8;
         private const int CollisionBucket = -1;
