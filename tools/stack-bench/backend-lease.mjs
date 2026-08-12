@@ -5,6 +5,8 @@ import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 
 export const LEASE_VERSION = 1;
+const LEASE_STATES = new Set(['created', 'starting', 'active', 'restarting',
+  'retained', 'stopped', 'released']);
 
 const fail = message => { throw new Error(`invalid backend lease: ${message}`); };
 
@@ -79,6 +81,7 @@ export function validateBackendLease(lease, { token, backend, runId, active = fa
   requireString(lease.runId, 'runId');
   requireString(lease.backend, 'backend');
   requireString(lease.ownershipToken, 'ownershipToken');
+  if (!LEASE_STATES.has(lease.state)) fail(`unknown state ${lease.state}`);
   if (token !== undefined && token !== lease.ownershipToken) fail('ownership token does not match');
   if (backend !== undefined && backend !== lease.backend) fail(`backend is ${lease.backend}, not ${backend}`);
   if (runId !== undefined && runId !== lease.runId) fail(`runId is ${lease.runId}, not ${runId}`);
@@ -102,6 +105,14 @@ export function validateBackendLease(lease, { token, backend, runId, active = fa
     if (lease.resources.buildContainer.owned !== true) fail('buildContainer must be benchmark-owned');
   }
   if (!Array.isArray(lease.resources?.locks)) fail('locks must be an array');
+  if (lease.resources.launchedPid !== null
+    && (!Number.isInteger(lease.resources.launchedPid) || lease.resources.launchedPid <= 0)) {
+    fail('launchedPid must be a positive integer or null');
+  }
+  if (!Array.isArray(lease.resources.listenerPids)
+    || lease.resources.listenerPids.some(pid => !/^\d+$/.test(String(pid)) || Number(pid) <= 0)) {
+    fail('listenerPids must contain only positive process ids');
+  }
   for (const lock of lease.resources.locks) {
     requireString(lock.path, 'lock.path');
     requireString(lock.key, 'lock.key');

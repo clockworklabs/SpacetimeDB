@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -64,6 +64,18 @@ test('lease updates are atomic and retain identity', () => {
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
+test('leases reject unknown lifecycle states and malformed process identities', () => {
+  const f = fixture();
+  f.lease.state = 'guessing';
+  assert.throws(() => writeBackendLease(f.path, f.lease), /unknown state guessing/);
+  f.lease.state = 'starting';
+  f.lease.resources.launchedPid = -1;
+  assert.throws(() => writeBackendLease(f.path, f.lease), /launchedPid must be a positive integer/);
+  f.lease.resources.launchedPid = null;
+  f.lease.resources.listenerPids = ['not-a-pid'];
+  assert.throws(() => writeBackendLease(f.path, f.lease), /listenerPids must contain only positive/);
+});
+
 test('public lease evidence hashes rather than exposes the ownership token', () => {
   const f = fixture();
   try {
@@ -97,6 +109,76 @@ test('supervisor teardown releases an owned lease without runtime processes', ()
     assert.equal(released.state, 'released');
     assert(released.releasedAt);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('pre-activation Spacetime cleanup releases only when its leased port stayed empty', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-created-release-'));
+  const emptyPath = join(root, 'empty.json');
+  const occupiedPath = join(root, 'occupied.json');
+  const emptyServer = createServer();
+  await new Promise((done, fail) => emptyServer.listen(0, '127.0.0.1', done).once('error', fail));
+  const emptyPort = emptyServer.address().port;
+  await new Promise(done => emptyServer.close(done));
+  const occupied = createServer((_request, response) => response.end('foreign'));
+  await new Promise((done, fail) => occupied.listen(0, '127.0.0.1', done).once('error', fail));
+  try {
+    const empty = createBackendLease({ runId: 'created-empty', backend: 'spacetime', track: 'chat',
+      runIndex: 0, serverUri: `http://127.0.0.1:${emptyPort}`, module: 'created-empty',
+      dataDir: join(root, 'empty-data') });
+    writeBackendLease(emptyPath, empty);
+    assert.equal(releaseBackendLease(emptyPath, empty.ownershipToken), true);
+    assert.equal(readBackendLease(emptyPath, { token: empty.ownershipToken }).state, 'released');
+
+    const blocked = createBackendLease({ runId: 'created-occupied', backend: 'spacetime', track: 'chat',
+      runIndex: 1, serverUri: `http://127.0.0.1:${occupied.address().port}`,
+      module: 'created-occupied', dataDir: join(root, 'occupied-data') });
+    writeBackendLease(occupiedPath, blocked);
+    assert.equal(releaseBackendLease(occupiedPath, blocked.ownershipToken), false);
+    assert.equal(readBackendLease(occupiedPath, { token: blocked.ownershipToken }).state, 'created');
+    assert.equal((await fetch(`http://127.0.0.1:${occupied.address().port}`)).status, 200);
+  } finally {
+    occupied.closeAllConnections();
+    await new Promise(done => occupied.close(done));
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('starting Spacetime cleanup requires and stops the exact launched process', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-starting-release-'));
+  const path = join(root, 'lease.json');
+  const ambiguousPath = join(root, 'ambiguous.json');
+  const first = createServer();
+  await new Promise((done, fail) => first.listen(0, '127.0.0.1', done).once('error', fail));
+  const ownedPort = first.address().port;
+  await new Promise(done => first.close(done));
+  const second = createServer();
+  await new Promise((done, fail) => second.listen(0, '127.0.0.1', done).once('error', fail));
+  const ambiguousPort = second.address().port;
+  await new Promise(done => second.close(done));
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'],
+    { detached: true, stdio: 'ignore' });
+  child.unref();
+  try {
+    const lease = createBackendLease({ runId: 'starting-owned', backend: 'spacetime', track: 'chat',
+      runIndex: 0, serverUri: `http://127.0.0.1:${ownedPort}`, module: 'starting-owned',
+      dataDir: join(root, 'owned-data') });
+    lease.state = 'starting';
+    lease.resources.launchedPid = child.pid;
+    writeBackendLease(path, lease);
+    assert.equal(releaseBackendLease(path, lease.ownershipToken), true);
+    assert.equal(readBackendLease(path, { token: lease.ownershipToken }).state, 'released');
+
+    const ambiguous = createBackendLease({ runId: 'starting-ambiguous', backend: 'spacetime',
+      track: 'chat', runIndex: 1, serverUri: `http://127.0.0.1:${ambiguousPort}`,
+      module: 'starting-ambiguous', dataDir: join(root, 'ambiguous-data') });
+    ambiguous.state = 'starting';
+    writeBackendLease(ambiguousPath, ambiguous);
+    assert.equal(releaseBackendLease(ambiguousPath, ambiguous.ownershipToken), false);
+    assert.equal(readBackendLease(ambiguousPath, { token: ambiguous.ownershipToken }).state, 'starting');
+  } finally {
+    try { child.kill('SIGKILL'); } catch { /* already stopped by lease teardown */ }
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('listener operations refuse a process not captured by the lease', async () => {

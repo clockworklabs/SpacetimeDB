@@ -146,6 +146,14 @@ export function killTree(pid) {
   else run('kill', ['-9', String(pid)]);
 }
 
+/** Kill a child spawned with detached:true, including its process group. */
+export function killDetachedTree(pid) {
+  if (!pid || String(pid) === '0' || Number(pid) === process.pid) return;
+  if (isWindows) { killTree(pid); return; }
+  try { process.kill(-Number(pid), 'SIGKILL'); }
+  catch { killTree(pid); }
+}
+
 /** Block for `ms` without a child process — `timeout` needs a console on Windows. */
 export function sleepSync(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);

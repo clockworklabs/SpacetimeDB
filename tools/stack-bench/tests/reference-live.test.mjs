@@ -97,8 +97,10 @@ test('supervisor accepts a deleted private lease only with matching released evi
     const state = join(root, 'supervisor.json');
     const output = join(root, 'output');
     mkdirSync(output);
-    writeFileSync(state, JSON.stringify({ version: 1, runId: 'released-run',
-      leasePath: join(root, 'deleted-lease.json'), ownershipToken: 'private-token' }));
+    const runtimeDir = join(root, 'runtime');
+    writeFileSync(state, JSON.stringify({ version: 2, runId: 'released-run', backend: 'mongodb',
+      runtimeDir, leasePath: join(runtimeDir, 'backend-lease.json'),
+      ownershipToken: 'private-token', output }));
     writeRunJson(join(output, 'run.json'), { id: 'released-run', backendLease: {
       runId: 'released-run', state: 'released', resources: {
         buildContainer: { running: false }, locks: [{ releasedAt: 'now' }],

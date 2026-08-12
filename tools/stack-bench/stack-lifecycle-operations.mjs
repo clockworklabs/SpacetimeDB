@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { updateBackendLease } from './backend-lease.mjs';
-import { answers as answersSync, killTree, pidsOnPort, sleepSync } from './platform.mjs';
+import { answers as answersSync, killDetachedTree, killTree, pidsOnPort, sleepSync } from './platform.mjs';
 import { fetchStatus } from './readiness.mjs';
 
 const DOCKER_TIMEOUT_MS = 120_000;
@@ -114,6 +114,8 @@ export async function controlSpacetime({ lease, mode, signal = null }) {
   if (mode !== 'restart') return;
   const url = new URL(lease.resources.serverUri);
   const port = Number(url.port);
+  const cli = process.env.SPACETIME_BIN;
+  if (!cli || !existsSync(cli)) throw new Error(`SPACETIME_BIN is unavailable: ${cli ?? '<unset>'}`);
   const actual = pidsOnPort(port);
   const unexpected = actual.filter(pid => !lease.resources.listenerPids.includes(pid));
   if (unexpected.length) throw new Error(`listener ${unexpected.join(',')} is not owned by lease ${lease.runId}`);
@@ -124,22 +126,42 @@ export async function controlSpacetime({ lease, mode, signal = null }) {
   for (const pid of actual) killTree(pid);
   await waitFor(async () => !(await answers(`${lease.resources.serverUri}/v1/ping`)),
     30_000, 'SpacetimeDB to stop', signal);
-  const cli = process.env.SPACETIME_BIN;
-  if (!cli || !existsSync(cli)) throw new Error(`SPACETIME_BIN is unavailable: ${cli ?? '<unset>'}`);
-  const child = spawn(cli, ['start', '--listen-addr', `127.0.0.1:${port}`,
-    '--data-dir', lease.resources.dataDir], { detached: true, stdio: 'ignore', windowsHide: true });
-  child.unref();
-  await waitFor(() => answers(`${lease.resources.serverUri}/v1/ping`),
-    240_000, 'SpacetimeDB to start', signal);
-  const listenerPids = pidsOnPort(port);
-  if (listenerPids.length !== 1) throw new Error(`expected one SpacetimeDB listener, found ${listenerPids.length}`);
   updateBackendLease(process.env.STACK_BENCH_LEASE,
     { token: lease.ownershipToken, backend: 'spacetime', runId: lease.runId }, next => {
-      next.state = 'active';
-      next.resources.launchedPid = child.pid ?? null;
-      next.resources.listenerPids = listenerPids;
+      next.state = 'starting';
+      next.resources.launchedPid = null;
+      next.resources.listenerPids = [];
       return next;
     });
+  let child = null;
+  try {
+    child = spawn(cli, ['start', '--listen-addr', `127.0.0.1:${port}`,
+      '--data-dir', lease.resources.dataDir], { detached: true, stdio: 'ignore', windowsHide: true });
+    const spawnFailed = new Promise((_, reject) => child.once('error', reject));
+    child.unref();
+    if (!child.pid) throw new Error('SpacetimeDB restart did not return a process id');
+    updateBackendLease(process.env.STACK_BENCH_LEASE,
+      { token: lease.ownershipToken, backend: 'spacetime', runId: lease.runId }, next => {
+        next.resources.launchedPid = child.pid;
+        return next;
+      });
+    await Promise.race([
+      waitFor(() => answers(`${lease.resources.serverUri}/v1/ping`),
+        240_000, 'SpacetimeDB to start', signal),
+      spawnFailed,
+    ]);
+    const listenerPids = pidsOnPort(port);
+    if (listenerPids.length !== 1) throw new Error(`expected one SpacetimeDB listener, found ${listenerPids.length}`);
+    updateBackendLease(process.env.STACK_BENCH_LEASE,
+      { token: lease.ownershipToken, backend: 'spacetime', runId: lease.runId }, next => {
+        next.state = 'active';
+        next.resources.listenerPids = listenerPids;
+        return next;
+      });
+  } catch (error) {
+    if (child?.pid) killDetachedTree(child.pid);
+    throw error;
+  }
 }
 
 export function activateHosted({ leasePath, leaseToken, lease }) {
@@ -158,13 +180,27 @@ export function activateSpacetime({ leasePath, leaseToken, lease, cli }) {
     throw new Error(`SpacetimeDB is already running on benchmark port :${port}; `
       + 'refusing to reuse or restart a host this run did not start');
   }
+  if (!cli || !existsSync(cli)) throw new Error(`SpacetimeDB CLI is unavailable: ${cli ?? '<unset>'}`);
   console.log(`  spacetime   ... not running, starting a benchmark-owned host on :${port}`);
   mkdirSync(lease.resources.dataDir, { recursive: true });
-  const child = spawn(cli,
-    ['start', '--listen-addr', `127.0.0.1:${port}`, '--data-dir', lease.resources.dataDir],
-    { detached: true, stdio: 'ignore', windowsHide: true });
-  child.unref();
+  updateBackendLease(leasePath,
+    { token: leaseToken, backend: lease.backend, runId: lease.runId }, next => {
+      next.state = 'starting';
+      return next;
+    });
+  let child = null;
   try {
+    child = spawn(cli,
+      ['start', '--listen-addr', `127.0.0.1:${port}`, '--data-dir', lease.resources.dataDir],
+      { detached: true, stdio: 'ignore', windowsHide: true });
+    child.once('error', () => { /* surfaced by the missing-pid guard below */ });
+    child.unref();
+    if (!child.pid) throw new Error('SpacetimeDB start did not return a process id');
+    updateBackendLease(leasePath,
+      { token: leaseToken, backend: lease.backend, runId: lease.runId }, next => {
+        next.resources.launchedPid = child.pid;
+        return next;
+      });
     for (let i = 0; i < 60; i++) {
       sleepSync(2000);
       if (answersSync(ping, 5)) {
@@ -185,7 +221,7 @@ export function activateSpacetime({ leasePath, leaseToken, lease, cli }) {
     }
     throw new Error(`SpacetimeDB did not come up on :${port}`);
   } catch (error) {
-    if (child.pid) killTree(child.pid);
+    if (child?.pid) killDetachedTree(child.pid);
     throw error;
   }
 }

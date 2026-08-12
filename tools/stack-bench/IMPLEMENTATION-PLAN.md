@@ -575,7 +575,10 @@ Normal exact-owned cleanup removes the private handoff. A container/listener/
 lock identity refusal keeps it, marks the attempt quarantined, names the still
 claimed resources and lock keys, and supplies deterministic recovery steps.
 The controller `recover` command re-authenticates that private lease and retries
-the same fail-closed cleanup; no same-name or same-port fallback exists.
+the same fail-closed cleanup; no same-name or same-port fallback exists. Startup
+records the launched process before readiness polling, so recovery can stop that
+exact process tree. A created lease is released only while its port is empty; an
+ambiguous startup or unexpected listener remains quarantined.
 
 E4 exit: a clean dedicated runner can pull by digest, run `preflight`, complete a
 no-model smoke, preserve artifacts, and remove the controller without losing

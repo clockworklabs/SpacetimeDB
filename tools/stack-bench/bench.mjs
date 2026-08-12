@@ -527,14 +527,81 @@ async function main() {
     }
   }
 
+  let tornDown = false;
+  let activeRun = null;
+  const recoveryPath = join(args.out, 'recovery.json');
+  const writeLeaseEvidence = (knownLease = null) => {
+    const lease = knownLease ?? readBackendLease(leasePath,
+      { token: initialLease.ownershipToken, backend: args.backend, runId });
+    const out = join(args.out, 'backend-lease.json');
+    const evidence = publicBackendLease(lease);
+    const id = `${runId}-backend-lease`;
+    writeArtifact(out, {
+      kind: 'backend_lease_evidence', id,
+      attempt: { id, parentId: runId },
+      timestamps: { startedAt: evidence.createdAt, completedAt: new Date().toISOString() },
+      identities: emptyArtifactIdentities({ stackAdapter: { id: args.backend } }),
+      payload: evidence,
+    });
+    return evidence;
+  };
+  const teardown = ({ reason = null, retainBackend = args.retainBackend } = {}) => {
+    if (tornDown) return;
+    if (activeAgentChild?.pid) {
+      killTree(activeAgentChild.pid);
+      activeAgentChild = null;
+    }
+    // Preserve restart failures before removing the only filesystem that holds
+    // their stderr. A 500 after restart is otherwise impossible to distinguish
+    // from an application defect, a dead dependency, or host pressure.
+    if (activeRun) {
+      try {
+        activeRun.backendDiagnostics = captureBackendDiagnostics(join(args.out, 'backend.log'));
+      } catch (error) {
+        activeRun.backendDiagnostics = { captured: false,
+          reason: String(error.message).split(/\r?\n/)[0] };
+      }
+    }
+    let released = false;
+    let cleanupError = null;
+    try {
+      released = releaseBackendLease(leasePath, initialLease.ownershipToken,
+        { retainBackend });
+    } catch (error) { cleanupError = error; }
+    let finalLease = initialLease;
+    try {
+      finalLease = readBackendLease(leasePath,
+        { token: initialLease.ownershipToken, backend: args.backend, runId });
+    } catch (error) { cleanupError ??= error; released = false; }
+    const evidence = writeLeaseEvidence(finalLease);
+    writeRecoveryArtifact(recoveryPath, finalLease, { cleanupSucceeded: released,
+      retained: Boolean(retainBackend),
+      reason: cleanupError?.message ?? reason ?? (released ? null : 'authenticated cleanup refused') });
+    if (activeRun) {
+      activeRun.backendLease = evidence;
+      activeRun.outcome ??= aggregateRunOutcome(activeRun.levels);
+      writeRunJson(join(args.out, 'run.json'), activeRun);
+    }
+    tornDown = released;
+    if (released && !retainBackend) {
+      rmSync(runtimeDir, { recursive: true, force: true });
+      if (privateSupervisorStatePath) rmSync(privateSupervisorStatePath, { force: true });
+    }
+    if (cleanupError) throw cleanupError;
+    if (!released) throw new Error(`backend teardown refused: listener no longer matches lease ${runId}`);
+  };
+  emergencyTeardown = teardown;
+
   try {
     executeStackCapability(stackAdapter, 'lifecycle', 'activate', {
       leasePath, leaseToken: initialLease.ownershipToken, lease: initialLease,
       ...stackRuntime.lifecycle,
     });
   } catch (error) {
-    releaseResourceLocks(initialLease);
-    rmSync(runtimeDir, { recursive: true, force: true });
+    try { teardown({ reason: `backend activation failed: ${error.message}`, retainBackend: false }); }
+    catch (cleanupError) {
+      console.error(`  activation cleanup quarantined: ${String(cleanupError.message).split(/\r?\n/)[0]}`);
+    }
     throw error;
   }
 
@@ -556,70 +623,6 @@ async function main() {
   // directory this run created is this run's to remove.
   // Leave nothing running once the run is over, however it ends — but only stop
   // what this run brought up.
-  let tornDown = false;
-  let activeRun = null;
-  const recoveryPath = join(args.out, 'recovery.json');
-  const writeLeaseEvidence = (knownLease = null) => {
-    const lease = knownLease ?? readBackendLease(leasePath,
-      { token: initialLease.ownershipToken, backend: args.backend, runId });
-    const out = join(args.out, 'backend-lease.json');
-    const evidence = publicBackendLease(lease);
-    const id = `${runId}-backend-lease`;
-    writeArtifact(out, {
-      kind: 'backend_lease_evidence', id,
-      attempt: { id, parentId: runId },
-      timestamps: { startedAt: evidence.createdAt, completedAt: new Date().toISOString() },
-      identities: emptyArtifactIdentities({ stackAdapter: { id: args.backend } }),
-      payload: evidence,
-    });
-    return evidence;
-  };
-  const teardown = ({ reason = null } = {}) => {
-    if (tornDown) return;
-    if (activeAgentChild?.pid) {
-      killTree(activeAgentChild.pid);
-      activeAgentChild = null;
-    }
-    // Preserve restart failures before removing the only filesystem that holds
-    // their stderr. A 500 after restart is otherwise impossible to distinguish
-    // from an application defect, a dead dependency, or host pressure.
-    if (activeRun) {
-      try {
-        activeRun.backendDiagnostics = captureBackendDiagnostics(join(args.out, 'backend.log'));
-      } catch (error) {
-        activeRun.backendDiagnostics = { captured: false,
-          reason: String(error.message).split(/\r?\n/)[0] };
-      }
-    }
-    let released = false;
-    let cleanupError = null;
-    try {
-      released = releaseBackendLease(leasePath, initialLease.ownershipToken,
-        { retainBackend: args.retainBackend });
-    } catch (error) { cleanupError = error; }
-    let finalLease = initialLease;
-    try {
-      finalLease = readBackendLease(leasePath,
-        { token: initialLease.ownershipToken, backend: args.backend, runId });
-    } catch (error) { cleanupError ??= error; released = false; }
-    const evidence = writeLeaseEvidence(finalLease);
-    writeRecoveryArtifact(recoveryPath, finalLease, { cleanupSucceeded: released,
-      retained: Boolean(args.retainBackend),
-      reason: cleanupError?.message ?? reason ?? (released ? null : 'authenticated cleanup refused') });
-    if (activeRun) {
-      activeRun.backendLease = evidence;
-      activeRun.outcome ??= aggregateRunOutcome(activeRun.levels);
-      writeRunJson(join(args.out, 'run.json'), activeRun);
-    }
-    tornDown = released;
-    if (released && !args.retainBackend) {
-      rmSync(runtimeDir, { recursive: true, force: true });
-      if (privateSupervisorStatePath) rmSync(privateSupervisorStatePath, { force: true });
-    }
-    if (cleanupError) throw cleanupError;
-    if (!released) throw new Error(`backend teardown refused: listener no longer matches lease ${runId}`);
-  };
-  emergencyTeardown = teardown;
   // This run's work path is unique. There is no legitimate pre-existing build
   // container to delete; teardown removes one only after run-build records its
   // immutable id in the lease.

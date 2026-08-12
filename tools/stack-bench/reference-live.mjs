@@ -19,7 +19,7 @@ import { hashDirectory } from './provenance.mjs';
 import { inspectImportedReference, loadReferenceRegistry, validateReferenceRegistry } from './reference-fixtures.mjs';
 import { killTree } from './platform.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
-import { recoverSupervisedRun } from './recovery.mjs';
+import { recoverSupervisedRun, validateSupervisorState } from './recovery.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const BENCH = join(ROOT, 'bench.mjs');
@@ -88,7 +88,10 @@ export function runBounded(command, argv,
 
 export function rescueSupervisedLease(path, output) {
   if (!existsSync(path)) return;
-  const state = readJson(path);
+  const state = validateSupervisorState(readJson(path), { source: path });
+  if (resolve(output) !== resolve(state.output)) {
+    throw new Error(`supervisor output does not match requested output: ${state.runId}`);
+  }
   if (!existsSync(state.leasePath)) {
     const runPath = join(output, 'run.json');
     if (!existsSync(runPath)) throw new Error(`backend lease disappeared without released run evidence: ${state.runId}`);
