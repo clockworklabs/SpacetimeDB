@@ -5,7 +5,7 @@ use duct::cmd;
 
 struct Command {
     path: &'static [&'static str],
-    package: Option<&'static str>,
+    package: &'static str,
 }
 
 // Each of these commands is in its own binary package, in order to keep the
@@ -23,10 +23,6 @@ const COMMANDS: &[Command] = &[
     Command {
         path: &["wasm-bindings"],
         package: "ci-wasm-bindings",
-    },
-    Command {
-        path: &["dlls"],
-        package: None,
     },
     Command {
         path: &["smoketests"],
