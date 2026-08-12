@@ -994,9 +994,8 @@ impl RelationalDB {
     fn maybe_do_snapshot(&self, tx_data: &TxData) {
         if let Some(snapshot_worker) = &self.snapshot_worker
             && let Some(tx_offset) = tx_data.tx_offset()
-            && tx_offset % SNAPSHOT_FREQUENCY == 0
-        // TODO: Consider shifting by 1, so that we snapshot after the module is initialized.
-        // && tx_offset % SNAPSHOT_FREQUENCY == 1
+            // We shift by 1 because the 0th tx has the system table info, and the next one has the module info.
+            && tx_offset % SNAPSHOT_FREQUENCY == 1
         {
             snapshot_worker.request_snapshot();
         }
