@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::Deserialize;
