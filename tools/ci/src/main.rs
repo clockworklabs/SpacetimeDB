@@ -10,15 +10,13 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::{env, fs};
 
-const README_PATH: &str = "tools/ci/README.md";
-
-mod ci_docs;
 mod cla_assistant;
 mod codeowners_check;
 mod internal_tests;
 mod keynote_bench;
 mod smoketest;
 mod util;
+mod workflow_watch;
 
 use util::ensure_repo_root;
 
@@ -359,6 +357,43 @@ fn check_codex_plugin_skills_sync() -> Result<()> {
     Ok(())
 }
 
+fn check_claude_marketplace_skills() -> Result<()> {
+    // Claude catalog lists each skill explicitly, so a new skill under `skills/` is
+    // invisible to Claude until it is added there
+    let catalog_path = Path::new(".claude-plugin/marketplace.json");
+    let contents = fs::read_to_string(catalog_path).with_context(|| format!("reading {}", catalog_path.display()))?;
+    let catalog: Value =
+        serde_json::from_str(&contents).with_context(|| format!("parsing {}", catalog_path.display()))?;
+    let listed: BTreeSet<String> = catalog["plugins"][0]["skills"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("{} plugins[0].skills must be an array", catalog_path.display()))?
+        .iter()
+        .filter_map(|value| value.as_str())
+        .map(|entry| entry.trim_start_matches("./").to_owned())
+        .collect();
+
+    let mut present = BTreeSet::new();
+    for entry in fs::read_dir("skills").with_context(|| "reading skills")? {
+        let entry = entry?;
+        if entry.path().join("SKILL.md").is_file() {
+            present.insert(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+
+    if listed != present {
+        let missing: Vec<_> = present.difference(&listed).cloned().collect();
+        let extraneous: Vec<_> = listed.difference(&present).cloned().collect();
+        bail!(
+            "{} skills list does not match skills/:\n  missing: {:?}\n  extraneous: {:?}\nUpdate the skills list in {}",
+            catalog_path.display(),
+            missing,
+            extraneous,
+            catalog_path.display()
+        );
+    }
+    Ok(())
+}
+
 #[derive(Subcommand)]
 enum CiCmd {
     /// Runs tests
@@ -416,15 +451,6 @@ enum CiCmd {
         )]
         spacetime_path: Option<String>,
     },
-    SelfDocs {
-        #[arg(
-            long,
-            default_value_t = false,
-            long_help = "Only check for changes, do not generate the docs"
-        )]
-        check: bool,
-    },
-
     /// Verify that any non-root global.json files are symlinks to the root global.json.
     GlobalJsonPolicy,
     /// Checks that publishable crates satisfy publish constraints.
@@ -459,6 +485,21 @@ enum OtherWorkflowsCmd {
     ClaAssistant {
         #[command(subcommand)]
         cmd: cla_assistant::ClaAssistantCmd,
+    },
+    /// Waits for a GitHub Actions workflow run to complete.
+    Watch {
+        /// Repository containing the workflow run, in owner/repo form.
+        #[arg(long)]
+        repo: String,
+        /// GitHub Actions workflow run ID.
+        #[arg(long)]
+        run_id: u64,
+        /// Seconds to sleep between polls.
+        #[arg(long, default_value_t = 30)]
+        interval_seconds: u64,
+        /// Maximum number of polls before timing out. Polls forever by default.
+        #[arg(long)]
+        max_attempts: Option<u64>,
     },
 }
 
@@ -683,6 +724,7 @@ fn main() -> Result<()> {
             ensure_repo_root()?;
             check_pnpm_release_age_policy()?;
             check_codex_plugin_skills_sync()?;
+            check_claude_marketplace_skills()?;
             // `cargo fmt --all` only checks files that Cargo discovers through workspace/package targets.
             // However, we also keep Rust sources in a locations that are tracked but not part of our workspace,
             // so this approach properly catches all the files, where `cargo fmt` does not.
@@ -854,23 +896,6 @@ fn main() -> Result<()> {
             }
         }
 
-        Some(CiCmd::SelfDocs { check }) => {
-            let readme_content = ci_docs::generate_cli_docs();
-            let path = Path::new(README_PATH);
-
-            if check {
-                let existing = fs::read_to_string(path).unwrap_or_default();
-                if existing != readme_content {
-                    bail!("README.md is out of date. Please run `cargo ci self-docs` to update it.");
-                } else {
-                    log::info!("README.md is up to date.");
-                }
-            } else {
-                fs::write(path, readme_content)?;
-                log::info!("Wrote CLI docs to {}", path.display());
-            }
-        }
-
         Some(CiCmd::GlobalJsonPolicy) => {
             check_global_json_policy()?;
         }
@@ -906,6 +931,18 @@ fn main() -> Result<()> {
             cmd: OtherWorkflowsCmd::ClaAssistant { cmd },
         }) => {
             cla_assistant::run(cmd)?;
+        }
+
+        Some(CiCmd::OtherWorkflows {
+            cmd:
+                OtherWorkflowsCmd::Watch {
+                    repo,
+                    run_id,
+                    interval_seconds,
+                    max_attempts,
+                },
+        }) => {
+            workflow_watch::watch_workflow_run(&repo, run_id, interval_seconds, max_attempts)?;
         }
 
         None => run_all_clap_subcommands(&cli.skip)?,

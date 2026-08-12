@@ -67,6 +67,8 @@ https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git
 
 (See also the [Unity Tutorial](../../00100-intro/00300-tutorials/00300-unity-tutorial/00200-part-1.md))
 
+The Unity package includes a `SpacetimeDBNetworkManager` component. Add one instance to a scene GameObject if you want the SDK to advance active connections from Unity's `Update` loop automatically. If you do not use the manager, call [`FrameTick`](#method-frametick) yourself every frame.
+
 ## Generate module bindings
 
 Each SpacetimeDB client depends on some bindings specific to your module. Create a `module_bindings` directory in your project's directory and generate the C# interface files using the Spacetime CLI. From your project directory, run:
@@ -220,6 +222,8 @@ class DbConnection {
 
 `FrameTick` will advance the connection until no work remains or until it is disconnected, then return rather than blocking. Games might arrange for this message to be called every frame.
 
+In Unity projects, a `SpacetimeDBNetworkManager` component can call `FrameTick` for active connections automatically. Use either the manager or your own update loop; without one of them, callbacks will not be invoked.
+
 It is not advised to run `FrameTick` on a background thread, since it modifies [`dbConnection.Db`](#property-db). If main thread code is also accessing the `Db`, it may observe data races when `FrameTick` runs on another thread.
 
 (Note that the SDK already does most of the work for parsing messages on a background thread. `FrameTick()` does the minimal amount of work needed to apply updates to the `Db`.)
@@ -306,14 +310,14 @@ interface IRemoteDbContext
 ```
 
 `Reducers` will have methods to invoke each reducer defined by the module,
-plus methods for adding and removing callbacks on each of those reducers.
+plus events for observing the result of reducer calls made by this connection.
 
 ##### Example
 
 ```csharp
 var conn = ConnectToDB();
 
-// Register a callback to be run every time the SendMessage reducer is invoked
+// Register a callback to observe the result of SendMessage calls made by this connection.
 conn.Reducers.OnSendMessage += Reducer_OnSendMessageEvent;
 ```
 
@@ -425,7 +429,7 @@ class SubscriptionBuilder
 }
 ```
 
-Subscribe to all rows from all public tables. This method is provided as a convenience for simple clients. The subscription initiated by `SubscribeToAllTables` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
+Subscribe to all rows from all public tables, including public event tables. This method is provided as a convenience for simple clients. The subscription initiated by `SubscribeToAllTables` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
 
 #### Type `TypedSubscriptionBuilder`
 
@@ -711,9 +715,9 @@ record Event<R>
 }
 ```
 
-Event when we are notified that a reducer ran in the remote database. The [`ReducerEvent`](#record-reducerevent) contains metadata about the reducer run, including its arguments and termination [`Status`](#record-status).
+Event when we are notified of the result of a reducer call made by this connection. The [`ReducerEvent`](#record-reducerevent) contains metadata about the reducer run, including its arguments and termination [`Status`](#record-status).
 
-This event is passed to row callbacks resulting from modifications by the reducer.
+For changes caused by other clients' reducer calls, use table row callbacks or event tables rather than reducer callbacks. The server does not broadcast reducer arguments globally.
 
 #### Variant `SubscribeApplied`
 
@@ -1084,13 +1088,16 @@ int CountPlayersAtLevel(RemoteTables tables, uint level) => tables.Player.Level.
 
 ## Observe and invoke reducers
 
-All [`IDbContext`](#interface-idbcontext) implementors, including [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext), have a `.Reducers` property, which in turn has methods for invoking reducers defined by the module and registering callbacks on it.
+All [`IDbContext`](#interface-idbcontext) implementors, including [`DbConnection`](#type-dbconnection) and [`EventContext`](#type-eventcontext), have a `.Reducers` property. Generated module bindings expose one invoke method and one result event for each reducer.
 
-Each reducer defined by the module has three methods on the `.Reducers`:
+For a reducer named `send_message`, generated C# bindings use PascalCase names:
 
-- An invoke method, whose name is the reducer's name converted to snake case, like `set_name`. This requests that the module run the reducer.
-- A callback registation method, whose name is prefixed with `on_`, like `on_set_name`. This registers a callback to run whenever we are notified that the reducer ran, including successfully committed runs and runs we requested which failed. This method returns a callback id, which can be passed to the callback remove method.
-- A callback remove method, whose name is prefixed with `remove_on_`, like `remove_on_set_name`. This cancels a callback previously registered via the callback registration method.
+- An invoke method, like `SendMessage(...)`. This requests that the module run the reducer.
+- A result event, like `OnSendMessage`. This event fires on the calling connection when SpacetimeDB reports that reducer call's result, including committed, failed, and out-of-energy statuses.
+
+Subscribe to reducer result events with `+=` and unsubscribe with `-=`, as with any C# event.
+
+Reducer result events are not global notifications. They are for reducer calls made by this connection. To notify other clients that something happened, write to a public table or event table and subscribe to it.
 
 ## Identify a client
 
