@@ -399,7 +399,7 @@ namespace SpacetimeDB
         public delegate void RowEventHandler(EventContext context, Row row);
         private CustomRowEventHandler OnInsertHandler { get; } = new();
 #if SAPPY
-        public EventListeners<RowEventHandler> OnInsert
+        public IEventListeners<RowEventHandler> OnInsert
         {
             get => OnInsertHandler.Listeners;
             set => OnInsertHandler.Listeners = value;
@@ -634,7 +634,7 @@ namespace SpacetimeDB
 
         private CustomRowEventHandler OnDeleteHandler { get; } = new();
 #if SAPPY
-        public EventListeners<RowEventHandler> OnDelete
+        public IEventListeners<RowEventHandler> OnDelete
         {
             get => OnDeleteHandler.Listeners;
             set => OnDeleteHandler.Listeners = value;
@@ -648,7 +648,7 @@ namespace SpacetimeDB
 #endif
         private CustomRowEventHandler OnBeforeDeleteHandler { get; } = new();
 #if SAPPY
-        public EventListeners<RowEventHandler> OnBeforeDelete
+        public IEventListeners<RowEventHandler> OnBeforeDelete
         {
             get => OnBeforeDeleteHandler.Listeners;
             set => OnBeforeDeleteHandler.Listeners = value;
@@ -662,7 +662,7 @@ namespace SpacetimeDB
 #endif
         private CustomUpdateEventHandler OnUpdateHandler { get; } = new();
 #if SAPPY
-        public EventListeners<UpdateEventHandler> OnUpdate
+        public IEventListeners<UpdateEventHandler> OnUpdate
         {
             get => OnUpdateHandler.Listeners;
             set => OnUpdateHandler.Listeners = value;
