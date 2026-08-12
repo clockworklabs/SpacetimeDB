@@ -791,10 +791,6 @@
               "settleMs": 2500
             },
             {
-              "do": "expectReplayRejected",
-              "actor": "stranger"
-            },
-            {
               "do": "click",
               "actor": "owner",
               "testid": "cart-toggle"
@@ -810,6 +806,7 @@
               "equals": 1
             }
           ],
+          "note": "A cart add request that contains only an item and quantity is legitimately reusable by another authenticated customer: the server applies it to the caller's own cart. The ownership assertion below is the security boundary; requiring every replay to return non-2xx incorrectly rejects identity-derived APIs.",
           "statedBy": "nobody else can read or change it"
         },
         {

@@ -22,9 +22,16 @@ in the refresh probe, so a feature that only works after a reload cannot pass.
 
 ## Scenario format
 
-`../scenarios/level-NN.json` — features, each with `actors`, unscored `setup` steps, and
-`criteria` worth 1 point each. Actions: `register`, `createRoom`, `enterRoom`, `send`,
-`typeInto`, `clearInput`, `click`, `wait`, `expect`.
+Scenario files contain features with isolated `actors`, unscored `setup` steps,
+and explicitly normalized criterion points. The full 47-action language is
+defined in `definition-compiler.mjs` and registered in `action-catalog.mjs`;
+scenario prose is not the runtime contract.
+
+Executors are split by responsibility: ordinary browser actions, actor and
+transport actions, and concurrency/lifecycle/database actions. Each executor
+receives only the capabilities declared by its plugin. `grader/grade.mjs`
+orchestrates actors and scoring but contains no action switch or backend-specific
+database/process implementation.
 
 `expect` supports `contains`, `notContains`, `absent`, `within` (ms), and `in` to scope
 the search inside a container:
@@ -58,17 +65,20 @@ is a useful negative control: it has no backend, so it should score 1/12.
 
 A grader that passes everything is worthless; one that fails the wrong thing is worse.
 `mutation-test.mjs` injects known defects into a known-good app and checks the grader
-notices, in the right feature:
+notices at the exact declared criterion, without collateral failures:
 
 ```bash
 node mutation-test.mjs --app <app-dir> --url <url> --mutations mutations/spacetime-l1.json
 ```
 
-A mutation that SURVIVES (score unchanged) is a hole in the oracle. Watch for *equivalent
-mutants* — a defect that changes no observable behavior. One here removed a receipt's
-sender filter, but a second filter still excluded the same user, so nothing changed and
-the survival was meaningless. Confirm a mutation actually alters what a user would see
-before treating its survival as a grader bug.
+Backend, track, level and scenario come from the mutation manifest. The runner
+fails closed if the baseline is not fully passing, an anchor is dead or
+ambiguous, reset/redeploy/readiness fails, setup breaks, evidence is
+inconclusive, the wrong criterion fails, or the intended kill has collateral.
+It writes an atomic criterion-level artifact for both completed controls and
+harness failures. A mutation that SURVIVES is an oracle hole, although an
+equivalent mutant can also survive; confirm the edit changes observable
+behaviour before diagnosing the grader.
 
 ## Clean state is a precondition, not a nicety
 

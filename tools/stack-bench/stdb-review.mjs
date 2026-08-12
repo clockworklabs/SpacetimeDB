@@ -141,7 +141,14 @@ if (!mine.turns) { console.error('nothing to review'); process.exit(2); }
 // SpacetimeDB needed that they did not.
 const compare = [];
 for (const other of String(arg('--compare', '')).split(',').filter(Boolean)) {
-  const d = join(ROOT, 'transcripts', other);
+  const transcriptRoot = join(ROOT, 'transcripts');
+  const exact = join(transcriptRoot, other);
+  const latest = existsSync(transcriptRoot)
+    ? readdirSync(transcriptRoot)
+      .filter(name => name.startsWith(`${other}-`) && statSync(join(transcriptRoot, name)).isDirectory())
+      .sort((a, b) => statSync(join(transcriptRoot, b)).mtimeMs - statSync(join(transcriptRoot, a)).mtimeMs)[0]
+    : null;
+  const d = latest ? join(transcriptRoot, latest) : exact;
   if (!existsSync(d)) continue;
   const c = actionLog(d, 0);
   compare.push(`### ${other} (${c.turns} actions)\n${c.log.slice(0, 25_000)}`);

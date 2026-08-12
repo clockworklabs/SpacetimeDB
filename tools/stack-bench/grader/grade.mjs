@@ -18,12 +18,54 @@
 // Exit codes: 0 = graded (any score), 2 = usage/infra error.
 
 import { chromium } from 'playwright';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, mkdirSync, existsSync } from 'node:fs';
+import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { harnessBrowserFailure, harnessProcessFailure } from '../harness-errors.mjs';
+import { compileScenarioDefinition } from '../definition-compiler.mjs';
+import { loadTrack } from '../tracks.mjs';
+import { recipeArtifactIdentities, writeArtifact } from '../artifacts.mjs';
+import { resolveCalibrationForRelease } from '../calibration-compiler.mjs';
+import { resolveGradeRecipeArtifactBinding } from '../recipe-release.mjs';
+import { selectScenarioChecks } from '../recipe-selection.mjs';
+import { ACTION_REGISTRY } from '../action-catalog.mjs';
+import { createActionRunContext, executeAction } from '../action-contract.mjs';
+import { createCheckEvidence, evidenceDisposition, evidenceIsMeasured, evidencePassed } from '../check-evidence.mjs';
+import { renderEvidenceConsoleLine } from '../evidence-presentation.mjs';
+import { executeStackCapability } from '../stack-adapter-contract.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../stack-adapters.mjs';
+import {
+  BROWSER_ACTION_IDS,
+  BROWSER_ACTION_IMPLEMENTATIONS,
+} from '../browser-action-executors.mjs';
+import {
+  ACTOR_TRANSPORT_ACTION_IDS,
+  ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
+  createNamedActionsCapability,
+} from '../actor-transport-action-executors.mjs';
+import {
+  createDatabaseWriteCapability,
+  createLifecycleCapability,
+  LIFECYCLE_CONCURRENCY_ACTION_IDS,
+  LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
+} from '../lifecycle-concurrency-action-executors.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_WITHIN = 5000;
+const REGISTERED_ACTIONS = new Set([
+  ...BROWSER_ACTION_IDS,
+  ...ACTOR_TRANSPORT_ACTION_IDS,
+  ...LIFECYCLE_CONCURRENCY_ACTION_IDS,
+]);
+const REGISTERED_ACTION_IMPLEMENTATIONS = Object.freeze({
+  ...BROWSER_ACTION_IMPLEMENTATIONS,
+  ...ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
+  ...LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
+});
+if (REGISTERED_ACTIONS.size !== ACTION_REGISTRY.ids.length
+  || ACTION_REGISTRY.ids.some(id => !REGISTERED_ACTIONS.has(id))) {
+  throw new Error('registered action implementations do not cover the action catalog exactly');
+}
 
 // Truncate a failure detail without throwing away the part that explains it.
 //
@@ -50,7 +92,7 @@ function keepReason(detail, limit = 600) {
 }
 
 function parseArgs(argv) {
-  const args = { level: 1, headed: false };
+  const args = { level: 1, headed: false, selectedCheckKeys: [] };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--url': args.url = argv[++i]; break;
@@ -60,14 +102,23 @@ function parseArgs(argv) {
       case '--feature': args.feature = parseInt(argv[++i], 10); break;
       case '--spec': args.spec = argv[++i]; break;
       case '--restart-cmd': args.restartCmd = argv[++i]; break;
+      case '--restart-spec': args.restartSpec = JSON.parse(argv[++i]); break;
       // Needed to issue the spec's named actions: which stack to talk to, and
       // which track declares the action names.
       case '--backend': args.backend = argv[++i]; break;
       case '--track': args.track = argv[++i]; break;
+      case '--expected-recipe-sha256': args.expectedRecipeSha256 = argv[++i]; break;
+      case '--selected-check': args.selectedCheckKeys.push(argv[++i]); break;
+      case '--selection-sha256': args.selectionSha256 = argv[++i]; break;
+      case '--parent-attempt-id': args.parentAttemptId = argv[++i]; break;
       // Which database to write to directly for out-of-band writes.
       case '--db-name': args.dbName = argv[++i]; break;
       case '--app': args.app = argv[++i]; break;
       case '--media': args.media = argv[++i]; break;
+      // Lightweight evidence for otherwise media-free qualification runs.
+      // Unlike --media this records no video or trace; it only captures every
+      // actor when a setup or criterion fails.
+      case '--failure-media': args.failureMedia = argv[++i]; break;
       case '--trace': args.trace = true; break;
       case '--headed': args.headed = true; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
@@ -90,10 +141,6 @@ const uniq = () => Math.random().toString(36).slice(2, 7);
 // whose endpoints are named differently (`writeUrlPattern`).
 const DEFAULT_WRITE_URL = '\\/api\\/|\\/rooms|\\/messages';
 let WRITE_URL_RE = new RegExp(DEFAULT_WRITE_URL);
-
-const IDENTITY_FIELD = /^(user_?id|sender_?id|author_?id|from_?user|identity)$/i;
-const CONTENT_FIELD = /^(content|text|message|body|msg)$/i;
-const ROOM_FIELD = /^(room_?id|channel_?id|conversation_?id)$/i;
 
 class Actor {
   constructor(name, page, context) {
@@ -193,53 +240,6 @@ class Actor {
       ? root.locator(tid(testid), { hasText: contains }).first()
       : root.locator(tid(testid)).first();
   }
-}
-
-// ─── Retargeting a replayed request ──────────────────────────────────────────
-
-// Match a token only on its own boundaries, so swapping user 7 for user 3 in
-// /rooms/17/members/7 cannot silently rewrite the room.
-const tokenRe = t => new RegExp(`(?<![A-Za-z0-9_-])${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`, 'g');
-const mentions = (s, t) => tokenRe(t).test(s);
-const swapToken = (s, from, to) => s.replace(tokenRe(from), to);
-
-// Apps address a user by id, not by the name shown on screen. The id is already
-// in traffic the harness recorded — find it next to the name the app sent back.
-// EVERY nearby candidate is returned, not the first: in a member list the id
-// sitting closest to a name is frequently the previous entry's, and picking it
-// made the whole replay quietly unverifiable.
-const ID_KEY = /"(?:_?id|user_?id|userId|memberId|member_id)"\s*:\s*"?([A-Za-z0-9_-]{1,64})"?/g;
-
-function discoverIds(actor, username) {
-  const found = new Set();
-  const quoted = `"${username}"`;
-  for (const chunk of actor.received) {
-    let i = chunk.indexOf(quoted);
-    while (i !== -1) {
-      for (const m of chunk.slice(Math.max(0, i - 200), i + 200).matchAll(ID_KEY)) found.add(m[1]);
-      i = chunk.indexOf(quoted, i + 1);
-    }
-  }
-  return [...found];
-}
-
-// The credentials to replay WITH. Reusing the privileged user's token proves
-// nothing, and replaying with none at all is worse: the server answers 401 and
-// the test reads as "authorization works" when it only showed that anonymous
-// requests are refused.
-const AUTH_HEADER = /^(authorization|cookie|x-auth-token|x-session|x-token|x-user)/i;
-
-function authFor(actor) {
-  for (const w of [...actor.writes].reverse()) {
-    const h = Object.entries(w.headers ?? {}).filter(([k, v]) => AUTH_HEADER.test(k) && v);
-    if (h.length) return Object.fromEntries(h);
-  }
-  // Nothing signed-in was ever sent — recover the token the server handed back.
-  for (const chunk of actor.received) {
-    const m = chunk.match(/"(?:token|accessToken|access_token|jwt|sessionToken)"\s*:\s*"([^"]{8,})"/);
-    if (m) return { authorization: `Bearer ${m[1]}` };
-  }
-  return null;
 }
 
 // Scenario strings may reference a run-scoped room as "{room:base}".
@@ -359,1094 +359,198 @@ function describeStep(step) {
 }
 
 
-// Replay a captured request as the app itself sent it. Rebuilding the headers
-// from scratch drops whatever carries the session, so the server answers 401 and
-// the test measures nothing. Hop-by-hop and length headers are dropped because
-// they describe the original transfer.
-function replayHeaders(write, overrides = {}) {
-  const out = { ...(write.headers ?? {}), 'content-type': 'application/json', ...overrides };
-  for (const k of Object.keys(out)) {
-    if (/^(content-length|host|connection|transfer-encoding|accept-encoding)$/i.test(k)) delete out[k];
-  }
-  return out;
-}
-
 // ─── Step execution ──────────────────────────────────────────────────────────
 
-async function enterRoom(actor, roomName) {
-  const item = actor.page.locator(tid('room-item'), { hasText: roomName }).first();
-  await item.waitFor({ state: 'visible', timeout: DEFAULT_WITHIN });
-  await item.click();
-  const input = actor.loc('message-input');
-  if (!(await input.isVisible().catch(() => false))) {
-    await actor.page.waitForTimeout(750);
-    // Apps may implement click-to-join then click-to-enter.
-    if (!(await input.isVisible().catch(() => false))) await item.click();
-  }
-  await input.waitFor({ state: 'visible', timeout: DEFAULT_WITHIN });
+function abortableSleep(ms, signal) {
+  if (signal?.aborted) return Promise.reject(signal.reason ?? new Error('action cancelled'));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(done, ms);
+    function done() {
+      signal?.removeEventListener('abort', cancelled);
+      resolve();
+    }
+    function cancelled() {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', cancelled);
+      reject(signal.reason ?? new Error('action cancelled'));
+    }
+    signal?.addEventListener('abort', cancelled, { once: true });
+  });
 }
 
+function browserActionCapabilities(actors, ctx) {
+  const actorAccess = Object.freeze({ get: name => actors.get(name) });
+  const runtimeValues = Object.freeze({
+    defaultWithin: DEFAULT_WITHIN,
+    expand: value => expand(value, ctx),
+    legacyScopedUser: name => `${name}-${ctx.scope}`,
+    roomName: base => ctx.roomName(base),
+    scopedUser: name => `${name}${ctx.scope}`,
+    recorded: Object.freeze({
+      get: key => ctx.recorded?.[key],
+      set: (key, value) => { ctx.recorded[key] = value; },
+    }),
+    sleep: abortableSleep,
+    testId: tid,
+    clients: Object.freeze({
+      async open(actor, settleMs, signal) {
+        const fresh = await actor.context.newPage();
+        fresh.setDefaultTimeout(DEFAULT_WITHIN);
+        actor.attach(fresh);
+        await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await abortableSleep(settleMs, signal);
+      },
+      async fresh(actor, sourceName) {
+        const context = await actor.page.context().browser().newContext();
+        const fresh = await context.newPage();
+        const name = `${sourceName}-fresh`;
+        // Register teardown ownership before navigation. If goto fails, the
+        // partially opened context must still be closed with the feature.
+        ctx.extraContexts?.push({ context, name, page: fresh });
+        fresh.setDefaultTimeout(DEFAULT_WITHIN);
+        await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        const observer = new Actor(`${actor.name}-fresh`, fresh, context);
+        observer.annotate = actor.annotate;
+        actors.set(name, observer);
+        return name;
+      },
+    }),
+  });
+  const transportObservation = Object.freeze({
+    defaultWithin: DEFAULT_WITHIN,
+    expand: value => expand(value, ctx),
+    sleep: abortableSleep,
+    verification: Object.freeze({
+      structural(message) {
+        ctx.verified?.push(message);
+        ctx.serverCheck = ctx.serverCheck ?? 'structural';
+      },
+      unverified(message) {
+        ctx.unverified.push(message);
+        ctx.serverCheck = 'unverified';
+      },
+      verified(message) {
+        ctx.verified?.push(message);
+        ctx.serverCheck = 'verified';
+      },
+    }),
+  });
+  const namedActions = createNamedActionsCapability({
+    actions: ctx.actions,
+    backend: ctx.backend,
+    url: ctx.url,
+    spacetime: ctx.spacetime,
+    lastCalls: Object.freeze({
+      get: () => ctx.lastCalls,
+      set: value => { ctx.lastCalls = value; },
+    }),
+    sleep: abortableSleep,
+  });
+  const concurrency = Object.freeze({
+    defaultWithin: DEFAULT_WITHIN,
+    dispatch: (step, signal) => runRegisteredAction(step, actors, ctx, signal),
+    expand: value => expand(value, ctx),
+    sleep: abortableSleep,
+    testId: tid,
+  });
+  return Object.freeze({
+    actors: actorAccess,
+    'application-files': Object.freeze({ root: ctx.appDir ?? null, expand: value => expand(value, ctx) }),
+    'application-lifecycle': createLifecycleCapability({
+      restartSpec: ctx.restartSpec,
+      restartCmd: ctx.restartCmd,
+      application: true,
+      sleep: abortableSleep,
+    }),
+    'backend-lifecycle': createLifecycleCapability({
+      restartSpec: ctx.restartSpec,
+      restartCmd: ctx.restartCmd,
+      sleep: abortableSleep,
+    }),
+    'browser-interaction': runtimeValues,
+    'browser-observation': runtimeValues,
+    clock: Object.freeze({ sleep: abortableSleep }),
+    concurrency,
+    'database-write': createDatabaseWriteCapability({
+      backend: ctx.backend,
+      spacetime: ctx.spacetime,
+      dbName: ctx.dbName,
+      expand: value => expand(value, ctx),
+    }),
+    'named-actions': namedActions,
+    subprocess: Object.freeze({ sleep: abortableSleep }),
+    'transport-observation': transportObservation,
+  });
+}
 
-// Write to the database with nothing of the app's in the loop.
-//
-// This used to run a script the app itself shipped. That was the app taking
-// part in its own testing, and it showed: one build's script ended with
-// `NOTIFY app_data_changed`, so the write announced itself and the app passed
-// without ever having the property being tested — a real ERP sync or warehouse
-// scanner does not call your NOTIFY. The model's job is to write the app; the
-// writing-from-outside is ours.
-//
-// Three tables are fixed by the spec (item, warehouse, stock) precisely so this
-// can be done on any build without asking the app anything. Everything else is
-// still the app's to model.
-async function dbSetStock(step, ctx) {
-  const { execFileSync } = await import('node:child_process');
-  const item = expand(step.item, ctx), warehouse = expand(step.warehouse, ctx);
-  const qty = Number(step.quantity);
-  if (!Number.isInteger(qty)) throw new Error(`dbSetStock: quantity must be a whole number, got ${step.quantity}`);
+async function runRegisteredAction(step, actors, ctx, signal = null) {
+  ctx.actionSequence = (ctx.actionSequence ?? 0) + 1;
+  const actionEvidence = await executeAction(ACTION_REGISTRY, step.do, step,
+    createActionRunContext({
+      capabilities: browserActionCapabilities(actors, ctx),
+      implementations: REGISTERED_ACTION_IMPLEMENTATIONS,
+      signal,
+      attempt: {
+        id: `${ctx.runId}:action:${ctx.actionSequence}`,
+        parentId: ctx.runId,
+      },
+    }));
+  ctx.actionEvidence?.push({ actor: step.actor ?? null, evidence: actionEvidence });
+  if (evidencePassed(actionEvidence)) return actionEvidence.observation;
+  const error = new Error(actionEvidence.summary ?? `${step.do} did not complete`);
+  Object.defineProperty(error, 'actionEvidence', { value: actionEvidence });
+  Object.defineProperty(error, 'actionActor', { value: step.actor ?? null });
+  throw error;
+}
 
-  const sql = ctx.backend === 'spacetime'
-    // No subqueries here: resolve the ids first, then write by primary key.
-    ? null
-    : `UPDATE stock SET quantity = ${qty} WHERE item_id = (SELECT id FROM item WHERE name = '${item}') ` +
-      `AND warehouse_id = (SELECT id FROM warehouse WHERE name = '${warehouse}')`;
-
-  if (ctx.backend === 'spacetime') {
-    const bin = process.env.SPACETIME_BIN ?? 'spacetime';
-    const q = t => execFileSync(bin, ['sql', ctx.spacetime.mod, '-s', ctx.spacetime.uri, t],
-      { encoding: 'utf8', stdio: 'pipe', timeout: 60000 });
-    const idOf = (table, name) => {
-      const out = q(`select id from ${table} where name = '${name}'`);
-      const m = out.match(/^\s*(\d+)\s*$/m);
-      if (!m) throw new Error(`dbSetStock: no ${table} named "${name}" — is the schema as the spec requires?`);
-      return m[1];
+function classifyCheckFailure(error, fallbackActor = null) {
+  const actionEvidence = error?.actionEvidence;
+  if (actionEvidence) {
+    return {
+      status: actionEvidence.status,
+      code: actionEvidence.code,
+      actor: error.actionActor ?? fallbackActor,
+      summary: actionEvidence.summary ?? `${actionEvidence.action.id} did not complete`,
+      observation: actionEvidence.observation,
+      expected: actionEvidence.expected,
+      retryable: actionEvidence.retryable,
     };
-    const i = idOf('item', item), w = idOf('warehouse', warehouse);
-    q(`update stock set quantity = ${qty} where item_id = ${i} and warehouse_id = ${w}`);
-    return;
   }
-
-  if (ctx.backend === 'mongodb') {
-    // Same three collections, and the same refusal to involve the app. Both
-    // field spellings are accepted: the spec names the columns in snake_case,
-    // but camelCase is idiomatic in this stack and a naming preference is not
-    // the property under test — we have lost enough criteria to the harness
-    // being fussy rather than to apps being wrong.
-    const js = `
-      const it = db.item.findOne({ name: ${JSON.stringify(item)} });
-      const wh = db.warehouse.findOne({ name: ${JSON.stringify(warehouse)} });
-      if (!it || !wh) { print('MISSING'); quit(1); }
-      const iid = it._id ?? it.id, wid = wh._id ?? wh.id;
-      const r = db.stock.updateOne(
-        { $or: [ { item_id: iid, warehouse_id: wid }, { itemId: iid, warehouseId: wid } ] },
-        { $set: { quantity: ${qty} } });
-      print(r.matchedCount === 1 ? 'OK' : 'NOMATCH');
-    `;
-    const out = execFileSync('docker', ['exec', process.env.MONGO_CONTAINER ?? 'stack-bench-mongodb',
-      'mongosh', ctx.dbName, '--quiet', '--eval', js], { encoding: 'utf8', stdio: 'pipe', timeout: 60000 });
-    if (!/OK/.test(out)) {
-      throw new Error(`dbSetStock: could not find ${item} / ${warehouse} in the item, warehouse and stock ` +
-        `collections the spec requires (${out.trim().slice(0, 80)})`);
-    }
-    return;
-  }
-
-  execFileSync('docker', ['exec', process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres',
-    'psql', '-U', 'stackbench', '-d', ctx.dbName, '-c', sql],
-    { encoding: 'utf8', stdio: 'pipe', timeout: 60000 });
+  const processFailure = harnessProcessFailure(error);
+  if (processFailure) return { status: 'harness_failure', code: 'process_failure', actor: fallbackActor,
+    summary: processFailure, observation: null, expected: null, retryable: false };
+  const browserFailure = harnessBrowserFailure(error);
+  if (browserFailure) return { status: 'harness_failure', code: 'browser_failure', actor: fallbackActor,
+    summary: browserFailure, observation: null, expected: null, retryable: false };
+  return { status: 'failed', code: 'application_failure', actor: fallbackActor,
+    summary: String(error?.message ?? error ?? 'unknown application failure'),
+    observation: null, expected: null, retryable: false };
 }
 
-// Issue one of the spec's named actions as several actors at the same instant.
-//
-// Clicking cannot contend: browser clicks arrive milliseconds apart and each
-// request finishes before the next starts. replayConcurrently solved that by
-// replaying writes captured from HTTP traffic, which works for server-based
-// stacks and not at all for SpacetimeDB — that client writes over WebSocket, so
-// nothing is captured and the criterion reports INCONCLUSIVE. Two contention
-// criteria were therefore never measured on one stack, and the two backends
-// were scored out of different totals.
-//
-// The spec names the write actions instead, so the harness can issue them
-// directly on either stack. Verified from the SpacetimeDB source that this is
-// the same execution path the app's own client uses: the HTTP route and the
-// WebSocket handler both call ModuleHost::call_reducer with the caller's
-// identity, differing only in whether a success notification is pushed back to
-// that socket. Transactions and concurrency semantics are identical.
-//
-// Identity comes out of the actor's own browser rather than being minted here,
-// so these really are that customer's requests: the session cookie for a
-// server-based stack, and the token the SDK persists for SpacetimeDB. Neither
-// reads an app-specific name — any cookie the app set, and any JWT it stored.
-// How an app carries a session is its own choice, and two PostgreSQL builds of
-// the same spec chose differently — one set a `sid` cookie, the next put a JWT
-// in localStorage. Looking only for cookies made the second report "no session
-// found" and lose the criterion. So collect whatever is there and send both;
-// an app ignores the one it does not use.
-async function actorAuth(actor) {
-  const headers = {};
-  const cookies = await actor.context.cookies().catch(() => []);
-  if (cookies.length) headers.Cookie = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-
-  // A JWT in web storage, wherever the app decided to keep it. SpacetimeDB's
-  // SDK persists its identity token this way, and server-based apps often do
-  // the same with their own.
-  const token = await actor.page.evaluate(() => {
-    const jwt = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\./;
-    for (const store of [localStorage, sessionStorage]) {
-      for (let i = 0; i < store.length; i++) {
-        const v = store.getItem(store.key(i)) ?? '';
-        if (jwt.test(v)) return v;
-        // Some apps wrap it: {"token":"eyJ..."}.
-        try {
-          const o = JSON.parse(v);
-          for (const x of Object.values(o ?? {})) if (typeof x === 'string' && jwt.test(x)) return x;
-        } catch { /* not JSON */ }
-      }
-    }
-    return null;
-  }).catch(() => null);
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  return Object.keys(headers).length ? headers : null;
-}
-
-async function callConcurrently(step, actors, ctx) {
-  const action = (ctx.actions ?? []).find(a => a.id === step.action);
-  if (!action) {
-    throw new Error(`INCONCLUSIVE: the track names no action "${step.action}", so nothing could be issued`);
-  }
-  const backend = ctx.backend;
-  const target = backend === 'spacetime'
-    ? (ctx.spacetime && `${ctx.spacetime.uri}/v1/database/${ctx.spacetime.mod}/call/${action.reducer}`)
-    : `${String(ctx.url).replace(/\/$/, '')}${action.path}`;
-  if (!target) {
-    throw new Error('INCONCLUSIVE: could not resolve where to send the action for this backend');
-  }
-
-  const prepared = [];
-  for (const name of step.actors) {
-    const actor = actors.get(name);
-    if (!actor) throw new Error(`callConcurrently: no actor "${name}"`);
-    const auth = await actorAuth(actor);
-    // No credentials means we would be issuing an anonymous request, which is a
-    // different test entirely — say so rather than quietly measuring the wrong
-    // thing.
-    if (!auth) throw new Error(`INCONCLUSIVE: no session found in ${name}'s browser, so the action could not be issued as them`);
-    prepared.push({ name, auth });
-  }
-  if (prepared.length < 2) throw new Error('INCONCLUSIVE: fewer than two actors, so nothing was contended');
-
-  const body = backend === 'spacetime'
-    ? JSON.stringify(step.args ?? action.args ?? [])
-    : JSON.stringify(step.body ?? {});
-
-  const t0 = Date.now();
-  const outcomes = await Promise.all(prepared.map(p =>
-    fetch(target, { method: 'POST', headers: { 'Content-Type': 'application/json', ...p.auth }, body })
-      .then(async r => ({ name: p.name, status: r.status, ok: r.ok, text: r.ok ? '' : (await r.text()).slice(0, 120) }))
-      .catch(e => ({ name: p.name, status: 0, ok: false, text: String(e.message).slice(0, 120) }))));
-
-  ctx.lastCalls = { action: step.action, fired: prepared.length, ms: Date.now() - t0, outcomes };
-  await actors.get(step.actors[0]).page.waitForTimeout(step.settleMs ?? 3000);
-}
-
-// How many of these people ended up with the thing — and did anyone get it
-// twice? A contention criterion is about the population, not one participant:
-// "exactly three of six customers got an order" cannot be expressed by asking
-// one customer about their own orders. Asking only actor `a` whether it has at
-// most one order passes when NOBODY got one, which is the exact failure an
-// oversell test must catch, so that phrasing was scoring nothing.
-async function expectActorsWith(step, actors, ctx) {
-  const contains = expand(step.contains, ctx);
-  const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
-  const counts = [];
-  for (const name of step.actors) {
-    const actor = actors.get(name);
-    if (!actor) throw new Error(`expectActorsWith: no actor "${name}"`);
-    // Give the UI the same settling budget a single expect would get, then
-    // count. A zero here is a real zero, not an impatient one.
-    const loc = actor.loc(step.testid, { contains, scope });
-    await loc.waitFor({ state: 'visible', timeout: step.within ?? DEFAULT_WITHIN }).catch(() => {});
-    const all = scope
-      ? actor.page.locator(tid(scope.testid), { hasText: scope.contains }).first().locator(tid(step.testid))
-      : (contains ? actor.page.locator(tid(step.testid), { hasText: contains }) : actor.page.locator(tid(step.testid)));
-    counts.push([name, await all.count().catch(() => 0)]);
-  }
-
-  const held = counts.filter(([, n]) => n > 0);
-  const detail = counts.map(([n, c]) => `${n}=${c}`).join(' ');
-  if (step.equals !== undefined && held.length !== step.equals) {
-    throw new Error(`expected exactly ${step.equals} actor(s) with ${tid(step.testid)}` +
-      `${contains ? ` containing "${contains}"` : ''}, found ${held.length} (${detail})`);
-  }
-  if (step.maxEach !== undefined) {
-    const greedy = counts.filter(([, n]) => n > step.maxEach);
-    if (greedy.length) {
-      throw new Error(`${greedy.map(([n, c]) => `${n} has ${c}`).join(', ')} ` +
-        `— no actor may hold more than ${step.maxEach} (${detail})`);
-    }
-  }
+function buildCheckEvidence({ ctx, phase, startedAtMs, failure = null, actor = null, summary = null,
+  attachments = [], actions = ctx.actionEvidence ?? [], sensitivity = null }) {
+  const classified = failure ? classifyCheckFailure(failure, actor) : {
+    status: 'passed', code: 'completed', actor: null, summary: null,
+    observation: null, expected: null, retryable: false,
+  };
+  const completedAtMs = Date.now();
+  const evidenceSummary = summary ?? classified.summary;
+  return createCheckEvidence({
+    ...classified,
+    phase,
+    summary: evidenceSummary == null ? null : keepReason(evidenceSummary),
+    startedAtMs,
+    completedAtMs,
+    actions,
+    attachments: attachments.map(attachment => typeof attachment === 'string'
+      ? { kind: 'screenshot', ref: basename(attachment) } : attachment),
+    sensitivity: sensitivity ?? actions.flatMap(entry => entry.evidence?.sensitivity ?? []),
+  });
 }
 
 async function runStep(step, actors, ctx) {
-  // Cross-actor steps act on several actors at once, so they resolve first.
-  if (step.do === 'expectOrderMatches') return expectOrderMatches(step, actors);
-  if (step.do === 'expectAgreement') return expectAgreement(step, actors, ctx);
-  if (step.do === 'expectActorsWith') return expectActorsWith(step, actors, ctx);
-  if (step.do === 'dbSetStock') return dbSetStock(step, ctx);
-  if (step.do === 'callConcurrently') return callConcurrently(step, actors, ctx);
-  if (step.do === 'expectCallOutcomes') {
-    const r = ctx.lastCalls;
-    if (!r) throw new Error('no callConcurrently ran before this assertion');
-    const accepted = r.outcomes.filter(o => o.ok).length;
-    if (step.accepted !== undefined && accepted !== step.accepted) {
-      const detail = r.outcomes.map(o => `${o.name}:${o.status}`).join(' ');
-      throw new Error(`${accepted} of ${r.fired} concurrent "${r.action}" requests were accepted, expected exactly ` +
-        `${step.accepted} (${detail}) — issued within ${r.ms}ms`);
-    }
-    return;
-  }
-  if (step.do === 'replayConcurrently') {
-    // Browser clicks arrive milliseconds apart and each request finishes in
-    // less, so a race never happens. Replaying each actor's own captured write
-    // through Promise.all issues them together and actually overlaps them.
-    const method = step.method ?? 'POST';
-    // `lastWrites` only holds requests that carried a JSON body, so a bodyless
-    // action — a checkout, a "confirm" — is never eligible and the replay
-    // silently races the wrong request instead. `match` picks the intended one
-    // out of the full capture by URL, the same way replayAs does.
-    const pick = a => {
-      if (!a) return undefined;
-      if (step.match) {
-        return [...(a.writes ?? [])].reverse()
-          .find(w => w.method === method && w.url.includes(step.match));
-      }
-      return a.lastWrites?.[method] ?? a.lastWrite;
-    };
-    const pending = step.actors.map(name => ({ actor: actors.get(name), write: pick(actors.get(name)) }))
-      .filter(x => x.write);
-    if (pending.length < 2) {
-      throw new Error(`INCONCLUSIVE: fewer than two ${step.match ? `"${step.match}" ` : ''}write requests were captured, ` +
-        'so nothing was contended. This backend may not write over HTTP, or the request carried no JSON body ' +
-        '(only bodied writes reach lastWrites — pass `match` to select by URL instead).');
-    }
-    // A replay that the server refused looks identical to one it accepted if the
-    // error is swallowed — and then an assertion about the result is really an
-    // assertion about a request that never took effect. Record what came back.
-    const replies = await Promise.all(pending.map(({ actor, write }) =>
-      actor.page.request.fetch(write.url, {
-        method: write.method,
-        headers: replayHeaders(write),
-        data: write.body === undefined || write.body === null ? undefined : JSON.stringify(write.body),
-      }).then(r => r.status(), err => `error: ${String(err.message).split('\n')[0]}`)));
-    // What matters is that both requests REACHED the server together — not what
-    // it decided. Refusing the second is often the correct answer (a cart that
-    // has already been checked out), and demanding two successes would mark a
-    // correctly-behaving app inconclusive. Only a transport failure means the
-    // race never happened.
-    const answered = replies.filter(s => typeof s === 'number');
-    if (answered.length < 2) {
-      throw new Error(`INCONCLUSIVE: only ${answered.length} of ${pending.length} replayed ` +
-        `${step.match ?? 'write'} requests reached the server (responses: ${replies.join(', ')}), ` +
-        'so the two never contended.');
-    }
-    await pending[0].actor.page.waitForTimeout(step.settleMs ?? 3000);
-    return;
-  }
-  if (step.do === 'clickConcurrently') {
-    // Genuine simultaneity: every actor clicks without waiting for the others.
-    // `targets` gives each actor its own element, so they compete for a shared
-    // limit instead of all pressing the same button.
-    const targets = step.targets ?? step.actors.map(actor => ({ actor }));
-    // A click that never landed and a write the server lost look identical in
-    // the result — the cart is simply short one item. Swallowing click errors
-    // therefore turns a UI problem into a fabricated concurrency defect, so a
-    // click that fails to dispatch is reported as a broken test, not a finding.
-    // Wait for every target to be ready BEFORE racing them. Readiness and
-    // contention are different questions, and conflating them cost a real
-    // result: on one backend a single actor's button had not painted within the
-    // click timeout, one of six clicks "never dispatched", and the criterion
-    // reported INCONCLUSIVE rather than measuring anything. The barrier gets a
-    // generous budget because it is not the thing under test; the clicks that
-    // follow get a short one, so a genuine dispatch failure still surfaces.
-    const resolved = targets.map(t => {
-      const where = t.in ?? step.in;
-      const scope = where ? { testid: where.testid, contains: expand(where.contains, ctx) } : undefined;
-      return { t, loc: actors.get(t.actor).loc(step.testid, { scope }) };
-    });
-    const notReady = (await Promise.all(resolved.map(({ t, loc }) =>
-      loc.waitFor({ state: 'visible', timeout: step.readyWithin ?? 15000 })
-        .then(() => null, () => t.actor)))).filter(Boolean);
-    if (notReady.length) {
-      throw new Error(`INCONCLUSIVE: ${tid(step.testid)} never became clickable for ${notReady.join(', ')} ` +
-        `— the page was not ready, so nothing could be contended`);
-    }
-
-    const outcomes = await Promise.all(resolved.map(({ t, loc }) =>
-      loc.click({ timeout: step.within ?? DEFAULT_WITHIN })
-        .then(() => null, err => `${t.actor}: ${String(err.message).split('\n')[0]}`)));
-    const failed = outcomes.filter(Boolean);
-    if (failed.length) {
-      throw new Error(`INCONCLUSIVE: ${failed.length} of ${targets.length} concurrent clicks on ` +
-        `${tid(step.testid)} never dispatched, so nothing was actually contended — ${failed.join(' | ')}`);
-    }
-    await actors.values().next().value.page.waitForTimeout(step.settleMs ?? 3000);
-    return;
-  }
-  if (step.do === 'restartBackend') {
-    if (!ctx.restartCmd) throw new Error('INCONCLUSIVE: no --restart-cmd supplied, backend was never restarted');
-    const { execFileSync } = await import('node:child_process');
-    try {
-      // stdio 'ignore': the restarted server is a backgrounded descendant that
-      // keeps an inherited pipe open, so 'pipe' never returns even though the
-      // script exits cleanly. The script does its own readiness wait.
-      execFileSync('bash', ['-c', ctx.restartCmd], { stdio: 'ignore', timeout: 300000 });
-    } catch (err) {
-      // Exit 3 means the restart was refused as unsafe (a shared host), not that
-      // the app failed. Report it as untestable rather than as a defect.
-      if (err.status === 3) throw new Error('INCONCLUSIVE: backend restart refused — no benchmark-owned instance available');
-      throw new Error(`backend restart failed: ${(err.stdout || err.message || '').toString().trim().slice(-200)}`);
-    }
-    // Not page-bound: clients may be closed across the restart.
-    await new Promise(r => setTimeout(r, step.settleMs ?? 10000));
-    return;
-  }
-  if (step.do === 'race') {
-    // Two things happening at the same time, on purpose: one actor opening a
-    // panel while another joins, a fetch racing the mutation it will miss.
-    // Each branch runs its steps in order; the branches themselves overlap.
-    // This is where fetch-then-merge architectures drop or duplicate rows —
-    // a sequential test can never catch it, because sequencing is the bug's
-    // absence.
-    await Promise.all((step.branches ?? []).map(async branch => {
-      for (const s of branch) await runStep(s, actors, ctx);
-    }));
-    await new Promise(r => setTimeout(r, step.settleMs ?? 2000));
-    return;
-  }
-  if (step.do === 'runScript') {
-    // Runs a script THE APP ITSELF shipped, from the app directory — the spec
-    // requires a back-office script that writes directly to the database, the
-    // way a cron job, an ETL, or another team's service would. The harness
-    // knows nothing about the app's schema; the script is where that knowledge
-    // lives. A missing script is a genuine failure (the spec asked for it),
-    // not an INCONCLUSIVE.
-    if (!ctx.appDir) throw new Error('INCONCLUSIVE: grader was not told the app directory (--app)');
-    const { execFileSync } = await import('node:child_process');
-    const { existsSync } = await import('node:fs');
-    const { join } = await import('node:path');
-    const path = join(ctx.appDir, step.script);
-    if (!existsSync(path)) throw new Error(`the app does not ship ${step.script} — the spec requires it`);
-    try {
-      // Args expand the same tokens steps do — usernames are scope-suffixed,
-      // so a raw name would purge a user that does not exist.
-      execFileSync('node', [path, ...(step.args ?? []).map(a => expand(a, ctx))],
-        { cwd: ctx.appDir, encoding: 'utf8', stdio: 'pipe', timeout: step.timeoutMs ?? 60000 });
-    } catch (err) {
-      throw new Error(`${step.script} failed: ${((err.stdout ?? '') + (err.stderr ?? '')).trim().slice(-200) || err.message}`);
-    }
-    await new Promise(r => setTimeout(r, step.settleMs ?? 3000));
-    return;
-  }
-  if (step.do === 'stopAppServer' || step.do === 'startAppServer') {
-    // The deploy window: a write lands while the app tier is down, and the app
-    // must converge once it returns. Reuses the restart command with a mode
-    // argument; on spacetime both are no-ops because there is no app tier —
-    // which is the measurement, not an exemption.
-    if (!ctx.restartCmd) throw new Error('INCONCLUSIVE: no --restart-cmd supplied, cannot control the app server');
-    const { execFileSync } = await import('node:child_process');
-    const mode = step.do === 'stopAppServer' ? 'stop' : 'start';
-    try {
-      execFileSync('bash', ['-c', `${ctx.restartCmd} ${mode}`], { stdio: 'ignore', timeout: 300000 });
-    } catch (err) {
-      if (err.status === 3) throw new Error('INCONCLUSIVE: app-server control refused on this host');
-      throw new Error(`could not ${mode} the app server: ${(err.stdout || err.message || '').toString().trim().slice(-160)}`);
-    }
-    await new Promise(r => setTimeout(r, step.settleMs ?? (mode === 'start' ? 8000 : 2000)));
-    return;
-  }
-  if (step.do === 'sendConcurrently') {
-    // Genuine concurrency: all senders fire without waiting for each other.
-    // Apps legitimately rate-limit (the L1 spec requires spam prevention), so
-    // each sender paces itself; concurrency comes from senders overlapping.
-    await Promise.all(step.senders.map(s =>
-      sendMany(actors.get(s.actor), s.prefix, s.count, s.delayMs ?? step.delayMs ?? 0)));
-    return;
-  }
-
-  const actor = actors.get(step.actor);
-  if (!actor) throw new Error(`unknown actor "${step.actor}"`);
-  const page = actor.page;
-
-  switch (step.do) {
-    case 'setOffline': {
-      await page.context().setOffline(step.offline !== false);
-      await page.waitForTimeout(step.settleMs ?? 500);
-      return;
-    }
-    case 'sendMany': return sendMany(actor, step.prefix, step.count, step.delayMs ?? 0);
-    case 'expectElementCount': {
-      // Exactly-N, not at-least-N: the classic enumeration-during-mutation bug
-      // is a fetched list MERGED with a live event for the same row, which
-      // renders twice. `expect` can only say the row is there; this says it is
-      // there once.
-      const within = step.within ?? 10000;
-      const deadline = Date.now() + within;
-      const root = step.in
-        ? page.locator(tid(step.in.testid), step.in.contains ? { hasText: step.in.contains } : {}).first()
-        : page;
-      for (;;) {
-        const n = await root.locator(tid(step.testid), step.contains ? { hasText: step.contains } : {}).count();
-        if (n === step.equals) return;
-        if (Date.now() > deadline) {
-          throw new Error(`expected exactly ${step.equals} ${tid(step.testid)}`
-            + `${step.contains ? ` containing "${step.contains}"` : ''}, saw ${n} (after ${within}ms)`);
-        }
-        await page.waitForTimeout(400);
-      }
-    }
-    case 'expectAllPresent': {
-      // Every message must be present exactly once: catches both loss and
-      // duplication (optimistic insert plus broadcast echo renders twice).
-      const within = step.within ?? 10000;
-      const deadline = Date.now() + within;
-      for (;;) {
-        const counts = [];
-        for (let i = 1; i <= step.count; i++) {
-          counts.push(await actor.page.locator(tid('message-item'), { hasText: `${step.prefix}-${pad(i, step.count)}` }).count());
-        }
-        const missing = counts.filter(c => c === 0).length;
-        const duplicated = counts.filter(c => c > 1).length;
-        if (!missing && !duplicated) return;
-        if (Date.now() > deadline) {
-          throw new Error(`of ${step.count} "${step.prefix}" messages: ${missing} missing, ${duplicated} duplicated (after ${within}ms)`);
-        }
-        await actor.page.waitForTimeout(500);
-      }
-    }
-    case 'signUp': {
-      // Passwords are derived from the scoped name so a later signIn can
-      // reproduce them without the scenario restating the credential.
-      // `exact` opts out of scoping, for an account the application seeds
-      // under a fixed name rather than one this run creates.
-      const user = step.exact ? step.name : `${step.name}${ctx.scope}`;
-      const pass = step.password ?? `pw-${user}`;
-      await page.locator(tid('signup-username')).first().fill(user);
-      await page.locator(tid('signup-password')).first().fill(pass);
-      await page.locator(tid('signup-submit')).first().click();
-      if (step.expectFailure) {
-        await page.waitForTimeout(step.settleMs ?? 2000);
-        return;
-      }
-      await page.locator(tid('current-user')).first()
-        .waitFor({ state: 'visible', timeout: DEFAULT_WITHIN * 2 });
-      return;
-    }
-    case 'signIn': {
-      const user = step.exact ? step.name : `${step.name}${ctx.scope}`;
-      const pass = step.password ?? `pw-${user}`;
-      const toggle = actor.loc('signin-toggle');
-      if (await toggle.count()) await toggle.click({ timeout: DEFAULT_WITHIN }).catch(() => {});
-      await page.locator(tid('signin-username')).first().fill(user);
-      await page.locator(tid('signin-password')).first().fill(pass);
-      await page.locator(tid('signin-submit')).first().click();
-      if (step.expectFailure) {
-        await page.waitForTimeout(step.settleMs ?? 2000);
-        return;
-      }
-      await page.locator(tid('current-user')).first()
-        .waitFor({ state: 'visible', timeout: DEFAULT_WITHIN * 2 });
-      return;
-    }
-    case 'register': {
-      await page.locator(tid('name-input')).first().fill(`${step.name}-${ctx.scope}`);
-      await page.locator(tid('name-submit')).first().click();
-      await page.locator(tid('room-list')).first()
-        .waitFor({ state: 'attached', timeout: DEFAULT_WITHIN });
-      return;
-    }
-    case 'createRoom': {
-      const roomName = ctx.roomName(step.room);
-      const nameInput = page.locator(tid('room-name-input')).first();
-      if (!(await nameInput.isVisible().catch(() => false))) {
-        await page.locator(tid('room-create')).first().click();
-      }
-      await nameInput.fill(roomName);
-      // Level 2 rooms can be private; the toggle is part of the creation
-      // surface, so it belongs to this verb rather than to a separate click
-      // that would race the form closing.
-      if (step.private) await page.locator(tid('room-private-toggle')).first().click();
-      await page.locator(tid('room-name-submit')).first().click();
-      // Must arrive via the app's live update path — no reload.
-      await page.locator(tid('room-item'), { hasText: roomName }).first()
-        .waitFor({ state: 'visible', timeout: DEFAULT_WITHIN });
-      return;
-    }
-    case 'enterRoom': return enterRoom(actor, ctx.roomName(step.room));
-    case 'send': {
-      const input = actor.loc('message-input');
-      await input.fill(step.text);
-      await input.press('Enter');
-      return;
-    }
-    case 'typeInto': {
-      const input = actor.loc('message-input');
-      await input.click();
-      await input.type(step.text, { delay: 40 });
-      return;
-    }
-    case 'clearInput': {
-      await actor.loc('message-input').fill('');
-      return;
-    }
-    case 'click': {
-      const scope = step.in
-        ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) }
-        : undefined;
-      // `contains` picks WHICH of a repeated testid to click — a member row, a
-      // friend entry — the same way expect narrows what it looks at.
-      await actor.loc(step.testid, { contains: expand(step.contains, ctx), scope })
-        .click({ timeout: step.within ?? DEFAULT_WITHIN });
-      if (step.settleMs) await page.waitForTimeout(step.settleMs);
-      return;
-    }
-    case 'reload': {
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await page.waitForTimeout(step.settleMs ?? 2500);
-      return;
-    }
-    case 'forgeWrite': {
-      // Replay this actor's own write request with a field tampered. If the
-      // app's write path carries no client-supplied identity at all (a
-      // SpacetimeDB reducer call takes its identity from the connection), there
-      // is nothing to forge and the step records `skipped`.
-      const write = actor.lastWrite;
-      if (!write) {
-        // Nothing replayable over HTTP. If the app writes over WebSocket, judge
-        // by whether that payload carries a client-supplied identity.
-        const ws = actor.lastWsWrite;
-        if (ws) {
-          const idKey = Object.keys(ws.body).find(k => IDENTITY_FIELD.test(k));
-          actor.forge = idKey
-            ? { inconclusive: true, reason: `writes over WebSocket ("${ws.event}") carrying a client-supplied "${idKey}" — replay not attempted, treat as unverified` }
-            : { structurallySafe: true, reason: `writes over WebSocket ("${ws.event}") with no client-supplied identity — the server must derive it from the connection` };
-        } else {
-          actor.forge = { inconclusive: true, reason: 'no write request observed at all — the test did not exercise anything' };
-        }
-        return;
-      }
-
-      const body = { ...write.body };
-      const key = Object.keys(body).find(k => (step.field === 'room' ? ROOM_FIELD : IDENTITY_FIELD).test(k));
-      if (!key) {
-        actor.forge = { structurallySafe: true, reason: `write body carries no identity field (${Object.keys(body).join(',') || 'empty'}) — nothing to forge` };
-        return;
-      }
-
-      let value = step.value;
-      if (step.fromActor) {
-        const victim = actors.get(step.fromActor);
-        const vkey = Object.keys(victim.lastWrite?.body ?? {}).find(k => IDENTITY_FIELD.test(k));
-        if (!vkey) {
-          const vws = victim.lastWsWrite;
-          const vwsKey = vws && Object.keys(vws.body).find(k => IDENTITY_FIELD.test(k));
-          if (!vwsKey) { actor.forge = { structurallySafe: true, reason: `${step.fromActor} never exposes an identity to steal` }; return; }
-          value = vws.body[vwsKey];
-        } else value = victim.lastWrite.body[vkey];
-      }
-      body[key] = value;
-
-      const contentKey = Object.keys(body).find(k => CONTENT_FIELD.test(k));
-      if (contentKey && step.text) body[contentKey] = step.text;
-
-      const res = await page.request.fetch(write.url, {
-        method: write.method,
-        headers: replayHeaders(write),
-        data: JSON.stringify(body),
-      });
-      actor.forge = { skipped: false, status: res.status(), accepted: res.ok(), tamperedField: key, value };
-      await page.waitForTimeout(step.settleMs ?? 2000);
-      return;
-    }
-    case 'expectForgeryRejected': {
-      const f = actor.forge;
-      if (!f) throw new Error('no forgeWrite ran before this assertion');
-      // Only an ACCEPTED forgery is a failure here. "Could not replay" is not
-      // evidence of safety, so it never scores a point on its own — the
-      // universal DOM assertion that follows is what actually earns it.
-      //
-      // But WHICH of those happened must be on the record. This step backed six
-      // points of "an attacker's request is refused" and, unlike
-      // expectReplayRejected, recorded nothing — so a pass where the forge
-      // never ran was indistinguishable from a pass where the server actually
-      // refused a hostile request. Three runs were graded before anyone could
-      // say which kind of pass 102a, 104a and 109a were.
-      if (f.inconclusive) {
-        ctx.unverified.push(`${actor.name}: ${f.reason}`);
-        ctx.serverCheck = 'unverified';
-        return;
-      }
-      if (f.structurallySafe) {
-        // A write path that carries no client-supplied identity at all is a
-        // real property, distinct from "we could not check" — record it as its
-        // own class rather than lumping it either way.
-        ctx.verified?.push(`${actor.name}: ${f.reason}`);
-        ctx.serverCheck = ctx.serverCheck ?? 'structural';
-        return;
-      }
-      if (f.accepted) {
-        throw new Error(`server ACCEPTED a write with a tampered "${f.tamperedField}" (HTTP ${f.status}) — the client chooses who it is`);
-      }
-      ctx.verified?.push(`${actor.name}: server refused the tampered "${f.tamperedField}" (HTTP ${f.status})`);
-      ctx.serverCheck = 'verified';
-      return;
-    }
-    case 'replayAs': {
-      // Take a privileged request another actor really made and re-issue it as
-      // THIS actor, with this actor's own credentials. Hiding the control is not
-      // authorization; the server has to say no to the request itself.
-      const source = actors.get(step.from);
-      if (!source) throw new Error(`replayAs: no actor "${step.from}"`);
-      const needle = expand(step.match, ctx).toLowerCase();
-      const write = [...source.writes].reverse()
-        .find(w => `${w.method} ${w.url} ${JSON.stringify(w.body)}`.toLowerCase().includes(needle));
-
-      if (!write) {
-        // Either the app writes over its live connection (identity comes from
-        // the connection, so there is nothing to re-issue) or the privileged
-        // action never happened. Neither proves the server is safe, so this
-        // records as unverified and the criterion rests on its DOM assertions.
-        actor.replay = { inconclusive: true, reason: source.lastWsWrite
-          ? `${step.from} writes over WebSocket ("${source.lastWsWrite.event}") — identity comes from the connection, replay not attempted`
-          : `no HTTP write from ${step.from} matching "${step.match}"` };
-        return;
-      }
-
-      // Swap in this actor's own credentials — otherwise the replay carries the
-      // privileged user's token and proves nothing about who may do what.
-      const mine = authFor(actor);
-      if (!mine) {
-        actor.replay = { inconclusive: true, reason: `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused` };
-        return;
-      }
-      const creds = { ...mine };
-      for (const k of Object.keys(write.headers)) {
-        if (AUTH_HEADER.test(k) && !(k in creds)) creds[k] = '';
-      }
-
-      // The replay must name a DIFFERENT victim than the original request, or an
-      // idempotent server could accept a no-op and look guilty. The target may
-      // live in the URL or in the body, so swap across both.
-      let url = write.url;
-      let data = write.body === null ? undefined : JSON.stringify(write.body);
-      if (step.swap) {
-        const find = expand(step.swap.find, ctx), to = expand(step.swap.with, ctx);
-        let a = find, b = to;
-        if (!mentions(url, a) && !mentions(data ?? '', a)) {
-          // Most apps address a user by id, not by display name. Scenarios stay
-          // written in names; the harness resolves them to whatever ids the app
-          // itself used, read out of traffic it has already seen.
-          const candidates = [...discoverIds(source, find), ...discoverIds(actor, find)];
-          const ra = candidates.find(c => mentions(url, c) || mentions(data ?? '', c));
-          const rb = [...discoverIds(source, to), ...discoverIds(actor, to)].find(c => c !== ra);
-          if (ra && rb) { a = ra; b = rb; }
-          else {
-            actor.replay = { inconclusive: true, reason: `neither "${find}" nor an id resolved for it appears in ${write.method} ${write.url} — cannot retarget the replay` };
-            return;
-          }
-        }
-        url = swapToken(url, a, b);
-        if (data) data = swapToken(data, a, b);
-      }
-
-      const res = await page.request.fetch(url, {
-        method: write.method,
-        headers: replayHeaders(write, creds),
-        ...(data === undefined ? {} : { data }),
-      }).catch(e => ({ status: () => 0, ok: () => false, error: e.message }));
-
-      actor.replay = { accepted: res.ok(), status: res.status(), url, method: write.method };
-      await page.waitForTimeout(step.settleMs ?? 2000);
-      return;
-    }
-    case 'expectReplayRejected': {
-      const r = actor.replay;
-      if (!r) throw new Error('no replayAs ran before this assertion');
-      if (r.inconclusive) {
-        // Unverified never scores and never penalises — but it must be VISIBLE.
-        // A replay that quietly declines to run looks exactly like a server that
-        // refused, and this criterion then rests on its DOM assertions alone.
-        ctx.unverified.push(`${actor.name}: ${r.reason}`);
-        ctx.serverCheck = 'unverified';
-        return;
-      }
-      ctx.verified?.push(`${actor.name}: server refused ${r.method} ${r.url} (HTTP ${r.status})`);
-      ctx.serverCheck = 'verified';
-      if (r.accepted) {
-        throw new Error(`server ACCEPTED ${r.method} ${r.url} from ${actor.name}, who is not allowed to do it (HTTP ${r.status}) — the check is in the interface, not the server`);
-      }
-      return;
-    }
-    case 'expectReceived': {
-      // The positive control for the wire checks below. It proves this harness
-      // can see what this app's live channel delivers, so that "not received"
-      // means the server withheld it rather than that we were looking in the
-      // wrong place.
-      const needle = expand(step.contains, ctx);
-      const deadline = Date.now() + (step.within ?? DEFAULT_WITHIN);
-      while (!actor.wasSent(needle) && Date.now() < deadline) await page.waitForTimeout(250);
-      if (!actor.wasSent(needle)) {
-        throw new Error(`the harness never saw "${needle}" reach ${actor.name}, who should have it — traffic on this app is not visible to the wire checks`);
-      }
-      return;
-    }
-    case 'expectNotReceived': {
-      const needle = expand(step.contains, ctx);
-      // A client that was never sent the text cannot leak it. A client that was
-      // sent it has already leaked it, however carefully the interface hides it.
-      if (actor.wasSent(needle)) {
-        throw new Error(`"${needle}" was delivered to ${actor.name}, who is not a participant — the server sends private data to everyone and relies on the client to hide it`);
-      }
-      return;
-    }
-    case 'scheduleMessage': {
-      // The L2 contract names the toggle and the time input but not the submit
-      // control, so fall back to a labelled button when no hook is present.
-      const input = actor.loc('message-input');
-      if (await input.count()) await input.fill(step.text);
-      const toggle = actor.loc('schedule-toggle');
-      if (await toggle.count()) await toggle.click({ timeout: DEFAULT_WITHIN }).catch(() => {});
-      const when = actor.loc('schedule-time');
-      await when.waitFor({ state: 'visible', timeout: DEFAULT_WITHIN });
-      // A dedicated compose field inside the scheduling UI takes precedence.
-      const schedInput = actor.page.locator('[data-testid="schedule-message-input"], [data-testid="schedule-text"]').first();
-      if (await schedInput.count()) await schedInput.fill(step.text);
-
-      const type = (await when.getAttribute('type')) ?? 'text';
-      const at = new Date(Date.now() + step.secondsAhead * 1000);
-      const local = new Date(at.getTime() - at.getTimezoneOffset() * 60000).toISOString();
-      if (type === 'datetime-local') await when.fill(local.slice(0, 16));
-      else if (type === 'time') await when.fill(local.slice(11, 16));
-      else await when.fill(String(step.secondsAhead));
-
-      const submit = actor.loc('schedule-submit');
-      if (await submit.count()) { await submit.click(); return; }
-      const labelled = page.getByRole('button', { name: /schedule|send later|confirm/i }).first();
-      if (await labelled.count()) { await labelled.click(); return; }
-      await when.press('Enter');
-      return;
-    }
-    case 'restartBackend': {
-      // Restarts the app's backend process — the Express server, or the
-      // SpacetimeDB host. Supplied by the caller because it is environment
-      // specific; without it the step fails loudly rather than passing.
-      if (!ctx.restartCmd) throw new Error('INCONCLUSIVE: no --restart-cmd supplied, backend was never restarted');
-      const { execFileSync } = await import('node:child_process');
-      try {
-        execFileSync('bash', ['-c', ctx.restartCmd], { encoding: 'utf8', stdio: 'pipe', timeout: 120000 });
-      } catch (err) {
-        throw new Error(`backend restart command failed: ${(err.stdout || err.message || '').toString().trim().slice(-200)}`);
-      }
-      await page.waitForTimeout(step.settleMs ?? 10000);
-      return;
-    }
-    case 'ensureSignedIn':
-    case 'ensureRegistered': {
-      // Some apps drop the session on reload (scored separately as an
-      // invariant). Re-register so THIS test measures scheduling durability
-      // rather than re-measuring session persistence.
-      const nameInput = page.locator(tid('signup-username')).first();
-      if (await nameInput.isVisible().catch(() => false)) {
-        const user = step.exact ? step.name : `${step.name}${ctx.scope}`;
-        await nameInput.fill(user);
-        await page.locator(tid('signup-password')).first().fill(step.password ?? `pw-${user}`);
-        await page.locator(tid('signup-submit')).first().click();
-        // What proves the app is ready differs per application; chat's room list
-        // is the default because that is what this step has always waited for.
-        await page.locator(tid(step.readyTestid ?? 'room-list')).first()
-          .waitFor({ state: 'attached', timeout: DEFAULT_WITHIN });
-        await page.waitForTimeout(step.settleMs ?? 1500);
-      }
-      return;
-    }
-    case 'closeClient': {
-      // A client that stays connected through a backend restart auto-reconnects
-      // before anything else can happen. Closing it first models the ordinary
-      // case — the user is not sitting on the page while you deploy — and keeps
-      // this test about scheduling rather than reconnect behaviour, which
-      // invariant 103 scores separately.
-      await page.close();
-      return;
-    }
-    case 'openClient': {
-      const fresh = await actor.context.newPage();
-      fresh.setDefaultTimeout(DEFAULT_WITHIN);
-      actor.attach(fresh);
-      await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await fresh.waitForTimeout(step.settleMs ?? 4000);
-      return;
-    }
-    case 'expectStable': {
-      // Read the same element several times: its text must not change while
-      // nothing is happening. Catches unstable sorts and re-render churn that a
-      // single assertion sails straight past.
-      const loc = actor.loc(step.testid, { contains: expand(step.contains, ctx) });
-      await loc.waitFor({ state: 'visible', timeout: step.within ?? DEFAULT_WITHIN });
-      const seen = [];
-      for (let i = 0; i < (step.samples ?? 4); i++) {
-        seen.push(((await loc.innerText().catch(() => '')) || '').trim());
-        await page.waitForTimeout(step.intervalMs ?? 700);
-      }
-      const distinct = [...new Set(seen)];
-      if (distinct.length > 1) {
-        throw new Error(`${tid(step.testid)} changed while idle: ${distinct.map(t => JSON.stringify(t.slice(0, 50))).join(' then ')}`);
-      }
-      return;
-    }
-    case 'freshClient': {
-      // Open a brand-new browser and look at the same thing. Anything the acting
-      // client shows but a fresh one cannot see never reached the server —
-      // optimistic inserts that were never confirmed, counts incremented only
-      // locally, state that lives in one browser's memory.
-      const context = await actor.page.context().browser().newContext();
-      const fresh = await context.newPage();
-      fresh.setDefaultTimeout(DEFAULT_WITHIN);
-      await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      const observer = new Actor(`${actor.name}-fresh`, fresh, context);
-      observer.annotate = actor.annotate;
-      actors.set(`${step.actor}-fresh`, observer);
-      // Registered for teardown; it is not one of the feature's declared actors.
-      ctx.extraContexts?.push({ context, name: `${step.actor}-fresh`, page: fresh });
-      return;
-    }
-    case 'fill': {
-      // Type into any input the contract names. Chat has dedicated steps for its
-      // two inputs; every other application needs the general form.
-      const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
-      const loc = actor.loc(step.testid, { scope });
-      await loc.waitFor({ state: 'visible', timeout: step.within ?? DEFAULT_WITHIN });
-      const text = expand(step.text, ctx) ?? '';
-      // A rating or a warehouse is as likely to be a dropdown as a text box, and
-      // `fill` refuses a <select> outright. The scenario says what the value is;
-      // how the app collects it is the app's business.
-      const tag = await loc.evaluate(el => el.tagName).catch(() => '');
-      if (tag === 'SELECT') {
-        await loc.selectOption(text).catch(async () => { await loc.selectOption({ label: text }); });
-      } else {
-        await loc.fill(text);
-      }
-      if (step.enter) await loc.press('Enter');
-      if (step.settleMs) await page.waitForTimeout(step.settleMs);
-      return;
-    }
-    case 'recordNumber': {
-      // Remember a number now so a later assertion can be about the CHANGE.
-      // Features share a database, so absolute totals — revenue above all —
-      // depend on what every earlier feature happened to buy. A delta does not.
-      const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
-      const loc = actor.loc(step.testid, { contains: expand(step.contains, ctx), scope });
-      await loc.waitFor({ state: 'visible', timeout: step.within ?? DEFAULT_WITHIN });
-      const value = parseNumber(await readValue(loc));
-      if (value === null) throw new Error(`${tid(step.testid)} has no number to record`);
-      ctx.recorded[step.as] = value;
-      return;
-    }
-    case 'pressKey': {
-      // Closing a panel by clicking its opener again assumes the opener
-      // toggles, and the contract only promises it OPENS — an app whose panel
-      // hides the storefront then blocks every later click. Escape is the one
-      // close the specification actually requires of everyone.
-      await page.keyboard.press(step.key ?? 'Escape');
-      await page.waitForTimeout(step.settleMs ?? 600);
-      return;
-    }
-    case 'expectNumber': return expectNumber(actor, step, ctx);
-    case 'wait': return page.waitForTimeout(step.ms);
-    case 'expect': return runExpect(actor, step, ctx);
-    default: throw new Error(`unknown action "${step.do}"`);
-  }
-}
-
-async function runExpect(actor, step, ctx = { roomName: x => x }) {
-  const within = step.within ?? DEFAULT_WITHIN;
-  const contains = expand(step.contains, ctx);
-  const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
-  const where = scope ? ` inside ${tid(scope.testid)} "${scope.contains}"` : '';
-  const loc = actor.loc(step.testid, { contains, scope });
-
-  if (step.absent) {
-    // Poll until gone (or never present) — hidden OR detached both count.
-    const deadline = Date.now() + within;
-    for (;;) {
-      const visible = await loc.isVisible().catch(() => false);
-      if (!visible) return;
-      if (Date.now() > deadline) {
-        throw new Error(`${tid(step.testid)}${contains ? ` containing "${contains}"` : ''}${where} still visible after ${within}ms`);
-      }
-      await actor.page.waitForTimeout(250);
-    }
-  }
-
-  // Zero can satisfy "at most N" — a customer who lost the oversell race has no
-  // order at all, and that is exactly what the criterion wants to see. So when
-  // only maxCount constrains the step, absence is a count of zero, not a
-  // failure to appear.
-  const visible = await loc.waitFor({ state: 'visible', timeout: within })
-    .then(() => true).catch(() => false);
-  if (!visible && !(step.maxCount !== undefined && step.count === undefined)) {
-    throw new Error(`${tid(step.testid)}${contains ? ` containing "${contains}"` : ''}${where} not visible within ${within}ms`);
-  }
-
-  if (step.count !== undefined || step.maxCount !== undefined) {
-    const all = scope
-      ? actor.page.locator(tid(scope.testid), { hasText: scope.contains }).first().locator(tid(step.testid))
-      : (contains ? actor.page.locator(tid(step.testid), { hasText: contains }) : actor.page.locator(tid(step.testid)));
-    const n = visible ? await all.count() : 0;
-    if (step.count !== undefined && n !== step.count) {
-      throw new Error(`expected exactly ${step.count} ${tid(step.testid)}${contains ? ` containing "${contains}"` : ''}, found ${n}`);
-    }
-    if (step.maxCount !== undefined && n > step.maxCount) {
-      throw new Error(`expected at most ${step.maxCount} ${tid(step.testid)}${contains ? ` containing "${contains}"` : ''}, found ${n}`);
-    }
-  }
-  if (!visible) return;
-
-  if (step.notContains) {
-    const text = (await loc.innerText().catch(() => '')) || '';
-    if (text.includes(step.notContains)) {
-      throw new Error(`${tid(step.testid)} unexpectedly contains "${step.notContains}" (text: "${text.trim().slice(0, 80)}")`);
-    }
-  }
-}
-
-// What a person reads off this element. A quantity shown in a spin box lives in
-// the value, not the text — `innerText` on an <input> is empty, which made a
-// perfectly good cart line look like it had no quantity at all.
-async function readValue(loc) {
-  const tag = await loc.evaluate(el => el.tagName).catch(() => '');
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-    return (await loc.inputValue().catch(() => '')) || '';
-  }
-  return (await loc.innerText().catch(() => '')) || '';
-}
-
-// Pull the first number out of rendered text: "Stock: 1,024 left" -> 1024,
-// "$12.50" -> 12.5. Returns null when there is no number to read.
-function parseNumber(text) {
-  const m = (text ?? '').replace(/[, ]/g, '').match(/-?\d+(\.\d+)?/);
-  return m ? Number(m[0]) : null;
-}
-
-// Counting elements and substring-matching text cannot express "the stock is
-// exactly 3": `contains: "3"` also matches 13, and `count` counts tags, not
-// values. Quantities are what an inventory is made of, so they get a real
-// comparison.
-async function expectNumber(actor, step, ctx) {
-  const within = step.within ?? DEFAULT_WITHIN;
-  const contains = expand(step.contains, ctx);
-  const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
-  const where = scope ? ` inside ${tid(scope.testid)} "${scope.contains}"` : '';
-  const loc = actor.loc(step.testid, { contains, scope });
-  await loc.waitFor({ state: 'visible', timeout: within }).catch(() => {
-    throw new Error(`${tid(step.testid)}${where} not visible within ${within}ms`);
-  });
-
-  // `relativeTo` turns the comparison into one about the change since a
-  // recordNumber step, which is the only honest way to assert on a running
-  // total that earlier features have also contributed to.
-  let equals = step.equals;
-  if (step.relativeTo !== undefined) {
-    const base = ctx.recorded?.[step.relativeTo];
-    if (base === undefined) throw new Error(`no number recorded as "${step.relativeTo}"`);
-    equals = base + (step.plus ?? 0);
-  }
-
-  const check = n => (equals === undefined || n === equals)
-    && (step.atLeast === undefined || n >= step.atLeast)
-    && (step.atMost === undefined || n <= step.atMost);
-
-  // The value may still be settling — a live count arrives after the write that
-  // changed it — so poll rather than read once.
-  const deadline = Date.now() + within;
-  let last = null;
-  for (;;) {
-    last = parseNumber(await readValue(loc));
-    if (last !== null && check(last)) return;
-    if (Date.now() > deadline) break;
-    await actor.page.waitForTimeout(250);
-  }
-  const wanted = [
-    equals !== undefined
-      ? `exactly ${equals}${step.relativeTo !== undefined ? ` (${step.relativeTo} + ${step.plus ?? 0})` : ''}`
-      : null,
-    step.atLeast !== undefined ? `at least ${step.atLeast}` : null,
-    step.atMost !== undefined ? `at most ${step.atMost}` : null,
-  ].filter(Boolean).join(' and ') || 'a number';
-  throw new Error(`${tid(step.testid)}${where} reads ${last === null ? 'no number' : last}, expected ${wanted}`);
-}
-
-// Indices are zero-padded so "AA-1" cannot substring-match "AA-10".
-const pad = (i, count) => String(i).padStart(String(count).length, '0');
-
-async function sendMany(actor, prefix, count, delayMs) {
-  const input = actor.loc('message-input');
-  for (let i = 1; i <= count; i++) {
-    await input.fill(`${prefix}-${pad(i, count)}`);
-    await input.press('Enter');
-    if (delayMs) await actor.page.waitForTimeout(delayMs);
-  }
-}
-
-// Every client must observe the same messages in the same order. Express stacks
-// broadcast with io.emit() AFTER awaiting the write, so the broadcast is not
-// atomic with the commit and concurrent senders can interleave differently per
-// client. A SpacetimeDB subscription update IS the commit, so it cannot diverge.
-async function expectOrderMatches(step, actors) {
-  const seqs = {};
-  for (const name of step.actors) {
-    const actor = actors.get(name);
-    const texts = await actor.page.locator(tid('message-item')).allInnerTexts();
-    seqs[name] = texts
-      .map(t => (t.match(new RegExp(`${step.prefix}-\\d+`)) || [])[0])
-      .filter(Boolean);
-  }
-  const [first, ...rest] = step.actors;
-  for (const other of rest) {
-    if (seqs[first].join('|') !== seqs[other].join('|')) {
-      const diffAt = seqs[first].findIndex((v, i) => v !== seqs[other][i]);
-      throw new Error(
-        `message order differs between ${first} and ${other} at position ${diffAt}: ` +
-        `${first} saw ${seqs[first].slice(Math.max(0, diffAt - 1), diffAt + 2).join(',')} / ` +
-        `${other} saw ${seqs[other].slice(Math.max(0, diffAt - 1), diffAt + 2).join(',')}`
-      );
-    }
-  }
-}
-
-// Every client must end up seeing the same thing. A single-actor assertion says
-// "Alice sees 20" and misses the actual defect, which is Bob seeing 19 — exactly
-// what non-atomic broadcast produces.
-async function expectAgreement(step, actors, ctx) {
-  const contains = expand(step.contains, ctx);
-  const scope = step.in ? { testid: step.in.testid, contains: expand(step.in.contains, ctx) } : undefined;
-  const deadline = Date.now() + (step.within ?? 10000);
-  let seen = {};
-  for (;;) {
-    seen = {};
-    for (const name of step.actors) {
-      const loc = actors.get(name).loc(step.testid, { contains, scope });
-      const text = (step.numeric ? await readValue(loc) : ((await loc.innerText().catch(() => '<missing>')) || '<missing>')).trim() || '<missing>';
-      // Comparing raw text makes "97 left" and "Stock: 97" disagree even though
-      // the clients are consistent. `numeric` compares the value instead.
-      seen[name] = step.numeric ? String(parseNumber(text) ?? '<no number>') : text;
-    }
-    if (new Set(Object.values(seen)).size === 1) return;
-    if (Date.now() > deadline) {
-      throw new Error(`clients disagree on ${tid(step.testid)}: ` +
-        Object.entries(seen).map(([k, v]) => `${k} sees ${JSON.stringify(v.slice(0, 40))}`).join(', '));
-    }
-    await actors.get(step.actors[0]).page.waitForTimeout(500);
-  }
+  ACTION_REGISTRY.get(step.do);
+  return runRegisteredAction(step, actors, ctx);
 }
 
 // ─── Feature grading ─────────────────────────────────────────────────────────
@@ -1458,7 +562,7 @@ async function gradeFeature(browser, feature, args, runCtx) {
   const scope = `${runCtx.runId}f${feature.id}`;
   const extraContexts = [];
   const ctx = { ...runCtx, scope, roomName: base => `${base}-${scope}`, extraContexts, recorded: {},
-    unverified: [], verified: [] };
+    unverified: [], verified: [], actionEvidence: [] };
   const actors = new Map();
   const contexts = [];
   const slug = `${args.label ?? 'run'}-f${feature.id}`;
@@ -1500,6 +604,21 @@ async function gradeFeature(browser, feature, args, runCtx) {
     criteria: [], caps: [], consoleErrors: [],
   };
 
+  const captureFailureScreenshots = async label => {
+    if (!args.failureMedia) return [];
+    mkdirSync(args.failureMedia, { recursive: true });
+    const captured = [];
+    for (const { name, page } of [...contexts, ...extraContexts]) {
+      const path = join(args.failureMedia, `${slug}-${label}-${name}.png`);
+      const ok = await page.screenshot({ path, fullPage: true, timeout: 5000 })
+        .then(() => true, () => false);
+      if (ok) captured.push(path);
+    }
+    return captured;
+  };
+
+  const setupStartedAtMs = Date.now();
+  ctx.actionEvidence = [];
   try {
     // Setup is not scored, but a failure makes the feature untestable (0).
     for (const step of feature.setup) {
@@ -1507,45 +626,49 @@ async function gradeFeature(browser, feature, args, runCtx) {
       await runStep(step, actors, ctx);
     }
   } catch (err) {
-    result.setupError = err.message;
-    result.caps.push('setup-failed → 0');
-    // Carry the REASON onto every criterion, not just onto the feature.
-    //
-    // This wrote a bare 'setup failed' for months while the actual error sat in
-    // `result.setupError` one line above, unread. report-bugs.mjs reads
-    // criterion details, so the fix agent was told "the feature could not be
-    // reached at all" for 110 of 150 recorded failures — 73% of everything —
-    // when the grader knew, every time, that (for example) sign-in never
-    // completed because the signed-in user never appeared.
-    //
-    // A browser that crashes or a harness step that times out is not the app
-    // failing, so those are marked inconclusive rather than scored as defects:
-    // the same rule the contention criteria already follow.
-    const why = keepReason(String(err.message ?? '').trim());
-    const harnessFault = /Page crashed|Target (page|closed)|browser has been closed|ECONNREFUSED/i.test(why);
+    // Carry the structured reason onto every criterion so downstream consumers
+    // can distinguish an application setup failure from missing harness evidence.
+    // ECONNREFUSED can mean the generated app never started, so it remains an
+    // application/setup failure. A child-process failure or vanished browser
+    // target supplies no behavioral observation and is inconclusive.
+    const classified = classifyCheckFailure(err);
+    const why = keepReason(classified.summary.trim());
+    const measured = evidenceDisposition(classified).measured;
+    result.caps.push(measured ? 'setup-failed → 0' : 'setup-unmeasured → untestable');
+    const screenshots = await captureFailureScreenshots('setup');
+    result.setupEvidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: setupStartedAtMs,
+      failure: err, summary: why, attachments: screenshots });
     for (const c of feature.criteria) {
-      // Mark an untestable criterion the way the rest of the harness already
-      // does — by prefixing the detail — AND with the field. compare-runs.mjs
-      // reads the prefix, bench.mjs and report-bugs.mjs read the field; setting
-      // only one of them would make a harness fault count as an app defect in
-      // whichever tool reads the other.
       const base = why ? `setup failed: ${why}` : 'setup failed';
-      result.criteria.push({
-        id: c.id, points: c.points, passed: false,
-        detail: harnessFault ? `INCONCLUSIVE: ${base}` : base,
-        ...(harnessFault ? { inconclusive: true } : {}),
-      });
+      const points = c.points ?? 1;
+      const evidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: setupStartedAtMs,
+        failure: err, summary: base, actions: [], sensitivity: result.setupEvidence.sensitivity,
+        attachments: [{ kind: 'check-evidence', ref: 'feature.setupEvidence' }, ...screenshots] });
+      const recorded = { id: c.id, desc: c.desc, points, evidence };
+      result.criteria.push(recorded);
+      if (!evidenceIsMeasured(evidence)) {
+        result.max -= points;
+        result.inconclusive = [...(result.inconclusive ?? []),
+          { id: c.id, points, status: evidence.status, code: evidence.code,
+            phase: evidence.phase, summary: evidence.summary }];
+      }
     }
+    if (screenshots.length) result.screenshots = screenshots;
     await closeAll();
     return result;
   }
+  result.setupEvidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: setupStartedAtMs });
 
   let refreshDependent = false;
   for (const criterion of feature.criteria) {
-    let passed = true, detail = null;
+    let failure = null, detail = null, activeActor = null;
+    let criterionScreenshots = [];
+    const criterionStartedAtMs = Date.now();
+    ctx.actionEvidence = [];
     ctx.serverCheck = null;
     try {
       for (const step of criterion.steps) {
+        activeActor = step.actor ?? activeActor;
         await annotate(actors.get(step.actor) ?? actors.values().next().value,
           { feature: feature.name, criterion: criterion.id, step: describeStep(step) });
         await runStep(step, actors, ctx);
@@ -1554,47 +677,52 @@ async function gradeFeature(browser, feature, args, runCtx) {
         await annotate(a, { feature: feature.name, criterion: criterion.id, step: 'passed', status: 'pass' });
       }
     } catch (err) {
-      passed = false;
-      detail = err.message;
+      failure = err;
+      const classified = classifyCheckFailure(err, activeActor);
+      detail = classified.summary;
       if (args.media) {
         for (const a of actors.values()) {
           await annotate(a, { feature: feature.name, criterion: criterion.id, step: err.message.slice(0, 120), status: 'fail' });
         }
         const shotActor = actors.get(criterion.steps[criterion.steps.length - 1]?.actor) ?? actors.values().next().value;
         const shot = join(args.media, `${slug}-${criterion.id}.png`);
-        await shotActor.page.screenshot({ path: shot, fullPage: true }).catch(() => {});
-        result.screenshots = [...(result.screenshots ?? []), shot];
+        const captured = await shotActor.page.screenshot({ path: shot, fullPage: true })
+          .then(() => true, () => false);
+        if (captured) criterionScreenshots.push(shot);
+      } else {
+        criterionScreenshots = await captureFailureScreenshots(criterion.id);
+      }
+      if (criterionScreenshots.length) {
+        result.screenshots = [...(result.screenshots ?? []), ...criterionScreenshots];
       }
       // Refresh probe: does the assertion pass once the page is reloaded?
       // If so the feature is refresh-dependent, not realtime.
       const failing = criterion.steps[criterion.steps.length - 1];
-      if (failing?.do === 'expect' && !failing.absent) {
+      const primaryActionEvidence = [...ctx.actionEvidence];
+      if (evidenceDisposition(classified).applicationFailure && failing?.do === 'expect' && !failing.absent) {
         try {
           const actor = actors.get(failing.actor);
           await actor.page.reload({ waitUntil: 'domcontentloaded' });
           await actor.page.waitForTimeout(2000);
-          await runExpect(actor, { ...failing, within: 6000 });
+          ctx.actionEvidence = [];
+          await runStep({ ...failing, within: 6000 }, actors, ctx);
           refreshDependent = true;
           detail += ' — PASSES AFTER RELOAD (refresh-dependent)';
         } catch { /* genuinely absent, not just refresh-dependent */ }
       }
+      ctx.actionEvidence = primaryActionEvidence;
     }
-    // A criterion the harness could not actually run is not a failure of the
-    // application. SpacetimeDB writes over a WebSocket, so a replay-based check
-    // captures nothing and reports INCONCLUSIVE — scoring that zero would
-    // penalise a backend for being architecturally different rather than wrong,
-    // which is the same thumb on the scale as crediting it for being
-    // uninspectable. Inconclusive earns no credit AND costs nothing: it leaves
-    // the scored total, and is reported separately so the gap is visible.
-    const inconclusive = !passed && /^INCONCLUSIVE/.test(String(detail));
+    const evidence = buildCheckEvidence({ ctx, phase: 'assertion', startedAtMs: criterionStartedAtMs,
+      failure, actor: activeActor, summary: detail, attachments: criterionScreenshots });
     result.criteria.push({ id: criterion.id, desc: criterion.desc, points: criterion.points,
-      passed, inconclusive: inconclusive || undefined, detail: keepReason(detail),
+      evidence,
       ...(ctx.serverCheck ? { serverCheck: ctx.serverCheck } : {}) });
-    if (passed) result.score += criterion.points;
-    else if (inconclusive) {
+    if (evidencePassed(evidence)) result.score += criterion.points;
+    else if (!evidenceIsMeasured(evidence)) {
       result.max -= criterion.points;
       result.inconclusive = [...(result.inconclusive ?? []),
-        { id: criterion.id, points: criterion.points, detail: keepReason(detail) }];
+        { id: criterion.id, points: criterion.points, status: evidence.status, code: evidence.code,
+          phase: evidence.phase, summary: evidence.summary }];
     }
   }
 
@@ -1644,48 +772,80 @@ async function countExistingRooms(browser, args, runId) {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
+  const startedAt = new Date().toISOString();
   const args = parseArgs(process.argv);
   const specPath = args.spec ? args.spec : join(ROOT, 'scenarios', `level-${String(args.level).padStart(2, '0')}.json`);
   let spec;
   try {
-    spec = JSON.parse(readFileSync(specPath, 'utf8'));
-  } catch {
-    console.error(`No scenario spec at ${specPath}`);
-    process.exit(2);
+    spec = compileScenarioDefinition(JSON.parse(readFileSync(specPath, 'utf8')), { source: specPath });
+  } catch (error) {
+    throw new Error(`cannot compile scenario ${specPath}: ${error.message}`, { cause: error });
   }
 
+  if (args.selectionSha256 && !/^[a-f0-9]{64}$/.test(args.selectionSha256)) {
+    throw new Error('--selection-sha256 must be 64 lowercase hexadecimal characters');
+  }
   if (spec.writeUrlPattern) WRITE_URL_RE = new RegExp(spec.writeUrlPattern);
 
-  const features = args.feature ? spec.features.filter(f => f.id === args.feature) : spec.features;
+  const candidateFeatures = args.feature ? spec.features.filter(f => f.id === args.feature) : spec.features;
+  if (args.feature && candidateFeatures.length === 0) {
+    throw new Error(`scenario ${specPath} has no feature ${args.feature}`);
+  }
   const runId = uniq();
-  // Where the named actions live. Resolved once: the track declares their
-  // names, and a SpacetimeDB module is addressed by name on its host rather
-  // than through the app's URL — the same two values reset-db.sh reads.
-  let actions = [], spacetime = null;
+  // Where the named actions live. The track declares their names; the
+  // authenticated backend lease—not generated application config—selects the
+  // SpacetimeDB host, module and exact build container used for direct SQL.
+  let actions = [], spacetime = null, recipeRelease = null, recipeIdentityRelease = null, calibration = null;
   if (args.track) {
-    try { actions = JSON.parse(readFileSync(join(ROOT, 'tracks', args.track, 'track.json'), 'utf8')).actions ?? []; }
-    catch { /* a track without named actions simply has none */ }
+    const track = loadTrack(args.track);
+    actions = track.actions;
+    const binding = resolveGradeRecipeArtifactBinding(track, args.level, specPath, args.feature ?? null);
+    recipeRelease = binding?.release ?? null;
+    recipeIdentityRelease = binding?.sourceRelease ?? null;
   }
-  if (args.backend === 'spacetime' && args.app) {
-    const cfg = join(args.app, 'client', 'src', 'config.ts');
-    if (existsSync(cfg)) {
-      const src = readFileSync(cfg, 'utf8');
-      const mod = src.match(/MODULE_NAME\s*=\s*'([^']+)'/)?.[1] ?? null;
-      const uri = (src.match(/URI\s*=\s*'([^']+)'/)?.[1] ?? 'http://127.0.0.1:3210')
-        .replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
-      if (mod) spacetime = { mod, uri };
-    }
+  if (args.expectedRecipeSha256
+    && recipeRelease?.contentSha256 !== args.expectedRecipeSha256) {
+    throw new Error(`recipe changed before grading: expected ${args.expectedRecipeSha256}, ` +
+      `resolved ${recipeRelease?.contentSha256 ?? 'no recipe'}`);
   }
+  const selectedScenario = selectScenarioChecks(
+    { ...spec, features: candidateFeatures }, recipeRelease, args.selectedCheckKeys);
+  const features = selectedScenario.features;
+  const selectedChecks = selectedScenario.checks;
+  if (!features.length) throw new Error(`scenario ${specPath} has no selected checks`);
+  if (args.track) {
+    const track = loadTrack(args.track);
+    calibration = resolveCalibrationForRelease(recipeIdentityRelease, {
+      trackRoot: track.dir,
+      stackBenchRoot: ROOT,
+    });
+  }
+  spacetime = args.backend
+    ? executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
+      'grading', 'context', { requireBuildContainer: true })
+    : null;
 
-  const ctx = { runId, roomName: base => `${base}-${runId}`, restartCmd: args.restartCmd, url: args.url,
+  const ctx = { runId, roomName: base => `${base}-${runId}`, restartCmd: args.restartCmd,
+    restartSpec: args.restartSpec, url: args.url,
     backend: args.backend, actions, spacetime, dbName: args.dbName,
     appDir: args.app };
 
   const browser = await chromium.launch({ headless: !args.headed });
   const report = {
+    definitionSchemaVersion: spec.schemaVersion,
+    recipeRelease,
     label: args.label ?? null, url: args.url, level: args.level, runId,
     total: 0, max: features.reduce((n, f) => n + f.criteria.reduce((m, c) => m + (c.points ?? 1), 0), 0), features: [],
+    selection: recipeRelease ? {
+      ...(args.selectionSha256 ? { sha256: args.selectionSha256 } : {}),
+      checks: selectedChecks.map(({ stableKey, packId, checkGroupId, featureId, criterionId,
+        description, points }) => ({ stableKey, packId, checkGroupId, featureId, criterionId,
+        description, points })),
+    } : null,
   };
+  const checkByCriterion = new Map(selectedChecks.map(check => [
+    `${String(check.featureId)}\0${String(check.criterionId)}`, check,
+  ]));
 
   // Preflight: grading a dirty database silently biases scores downward (a long
   // room/user list breaks assertions that pass on a clean app), so surface it
@@ -1700,6 +860,13 @@ async function main() {
   for (const feature of features) {
     process.stdout.write(`Feature ${feature.id}: ${feature.name} ... `);
     const r = await gradeFeature(browser, feature, args, ctx);
+    if (recipeRelease) {
+      for (const criterion of r.criteria) {
+        const check = checkByCriterion.get(`${String(feature.id)}\0${String(criterion.id)}`);
+        if (!check) throw new Error(`graded criterion ${feature.id}/${criterion.id} has no recipe check`);
+        criterion.stableKey = check.stableKey;
+      }
+    }
     report.features.push(r);
     report.total += r.score;
     // Criteria the harness could not run are removed from the denominator by
@@ -1711,9 +878,8 @@ async function main() {
         ...r.inconclusive.map(c => ({ feature: r.id, ...c }))];
     }
     console.log(`${r.score}/${r.max}${r.caps.length ? ` (${r.caps.join('; ')})` : ''}`);
-    for (const c of r.criteria.filter(c => !c.passed)) {
-      // An untestable criterion is not a defect, and must not read like one.
-      console.log(`    ${c.inconclusive ? 'UNTESTABLE' : 'FAIL'} ${c.id} — ${c.detail}`);
+    for (const c of r.criteria.filter(c => !evidencePassed(c.evidence))) {
+      console.log(`    ${renderEvidenceConsoleLine(c.evidence, c.id)}`);
     }
   }
 
@@ -1721,8 +887,19 @@ async function main() {
 
   console.log(`\nTOTAL ${report.total}/${report.max}`);
   if (args.out) {
-    mkdirSync(dirname(args.out), { recursive: true });
-    writeFileSync(args.out, JSON.stringify(report, null, 2));
+    const artifactId = `grade-${runId}`;
+    writeArtifact(args.out, {
+      kind: 'grade',
+      id: artifactId,
+      attempt: { id: artifactId, parentId: args.parentAttemptId ?? null },
+      timestamps: { startedAt, completedAt: new Date().toISOString() },
+      identities: recipeArtifactIdentities(recipeIdentityRelease, {
+        calibration: calibration ? { id: calibration.id, version: calibration.version,
+          sha256: calibration.contentSha256, state: calibration.state } : null,
+        stackAdapter: args.backend ? { id: args.backend } : null,
+      }),
+      payload: report,
+    });
     console.log(`Report written to ${args.out}`);
   }
 }

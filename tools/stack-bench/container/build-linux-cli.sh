@@ -8,7 +8,8 @@
 # it, so without this the SpacetimeDB backend falls back to running on the host
 # and loses the isolation every other backend gets.
 #
-# Output: tools/stack-bench/container/bin/spacetimedb-cli (a Linux ELF)
+# Outputs: tools/stack-bench/container/bin/spacetimedb-cli and
+#          tools/stack-bench/container/bin/spacetimedb-standalone (Linux ELFs)
 #
 # Usage: bash tools/stack-bench/container/build-linux-cli.sh
 set -euo pipefail
@@ -52,14 +53,18 @@ docker run --rm \
     # this script stays a single file with nothing to keep in sync.
     apt-get update -qq
     apt-get install -y -qq --no-install-recommends \
-      pkg-config libssl-dev build-essential clang cmake perl git >/dev/null
+      pkg-config libssl-dev build-essential clang cmake perl git curl python3 >/dev/null
     rustup show >/dev/null            # honours rust-toolchain.toml
-    cargo build --release --locked -p spacetimedb-cli --bin spacetimedb-cli
+    cargo build --release --locked \
+      -p spacetimedb-cli --bin spacetimedb-cli \
+      -p spacetimedb-standalone --bin spacetimedb-standalone
     cp /target/release/spacetimedb-cli /out/spacetimedb-cli
-    chmod +x /out/spacetimedb-cli
+    cp /target/release/spacetimedb-standalone /out/spacetimedb-standalone
+    chmod +x /out/spacetimedb-cli /out/spacetimedb-standalone
   '
 
 echo ""
 file "$OUT/spacetimedb-cli" 2>/dev/null || true
+file "$OUT/spacetimedb-standalone" 2>/dev/null || true
 docker run --rm -v "$OUT:/deps:ro" "${STACK_BENCH_IMAGE:-stack-bench-build:2.1.226}" \
-  /deps/spacetimedb-cli --version
+  sh -c 'test -x /deps/spacetimedb-standalone && /deps/spacetimedb-cli --version'

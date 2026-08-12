@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "fixture-set",
+  "id": "ecommerce.storefront",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Ecommerce storefront starting data",
+  "warehouses": ["East", "West"],
+  "items": [
+    { "name": "Air Purifier", "price": "189.00", "category": "Home", "stock": { "East": 60, "West": 40 } },
+    { "name": "Bluetooth Speaker", "price": "79.50", "category": "Audio", "stock": { "East": 50, "West": 50 } },
+    { "name": "Coffee Grinder", "price": "64.00", "category": "Home", "stock": { "East": 70, "West": 30 } },
+    { "name": "Desk Lamp", "price": "42.00", "category": "Home", "stock": { "East": 55, "West": 45 } },
+    { "name": "Espresso Machine", "price": "449.00", "category": "Home", "stock": { "East": 80, "West": 20 } },
+    { "name": "Gaming Mouse", "price": "59.00", "category": "Computing", "stock": { "East": 50, "West": 50 } },
+    { "name": "Headphones", "price": "199.00", "category": "Audio", "stock": { "East": 60, "West": 40 } },
+    { "name": "Induction Cooktop", "price": "329.00", "category": "Home", "stock": { "East": 50, "West": 50 } },
+    { "name": "Keyboard", "price": "89.00", "category": "Computing", "stock": { "East": 70, "West": 30 } },
+    { "name": "Laptop Stand", "price": "29.00", "category": "Computing", "stock": { "East": 90, "West": 10 } },
+    { "name": "Mirrorless Camera", "price": "1299.00", "category": "Photo", "stock": { "East": 2, "West": 1 } },
+    { "name": "Webcam", "price": "69.00", "category": "Computing", "stock": { "East": 60, "West": 40 } }
+  ],
+  "accounts": [
+    { "username": "admin", "password": "stackbench-admin-2026", "roles": ["admin"] }
+  ],
+  "empty": ["carts", "orders", "reviews"]
+}

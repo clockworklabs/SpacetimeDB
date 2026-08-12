@@ -9,14 +9,15 @@
 //
 // Usage: node summarise.mjs <dir>
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { readArtifactPayload } from '../artifacts.mjs';
 
 const dir = process.argv[2];
 if (!dir) { console.error('Usage: node summarise.mjs <dir>'); process.exit(2); }
 
 const rows = readdirSync(dir).filter(f => f.endsWith('.json'))
-  .map(f => JSON.parse(readFileSync(join(dir, f), 'utf8')));
+  .map(f => readArtifactPayload(join(dir, f)));
 
 // cells[backend][config] = [report, ...]
 const cells = {};

@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 2,
+  "fixtures": [
+    {
+      "id": "ecommerce-l1-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "candidate",
+      "targetPath": "reference-apps/ecommerce/mongodb",
+      "origin": {
+        "result": "archive/pre-v1/results/mongodb-ecom-run0",
+        "source": "archive/pre-v1/results/mongodb-ecom-run0/source",
+        "sourceSha256": "17a418f675dad9f3a367119c8e1cfecec7821ab77d5ae6e570306c6a1bb3195c"
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/mongodb",
+        "sourceSha256": "42e2323e26d41d91ff9f563cf2af51af2d4cb887abd63c12da145aa0a049a13e"
+      },
+      "archivedEvidence": [
+        "archive/pre-v1/results/mongodb-ecom-run0/grading/grading-features.json",
+        "archive/pre-v1/results/mongodb-ecom-run0/grading/grading-invariants.json",
+        "archive/pre-v1/results/mongodb-ecom-run0/grading/grading-contention.json",
+        "archive/pre-v1/results/mongodb-ecom-run0/grading/grading-systems.json"
+      ],
+      "mutationManifests": ["grader/mutations/mongodb-ecom-l1.json"],
+      "qualification": "Pre-v1 reports are archived as historical context only; current Docker qualification is required."
+    },
+    {
+      "id": "ecommerce-l1-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "candidate",
+      "targetPath": "reference-apps/ecommerce/postgres",
+      "origin": {
+        "result": "archive/pre-v1/results/postgres-ecom-l2",
+        "source": "archive/pre-v1/results/postgres-ecom-l2/source",
+        "sourceSha256": "c3ee2e10d4d363b1d45312c59485a9215cdc1d8774aa3fe904d2145e816c092a"
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/postgres",
+        "sourceSha256": "cd8a0106e59892da68deb8becbcd670dec80d53657259d1cc6fa76b535e616ee"
+      },
+      "archivedEvidence": [
+        "archive/pre-v1/results/postgres-ecom-l2/grading/grading-contention.json",
+        "archive/pre-v1/results/postgres-ecom-l2/grading/grading-invariants@L1.json",
+        "archive/pre-v1/results/postgres-ecom-l2/grading/grading-systems@L1.json"
+      ],
+      "mutationManifests": ["grader/mutations/postgres-ecom-l1.json"],
+      "qualification": "Pre-v1 reports are archived as historical context only; current Docker qualification is required."
+    },
+    {
+      "id": "ecommerce-l1-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "candidate",
+      "targetPath": "reference-apps/ecommerce/spacetime",
+      "origin": {
+        "result": "archive/pre-v1/results/spacetime-ecom-trial2",
+        "source": "archive/pre-v1/results/spacetime-ecom-trial2/source",
+        "sourceSha256": "bcf68dcab958ee9b9b8ff54d8d40aa83cb1aa100f1b0c09b42f5e9202830b2b0"
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/spacetime",
+        "sourceSha256": "b035e5354f1a947d422225f8b9a73a296179258a75c8cac81fd51684bd65c85e"
+      },
+      "archivedEvidence": [
+        "archive/pre-v1/results/spacetime-ecom-trial2/grading/grading-features.json",
+        "archive/pre-v1/results/spacetime-ecom-trial2/grading/grading-invariants.json",
+        "archive/pre-v1/results/spacetime-ecom-trial2/grading/grading-contention.json",
+        "archive/pre-v1/results/spacetime-ecom-trial2/grading/grading-systems.json"
+      ],
+      "mutationManifests": ["grader/mutations/spacetime-ecom-l1.json"],
+      "qualification": "Pre-v1 reports are archived as historical context only; current Docker qualification is required."
+    },
+    {
+      "id": "chat-l1-mongodb",
+      "backend": "mongodb",
+      "track": "chat",
+      "level": 1,
+      "status": "blocked",
+      "targetPath": "reference-apps/chat/mongodb",
+      "mutationManifests": [],
+      "blockedReason": "No preserved canonical source and no current mutation manifest."
+    },
+    {
+      "id": "chat-l1-postgres",
+      "backend": "postgres",
+      "track": "chat",
+      "level": 1,
+      "status": "blocked",
+      "targetPath": "reference-apps/chat/postgres",
+      "mutationManifests": [
+        "grader/mutations/postgres-l1.json",
+        "grader/mutations/postgres-l1-authz.json"
+      ],
+      "blockedReason": "Preserved source exists but none of its anchors matches either historical manifest; rebuild and regenerate."
+    },
+    {
+      "id": "chat-l1-spacetime",
+      "backend": "spacetime",
+      "track": "chat",
+      "level": 1,
+      "status": "blocked",
+      "targetPath": "reference-apps/chat/spacetime",
+      "mutationManifests": [
+        "grader/mutations/spacetime-l1.json",
+        "grader/mutations/spacetime-l1-authz.json"
+      ],
+      "blockedReason": "The preserved source grades 0/49 and none of its anchors matches either historical manifest; rebuild and regenerate."
+    }
+  ]
+}

@@ -1,29 +1,36 @@
 {
+  "schemaVersion": 1,
+  "status": "candidate",
+  "fixtureSha256": "42e2323e26d41d91ff9f563cf2af51af2d4cb887abd63c12da145aa0a049a13e",
+  "backend": "mongodb",
+  "track": "ecommerce",
+  "level": 1,
+  "scenario": "tracks/ecommerce/scenarios/01-contention.json",
   "note": "Defects injected into the generated MongoDB shop, so the ecommerce contention criteria are proven on the backend they score rather than only on PostgreSQL. Anchors are specific to this app; regenerate for another.",
   "mutations": [
     {
       "id": "oversell-unguarded-decrement",
+      "kills": ["201a", "201b"],
       "desc": "Remove the quantity guard from the atomic stock decrement. The app reserves stock with findOneAndUpdate({_id, quantity: {$gte: take}}, {$inc: {quantity: -take}}) — the filter is what makes the decrement safe under concurrency, because a document whose stock has already been taken no longer matches. Without it the update always applies and simultaneous buyers each decrement the same units.",
       "breaks": 201,
-      "breaksCriterion": "201a",
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "{ _id: loc._id, quantity: { $gte: take } },",
-          "replace": "{ _id: loc._id },"
+          "find": "{ item_id: item._id, quantity: { $gte: 1 } },",
+          "replace": "{ item_id: item._id },"
         }
       ]
     },
     {
       "id": "checkout-not-idempotent",
-      "desc": "Remove the per-user lock around checkout so two simultaneous checkouts of one cart both read its lines and each create an order.",
+      "kills": ["203b"],
+      "desc": "Replace the atomic claim-and-clear with a read, so two simultaneous checkouts both observe the same cart and each create an order.",
       "breaks": 203,
-      "breaksCriterion": "203b",
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "await withUserLock(req.user._id, async () => {",
-          "replace": "await (async () => {"
+          "find": "const claimedCart = await Cart.findOneAndUpdate({ userId }, { $set: { items: [] } });",
+          "replace": "const claimedCart = await Cart.findOne({ userId });"
         }
       ]
     }

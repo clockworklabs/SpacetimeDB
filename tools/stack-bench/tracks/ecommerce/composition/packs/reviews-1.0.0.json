@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.reviews",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Verified-purchase reviews",
+  "description": "Review creation, uniqueness, and proof of purchase.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "unmeasured" },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l1.reviews", "path": "prompts/01-storefront.md", "order": 90, "from": "### Reviews", "until": "### Admin", "modes": ["fresh"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l1.review-hooks", "path": "contracts/appendix-01.md", "order": 1055, "from": "| `review-rating`", "until": "| `cart-panel`", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.review-error-hook", "path": "contracts/appendix-01.md", "order": 1100, "from": "| `review-error`", "until": "| `out-of-stock`", "modes": ["fresh"] },
+      { "id": "ecommerce.l2.existing-hooks", "path": "contracts/appendix-02.md", "order": 2010, "from": "| `app-title`", "until": "| `staff-link`", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "reviews", "source": "scenarios/01-features.json", "feature": 6, "role": "feature" },
+    { "id": "purchase-backed-review", "source": "scenarios/01-invariants.json", "feature": 108, "role": "guarantee" }
+  ]
+}

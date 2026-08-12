@@ -1,0 +1,28 @@
+{
+  "level": 1,
+  "features": [
+    {
+      "id": 1,
+      "name": "Application title",
+      "actors": ["viewer"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "title-visible",
+          "desc": "The application title is visible",
+          "points": 1,
+          "statedBy": "Fixture Chat",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "viewer",
+              "testid": "app-title",
+              "contains": "Fixture Chat",
+              "within": 1000
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

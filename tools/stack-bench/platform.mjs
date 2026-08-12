@@ -19,15 +19,31 @@ export const nullDevice = isWindows ? 'NUL' : '/dev/null';
 
 const run = (cmd, args) => {
   try {
-    return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return execFileSync(cmd, args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 30_000,
+    });
   } catch { return ''; }
 };
 
+const runResult = (cmd, args) => {
+  try {
+    return { ok: true, code: 0, output: execFileSync(cmd, args, {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000,
+    }) };
+  } catch (error) {
+    return { ok: false, code: error.status ?? null, output: `${error.stdout ?? ''}`, error };
+  }
+};
+
 /** PIDs listening on a TCP port. */
-export function pidsOnPort(port) {
+export function pidsOnPort(port, { strict = false } = {}) {
   const out = new Set();
   if (isWindows) {
-    for (const line of run('netstat', ['-ano']).split('\n')) {
+    const result = runResult('netstat', ['-ano']);
+    if (!result.ok && strict) throw new Error(`could not inspect listeners on :${port}`);
+    for (const line of result.output.split('\n')) {
       if (!new RegExp(`:${port}\\s`).test(line) || !/LISTENING/i.test(line)) continue;
       const pid = line.trim().split(/\s+/).pop();
       if (pid && pid !== '0') out.add(pid);
@@ -35,13 +51,29 @@ export function pidsOnPort(port) {
     return [...out];
   }
   // lsof is the common case; ss covers minimal containers that lack it.
-  for (const pid of run('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN']).split('\n')) {
+  const lsof = runResult('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN']);
+  // lsof uses exit 1 for a successful query with no matches.
+  if (!lsof.ok && lsof.code !== 1 && strict) {
+    const ss = runResult('ss', ['-lptn']);
+    if (!ss.ok) throw new Error(`could not inspect listeners on :${port}`);
+    for (const line of ss.output.split('\n')) {
+      if (!new RegExp(`(?:^|\\s)(?:\\[[^\\]]+\\]|\\S+):${port}\\s`).test(line)) continue;
+      for (const match of line.matchAll(/pid=(\d+)/g)) out.add(match[1]);
+    }
+    return [...out];
+  }
+  for (const pid of lsof.output.split('\n')) {
     if (pid.trim()) out.add(pid.trim());
   }
   if (!out.size) {
-    for (const m of run('ss', ['-lptn']).matchAll(/pid=(\d+)/g)) {
-      // ss prints every listener; only take lines mentioning this port.
-      out.add(m[1]);
+    const ss = runResult('ss', ['-lptn']);
+    if (!ss.ok) {
+      if (strict && lsof.code !== 1) throw new Error(`could not inspect listeners on :${port}`);
+      return [];
+    }
+    for (const line of ss.output.split('\n')) {
+      if (!new RegExp(`(?:^|\\s)(?:\\[[^\\]]+\\]|\\S+):${port}\\s`).test(line)) continue;
+      for (const match of line.matchAll(/pid=(\d+)/g)) out.add(match[1]);
     }
   }
   return [...out];

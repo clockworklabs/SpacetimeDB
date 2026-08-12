@@ -1,0 +1,69 @@
+{
+  "level": 1,
+  "name": "Action language compatibility fixture",
+  "features": [
+    {
+      "id": 1,
+      "name": "Every registered action",
+      "actors": ["a", "b"],
+      "max": 0,
+      "setup": [],
+      "criteria": [
+        {
+          "id": "all-actions",
+          "desc": "Compiles one representative of every registered action",
+          "points": 0,
+          "steps": [
+            { "do": "callConcurrently", "actors": ["a", "b"], "action": "buy", "settleMs": 1 },
+            { "do": "clearInput", "actor": "a" },
+            { "do": "click", "actor": "a", "testid": "button" },
+            { "do": "clickConcurrently", "actors": ["a", "b"], "testid": "button", "settleMs": 1 },
+            { "do": "closeClient", "actor": "a" },
+            { "do": "createRoom", "actor": "a", "room": "room" },
+            { "do": "dbSetStock", "item": "item", "warehouse": "warehouse", "quantity": 1, "settleMs": 1 },
+            { "do": "ensureRegistered", "actor": "a", "name": "alice" },
+            { "do": "ensureSignedIn", "actor": "a", "name": "alice" },
+            { "do": "enterRoom", "actor": "a", "room": "room" },
+            { "do": "expect", "actor": "a", "testid": "status" },
+            { "do": "expectActorsWith", "actors": ["a", "b"], "testid": "status", "contains": "ok", "equals": 2, "maxEach": 1 },
+            { "do": "expectAgreement", "actors": ["a", "b"], "testid": "status" },
+            { "do": "expectAllPresent", "actor": "a", "prefix": "message", "count": 1, "within": 1 },
+            { "do": "expectCallOutcomes", "accepted": 1 },
+            { "do": "expectElementCount", "actor": "a", "testid": "row", "contains": "item", "equals": 1, "within": 1 },
+            { "do": "expectForgeryRejected", "actor": "a" },
+            { "do": "expectNotReceived", "actor": "a", "contains": "secret" },
+            { "do": "expectNumber", "actor": "a", "testid": "count", "equals": 1 },
+            { "do": "expectOrderMatches", "actors": ["a", "b"], "prefix": "message" },
+            { "do": "expectReceived", "actor": "a", "contains": "hello", "within": 1 },
+            { "do": "expectReplayRejected", "actor": "a" },
+            { "do": "expectStable", "actor": "a", "testid": "count", "samples": 2, "intervalMs": 1 },
+            { "do": "fill", "actor": "a", "testid": "input", "text": "value" },
+            { "do": "forgeWrite", "actor": "a", "fromActor": "b", "settleMs": 1 },
+            { "do": "freshClient", "actor": "a" },
+            { "do": "openClient", "actor": "a" },
+            { "do": "pressKey", "actor": "a", "key": "Enter" },
+            { "do": "race", "branches": [[{ "do": "wait", "actor": "a", "ms": 1 }], [{ "do": "wait", "actor": "b", "ms": 1 }]], "settleMs": 1 },
+            { "do": "recordNumber", "actor": "a", "testid": "count", "as": "before" },
+            { "do": "register", "actor": "a", "name": "alice" },
+            { "do": "reload", "actor": "a", "settleMs": 1 },
+            { "do": "replayAs", "actor": "a", "from": "b", "match": "write" },
+            { "do": "replayConcurrently", "actors": ["a", "b"], "settleMs": 1 },
+            { "do": "restartBackend", "settleMs": 1 },
+            { "do": "runScript", "script": "fixture.mjs", "args": [] },
+            { "do": "scheduleMessage", "actor": "a", "text": "later", "secondsAhead": 1 },
+            { "do": "send", "actor": "a", "text": "hello" },
+            { "do": "sendConcurrently", "senders": [{ "actor": "a", "prefix": "message", "count": 1 }], "delayMs": 1 },
+            { "do": "sendMany", "actor": "a", "prefix": "message", "count": 1, "delayMs": 1 },
+            { "do": "setOffline", "actor": "a" },
+            { "do": "signIn", "actor": "a", "name": "alice" },
+            { "do": "signUp", "actor": "a", "name": "alice" },
+            { "do": "startAppServer" },
+            { "do": "stopAppServer" },
+            { "do": "typeInto", "actor": "a", "text": "value" },
+            { "do": "wait", "actor": "a", "ms": 1 }
+          ]
+        }
+      ]
+    }
+  ]
+}

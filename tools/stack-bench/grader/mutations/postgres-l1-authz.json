@@ -1,4 +1,9 @@
 {
+  "status": "legacy-unreproducible",
+  "backend": "postgres",
+  "track": "chat",
+  "level": 1,
+  "scenario": "tracks/chat/scenarios/01-invariants.json",
   "note": [
     "Validation for the authorization and privacy criteria added with the member",
     "panel and direct messages. Every one of them passed on both backends first",
@@ -11,13 +16,13 @@
     "dev = tsx watch) for the change to take effect.",
     "",
     "Run with:",
-    "  node mutation-test.mjs --app <app> --url <url> --level 1",
-    "    --spec ../tracks/chat/scenarios/01-invariants.json",
+    "  node mutation-test.mjs --app <app> --url <url>",
     "    --mutations mutations/postgres-l1-authz.json"
   ],
   "mutations": [
     {
       "id": "broadcast-every-message-to-everyone",
+      "kills": ["outsider-never-receives-it-over-the-wire"],
       "file": "server/src/index.ts",
       "desc": "Messages go to every connected client instead of the room's channel. The interface still looks correct — each client renders only the room it is showing — so this is invisible to a DOM assertion and visible only on the wire.",
       "find": "io.to(`room:${roomId}`).emit('room:message', { roomId, message: out });",
@@ -27,6 +32,7 @@
     },
     {
       "id": "removal-does-not-close-the-stream",
+      "kills": ["removed-member-stops-receiving"],
       "file": "server/src/index.ts",
       "desc": "A removed member is marked removed in the database but their socket stays subscribed to the room, so they keep receiving its messages live. The member panel updates correctly, which is all a DOM check can see.",
       "find": "    removeUserFromRoomChannel(targetId, roomId);",
@@ -36,6 +42,7 @@
     },
     {
       "id": "anyone-can-remove-a-member",
+      "kills": ["only-an-owner-can-remove-a-member"],
       "file": "server/src/index.ts",
       "desc": "The ownership check on removal is dropped. The button is still hidden from non-owners, so the app looks correct; only re-issuing the request as the wrong user can see it.",
       "find": "if (membership.role !== 'owner') return res.status(403).json({ error: 'Only a room owner can remove members' });",

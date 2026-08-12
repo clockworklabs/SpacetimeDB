@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.operations-access",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Fulfilment and operator access",
+  "description": "The fulfilment queue, operator authorization, and order ownership during operations.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "request-replay"],
+  "evidence": ["browser-observation", "server-refusal"],
+  "budget": { "status": "unmeasured" },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l2.staff-fulfilment", "path": "prompts/02-operations.md", "order": 20, "from": "## New: warehouse staff", "until": "### Moving stock", "modes": ["upgrade"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l2.fulfilment-hooks", "path": "contracts/appendix-02.md", "order": 2020, "from": "| `staff-link`", "until": "| `transfer-from`", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "fulfilment-queue", "source": "scenarios/02-features.json", "feature": 1, "role": "feature" },
+    { "id": "operator-authorization", "source": "scenarios/02-invariants.json", "feature": 201, "role": "guarantee" },
+    { "id": "order-owner", "source": "scenarios/02-invariants.json", "feature": 204, "role": "guarantee" }
+  ]
+}

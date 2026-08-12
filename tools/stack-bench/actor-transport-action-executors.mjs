@@ -1,0 +1,543 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { isAbsolute, relative, resolve } from 'node:path';
+import {
+  ActionApplicationFailure,
+  ActionInconclusive,
+} from './action-contract.mjs';
+import { browserApplicationBoundary } from './browser-action-executors.mjs';
+import { executeStackCapability } from './stack-adapter-contract.mjs';
+import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
+import { harnessProcessFailure } from './harness-errors.mjs';
+
+export const ACTOR_TRANSPORT_ACTION_IDS = Object.freeze([
+  'callConcurrently',
+  'createRoom',
+  'ensureRegistered',
+  'ensureSignedIn',
+  'enterRoom',
+  'expectCallOutcomes',
+  'expectForgeryRejected',
+  'expectNotReceived',
+  'expectReceived',
+  'expectReplayRejected',
+  'forgeWrite',
+  'register',
+  'replayAs',
+  'runScript',
+  'scheduleMessage',
+  'send',
+  'sendMany',
+  'signIn',
+  'signUp',
+].sort());
+
+const IDENTITY_FIELD = /^(user_?id|sender_?id|author_?id|from_?user|identity)$/i;
+const CONTENT_FIELD = /^(content|text|message|body|msg)$/i;
+const ROOM_FIELD = /^(room_?id|channel_?id|conversation_?id)$/i;
+const AUTH_HEADER = /^(authorization|cookie|x-auth-token|x-session|x-token|x-user)/i;
+const ID_KEY = /"(?:_?id|user_?id|userId|memberId|member_id)"\s*:\s*"?([A-Za-z0-9_-]{1,64})"?/g;
+
+const fail = message => { throw new ActionApplicationFailure(message); };
+const inconclusive = message => { throw new ActionInconclusive(message); };
+const pad = (index, count) => String(index).padStart(String(count).length, '0');
+
+function actorFor(capabilities, name) {
+  const actor = capabilities.actors.get(name);
+  if (!actor) fail(`unknown actor "${name}"`);
+  return actor;
+}
+
+const browserFor = capabilities => capabilities['browser-interaction'];
+const transportFor = capabilities => capabilities['transport-observation'];
+
+const tokenRe = token => new RegExp(
+  `(?<![A-Za-z0-9_-])${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`, 'g');
+const mentions = (value, token) => tokenRe(token).test(value);
+const swapToken = (value, from, to) => value.replace(tokenRe(from), to);
+
+function discoverIds(actor, username) {
+  const found = new Set();
+  const quoted = `"${username}"`;
+  for (const chunk of actor.received) {
+    let index = chunk.indexOf(quoted);
+    while (index !== -1) {
+      for (const match of chunk.slice(Math.max(0, index - 200), index + 200).matchAll(ID_KEY)) {
+        found.add(match[1]);
+      }
+      index = chunk.indexOf(quoted, index + 1);
+    }
+  }
+  return [...found];
+}
+
+export function replayHeaders(write, overrides = {}) {
+  const headers = { ...(write.headers ?? {}), 'content-type': 'application/json', ...overrides };
+  for (const key of Object.keys(headers)) {
+    if (/^(content-length|host|connection|transfer-encoding|accept-encoding)$/i.test(key)) {
+      delete headers[key];
+    }
+  }
+  return headers;
+}
+
+function authFor(actor) {
+  for (const write of [...actor.writes].reverse()) {
+    const headers = Object.entries(write.headers ?? {}).filter(([key, value]) => AUTH_HEADER.test(key) && value);
+    if (headers.length) return Object.fromEntries(headers);
+  }
+  for (const chunk of actor.received) {
+    const match = chunk.match(/"(?:token|accessToken|access_token|jwt|sessionToken)"\s*:\s*"([^"]{8,})"/);
+    if (match) return { authorization: `Bearer ${match[1]}` };
+  }
+  return null;
+}
+
+async function browserCredentials(actor) {
+  const headers = {};
+  const cookies = await actor.context.cookies().catch(() => []);
+  if (cookies.length) headers.Cookie = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+  const token = await actor.page.evaluate(() => {
+    const jwt = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\./;
+    for (const storage of [localStorage, sessionStorage]) {
+      for (let index = 0; index < storage.length; index++) {
+        const value = storage.getItem(storage.key(index)) ?? '';
+        if (jwt.test(value)) return value;
+        try {
+          const object = JSON.parse(value);
+          for (const nested of Object.values(object ?? {})) {
+            if (typeof nested === 'string' && jwt.test(nested)) return nested;
+          }
+        } catch { /* not JSON */ }
+      }
+    }
+    return null;
+  }).catch(() => null);
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return Object.keys(headers).length ? headers : null;
+}
+
+async function signUp({ input, capabilities, signal }) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const user = input.exact ? input.name : browser.scopedUser(input.name);
+  const password = input.password ?? `pw-${user}`;
+  await actor.page.locator(browser.testId('signup-username')).first().fill(user);
+  await actor.page.locator(browser.testId('signup-password')).first().fill(password);
+  await actor.page.locator(browser.testId('signup-submit')).first().click();
+  if (input.expectFailure) {
+    await browser.sleep(input.settleMs ?? 2000, signal);
+    return { user, expectedFailure: true };
+  }
+  await actor.page.locator(browser.testId('current-user')).first()
+    .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+  return { user, signedUp: true };
+}
+
+async function signIn({ input, capabilities, signal }) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const user = input.exact ? input.name : browser.scopedUser(input.name);
+  const password = input.password ?? `pw-${user}`;
+  const toggle = actor.loc('signin-toggle');
+  if (await toggle.count()) await toggle.click({ timeout: browser.defaultWithin }).catch(() => {});
+  await actor.page.locator(browser.testId('signin-username')).first().fill(user);
+  await actor.page.locator(browser.testId('signin-password')).first().fill(password);
+  await actor.page.locator(browser.testId('signin-submit')).first().click();
+  if (input.expectFailure) {
+    await browser.sleep(input.settleMs ?? 2000, signal);
+    return { user, expectedFailure: true };
+  }
+  await actor.page.locator(browser.testId('current-user')).first()
+    .waitFor({ state: 'visible', timeout: browser.defaultWithin * 2 });
+  return { user, signedIn: true };
+}
+
+async function register({ input, capabilities }) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const name = browser.legacyScopedUser(input.name);
+  await actor.page.locator(browser.testId('name-input')).first().fill(name);
+  await actor.page.locator(browser.testId('name-submit')).first().click();
+  await actor.page.locator(browser.testId('room-list')).first()
+    .waitFor({ state: 'attached', timeout: browser.defaultWithin });
+  return { name, registered: true };
+}
+
+async function createRoom({ input, capabilities }) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const room = browser.roomName(input.room);
+  const nameInput = actor.page.locator(browser.testId('room-name-input')).first();
+  if (!(await nameInput.isVisible().catch(() => false))) {
+    await actor.page.locator(browser.testId('room-create')).first().click();
+  }
+  await nameInput.fill(room);
+  if (input.private) await actor.page.locator(browser.testId('room-private-toggle')).first().click();
+  await actor.page.locator(browser.testId('room-name-submit')).first().click();
+  await actor.page.locator(browser.testId('room-item'), { hasText: room }).first()
+    .waitFor({ state: 'visible', timeout: browser.defaultWithin });
+  return { room, private: input.private === true };
+}
+
+async function enterRoom({ input, capabilities, signal }) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const room = browser.roomName(input.room);
+  const item = actor.page.locator(browser.testId('room-item'), { hasText: room }).first();
+  await item.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+  await item.click();
+  const message = actor.loc('message-input');
+  if (!(await message.isVisible().catch(() => false))) {
+    await browser.sleep(750, signal);
+    if (!(await message.isVisible().catch(() => false))) await item.click();
+  }
+  await message.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+  return { room, entered: true };
+}
+
+async function send({ input, capabilities }) {
+  const actor = actorFor(capabilities, input.actor);
+  const message = actor.loc('message-input');
+  await message.fill(input.text);
+  await message.press('Enter');
+  return { sent: input.text };
+}
+
+async function sendMany({ input, capabilities, signal }) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const message = actor.loc('message-input');
+  for (let index = 1; index <= input.count; index++) {
+    await message.fill(`${input.prefix}-${pad(index, input.count)}`);
+    await message.press('Enter');
+    if (input.delayMs) await browser.sleep(input.delayMs, signal);
+  }
+  return { sent: input.count, prefix: input.prefix };
+}
+
+async function scheduleMessage({ input, capabilities }) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const message = actor.loc('message-input');
+  if (await message.count()) await message.fill(input.text);
+  const toggle = actor.loc('schedule-toggle');
+  if (await toggle.count()) await toggle.click({ timeout: browser.defaultWithin }).catch(() => {});
+  const when = actor.loc('schedule-time');
+  await when.waitFor({ state: 'visible', timeout: browser.defaultWithin });
+  const dedicated = actor.page.locator(
+    '[data-testid="schedule-message-input"], [data-testid="schedule-text"]').first();
+  if (await dedicated.count()) await dedicated.fill(input.text);
+  const type = (await when.getAttribute('type')) ?? 'text';
+  const at = new Date(Date.now() + input.secondsAhead * 1000);
+  const local = new Date(at.getTime() - at.getTimezoneOffset() * 60000).toISOString();
+  if (type === 'datetime-local') await when.fill(local.slice(0, 16));
+  else if (type === 'time') await when.fill(local.slice(11, 16));
+  else await when.fill(String(input.secondsAhead));
+  const submit = actor.loc('schedule-submit');
+  if (await submit.count()) await submit.click();
+  else {
+    const labelled = actor.page.getByRole('button', { name: /schedule|send later|confirm/i }).first();
+    if (await labelled.count()) await labelled.click();
+    else await when.press('Enter');
+  }
+  return { scheduled: input.text, secondsAhead: input.secondsAhead };
+}
+
+async function ensureSignedIn({ input, capabilities, signal }) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = browserFor(capabilities);
+  const username = actor.page.locator(browser.testId('signup-username')).first();
+  if (!(await username.isVisible().catch(() => false))) return { restored: false };
+  const user = input.exact ? input.name : browser.scopedUser(input.name);
+  await username.fill(user);
+  await actor.page.locator(browser.testId('signup-password')).first().fill(input.password ?? `pw-${user}`);
+  await actor.page.locator(browser.testId('signup-submit')).first().click();
+  await actor.page.locator(browser.testId(input.readyTestid ?? 'room-list')).first()
+    .waitFor({ state: 'attached', timeout: browser.defaultWithin });
+  await browser.sleep(input.settleMs ?? 1500, signal);
+  return { restored: true, user };
+}
+
+const ensureRegistered = ensureSignedIn;
+
+async function forgeWrite({ input, capabilities, signal }) {
+  const actor = actorFor(capabilities, input.actor);
+  const transport = transportFor(capabilities);
+  const write = actor.lastWrite;
+  if (!write) {
+    const websocket = actor.lastWsWrite;
+    if (websocket) {
+      const identityKey = Object.keys(websocket.body).find(key => IDENTITY_FIELD.test(key));
+      actor.forge = identityKey
+        ? { inconclusive: true, reason: `writes over WebSocket ("${websocket.event}") carrying a client-supplied "${identityKey}" — replay not attempted, treat as unverified` }
+        : { structurallySafe: true, reason: `writes over WebSocket ("${websocket.event}") with no client-supplied identity — the server must derive it from the connection` };
+    } else {
+      actor.forge = { inconclusive: true, reason: 'no write request observed at all — the test did not exercise anything' };
+    }
+    return { attempted: false, classification: actor.forge.structurallySafe ? 'structural' : 'unverified' };
+  }
+  const body = { ...write.body };
+  const key = Object.keys(body).find(field => (input.field === 'room' ? ROOM_FIELD : IDENTITY_FIELD).test(field));
+  if (!key) {
+    actor.forge = { structurallySafe: true,
+      reason: `write body carries no identity field (${Object.keys(body).join(',') || 'empty'}) — nothing to forge` };
+    return { attempted: false, classification: 'structural' };
+  }
+  let value = input.value;
+  if (input.fromActor) {
+    const victim = actorFor(capabilities, input.fromActor);
+    const victimKey = Object.keys(victim.lastWrite?.body ?? {}).find(field => IDENTITY_FIELD.test(field));
+    if (!victimKey) {
+      const wsKey = victim.lastWsWrite && Object.keys(victim.lastWsWrite.body)
+        .find(field => IDENTITY_FIELD.test(field));
+      if (!wsKey) {
+        actor.forge = { structurallySafe: true, reason: `${input.fromActor} never exposes an identity to steal` };
+        return { attempted: false, classification: 'structural' };
+      }
+      value = victim.lastWsWrite.body[wsKey];
+    } else value = victim.lastWrite.body[victimKey];
+  }
+  body[key] = value;
+  const contentKey = Object.keys(body).find(field => CONTENT_FIELD.test(field));
+  if (contentKey && input.text) body[contentKey] = input.text;
+  const response = await actor.page.request.fetch(write.url, {
+    method: write.method,
+    headers: replayHeaders(write),
+    data: JSON.stringify(body),
+  });
+  actor.forge = { skipped: false, status: response.status(), accepted: response.ok(), tamperedField: key, value };
+  await transport.sleep(input.settleMs ?? 2000, signal);
+  return { attempted: true, status: actor.forge.status, accepted: actor.forge.accepted, tamperedField: key };
+}
+
+async function expectForgeryRejected({ input, capabilities }) {
+  const actor = actorFor(capabilities, input.actor);
+  const transport = transportFor(capabilities);
+  const forge = actor.forge;
+  if (!forge) fail('no forgeWrite ran before this assertion');
+  if (forge.inconclusive) {
+    transport.verification.unverified(`${actor.name}: ${forge.reason}`);
+    return { classification: 'unverified' };
+  }
+  if (forge.structurallySafe) {
+    transport.verification.structural(`${actor.name}: ${forge.reason}`);
+    return { classification: 'structural' };
+  }
+  if (forge.accepted) {
+    fail(`server ACCEPTED a write with a tampered "${forge.tamperedField}" (HTTP ${forge.status}) — the client chooses who it is`);
+  }
+  transport.verification.verified(
+    `${actor.name}: server refused the tampered "${forge.tamperedField}" (HTTP ${forge.status})`);
+  return { classification: 'verified', status: forge.status };
+}
+
+async function replayAs({ input, capabilities, signal }) {
+  const actor = actorFor(capabilities, input.actor);
+  const source = actorFor(capabilities, input.from);
+  const transport = transportFor(capabilities);
+  const needle = transport.expand(input.match).toLowerCase();
+  const write = [...source.writes].reverse()
+    .find(candidate => `${candidate.method} ${candidate.url} ${JSON.stringify(candidate.body)}`
+      .toLowerCase().includes(needle));
+  if (!write) {
+    actor.replay = { inconclusive: true, reason: source.lastWsWrite
+      ? `${input.from} writes over WebSocket ("${source.lastWsWrite.event}") — identity comes from the connection, replay not attempted`
+      : `no HTTP write from ${input.from} matching "${input.match}"` };
+    return { attempted: false };
+  }
+  const mine = authFor(actor);
+  if (!mine) {
+    actor.replay = { inconclusive: true,
+      reason: `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused` };
+    return { attempted: false };
+  }
+  const credentials = { ...mine };
+  for (const key of Object.keys(write.headers)) {
+    if (AUTH_HEADER.test(key) && !(key in credentials)) credentials[key] = '';
+  }
+  let url = write.url;
+  let data = write.body === null ? undefined : JSON.stringify(write.body);
+  if (input.swap) {
+    const find = transport.expand(input.swap.find);
+    const to = transport.expand(input.swap.with);
+    let fromToken = find;
+    let toToken = to;
+    if (!mentions(url, fromToken) && !mentions(data ?? '', fromToken)) {
+      const candidates = [...discoverIds(source, find), ...discoverIds(actor, find)];
+      const resolvedFrom = candidates.find(candidate => mentions(url, candidate) || mentions(data ?? '', candidate));
+      const resolvedTo = [...discoverIds(source, to), ...discoverIds(actor, to)]
+        .find(candidate => candidate !== resolvedFrom);
+      if (!resolvedFrom || !resolvedTo) {
+        actor.replay = { inconclusive: true,
+          reason: `neither "${find}" nor an id resolved for it appears in ${write.method} ${write.url} — cannot retarget the replay` };
+        return { attempted: false };
+      }
+      fromToken = resolvedFrom;
+      toToken = resolvedTo;
+    }
+    url = swapToken(url, fromToken, toToken);
+    if (data) data = swapToken(data, fromToken, toToken);
+  }
+  const response = await actor.page.request.fetch(url, {
+    method: write.method,
+    headers: replayHeaders(write, credentials),
+    ...(data === undefined ? {} : { data }),
+  }).catch(error => ({ status: () => 0, ok: () => false, error: error.message }));
+  actor.replay = { accepted: response.ok(), status: response.status(), url, method: write.method };
+  await transport.sleep(input.settleMs ?? 2000, signal);
+  return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status };
+}
+
+async function expectReplayRejected({ input, capabilities }) {
+  const actor = actorFor(capabilities, input.actor);
+  const transport = transportFor(capabilities);
+  const replay = actor.replay;
+  if (!replay) fail('no replayAs ran before this assertion');
+  if (replay.inconclusive) {
+    transport.verification.unverified(`${actor.name}: ${replay.reason}`);
+    return { classification: 'unverified' };
+  }
+  if (replay.accepted) {
+    fail(`server ACCEPTED ${replay.method} ${replay.url} from ${actor.name}, who is not allowed to do it (HTTP ${replay.status}) — the check is in the interface, not the server`);
+  }
+  transport.verification.verified(
+    `${actor.name}: server refused ${replay.method} ${replay.url} (HTTP ${replay.status})`);
+  return { classification: 'verified', status: replay.status };
+}
+
+async function expectReceived({ input, capabilities, signal }) {
+  const actor = actorFor(capabilities, input.actor);
+  const transport = transportFor(capabilities);
+  const needle = transport.expand(input.contains);
+  const deadline = Date.now() + (input.within ?? transport.defaultWithin);
+  while (!actor.wasSent(needle) && Date.now() < deadline) await transport.sleep(250, signal);
+  if (!actor.wasSent(needle)) {
+    fail(`the harness never saw "${needle}" reach ${actor.name}, who should have it — traffic on this app is not visible to the wire checks`);
+  }
+  return { received: true, contains: needle };
+}
+
+async function expectNotReceived({ input, capabilities }) {
+  const actor = actorFor(capabilities, input.actor);
+  const needle = transportFor(capabilities).expand(input.contains);
+  if (actor.wasSent(needle)) {
+    fail(`"${needle}" was delivered to ${actor.name}, who is not a participant — the server sends private data to everyone and relies on the client to hide it`);
+  }
+  return { received: false, contains: needle };
+}
+
+async function callConcurrently({ input, capabilities, signal }) {
+  const named = capabilities['named-actions'];
+  const action = named.resolve(input.action);
+  if (!action) inconclusive(`the track names no action "${input.action}", so nothing could be issued`);
+  const prepared = [];
+  for (const name of input.actors) {
+    const actor = actorFor(capabilities, name);
+    const credentials = await browserCredentials(actor);
+    if (!credentials) {
+      inconclusive(`no session found in ${name}'s browser, so the action could not be issued as them`);
+    }
+    prepared.push({ name, credentials });
+  }
+  if (prepared.length < 2) inconclusive('fewer than two actors, so nothing was contended');
+  const request = named.request(action, input);
+  if (!request?.url) inconclusive('could not resolve where to send the action for this backend');
+  const started = named.now();
+  const outcomes = await Promise.all(prepared.map(preparedActor =>
+    named.fetch(request.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...preparedActor.credentials },
+      body: request.body,
+      signal,
+    }).then(async response => ({ name: preparedActor.name, status: response.status, ok: response.ok,
+      text: response.ok ? '' : (await response.text()).slice(0, 120) }))
+      .catch(error => ({ name: preparedActor.name, status: 0, ok: false,
+        text: String(error.message).slice(0, 120) }))));
+  const result = { action: input.action, fired: prepared.length, ms: named.now() - started, outcomes };
+  named.lastCalls.set(result);
+  await named.sleep(input.settleMs ?? 3000, signal);
+  return result;
+}
+
+async function expectCallOutcomes({ input, capabilities }) {
+  const result = capabilities['named-actions'].lastCalls.get();
+  if (!result) fail('no callConcurrently ran before this assertion');
+  const accepted = result.outcomes.filter(outcome => outcome.ok).length;
+  if (input.accepted !== undefined && accepted !== input.accepted) {
+    const detail = result.outcomes.map(outcome => `${outcome.name}:${outcome.status}`).join(' ');
+    fail(`${accepted} of ${result.fired} concurrent "${result.action}" requests were accepted, expected exactly `
+      + `${input.accepted} (${detail}) — issued within ${result.ms}ms`);
+  }
+  return { accepted, fired: result.fired, outcomes: result.outcomes };
+}
+
+async function runScript({ input, capabilities, signal }) {
+  const files = capabilities['application-files'];
+  const subprocess = capabilities.subprocess;
+  if (!files.root) inconclusive('grader was not told the app directory (--app)');
+  const root = resolve(files.root);
+  const path = resolve(root, input.script);
+  const fromRoot = relative(root, path);
+  if (!fromRoot || fromRoot === '..' || fromRoot.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)
+    || isAbsolute(fromRoot)) {
+    fail(`${input.script} is not a script inside the application directory`);
+  }
+  if (!existsSync(path)) fail(`the app does not ship ${input.script} — the spec requires it`);
+  try {
+    execFileSync('node', [path, ...(input.args ?? []).map(files.expand)], {
+      cwd: files.root,
+      encoding: 'utf8',
+      stdio: 'pipe',
+      timeout: input.timeoutMs ?? 60000,
+    });
+  } catch (error) {
+    const infrastructure = harnessProcessFailure(error);
+    if (infrastructure) throw error;
+    fail(`${input.script} failed: ${((error.stdout ?? '') + (error.stderr ?? '')).trim().slice(-200) || error.message}`);
+  }
+  await subprocess.sleep(input.settleMs ?? 3000, signal);
+  return { script: input.script, completed: true };
+}
+
+export function createNamedActionsCapability({ actions, backend, url, spacetime, lastCalls, sleep,
+  fetchImpl = fetch, now = () => Date.now() }) {
+  return Object.freeze({
+    resolve: id => (actions ?? []).find(action => action.id === id) ?? null,
+    request(action, input) {
+      return executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend),
+        'named-action', 'request', { action, input, spacetime, url });
+    },
+    fetch: fetchImpl,
+    lastCalls: Object.freeze({ get: lastCalls.get, set: lastCalls.set }),
+    now,
+    sleep,
+  });
+}
+
+export const ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS = Object.freeze({
+  callConcurrently,
+  createRoom: browserApplicationBoundary(createRoom),
+  ensureRegistered: browserApplicationBoundary(ensureRegistered),
+  ensureSignedIn: browserApplicationBoundary(ensureSignedIn),
+  enterRoom: browserApplicationBoundary(enterRoom),
+  expectCallOutcomes,
+  expectForgeryRejected,
+  expectNotReceived,
+  expectReceived: browserApplicationBoundary(expectReceived),
+  expectReplayRejected,
+  forgeWrite: browserApplicationBoundary(forgeWrite),
+  register: browserApplicationBoundary(register),
+  replayAs: browserApplicationBoundary(replayAs),
+  runScript,
+  scheduleMessage: browserApplicationBoundary(scheduleMessage),
+  send: browserApplicationBoundary(send),
+  sendMany: browserApplicationBoundary(sendMany),
+  signIn: browserApplicationBoundary(signIn),
+  signUp: browserApplicationBoundary(signUp),
+});
+
+if (Object.keys(ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS).sort().join('\0')
+  !== ACTOR_TRANSPORT_ACTION_IDS.join('\0')) {
+  throw new Error('actor/transport action implementation registry does not match its declared action ids');
+}

@@ -19,6 +19,11 @@ copyFileSync(join(HERE, which, 'index.html'), join(args.app, 'index.html'));
 
 console.log(JSON.stringify({
   appDir: args.app, mode: args.mode, level: Number(args.level ?? 1),
+  track: args.track, backend: args.backend, model: args.model,
+  guidance: args.guidance, stack: args.guidance === 'minimal' ? 'free' : 'prescribed',
+  setup: { isolation: { mode: 'deterministic-fixture' }, session: 'model-free-test' },
   costUsd: args.mode === 'fix' ? 0.05 : 0.5, tokens: 1000, outputTokens: 100,
-  durationMs: 50, sessionId: `stub-${args.mode}`, ok: true, fixture: which,
+  usage: { input: 100, output: 100, cacheWrite: 300, cacheRead: 500 },
+  turns: args.mode === 'fix' ? 2 : 3, promptBytes: args.mode === 'fix' ? 200 : 300,
+  durationMs: 50, sessionId: `stub-${args.mode}`, ok: true,
 }));

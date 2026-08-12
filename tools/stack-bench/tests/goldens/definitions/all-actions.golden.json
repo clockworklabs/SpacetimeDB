@@ -1,0 +1,311 @@
+{
+  "features": [
+    {
+      "actors": [
+        "a",
+        "b"
+      ],
+      "criteria": [
+        {
+          "desc": "Compiles one representative of every registered action",
+          "id": "all-actions",
+          "points": 0,
+          "steps": [
+            {
+              "action": "buy",
+              "actors": [
+                "a",
+                "b"
+              ],
+              "do": "callConcurrently",
+              "settleMs": 1
+            },
+            {
+              "actor": "a",
+              "do": "clearInput"
+            },
+            {
+              "actor": "a",
+              "do": "click",
+              "testid": "button"
+            },
+            {
+              "actors": [
+                "a",
+                "b"
+              ],
+              "do": "clickConcurrently",
+              "settleMs": 1,
+              "testid": "button"
+            },
+            {
+              "actor": "a",
+              "do": "closeClient"
+            },
+            {
+              "actor": "a",
+              "do": "createRoom",
+              "room": "room"
+            },
+            {
+              "do": "dbSetStock",
+              "item": "item",
+              "quantity": 1,
+              "settleMs": 1,
+              "warehouse": "warehouse"
+            },
+            {
+              "actor": "a",
+              "do": "ensureRegistered",
+              "name": "alice"
+            },
+            {
+              "actor": "a",
+              "do": "ensureSignedIn",
+              "name": "alice"
+            },
+            {
+              "actor": "a",
+              "do": "enterRoom",
+              "room": "room"
+            },
+            {
+              "actor": "a",
+              "do": "expect",
+              "testid": "status"
+            },
+            {
+              "actors": [
+                "a",
+                "b"
+              ],
+              "contains": "ok",
+              "do": "expectActorsWith",
+              "equals": 2,
+              "maxEach": 1,
+              "testid": "status"
+            },
+            {
+              "actors": [
+                "a",
+                "b"
+              ],
+              "do": "expectAgreement",
+              "testid": "status"
+            },
+            {
+              "actor": "a",
+              "count": 1,
+              "do": "expectAllPresent",
+              "prefix": "message",
+              "within": 1
+            },
+            {
+              "accepted": 1,
+              "do": "expectCallOutcomes"
+            },
+            {
+              "actor": "a",
+              "contains": "item",
+              "do": "expectElementCount",
+              "equals": 1,
+              "testid": "row",
+              "within": 1
+            },
+            {
+              "actor": "a",
+              "do": "expectForgeryRejected"
+            },
+            {
+              "actor": "a",
+              "contains": "secret",
+              "do": "expectNotReceived"
+            },
+            {
+              "actor": "a",
+              "do": "expectNumber",
+              "equals": 1,
+              "testid": "count"
+            },
+            {
+              "actors": [
+                "a",
+                "b"
+              ],
+              "do": "expectOrderMatches",
+              "prefix": "message"
+            },
+            {
+              "actor": "a",
+              "contains": "hello",
+              "do": "expectReceived",
+              "within": 1
+            },
+            {
+              "actor": "a",
+              "do": "expectReplayRejected"
+            },
+            {
+              "actor": "a",
+              "do": "expectStable",
+              "intervalMs": 1,
+              "samples": 2,
+              "testid": "count"
+            },
+            {
+              "actor": "a",
+              "do": "fill",
+              "testid": "input",
+              "text": "value"
+            },
+            {
+              "actor": "a",
+              "do": "forgeWrite",
+              "fromActor": "b",
+              "settleMs": 1
+            },
+            {
+              "actor": "a",
+              "do": "freshClient"
+            },
+            {
+              "actor": "a",
+              "do": "openClient"
+            },
+            {
+              "actor": "a",
+              "do": "pressKey",
+              "key": "Enter"
+            },
+            {
+              "branches": [
+                [
+                  {
+                    "actor": "a",
+                    "do": "wait",
+                    "ms": 1
+                  }
+                ],
+                [
+                  {
+                    "actor": "b",
+                    "do": "wait",
+                    "ms": 1
+                  }
+                ]
+              ],
+              "do": "race",
+              "settleMs": 1
+            },
+            {
+              "actor": "a",
+              "as": "before",
+              "do": "recordNumber",
+              "testid": "count"
+            },
+            {
+              "actor": "a",
+              "do": "register",
+              "name": "alice"
+            },
+            {
+              "actor": "a",
+              "do": "reload",
+              "settleMs": 1
+            },
+            {
+              "actor": "a",
+              "do": "replayAs",
+              "from": "b",
+              "match": "write"
+            },
+            {
+              "actors": [
+                "a",
+                "b"
+              ],
+              "do": "replayConcurrently",
+              "settleMs": 1
+            },
+            {
+              "do": "restartBackend",
+              "settleMs": 1
+            },
+            {
+              "args": [],
+              "do": "runScript",
+              "script": "fixture.mjs"
+            },
+            {
+              "actor": "a",
+              "do": "scheduleMessage",
+              "secondsAhead": 1,
+              "text": "later"
+            },
+            {
+              "actor": "a",
+              "do": "send",
+              "text": "hello"
+            },
+            {
+              "delayMs": 1,
+              "do": "sendConcurrently",
+              "senders": [
+                {
+                  "actor": "a",
+                  "count": 1,
+                  "prefix": "message"
+                }
+              ]
+            },
+            {
+              "actor": "a",
+              "count": 1,
+              "delayMs": 1,
+              "do": "sendMany",
+              "prefix": "message"
+            },
+            {
+              "actor": "a",
+              "do": "setOffline",
+              "offline": true
+            },
+            {
+              "actor": "a",
+              "do": "signIn",
+              "name": "alice"
+            },
+            {
+              "actor": "a",
+              "do": "signUp",
+              "name": "alice"
+            },
+            {
+              "do": "startAppServer"
+            },
+            {
+              "do": "stopAppServer"
+            },
+            {
+              "actor": "a",
+              "do": "typeInto",
+              "text": "value"
+            },
+            {
+              "actor": "a",
+              "do": "wait",
+              "ms": 1
+            }
+          ]
+        }
+      ],
+      "id": 1,
+      "max": 0,
+      "name": "Every registered action",
+      "setup": []
+    }
+  ],
+  "level": 1,
+  "name": "Action language compatibility fixture",
+  "schemaVersion": 1
+}

@@ -22,9 +22,12 @@
 //   node check-actions.mjs --backend spacetime --app <dir> [--out report.json]
 //   node check-actions.mjs --backend postgres --url http://localhost:6573
 
-import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { emptyArtifactIdentities, writeArtifact } from './artifacts.mjs';
+import { executeStackCapability } from './stack-adapter-contract.mjs';
+import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 
 const TRACKS = join(dirname(fileURLToPath(import.meta.url)), 'tracks');
 
@@ -38,6 +41,7 @@ function parseArgs(argv) {
     else if (k === '--out') a.out = argv[++i];
     else if (k === '--track') a.track = argv[++i];
     else if (k === '--quiet') a.quiet = true;
+    else if (k === '--parent-attempt-id') a.parentAttemptId = argv[++i];
     else { console.error(`Unknown arg ${k}`); process.exit(2); }
   }
   if (!a.backend) { console.error('--backend is required'); process.exit(2); }
@@ -54,46 +58,35 @@ const track = args.track ? JSON.parse(readFileSync(join(TRACKS, args.track, 'tra
 const ACTIONS = (track?.actions ?? []).map(a => ({ ...a, http: { method: 'POST', path: a.path } }));
 if (!ACTIONS.length) {
   if (!args.quiet) console.log(`  no named actions declared for track "${args.track ?? '(none)'}" — nothing to check`);
-  if (args.out) writeFileSync(args.out, JSON.stringify({ backend: args.backend, results: [], missing: [] }, null, 2));
+  if (args.out) {
+    const id = `${args.parentAttemptId ?? 'actions'}-action-check`;
+    writeArtifact(args.out, { kind: 'action_check', id,
+      attempt: { id, parentId: args.parentAttemptId ?? null },
+      identities: emptyArtifactIdentities({ stackAdapter: { id: args.backend } }),
+      payload: { backend: args.backend, results: [], missing: [] } });
+  }
   process.exit(0);
 }
 
-// SpacetimeDB is addressed by module name on the host, not by the app's URL, and
-// both live in the config the app generated. reset-db.sh reads the same two
-// values the same way.
-function spacetimeTarget(appDir) {
-  const cfg = join(appDir, 'client', 'src', 'config.ts');
-  if (!existsSync(cfg)) return null;
-  const src = readFileSync(cfg, 'utf8');
-  const pick = re => (src.match(re)?.[1] ?? null);
-  const mod = pick(/MODULE_NAME\s*=\s*'([^']+)'/);
-  let uri = pick(/URI\s*=\s*'([^']+)'/) ?? 'http://127.0.0.1:3210';
-  // The SDK connects over ws://; the HTTP API does not answer there.
-  uri = uri.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
-  return mod ? { mod, uri } : null;
-}
+// SpacetimeDB control targets come from the authenticated lease. Client config
+// is app-controlled input and may use environment expressions rather than
+// literals; it is neither authoritative nor safe for harness operations.
+const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
+const spacetime = executeStackCapability(adapter, 'grading', 'context',
+  { requireBuildContainer: false });
 
 async function probe(action) {
   try {
-    if (args.backend === 'spacetime') {
-      const t = spacetimeTarget(args.app ?? '.');
-      if (!t) return { ok: false, status: 0, note: 'could not read MODULE_NAME from client/src/config.ts' };
-      const r = await fetch(`${t.uri}/v1/database/${t.mod}/call/${action.reducer}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(action.args),
-      });
-      // 404 is the host saying there is no such reducer.
-      return { ok: r.status !== 404, status: r.status, note: r.status === 404 ? `no reducer named "${action.reducer}"` : '' };
-    }
-    const base = (args.url ?? '').replace(/\/$/, '');
-    if (!base) return { ok: false, status: 0, note: 'no --url given for a server-based backend' };
-    const r = await fetch(`${base}${action.http.path}`, {
-      method: action.http.method,
+    const request = executeStackCapability(adapter, 'named-action', 'request',
+      { action, input: { args: action.args }, spacetime, url: args.url });
+    if (!request.url) return { ok: false, status: 0, note: 'no --url given for a server-based backend' };
+    const r = await fetch(request.url, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+      body: request.body,
     });
-    return { ok: r.status !== 404, status: r.status, note: r.status === 404 ? `no route at ${action.http.path}` : '' };
+    return { ok: r.status !== 404, status: r.status,
+      note: r.status === 404 ? request.missingNote : '' };
   } catch (e) {
     return { ok: false, status: 0, note: String(e.message).split('\n')[0].slice(0, 90) };
   }
@@ -111,5 +104,11 @@ if (!args.quiet) {
     ? `\n${missing.length} named action(s) missing — contention and volume tests cannot be issued against this app.`
     : '\nall named actions answer.');
 }
-if (args.out) writeFileSync(args.out, JSON.stringify({ backend: args.backend, results, missing: missing.map(m => m.id) }, null, 2));
+if (args.out) {
+  const id = `${args.parentAttemptId ?? 'actions'}-action-check`;
+  writeArtifact(args.out, { kind: 'action_check', id,
+    attempt: { id, parentId: args.parentAttemptId ?? null },
+    identities: emptyArtifactIdentities({ stackAdapter: { id: args.backend } }),
+    payload: { backend: args.backend, results, missing: missing.map(m => m.id) } });
+}
 process.exit(missing.length ? 1 : 0);

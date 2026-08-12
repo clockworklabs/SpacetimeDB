@@ -24,7 +24,9 @@ if (!portFile || !cmd) { console.error('need --port-file and --cmd'); process.ex
 const server = createServer((req, res) => {
   let out = '', ok = true;
   try {
-    out = execSync(cmd, { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: 'pipe' });
+    out = execSync(cmd, {
+      encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: 'pipe', timeout: 110_000,
+    });
   } catch (e) {
     ok = false;
     out = `${e.stdout ?? ''}${e.stderr ?? ''}` || String(e.message);

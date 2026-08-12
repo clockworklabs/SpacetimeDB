@@ -24,29 +24,47 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, basename, dirname } from 'node:path';
 import { homedir } from 'node:os';
+import { leaseFromEnv, updateBackendLease } from '../backend-lease.mjs';
+import { resolveContainerImage } from '../container-image.mjs';
+import { executeStackCapability } from '../stack-adapter-contract.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../stack-adapters.mjs';
+import { DEFAULT_BUILD_IMAGE } from '../product-config.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d = null) => { const i = argv.indexOf(k); return i === -1 ? d : argv[i + 1]; };
 
 const appDir = opt('--app');
 if (!appDir) { console.error('run-build.mjs: --app is required'); process.exit(2); }
+const backend = opt('--backend');
+if (!backend) { console.error('run-build.mjs: --backend is required'); process.exit(2); }
+let adapter;
+try { adapter = STACK_ADAPTER_REGISTRY.get(backend); }
+catch (error) { console.error(`run-build.mjs: ${error.message}`); process.exit(2); }
+const prepareOnly = argv.includes('--prepare-only');
+const DOCKER_TIMEOUT_MS = 120_000;
+const DOCKER_PROBE_TIMEOUT_MS = 10_000;
+const BUILD_SESSION_TIMEOUT_MS = 55 * 60_000;
 
 const REPO = resolve(join(new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), '..', '..', '..'));
-const image = opt('--image', 'stack-bench-build:2.1.226');
+const imageReference = opt('--image', DEFAULT_BUILD_IMAGE);
+let imageIdentity;
+try { imageIdentity = resolveContainerImage(imageReference); }
+catch (error) {
+  console.error(`run-build.mjs: cannot resolve image ${imageReference}: ${error.message}`);
+  process.exit(2);
+}
+const image = imageIdentity.id;
 const effort = opt('--effort', 'high');
 const model = opt('--model', 'claude-sonnet-5');
 const ports = (opt('--ports', '') || '').split(',').filter(Boolean);
 
-// The two artifacts actually under test, mounted read-only from the repository.
-// Copying them to a neutral path was considered and rejected: a staged copy can
-// drift from the repo, and this project has already retracted a finding that
-// came from a stale artifact.
-const bindings = join(REPO, 'crates', 'bindings-typescript');
-// The Linux build of the repository's own CLI — target/release holds a Windows
-// PE binary a container cannot execute. Produced by build-linux-cli.sh, which
-// compiles this checkout rather than fetching a release, so the CLI under test
-// is still the one under test.
-const cli = join(REPO, 'tools', 'stack-bench', 'container', 'bin', 'spacetimedb-cli');
+const containerPlan = executeStackCapability(adapter, 'build-container', 'plan', { repo: REPO, appDir });
+if (!containerPlan || !Array.isArray(containerPlan.requiredPaths)
+  || !Array.isArray(containerPlan.ensureDirectories) || !Array.isArray(containerPlan.mounts)
+  || typeof containerPlan.init !== 'string' || !containerPlan.init) {
+  console.error(`run-build.mjs: ${backend} adapter returned an invalid build-container plan`);
+  process.exit(2);
+}
 
 // Auth. An API key is used when one is supplied, and otherwise the CLI
 // authenticates from the mounted credential so runs bill to the plan rather
@@ -58,7 +76,7 @@ const cli = join(REPO, 'tools', 'stack-bench', 'container', 'bin', 'spacetimedb-
 // into it, and a token is worth more than a run.
 const apiKey = opt('--api-key', process.env.ANTHROPIC_API_KEY ?? '');
 const creds = join(homedir(), '.claude', '.credentials.json');
-if (!apiKey && !existsSync(creds)) {
+if (!prepareOnly && !apiKey && !existsSync(creds)) {
   console.error(`run-build.mjs: no --api-key/ANTHROPIC_API_KEY and no credentials at ${creds}`);
   console.error('  the container has no way to authenticate');
   process.exit(2);
@@ -76,22 +94,11 @@ if (!apiKey && !existsSync(creds)) {
 //
 // The host's whole ~/.claude/projects is deliberately NOT mounted: it holds
 // every other run's transcripts and the user's own sessions.
-const projects = join(homedir(), '.claude', 'projects',
+const projects = prepareOnly ? null : join(homedir(), '.claude', 'projects',
   resolve(appDir).replace(/[\\/:]/g, '-').toLowerCase());
-mkdirSync(projects, { recursive: true });
+if (projects) mkdirSync(projects, { recursive: true });
 
-// The SpacetimeDB CLI's own config, which holds the identity and token it mints
-// on first publish. On Linux that is $XDG_CONFIG_HOME/spacetime (checked in
-// crates/paths), and in a `--rm` container it would be discarded every round —
-// so a fix round would arrive as a different identity and be refused ownership
-// of the module the build round published. On the host this config persists
-// globally, so persisting it per run is the behaviour being reproduced, not a
-// new one.
-//
-// It lives beside the app rather than inside it: the app directory is what gets
-// copied into source/ and audited, and a token does not belong in either.
-const stdbConfig = resolve(appDir, '..', '.spacetime-cli-config');
-mkdirSync(stdbConfig, { recursive: true });
+for (const directory of containerPlan.ensureDirectories) mkdirSync(directory, { recursive: true });
 
 // The container OUTLIVES the build session, and that is the whole point.
 //
@@ -116,30 +123,74 @@ mkdirSync(stdbConfig, { recursive: true });
 const containerName = `stack-bench-${basename(dirname(resolve(appDir)))}`;
 const dockerEnv = { ...process.env, MSYS_NO_PATHCONV: '1' };
 
-function containerState(name) {
-  const r = spawnSync('docker', ['inspect', '-f', '{{.State.Running}}', name],
-    { encoding: 'utf8', env: dockerEnv });
-  if (r.status !== 0) return 'absent';
-  return r.stdout.trim() === 'true' ? 'running' : 'stopped';
+function inspectContainer(name) {
+  const r = spawnSync('docker', ['inspect', '--format',
+    '{{.Id}} {{.Image}} {{.State.Running}}', name],
+  { encoding: 'utf8', env: dockerEnv, timeout: DOCKER_TIMEOUT_MS });
+  if (r.status !== 0) return null;
+  const [id, inspectedImage, running] = r.stdout.trim().split(/\s+/, 3);
+  return { id, image: inspectedImage, running: running === 'true' };
+}
+
+// Resolve ownership before looking at, reusing, or creating a container. A
+// same-name container is not evidence that this run owns it: adopting one
+// would let a collision mount an unrelated filesystem into the benchmark, and
+// deleting it by name would destroy somebody else's resource. The lease's
+// immutable id is the only reuse authority.
+let leaseContext;
+try { leaseContext = leaseFromEnv(process.env, { backend, active: true }); }
+catch (error) {
+  console.error(`run-build.mjs: an authenticated active backend lease is required: ${error.message}`);
+  process.exit(3);
+}
+
+const existing = inspectContainer(containerName);
+const priorContainer = leaseContext.lease.resources.buildContainer ?? null;
+if (existing) {
+  if (!priorContainer) {
+    console.error(`run-build.mjs: refusing to adopt existing unleased container ${containerName}`);
+    process.exit(3);
+  }
+  if (priorContainer.name !== containerName || priorContainer.id !== existing.id) {
+    console.error(`run-build.mjs: existing container ${containerName}/${existing.id} does not match lease `
+      + `${priorContainer.name}/${priorContainer.id}`);
+    process.exit(3);
+  }
+  if (!existing.running) {
+    console.error(`run-build.mjs: leased container ${containerName} stopped unexpectedly; refusing to replace it`);
+    process.exit(3);
+  }
+} else if (priorContainer) {
+  console.error(`run-build.mjs: leased container ${priorContainer.name}/${priorContainer.id} is missing`);
+  process.exit(3);
 }
 
 // Create it if this is the first round of the run; reuse it for every round
 // after, so a fix round finds the app, its node_modules and its servers exactly
 // where the build round left them.
-if (containerState(containerName) !== 'running') {
-  // A stopped container of the same name would refuse the create and cannot be
-  // reused anyway — its published ports are gone.
-  spawnSync('docker', ['rm', '-f', containerName], { stdio: 'ignore', env: dockerEnv });
-
+if (!existing) {
   const create = [
     'run', '-d', '--init', '--name', containerName,
     '-v', `${resolve(appDir)}:/app`,
-    '-v', `${projects}:/root/.claude/projects/-app`,
-    '-v', `${stdbConfig}:/root/.config/spacetime`,
   ];
-  if (!apiKey) create.push('-v', `${creds}:/root/.claude/.credentials.json`);
-  if (existsSync(bindings)) create.push('-v', `${bindings}:/deps/bindings-typescript:ro`);
-  if (existsSync(cli)) create.push('-v', `${cli}:/deps/spacetimedb-cli:ro`);
+  if (projects) create.push('-v', `${projects}:/root/.claude/projects/-app`);
+  if (!prepareOnly && !apiKey) create.push('-v', `${creds}:/root/.claude/.credentials.json`);
+  // The selected adapter owns every stack-specific mount. Giving a treatment
+  // another stack's artifacts would violate the "only artifacts under test"
+  // boundary.
+  for (const requiredPath of containerPlan.requiredPaths) {
+    if (!existsSync(requiredPath)) {
+      console.error(`run-build.mjs: ${backend} container artifact is missing: ${requiredPath}`);
+      process.exit(2);
+    }
+  }
+  for (const mount of containerPlan.mounts) {
+    if (!mount || typeof mount.source !== 'string' || typeof mount.target !== 'string') {
+      console.error(`run-build.mjs: ${backend} adapter returned an invalid container mount`);
+      process.exit(2);
+    }
+    create.push('-v', `${mount.source}:${mount.target}${mount.readOnly ? ':ro' : ''}`);
+  }
 
   // Dev servers start inside the container and the grader runs on the host, so
   // the track's port window has to be published. Publishing happens at create
@@ -149,14 +200,75 @@ if (containerState(containerName) !== 'running') {
 
   // `--init` gives the container a real PID 1. Without it the dev servers the
   // build leaves behind are reparented to `sleep`, which never reaps them.
-  create.push('-w', '/app', image, 'sleep', 'infinity');
+  create.push('-w', '/app', image, 'sh', '-lc', containerPlan.init);
 
-  const made = spawnSync('docker', create, { encoding: 'utf8', env: dockerEnv });
+  const made = spawnSync('docker', create, {
+    encoding: 'utf8', env: dockerEnv, timeout: DOCKER_TIMEOUT_MS,
+  });
   if (made.status !== 0) {
     console.error(`run-build.mjs: could not start ${containerName}`);
-    console.error(made.stderr || made.stdout || '');
+    console.error(made.stderr || made.stdout || made.error?.message || '');
     process.exit(2);
   }
+}
+
+const containerInspection = inspectContainer(containerName);
+if (!containerInspection) {
+  console.error(`run-build.mjs: cannot inspect ${containerName}`);
+  process.exit(2);
+}
+const { id: containerId, image: containerImage } = containerInspection;
+try {
+  const { path, lease } = leaseContext;
+  const prior = lease.resources.buildContainer;
+  if (prior && (prior.name !== containerName || prior.id !== containerId)) {
+    throw new Error(`running container ${containerName}/${containerId} does not match lease `
+      + `${prior.name}/${prior.id}`);
+  }
+  updateBackendLease(path, { token: lease.ownershipToken, backend, runId: lease.runId }, next => {
+    next.resources.buildContainer = {
+      name: containerName, id: containerId, image: containerImage, owned: true, running: true,
+    };
+    return next;
+  });
+} catch (error) {
+  // Creation succeeded but ownership recording did not. Remove only the exact
+  // id created by this invocation; leaving an unleased container is not safe.
+  if (!existing) {
+    spawnSync('docker', ['rm', '-f', containerId], {
+      stdio: 'ignore', env: dockerEnv, timeout: DOCKER_TIMEOUT_MS,
+    });
+  }
+  console.error(`run-build.mjs: ${error.message}`);
+  process.exit(3);
+}
+
+if (containerPlan.readyFile) {
+  // `docker run -d` returns while PID 1 is still staging the SDK. Do not race
+  // the coding session against that copy/install: a partial file dependency
+  // fails as an application error and charges the backend for harness setup.
+  let ready = false;
+  const readyDeadline = Date.now() + 90_000;
+  while (Date.now() < readyDeadline) {
+    const probe = spawnSync('docker', ['exec', containerName, 'test', '-f', containerPlan.readyFile],
+      { stdio: 'ignore', env: dockerEnv, timeout: DOCKER_PROBE_TIMEOUT_MS });
+    if (probe.status === 0) { ready = true; break; }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+  }
+  if (!ready) {
+    const logs = spawnSync('docker', ['logs', containerName], {
+      encoding: 'utf8', env: dockerEnv, timeout: DOCKER_TIMEOUT_MS,
+    });
+    console.error(`run-build.mjs: timed out waiting for ${containerPlan.readyDescription ?? `${backend} setup`}`);
+    console.error(logs.stderr || logs.stdout || '');
+    process.exit(2);
+  }
+}
+
+if (prepareOnly) {
+  process.stdout.write(`${JSON.stringify({ containerName,
+    identity: `${containerId} ${containerImage}` })}\n`);
+  process.exit(0);
 }
 
 const args = ['exec', '-i', '-w', '/app'];
@@ -194,8 +306,10 @@ const res = spawnSync('docker', args, {
   encoding: 'utf8',
   maxBuffer: 256 * 1024 * 1024,
   env: { ...process.env, MSYS_NO_PATHCONV: '1' },
+  timeout: BUILD_SESSION_TIMEOUT_MS,
 });
 
 if (res.stdout) process.stdout.write(res.stdout);
 if (res.stderr) process.stderr.write(res.stderr);
+if (res.error) process.stderr.write(`run-build.mjs: coding session failed: ${res.error.message}\n`);
 process.exit(res.status ?? 1);

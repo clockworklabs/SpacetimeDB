@@ -9,59 +9,78 @@
 // Usage:
 //   node bench.mjs --backend spacetime --levels 1-5 [--model claude-sonnet-5]
 //                  [--fix-rounds 3] [--run-index 0] [--out <dir>]
-//                  [--keep-spacetime] [--no-media]
+//                  [--retain-backend] [--no-media]
 //
 // The benchmark runs its own SpacetimeDB host (STACK_BENCH_STDB_URI, default
 // 127.0.0.1:3210, data in .spacetime-data) rather than a machine-wide one, so
 // resource measurements describe the module under test and a durability restart
 // cannot disturb anything else. It is started if absent and stopped at the end
-// unless --keep-spacetime.
+// unless --retain-backend.
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync, renameSync } from 'node:fs';
-import { join, dirname, resolve, basename } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { loadTrack, resultsName, portsFor, workDirFor, sweepWorkRoot, assertNoPortCollisions, PORT_BASES, DEFAULT_TRACK } from './tracks.mjs';
-import { pidsOnPort, pidsMatching, killTree, sleepSync, answers } from './platform.mjs';
+import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
+  moduleName, dbName, DEFAULT_TRACK } from './tracks.mjs';
+import { killTree, sleepSync } from './platform.mjs';
+import { compareCriterionEvidence } from './scoring.mjs';
+import { emptyArtifactIdentities, readArtifactPayload, writeArtifact, writeRunJson } from './artifacts.mjs';
+import { aggregateRunOutcome, classifyBundle, mutationControlEligible, runExitCode } from './outcomes.mjs';
+import { summarizeSessions } from './session-metrics.mjs';
+import { hashDirectory } from './provenance.mjs';
+import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
+  acquireResourceLock, releaseResourceLocks, updateBackendLease, writeBackendLease } from './backend-lease.mjs';
+import { captureBackendDiagnostics } from './backend-control.mjs';
+import { releaseBackendLease } from './backend-teardown.mjs';
+import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { resolveRecipeSelection } from './recipe-selection.mjs';
+import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
+import { executeStackCapability } from './stack-adapter-contract.mjs';
+import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
+import { agentRequestArgv, validateAgentResult } from './agent-adapter-contract.mjs';
+import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from './agent-adapters.mjs';
+import { runPreflight } from './preflight.mjs';
+import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const AGENT = join(ROOT, 'agent.mjs');
+const COMMAND_TIMEOUT_MS = 20 * 60_000;
 
 function parseArgs(argv) {
-  const a = { model: 'claude-sonnet-5', fixRounds: 3, runIndex: 0, levels: '1', media: true,
-    guidance: 'prescribed', track: DEFAULT_TRACK };
+  const a = { model: null, agentAdapter: 'claude-code',
+    fixRounds: 3, runIndex: 0, levels: '1', media: true,
+    guidance: 'prescribed', track: DEFAULT_TRACK, packIds: [], checkKeys: [] };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--backend': a.backend = argv[++i]; break;
       case '--track': a.track = argv[++i]; break;
       case '--levels': a.levels = argv[++i]; break;
+      case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
+      case '--check': a.checkKeys.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--model': a.model = argv[++i]; break;
       case '--fix-rounds': a.fixRounds = parseInt(argv[++i], 10); break;
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--out': a.out = argv[++i]; break;
       case '--app': a.app = argv[++i]; break;
       case '--url': a.url = argv[++i]; break;
-      case '--agent': a.agent = argv[++i]; break;
+      case '--agent-adapter': a.agentAdapter = argv[++i]; break;
       case '--no-media': a.media = false; break;
-      case '--keep-spacetime': a.keepSpacetime = true; break;
+      case '--retain-backend': a.retainBackend = true; break;
       case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
       case '--skip-probe': a.skipProbe = true; break;
       // Which reference documents to inline (spacetime only). The variable
       // under test in the cost work; passed straight through to agent.mjs.
       case '--skills': a.skills = argv[++i]; break;
-      // Builds run in a container by default; these pin it for the whole run.
-      // --require-container refuses rather than falling back to the host, which
-      // is what a sweep claiming isolation needs.
-      case '--no-container': a.noContainer = true; break;
-      case '--require-container': a.requireContainer = true; break;
       case '--api-key': a.apiKey = argv[++i]; break;
+      case '--mutations': a.mutations = resolve(argv[++i]); break;
       // Start from an existing built app (a preserved L1 source) and UPGRADE it,
       // instead of rebuilding the lower level. The correct L1 that scored 51/51
       // is the right foundation for L2 — rebuilding it costs money and adds
       // variance that confounds the L1->L2 comparison.
       case '--seed-from': a.seedFrom = argv[++i]; break;
+      case '--parent-attempt-id': a.parentAttemptId = argv[++i]; break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
   }
@@ -147,41 +166,6 @@ function restoreSource(from, appDir) {
   }
 }
 
-// Score two grading passes on the criteria they BOTH scored conclusively.
-//
-// Totals cannot be compared directly across rounds: a criterion that comes back
-// inconclusive is subtracted from the denominator, so `max` moves on its own.
-// Contention criteria are the usual cause — whether six concurrent clicks all
-// land, or the page crashes mid-assertion, is not deterministic.
-//
-// A criterion counts here only if it appears in both passes AND was conclusive
-// in both. Withheld criteria (points: 0) contribute nothing either way, so they
-// are left in — they cannot move the comparison.
-function compareOnSharedCriteria(before, after) {
-  const index = bundle => {
-    const m = new Map();
-    for (const suite of Object.values(bundle?.suites ?? {})) {
-      for (const feature of suite?.features ?? []) {
-        for (const c of feature.criteria ?? []) {
-          if (c.inconclusive) continue;
-          m.set(`${feature.name}/${c.id}`, { passed: !!c.passed, points: c.points ?? 1 });
-        }
-      }
-    }
-    return m;
-  };
-  const a = index(before), b = index(after);
-  let scoreBefore = 0, scoreAfter = 0, count = 0;
-  for (const [key, was] of a) {
-    const now = b.get(key);
-    if (!now) continue;
-    count += 1;
-    scoreBefore += was.passed ? was.points : 0;
-    scoreAfter += now.passed ? now.points : 0;
-  }
-  return { before: scoreBefore, after: scoreAfter, count };
-}
-
 // Did this build read the thing that grades it? Prevention has holes we know
 // about — permission rules do not govern a bash `cat` — so this is checked
 // after EVERY session rather than once at the end. A fix round that read the
@@ -203,184 +187,170 @@ function auditContamination(appDir) {
   }
 }
 
-// The agent starts dev servers so grading can reach them, but nothing owned
-// their lifetime — runs were leaving vite and Express processes behind, which is
-// how ports and app directories ended up occupied by finished work.
-function portsForRun(backend, runIndex, track) {
-  // The stub backend (offline test loop) owns no ports at all.
-  if (!PORT_BASES[backend]) return [];
-  const p = portsFor(track, backend, runIndex);
-  return p.express ? [p.vite, p.express] : [p.vite];
-}
-
-// A dev server is usually a watcher supervising a child: the child holds the
-// port, the parent holds the directory. Killing by port leaves the parent alive
-// and the next build fails on EBUSY, so also sweep anything whose command line
-// names this run's app directory.
-function stopByAppDir(appDir) {
-  if (!appDir) return;
-  for (const pid of pidsMatching(appDir)) killTree(pid);
-}
-
-// Did this run's build session run in a container? agent.mjs pins the answer
-// beside the app at build time, so every later step agrees with the build.
-function isContainerRun(appDir) {
+function containerIdentity(name) {
   try {
-    return readFileSync(join(dirname(resolve(appDir)), '.stack-bench-isolation'), 'utf8')
-      .trim() === 'container';
-  } catch { return false; }
-}
-
-// A containerised run keeps its app, and its dev servers, inside a long-lived
-// container that outlives each build session on purpose. Nothing else removes
-// it: `docker run` is no longer `--rm`, precisely so the grader has something to
-// talk to afterwards. Named from the run's work directory, so this removes only
-// this run's container and never a concurrent one's.
-//
-// Called at the end of a run and before one starts — NOT from stopServers, which
-// also runs mid-run before a rollback grade that still needs the app up.
-function stopRunContainer(appDir) {
-  const name = `stack-bench-${basename(dirname(resolve(appDir)))}`;
-  try {
-    execFileSync('docker', ['rm', '-f', name],
-      { stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' } });
-    console.log(`  removed the run container ${name}`);
-  } catch { /* never created, or already gone */ }
-}
-
-function stopServers(backend, runIndex, appDir, track) {
-  stopByAppDir(appDir);
-  // In a containerised run the app's servers are not host processes, and the
-  // host side of a published port is held by Docker's own proxy. Killing what
-  // sits on that port kills the proxy — which took the Docker daemon down once
-  // today, mid-run. There is also nothing to kill for the usual reason: the
-  // EBUSY this function exists to prevent is a Windows file lock held by a host
-  // watcher, and a containerised run's watchers are Linux processes that do not
-  // lock the mounted files at all. So leave them running; the rollback grade
-  // below depends on them being up.
-  if (isContainerRun(appDir)) return;
-  for (const port of portsForRun(backend, runIndex, track)) {
-    for (const pid of pidsOnPort(port)) {
-      killTree(pid);
-      console.log(`  stopped the server on :${port}`);
-    }
+    const id = execFileSync('docker', ['inspect', '--format', '{{.Id}}', name],
+      { encoding: 'utf8', stdio: 'pipe', timeout: 120_000 }).trim();
+    if (!id) throw new Error('empty container id');
+    return { name, id };
+  } catch (error) {
+    throw new Error(`cannot lease ${name}: ${String(error.message).split('\n')[0]}`);
   }
-}
-
-// The benchmark runs its OWN SpacetimeDB host, on its own port and data
-// directory. Sharing a machine-wide host meant resource measurements described
-// whatever else was published there, and restarting it for a durability test
-// took somebody else's databases down with it.
-const STDB_URI = process.env.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210';
-const STDB_PORT = new URL(STDB_URI).port;
-const STDB_DATA_DIR = join(ROOT, '.spacetime-data');
-// The host under test is the one built from this repository. Falling back to a
-// PATH install would benchmark a release nobody is changing.
-const LOCAL_CLI = join(ROOT, '..', '..', 'target', 'release', 'spacetimedb-cli.exe');
-const SPACETIME_BIN = process.env.SPACETIME_BIN ?? (existsSync(LOCAL_CLI) ? LOCAL_CLI : 'spacetime');
-
-const spacetimeUp = () => answers(`${STDB_URI}/v1/ping`, 5);
-
-// Own only what you start. A host that was already up belongs to whoever started
-// it — other databases live there — so it is used and left alone. One we start
-// ourselves is ours to stop again, unless --keep-spacetime says otherwise.
-function ensureSpacetime() {
-  if (spacetimeUp()) {
-    console.log('  spacetime   ... already running (will be left alone)');
-    return false;
-  }
-  console.log(`  spacetime   ... not running, starting a benchmark-owned host on :${STDB_PORT}`);
-  mkdirSync(STDB_DATA_DIR, { recursive: true });
-  spawn(SPACETIME_BIN, ['start', '--listen-addr', `127.0.0.1:${STDB_PORT}`, '--data-dir', STDB_DATA_DIR],
-    { detached: true, stdio: 'ignore', shell: true }).unref();
-  for (let i = 0; i < 60; i++) {
-    sleepSync(2000);
-    if (spacetimeUp()) { console.log('  spacetime   ... up'); return true; }
-  }
-  console.error(`SpacetimeDB did not come up on :${STDB_PORT}.`);
-  process.exit(2);
-}
-
-// Stop ONLY the host listening on the benchmark's port. Killing by image name
-// terminates every SpacetimeDB on the machine, which is how a grading run once
-// took down databases that had nothing to do with the benchmark.
-function stopSpacetime() {
-  for (const pid of pidsOnPort(STDB_PORT)) {
-    killTree(pid);
-    console.log(`  stopped the SpacetimeDB host this run started on :${STDB_PORT}`);
-  }
-}
-
-// Which SpacetimeDB produced this result. With a local build that moves under
-// us, "the version" stops being inferable from the date, and an unrecorded
-// variable has already cost this project several reversed conclusions.
-function stdbProvenance() {
-  const out = { cli: null, commit: null, sdk: null, skillRevision: null };
-  try {
-    const v = execFileSync(SPACETIME_BIN, ['--version'], { encoding: 'utf8' });
-    out.cli = (v.match(/tool version ([\d.]+)/) || [])[1] ?? null;
-    out.commit = (v.match(/Commit: ([0-9a-f]+)/) || [])[1] ?? null;
-  } catch { /* not built, or PATH fallback */ }
-  const repo = join(ROOT, '..', '..');
-  try {
-    out.sdk = JSON.parse(readFileSync(join(repo, 'crates', 'bindings-typescript', 'package.json'), 'utf8')).version;
-  } catch { /* not a checkout */ }
-  try {
-    out.skillRevision = execFileSync('git', ['-C', repo, 'hash-object',
-      'skills/typescript-server/SKILL.md'], { encoding: 'utf8' }).trim();
-  } catch { /* not a git checkout */ }
-  return out;
 }
 
 const sh = (cmd, args, opts = {}) =>
-  execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...opts });
+  execFileSync(cmd, args, {
+    encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: COMMAND_TIMEOUT_MS, ...opts,
+  });
 
-function runAgent(args, mode, level, appDir) {
-  const out = sh('node', [args.agent ?? AGENT, '--mode', mode, '--backend', args.backend,
-    '--level', String(level), '--app', appDir, '--track', args.track,
-    '--run-index', String(args.runIndex), '--model', args.model,
-    '--guidance', args.guidance,
-    ...(args.skills ? ['--skills', args.skills] : []),
-    // Isolation is pinned for the whole run, not per round: a sweep whose fix
-    // rounds ran somewhere other than its build round is two measurements
-    // reported as one.
-    ...(args.noContainer ? ['--no-container'] : []),
-    ...(args.requireContainer ? ['--require-container'] : []),
-    ...(args.apiKey ? ['--api-key', args.apiKey] : [])], { stdio: 'pipe' });
-  return JSON.parse(out.trim().split('\n').pop());
+let activeAgentChild = null;
+// Set once a run owns resources. The top-level rejection handler invokes this
+// directly; relying only on process 'exit' made cleanup best-effort precisely
+// when an awaited build rejected unexpectedly.
+let emergencyTeardown = null;
+
+function runAgent(args, adapter, mode, level, appDir) {
+  const request = { mode, level, app: appDir, backend: args.backend, track: args.track,
+    runIndex: args.runIndex, model: args.model, guidance: args.guidance, skills: args.skills };
+  const argv = agentRequestArgv(adapter, request);
+  if (args.apiKey && !adapter.apiKeyEnvironmentVariable) {
+    throw new Error(`agent adapter ${adapter.id} does not accept an API key`);
+  }
+  const env = { ...process.env,
+    ...(args.apiKey ? { [adapter.apiKeyEnvironmentVariable]: args.apiKey } : {}) };
+  return new Promise((resolveRun, rejectRun) => {
+    const child = execFile('node', argv, {
+      encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: adapter.deadlineMs,
+      env,
+    },
+      (error, stdout, stderr) => {
+        if (activeAgentChild === child) activeAgentChild = null;
+        if (error) {
+          error.stdout = stdout;
+          error.stderr = stderr;
+          rejectRun(error);
+          return;
+        }
+        try { resolveRun(validateAgentResult(JSON.parse(stdout.trim().split('\n').pop()), request)); }
+        catch (parseError) {
+          // Empty/malformed agent output used to discard stderr, turning a
+          // failed deploy into the content-free claim "invalid JSON". Preserve
+          // bounded tails from both pipes; they are the only evidence left once
+          // teardown removes the build container.
+          const stdoutTail = stdout.trim().slice(-2000) || '<empty>';
+          const stderrTail = stderr.trim().slice(-4000) || '<empty>';
+          rejectRun(new Error(`agent returned invalid JSON: ${parseError.message}\n`
+            + `agent stdout tail:\n${stdoutTail}\nagent stderr tail:\n${stderrTail}`));
+        }
+      });
+    activeAgentChild = child;
+  });
 }
 
-// The restart command is handed to `bash -c`, which reads a backslash as an
-// escape: a Windows path arrives with its separators eaten and `\tools` turned
-// into a literal tab. Bash accepts forward slashes on Windows, so the path is
-// written the one way both shells agree on.
-const forBash = p => p.replace(/\\/g, '/');
-
-function grade(args, appDir, url, label, level, track) {
-  const expressPort = PORT_BASES[args.backend]
-    ? portsFor(track, args.backend, args.runIndex).express ?? ''
-    : '';
+function grade(args, appDir, url, label, level, track, parentAttemptId) {
+  const restartSpec = restartSpecFor(args, appDir, track);
+  const expressPort = restartSpec.port ?? '';
   const argv = [join(ROOT, 'run-suite.mjs'), '--app', appDir, '--url', url,
     '--backend', args.backend, '--label', label, '--level', String(level),
     '--track', args.track,
     '--reseed-probe', `http://localhost:${expressPort}${track.restartProbe}`,
     '--run-index', String(args.runIndex),
+    '--parent-attempt-id', parentAttemptId,
+    ...args.packIds.flatMap(pack => ['--pack', pack]),
+    ...args.checkKeys.flatMap(check => ['--check', check]),
     ...(args.media ? [] : ['--no-media']),
-    ...(args.backend === 'stub'
+    ...(!executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
+      'run-policy', 'reset-enabled')
       ? ['--no-reset']
-      : ['--restart-cmd', `bash ${forBash(join(ROOT, 'restart-backend.sh'))} ${args.backend} ${forBash(appDir)} ${expressPort} ${track.restartProbe}`])];
-  try { sh('node', argv, { stdio: 'inherit' }); } catch { /* score is in the bundle */ }
+      : ['--restart-spec', JSON.stringify(restartSpec)])];
   const bundle = join(appDir, 'stack-bench', 'bundle.json');
-  return existsSync(bundle) ? JSON.parse(readFileSync(bundle, 'utf8')) : null;
+  rmSync(bundle, { force: true });
+  try { sh('node', argv, { stdio: 'inherit' }); } catch { /* a current bundle may still explain a scored failure */ }
+  return existsSync(bundle) ? readArtifactPayload(bundle, { expectedKind: 'grade_bundle' }) : null;
+}
+
+function restartSpecFor(args, appDir, track) {
+  const port = portsFor(track, args.backend, args.runIndex).express ?? null;
+  return { backend: args.backend, app: appDir, port: port == null ? null : Number(port),
+    probe: track.restartProbe };
+}
+
+function runMutationControl(args, appDir, url, track) {
+  const output = join(args.out, 'mutation-control.json');
+  rmSync(output, { force: true });
+  const argv = [join(ROOT, 'grader', 'mutation-test.mjs'), '--app', appDir,
+    '--url', url, '--mutations', args.mutations, '--backend', args.backend,
+    '--track', args.track, '--run-index', String(args.runIndex), '--out', output,
+    '--restart-spec', JSON.stringify(restartSpecFor(args, appDir, track)),
+    '--parent-attempt-id', args.parentAttemptId];
+  let processError = null;
+  try { sh(process.execPath, argv, { stdio: 'inherit' }); }
+  catch (error) { processError = String(error.message).split('\n')[0]; }
+  if (!existsSync(output)) {
+    return { ok: false, artifact: output, processError,
+      outcome: { kind: 'harness_failure', phase: 'mutation-control',
+        reason: processError ?? 'mutation runner produced no artifact' } };
+  }
+  const artifact = readArtifactPayload(output, { expectedKind: 'mutation_control' });
+  return { ok: artifact.ok === true && !processError, artifact: output,
+    processError, summary: artifact.summary ?? null, outcome: artifact.outcome ?? null,
+    results: artifact.results ?? [] };
 }
 
 async function main() {
   const args = parseArgs(process.argv);
-  process.env.STACK_BENCH_STDB_URI = STDB_URI;
-  process.env.SPACETIME_BIN = SPACETIME_BIN;
-  process.env.STACK_BENCH_STDB_OWNED = '1';   // this host is ours; restarts are allowed
+  const stackAdapter = STACK_ADAPTER_REGISTRY.get(args.backend);
+  const agentAdapter = AGENT_ADAPTER_REGISTRY.get(args.agentAdapter);
+  args.model ??= agentAdapter.defaultModel;
+  if (args.retainBackend
+    && !executeStackCapability(stackAdapter, 'run-policy', 'retain-host-supported')) {
+    throw new Error(`stack adapter ${args.backend} does not support --retain-backend`);
+  }
+  const stackRuntime = executeStackCapability(stackAdapter, 'orchestrator', 'config', {
+    root: ROOT, env: process.env, helpers: { exists: existsSync },
+  });
+  Object.assign(process.env, stackRuntime.environment);
+  process.env.STACK_BENCH_NODE_BIN = process.platform === 'win32' ? 'node.exe' : process.execPath;
   const track = loadTrack(args.track);
+  // Resolve the requested scope for every level before probing the sandbox,
+  // acquiring a backend lease or paying for a build. A pack that exists at L2
+  // but not L1 is not a late grading surprise; it is an invalid run request.
+  for (const level of args.levelList) {
+    const binding = resolveLegacyRecipeRelease(track, level);
+    if (!binding && (args.packIds.length || args.checkKeys.length)) {
+      throw new Error(`L${level} has no recipe release, so --pack/--check cannot be resolved`);
+    }
+    if (binding) resolveRecipeSelection(binding.release, args);
+  }
   assertNoPortCollisions();
+  // The deterministic adapter/stack is the model-free unit loop. Real runs
+  // prove the exact requested scope, engine, image, credentials, storage and
+  // ports before the sandbox probe or any paid coding session begins.
+  const preflight = args.backend === 'stub' ? null : runPreflight({
+    backends: [args.backend], track: args.track, levels: args.levels,
+    levelList: args.levelList, runIndex: args.runIndex, agentAdapter: args.agentAdapter,
+    packIds: args.packIds, checkKeys: args.checkKeys, smoke: true,
+    image: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
+    resultsDir: resolve(args.out ?? join(ROOT, 'results')),
+  }, { env: args.apiKey && agentAdapter.apiKeyEnvironmentVariable
+    ? { ...process.env, [agentAdapter.apiKeyEnvironmentVariable]: '<provided-by-argument>' }
+    : process.env });
+  if (preflight && !preflight.ok) {
+    const failures = preflight.checks.filter(check => check.status === 'fail');
+    console.error('\nPREFLIGHT FAILED — no model session was started.');
+    for (const failure of failures) {
+      console.error(`  ${failure.id}: ${failure.summary}`);
+      if (failure.remediation) console.error(`    fix: ${failure.remediation}`);
+    }
+    process.exit(2);
+  }
+  if (preflight) console.log(`  preflight  ... ${preflight.summary.passed} checks passed`
+    + `${preflight.summary.warnings ? `, ${preflight.summary.warnings} warning(s)` : ''}`);
+  const beyondValidatedLevels = args.levelList.filter(level => level > track.validatedThrough);
+  if (beyondValidatedLevels.length) {
+    console.log(`  NOTICE: ${track.name} is validated through L${track.validatedThrough}; `
+      + `this run also requests L${beyondValidatedLevels.join(', L')}. The result will record those exact levels.`);
+  }
 
   // Prove the sandbox before spending a run on it. The rules have already been
   // wrong twice in ways that read as fine: a deny list shipped under
@@ -392,7 +362,8 @@ async function main() {
   // The stub backend is the offline test loop: no model, no cost, nothing to
   // protect. Spending a real CLI session probing it would make the one test
   // that is supposed to run for free stop being free.
-  if (!args.skipProbe && args.backend !== 'stub') {
+  if (!args.skipProbe && executeStackCapability(stackAdapter,
+    'run-policy', 'sandbox-probe-required')) {
     console.log('  sandbox    ... probing the deny rules');
     try {
       sh('node', [join(ROOT, 'probe-sandbox.mjs'), '--mode', 'acceptEdits', '--model', args.model],
@@ -405,8 +376,99 @@ async function main() {
   }
   const url = args.url ?? `http://localhost:${portsFor(track, args.backend, args.runIndex).vite}`;
   const runDir = resultsName(track, args.backend, args.runIndex);
-  args.out ??= join(ROOT, 'results', runDir);
+  const runId = newRunId({ track: args.track, backend: args.backend, runIndex: args.runIndex });
+  const artifactLabel = `${runDir}-${runId}`;
+  // Default results never reuse a directory. The stable backend/run name is a
+  // grouping directory only; every artifact beneath it belongs to one run id.
+  args.out ??= join(ROOT, 'results', runDir, runId);
   mkdirSync(args.out, { recursive: true });
+  if (existsSync(join(args.out, 'run.json'))) {
+    throw new Error(`refusing to reuse result directory containing run.json: ${args.out}`);
+  }
+  if (preflight) writeArtifact(join(args.out, 'preflight.json'), {
+    kind: 'preflight', id: `${runId}-preflight`,
+    attempt: { id: `${runId}-preflight`, parentId: runId },
+    identities: emptyArtifactIdentities({
+      agentAdapter: agentAdapterIdentity(agentAdapter),
+      stackAdapter: { id: args.backend },
+    }),
+    payload: preflight,
+  });
+
+  // Resolve and validate caller-owned source before acquiring a backend slot.
+  // A failed pristine-hash check used to happen after lease creation but before
+  // teardown handlers existed, leaving a dead-owner lock and private lease.
+  const ownWorkDir = !args.app;
+  const appDir = args.app ?? join(workDirFor(track, args.backend, args.runIndex, runId), 'app');
+  if (args.mutations) {
+    if (!args.app) throw new Error('--mutations requires an explicit pristine --app');
+    const manifest = JSON.parse(readFileSync(args.mutations, 'utf8'));
+    if (!/^[a-f0-9]{64}$/.test(manifest.fixtureSha256 ?? '')) {
+      throw new Error('mutation manifest has no valid fixtureSha256');
+    }
+    const fixture = hashDirectory(appDir);
+    if (fixture.sha256 !== manifest.fixtureSha256) {
+      throw new Error(`mutation manifest targets fixture ${manifest.fixtureSha256}, not ${fixture.sha256}`);
+    }
+  }
+
+  // Every destructive or lifecycle operation is tied to this record. A boolean
+  // "owned" flag could say yes without identifying what was owned, and after a
+  // restart it could not prove the listener being killed was the one this run
+  // started. The token prevents a stale sibling process from presenting a
+  // different lease accidentally; the targets themselves come only from the
+  // lease, never from generated application files.
+  const runtimeDir = join(tmpdir(), 'stack-bench-runtime', runId);
+  const leasePath = join(runtimeDir, 'backend-lease.json');
+  const preparedLease = executeStackCapability(stackAdapter, 'lease', 'prepare', {
+    track,
+    runIndex: args.runIndex,
+    runtimeDir,
+    serverUri: stackRuntime.lease.serverUri,
+    env: process.env,
+    helpers: { containerIdentity, dbName, moduleName },
+  });
+  const initialLease = createBackendLease({
+    runId,
+    backend: args.backend,
+    track: args.track,
+    runIndex: args.runIndex,
+    ...preparedLease.lease,
+  });
+  const lockRoot = join(tmpdir(), 'stack-bench-resource-locks');
+  const lockKeys = [`slot:${args.track}:${args.backend}:run${args.runIndex}`,
+    ...preparedLease.lockKeys];
+  try {
+    for (const key of lockKeys.sort()) {
+      initialLease.resources.locks.push(acquireResourceLock({ root: lockRoot, key, lease: initialLease }));
+    }
+    writeBackendLease(leasePath, initialLease);
+    const supervisorState = process.env.STACK_BENCH_SUPERVISOR_STATE;
+    if (supervisorState) {
+      // Private handoff to an outer timeout supervisor. It contains the lease
+      // token, so create it once with owner-only permissions and never place it
+      // in the results tree.
+      writeFileSync(resolve(supervisorState), `${JSON.stringify({
+        version: 1, runId, leasePath, ownershipToken: initialLease.ownershipToken,
+      })}\n`, { flag: 'wx', mode: 0o600 });
+    }
+  } catch (error) {
+    releaseResourceLocks(initialLease);
+    rmSync(runtimeDir, { recursive: true, force: true });
+    throw error;
+  }
+  process.env.STACK_BENCH_LEASE = leasePath;
+  process.env.STACK_BENCH_LEASE_TOKEN = initialLease.ownershipToken;
+  if (process.platform === 'win32') {
+    // `bash` resolves to WSL on this host. WSL drops ordinary Windows
+    // environment additions unless WSLENV names them, and path-valued entries
+    // need /p translation. Without this bridge the lifecycle script sees no
+    // lease and correctly refuses every reset/restart.
+    const bridge = ['STACK_BENCH_LEASE/p', 'STACK_BENCH_LEASE_TOKEN',
+      'STACK_BENCH_NODE_BIN', ...stackRuntime.windowsEnvironmentBridge];
+    const existing = (process.env.WSLENV ?? '').split(':').filter(Boolean);
+    process.env.WSLENV = [...new Set([...existing, ...bridge])].join(':');
+  }
 
   // The app used to live at results/<run>/app and now builds outside the
   // results tree, so anything still sitting there belongs to an older run under
@@ -439,7 +501,16 @@ async function main() {
     }
   }
 
-  const weStartedSpacetime = args.backend === 'spacetime' ? ensureSpacetime() : false;
+  try {
+    executeStackCapability(stackAdapter, 'lifecycle', 'activate', {
+      leasePath, leaseToken: initialLease.ownershipToken, lease: initialLease,
+      ...stackRuntime.lifecycle,
+    });
+  } catch (error) {
+    releaseResourceLocks(initialLease);
+    rmSync(runtimeDir, { recursive: true, force: true });
+    throw error;
+  }
 
   // One app, grown level by level — the same app the earlier levels built.
   // Built OUTSIDE the harness. While the app lived at results/<run>/app it sat
@@ -447,40 +518,77 @@ async function main() {
   // and grade.mjs, and transcripts show builds taking exactly that walk. An
   // isolated root removes the class rather than forbidding instances of it.
   // Artifacts are copied back to results/ when the run finishes.
-  // Finished runs are deleted on the way in rather than left to pile up in temp,
-  // and anything still locked is named instead of silently skipped.
-  const stuck = sweepWorkRoot();
-  if (stuck.length) {
-    console.log(`  workdirs   ... ${stuck.length} old run dir(s) could not be removed (still held):`);
-    for (const d of stuck.slice(0, 3)) console.log(`               ${d}`);
-    console.log('               harmless — this run uses its own directory.');
-  }
-
+  // This run removes its own directory on normal teardown. It deliberately does
+  // not sweep other run directories on startup: recursive deletion of an old
+  // node_modules tree can monopolize Windows I/O, and age alone is not ownership
+  // evidence when another agent is working in parallel.
   // Stamped, so this run cannot inherit a directory another one is still
   // holding. Every level shares it: L2 upgrades the app L1 built.
   //
   // An EXPLICIT --app belongs to the caller — the test loop passes one, and
   // deleting its parent on the way out deleted the loop's own run.json. Only a
   // directory this run created is this run's to remove.
-  const ownWorkDir = !args.app;
-  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
-  const appDir = args.app ?? join(workDirFor(track, args.backend, args.runIndex, stamp), 'app');
-
   // Leave nothing running once the run is over, however it ends — but only stop
   // what this run brought up.
-  const teardown = () => {
-    stopServers(args.backend, args.runIndex, appDir, track);
-    // The run's container is deliberately not removed by stopServers, so the
-    // run itself has to end it. This is the only place that should.
-    stopRunContainer(appDir);
-    if (weStartedSpacetime && !args.keepSpacetime) stopSpacetime();
+  let tornDown = false;
+  let activeRun = null;
+  const writeLeaseEvidence = () => {
+    const lease = readBackendLease(leasePath,
+      { token: initialLease.ownershipToken, backend: args.backend, runId });
+    const out = join(args.out, 'backend-lease.json');
+    const evidence = publicBackendLease(lease);
+    const id = `${runId}-backend-lease`;
+    writeArtifact(out, {
+      kind: 'backend_lease_evidence', id,
+      attempt: { id, parentId: runId },
+      timestamps: { startedAt: evidence.createdAt, completedAt: new Date().toISOString() },
+      identities: emptyArtifactIdentities({ stackAdapter: { id: args.backend } }),
+      payload: evidence,
+    });
+    return evidence;
   };
-  // A previous run may have left a watcher holding the app directory, which the
-  // build's wipe would trip over.
-  stopServers(args.backend, args.runIndex, appDir, track);
-  stopRunContainer(appDir);
+  const teardown = () => {
+    if (tornDown) return;
+    if (activeAgentChild?.pid) {
+      killTree(activeAgentChild.pid);
+      activeAgentChild = null;
+    }
+    // Preserve restart failures before removing the only filesystem that holds
+    // their stderr. A 500 after restart is otherwise impossible to distinguish
+    // from an application defect, a dead dependency, or host pressure.
+    if (activeRun) {
+      try {
+        activeRun.backendDiagnostics = captureBackendDiagnostics(join(args.out, 'backend.log'));
+      } catch (error) {
+        activeRun.backendDiagnostics = { captured: false,
+          reason: String(error.message).split(/\r?\n/)[0] };
+      }
+    }
+    const released = releaseBackendLease(leasePath, initialLease.ownershipToken,
+      { retainBackend: args.retainBackend });
+    const evidence = writeLeaseEvidence();
+    if (activeRun) {
+      activeRun.backendLease = evidence;
+      activeRun.outcome ??= aggregateRunOutcome(activeRun.levels);
+      writeRunJson(join(args.out, 'run.json'), activeRun);
+    }
+    tornDown = released;
+    if (released && !args.retainBackend) rmSync(runtimeDir, { recursive: true, force: true });
+    if (!released) throw new Error(`backend teardown refused: listener no longer matches lease ${runId}`);
+  };
+  emergencyTeardown = teardown;
+  // This run's work path is unique. There is no legitimate pre-existing build
+  // container to delete; teardown removes one only after run-build records its
+  // immutable id in the lease.
   process.on('SIGINT', () => { console.log('interrupted — stopping servers'); teardown(); process.exit(130); });
   process.on('SIGTERM', () => { teardown(); process.exit(143); });
+  process.on('exit', () => {
+    if (!tornDown) {
+      try { teardown(); } catch (error) {
+        console.error(`  cleanup failed: ${String(error.message).split('\n')[0]}`);
+      }
+    }
+  });
 
   // Seed the work dir from an existing app, so the first level upgrades it
   // rather than building from nothing. Source only (SOURCE_DIRS); the upgrade
@@ -498,8 +606,19 @@ async function main() {
   }
 
   const started = Date.now();
-  const run = { track: args.track, backend: args.backend, model: args.model,
-    guidance: args.guidance, stack: args.guidance === 'minimal' ? 'free' : 'prescribed', levels: [] };
+  const run = { id: runId, startedAt: new Date(started).toISOString(),
+    parentAttemptId: args.parentAttemptId ?? null,
+    identities: emptyArtifactIdentities({
+      agentAdapter: agentAdapterIdentity(agentAdapter),
+      stackAdapter: { id: args.backend },
+    }),
+    track: args.track, backend: args.backend, model: args.model,
+    guidance: args.guidance, stack: args.guidance === 'minimal' ? 'free' : 'prescribed',
+    selectionRequest: { packs: [...args.packIds], checks: [...args.checkKeys] },
+    backendLease: publicBackendLease(readBackendLease(leasePath,
+      { token: initialLease.ownershipToken, backend: args.backend, runId })),
+    validation: { validatedThrough: track.validatedThrough, beyondValidatedLevels }, levels: [] };
+  activeRun = run;
 
   // A contaminated session ends the run at the session that did it. Continuing
   // spends money on a level whose score may not be quoted, and the previous
@@ -513,8 +632,8 @@ async function main() {
     for (const e of contamination.evidence) console.log(`     ${e}`);
     console.log('     Scores from this run must not be quoted. Stopping now rather than');
     console.log('     paying to grade a level that cannot be used.');
-    try { writeFileSync(join(args.out, 'run.json'), JSON.stringify(run, null, 2)); } catch { /* best effort */ }
-    try { sh('node', [join(ROOT, 'archive-transcripts.mjs'), '--app', appDir, '--label', runDir], { stdio: 'pipe' }); } catch { /* best effort */ }
+    try { writeRunJson(join(args.out, 'run.json'), run); } catch { /* best effort */ }
+    try { sh('node', [join(ROOT, 'archive-transcripts.mjs'), '--app', appDir, '--label', artifactLabel], { stdio: 'pipe' }); } catch { /* best effort */ }
     teardown();
     process.exit(4);
   };
@@ -524,7 +643,8 @@ async function main() {
     console.log(`\n================ ${args.backend} — level ${level} ================`);
 
     const firstMode = args.seedFrom ? 'upgrade' : 'build';
-    const build = runAgent(args, level === args.levelList[0] ? firstMode : 'upgrade', level, appDir);
+    const build = await runAgent(args, agentAdapter,
+      level === args.levelList[0] ? firstMode : 'upgrade', level, appDir);
     const buildLeak = auditContamination(appDir);
     if (buildLeak) abortContaminated(`level ${level} build`, buildLeak);
     // Carry the agent's own record of the setup up to the run. Comparing two
@@ -537,10 +657,16 @@ async function main() {
     if (!build.sessionId) {
       console.log(`  ABORTED: the coding session never ran — see ${join(appDir, `.session-*-l${level}.json`)}`);
       run.levels.push({ level, score: null, max: null, error: 'coding session did not run',
+        outcome: { kind: 'harness_failure', phase: 'coding-session',
+          reason: 'coding session did not run', appFailures: [], inconclusive: [] },
+        buildSession: { sessionId: build.sessionId ?? null, costUsd: build.costUsd,
+          durationMs: build.durationMs, usage: build.usage ?? null,
+          transcript: build.transcript ?? null, provenance: build.provenance ?? null },
+        sessionTotals: summarizeSessions([build]),
         costUsd: build.costUsd, durationMs: Date.now() - t0 });
       break;
     }
-    let bundle = grade(args, appDir, url, `${args.backend}-l${level}`, level, track);
+    let bundle = grade(args, appDir, url, `${args.backend}-l${level}`, level, track, runId);
 
     // What the model built BEFORE being handed the answers. Every backend can
     // reach the same total given enough fix rounds, so the post-fix score stops
@@ -549,9 +675,11 @@ async function main() {
       score: bundle?.totals?.score ?? null,
       max: bundle?.totals?.max ?? null,
       contractPass: bundle?.totals?.contractPass ?? null,
+      outcome: classifyBundle(bundle),
       missed: Object.values(bundle?.suites ?? {}).flatMap(s =>
         (s?.features ?? []).flatMap(f =>
-          (f.criteria ?? []).filter(c => !c.passed).map(c => `${f.name}/${c.id}`))),
+          (f.criteria ?? []).filter(c => !evidencePassed(criterionEvidence(c)))
+            .map(c => `${f.name}/${c.id}`))),
     };
 
     // Keep the first attempt before a fix round overwrites it.
@@ -588,6 +716,7 @@ async function main() {
 
     let fixRounds = 0;
     let fixCost = 0;
+    const fixSessions = [];
     let stalled = false;
     let regressed = false;
 
@@ -619,15 +748,21 @@ async function main() {
       snapshotSource(appDir, snapshot);
       fixRounds += 1;
       console.log(`--- fix round ${fixRounds}/${args.fixRounds} ---`);
-      const fix = runAgent(args, 'fix', level, appDir);
+      const fix = await runAgent(args, agentAdapter, 'fix', level, appDir);
       fixCost += fix.costUsd;
+      fixSessions.push({ round: fixRounds, sessionId: fix.sessionId ?? null,
+        costUsd: fix.costUsd, durationMs: fix.durationMs, usage: fix.usage ?? null,
+        tokens: fix.tokens ?? null, outputTokens: fix.outputTokens ?? null,
+        turns: fix.turns ?? null, promptBytes: fix.promptBytes ?? null,
+        thinking: fix.thinking ?? null, transcript: fix.transcript ?? null,
+        provenance: fix.provenance ?? null });
 
       // Check the round that just ran, before paying to grade it. A fix session
       // that read the scenario file is not going to be redeemed by another
       // round, and grading it only produces a number nobody may quote.
       const fixLeak = auditContamination(appDir);
       if (fixLeak) abortContaminated(`fix round ${fixRounds}`, fixLeak);
-      bundle = grade(args, appDir, url, `${args.backend}-l${level}-fix${fixRounds}`, level, track);
+      bundle = grade(args, appDir, url, `${args.backend}-l${level}-fix${fixRounds}`, level, track, runId);
 
       // A round that moves nothing usually means the finding is not actionable —
       // often the harness is wrong, not the app. Stop rather than pay again for
@@ -647,27 +782,33 @@ async function main() {
       // 0.980 to 0.961, so it was called a regression, the app was rolled back,
       // and the level was lost. Nothing had got worse.
       //
-      // Scoring the intersection removes the question: only criteria that were
-      // conclusively scored in BOTH rounds count, so the denominator cannot
-      // move underneath the comparison.
-      const shared = compareOnSharedCriteria(beforeBundle, bundle);
-      if (shared.count === 0) {
+      // Compare criteria that were conclusive in both rounds, but never let a
+      // previous observation disappear: conclusive -> inconclusive is lost
+      // evidence and rolls the source back instead of hiding a regression.
+      const shared = compareCriterionEvidence(beforeBundle, bundle);
+      if (shared.count === 0 && shared.lostEvidence.length === 0 && shared.definitionChanges.length === 0) {
         console.log('    no criteria were conclusively scored in both rounds; stopping');
         stalled = true;
         break;
       }
-      if (shared.count < Math.min(beforeMax, afterMax)) {
-        console.log(`    comparing the ${shared.count} criteria scored in both rounds`
+      if (shared.points < Math.min(beforeMax, afterMax)) {
+        console.log(`    comparing ${shared.points} point(s) across ${shared.count} criteria scored in both rounds`
           + ` (${before}/${beforeMax} -> ${after}/${afterMax} overall)`);
       }
-      if (shared.after < shared.before) {
-        console.log(`    regressed (${shared.before} -> ${shared.after} on shared criteria); rolling back and stopping`);
+      const evidenceRegressed = shared.lostEvidence.length > 0 || shared.definitionChanges.length > 0;
+      if (evidenceRegressed || shared.after < shared.before) {
+        if (shared.lostEvidence.length) {
+          console.log(`    lost conclusive evidence for ${shared.lostEvidence.length} criterion/criteria; rolling back and stopping`);
+        } else if (shared.definitionChanges.length) {
+          console.log('    rubric points changed between grades; rolling back and stopping');
+        } else {
+          console.log(`    regressed (${shared.before} -> ${shared.after} on shared criteria); rolling back and stopping`);
+        }
         // Stop the servers BEFORE deleting what they are watching. Without
         // this, rolling back a regressed postgres run threw EBUSY on
         // app/server and took the whole finished run down with it.
-        stopServers(args.backend, args.runIndex, appDir, track);
         restoreSource(snapshot, appDir);
-        bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback`, level, track);
+        bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback`, level, track, runId);
         regressed = true;
         stalled = true;
         break;
@@ -683,11 +824,19 @@ async function main() {
     // makes a harness failure indistinguishable from an app that scored nothing
     // — in a ladder run it silently drops a level's result on the floor. Say so
     // instead, and leave the score null.
-    const graded = bundle?.totals?.max > 0;
+    const finalBundleOutcome = classifyBundle(bundle);
+    const graded = !['ungraded', 'harness_failure'].includes(finalBundleOutcome.kind);
     if (!graded) {
       console.log(`  L${level}: GRADING DID NOT COMPLETE — no usable bundle. ` +
         `Score is unknown, not zero; re-grade this level before using the run.`);
     }
+    const buildSession = { sessionId: build.sessionId, costUsd: build.costUsd,
+      durationMs: build.durationMs, usage: build.usage ?? null,
+      tokens: build.tokens ?? null, outputTokens: build.outputTokens ?? null,
+      turns: build.turns ?? null, promptBytes: build.promptBytes ?? null,
+      thinking: build.thinking ?? null, transcript: build.transcript ?? null,
+      provenance: build.provenance ?? null };
+    const sessionTotals = summarizeSessions([buildSession, ...fixSessions]);
     run.levels.push({
       level,
       graded,
@@ -698,29 +847,50 @@ async function main() {
       // console and the bundle but not run.json, so the thesis metric was
       // missing from the durable record.
       regression: bundle?.totals?.regression ?? null,
+      selection: bundle?.selection ?? null,
       firstBuild,
       contractPass: bundle?.totals?.contractPass ?? null,
       code: bundle?.code ?? null,
       buildCostUsd: build.costUsd,
       fixCostUsd: Number(fixCost.toFixed(4)),
-      tokens: build.tokens,
+      buildSession,
+      fixSessions,
+      sessionTotals,
+      tokens: sessionTotals.tokens,
       // Carried up so a run summary can explain a cost, not just report one.
-      usage: build.usage ?? null,
-      turns: build.turns ?? null,
-      promptBytes: build.promptBytes ?? null,
-      tokensPerTurn: build.tokensPerTurn ?? null,
+      usage: sessionTotals.usage,
+      turns: sessionTotals.turns,
+      promptBytes: sessionTotals.promptBytes,
+      tokensPerTurn: sessionTotals.turns
+        ? Math.round(sessionTotals.tokens / sessionTotals.turns) : null,
       // Reasoning actually produced. The budget is deliberately unpinned so runs
       // measure what a customer gets; that is only defensible if a shift in the
       // CLI default is visible afterwards rather than silently absorbed into
       // every score. agent.mjs measured this from the session transcript and the
       // level record was dropping it, so the guarantee was not holding.
-      thinking: build.thinking ?? null,
+      thinking: sessionTotals.thinking,
       fixRounds,
       stalled,
       regressed,
+      outcome: finalBundleOutcome,
       durationSec: Math.round((Date.now() - t0) / 1000),
     });
-    writeFileSync(join(args.out, 'run.json'), JSON.stringify(run, null, 2));
+    writeRunJson(join(args.out, 'run.json'), run);
+  }
+
+  if (args.mutations) {
+    console.log(`\n================ ${args.backend} mutation control ================`);
+    const pristineOutcome = aggregateRunOutcome(run.levels);
+    if (mutationControlEligible(pristineOutcome)) {
+      args.parentAttemptId = runId;
+      run.mutationControl = runMutationControl(args, appDir, url, track);
+    } else {
+      console.log(`  skipped: pristine outcome is ${pristineOutcome.kind}`);
+      run.mutationControl = { ok: false, skipped: true,
+        outcome: { kind: pristineOutcome.kind, phase: 'mutation-control-prerequisite',
+          reason: `pristine outcome is ${pristineOutcome.kind}` } };
+    }
+    writeRunJson(join(args.out, 'run.json'), run);
   }
 
   // Did the builds read the thing that grades them? Prevention has holes we
@@ -755,7 +925,7 @@ async function main() {
   // Keep the evidence. The transcripts the audit just read are pruned by the CLI
   // after 30 days, and that has already destroyed one benchmark's audit trail.
   try {
-    sh('node', [join(ROOT, 'archive-transcripts.mjs'), '--app', appDir, '--label', runDir],
+    sh('node', [join(ROOT, 'archive-transcripts.mjs'), '--app', appDir, '--label', artifactLabel],
       { stdio: 'pipe' });
   } catch { console.log('  (transcript archiving failed — evidence is on a 30-day timer)'); }
 
@@ -765,21 +935,36 @@ async function main() {
     max: run.levels.reduce((n, l) => n + (l.max ?? 0), 0),
     costUsd: Number(run.levels.reduce((n, l) => n + (l.buildCostUsd ?? 0) + (l.fixCostUsd ?? 0), 0).toFixed(4)),
     fixRounds: run.levels.reduce((n, l) => n + (l.fixRounds ?? 0), 0),
+    sessions: run.levels.reduce((n, l) => n + (l.sessionTotals?.sessions ?? 0), 0),
+    tokens: run.levels.reduce((n, l) => n + (l.sessionTotals?.tokens ?? 0), 0),
+    outputTokens: run.levels.reduce((n, l) => n + (l.sessionTotals?.outputTokens ?? 0), 0),
+    turns: run.levels.reduce((n, l) => n + (l.sessionTotals?.turns ?? 0), 0),
+    modelDurationMs: run.levels.reduce((n, l) => n + (l.sessionTotals?.durationMs ?? 0), 0),
     durationSec: Math.round((Date.now() - started) / 1000),
     // Which levels the totals are actually made of. A run missing a level is
     // not comparable with one that graded them all, and the summary has to
     // carry that rather than leaving it to be noticed.
     ungraded: run.levels.filter(l => !l.graded).map(l => l.level),
   };
-  writeFileSync(join(args.out, 'run.json'), JSON.stringify(run, null, 2));
+  run.outcome = aggregateRunOutcome(run.levels);
+  run.completedAt = new Date().toISOString();
+  if (args.mutations && !run.mutationControl?.ok && !run.mutationControl?.skipped) {
+    run.outcome = { kind: 'harness_failure', phase: 'mutation-control',
+      reason: run.mutationControl?.outcome?.reason
+        ?? run.mutationControl?.processError
+        ?? 'one or more declared mutations were not cleanly caught',
+      appFailures: [], inconclusive: [] };
+  }
+  writeRunJson(join(args.out, 'run.json'), run);
 
   // What the model fought with is the part SpacetimeDB can act on, and it is
   // only in the transcript — the score cannot say it. Appended to a running
   // file after every SpacetimeDB run so the pattern across runs is visible
   // rather than rediscovered each time.
-  if (args.backend === 'spacetime') {
+  if (executeStackCapability(stackAdapter, 'run-policy', 'product-review-enabled')
+    && run.setup?.session !== 'model-free-reference') {
     try {
-      sh('node', [join(ROOT, 'stdb-report.mjs'), '--label', runDir, '--track', args.track,
+      sh('node', [join(ROOT, 'stdb-report.mjs'), '--label', artifactLabel, '--track', args.track,
         '--level', String(args.levelList[args.levelList.length - 1]),
         '--score', `${run.totals.score}/${run.totals.max}`,
         '--cost', String(run.totals.costUsd),
@@ -792,9 +977,9 @@ async function main() {
     // workarounds, and API used wrongly but successfully — only shows in the
     // shape of what the model did, so the behavioural review runs too.
     try {
-      sh('node', [join(ROOT, 'stdb-review.mjs'), '--label', runDir,
+      sh('node', [join(ROOT, 'stdb-review.mjs'), '--label', artifactLabel,
         '--source', join(args.out, 'source'),
-        '--compare', ['postgres', 'mongodb']
+        '--compare', executeStackCapability(stackAdapter, 'run-policy', 'product-review-comparisons')
           .map(b => resultsName(track, b, args.runIndex)).join(',')], { stdio: 'inherit' });
     } catch (e) {
       console.log(`  (stdb behavioural review failed: ${String(e.message).split('\n')[0]})`);
@@ -854,6 +1039,14 @@ async function main() {
       console.log(`  (work dir still held: ${dirname(appDir)} — the next sweep will take it)`);
     }
   }
+  process.exitCode = runExitCode(run.outcome);
 }
 
-main();
+main().catch(error => {
+  console.error(error.stack ?? error.message);
+  try { emergencyTeardown?.(); }
+  catch (cleanupError) {
+    console.error(`cleanup after failure also failed: ${String(cleanupError.message).split(/\r?\n/)[0]}`);
+  }
+  process.exitCode = 1;
+});

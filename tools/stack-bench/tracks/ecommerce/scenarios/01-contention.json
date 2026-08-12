@@ -3,7 +3,7 @@
   "track": "ecommerce",
   "name": "Storefront and warehouse — contention (WITHHELD)",
   "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
-  "note": "PROMOTION RULE, learned the hard way: a mutant counts as CAUGHT only when the criterion fails on its OWN assertion. A failure of INCONCLUSIVE — a click that never dispatched, a restart that was refused — also drops the score, and reads as detection while proving nothing. Check the failure text, never just the number. PROMOTION PROCEDURE: a zero-point criterion cannot be mutation-tested directly, because mutation-test.mjs detects a defect as a score DROP and zero minus zero is no change — every mutant 'survives' by construction. Prove a criterion against a scored copy instead: regenerate grader/.candidates/ecom-contention-scored.json (same steps, 1 point each), run mutation-test.mjs against THAT, and promote here only what was CAUGHT. EVERY CRITERION SCORES ZERO ON PURPOSE. A criterion here is a claim that concurrent customers can break an application, and that claim is not proven until this suite has actually caught a defect. The chat track's contention criteria were withheld for the same reason and are still withheld, because the failure they predicted never appeared. Promote a criterion to real points only when grader/mutation-test.mjs shows it CAUGHT its mutant in grader/mutations/<backend>-ecom-l1.json AND it passes against the unmutated reference build. Record which mutant proved it in `provenBy` when promoting. Until then these run, and their results are reported, but they cannot move a score in either direction.",
+  "note": "PROMOTION RULE, learned the hard way: a mutant counts as CAUGHT only when its declared criterion fails on its OWN assertion. Setup failure, INCONCLUSIVE evidence, a failure in the wrong criterion, and collateral regressions are invalid evidence. mutation-test.mjs now compares criterion outcomes directly, so zero-point candidates need no score-inflated copy. EVERY WITHHELD CRITERION SCORES ZERO ON PURPOSE. Promote one only after it passes on a fully green unmutated reference app and cleanly catches its backend-specific mutant; record that evidence in `provenBy`. Until then these checks are diagnostic and cannot move a score.",
   "features": [
     {
       "id": 201,
@@ -147,7 +147,7 @@
               "numeric": true
             }
           ],
-          "provenBy": "Proven on all three backends it scores, each by removing that stack’s own oversell protection: postgres (FOR UPDATE on the stock read) and mongodb (the quantity:{$gte} filter on the conditional update) both drove stock to -3; spacetime, whose reducers are transactional and have no lock to remove, was mutated by dropping the stock guard and read 4294967293 — the same -3 wrapped by u32 underflow. Every unmutated build passes. NOTE the asymmetry: the postgres and mongodb mutants inject a RACE; the spacetime one injects a missing validation, because the race is not expressible in a reducer. See grader/mutations/spacetime-ecom-l1.json.",
+          "provenBy": "Candidate backend-specific mutants are declared for this criterion and must pass the live Docker mutation gate before this oracle is called production-validated. PostgreSQL and MongoDB remove an explicit concurrency control; SpacetimeDB omits inventory reservation because reducer transactions make the equivalent interleaving defect inexpressible.",
           "statedBy": "stock may never go negative, and two customers must never both get the last unit"
         },
         {
@@ -321,7 +321,7 @@
         {
           "id": "202a",
           "points": 0,
-          "withheld": "FLAKY (read 97 clean, 102 mutated) and its mutant is EQUIVALENT — rewriting quantity=quantity+N as a subselect is identical in postgres. Needs a real mutant and a deterministic restock step.",
+          "withheld": "A candidate cross-feature mutation now omits purchase inventory reservation and directly makes this read start + 5 instead of start + 2. Keep at zero until that exact target passes the repeated live Docker mutation gate.",
           "desc": "three purchases and a restock of five during the rush leave stock at start + 2",
           "steps": [
             {

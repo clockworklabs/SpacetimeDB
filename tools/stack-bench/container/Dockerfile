@@ -9,7 +9,10 @@
 # Nothing from tools/stack-bench is copied in or mounted at run time. The only
 # repository paths a container sees are the two artifacts actually under test,
 # mounted read-only by run-build.mjs.
-FROM node:22-slim
+# Keep the readable tag, but bind it to the exact multi-platform manifest used
+# to build the benchmark image. A clean rebuild must not silently pick up a new
+# Node or Debian base because the upstream tag moved.
+FROM node:22-slim@sha256:f86be15afa9a8277608e141ce2a8aa55d3d9c40845921b8511f4fb7897be2554
 
 # git: builds initialise repositories and some tooling shells out to it.
 # curl: readiness probes against the app's own dev server.

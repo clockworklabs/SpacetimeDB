@@ -13,17 +13,26 @@
 // Prints a JSON line: { appDir, costUsd, tokens, durationMs, sessionId, ok }
 
 import { execFileSync, spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync,
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync,
          openSync, readSync, closeSync } from 'node:fs';
 import { join, dirname, resolve, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { loadTrack, levelPrompt, appendix, dbName, moduleName, portsFor, DEFAULT_TRACK } from './tracks.mjs';
+import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor, DEFAULT_TRACK } from './tracks.mjs';
+import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
 import { writeSandbox } from './sandbox.mjs';
 import { killTree } from './platform.mjs';
+import { leaseFromEnv } from './backend-lease.mjs';
+import { resolveContainerImage } from './container-image.mjs';
+import { hashDirectory, sessionProvenance, sha256 } from './provenance.mjs';
+import { executeStackCapability } from './stack-adapter-contract.mjs';
+import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
+import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(ROOT, '..', '..');
+const CONTROL_COMMAND_TIMEOUT_MS = 120_000;
+const BUILD_SESSION_TIMEOUT_MS = 58 * 60_000;
 
 // The benchmark runs its own SpacetimeDB host so that measurements describe the
 // module under test rather than whatever else is published on a shared machine,
@@ -68,29 +77,21 @@ const THINKING_TOKENS = process.env.STACK_BENCH_THINKING ?? null;
 // changes it deliberately.
 const EFFORT = process.env.STACK_BENCH_EFFORT ?? 'high';
 
-// Where a build session runs. HOST by default, container behind
-// --require-container.
+// Coding sessions always run in Docker; there is no host execution path.
 //
 // The container gives a property the sandbox never had — the harness is not on
 // the filesystem the build can see — and the post-build half now works: an app
-// was stood up in one and graded end to end, and restart/stop/start really
-// restart. What does NOT work is SpacetimeDB. A containerised `spacetime dev`
-// blocked a build session for 1:01:17 and the run produced nothing. The shell
-// backgrounding pattern was ruled out (the same shape returns in 5s under
-// docker exec, redirected or not), so the cause is in `spacetime dev` itself and
-// is not yet understood.
+// was stood up in one and graded end to end, restart/stop/start really restart,
+// and `spacetime dev` now publishes and streams logs with one retained identity.
 //
-// Ledger, because it decides the default: containerisation has cost a day, a
-// $9.46 sweep that graded nothing, and an hour-long hang. The contamination it
+// Historical ledger: containerisation cost a day, a
+// $9.46 sweep that graded nothing, and an hour-long hang. Those failures have
+// since been resolved and remain here as the reason isolation is a hard gate.
+// The contamination it
 // prevents has happened once, was CAUGHT by leak-audit, and cost one voided run.
-// Until the SpacetimeDB hang is understood, the host is where numbers come from
-// — it is where every valid result in this project was measured.
-//
-// Nothing is lost by this: --require-container still forces it, and the
-// reproduction to run is a `spacetime dev` from a CLEAN module against a
-// disposable host, which needs no model spend.
-const USE_CONTAINER = (process.env.STACK_BENCH_CONTAINER ?? '0') !== '0';
-const IMAGE = process.env.STACK_BENCH_IMAGE ?? 'stack-bench-build:2.1.226';
+// Reproduce the complete boundary with `npm run test:container`; no model spend
+// is needed.
+const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 
 // Set once in main(), because the addresses a build is TOLD to use depend on
 // where the build runs.
@@ -100,9 +101,8 @@ const IMAGE = process.env.STACK_BENCH_IMAGE ?? 'stack-bench-build:2.1.226';
 // addresses are rewritten to Docker's host alias. Dev-server ports are NOT
 // rewritten: those servers start inside the container and are published back
 // out, so the grader on the host still reaches them at localhost.
-let CONTAINER = false;
-let HOST_ADDR = '127.0.0.1';
-const hostUrl = u => (CONTAINER ? u.replace(/127\.0\.0\.1|localhost/g, HOST_ADDR) : u);
+const HOST_ADDR = process.env.STACK_BENCH_HOST_ALIAS ?? 'host.docker.internal';
+const hostUrl = u => u.replace(/127\.0\.0\.1|localhost/g, HOST_ADDR);
 
 // Where the two artifacts under test are mounted. Container paths also keep the
 // repository root out of the prompt, which is what the contaminated run followed
@@ -156,38 +156,32 @@ function thinkingVolume(appDir, sessionId) {
 }
 
 
-// The versions of the things actually under test. `cliVersion` is Claude Code;
-// it says nothing about which SpacetimeDB produced a number, and a benchmark of
-// SpacetimeDB that does not record which SpacetimeDB is not reproducible.
-function spacetimeVersion(bin) {
-  try {
-    const out = execFileSync(bin, ['--version'], { encoding: 'utf8', stdio: 'pipe' });
-    const commit = out.match(/Commit:\s*([0-9a-f]+)/i)?.[1] ?? null;
-    return { commit, raw: out.trim().split(/\r?\n/).slice(0, 2).join(' ') };
-  } catch { return { commit: null, raw: 'unknown' }; }
-}
-
 // The version of the CLI a container actually ran, which is a Linux binary the
 // host cannot execute. Reporting the Windows build's version instead would
 // attribute the run to whatever happens to be sitting in target/release — and
 // the two go stale independently, which is exactly how a stale CLI produced a
 // retracted finding here before.
-function linuxSpacetimeVersion() {
+function linuxSpacetimeVersion(image) {
   try {
     const out = execFileSync('docker',
       ['run', '--rm', '-v', `${LINUX_CLI}:/deps/spacetimedb-cli:ro`,
-        '--entrypoint', '/deps/spacetimedb-cli', IMAGE, '--version'],
-      { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' } });
+        '--entrypoint', '/deps/spacetimedb-cli', image, '--version'],
+      { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' },
+        timeout: CONTROL_COMMAND_TIMEOUT_MS });
     const commit = out.match(/Commit:\s*([0-9a-f]+)/i)?.[1] ?? null;
-    return { commit, raw: out.trim().split(/\r?\n/).slice(0, 2).join(' ') };
-  } catch { return { commit: null, raw: 'unknown' }; }
+    return { commit, binarySha256: sha256(readFileSync(LINUX_CLI)),
+      raw: out.trim().split(/\r?\n/).slice(0, 2).join(' ') };
+  } catch { return { commit: null, binarySha256: null, raw: 'unknown' }; }
 }
 
-function bindingsVersion(pkgDir) {
+function bindingsIdentity(pkgDir) {
   try {
     const p = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
-    return `${p.name}@${p.version}`;
-  } catch { return 'unknown'; }
+    const source = hashDirectory(pkgDir, { exclude: name =>
+      /(^|\/)(node_modules|dist|target)(\/|$)/.test(name) });
+    return { package: `${p.name}@${p.version}`, sourceSha256: source.sha256,
+      sourceFiles: source.files.length };
+  } catch { return { package: 'unknown', sourceSha256: null, sourceFiles: 0 }; }
 }
 
 // The CLI version inside the build image. Read by running it, not by trusting
@@ -195,15 +189,26 @@ function bindingsVersion(pkgDir) {
 function imageCliVersion(image) {
   try {
     return execFileSync('docker', ['run', '--rm', '--entrypoint', 'claude', image, '--version'],
-      { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' } }).trim();
+      { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' },
+        timeout: CONTROL_COMMAND_TIMEOUT_MS }).trim();
+  } catch { return 'unknown'; }
+}
+
+function imageNodeVersion(image) {
+  try {
+    return execFileSync('docker', ['run', '--rm', '--entrypoint', 'node', image, '--version'],
+      { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' },
+        timeout: CONTROL_COMMAND_TIMEOUT_MS }).trim();
   } catch { return 'unknown'; }
 }
 
 function containerImage(name) {
   try {
-    return execFileSync('docker', ['inspect', '-f', '{{.Config.Image}}', name],
-      { encoding: 'utf8', stdio: 'pipe' }).trim();
-  } catch { return 'unknown'; }
+    const out = execFileSync('docker', ['inspect', '-f', '{{.Config.Image}} {{.Image}}', name],
+      { encoding: 'utf8', stdio: 'pipe', timeout: CONTROL_COMMAND_TIMEOUT_MS }).trim();
+    const [reference, imageId] = out.split(/\s+/, 2);
+    return { reference, imageId };
+  } catch { return { reference: 'unknown', imageId: null }; }
 }
 
 // Anything ambient that could change how the model behaves. We cannot prove no
@@ -218,12 +223,6 @@ function ambientEnv() {
     seen[k] = /KEY|TOKEN|SECRET/i.test(k) ? '<redacted, present>' : v;
   }
   return seen;
-}
-
-function cliVersion(bin) {
-  try {
-    return execFileSync(bin, ['--version'], { encoding: 'utf8', stdio: 'pipe' }).trim().split('\n')[0];
-  } catch { return 'unknown'; }
 }
 
 function parseArgs(argv) {
@@ -249,11 +248,8 @@ function parseArgs(argv) {
       // Comma-separated skill directories to inline, e.g.
       //   --skills typescript-server,typescript-client,cli
       case '--skills': a.skills = argv[++i].split(',').map(x => x.trim()).filter(Boolean); break;
-      case '--no-container': a.noContainer = true; break;
-      case '--container': a.noContainer = false; break;
       // Container or nothing. For sweeps whose claim is that no build could
       // reach the grader — there, a silent fallback would be a false claim.
-      case '--require-container': a.requireContainer = true; a.noContainer = false; break;
       // An API key, when supplied, is used instead of the mounted plan
       // credential — it keeps a rotating token off the build's filesystem.
       case '--api-key': a.apiKey = argv[++i]; break;
@@ -268,21 +264,9 @@ function parseArgs(argv) {
   return a;
 }
 
-function findClaude() {
-  const appData = process.env.APPDATA ?? join(process.env.HOME ?? '', 'AppData', 'Roaming');
-  const desktop = join(appData, 'Claude', 'claude-code');
-  if (existsSync(desktop)) {
-    const versions = readdirSync(desktop).sort();
-    const exe = join(desktop, versions[versions.length - 1], 'claude.exe');
-    if (existsSync(exe)) return exe;
-  }
-  return 'claude';
-}
-
-const dbUrl = (backend, runIndex, dbPort, track) =>
-  hostUrl(backend === 'postgres'
-    ? `postgresql://stackbench:stackbench@localhost:${dbPort}/${dbName(track, runIndex)}`
-    : `mongodb://localhost:${dbPort}/${dbName(track, runIndex)}`);
+const dbUrl = (backend, runIndex, dbPort, track) => executeStackCapability(
+  STACK_ADAPTER_REGISTRY.get(backend), 'agent', 'connection-url',
+  { dbPort, database: dbName(track, runIndex), hostUrl });
 
 // Per-run databases must exist before the app connects, or the agent will go
 // looking for one that does — which has led to apps silently using a foreign
@@ -295,46 +279,19 @@ const dbUrl = (backend, runIndex, dbPort, track) =>
 // extra tables". It spent real turns diagnosing and clearing someone else's
 // leftovers, and those turns land in the cost figure this benchmark exists to
 // measure. Mongo already dropped its whole database; postgres only truncated.
-function ensureDatabase(backend, runIndex, dbPort, track, wipe = false) {
-  const name = dbName(track, runIndex);
-  if (backend === 'postgres') {
-    const container = process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres';
-    try {
-      execFileSync('docker', ['exec', container, 'psql', '-U', 'stackbench', '-d', 'postgres',
-        '-c', `CREATE DATABASE ${name} OWNER stackbench;`], { stdio: 'pipe' });
-    } catch { /* already exists */ }
-    if (wipe) {
-      try {
-        execFileSync('docker', ['exec', container, 'psql', '-U', 'stackbench', '-d', name,
-          '-c', 'DROP SCHEMA public CASCADE; CREATE SCHEMA public; '
-              + 'GRANT ALL ON SCHEMA public TO stackbench;'], { stdio: 'pipe' });
-        console.error(`  wiped ${name} (schema dropped) — a build starts on an empty database`);
-      } catch (e) {
-        console.error(`  WARNING: could not wipe ${name}: ${String(e.message).split('\n')[0]}`);
-      }
-    }
-  } else if (backend === 'spacetime' && wipe) {
-    // A published module survives a run. If the next build's schema is not
-    // compatible with it, publish aborts demanding manual migration or
-    // --delete-data — friction this benchmark has recorded and charged to
-    // SpacetimeDB, when the cause was our own leftovers. Delete the module so
-    // a build starts against nothing at all.
-    try {
-      execFileSync(STDB_BIN, ['delete', moduleName(track, runIndex), '-s', STDB_URI, '-y'],
-        { stdio: 'pipe' });
-      console.error(`  deleted module ${moduleName(track, runIndex)} — a build starts with none published`);
-    } catch { /* not published is the desired state */ }
-  } else if (backend === 'mongodb' && wipe) {
-    const container = process.env.MONGO_CONTAINER ?? 'stack-bench-mongodb';
-    try {
-      execFileSync('docker', ['exec', container, 'mongosh', name, '--quiet',
-        '--eval', 'db.dropDatabase()'], { stdio: 'pipe' });
-      console.error(`  wiped ${name} — a build starts on an empty database`);
-    } catch (e) {
-      console.error(`  WARNING: could not wipe ${name}: ${String(e.message).split('\n')[0]}`);
-    }
+export function ensureDatabase(backend, runIndex, dbPort, track, wipe = false,
+  { exec = execFileSync, stdbBin = STDB_BIN } = {}) {
+  const { lease } = leaseFromEnv(process.env, { backend, active: true });
+  if (lease.runIndex !== runIndex || lease.track !== track.name) {
+    throw new Error(`backend lease ${lease.runId} belongs to ${lease.track}/run${lease.runIndex}, `
+      + `not ${track.name}/run${runIndex}`);
   }
-  return name;
+  const expectedName = dbName(track, runIndex);
+  const name = lease.resources.database ?? expectedName;
+  return executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend), 'database', 'prepare', {
+    lease, name, expectedName, wipe, exec, cli: stdbBin,
+    expectedServerUri: STDB_URI, expectedModule: moduleName(track, runIndex), dbPort,
+  });
 }
 
 // prescribed: the stack is chosen for them (Express, socket.io, an ORM, a layout).
@@ -342,10 +299,9 @@ function ensureDatabase(backend, runIndex, dbPort, track, wipe = false) {
 // build it is the model's call. Prescribing a stack means measuring the stack we
 // picked, not the database.
 function backendDoc(args, p, track) {
-  if (args.guidance === 'minimal' && args.backend === 'spacetime') {
-    console.error('--stack free does not apply to spacetime: it IS the stack, so there is no '
-      + 'framework, realtime mechanism or ORM to choose. Compare postgres/mongodb free runs '
-      + 'against their own prescribed runs; spacetime prescribed is the reference.');
+  if (args.guidance === 'minimal' && !executeStackCapability(
+    STACK_ADAPTER_REGISTRY.get(args.backend), 'agent', 'minimal-guidance-supported')) {
+    console.error(`--stack free does not apply to ${args.backend}; its adapter requires the prescribed stack`);
     process.exit(2);
   }
   const rel = args.guidance === 'minimal'
@@ -357,10 +313,10 @@ function backendDoc(args, p, track) {
     .replaceAll('<EXPRESS_PORT>', String(p.express ?? ''))
     .replaceAll('<APP_NOUN>', track.title)
     .replaceAll('<MODULE_NAME>', moduleName(track, args.runIndex))
-    .replaceAll('<DATABASE_URL>', p.dbPort ? dbUrl(args.backend, args.runIndex, p.dbPort, track) : '')
+    .replaceAll('<DATABASE_URL>', p.dbPort ? dbUrl(args.backend, args.runIndex, p.dbPort, track) ?? '' : '')
     .replaceAll('<STDB_URI>', hostUrl(STDB_URI))
-    .replaceAll('<STDB_BIN>', CONTAINER ? C_BIN : fwd(STDB_BIN))
-    .replaceAll('<STDB_PACKAGE>', `file:${CONTAINER ? C_PKG : fwd(LOCAL_PKG)}`);
+    .replaceAll('<STDB_BIN>', C_BIN)
+    .replaceAll('<STDB_PACKAGE>', `file:${C_PKG}`);
 }
 
 // SpacetimeDB is young enough that models have little of it in training data;
@@ -376,10 +332,7 @@ function backendDoc(args, p, track) {
 // it a build hand-rolls that loop, and one run that had the knowledge came in
 // at $10.29/32min against $22.51/127min without. That was n=1 and is exactly
 // what --skills exists to settle.
-const DEFAULT_SKILLS = ['typescript-server', 'typescript-client'];
-
-function skillDocs(backend, skills) {
-  if (backend !== 'spacetime') return '';
+function skillDocs(skills) {
   const strip = md => md.replace(/^---\n[\s\S]*?\n---\n/, '');
   return skills
     .map(s => strip(readFileSync(join(REPO, 'skills', s, 'SKILL.md'), 'utf8')))
@@ -438,11 +391,15 @@ function startLintServer(cmd, appDir) {
 // report it under the same name.
 function containerBlocker(backend) {
   try {
-    execFileSync('docker', ['image', 'inspect', IMAGE], { stdio: 'pipe' });
-  } catch {
-    return `image ${IMAGE} is not built — docker build -t ${IMAGE} ${fwd(join(ROOT, 'container'))}`;
+    execFileSync('docker', ['image', 'inspect', IMAGE],
+      { stdio: 'pipe', timeout: CONTROL_COMMAND_TIMEOUT_MS });
+  } catch (error) {
+    const detail = String(error.message).split('\n')[0];
+    return `cannot verify isolation image ${IMAGE}: ${detail} — `
+      + `build it with docker build -t ${IMAGE} ${fwd(join(ROOT, 'container'))}`;
   }
-  if (backend !== 'spacetime') return null;
+  if (!executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend),
+    'agent', 'linux-cli-required')) return null;
   if (!existsSync(LINUX_CLI)) {
     return `no Linux SpacetimeDB CLI at ${fwd(LINUX_CLI)} — `
       + 'bash tools/stack-bench/container/build-linux-cli.sh';
@@ -464,89 +421,69 @@ function containerBlocker(backend) {
   return null;
 }
 
-// The container is the default, but a default that kills a run it cannot serve
-// is worse than no default. So:
-//
-//   default (or --container / STACK_BENCH_CONTAINER=1) blocked -> run on the
-//   host, say so loudly, and record why in run.json, because the host is what
-//   every number so far was measured on and falling back changes nothing except
-//   the isolation guarantee.
-//
-//   --require-container blocked -> refuse. That is the mode for a sweep whose
-//   whole point is that no build could reach the grader; degrading it silently
-//   would produce numbers claiming an isolation they did not have.
+// There is one coding-session topology to secure and clean up: Docker or fail.
 function decideIsolation(args) {
-  // An explicit flag beats the default in both directions. Without this, the
-  // temporary host default silently swallowed --require-container — the one
-  // mode whose entire purpose is to refuse to run anywhere else.
-  const wanted = args.requireContainer === true || args.noContainer === false ? true
-    : args.noContainer === true ? false
-    : USE_CONTAINER;
-  if (!wanted) return { container: false, reason: 'requested' };
   const blocker = containerBlocker(args.backend);
   if (!blocker) return { container: true, reason: null };
-  if (args.requireContainer) {
-    console.error(`agent.mjs: --require-container, but ${blocker}`);
-    process.exit(2);
-  }
-  console.error(`  WARNING: running on the host, not in a container — ${blocker}`);
-  console.error('  the build can reach the harness; the leak audit is the only control');
-  return { container: false, reason: blocker };
+  console.error(`agent.mjs: isolated build unavailable: ${blocker}`);
+  console.error('  benchmark coding sessions require the isolation container');
+  process.exit(2);
 }
 
-// A run's fix rounds must happen wherever its build round happened. Host and
-// container are different filesystems and different CLI builds, so a run that
-// switches partway is two measurements reported as one — and the switch would
-// happen silently, triggered by nothing the run did.
+// Every round must retain the container pin written by the first round. A
+// missing or non-container marker is ambiguous prior state, never authority to
+// choose a second execution topology.
 //
 // So the decision is made once, at `build`, and recorded beside the app rather
 // than inside it (the app directory is what gets copied into source/ and
-// audited). Later modes read it back. An explicit flag always wins, because
-// someone naming a mode on the command line means it.
+// audited). Later modes read it back and refuse ambiguous prior state.
 //
 // The marker lives outside the app because `build` wipes the app directory.
-// That also means an app with work in it and NO marker is a run that started
-// before this existed: it ran on the host, and adopting the new default
-// underneath it would corrupt the run in progress.
+// An app with benchmark state and no marker predates this invariant; refuse it
+// rather than guessing where its earlier rounds executed.
 function resolveIsolation(args) {
-  const explicit = args.noContainer === true || args.noContainer === false
-    || args.requireContainer === true;
   const marker = resolve(args.app, '..', '.stack-bench-isolation');
 
-  if (args.mode === 'build' || explicit) {
+  if (args.mode === 'build') {
     const decided = decideIsolation(args);
     if (!args.printPrompt) {
-      try {
-        mkdirSync(dirname(marker), { recursive: true });
-        writeFileSync(marker, decided.container ? 'container' : 'host');
-      } catch { /* a pin we cannot write is not worth failing a run over */ }
+      mkdirSync(dirname(marker), { recursive: true });
+      writeFileSync(marker, 'container');
     }
     return decided;
   }
 
   if (existsSync(marker)) {
-    const pinned = readFileSync(marker, 'utf8').trim() === 'container';
-    if (!pinned) return { container: false, reason: 'pinned to the host by this run\'s build' };
+    const pinned = readFileSync(marker, 'utf8').trim();
+    if (pinned !== 'container') {
+      console.error(`agent.mjs: unsupported isolation marker ${JSON.stringify(pinned)}; expected "container"`);
+      process.exit(2);
+    }
     const blocker = containerBlocker(args.backend);
     if (blocker) {
       console.error(`agent.mjs: this run's build ran in a container, but ${blocker}`);
-      console.error('  continuing on the host would make the fix rounds a different measurement');
+      console.error('  refusing to run this round in a different environment');
       process.exit(2);
     }
     return { container: true, reason: null };
   }
 
   // No marker. `.stack-bench-backend` is written by every agent round, so its
-  // presence means a previous round already worked in this directory — one that
-  // predates the pin, and therefore ran on the host. (A seeded upgrade does not
+  // presence means a previous round already worked in this directory without
+  // recording its topology. (A seeded upgrade does not
   // have it: restoreSource copies source directories, not dotfiles, so the
   // first round of a new run still decides fresh.)
   if (existsSync(join(args.app, '.stack-bench-backend'))) {
-    console.error('  running on the host: this app was built before isolation was pinned,');
-    console.error('  and switching a run to a container partway changes what is measured');
-    return { container: false, reason: 'run started before isolation was pinned' };
+    console.error('agent.mjs: app has prior benchmark state but no isolation marker');
+    console.error('  refusing to guess where earlier rounds ran; start a clean run');
+    process.exit(2);
   }
-  return decideIsolation(args);
+  const decided = decideIsolation(args);
+  if (!args.printPrompt) {
+    mkdirSync(dirname(marker), { recursive: true });
+    writeFileSync(marker, 'container');
+  }
+  return decided;
 }
 
 function writeLintShim(appDir, port) {
@@ -557,10 +494,10 @@ function writeLintShim(appDir, port) {
   return './check-hooks.sh';
 }
 
-function buildPrompt(args, p, track, lintPort) {
+function buildPrompt(args, p, track, lintPort, materials = {}) {
   const lint = args.printPrompt ? './check-hooks.sh' : writeLintShim(args.app, lintPort);
   const common = [
-    `The app lives in ${CONTAINER ? '/app' : args.app.replace(/\\/g, '/')} — work there.`,
+    'The app lives in /app — work there.',
     // Container runs only, and identical for every backend so no stack gets
     // more guidance than another.
     //
@@ -570,13 +507,13 @@ function buildPrompt(args, p, track, lintPort) {
     // host through -p, the same server on 0.0.0.0 answers 200. Without this
     // every containerised run would build a working app the grader cannot
     // reach, and fail for a reason that has nothing to do with the database.
-    ...(CONTAINER ? ['',
+    '',
       'Dev servers must listen on 0.0.0.0, not localhost, or nothing outside '
-      + 'can reach them. For Vite set `server.host: true` in vite.config.ts.'] : []),
+      + 'can reach them. For Vite set `server.host: true` in vite.config.ts.',
     '',
     backendDoc(args, p, track),
   ];
-  const skills = skillDocs(args.backend, args.skills ?? DEFAULT_SKILLS);
+  const skills = materials.skillsText ?? skillDocs(args.backend, args.skills ?? DEFAULT_SKILLS);
   if (skills) common.push('', '---', '', skills);
 
   if (args.mode === 'fix') {
@@ -617,8 +554,8 @@ function buildPrompt(args, p, track, lintPort) {
     '',
     '---',
     '',
-    levelPrompt(track, args.level),
-    appendix(track, args.level),
+    materials.requirementText ?? levelPrompt(track, args.level),
+    materials.contractText ?? appendix(track, args.level),
   ].join('\n');
 }
 
@@ -634,15 +571,24 @@ async function main() {
   // build will run, so this is settled before any prompt is rendered — printed
   // or sent. Resolving it after --print-prompt would make the regression gate
   // compare a prompt nobody is ever given.
-  const isolation = resolveIsolation(args);
-  CONTAINER = isolation.container;
-  if (CONTAINER) HOST_ADDR = process.env.STACK_BENCH_HOST_ALIAS ?? 'host.docker.internal';
+  resolveIsolation(args);
+  const imageIdentity = resolveContainerImage(IMAGE);
+  const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
+  const defaultSkills = executeStackCapability(adapter, 'agent', 'default-skills');
+  const selectedSkills = defaultSkills.length ? (args.skills ?? defaultSkills) : [];
+  const skillsText = skillDocs(selectedSkills);
+  const recipeBinding = resolveLegacyRecipeRelease(track, args.level);
+  const requirementText = recipeBinding?.plan.recipe.task.requirementText ?? levelPrompt(track, args.level);
+  const contractText = recipeBinding?.plan.recipe.task.contractText ?? appendix(track, args.level);
 
   // Renders what the model would be given, without spending anything or
   // touching the app directory. The regression gate for harness changes is a
   // diff of this against a saved copy — captured with the same isolation flags,
   // since host and container prompts differ by design.
-  if (args.printPrompt) { process.stdout.write(buildPrompt(args, p, track)); return; }
+  if (args.printPrompt) {
+    process.stdout.write(buildPrompt(args, p, track, undefined, { skillsText, requirementText, contractText }));
+    return;
+  }
   // Only a build wipes: an upgrade or a fix must find the data the previous
   // level left, which is the whole point of a cumulative ladder.
   // Called for every backend, not just those with a dbPort: spacetime has no
@@ -682,7 +628,13 @@ async function main() {
   process.on('exit', stopLint);
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stopLint(); process.exit(130); });
 
-  const prompt = buildPrompt(args, p, track, lintPort);
+  const prompt = buildPrompt(args, p, track, lintPort, { skillsText, requirementText, contractText });
+  const bugReportPath = join(args.app, 'BUG_REPORT.md');
+  const bugReportText = args.mode === 'fix' && existsSync(bugReportPath)
+    ? readFileSync(bugReportPath, 'utf8') : null;
+  const provenance = sessionProvenance({ prompt, skillsText, contractText, bugReportText,
+    scenarioPaths: suitesFor(track, args.level).map(suite => suite.spec),
+    trackDir: track.dir, trackManifestPath: join(track.dir, 'track.json') });
   writeFileSync(join(args.app, `.prompt-${args.mode}-l${args.level}.md`), prompt);
 
   const started = Date.now();
@@ -716,46 +668,21 @@ async function main() {
       // harness has pinned this since April for the same reason.
       FORCE_PROMPT_CACHING_5M: '1' };
 
-    if (CONTAINER) {
-      // Same CLI arguments, run somewhere the harness does not exist. The
-      // container path is a separate script so that what a build can reach is
-      // stated in one place — see container/run-build.mjs.
-      raw = execFileSync(process.execPath, [
-        join(ROOT, 'container', 'run-build.mjs'),
-        '--app', args.app,
-        '--image', IMAGE,
-        '--effort', EFFORT,
-        '--model', args.model,
-        '--settings', `/app/${basename(settings)}`,
-        '--ports', [p.vite, p.express].filter(Boolean).join(','),
-        ...(args.apiKey ? ['--api-key', args.apiKey] : []),
-      ], { input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: cliEnv });
-    } else {
-    raw = execFileSync(findClaude(), [
-      '--print', '--output-format', 'json',
-      // NOT --dangerously-skip-permissions: that is bypassPermissions, which
-      // switches the permission system off entirely — deny rules included.
-      // probe-sandbox.mjs demonstrates it: under the bypass flag all five
-      // probed paths come back in full, and under acceptEdits all five are
-      // refused. The mode must be named explicitly, because the default mode
-      // withholds approval from Write and Edit and a build cannot write files.
-      '--permission-mode', 'acceptEdits',
-      '--settings', settings,
-      '--model', args.model,
-      // Narrows what the session is POINTED at, which is hygiene rather than
-      // isolation: `--dangerously-skip-permissions` makes `--add-dir` advisory,
-      // and sessions have been observed reading `tracks/*/scenarios/*.json`
-      // (the graded assertions) and copying a prior run's snapshot regardless.
-      // Isolation is the sandbox settings above and keeping the harness out of
-      // the app's ancestry; this argument alone guarantees nothing.
-      // Everything the model legitimately needs (backend guidance, skill
-      // documents, the level spec, the contract appendix) is inlined into the
-      // prompt, and the linter is reached over loopback rather than by path.
+    // Same CLI arguments, run somewhere the harness does not exist. The
+    // container path is a separate script so that what a build can reach is
+    // stated in one place — see container/run-build.mjs.
+    raw = execFileSync(process.execPath, [
+      join(ROOT, 'container', 'run-build.mjs'),
+      '--app', args.app,
+      '--backend', args.backend,
+      '--image', imageIdentity.id,
       '--effort', EFFORT,
-      '--add-dir', args.app,
-    ], { cwd: args.app, input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
-      env: cliEnv });
-    }
+      '--model', args.model,
+      '--settings', `/app/${basename(settings)}`,
+      '--ports', [p.vite, p.express].filter(Boolean).join(','),
+      ...(args.apiKey ? ['--api-key', args.apiKey] : []),
+    ], { input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: cliEnv,
+      timeout: BUILD_SESSION_TIMEOUT_MS });
   } catch (err) {
     raw = (err.stdout || '').toString();
     spawnError = err.code
@@ -806,7 +733,7 @@ async function main() {
       effort: EFFORT,
       // Which reference documents the model was handed. The cost work varies
       // this deliberately, so a number is meaningless without it.
-      skills: args.backend === 'spacetime' ? (args.skills ?? DEFAULT_SKILLS) : [],
+      skills: selectedSkills,
       // Recorded because it materially changes cost, and because a figure whose
       // cache tier is unknown cannot be compared with one taken later.
       cacheTier: '5m',
@@ -814,41 +741,39 @@ async function main() {
       // In a container the host CLI is not the one that ran, so the version is
       // read from the image. Reporting the host's would attribute a number to
       // software that took no part in producing it.
-      cliVersion: CONTAINER ? imageCliVersion(IMAGE) : cliVersion(findClaude()),
-      // Where the session ran. Host and container are different filesystems and
-      // different CLI builds, so two numbers are only comparable when this
-      // matches — it is the field that says whether they are.
-      isolation: CONTAINER
-        ? { mode: 'container', image: IMAGE, hostAlias: HOST_ADDR, fellBackBecause: null }
-        : { mode: 'host', image: null, hostAlias: null,
-            // Null when the host was asked for; a reason when the container was
-            // the intent and could not be honoured. Without this a fallback
-            // looks identical to a deliberate host run.
-            fellBackBecause: isolation.reason === 'requested' ? null : isolation.reason },
+      cliVersion: imageCliVersion(imageIdentity.id),
+      // Both the human-facing reference and immutable content identity are
+      // recorded; the latter is what Docker actually executes.
+      isolation: { mode: 'container', image: imageIdentity.reference,
+        imageId: imageIdentity.id, hostAlias: HOST_ADDR },
       // Whether the run billed to a key or to the plan. Cost figures from the
       // two are not the same measurement.
       auth: (args.apiKey ?? process.env.ANTHROPIC_API_KEY) ? 'api-key' : 'credentials',
       // What is actually being benchmarked, not just what drove it.
-      spacetime: args.backend !== 'spacetime' ? null
-        : CONTAINER ? linuxSpacetimeVersion() : spacetimeVersion(STDB_BIN),
-      spacetimeBindings: args.backend === 'spacetime' ? bindingsVersion(LOCAL_PKG) : null,
-      database: args.backend === 'postgres' ? containerImage(process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres')
-        : args.backend === 'mongodb' ? containerImage(process.env.MONGO_CONTAINER ?? 'stack-bench-mongodb')
-        : null,
+      ...executeStackCapability(adapter, 'agent', 'setup-metadata', {
+        imageId: imageIdentity.id,
+        localPackage: LOCAL_PKG,
+        env: process.env,
+        helpers: { linuxSpacetimeVersion, bindingsIdentity, containerImage },
+      }),
       // Ambient variables that could have influenced the model, recorded so the
       // question "what settings produced this" has an answer.
       env: ambientEnv(),
-      node: process.version,
+      // The orchestrator and coding session are separate runtimes. Recording
+      // only the host Node version would attribute the model's tool execution
+      // to a binary that never entered its container.
+      node: { orchestrator: process.version, codingContainer: imageNodeVersion(imageIdentity.id) },
       platform: process.platform,
     },
     costUsd: Number((result.total_cost_usd ?? 0).toFixed(4)),
     tokens: input + output + cacheWrite + cacheRead,
     outputTokens: output,
     usage: { input, output, cacheWrite, cacheRead },
+    provenance,
     turns,
     // What the model was handed before it did anything — the denominator for
     // every per-turn cost, and the axis the benchmark is least fair on.
-    promptBytes: prompt.length,
+    promptBytes: Buffer.byteLength(prompt),
     tokensPerTurn: turns ? Math.round((input + output + cacheWrite + cacheRead) / turns) : null,
     // Reasoning volume, measured rather than assumed — the budget is unpinned,
     // so this is how a change in the CLI default becomes visible in the record.
@@ -861,4 +786,6 @@ async function main() {
   console.log(JSON.stringify(out));
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch(err => { console.error(err); process.exit(1); });
+}

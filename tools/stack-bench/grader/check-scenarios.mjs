@@ -10,6 +10,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, listTracks, DEFAULT_TRACK } from '../tracks.mjs';
+import { compileScenarioDefinition } from '../definition-compiler.mjs';
+import { ACTION_REGISTRY } from '../action-catalog.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -18,13 +20,7 @@ const trackArg = process.argv.includes('--track')
   : null;
 const trackNames = trackArg ? [trackArg] : (listTracks().length ? listTracks() : [DEFAULT_TRACK]);
 
-// The step vocabulary, read from the grader itself rather than duplicated here.
-const grader = readFileSync(join(HERE, 'grade.mjs'), 'utf8');
-// Some steps are dispatched by an early `if` rather than the switch, so read both.
-const known = new Set([
-  ...[...grader.matchAll(/case '([a-zA-Z]+)':/g)].map(m => m[1]),
-  ...[...grader.matchAll(/step\.do === '([a-zA-Z]+)'/g)].map(m => m[1]),
-]);
+const known = new Set(ACTION_REGISTRY.ids);
 
 let problems = 0;
 const fail = (where, msg) => { console.log(`  ${where}: ${msg}`); problems++; };
@@ -70,8 +66,16 @@ for (const name of trackNames) {
  console.log(`# track: ${name}`);
  const contracts = hooksByLevel(track);
  for (const file of readdirSync(track.scenarios).filter(f => f.endsWith('.json'))) {
-  const spec = JSON.parse(readFileSync(join(track.scenarios, file), 'utf8'));
-  const level = file.slice(0, 2);
+  const scenarioPath = join(track.scenarios, file);
+  let spec;
+  try {
+    spec = compileScenarioDefinition(JSON.parse(readFileSync(scenarioPath, 'utf8')),
+      { source: scenarioPath });
+  } catch (error) {
+    fail(file, error.message);
+    continue;
+  }
+  const level = String(spec.level).padStart(2, '0');
   const hooks = contracts[level] ?? null;
 
   console.log(`${file}`);

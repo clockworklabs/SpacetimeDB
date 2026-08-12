@@ -17,14 +17,68 @@ varies.
 
 ## Run it
 
+Install the locked harness dependencies and browser once per checkout:
+
+```bash
+cd tools/stack-bench
+npm ci
+npm run bootstrap:browsers
+npm test
+npm run preflight -- --backend spacetime,postgres,mongodb --track ecommerce --levels 1-2 --smoke
+npm run test:null
+npm run test:container
+```
+
+`preflight` says whether the exact requested run can start and gives a concrete
+fix for each failure. It checks Docker/Compose, resource floors, image and
+database identities, credentials, ports, clock, storage, and inherited run
+state. `--smoke` uses no model: it starts the real build image, checks declared
+outbound destinations, and proves its result-volume write survives on the host.
+Every real benchmark runs that full smoke automatically before any model call
+and stores the result as `preflight.json`; the explicit command is for fixing
+the machine before launching a campaign.
+
+`test:null` drives the complete validated L1-L2 grader against a reachable
+blank app and fails if any point-bearing criterion passes or becomes
+inconclusive. It takes several minutes because it uses the real browser suites,
+not fixture reports. Every public track is included by default and the complete
+criterion evidence is written under `results/`.
+
 ```bash
 node bench.mjs --backend spacetime --levels 1-5
 node bench.mjs --backend postgres  --levels 1-5 --run-index 1
 node bench.mjs --backend mongodb   --levels 1-5 --run-index 2
+node bench.mjs --backend postgres --track ecommerce --levels 1 \
+  --pack ecommerce.identity-access --check <stable-check-key>
 ```
 
 Give concurrent runs distinct `--run-index` values; ports and databases are
-allocated from it. Results land in `results/<backend>-run<N>/run.json`.
+allocated from it. Results land under a unique run id inside
+`results/<backend>-run<N>/`.
+
+Public result JSON uses artifact schema v2. Each file records what kind of
+evidence it contains, the attempt and parent attempt that produced it, start and
+completion times, and every applicable engine, recipe, pack, fixture,
+calibration, experiment, agent-adapter, and stack-adapter identity. Evidence
+payload fields are checked by kind and files are replaced atomically. Active
+readers accept only schema v2 and reject unknown fields, kinds, versions,
+malformed hashes, and secret-bearing keys. Pre-v1 result bytes are preserved in
+a checksummed inert archive, not interpreted as current evidence.
+
+Every check records exactly one typed state: `passed`, `failed`, `inconclusive`,
+or `harness_failure`. One shared status table drives scoring, run outcomes,
+mutation/null controls, comparisons, repair eligibility, and console labels.
+Diagnostic wording is only rendered or redacted for people; changing that prose
+cannot turn missing evidence into a product failure or send a harness defect to
+the repair agent.
+
+The scenario action language is also startup-validated. All 47 compatibility
+actions declare a versioned input compiler, required capabilities, hard
+deadline, evidence type, redaction tags, renderer metadata, and a narrow
+executor boundary. All 47 actions now run only through independent registered
+executors with capability-scoped access. The central compatibility dispatcher
+is gone; concurrency, browser lifecycle, backend/app control, and direct database
+writes use the same typed action contract as ordinary browser observations.
 
 Bring up the databases first; the SpacetimeDB backend needs `spacetime start`
 instead:
@@ -38,9 +92,16 @@ Requires the Claude Code CLI, Node and Docker. The services use their own ports
 state with anything else on the machine.
 
 A run owns only what it starts, and stops it again when finished or interrupted.
-A SpacetimeDB host that was already running belongs to whoever started it — other
-databases live there — so it is used as-is and left alone. If none is running, one
-is started and stopped again at the end, or kept with `--keep-spacetime`.
+A SpacetimeDB host that was already running belongs to whoever started it, so the
+benchmark refuses to reuse or restart it. Use a dedicated `STACK_BENCH_STDB_URI`
+whose explicit loopback port is free; the benchmark starts that host and stops it
+at the end, or retains it for debugging with `--retain-backend`.
+
+Coding sessions are selected through a statically registered agent adapter.
+`claude-code` is the default; deterministic, fault-injection, and model-free
+reference adapters exercise the same versioned request/result contract in
+harness qualification. Select one with `--agent-adapter <id>`. Arbitrary
+executable paths are not accepted as production adapters.
 
 ## Tracks
 
@@ -49,6 +110,35 @@ application-specific — level prompts, the UI contract, the scenario suites and
 the golden path the linter walks — lives under `tracks/<name>/`, declared by a
 `track.json`. Adding an application is a matter of dropping in a directory; the
 harness needs no change. Pick one with `--track` (default `chat`).
+
+Composition authoring is read-only and does not require Docker:
+
+```bash
+npm run pack -- validate tracks/ecommerce/composition/packs/identity-access-1.0.0.json --track ecommerce
+npm run recipe -- validate tracks/ecommerce/composition/recipes/l1-standard-1.0.0.json --track ecommerce
+npm run recipe -- show tracks/ecommerce/composition/recipes/smoke-1.0.0.json --track ecommerce --pack ecommerce.identity-access
+npm run recipe -- diff <old-recipe.json> <new-recipe.json> --track ecommerce
+```
+
+`recipe diff` reports meaning, scoring, fixture, execution, and metadata changes
+separately, names requirement/contract fragments added or removed, then names the calibration bindings and evidence repetitions that
+must be redone. `recipe show --pack` and `--check` produce a selected scope with
+its own deterministic selection hash, bound to the source recipe hash. The same
+flags on `bench.mjs` run that scope. Packs and individual checks are combined as
+a union. Run, bundle, and grade artifacts record the request, the exact checks
+it resolved to, which checks were attempted, and any checks not run with their
+reason. A subset can be an intentional benchmark run. `compare-runs.mjs` refuses
+different recipe or selection identities and refuses any run whose scope cannot
+be proven. Pre-v1 results are preserved under `archive/pre-v1/` for historical
+inspection only; active readers do not infer or migrate their meaning.
+
+Packs own ordered public requirement fragments, testing-hook fragments, and
+their checks; recipes retain global framing and choose exact pack versions.
+Removing a pack therefore removes its unique instructions and checks together.
+Explicitly shared fragments are deduplicated only when their source slice,
+order, modes, and bytes match exactly. A `--check` filter intentionally narrows
+measurement without changing the task the app was built to satisfy. `recipe
+show` displays that exact composed task and its independent hash.
 
 | Track | Application | Why it exists |
 |---|---|---|
@@ -63,6 +153,12 @@ what gets built, how it is graded, and how the benchmark is kept honest — writ
 for a reader who does not work on the harness.
 
 ## Levels
+
+The five-level ladder below is the production target. Both tracks are currently
+validated through **L2**. A run may choose any declared level; its artifact says
+exactly which levels ran and separately records the track's current
+`validatedThrough` boundary. A level with no declared suite fails instead of
+falling back to L1 grading.
 
 Ordered by the property each makes verifiable, not by feature novelty — see each
 track's `LEVELS.md`.
@@ -125,8 +221,9 @@ earned their place, mostly by catching this harness being wrong:
   this different do not break identically. This tell has caught five false
   positives; none were real defects.
 - **Mutation testing.** `grader/mutation-test.mjs` injects known defects into a
-  working app and requires the grader to catch each one, in the right feature.
-  A defect it misses is a hole in the oracle.
+  fully passing reference app and requires the exact declared criterion to fail
+  conclusively, without collateral regressions. A defect it misses is a hole in
+  the oracle; setup and infrastructure failures are not kills.
 - **Reset before every suite.** Dirty state lowers scores silently.
 - **Verify the app is using the benchmark's own database.** A generated app once
   connected to an unrelated instance and graded normally.
@@ -141,8 +238,9 @@ Everything needed to audit a verdict afterwards, under `<app>/stack-bench/`:
 
 | Artifact | What it is |
 |---|---|
+| `preflight.json` | exact environment admission checks completed before model spend |
 | `bundle.json` | scores per suite, code metrics, environment checks |
-| `grading-<suite>.json` | every criterion, pass or fail, with the observed detail |
+| `grading-<suite>.json` | every criterion's typed verdict and structured evidence |
 | `contract-lint.json` | which test ids resolved |
 | `media/*.webm` | one video per actor per feature — what each user saw |
 | `media/*.png` | full-page screenshot at the exact moment an assertion failed |

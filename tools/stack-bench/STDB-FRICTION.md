@@ -73,9 +73,9 @@ different outcomes across two runs:**
 1. Hand-implemented SHA-256 from scratch, including UTF-8 encoding:
    - evidence: `// Minimal, dependency-free SHA-256 for password hashing inside the deterministic` / `// module runtime (no Node 'crypto', no guaranteed WebCrypto/TextEncoder).` (spacetime-run0 transcript, written to crypto.ts)
 2. Shipped a non-cryptographic hash with an apology in the comment:
-   - evidence: `// Not a cryptographic hash: SpacetimeDB modules run deterministically and have` / `// no access to system crypto. Good enough to avoid storing plaintext passwords.` (results/spacetime-run0/app/backend/spacetimedb/src/index.ts:22)
+   - evidence: `// Not a cryptographic hash: SpacetimeDB modules run deterministically and have` / `// no access to system crypto. Good enough to avoid storing plaintext passwords.` (archive/pre-v1/results/spacetime-run0/app/backend/spacetimedb/src/index.ts:22)
 3. Shipped PLAINTEXT password storage and comparison:
-   - evidence: `if (!acc || acc.password !== password) throw new SenderError('Invalid username or password');` (results/spacetime-ecom-run0/source/backend/spacetimedb/src/index.ts:71)
+   - evidence: `if (!acc || acc.password !== password) throw new SenderError('Invalid username or password');` (archive/pre-v1/results/spacetime-ecom-run0/source/backend/spacetimedb/src/index.ts:71)
 
 **Cost:** turns spent reimplementing primitives the other stacks import, and a
 security defect shipping silently. **Possible fix:** expose a deterministic hash
@@ -758,11 +758,11 @@ from a TypeScript client, and that codegen emitting views as table handles is
 what cost this run. **That was wrong and is retracted.** Views work.
 
 What actually happened: the investigation was run against
-`results/spacetime-run0/app`, which is a leftover directory from a DIFFERENT
+`archive/pre-v1/results/spacetime-run0/app`, which is a leftover directory from a DIFFERENT
 run two days earlier (mtime 2026-08-06; the app itself now builds outside the
 results tree, see bench.mjs:274). Its schema, its bindings and its missing
 `onError` all belonged to that older app. The run actually graded here is in
-`results/spacetime-run0/source`, and it is internally consistent: its module
+`archive/pre-v1/results/spacetime-run0/source`, and it is internally consistent: its module
 views and its client bindings match exactly, and it does wire `onError`.
 
 Established while chasing it, and worth keeping:
@@ -1122,5 +1122,186 @@ By SpacetimeDB surface: server API (schema / reducers) (13), other (6), generate
   - cost: New seed data (categories, staff account) silently failed to appear after a schema-adding publish; diagnosing this consumed a debugging cycle and the eventual fix required a full --delete-data wipe of accumulated state
   - evidence: `I found the issue — categories and the staff account weren't seeded because 'init' only runs on a database's first creation, and this database already existed from Level 1.`
   - possible fix: Have `spacetime publish` print an explicit note when init is skipped because the database already exists, so it's not mistaken for a bug in the module's seed logic.
+
+---
+## 2026-08-10 21:32 — spacetime-ecom-run2 (ecommerce) L1
+
+**Result:** 51/51, $6.4508, 0 fix round(s)
+
+**Tokens** (from the CLI's own usage, 1 session(s), 201 turns)
+
+| | tokens | share of input |
+|---|---:|---:|
+| cache read | 26,841,346 | 98% |
+| cache write | 420,394 | 2% |
+| fresh input | 441 | 0% |
+| output | 242,606 | — |
+
+**Where it got stuck** — 3 build failure(s) of 129 tool calls (plus 3 refused by the sandbox — harness, not SpacetimeDB)
+
+| times | error |
+|---:|---|
+| 1 | spacetimedb: error: unexpected argument '-s' found |
+| 1 | TS7053: Element implicitly has an '…' type because expression of type '…' can'…'IteratorObject<{ id: bi |
+| 1 | TS2345: Argument of type '…' is not assignable to parameter of type '…' |
+
+By SpacetimeDB surface: server API (schema / reducers) (2), CLI / publish (1)
+
+**Re-read** — 15 read(s) of generated bindings
+
+- 4x `client/src/App.tsx`
+- 1x `backend/spacetimedb/package.json`
+- 1x `backend/spacetimedb/tsconfig.json`
+- 1x `src/module_bindings/index.ts`
+- 1x `src/module_bindings/item_table.ts`
+- 1x `src/module_bindings/my_account_table.ts`
+
+---
+**Behavioural review** — 5 finding(s) with verified evidence
+
+- **server subcommand rejects -s server-selector flag** *(CLI/publish)*
+  - cost: one failed CLI call before falling back to a different invocation to find the registered server
+  - evidence: `error: unexpected argument '-s' found Usage: spacetimedb-cli.exe server list For more information, try '--help'.`
+  - possible fix: Either support a consistent -s/--server flag across all `spacetimedb-cli server` subcommands or make the error suggest the correct syntax for that subcommand
+- **basic server ping command flagged UNSTABLE** *(CLI/publish)*
+  - cost: no retries incurred, but every basic connectivity check for a server the model is expected to routinely use surfaces a breaking-change warning, undermining confidence in a core CLI command
+  - evidence: `WARNING: This command is UNSTABLE and subject to breaking changes. Server is online: http://127.0.0.1:3000`
+  - possible fix: Stabilize `server ping` (or `server list`) since it's a basic operation needed just to discover whether a server is reachable, rather than leaving it marked unstable
+- **table index filter() returns a non-indexable iterator** *(client SDK)*
+  - cost: TypeScript compile failure required locating every call site (grep) and rewriting 5 separate lines (cartItem.byCartItem.filter(...)[0] pattern) across the reducer file
+  - evidence: `Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'IteratorObject<{ id: bigint; itemId: bigint; quantity: number; cartId: bigint; }, undefined, unknown>'.`
+  - possible fix: Either make unique-index filter() return the single row directly (or an array) instead of a bare iterator, or document/provide a first()-style helper so callers don't reach for array indexing
+- **view builder rejects scalar return type without clear guidance, and the object-wrapped fix still fails to typecheck** *(generated bindings)*
+  - cost: two separate rounds of edits to the same view (adminRevenue): first wrapping the scalar in an object, then a second TS2345 failure on the resulting builder type before it compiled
+  - evidence: `Argument of type 'ProductBuilder<{ total: F64Builder; }>' is not assignable to parameter of type 'ViewReturnTypeBuilder'.`
+  - possible fix: Improve the view-return-type builder's error message to state directly that scalar returns must be wrapped in an object type, and fix/align ProductBuilder's type so a correctly-wrapped single-field object satisfies ViewReturnTypeBuilder without a second unrelated type error
+- **publish/generate overrides user's tsconfig verbatimModuleSyntax with a warning on every run** *(CLI/publish)*
+  - cost: noise repeated on both the publish step and the generate step; no functional break but adds uncertainty about which compiler settings actually take effect
+  - evidence: `[CONFIGURATION_FIELD_CONFLICT] Warning: 'compilerOptions.verbatimModuleSyntax' from 'tsconfig.json' is overridden by 'on`
+  - possible fix: Either respect the project's tsconfig.json setting for verbatimModuleSyntax or document that spacetime CLI forces this field so scaffolded tsconfig.json files don't fight the tool
+
+---
+## 2026-08-10 21:39 — spacetime-ecom-run0 (ecommerce) L2
+
+**Result:** 50/50, $14.6235, 1 fix round(s)
+
+**Tokens** (from the CLI's own usage, 4 session(s), 643 turns)
+
+| | tokens | share of input |
+|---|---:|---:|
+| cache read | 91,209,038 | 98% |
+| cache write | 1,758,199 | 2% |
+| fresh input | 1,286 | 0% |
+| output | 670,420 | — |
+
+**Where it got stuck** — 21 build failure(s) of 370 tool calls (plus 9 refused by the sandbox — harness, not SpacetimeDB)
+
+| times | error |
+|---:|---|
+| 1 | TS2345: Argument of type '…' is not assignable to parameter of type '…'. |
+| 1 | TS2345: Argument of type '…' is not assignable to parameter of type '…' |
+| 1 | TS2339: Property '…' does not exist on type 'readonly { id: bigint; itemId: bigint; createdAt: Timestamp; accountId: bigint; |
+| 1 | Error: Publishing aborted by user |
+| 1 | TS1005: '…' expected. |
+| 1 | Error: Aggregate expressions must have column aliases |
+| 1 | <tool_use_error>Blocked: sleep 30 followed by: cd "C:/Users/bradl/AppData/Local/Temp/stack-bench-runs/spacetime-ecom-run |
+| 1 | Error: Cannot find module 'playwright' |
+
+By SpacetimeDB surface: server API (schema / reducers) (13), other (6), generated bindings (1), client SDK (subscriptions) (1)
+
+**Re-read** — 8 read(s) of generated bindings
+
+- 6x `src/components/ItemDetail.tsx`
+- 6x `spacetimedb/src/index.ts`
+- 3x `client/src/App.tsx`
+- 3x `spacetimedb/src/schema.ts`
+- 3x `client/src/App.tsx`
+- 2x `spacetimedb/src/index.ts`
+
+---
+**Behavioural review** — 6 finding(s) with verified evidence
+
+- **View return type builder errors give no actionable guidance** *(generated bindings)*
+  - cost: two rounds of TS compile failures on the same view definition; had to grep and read internal SDK source (views.ts) to understand ViewReturnTypeBuilder before getting the type right
+  - evidence: `src/index.ts(271,3): error TS2345: Argument of type 'F64Builder' is not assignable to parameter of type 'ViewReturnTypeBuilder'. Type 'F64Builder' is not assignable to type 'TypeBuilder<object | undefined, OptionAlgebrai`
+  - possible fix: Improve the TS error message (or docs) to state directly how to declare a view row's computed/aggregate field type, instead of surfacing a generic structural-typing mismatch that requires reading SDK internals.
+- **clientDisconnected fires on ordinary reconnects, not just logout** *(server API)*
+  - cost: root cause of six separate reported bugs (session/cart/order state wiped on page reload); required a whole extra debugging session with an investigation agent, log analysis, and Playwright verification to diagnose and fix
+  - evidence: `The clearest bug: 'onDisconnect' in 'backend/spacetimedb/src/index.ts' deletes the session row whenever the connection drops — including on a page reload/reconnect using the same identity/token, which would wipe out the `
+  - possible fix: Document explicitly that the disconnect lifecycle hook fires on every WebSocket drop (including page reloads/reconnects with the same identity), and warn against treating it as an explicit-logout signal in the client SDK / module docs.
+- **SQL rejects unaliased aggregate expressions** *(server API)*
+  - cost: ad hoc verification query failed and had to be rewritten via trial and error against the CLI
+  - evidence: `Error: Aggregate expressions must have column aliases`
+  - possible fix: Auto-generate a default column alias for aggregate expressions instead of erroring, or surface the aliasing requirement in `spacetime sql --help`/docs.
+- **SQL disallows SELECT * combined with ORDER BY/LIMIT** *(server API)*
+  - cost: query failed and had to be reissued without ORDER BY/LIMIT, losing the ability to directly inspect the most recent rows
+  - evidence: `Error: Unsupported: SELECT * FROM customer_order ORDER BY id DESC LIMIT 5 Caused by: HTTP status client error (400 Bad Request) for url (http://127.0.0.1:3210/v1/database/c2002e72349371acb228841462af8f0fa1f9eb3c224bb4956`
+  - possible fix: Support ORDER BY/LIMIT with SELECT * in spacetime sql, or document the restriction alongside the wildcard-projection rules.
+- **SQL disallows 'mixed wildcard projections'** *(server API)*
+  - cost: query had to be rewritten to explicitly enumerate columns after a second unsupported-SQL error in the same debugging session
+  - evidence: `Error: Mixed wildcard projections are not supported Caused by: HTTP status client error (400 Bad Request)`
+  - possible fix: Either support selecting `t.*` alongside other columns/tables, or document this SQL subset restriction clearly so it doesn't have to be discovered by trial and error.
+- **`init` reducer silently skips reseeding on redeploy to an existing database** *(CLI/publish)*
+  - cost: new schema's seed data (categories, staff account) never got created after a normal publish; diagnosed only after functional testing failed, then worked around with a destructive `--delete-data` republish
+  - evidence: `I found the issue — categories and the staff account weren't seeded because 'init' only runs on a database's first creation, and this database already existed from Level 1.`
+  - possible fix: Warn during `spacetime publish` when the module's init reducer has effectively no-op'd because the database already exists, so schema/seed additions don't silently fail to apply.
+
+---
+## 2026-08-10 21:54 — spacetime-ecom-run1 (ecommerce) L1
+
+**Result:** 51/51, $12.1274, 1 fix round(s)
+
+**Tokens** (from the CLI's own usage, 2 session(s), 344 turns)
+
+| | tokens | share of input |
+|---|---:|---:|
+| cache read | 51,413,497 | 99% |
+| cache write | 712,094 | 1% |
+| fresh input | 688 | 0% |
+| output | 312,587 | — |
+
+**Where it got stuck** — 9 build failure(s) of 190 tool calls (plus 3 refused by the sandbox — harness, not SpacetimeDB)
+
+| times | error |
+|---:|---|
+| 1 | TS7053: Element implicitly has an '…' type because expression of type '…' can'…'IteratorObject<{ id: bi |
+| 1 | TS2345: Argument of type '…' is not assignable to parameter of type '…' |
+| 1 | Error: Errors occurred: |
+| 1 | ERROR: The process "84397" not found. |
+| 1 | Exit code 127 /usr/bin/bash: line 1: wmic: command not found |
+| 1 | ERROR: Invalid argument/option - 'V:/'. |
+| 1 | Error: `--module-path` cannot be used when `spacetime.json` contains publish targets. Remove `--module-path` or run with |
+| 1 | Error: IO error: not a terminal |
+
+By SpacetimeDB surface: generated bindings (4), CLI / publish (3), server API (schema / reducers) (2)
+
+**Re-read** — 2 read(s) of generated bindings
+
+- 6x `client/src/index.css`
+- 4x `spacetimedb/src/index.ts`
+- 4x `client/src/App.tsx`
+- 3x `src/components/ItemDetail.tsx`
+- 2x `spacetime-ecom-run1-20260810205827/app/check-hooks.sh`
+- 2x `spacetime-ecom-run1-20260810205827/app/spacetime.json`
+
+---
+**Behavioural review** — 4 finding(s) with verified evidence
+
+- **Indexed table accessor .filter() returns a lazy iterator, not an array, breaking the natural `[0]` idiom** *(generated bindings)*
+  - cost: Two call sites (index.ts lines 71 and 209) failed TypeScript compilation with the same error. First fix attempt used a sed regex to wrap calls in `[...iter][0]`, which corrupted the accessor names (e.g. producing `by_ITEMPLACEHOLDER`), requiring a second corrective pass (a Python script) across the file to repair it.
+  - evidence: `src/index.ts(71,20): error TS7053: Element implicitly has an 'any' type because expression of type '0' can't be used to index type 'IteratorObject<{ id: bigint; itemId: bigint; accountId: bigint; }, undefined, unknown>'.`
+  - possible fix: Have indexed accessor `.filter()` return an array (or provide a `.first()`/`.findOne()` convenience method) so the obvious 'get the matching row' pattern doesn't require spreading an iterator.
+- **view() rejects a bare primitive return-type builder (t.f64()) with a confusing generic-constraint error** *(server API)*
+  - cost: Publish attempt failed compilation; required reading the SDK's internal ViewReturnTypeBuilder type in src/server/schema.ts to discover views must return an object-shaped builder, then editing the view to wrap the f64 in an object.
+  - evidence: `src/index.ts(377,87): error TS2345: Argument of type 'ProductBuilder<{ total: F64Builder; }>' is not assignable to parameter of type 'ViewReturnTypeBuilder'.`
+  - possible fix: Either allow primitive return-type builders for view(), or surface a clear top-level error message ('view return type must be an object; wrap primitives like t.f64() in an object') instead of a generic type-assignability error.
+- **Wrapping a view's return type in an object triggered an opaque 'name used for multiple types' publish error** *(server API)*
+  - cost: After fixing the prior view-return-type error, republishing failed with a bare name-collision message that didn't say where the conflicting type came from, costing another Read+Edit cycle to guess the correct fix (renaming the inline object type).
+  - evidence: `Error: Errors occurred: name 'AdminRevenue' is used for multiple types`
+  - possible fix: Include the two conflicting declaration sites (file/line or construct) in the error message so the collision can be resolved without guessing.
+- **`spacetime dev --module-path` silently conflicts with a `server` field in spacetime.json** *(CLI/publish)*
+  - cost: Dev-mode startup failed after the module bindings/backend were already scaffolded; the agent had to grep the CLI's own Rust source (dev.rs) to understand the constraint, then edit spacetime.json twice (changing the `server` field, restarting the watcher) across three attempts before `dev` started cleanly.
+  - evidence: `started pid 84571 Error: '--module-path' cannot be used when 'spacetime.json' contains publish targets. Remove '--module`
+  - possible fix: Detect this conflict earlier (at config load) with a message that also states which config fields count as 'publish targets', and/or let `--module-path` override rather than hard-conflict with spacetime.json when both point at the same module.
 
 ---

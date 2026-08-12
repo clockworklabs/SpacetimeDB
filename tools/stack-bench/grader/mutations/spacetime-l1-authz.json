@@ -1,13 +1,18 @@
 {
+  "status": "legacy-unreproducible",
+  "backend": "spacetime",
+  "track": "chat",
+  "level": 1,
+  "scenario": "tracks/chat/scenarios/01-invariants.json",
   "note": [
     "The SpacetimeDB counterpart to postgres-l1-authz.json. Validating the new",
     "criteria against only one backend would tell us the grader catches defects",
     "in that backend's shape — which is the bias worth avoiding, since the point",
     "of the benchmark is a fair comparison.",
     "",
-    "These edit the MODULE, so they need a republish rather than a hot reload:",
-    "set redeployMs high enough for `spacetime publish` to finish, and run with a",
-    "redeploy command (see redeploy below).",
+    "These edit the MODULE, so they need a republish rather than a hot reload.",
+    "The runner republishes through the authenticated backend lease during each",
+    "reset and republishes the restored source before it exits the mutant.",
     "",
     "EXPECTATION, recorded before running so the result cannot be rationalised",
     "afterwards:",
@@ -23,10 +28,10 @@
     "    on SpacetimeDB, NOT that SpacetimeDB has none. Fixing it means driving the",
     "    reducer from the wrong actor's own live connection."
   ],
-  "redeploy": "spacetime publish stackbench-run0 --module-path backend/spacetimedb",
   "mutations": [
     {
       "id": "leak-every-message",
+      "kills": ["outsider-never-receives-it-over-the-wire"],
       "file": "backend/spacetimedb/src/index.ts",
       "desc": "The my_messages view stops restricting rows to conversations the caller belongs to, so every client is sent every message including other people's direct ones. The interface still shows only the open conversation.",
       "find": "    if (!convIds.has(msg.conversationId)) continue;",
@@ -36,6 +41,7 @@
     },
     {
       "id": "anyone-can-remove-a-member",
+      "kills": ["only-an-owner-can-remove-a-member"],
       "file": "backend/spacetimedb/src/index.ts",
       "desc": "The ownership check in the removeMember reducer is dropped. The control stays hidden from non-owners, so nothing visible changes.",
       "find": "    if (!myMembership || !myMembership.isOwner) throw new SenderError('only an owner can remove members');",

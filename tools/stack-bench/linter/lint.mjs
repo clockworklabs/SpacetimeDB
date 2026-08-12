@@ -14,6 +14,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadTrack, DEFAULT_TRACK } from '../tracks.mjs';
+import { emptyArtifactIdentities, writeArtifact } from '../artifacts.mjs';
 
 const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CHECK_TIMEOUT = 5000;
@@ -28,6 +29,7 @@ function parseArgs(argv) {
       case '--json': args.json = true; break;
       case '--out': args.out = argv[++i]; break;
       case '--label': args.label = argv[++i]; break;
+      case '--parent-attempt-id': args.parentAttemptId = argv[++i]; break;
       case '--headed': args.headed = true; break;
       default:
         console.error(`Unknown argument: ${argv[i]}`);
@@ -131,9 +133,13 @@ async function run() {
     results,
   };
   if (args.out) {
-    const { writeFileSync, mkdirSync } = await import('node:fs');
-    mkdirSync(dirname(args.out), { recursive: true });
-    writeFileSync(args.out, JSON.stringify(report, null, 2));
+    const id = `${args.parentAttemptId ?? args.label ?? 'lint'}-contract-lint`;
+    writeArtifact(args.out, {
+      kind: 'contract_lint', id,
+      attempt: { id, parentId: args.parentAttemptId ?? null },
+      identities: emptyArtifactIdentities(),
+      payload: report,
+    });
     if (!args.json) console.log(`\nLint report written to ${args.out}`);
   }
   if (args.json) {

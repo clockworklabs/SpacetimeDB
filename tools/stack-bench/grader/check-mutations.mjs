@@ -19,7 +19,7 @@
 //   node check-mutations.mjs --app <dir> --mutations <file> --quiet   (exit code only)
 
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { mutationEdits, resolveMutationFile, validateMutationDefinitions } from '../mutation-analysis.mjs';
 
 function parseArgs(argv) {
   const a = {};
@@ -46,27 +46,31 @@ if (spec.anchoredTo) say(`anchored  : ${String(spec.anchoredTo).split('.')[0]}`)
 say('');
 
 let bad = 0;
+const definitions = validateMutationDefinitions(spec.mutations);
+for (const issue of definitions.issues) {
+  console.log(`  BAD MANIFEST ${issue.mutation ?? '<unnamed>'} -> ${issue.kind}`);
+  bad++;
+}
 for (const m of spec.mutations ?? []) {
-  const file = join(args.app, m.file);
+  let file;
+  try { file = resolveMutationFile(args.app, m.file); }
+  catch {
+    console.log(`  UNSAFE FILE ${m.id} -> ${m.file} escapes the app directory`);
+    bad++;
+    continue;
+  }
   if (!existsSync(file)) {
     console.log(`  DEAD FILE   ${m.id} -> ${m.file} does not exist in this app`);
     bad++;
     continue;
   }
   const src = readFileSync(file, 'utf8');
-  for (const e of m.edits ?? []) {
+  for (const e of mutationEdits(m)) {
     const n = src.split(e.find).length - 1;
     if (n === 1) { say(`  ok          ${m.id} -> ${m.file}`); continue; }
     console.log(n === 0
       ? `  DEAD ANCHOR ${m.id} -> not found in ${m.file}`
       : `  AMBIGUOUS   ${m.id} -> matches ${n}x in ${m.file}; the edit would land in more than one place`);
-    bad++;
-  }
-  // A mutation that names no criterion cannot promote anything, and a `breaks`
-  // that is not a numeric feature id makes mutation-test.mjs score `undefined`
-  // and report SURVIVED for a mutant that worked perfectly.
-  if (typeof m.breaks !== 'number') {
-    console.log(`  BAD BREAKS  ${m.id} -> "breaks" must be the numeric feature id, got ${JSON.stringify(m.breaks)}`);
     bad++;
   }
 }

@@ -22,12 +22,13 @@
 //   node load.mjs --url http://localhost:6273 --backend postgres --label pg
 //                 [--clients 8] [--rounds 20] [--out report.json]
 
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { sampleProcesses as hostSample } from '../platform.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { emptyArtifactIdentities, writeArtifact } from '../artifacts.mjs';
 
 // Playwright is already installed for the grader and the linter; resolving it
 // from there keeps this tool install-free rather than adding a third copy of a
@@ -284,8 +285,13 @@ async function main() {
     console.log(`  cost ${report.cpuSecondsPer1kDelivered ?? '?'} CPU-seconds per 1000 delivered`);
 
     if (args.out) {
-      mkdirSync(dirname(args.out), { recursive: true });
-      writeFileSync(args.out, JSON.stringify(report, null, 2));
+      const id = `performance-${args.label}-${new Date(started).toISOString().replace(/[:.]/g, '-')}`;
+      writeArtifact(args.out, {
+        kind: 'performance_run', id,
+        timestamps: { startedAt: new Date(started).toISOString(), completedAt: new Date().toISOString() },
+        identities: emptyArtifactIdentities({ stackAdapter: { id: args.backend } }),
+        payload: report,
+      });
       console.log(`  wrote ${args.out}`);
     }
   } finally {

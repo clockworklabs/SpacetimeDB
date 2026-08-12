@@ -71,9 +71,8 @@ by the grader, which stays on the host: publish the track's port window
 
 ## How the harness uses it
 
-The container is the **default**. `--no-container` (or `STACK_BENCH_CONTAINER=0`)
-runs on the host, which is what every number collected before this change was
-measured on.
+The container is the only coding-session runtime. Earlier host measurements are
+historical diagnostic evidence and are not comparable to hardened runs.
 
 0. **The container outlives the build session.** This is the load-bearing
    decision and the first version got it wrong. `docker run --rm` ended the
@@ -209,20 +208,23 @@ Two SpacetimeDB-specific mounts follow from this:
   it. It sits beside the app, not inside it — the app directory is what gets
   copied into `source/` and audited, and a token belongs in neither.
 
-`run.json` records the version of the **Linux** CLI, read by running it in the
-image, because the Windows and Linux builds go stale independently.
+`run.json` records the version and binary SHA-256 of the **Linux** CLI, because
+the Windows and Linux builds go stale independently. It also records the
+repository SDK source hash, the image's Node and Claude Code versions, and the
+immutable image content ID Docker actually executes.
 
-If the Linux CLI is missing or is not an ELF binary, a SpacetimeDB run falls
-back to the host, warns, and records `isolation.fellBackBecause` — a fallback
-must not read like a deliberate host run. `--require-container` refuses instead,
-which is what a sweep claiming isolation needs.
+If the Linux CLI is missing or is not an ELF binary, the run refuses before a
+model session starts. There is no host fallback and therefore no second
+lifecycle or filesystem boundary to audit.
 
 ## Cost, honestly
 
 - It re-baselines: different filesystem, and the image pins CLI 2.1.226 against
   the host's 2.1.222, so numbers taken before and after are not strictly
-  comparable. `run.json` records `isolation` and the image's own CLI version
-  (read by running it, not from the tag) so the two are never silently mixed.
+  comparable. The Dockerfile base and database services are pinned by manifest
+  digest. At runtime the build tag is resolved once and Docker executes its
+  immutable content ID. `run.json` records that ID and the image's own CLI and
+  Node versions so two different images are never silently mixed.
 - Per-run overhead is a container start and a dependency install; the install
   already happens.
 - The build can still read the credential mounted into it. That is a real

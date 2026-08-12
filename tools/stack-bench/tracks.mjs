@@ -11,15 +11,19 @@ import { readFileSync, readdirSync, existsSync, statSync, rmSync } from 'node:fs
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { compileTrackManifest } from './definition-compiler.mjs';
+import { executeStackCapability } from './stack-adapter-contract.mjs';
+import { STACK_ADAPTER_REGISTRY, stackPortAllocations } from './stack-adapters.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 export const TRACKS_DIR = join(ROOT, 'tracks');
 export const DEFAULT_TRACK = 'chat';
 
-export function listTracks() {
+export function listTracks({ includeInternal = false } = {}) {
   if (!existsSync(TRACKS_DIR)) return [];
   return readdirSync(TRACKS_DIR, { withFileTypes: true })
     .filter(e => e.isDirectory() && existsSync(join(TRACKS_DIR, e.name, 'track.json')))
+    .filter(e => includeInternal || !JSON.parse(readFileSync(join(TRACKS_DIR, e.name, 'track.json'), 'utf8')).internal)
     .map(e => e.name)
     .sort();
 }
@@ -28,13 +32,14 @@ export function loadTrack(name = DEFAULT_TRACK) {
   const dir = join(TRACKS_DIR, name);
   const manifest = join(dir, 'track.json');
   if (!existsSync(manifest)) {
-    console.error(`Unknown track "${name}". Available: ${listTracks().join(', ') || 'none'}`);
+    console.error(`Unknown track "${name}". Available: ${listTracks({ includeInternal: true }).join(', ') || 'none'}`);
     process.exit(2);
   }
-  const m = JSON.parse(readFileSync(manifest, 'utf8'));
+  const m = compileTrackManifest(JSON.parse(readFileSync(manifest, 'utf8')), { source: manifest });
   return {
     name,
     dir,
+    schemaVersion: m.schemaVersion,
     // Substituted into the backend guidance docs, so the app is branded for the
     // application being built rather than always for chat.
     title: m.title ?? name,
@@ -42,6 +47,12 @@ export function loadTrack(name = DEFAULT_TRACK) {
     // two tracks at the same --run-index cannot collide. Empty for chat, whose
     // names are the ones every existing result was recorded under.
     slug: m.slug ?? '',
+    internal: !!m.internal,
+    // Only these levels may be used as a published baseline. Higher declared
+    // levels are development material until their reference and mutation gates
+    // pass; plannedThrough keeps the intended ladder visible.
+    validatedThrough: m.validatedThrough ?? 0,
+    plannedThrough: m.plannedThrough ?? Math.max(...Object.keys(m.suites ?? {}).map(Number), 0),
     portOffset: m.portOffset ?? 0,
     // What to poll after restarting the app's server to know it is back.
     restartProbe: m.restartProbe ?? '/',
@@ -50,6 +61,7 @@ export function loadTrack(name = DEFAULT_TRACK) {
     // grading can assume it is there.
     reseedOnReset: m.reseedOnReset ?? false,
     suites: m.suites ?? {},
+    actions: m.actions ?? [],
     prompts: join(dir, 'prompts'),
     contracts: join(dir, 'contracts'),
     scenarios: join(dir, 'scenarios'),
@@ -66,11 +78,7 @@ export function loadTrack(name = DEFAULT_TRACK) {
 // one another, and assertNoPortCollisions() proves the whole grid disjoint
 // rather than trusting anyone's arithmetic.
 
-export const PORT_BASES = {
-  spacetime: { vite: 6173 },
-  postgres: { vite: 6273, express: 6001, db: 6532 },
-  mongodb: { vite: 6373, express: 6101, db: 6537 },
-};
+export const PORT_BASES = Object.freeze(stackPortAllocations());
 
 // Run indexes above this are refused: the spacing proof below only covers this
 // range, and an uncapped index walks one backend's window into another's — at
@@ -83,14 +91,11 @@ export function portsFor(track, backend, runIndex) {
   if (runIndex > RUN_INDEX_CAP) {
     throw new Error(`--run-index ${runIndex} exceeds ${RUN_INDEX_CAP}; the port grid is only proven collision-free below that`);
   }
-  const base = PORT_BASES[backend];
-  if (!base) throw new Error(`unknown backend "${backend}"`);
-  const offset = track.portOffset + runIndex;
-  return {
-    vite: base.vite + offset,
-    express: base.express ? base.express + offset : null,
-    dbPort: base.db ?? null,
-  };
+  const adapter = STACK_ADAPTER_REGISTRY.get(backend);
+  return executeStackCapability(adapter, 'ports', 'for-run', {
+    trackOffset: track.portOffset,
+    runIndex,
+  });
 }
 
 // Every (track, backend, run-index) combination must own its ports outright.
@@ -103,9 +108,9 @@ export function assertNoPortCollisions() {
   for (const [backend, base] of Object.entries(PORT_BASES)) {
     if (base.db) owner.set(base.db, `${backend} database container`);
   }
-  for (const name of listTracks()) {
+  for (const name of listTracks({ includeInternal: true })) {
     const track = loadTrack(name);
-    for (const backend of Object.keys(PORT_BASES)) {
+    for (const backend of STACK_ADAPTER_REGISTRY.ids) {
       for (let i = 0; i <= RUN_INDEX_CAP; i++) {
         const p = portsFor(track, backend, i);
         for (const port of [p.vite, p.express]) {
@@ -196,8 +201,8 @@ export function appendix(track, level) {
 }
 
 // Suites are declared per level in the manifest, with spec paths relative to
-// the track directory. A level with no entry of its own falls back to level 1's,
-// which is what grading a higher level did before tracks existed.
+// the track directory. Missing declarations are an incomplete level, not a
+// reason to silently grade a higher-level prompt with L1's feature suite.
 // Guarantees, unlike features, are promises that must not break later. A level
 // adds features; it must not cost you the invariants the earlier levels earned.
 // These suites are therefore re-run at every level above the one that
@@ -208,11 +213,12 @@ export function appendix(track, level) {
 // updates"; a stack that maintains propagation by hand pays for every new write
 // path, and the failure shows up here rather than in the feature score. Without
 // it, L3 never re-checks L1's promises and a regression is invisible.
-const CUMULATIVE_KINDS = new Set(['invariants', 'contention', 'systems']);
-
 export function suitesFor(track, level) {
   const at = lvl => (track.suites[String(lvl)] ?? []).map(s => ({ ...s, spec: join(track.dir, s.spec) }));
-  const declared = track.suites[String(level)] ? at(level) : at(1);
+  if (!track.suites[String(level)]) {
+    throw new Error(`No scenario suites declared for ${track.name} level ${level}`);
+  }
+  const declared = at(level);
 
   // Earlier levels' guarantee suites, oldest first, deduped by spec: a suite
   // declared at several levels (01-contention is listed at 1 and 2) is one
@@ -222,7 +228,7 @@ export function suitesFor(track, level) {
   const inherited = [];
   for (let lvl = 1; lvl < level; lvl++) {
     for (const s of at(lvl)) {
-      if (!CUMULATIVE_KINDS.has(s.id) || seen.has(s.spec)) continue;
+      if (s.inherit !== 'all-higher-levels' || seen.has(s.spec)) continue;
       seen.add(s.spec);
       // A distinct id, because the bundle keys suites by id and a collision
       // would silently overwrite one result with another.

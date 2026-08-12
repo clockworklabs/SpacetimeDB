@@ -1,0 +1,30 @@
+{
+  "name": "@spacetimedb/stack-bench",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "bootstrap:browsers": "playwright install chromium",
+    "preflight": "node preflight.mjs",
+    "verify:release": "node release-manifest.mjs verify",
+    "check:scenarios": "node grader/check-scenarios.mjs",
+    "check:definition-goldens": "node definition-goldens.mjs",
+    "check:composition": "node check-composition.mjs",
+    "check:calibration": "node check-calibration.mjs",
+    "check:references": "node reference-fixtures.mjs",
+    "pack": "node composition-cli.mjs pack",
+    "recipe": "node composition-cli.mjs recipe",
+    "test": "node --test tests/*.test.mjs",
+    "test:container": "node container-smoke.mjs",
+    "test:references": "node reference-build.mjs",
+    "qualify:reference": "node reference-live.mjs",
+    "test:faults": "node fault-injection.mjs",
+    "test:loop": "node test-loop.mjs",
+    "test:null": "node null-control.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.62.1"
+  }
+}

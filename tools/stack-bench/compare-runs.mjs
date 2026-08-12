@@ -18,8 +18,11 @@
 // Usage:
 //   node compare-runs.mjs results/postgres-ecom-run0 results/spacetime-ecom-run0
 
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
+import { readArtifactPayload } from './artifacts.mjs';
+import { criterionEvidence, evidenceDisposition } from './check-evidence.mjs';
+import { evidenceStatusLabel } from './evidence-presentation.mjs';
 
 const dirs = process.argv.slice(2).filter(a => !a.startsWith('--'));
 if (dirs.length < 2) {
@@ -32,19 +35,25 @@ function loadRun(dir) {
   const gdir = join(dir, 'grading');
   if (!existsSync(gdir)) throw new Error(`no grading/ in ${dir} — was this run graded?`);
   const criteria = new Map();
+  const recipeHashes = new Set();
+  const selectionHashes = new Set();
   for (const f of readdirSync(gdir)) {
     if (!f.startsWith('grading-') || !f.endsWith('.json')) continue;
     const suite = f.slice('grading-'.length, -'.json'.length);
-    const r = JSON.parse(readFileSync(join(gdir, f), 'utf8'));
+    const r = readArtifactPayload(join(gdir, f));
+    const recipeHash = r.artifactEnvelope?.identities?.recipe?.sha256;
+    if (recipeHash) recipeHashes.add(recipeHash);
+    if (r.selection?.sha256) selectionHashes.add(r.selection.sha256);
     for (const feat of r.features ?? []) {
       for (const c of feat.criteria ?? []) {
-        const detail = String(c.detail ?? '');
-        criteria.set(`${suite}/${c.id}`, {
+        const evidence = criterionEvidence(c);
+        const disposition = evidenceDisposition(evidence);
+        const detail = String(evidence.summary ?? '');
+        criteria.set(c.stableKey ?? `${suite}/${c.id}`, {
           points: c.points ?? 1,
-          passed: c.passed === true,
-          // The grader marks these by prefixing the detail; mirror that rather
-          // than inventing a second convention.
-          inconclusive: c.passed !== true && /^INCONCLUSIVE/.test(detail),
+          passed: disposition.passed,
+          measured: disposition.measured,
+          status: evidence.status,
           detail,
         });
       }
@@ -52,12 +61,25 @@ function loadRun(dir) {
   }
   let cost = null;
   const rj = join(dir, 'run.json');
-  if (existsSync(rj)) cost = JSON.parse(readFileSync(rj, 'utf8'))?.totals?.costUsd ?? null;
-  return { name: basename(dir), cost, criteria };
+  if (existsSync(rj)) cost = readArtifactPayload(rj)?.totals?.costUsd ?? null;
+  if (recipeHashes.size > 1) throw new Error(`${dir} contains more than one recipe identity`);
+  if (selectionHashes.size > 1) throw new Error(`${dir} contains more than one selection identity`);
+  return { name: basename(dir), cost, criteria,
+    recipeSha256: [...recipeHashes][0] ?? null,
+    selectionSha256: [...selectionHashes][0] ?? null };
 }
 
 const runs = dirs.map(loadRun);
-
+const unidentified = runs.filter(run => !run.recipeSha256 || !run.selectionSha256);
+if (unidentified.length) {
+  throw new Error(`cannot prove comparable run scope for ${unidentified.map(run => run.name).join(', ')}; `
+    + 'use artifacts that record recipe and selection identities');
+}
+const identified = runs.filter(run => run.recipeSha256 && run.selectionSha256);
+const scopeKeys = new Set(identified.map(run => `${run.recipeSha256}:${run.selectionSha256}`));
+if (scopeKeys.size > 1) {
+  throw new Error('runs use different recipe or selection identities and are not directly comparable');
+}
 // Every criterion anyone attempted.
 const all = new Set(runs.flatMap(r => [...r.criteria.keys()]));
 
@@ -65,7 +87,7 @@ const common = [];
 const notEverywhere = [];
 for (const id of [...all].sort()) {
   const seen = runs.map(r => r.criteria.get(id));
-  const measuredEverywhere = seen.every(c => c && !c.inconclusive);
+  const measuredEverywhere = seen.every(c => c?.measured);
   (measuredEverywhere ? common : notEverywhere).push(id);
 }
 
@@ -89,7 +111,7 @@ if (notEverywhere.length) {
     const where = runs.map(r => {
       const c = r.criteria.get(id);
       if (!c) return `${r.name}: absent`;
-      if (c.inconclusive) return `${r.name}: INCONCLUSIVE`;
+      if (!c.measured) return `${r.name}: ${evidenceStatusLabel(c.status)}`;
       return `${r.name}: ${c.passed ? 'pass' : 'fail'}`;
     }).join('  |  ');
     console.log(`  ${id}\n      ${where}`);

@@ -1,0 +1,11 @@
+{
+  "level": 1,
+  "hooks": [
+    {
+      "id": "app-title",
+      "element": "the visible application title",
+      "stage": "landing",
+      "check": "visible"
+    }
+  ]
+}

@@ -10,7 +10,7 @@ name: stack-bench
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16@sha256:803ea6da631eab4a350da4ba87541e4737197b8c26ec0feb23ff6f9714212d1d
     container_name: stack-bench-postgres
     ports:
       - "6532:5432"
@@ -30,7 +30,7 @@ services:
   # mechanism the Postgres backend does not have, and the comparison is about
   # what an agent builds on a standard stack.
   mongodb:
-    image: mongo:7
+    image: mongo:7@sha256:8ecb514b00bdcc0bde67ef4e6c330385377a9dc68e24ee94e28c07c891647348
     container_name: stack-bench-mongodb
     ports:
       - "6537:27017"

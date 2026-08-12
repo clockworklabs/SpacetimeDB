@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.inventory-operations",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Inventory operations",
+  "description": "Warehouse transfers, operational inventory views, and stock conservation.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "request-replay"],
+  "evidence": ["browser-observation", "server-refusal"],
+  "budget": { "status": "unmeasured" },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l2.stock-transfer", "path": "prompts/02-operations.md", "order": 30, "from": "### Moving stock", "until": "### Cancelling and returning", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.operational-views", "path": "prompts/02-operations.md", "order": 50, "from": "### Live operational views", "until": "### What must stay true", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.shared-invariants", "path": "prompts/02-operations.md", "order": 60, "from": "### What must stay true", "until": "## Starting data", "modes": ["upgrade"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l2.transfer-hooks", "path": "contracts/appendix-02.md", "order": 2030, "from": "| `transfer-from`", "until": "| `price-input`", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.operational-view-hooks", "path": "contracts/appendix-02.md", "order": 2050, "from": "| `low-stock-list`", "until": "| `order-status`", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "warehouse-transfer", "source": "scenarios/02-features.json", "feature": 2, "role": "feature" },
+    { "id": "operational-views", "source": "scenarios/02-features.json", "feature": 5, "role": "feature" },
+    { "id": "stock-conservation", "source": "scenarios/02-invariants.json", "feature": 202, "role": "guarantee" }
+  ]
+}

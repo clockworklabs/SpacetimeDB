@@ -1,0 +1,378 @@
+import assert from 'node:assert/strict';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, relative } from 'node:path';
+import test from 'node:test';
+
+import { checkCompositions } from '../check-composition.mjs';
+import {
+  compileFixtureDefinition,
+  compilePackDefinition,
+  compilePromotionDefinition,
+  compilePromotionFile,
+  compileRecipeDefinition,
+  compileRecipeFile,
+  resolveTaskFragment,
+} from '../composition-compiler.mjs';
+import { compileScenarioDefinition } from '../definition-compiler.mjs';
+import { loadTrack, suitesFor } from '../tracks.mjs';
+
+const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
+const recipePath = name => join(ECOMMERCE, 'composition', 'recipes', name);
+
+test('the ecommerce composition tree validates as one source set', () => {
+  assert.deepEqual(checkCompositions({ trackName: 'ecommerce' }), [{
+    track: 'ecommerce', packs: 8, fixtures: 2, recipes: 3, checks: 107, aliases: 2,
+  }]);
+});
+
+function legacyProjection(level) {
+  const track = loadTrack('ecommerce');
+  return suitesFor(track, level).map(suite => {
+    const source = relative(track.dir, suite.spec).replaceAll('\\', '/');
+    const spec = compileScenarioDefinition(JSON.parse(readFileSync(suite.spec, 'utf8')), { source });
+    return {
+      id: suite.id,
+      source,
+      features: spec.features.map(feature => ({
+        id: feature.id,
+        criteria: feature.criteria.map(criterion => ({
+          id: criterion.id,
+          points: criterion.points ?? 1,
+        })),
+      })),
+    };
+  });
+}
+
+function recipeProjection(plan) {
+  return plan.execution.map(suite => ({
+    id: suite.id,
+    source: suite.source,
+    features: suite.checkGroups.reduce((features, group) => {
+      let feature = features.at(-1);
+      if (!feature || feature.id !== group.feature.id) {
+        feature = { id: group.feature.id, criteria: [] };
+        features.push(feature);
+      }
+      feature.criteria.push(...group.feature.criteria.map(criterion => ({
+        id: criterion.id, points: criterion.points ?? 1,
+      })));
+      return features;
+    }, []),
+  }));
+}
+
+test('ecommerce L1 and L2 recipes preserve current suite, feature, check, order, and score semantics', () => {
+  const l1 = compileRecipeFile(recipePath('l1-standard-1.0.0.json'), { trackRoot: ECOMMERCE });
+  const l2 = compileRecipeFile(recipePath('l2-standard-1.0.0.json'), { trackRoot: ECOMMERCE });
+  assert.deepEqual(recipeProjection(l1), legacyProjection(1));
+  assert.deepEqual(recipeProjection(l2), legacyProjection(2));
+  assert.deepEqual({ checks: l1.checks.length, points: l1.scoring.points }, { checks: 48, points: 51 });
+  assert.deepEqual({ checks: l2.checks.length, points: l2.scoring.points }, { checks: 52, points: 74 });
+  const promotions = compilePromotionFile(join(ECOMMERCE, 'composition', 'promotions.json'), {
+    trackRoot: ECOMMERCE,
+  });
+  assert.deepEqual(promotions.entries.map(entry => [entry.alias, entry.status, entry.recipe.id]), [
+    ['L1', 'candidate', 'ecommerce.l1-standard'],
+    ['L2', 'candidate', 'ecommerce.l2-standard'],
+  ]);
+});
+
+test('full ecommerce recipes compose the exact legacy builder task from pack-owned fragments', () => {
+  for (const [recipe, prompt, contract] of [
+    ['l1-standard-1.0.0.json', 'prompts/01-storefront.md', 'contracts/appendix-01.md'],
+    ['l2-standard-1.0.0.json', 'prompts/02-operations.md', 'contracts/appendix-02.md'],
+  ]) {
+    const plan = compileRecipeFile(recipePath(recipe), { trackRoot: ECOMMERCE });
+    assert.equal(plan.recipe.task.requirementText, readFileSync(join(ECOMMERCE, prompt), 'utf8'));
+    assert.equal(plan.recipe.task.contractText, readFileSync(join(ECOMMERCE, contract), 'utf8'));
+  }
+});
+
+test('removing session durability removes its requirement and checks without changing account access', () => {
+  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-pack-removal-'));
+  const root = join(temp, 'ecommerce');
+  try {
+    cpSync(ECOMMERCE, root, { recursive: true });
+    const path = join(root, 'composition', 'recipes', 'l1-standard-1.0.0.json');
+    const recipe = JSON.parse(readFileSync(path, 'utf8'));
+    recipe.packs = recipe.packs.filter(pack => pack.id !== 'ecommerce.session-durability');
+    writeFileSync(path, `${JSON.stringify(recipe, null, 2)}\n`);
+    const plan = compileRecipeFile(path, { trackRoot: root });
+    assert.equal(plan.checks.length, 45);
+    assert(plan.checks.some(check => check.stableKey === 'ecommerce.identity-access.accounts.1a'));
+    assert(!plan.checks.some(check => check.packId === 'ecommerce.session-durability'));
+    assert.doesNotMatch(plan.recipe.task.requirementText, /A signed-in session/);
+    assert.match(plan.recipe.task.requirementText, /A visitor can \*\*create an account\*\*/);
+  } finally { rmSync(temp, { recursive: true, force: true }); }
+});
+
+test('the smoke recipe reuses two behavior packs without duplicating their definitions', () => {
+  const plan = compileRecipeFile(recipePath('smoke-1.0.0.json'), { trackRoot: ECOMMERCE });
+  assert.deepEqual(plan.packs.map(pack => pack.id), [
+    'ecommerce.identity-access', 'ecommerce.reviews',
+  ]);
+  assert.deepEqual(plan.execution[0].checkGroups.map(group => group.feature.id), [1, 6]);
+  assert.equal(plan.checks.length, 7);
+  assert.equal(plan.scoring.points, 8);
+  assert.equal(plan.packs[0].budget.status, 'unmeasured');
+  assert(plan.packs[0].actions.includes('signUp'));
+  assert.match(plan.recipe.task.requirementText, /### Accounts/);
+  assert.match(plan.recipe.task.requirementText, /### Reviews/);
+  assert.doesNotMatch(plan.recipe.task.requirementText, /### Cart|### Admin|### Buying/);
+});
+
+test('fixture versions make the L2 staff addition explicit', () => {
+  const l1 = compileRecipeFile(recipePath('l1-standard-1.0.0.json'), { trackRoot: ECOMMERCE });
+  const l2 = compileRecipeFile(recipePath('l2-standard-1.0.0.json'), { trackRoot: ECOMMERCE });
+  assert.equal(l1.fixture.items.length, 12);
+  assert.deepEqual(l1.fixture.accounts.map(account => account.username), ['admin']);
+  assert.deepEqual(l2.fixture.accounts.map(account => account.username), ['admin', 'staff']);
+  assert.equal(l1.fixture.items.find(item => item.name === 'Mirrorless Camera').stock.East, 2);
+  const prompt = readFileSync(join(ECOMMERCE, 'prompts', '01-storefront.md'), 'utf8');
+  const startingData = prompt.slice(prompt.indexOf('### Starting data'));
+  const promptItems = startingData.split(/\r?\n/).map(line =>
+    line.match(/^\| ([^|]+) \| (\d+\.\d{2}) \| (\d+) \| (\d+) \|$/))
+    .filter(Boolean)
+    .map(match => ({ name: match[1].trim(), price: match[2],
+      stock: { East: Number(match[3]), West: Number(match[4]) } }));
+  assert.deepEqual(l1.fixture.items.map(item => ({ name: item.name, price: item.price, stock: item.stock })),
+    promptItems);
+  assert.match(prompt, /username `admin`, password `stackbench-admin-2026`/);
+  assert.match(readFileSync(join(ECOMMERCE, 'prompts', '02-operations.md'), 'utf8'),
+    /username `staff`, password `stackbench-staff-2026`/);
+});
+
+test('source contracts reject unknown fields, malformed versions, duplicate fixture data, and invalid aliases', () => {
+  const pack = {
+    schemaVersion: 1, kind: 'test-pack', id: 'example.pack', version: '1.0.0', state: 'draft',
+    title: 'Pack', requiresPacks: [], conflictsWith: [], capabilities: ['browser'],
+    evidence: ['browser-observation'], budget: { status: 'unmeasured' },
+    task: { requirements: [{ id: 'example.requirement', path: 'prompt.md', order: 1 }], contracts: [] },
+    checks: [{ id: 'group', source: 'scenarios/01.json', feature: 1, role: 'feature' }],
+  };
+  assert.throws(() => compilePackDefinition({ ...pack, surprise: true }), /surprise: unknown field/);
+  assert.throws(() => compilePackDefinition({ ...pack, version: 'latest' }), /exact semantic version/);
+  assert.throws(() => compilePackDefinition({ ...pack, requiresPacks: ['example.other'] }), /id@version/);
+  assert.throws(() => compilePackDefinition({ ...pack, state: 'qualified' }),
+    /qualified packs require a bounded runtime budget/);
+
+  const fixture = {
+    schemaVersion: 1, kind: 'fixture-set', id: 'example.fixture', version: '1.0.0', state: 'draft',
+    title: 'Fixture', warehouses: ['East'], items: [
+      { name: 'Item', price: '1.00', category: 'Test', stock: { East: 1 } },
+    ], accounts: [], empty: [],
+  };
+  assert.throws(() => compileFixtureDefinition({ ...fixture, warehouses: ['East', 'East'] }), /duplicates/);
+
+  const recipe = {
+    schemaVersion: 1, kind: 'benchmark-recipe', id: 'example.recipe', version: '1.0.0', state: 'draft',
+    title: 'Recipe', track: 'example',
+    fixture: { path: '../fixtures/f.json', id: 'example.fixture', version: '1.0.0' },
+    task: { mode: 'fresh', framing: { requirements: [
+      { id: 'example.framing', path: 'prompt.md', order: 0 },
+    ], contracts: [] } },
+    packs: [{ path: '../packs/a.json', id: 'example.a', version: '1.0.0', includeRoles: ['feature'] }],
+    execution: [{ id: 'features', source: 'scenarios/01.json' }],
+    scoring: { mode: 'legacy-source-points' },
+  };
+  assert.throws(() => compileRecipeDefinition(recipe), /allowed only for a declared compatibility recipe/);
+  const catalog = {
+    schemaVersion: 1, kind: 'promotion-catalog', id: 'example.recipes', version: '1.0.0',
+    state: 'draft', title: 'Promotions', entries: [{ alias: 'latest', status: 'candidate',
+      recipe: { path: 'recipes/r.json', id: 'example.recipe', version: '1.0.0' } }],
+  };
+  assert.throws(() => compilePromotionDefinition(catalog), /must look like L1/);
+});
+
+test('task fragment markers are contained, unique, ordered, and non-empty', () => {
+  const box = sandbox();
+  try {
+    assert.throws(() => resolveTaskFragment({ id: 'example.missing', path: 'prompts/task.md',
+      order: 1, from: 'not present' }, { trackRoot: box.root }), /marker not found/);
+    assert.throws(() => resolveTaskFragment({ id: 'example.escape', path: '../outside.md',
+      order: 1 }, { trackRoot: box.root }), /escapes/);
+    writeFileSync(join(box.root, 'prompts', 'task.md'), 'same\nsame\n');
+    assert.throws(() => resolveTaskFragment({ id: 'example.ambiguous', path: 'prompts/task.md',
+      order: 1, from: 'same' }, { trackRoot: box.root }), /marker is not unique/);
+    assert.throws(() => compilePackDefinition({ ...box.makePack('bad'), task: {
+      requirements: [{ id: 'example.bad', path: 'prompts/task.md', order: -1 }], contracts: [],
+    } }), /non-negative integer/);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+function sandbox() {
+  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-composition-'));
+  const root = join(temp, 'example');
+  for (const directory of [
+    'composition/recipes', 'composition/packs', 'composition/fixtures', 'scenarios', 'prompts', 'contracts',
+  ]) mkdirSync(join(root, directory), { recursive: true });
+  writeFileSync(join(root, 'prompts', 'task.md'), 'Build it.');
+  writeFileSync(join(root, 'contracts', 'contract.json'), '{}');
+  writeFileSync(join(root, 'scenarios', '01.json'), JSON.stringify({
+    level: 1,
+    features: [{ id: 1, name: 'Feature', actors: ['a'], setup: [], criteria: [
+      { id: '1a', desc: 'Works', points: 2, steps: [{ do: 'wait', actor: 'a', ms: 1 }] },
+    ] }],
+  }));
+  const fixture = {
+    schemaVersion: 1, kind: 'fixture-set', id: 'example.fixture', version: '1.0.0', state: 'draft',
+    title: 'Fixture', warehouses: ['East'], items: [
+      { name: 'Item', price: '1.00', category: 'Test', stock: { East: 1 } },
+    ], accounts: [], empty: [],
+  };
+  writeFileSync(join(root, 'composition', 'fixtures', 'fixture.json'), JSON.stringify(fixture));
+  const makePack = (name, extra = {}) => ({
+    schemaVersion: 1, kind: 'test-pack', id: `example.${name}`, version: '1.0.0', state: 'draft',
+    title: name, requiresPacks: [], conflictsWith: [], capabilities: ['browser'],
+    evidence: ['browser-observation'], budget: { status: 'unmeasured' },
+    task: { requirements: [{ id: `example.${name}.requirement`, path: 'prompts/task.md', order: 10 }], contracts: [] },
+    checks: [{ id: 'group', source: 'scenarios/01.json', feature: 1, role: 'feature' }],
+    ...extra,
+  });
+  const writePack = (name, extra) => writeFileSync(join(root, 'composition', 'packs', `${name}.json`),
+    JSON.stringify(makePack(name, extra)));
+  const makeRecipe = (packs, scoring = { mode: 'legacy-source-points' }) => ({
+    schemaVersion: 1, kind: 'benchmark-recipe', id: 'example.recipe', version: '1.0.0', state: 'draft',
+    title: 'Recipe', track: 'example',
+    compatibility: { legacyLevel: 1 },
+    fixture: { path: '../fixtures/fixture.json', id: 'example.fixture', version: '1.0.0' },
+    task: { mode: 'fresh', framing: { requirements: [
+      { id: 'example.framing', path: 'prompts/task.md', order: 0 },
+    ], contracts: [{ id: 'example.contract', path: 'contracts/contract.json', order: 0 }] } },
+    packs: packs.map(name => ({ path: `../packs/${name}.json`, id: `example.${name}`,
+      version: '1.0.0', includeRoles: ['feature'] })),
+    execution: [{ id: 'features', source: 'scenarios/01.json' }],
+    scoring,
+  });
+  const writeRecipe = value => {
+    const path = join(root, 'composition', 'recipes', 'recipe.json');
+    writeFileSync(path, JSON.stringify(value));
+    return path;
+  };
+  return { temp, root, makePack, writePack, makeRecipe, writeRecipe };
+}
+
+test('composition rejects missing dependencies, dependency cycles, conflicts, duplicate ownership, and unsupported capabilities', () => {
+  const box = sandbox();
+  try {
+    box.writePack('a', { requiresPacks: ['example.b@1.0.0'] });
+    let path = box.writeRecipe(box.makeRecipe(['a']));
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /missing example.b@1.0.0/);
+
+    box.writePack('b', { requiresPacks: ['example.a@1.0.0'] });
+    path = box.writeRecipe(box.makeRecipe(['a', 'b']));
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /dependency cycle/);
+
+    box.writePack('a', { conflictsWith: ['example.b@1.0.0'] });
+    box.writePack('b');
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /conflicts with selected/);
+
+    box.writePack('a');
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /criterion already selected/);
+
+    box.writePack('b', { task: { requirements: [
+      { id: 'example.a.requirement', path: 'prompts/task.md', order: 11 },
+    ], contracts: [] } });
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /shared fragment.*does not match/);
+
+    path = box.writeRecipe(box.makeRecipe(['a']));
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root, availableCapabilities: [] }),
+      /unsupported capabilities: browser/);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+test('explicit scoring must name every selected stable check exactly once', () => {
+  const box = sandbox();
+  try {
+    box.writePack('a');
+    let path = box.writeRecipe(box.makeRecipe(['a'], { mode: 'explicit', weights: {} }));
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /missing example.a.group.1a/);
+    path = box.writeRecipe(box.makeRecipe(['a'], {
+      mode: 'explicit', weights: { 'example.a.group.1a': 7 },
+    }));
+    const plan = compileRecipeFile(path, { trackRoot: box.root });
+    assert.equal(plan.scoring.points, 7);
+    assert.equal(plan.checks[0].sourcePoints, 2);
+    assert.equal(plan.checks[0].points, 7);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+test('composition references cannot escape the track or composition roots', () => {
+  const box = sandbox();
+  try {
+    box.writePack('a');
+    const recipe = box.makeRecipe(['a']);
+    recipe.packs[0].path = '../../../outside.json';
+    const path = box.writeRecipe(recipe);
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }), /escapes/);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+test('a promotion catalog cannot point a live alias at a draft recipe', () => {
+  const box = sandbox();
+  try {
+    box.writePack('a');
+    box.writeRecipe(box.makeRecipe(['a']));
+    const catalog = {
+      schemaVersion: 1, kind: 'promotion-catalog', id: 'example.recipes', version: '1.0.0',
+      state: 'draft', title: 'Promotions', entries: [{ alias: 'L1', status: 'promoted',
+        recipe: { path: 'recipes/recipe.json', id: 'example.recipe', version: '1.0.0' } }],
+    };
+    const path = join(box.root, 'composition', 'promotions.json');
+    writeFileSync(path, JSON.stringify(catalog));
+    assert.throws(() => compilePromotionFile(path, { trackRoot: box.root }), /while it is draft/);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+test('qualified recipes cannot select draft packs, fixtures, or base recipes', () => {
+  const box = sandbox();
+  try {
+    box.writePack('a');
+    const recipe = box.makeRecipe(['a']);
+    recipe.state = 'qualified';
+    const path = box.writeRecipe(recipe);
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }),
+      /qualified recipe selects draft fixture/);
+    const fixturePath = join(box.root, 'composition', 'fixtures', 'fixture.json');
+    const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
+    fixture.state = 'qualified';
+    writeFileSync(fixturePath, JSON.stringify(fixture));
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }),
+      /qualified recipe selects draft pack/);
+
+    box.writePack('a', { state: 'qualified', budget: { status: 'bounded', maxRuntimeMs: 1000 } });
+    const base = box.makeRecipe(['a']);
+    base.id = 'example.base';
+    writeFileSync(join(box.root, 'composition', 'recipes', 'base.json'), JSON.stringify(base));
+    recipe.task = { ...recipe.task, mode: 'upgrade', baseRecipe: {
+      path: 'base.json', id: 'example.base', version: '1.0.0',
+    } };
+    box.writeRecipe(recipe);
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }),
+      /qualified upgrade recipe selects draft base/);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+test('upgrade recipe references are exact, resolvable, and acyclic', () => {
+  const box = sandbox();
+  try {
+    box.writePack('a');
+    const a = box.makeRecipe(['a']);
+    a.id = 'example.recipe-a';
+    a.task = { ...a.task, mode: 'upgrade', baseRecipe: {
+      path: 'recipe-b.json', id: 'example.recipe-b', version: '1.0.0',
+    } };
+    const b = box.makeRecipe(['a']);
+    b.id = 'example.recipe-b';
+    b.task = { ...b.task, mode: 'upgrade', baseRecipe: {
+      path: 'recipe-a.json', id: 'example.recipe-a', version: '1.0.0',
+    } };
+    const aPath = join(box.root, 'composition', 'recipes', 'recipe-a.json');
+    const bPath = join(box.root, 'composition', 'recipes', 'recipe-b.json');
+    writeFileSync(aPath, JSON.stringify(a));
+    writeFileSync(bPath, JSON.stringify(b));
+    assert.throws(() => compileRecipeFile(aPath, { trackRoot: box.root }), /recipe dependency cycle/);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});

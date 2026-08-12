@@ -1,38 +1,48 @@
 {
+  "schemaVersion": 1,
   "title": "Chat",
   "slug": "",
+  "validatedThrough": 2,
+  "plannedThrough": 5,
   "portOffset": 0,
   "restartProbe": "/api/rooms",
   "suites": {
     "1": [
       {
         "id": "features",
+        "inherit": "none",
         "spec": "scenarios/01-basic-chat.json"
       },
       {
         "id": "invariants",
+        "inherit": "all-higher-levels",
         "spec": "scenarios/01-invariants.json"
       },
       {
         "id": "delivery",
+        "inherit": "none",
         "spec": "scenarios/01-delivery.json"
       },
       {
         "id": "systems",
+        "inherit": "all-higher-levels",
         "spec": "scenarios/01-systems.json"
       }
     ],
     "2": [
       {
         "id": "features",
+        "inherit": "none",
         "spec": "scenarios/02-features.json"
       },
       {
         "id": "invariants",
+        "inherit": "all-higher-levels",
         "spec": "scenarios/02-invariants.json"
       },
       {
         "id": "systems",
+        "inherit": "all-higher-levels",
         "spec": "scenarios/02-systems.json"
       }
     ]

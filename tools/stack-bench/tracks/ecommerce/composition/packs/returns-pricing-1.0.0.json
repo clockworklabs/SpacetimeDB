@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.returns-pricing",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Returns and pricing history",
+  "description": "Cancellation, returns, mutable catalog prices, immutable order history, and refunds.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "unmeasured" },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l2.returns-pricing", "path": "prompts/02-operations.md", "order": 40, "from": "### Cancelling and returning", "until": "### Live operational views", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.shared-invariants", "path": "prompts/02-operations.md", "order": 60, "from": "### What must stay true", "until": "## Starting data", "modes": ["upgrade"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l2.price-hooks", "path": "contracts/appendix-02.md", "order": 2040, "from": "| `price-input`", "until": "| `low-stock-list`", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.return-hooks", "path": "contracts/appendix-02.md", "order": 2060, "from": "| `order-status`", "until": "Before declaring", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "cancellation-and-return", "source": "scenarios/02-features.json", "feature": 3, "role": "feature" },
+    { "id": "price-history", "source": "scenarios/02-features.json", "feature": 4, "role": "feature" },
+    { "id": "refund-accounting", "source": "scenarios/02-invariants.json", "feature": 203, "role": "guarantee" }
+  ]
+}

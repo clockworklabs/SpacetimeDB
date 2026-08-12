@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "kind": "benchmark-recipe",
+  "id": "ecommerce.l1-standard",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Ecommerce L1 compatibility recipe",
+  "track": "ecommerce",
+  "compatibility": { "legacyLevel": 1 },
+  "fixture": { "path": "../fixtures/storefront-1.0.0.json", "id": "ecommerce.storefront", "version": "1.0.0" },
+  "task": {
+    "mode": "fresh",
+    "framing": {
+      "requirements": [
+        { "id": "ecommerce.l1.introduction", "path": "prompts/01-storefront.md", "order": 10, "until": "## Features", "modes": ["fresh"] },
+        { "id": "ecommerce.l1.features-heading", "path": "prompts/01-storefront.md", "order": 20, "from": "## Features", "until": "### Accounts", "modes": ["fresh"] }
+      ],
+      "contracts": [
+        { "id": "ecommerce.l1.contract-heading", "path": "contracts/appendix-01.md", "order": 1000, "until": "| `app-title`", "modes": ["fresh"] },
+        { "id": "ecommerce.l1.app-title-hook", "path": "contracts/appendix-01.md", "order": 1010, "from": "| `app-title`", "until": "| `item-list`", "modes": ["fresh"] },
+        { "id": "ecommerce.l1.contract-footer", "path": "contracts/appendix-01.md", "order": 1140, "from": "Before declaring", "modes": ["fresh"] }
+      ]
+    }
+  },
+  "packs": [
+    { "path": "../packs/identity-access-1.0.0.json", "id": "ecommerce.identity-access", "version": "1.0.0", "includeRoles": ["feature", "guarantee"] },
+    { "path": "../packs/catalog-inventory-1.0.0.json", "id": "ecommerce.catalog-inventory", "version": "1.0.0", "includeRoles": ["feature", "guarantee"] },
+    { "path": "../packs/cart-checkout-1.0.0.json", "id": "ecommerce.cart-checkout", "version": "1.0.0", "includeRoles": ["feature", "guarantee"] },
+    { "path": "../packs/session-durability-1.0.0.json", "id": "ecommerce.session-durability", "version": "1.0.0", "includeRoles": ["feature", "guarantee"] },
+    { "path": "../packs/reviews-1.0.0.json", "id": "ecommerce.reviews", "version": "1.0.0", "includeRoles": ["feature", "guarantee"] }
+  ],
+  "execution": [
+    { "id": "features", "source": "scenarios/01-features.json" },
+    { "id": "invariants", "source": "scenarios/01-invariants.json" },
+    { "id": "contention", "source": "scenarios/01-contention.json" },
+    { "id": "systems", "source": "scenarios/01-systems.json" }
+  ],
+  "scoring": { "mode": "legacy-source-points" }
+}

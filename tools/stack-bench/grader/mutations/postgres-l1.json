@@ -1,8 +1,14 @@
 {
+  "status": "legacy-unreproducible",
+  "backend": "postgres",
+  "track": "chat",
+  "level": 1,
+  "scenario": "tracks/chat/scenarios/01-contention-wip.json",
   "note": "Defects injected into the generated PostgreSQL app to prove the concurrency criteria can fail. Anchors are specific to this app; regenerate for another.",
   "mutations": [
     {
       "id": "reaction-count-without-serialization",
+      "kills": ["reaction-count-is-exact"],
       "desc": "Remove the advisory lock around the reaction insert and read, so concurrent reactions race their read-and-broadcast and a later broadcast can carry a stale, smaller count",
       "breaks": 106,
       "file": "server/src/index.ts",

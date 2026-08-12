@@ -1,6 +1,9 @@
 {
+  "schemaVersion": 1,
   "title": "Shop",
   "slug": "ecom",
+  "validatedThrough": 2,
+  "plannedThrough": 5,
   "portOffset": 300,
   "restartProbe": "/api/items",
   "reseedOnReset": true,
@@ -8,46 +11,56 @@
     "1": [
       {
         "id": "features",
+        "inherit": "none",
         "spec": "scenarios/01-features.json"
       },
       {
         "id": "invariants",
+        "inherit": "all-higher-levels",
         "spec": "scenarios/01-invariants.json"
       },
       {
         "id": "contention",
+        "inherit": "all-higher-levels",
         "spec": "scenarios/01-contention.json"
       },
       {
         "id": "systems",
+        "inherit": "all-higher-levels",
         "spec": "scenarios/01-systems.json"
       }
     ],
     "2": [
       {
         "id": "features",
+        "inherit": "none",
         "spec": "scenarios/02-features.json"
       },
       {
         "id": "invariants",
+        "inherit": "all-higher-levels",
         "spec": "scenarios/02-invariants.json"
       },
       {
         "id": "contention",
+        "inherit": "all-higher-levels",
         "spec": "scenarios/01-contention.json"
       }
     ],
     "3": [
       {
         "id": "features",
+        "inherit": "none",
         "spec": "scenarios/03-features.json"
       },
       {
         "id": "invariants",
+        "inherit": "all-higher-levels",
         "spec": "scenarios/03-invariants.json"
       },
       {
         "id": "systems",
+        "inherit": "all-higher-levels",
         "spec": "scenarios/01-systems.json"
       }
     ]

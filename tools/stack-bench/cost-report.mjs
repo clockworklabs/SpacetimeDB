@@ -14,6 +14,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, listTracks, resultsName, DEFAULT_TRACK } from './tracks.mjs';
+import { readArtifactPayload } from './artifacts.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const arg = (name, fallback) => {
@@ -35,7 +36,7 @@ for (const backend of ['spacetime', 'postgres', 'mongodb']) {
   const dir = join(ROOT, 'results', resultsName(track, backend, runIndex));
   const runFile = join(dir, 'run.json');
   if (!existsSync(runFile)) continue;
-  const level = JSON.parse(readFileSync(runFile, 'utf8')).levels?.[0];
+  const level = readArtifactPayload(runFile, { expectedKind: 'benchmark_run' }).levels?.[0];
   if (!level) continue;
 
   // Older runs predate the detailed capture; fall back to the session record.
@@ -46,7 +47,8 @@ for (const backend of ['spacetime', 'postgres', 'mongodb']) {
   }
   const usage = level.usage ?? extra.usage ?? null;
   const bundle = join(dir, 'app', 'stack-bench', 'bundle.json');
-  const code = existsSync(bundle) ? JSON.parse(readFileSync(bundle, 'utf8')).code : null;
+  const code = existsSync(bundle)
+    ? readArtifactPayload(bundle, { expectedKind: 'grade_bundle' }).code : null;
 
   rows.push({
     backend,

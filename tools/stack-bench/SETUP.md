@@ -44,11 +44,15 @@ data rather than being absorbed into every score.
 Recorded per run, because a benchmark of SpacetimeDB that does not say which
 SpacetimeDB is not reproducible:
 
-- `setup.spacetime` — CLI version and commit of the binary built from this repo
-- `setup.spacetimeBindings` — e.g. `spacetimedb@2.8.0`, the local `file:` package
-- `setup.database` — container image, e.g. `postgres:16`, `mongo:7`
+- `setup.spacetime` — CLI version, commit and binary SHA-256 of the Linux binary
+  built from this repo
+- `setup.spacetimeBindings` — package version and source-tree SHA-256 of the
+  local `file:` package
+- `setup.database` — readable image reference and the database container's
+  immutable image content ID
 - `setup.cliVersion` — Claude Code version (the driver, not the subject)
-- `setup.node`, `setup.platform`
+- `setup.node` — separate orchestrator and coding-container Node versions
+- `setup.platform`
 
 ## Guidance, and the asymmetry in it
 
@@ -72,18 +76,17 @@ cost difference. It does not: the compiler errors do.
 
 ## Where the build runs
 
-Builds run **in a container by default** (`container/Dockerfile`), because the
+Builds are **container-only**. The container
+(`container/Dockerfile`) exists because the
 harness is not on its filesystem — a fix round once read the scenario file
 defining the criteria it was failing and then ran the grader, using nothing but
 `grep` and `node`. Denying those paths is a blocklist; absence is not.
 
 | flag | effect |
 |---|---|
-| *(default)* | container, falling back to the host with a warning if it cannot run there |
-| `--no-container`, `STACK_BENCH_CONTAINER=0` | host, as every number before this change was measured |
-| `--require-container` | container or refuse — for a sweep whose claim is that no build could reach the grader |
+| *(default)* | container or refuse; model sessions have no host execution path |
 | `--api-key <key>`, `ANTHROPIC_API_KEY` | bill to a key instead of the plan credential |
-| `STACK_BENCH_IMAGE` | image tag (default `stack-bench-build:2.1.226`) |
+| `STACK_BENCH_IMAGE` | image reference (default `stack-bench-build:2.1.226`) |
 
 Build the image first, and — for SpacetimeDB — a Linux build of this
 repository's CLI, since `target/release` holds a Windows binary a container
@@ -97,25 +100,45 @@ docker build -t stack-bench-build:2.1.226 tools/stack-bench/container
 bash tools/stack-bench/container/build-linux-cli.sh
 ```
 
-`run.json` records `setup.isolation` (`mode`, `image`, `hostAlias`, and
-`fellBackBecause` when the container was intended but unavailable) and
-`setup.auth` (`api-key` or `credentials`). Host and container are different
-filesystems and different CLI builds, so two numbers are only comparable when
-those fields match.
+Verify the model-free container lifecycle before spending a coding session:
 
-**Isolation is pinned per run.** The choice is made at the build round and
-written to `.stack-bench-isolation` beside the app; later rounds read it back. A
-run whose fix rounds happened somewhere other than its build round is two
-measurements reported as one, and without the pin that switch would happen
-silently the moment the default changed. An explicit flag always wins. An app
-directory with a previous round in it and no pin is treated as a host run — it
-started before the pin existed, and adopting a new default underneath a run in
-progress would corrupt it.
+```bash
+npm run preflight -- --backend spacetime,postgres,mongodb --track ecommerce --levels 1-2 --smoke
+npm run test:container
+```
 
-If the Linux CLI is missing, a SpacetimeDB run falls back to the host and says
-so in `isolation.fellBackBecause`; `run.json` reports the Linux CLI's own
-version, since the Windows and Linux builds go stale independently. See
-`CONTAINER-DESIGN.md`.
+The first command is the operator admission check: exact requested scope,
+Docker/Compose and architecture, CPU/memory/disk floors, clock, digest-matched
+services, free run ports, credentials, provider-declared outbound access, Linux
+CLI architecture, and persistent result-volume writes. `bench.mjs` repeats the
+full no-model smoke automatically and refuses before any model call if a check
+fails. Its typed `preflight.json` is attached to the run; secrets are never
+included.
+
+This starts a dedicated host on an ephemeral port, stages the repository SDK
+with its runtime dependencies, runs `spacetime dev` inside the real build image,
+publishes a fixture, checks it through SQL, verifies the integrated log stream
+is authorized, and verifies cleanup. Log authorization is a hard assertion: a
+publish-only success cannot make this smoke green.
+
+The Dockerfile pins its Node base by manifest digest. PostgreSQL and MongoDB are
+also pinned by manifest digest in `docker-compose.yaml`. At session start the
+harness resolves `STACK_BENCH_IMAGE` to a `sha256:...` content ID and passes
+that ID—not the possibly movable tag—to `docker run`.
+
+`run.json` records `setup.isolation` (`mode`, readable `image`, immutable
+`imageId`, and `hostAlias`) and
+`setup.auth` (`api-key` or `credentials`). Two numbers are comparable only when
+the recorded image IDs and host-alias topology match.
+
+**Isolation is pinned per run.** The first round writes `container` to
+`.stack-bench-isolation` beside the app; later rounds require it. An app with
+prior benchmark state and no valid pin is refused as ambiguous rather than
+silently adopted.
+
+If the image or Linux CLI is missing, the run refuses before model spend.
+`run.json` reports the Linux CLI's own version, since the Windows and Linux
+builds go stale independently. See `CONTAINER-DESIGN.md`.
 
 Auth defaults to the plan: without a key, only `~/.claude/.credentials.json` is
 bind-mounted — read-write, because the host rotates that token and a copy stops
@@ -125,9 +148,9 @@ anything mounted into it; that residual risk is accepted for now.
 
 ## The environment
 
-`agent.mjs` forwards `process.env` to the build on the host path. That is how
-`CLAUDE_EFFORT` influenced every run before anyone noticed. A container inherits
-nothing: only `DISABLE_AUTOUPDATER`, `FORCE_PROMPT_CACHING_5M`,
+The removed host path forwarded `process.env`, which is how `CLAUDE_EFFORT`
+influenced earlier runs before anyone noticed. A container inherits only
+`DISABLE_AUTOUPDATER`, `FORCE_PROMPT_CACHING_5M`,
 `MAX_THINKING_TOKENS` and the API key (when used) are passed in, which closes
 this hole for containerised runs rather than only recording it. Ambient variables matching
 `CLAUDE*`, `ANTHROPIC*`, `MAX_THINKING*`, `DISABLE_AUTOUPDATER` and
@@ -147,6 +170,14 @@ Recorded at the top level of `run.json`: `track`, `backend`, `model`,
 Cost is broken out per phase — `buildCostUsd` and `fixCostUsd` — because a total
 alone cannot distinguish an expensive first attempt from an expensive repair,
 and those are different claims about a stack.
+
+Every level keeps one `buildSession` and an ordered `fixSessions` array. Each
+session records its prompt, selected skills, contract, track manifest, scenarios
+and rubric hashes; fix sessions also hash the exact bug report they received.
+`sessionTotals` aggregates cost, tokens, output tokens, usage classes, turns,
+prompt bytes, reasoning volume and model duration across those sessions. The
+run totals aggregate sessions, tokens, output tokens, turns and model duration
+across every level; wall-clock `durationSec` remains separate.
 
 ## Comparing runs
 

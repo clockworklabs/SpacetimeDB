@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.session-durability",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Session and account-state durability",
+  "description": "Identity, cart, and order continuity through reload and connection recovery.",
+  "requiresPacks": ["ecommerce.identity-access@1.0.0", "ecommerce.cart-checkout@1.0.0"],
+  "conflictsWith": [],
+  "capabilities": ["browser", "backend-lifecycle"],
+  "evidence": ["browser-observation", "fresh-client-observation"],
+  "budget": { "status": "unmeasured" },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l1.session-durability", "path": "prompts/01-storefront.md", "order": 40, "from": "- A signed-in session", "until": "- Usernames are unique.", "modes": ["fresh"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l1.identity-hooks", "path": "contracts/appendix-01.md", "order": 1030, "from": "| `signup-username`", "until": "| `buy-now`", "modes": ["fresh"] },
+      { "id": "ecommerce.l2.existing-hooks", "path": "contracts/appendix-02.md", "order": 2010, "from": "| `app-title`", "until": "| `staff-link`", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "session-continuity", "source": "scenarios/01-features.json", "feature": 1, "criteria": ["1e"], "role": "feature" },
+    { "id": "account-state-persists", "source": "scenarios/01-invariants.json", "feature": 105, "role": "guarantee" }
+  ]
+}

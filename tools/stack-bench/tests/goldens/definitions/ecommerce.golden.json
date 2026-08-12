@@ -1,0 +1,5579 @@
+{
+  "definitionSchemaVersion": 1,
+  "levels": [
+    {
+      "level": 1,
+      "suites": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "scenario": "scenarios/01-features.json"
+        },
+        {
+          "id": "invariants",
+          "inherit": "all-higher-levels",
+          "scenario": "scenarios/01-invariants.json"
+        },
+        {
+          "id": "contention",
+          "inherit": "all-higher-levels",
+          "scenario": "scenarios/01-contention.json"
+        },
+        {
+          "id": "systems",
+          "inherit": "all-higher-levels",
+          "scenario": "scenarios/01-systems.json"
+        }
+      ]
+    },
+    {
+      "level": 2,
+      "suites": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "scenario": "scenarios/02-features.json"
+        },
+        {
+          "id": "invariants",
+          "inherit": "all-higher-levels",
+          "scenario": "scenarios/02-invariants.json"
+        },
+        {
+          "id": "contention",
+          "inherit": "all-higher-levels",
+          "scenario": "scenarios/01-contention.json"
+        }
+      ]
+    },
+    {
+      "level": 3,
+      "suites": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "scenario": "scenarios/03-features.json"
+        },
+        {
+          "id": "invariants",
+          "inherit": "all-higher-levels",
+          "scenario": "scenarios/03-invariants.json"
+        },
+        {
+          "id": "systems",
+          "inherit": "all-higher-levels",
+          "scenario": "scenarios/01-systems.json"
+        }
+      ]
+    }
+  ],
+  "manifest": {
+    "actions": [
+      {
+        "args": [
+          0
+        ],
+        "id": "buy",
+        "path": "/api/items/00000000-0000-0000-0000-000000000000/buy",
+        "reducer": "buy_now"
+      },
+      {
+        "args": [
+          0,
+          1
+        ],
+        "id": "addToCart",
+        "path": "/api/cart",
+        "reducer": "add_to_cart"
+      },
+      {
+        "args": [],
+        "id": "checkout",
+        "path": "/api/checkout",
+        "reducer": "checkout"
+      },
+      {
+        "args": [
+          0,
+          0,
+          1
+        ],
+        "id": "restock",
+        "path": "/api/admin/restock",
+        "reducer": "admin_restock"
+      },
+      {
+        "args": [
+          "",
+          ""
+        ],
+        "id": "signUp",
+        "path": "/api/auth/signup",
+        "reducer": "sign_up"
+      },
+      {
+        "args": [
+          "",
+          ""
+        ],
+        "id": "signIn",
+        "path": "/api/auth/signin",
+        "reducer": "sign_in"
+      }
+    ],
+    "plannedThrough": 5,
+    "portOffset": 300,
+    "reseedOnReset": true,
+    "restartProbe": "/api/items",
+    "schemaVersion": 1,
+    "slug": "ecom",
+    "suites": {
+      "1": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "spec": "scenarios/01-features.json"
+        },
+        {
+          "id": "invariants",
+          "inherit": "all-higher-levels",
+          "spec": "scenarios/01-invariants.json"
+        },
+        {
+          "id": "contention",
+          "inherit": "all-higher-levels",
+          "spec": "scenarios/01-contention.json"
+        },
+        {
+          "id": "systems",
+          "inherit": "all-higher-levels",
+          "spec": "scenarios/01-systems.json"
+        }
+      ],
+      "2": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "spec": "scenarios/02-features.json"
+        },
+        {
+          "id": "invariants",
+          "inherit": "all-higher-levels",
+          "spec": "scenarios/02-invariants.json"
+        },
+        {
+          "id": "contention",
+          "inherit": "all-higher-levels",
+          "spec": "scenarios/01-contention.json"
+        }
+      ],
+      "3": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "spec": "scenarios/03-features.json"
+        },
+        {
+          "id": "invariants",
+          "inherit": "all-higher-levels",
+          "spec": "scenarios/03-invariants.json"
+        },
+        {
+          "id": "systems",
+          "inherit": "all-higher-levels",
+          "spec": "scenarios/01-systems.json"
+        }
+      ]
+    },
+    "title": "Shop",
+    "validatedThrough": 2
+  },
+  "scenarios": [
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "a",
+              "b",
+              "c",
+              "d",
+              "e",
+              "f"
+            ],
+            "criteria": [
+              {
+                "desc": "six customers buy the last three units at once: stock lands on exactly zero, never below",
+                "id": "201a",
+                "points": 1,
+                "provenBy": "Candidate backend-specific mutants are declared for this criterion and must pass the live Docker mutation gate before this oracle is called production-validated. PostgreSQL and MongoDB remove an explicit concurrency control; SpacetimeDB omits inventory reservation because reducer transactions make the equivalent interleaving defect inexpressible.",
+                "statedBy": "stock may never go negative, and two customers must never both get the last unit",
+                "steps": [
+                  {
+                    "actors": [
+                      "a",
+                      "b",
+                      "c",
+                      "d",
+                      "e",
+                      "f"
+                    ],
+                    "do": "clickConcurrently",
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "settleMs": 6000,
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "a",
+                    "do": "expectNumber",
+                    "equals": 0,
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actors": [
+                      "a",
+                      "b",
+                      "c",
+                      "d",
+                      "e",
+                      "f"
+                    ],
+                    "do": "expectAgreement",
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "numeric": true,
+                    "testid": "item-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "exactly three of the six customers end up with an order, and none is charged twice",
+                "id": "201b",
+                "points": 0,
+                "statedBy": "two customers must never both get the last unit",
+                "steps": [
+                  {
+                    "actors": [
+                      "a",
+                      "b",
+                      "c",
+                      "d",
+                      "e",
+                      "f"
+                    ],
+                    "do": "clickConcurrently",
+                    "settleMs": 2500,
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actors": [
+                      "a",
+                      "b",
+                      "c",
+                      "d",
+                      "e",
+                      "f"
+                    ],
+                    "contains": "Mirrorless Camera",
+                    "do": "expectActorsWith",
+                    "equals": 3,
+                    "maxEach": 1,
+                    "testid": "order-item"
+                  }
+                ],
+                "withheld": "rewritten to count the population instead of one participant: the old phrasing asked actor a for at most one order, which passes when nobody got one. Stays at 0 points until it kills a mutant on a real build."
+              },
+              {
+                "desc": "revenue counts three sales, not six",
+                "id": "201c",
+                "points": 0,
+                "statedBy": "stock must never leave a warehouse without a corresponding order",
+                "steps": [],
+                "withheld": "needs an admin actor; wire once 201a has demonstrably failed somewhere"
+              }
+            ],
+            "id": 201,
+            "name": "The last unit is sold once",
+            "setup": [
+              {
+                "actor": "a",
+                "do": "signUp",
+                "name": "c1"
+              },
+              {
+                "actor": "b",
+                "do": "signUp",
+                "name": "c2"
+              },
+              {
+                "actor": "c",
+                "do": "signUp",
+                "name": "c3"
+              },
+              {
+                "actor": "d",
+                "do": "signUp",
+                "name": "c4"
+              },
+              {
+                "actor": "e",
+                "do": "signUp",
+                "name": "c5"
+              },
+              {
+                "actor": "f",
+                "do": "signUp",
+                "name": "c6"
+              },
+              {
+                "actor": "a",
+                "do": "fill",
+                "enter": true,
+                "settleMs": 1200,
+                "testid": "search-input",
+                "text": "Mirrorless Camera"
+              },
+              {
+                "actor": "b",
+                "do": "fill",
+                "enter": true,
+                "settleMs": 1200,
+                "testid": "search-input",
+                "text": "Mirrorless Camera"
+              },
+              {
+                "actor": "c",
+                "do": "fill",
+                "enter": true,
+                "settleMs": 1200,
+                "testid": "search-input",
+                "text": "Mirrorless Camera"
+              },
+              {
+                "actor": "d",
+                "do": "fill",
+                "enter": true,
+                "settleMs": 1200,
+                "testid": "search-input",
+                "text": "Mirrorless Camera"
+              },
+              {
+                "actor": "e",
+                "do": "fill",
+                "enter": true,
+                "settleMs": 1200,
+                "testid": "search-input",
+                "text": "Mirrorless Camera"
+              },
+              {
+                "actor": "f",
+                "do": "fill",
+                "enter": true,
+                "settleMs": 1200,
+                "testid": "search-input",
+                "text": "Mirrorless Camera"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "admin",
+              "a",
+              "b",
+              "c"
+            ],
+            "criteria": [
+              {
+                "desc": "an uncontended restock of five is stored by the server and shows on the storefront",
+                "id": "202-control",
+                "points": 0,
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "testid": "admin-link"
+                  },
+                  {
+                    "actor": "admin",
+                    "as": "warehouse-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "admin-location-qty"
+                  },
+                  {
+                    "actor": "a",
+                    "as": "storefront-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "restock-input",
+                    "text": "5"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "restock-submit"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "wait",
+                    "ms": 4000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "admin-location-row"
+                    },
+                    "plus": 5,
+                    "relativeTo": "warehouse-before",
+                    "testid": "admin-location-qty",
+                    "within": 8000
+                  },
+                  {
+                    "actor": "a",
+                    "do": "pressKey",
+                    "key": "Escape",
+                    "settleMs": 800
+                  },
+                  {
+                    "actor": "a",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "item-card"
+                    },
+                    "plus": 5,
+                    "relativeTo": "storefront-before",
+                    "testid": "item-stock",
+                    "within": 8000
+                  }
+                ],
+                "withheld": "diagnostic: establishes that a restock is applied and reaches the storefront"
+              },
+              {
+                "desc": "three purchases and a restock of five during the rush leave stock at start + 2",
+                "id": "202a",
+                "points": 0,
+                "statedBy": "a restock in one warehouse raises the storefront number live",
+                "steps": [
+                  {
+                    "actor": "a",
+                    "as": "rush-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actors": [
+                      "a",
+                      "b",
+                      "c"
+                    ],
+                    "do": "clickConcurrently",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "item-card"
+                    },
+                    "settleMs": 500,
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "restock-input",
+                    "text": "5"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "restock-submit"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "wait",
+                    "ms": 6000
+                  },
+                  {
+                    "actor": "a",
+                    "do": "pressKey",
+                    "key": "Escape",
+                    "settleMs": 800
+                  },
+                  {
+                    "actor": "a",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "item-card"
+                    },
+                    "plus": 2,
+                    "relativeTo": "rush-before",
+                    "testid": "item-stock",
+                    "within": 10000
+                  }
+                ],
+                "withheld": "A candidate cross-feature mutation now omits purchase inventory reservation and directly makes this read start + 5 instead of start + 2. Keep at zero until that exact target passes the repeated live Docker mutation gate."
+              }
+            ],
+            "id": 202,
+            "name": "A restock during a rush is not lost",
+            "note": "The rush assertion only means something if a restock works at all, so the control runs first and has to move the number. Without it a restock that never reached the server and a restock lost to a race look identical: both leave stock at start - purchases. The control also separates the two, by reading what the server stored (admin-location-qty) before what the buyer sees (item-stock). Totals are asserted as CHANGES rather than absolute values, because earlier features buy from the same catalogue.",
+            "setup": [
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "a",
+                "do": "signUp",
+                "name": "r1"
+              },
+              {
+                "actor": "b",
+                "do": "signUp",
+                "name": "r2"
+              },
+              {
+                "actor": "c",
+                "do": "signUp",
+                "name": "r3"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "tab1",
+              "tab2",
+              "filler"
+            ],
+            "criteria": [
+              {
+                "desc": "the same item added from two tabs at once becomes one line of two",
+                "id": "203a",
+                "points": 0,
+                "statedBy": "raises its quantity rather than adding a second line",
+                "steps": [
+                  {
+                    "actors": [
+                      "tab1",
+                      "tab2"
+                    ],
+                    "do": "clickConcurrently",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "item-card"
+                    },
+                    "settleMs": 4000,
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "click",
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "tab1",
+                    "contains": "Gaming Mouse",
+                    "count": 1,
+                    "do": "expect",
+                    "testid": "cart-item"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "expectNumber",
+                    "equals": 2,
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "cart-item"
+                    },
+                    "testid": "cart-quantity"
+                  }
+                ],
+                "withheld": "runs clean (2/2) but no mutant has been attempted against it yet."
+              },
+              {
+                "desc": "checking the same cart out twice at once produces one order",
+                "id": "203b",
+                "note": "replayConcurrently replays each actor's LAST POST, so a racing tab must not touch the cart after its checkout is captured — that would overwrite the captured request with an add-to-cart. A third session on the same account fills the cart instead, leaving tab1 and tab2 holding nothing but their checkouts. A checkout carries no JSON body, so it never lands in lastWrites — the replay must select it by URL with the match option, or it silently races the last add-to-cart instead.",
+                "points": 1,
+                "provenBy": "checkout-not-idempotent (postgres-ecom-l1.json): stripping FOR UPDATE from the cart read at checkout made two replayed checkout requests each create an order — the criterion failed on its own assertion (expected exactly 1 order containing Keyboard, found 2). The unmutated app passes, refusing the second checkout with a 400.",
+                "statedBy": "checking out twice must not produce two orders",
+                "steps": [
+                  {
+                    "actor": "tab1",
+                    "do": "click",
+                    "testid": "checkout-submit"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "tab2",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Webcam"
+                  },
+                  {
+                    "actor": "tab2",
+                    "do": "click",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "tab2",
+                    "do": "wait",
+                    "ms": 1200
+                  },
+                  {
+                    "actor": "tab2",
+                    "do": "click",
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "tab2",
+                    "do": "click",
+                    "testid": "checkout-submit"
+                  },
+                  {
+                    "actor": "tab2",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "filler",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Keyboard"
+                  },
+                  {
+                    "actor": "filler",
+                    "do": "click",
+                    "in": {
+                      "contains": "Keyboard",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "filler",
+                    "do": "wait",
+                    "ms": 2000
+                  },
+                  {
+                    "action": "checkout",
+                    "actors": [
+                      "tab1",
+                      "tab2"
+                    ],
+                    "do": "callConcurrently",
+                    "settleMs": 5000
+                  },
+                  {
+                    "accepted": 1,
+                    "do": "expectCallOutcomes"
+                  },
+                  {
+                    "actor": "filler",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "filler",
+                    "contains": "Keyboard",
+                    "count": 1,
+                    "do": "expect",
+                    "testid": "order-item"
+                  }
+                ],
+                "withheld": "uses the spec's named `checkout` action so it can be issued on either stack. It previously replayed a captured HTTP write, which SpacetimeDB never produces — that client writes over WebSocket — so the criterion reported INCONCLUSIVE there and the two backends were scored out of different totals. Points retained: it has already failed a mutant on the stacks that could run it."
+              }
+            ],
+            "id": 203,
+            "name": "One cart, two tabs, one checkout",
+            "note": "Both tabs reach the item by search rather than trusting the storefront: earlier features in this suite buy things, which re-ranks the top ten. Each tab opens its OWN cart — panel state belongs to a browser context, not to the feature.",
+            "setup": [
+              {
+                "actor": "tab1",
+                "do": "signUp",
+                "name": "twin"
+              },
+              {
+                "actor": "tab2",
+                "do": "signIn",
+                "name": "twin"
+              },
+              {
+                "actor": "filler",
+                "do": "signIn",
+                "name": "twin"
+              },
+              {
+                "actor": "tab1",
+                "do": "fill",
+                "enter": true,
+                "settleMs": 1500,
+                "testid": "search-input",
+                "text": "Gaming Mouse"
+              },
+              {
+                "actor": "tab2",
+                "do": "fill",
+                "enter": true,
+                "settleMs": 1500,
+                "testid": "search-input",
+                "text": "Gaming Mouse"
+              }
+            ]
+          }
+        ],
+        "level": 1,
+        "name": "Storefront and warehouse — contention (WITHHELD)",
+        "note": "PROMOTION RULE, learned the hard way: a mutant counts as CAUGHT only when its declared criterion fails on its OWN assertion. Setup failure, INCONCLUSIVE evidence, a failure in the wrong criterion, and collateral regressions are invalid evidence. mutation-test.mjs now compares criterion outcomes directly, so zero-point candidates need no score-inflated copy. EVERY WITHHELD CRITERION SCORES ZERO ON PURPOSE. Promote one only after it passes on a fully green unmutated reference app and cleanly catches its backend-specific mutant; record that evidence in `provenBy`. Until then these checks are diagnostic and cannot move a score.",
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses"
+      },
+      "path": "scenarios/01-contention.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "shopper",
+              "impostor"
+            ],
+            "criteria": [
+              {
+                "desc": "a visitor can create an account and is signed in as it",
+                "id": "1a",
+                "points": 1,
+                "statedBy": "a visitor can create an account with a username and password",
+                "steps": [
+                  {
+                    "actor": "shopper",
+                    "contains": "ann",
+                    "do": "expect",
+                    "testid": "current-user",
+                    "within": 6000
+                  }
+                ]
+              },
+              {
+                "desc": "a taken username is refused and does not sign the visitor in as the existing account",
+                "id": "1b",
+                "points": 1,
+                "statedBy": "signing up with a taken username fails with a visible error and\nmust never sign the visitor in as the existing account",
+                "steps": [
+                  {
+                    "actor": "impostor",
+                    "do": "signUp",
+                    "expectFailure": true,
+                    "name": "ann",
+                    "password": "different-pw"
+                  },
+                  {
+                    "actor": "impostor",
+                    "do": "expect",
+                    "testid": "auth-error",
+                    "within": 6000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "impostor",
+                    "do": "expect",
+                    "testid": "current-user"
+                  }
+                ]
+              },
+              {
+                "desc": "a wrong password is refused",
+                "id": "1c",
+                "points": 1,
+                "statedBy": "signing in with a wrong password fails with a visible error",
+                "steps": [
+                  {
+                    "actor": "impostor",
+                    "do": "signIn",
+                    "expectFailure": true,
+                    "name": "ann",
+                    "password": "wrong-pw"
+                  },
+                  {
+                    "actor": "impostor",
+                    "do": "expect",
+                    "testid": "auth-error",
+                    "within": 6000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "impostor",
+                    "do": "expect",
+                    "testid": "current-user"
+                  }
+                ]
+              },
+              {
+                "desc": "signing out and back in returns the same account",
+                "id": "1d",
+                "points": 1,
+                "statedBy": "a signed-in user can sign out, returning to the signed-out state",
+                "steps": [
+                  {
+                    "actor": "shopper",
+                    "do": "click",
+                    "testid": "signout"
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "expect",
+                    "testid": "signup-username",
+                    "within": 6000
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "signIn",
+                    "name": "ann"
+                  },
+                  {
+                    "actor": "shopper",
+                    "contains": "ann",
+                    "do": "expect",
+                    "testid": "current-user",
+                    "within": 6000
+                  }
+                ]
+              },
+              {
+                "desc": "the session survives a reload",
+                "id": "1e",
+                "points": 1,
+                "statedBy": "a signed-in session persists across a page reload",
+                "steps": [
+                  {
+                    "actor": "shopper",
+                    "do": "reload",
+                    "settleMs": 4000
+                  },
+                  {
+                    "actor": "shopper",
+                    "contains": "ann",
+                    "do": "expect",
+                    "testid": "current-user",
+                    "within": 6000
+                  }
+                ]
+              }
+            ],
+            "id": 1,
+            "name": "Accounts",
+            "note": "The refusals are attempted by a second, signed-out actor: a client that is already signed in has no sign-up form to submit, so re-using one actor would test nothing.",
+            "setup": [
+              {
+                "actor": "shopper",
+                "do": "signUp",
+                "name": "ann"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "buyer",
+              "visitor"
+            ],
+            "criteria": [
+              {
+                "desc": "a signed-out visitor sees the catalogue with prices and stock",
+                "id": "2a",
+                "points": 1,
+                "statedBy": "every item shows its name, price and current stock",
+                "steps": [
+                  {
+                    "actor": "visitor",
+                    "contains": "Air Purifier",
+                    "do": "expect",
+                    "testid": "item-card"
+                  },
+                  {
+                    "actor": "visitor",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-price"
+                  },
+                  {
+                    "actor": "visitor",
+                    "atLeast": 1,
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "the storefront shows ten items, alphabetically while nothing has been bought",
+                "id": "2b",
+                "points": 1,
+                "statedBy": "the storefront shows the 10 most-purchased items",
+                "steps": [
+                  {
+                    "actor": "visitor",
+                    "count": 10,
+                    "do": "expect",
+                    "testid": "item-card"
+                  },
+                  {
+                    "actor": "visitor",
+                    "contains": "Air Purifier",
+                    "do": "expect",
+                    "testid": "item-card"
+                  },
+                  {
+                    "actor": "visitor",
+                    "contains": "Laptop Stand",
+                    "do": "expect",
+                    "testid": "item-card"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "visitor",
+                    "contains": "Mirrorless Camera",
+                    "do": "expect",
+                    "testid": "item-card"
+                  }
+                ]
+              },
+              {
+                "desc": "a purchase moves the bought item to the front of the ranking, live",
+                "id": "2c",
+                "points": 1,
+                "statedBy": "when anyone buys something, every\nvisitor's storefront updates without a reload",
+                "steps": [
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "visitor",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "visitor",
+                    "contains": "Coffee Grinder",
+                    "do": "expect",
+                    "in": {
+                      "testid": "item-list"
+                    },
+                    "testid": "item-name"
+                  },
+                  {
+                    "actors": [
+                      "buyer",
+                      "visitor"
+                    ],
+                    "do": "expectAgreement",
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "item-card"
+                    },
+                    "numeric": true,
+                    "testid": "item-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "search finds an item that is not on the storefront",
+                "id": "2d",
+                "points": 1,
+                "statedBy": "search covers the whole catalogue, not just the items currently on the storefront",
+                "steps": [
+                  {
+                    "actor": "visitor",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Mirrorless"
+                  },
+                  {
+                    "actor": "visitor",
+                    "contains": "Mirrorless Camera",
+                    "do": "expect",
+                    "in": {
+                      "testid": "search-results"
+                    },
+                    "testid": "item-card"
+                  }
+                ]
+              }
+            ],
+            "id": 2,
+            "name": "Storefront is public and live",
+            "setup": [
+              {
+                "actor": "buyer",
+                "do": "signUp",
+                "name": "dov"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "buyer",
+              "watcher",
+              "visitor"
+            ],
+            "criteria": [
+              {
+                "desc": "a signed-out visitor is offered no way to buy",
+                "id": "3a",
+                "points": 1,
+                "statedBy": "a signed-out visitor sees no buy or\nadd-to-cart action",
+                "steps": [
+                  {
+                    "absent": true,
+                    "actor": "visitor",
+                    "do": "expect",
+                    "testid": "buy-now"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "visitor",
+                    "do": "expect",
+                    "testid": "add-to-cart"
+                  }
+                ]
+              },
+              {
+                "desc": "buying reduces the stock every other client sees, without a reload",
+                "id": "3b",
+                "points": 2,
+                "statedBy": "buying an item reduces its stock by one for everyone",
+                "steps": [
+                  {
+                    "actor": "watcher",
+                    "do": "expectNumber",
+                    "equals": 100,
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "expectNumber",
+                    "equals": 99,
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "visitor",
+                    "do": "expectNumber",
+                    "equals": 99,
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "the purchase is recorded in the buyer's order history at the price paid",
+                "id": "3c",
+                "points": 1,
+                "statedBy": "it creates an order for the buyer,\nvisible in their order history",
+                "steps": [
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "buyer",
+                    "contains": "Espresso Machine",
+                    "do": "expect",
+                    "testid": "order-item"
+                  },
+                  {
+                    "actor": "buyer",
+                    "atLeast": 449,
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "order-item"
+                    },
+                    "testid": "order-total"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "pressKey",
+                    "key": "Escape",
+                    "settleMs": 800
+                  }
+                ]
+              },
+              {
+                "desc": "an item sells out visibly, and a checkout exceeding stock is refused and changes nothing",
+                "id": "3d",
+                "points": 2,
+                "statedBy": "an item with zero stock cannot be bought",
+                "steps": [
+                  {
+                    "actor": "buyer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Mirrorless Camera"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "wait",
+                    "ms": 800
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "wait",
+                    "ms": 800
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "wait",
+                    "ms": 800
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "wait",
+                    "ms": 800
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "expectNumber",
+                    "equals": 0,
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "testid": "out-of-stock"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "testid": "checkout-submit"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "expect",
+                    "testid": "buy-error",
+                    "within": 6000
+                  },
+                  {
+                    "actor": "buyer",
+                    "contains": "Mirrorless Camera",
+                    "do": "expect",
+                    "testid": "cart-item"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "pressKey",
+                    "key": "Escape",
+                    "settleMs": 800
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "expectNumber",
+                    "equals": 0,
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  }
+                ]
+              }
+            ],
+            "id": 3,
+            "name": "Buying",
+            "setup": [
+              {
+                "actor": "buyer",
+                "do": "signUp",
+                "name": "eli"
+              },
+              {
+                "actor": "watcher",
+                "do": "signUp",
+                "name": "fay"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "tab1",
+              "tab2"
+            ],
+            "criteria": [
+              {
+                "desc": "adding the same item twice raises its quantity instead of adding a second line",
+                "id": "4a",
+                "points": 1,
+                "statedBy": "adding an item that is already in the cart raises its quantity",
+                "steps": [
+                  {
+                    "actor": "tab1",
+                    "do": "click",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "wait",
+                    "ms": 800
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "click",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "click",
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "tab1",
+                    "contains": "Headphones",
+                    "count": 1,
+                    "do": "expect",
+                    "testid": "cart-item"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "expectNumber",
+                    "equals": 2,
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "cart-item"
+                    },
+                    "testid": "cart-quantity"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "pressKey",
+                    "key": "Escape",
+                    "settleMs": 800
+                  }
+                ]
+              },
+              {
+                "desc": "the cart survives a reload",
+                "id": "4b",
+                "points": 1,
+                "statedBy": "the cart survives a reload",
+                "steps": [
+                  {
+                    "actor": "tab1",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Laptop Stand"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "click",
+                    "in": {
+                      "contains": "Laptop Stand",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "reload",
+                    "settleMs": 4000
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "click",
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "tab1",
+                    "contains": "Laptop Stand",
+                    "do": "expect",
+                    "testid": "cart-item"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "pressKey",
+                    "key": "Escape",
+                    "settleMs": 800
+                  }
+                ]
+              },
+              {
+                "desc": "the same account signed in elsewhere sees one cart, live",
+                "id": "4c",
+                "points": 2,
+                "statedBy": "the same account signed\nin twice sees one cart, and a change made in one place appears in the other without a\nreload",
+                "steps": [
+                  {
+                    "actor": "tab2",
+                    "do": "signIn",
+                    "name": "gus"
+                  },
+                  {
+                    "actor": "tab2",
+                    "do": "click",
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "tab2",
+                    "contains": "Laptop Stand",
+                    "do": "expect",
+                    "testid": "cart-item"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Induction Cooktop"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "click",
+                    "in": {
+                      "contains": "Induction Cooktop",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "tab2",
+                    "contains": "Induction Cooktop",
+                    "do": "expect",
+                    "testid": "cart-item",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "checkout creates one order, reduces stock and empties the cart",
+                "id": "4d",
+                "points": 2,
+                "statedBy": "checkout turns the cart into one order, reduces stock for every line, and\nempties the cart",
+                "steps": [
+                  {
+                    "actor": "tab1",
+                    "do": "click",
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "click",
+                    "testid": "checkout-submit"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "wait",
+                    "ms": 2000
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "expect",
+                    "testid": "empty-cart"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "pressKey",
+                    "key": "Escape",
+                    "settleMs": 800
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1200,
+                    "testid": "search-input",
+                    "text": ""
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "expectNumber",
+                    "equals": 98,
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "tab1",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "tab1",
+                    "contains": "Headphones",
+                    "do": "expect",
+                    "testid": "order-item"
+                  }
+                ]
+              }
+            ],
+            "id": 4,
+            "name": "Cart belongs to the account",
+            "setup": [
+              {
+                "actor": "tab1",
+                "do": "signUp",
+                "name": "gus"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "author",
+              "other",
+              "visitor"
+            ],
+            "criteria": [
+              {
+                "desc": "a customer can review an item and everyone sees it, signed out included",
+                "id": "6a",
+                "points": 2,
+                "statedBy": "reviews are visible to everyone, including signed-out visitors",
+                "steps": [
+                  {
+                    "actor": "author",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Induction Cooktop"
+                  },
+                  {
+                    "actor": "author",
+                    "do": "click",
+                    "in": {
+                      "contains": "Induction Cooktop",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-name"
+                  },
+                  {
+                    "actor": "author",
+                    "do": "fill",
+                    "testid": "review-rating",
+                    "text": "4"
+                  },
+                  {
+                    "actor": "author",
+                    "do": "fill",
+                    "testid": "review-input",
+                    "text": "solid mold"
+                  },
+                  {
+                    "actor": "author",
+                    "do": "click",
+                    "testid": "review-submit"
+                  },
+                  {
+                    "actor": "author",
+                    "contains": "solid mold",
+                    "do": "expect",
+                    "testid": "review-item"
+                  },
+                  {
+                    "actor": "visitor",
+                    "do": "click",
+                    "in": {
+                      "contains": "Induction Cooktop",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-name"
+                  },
+                  {
+                    "actor": "visitor",
+                    "contains": "solid mold",
+                    "do": "expect",
+                    "testid": "review-item",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "one review per customer per item — a second does not add a duplicate",
+                "id": "6b",
+                "points": 1,
+                "statedBy": "one review per customer per item",
+                "steps": [
+                  {
+                    "actor": "author",
+                    "do": "fill",
+                    "testid": "review-rating",
+                    "text": "2"
+                  },
+                  {
+                    "actor": "author",
+                    "do": "fill",
+                    "testid": "review-input",
+                    "text": "changed my mind"
+                  },
+                  {
+                    "actor": "author",
+                    "do": "click",
+                    "testid": "review-submit"
+                  },
+                  {
+                    "actor": "author",
+                    "do": "wait",
+                    "ms": 2000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "author",
+                    "contains": "solid mold",
+                    "do": "expect",
+                    "testid": "review-item"
+                  }
+                ]
+              },
+              {
+                "desc": "the average rating reflects both reviewers, live",
+                "id": "6c",
+                "points": 1,
+                "statedBy": "each item shows its average rating, which updates live as reviews arrive",
+                "steps": [
+                  {
+                    "actor": "other",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Induction Cooktop"
+                  },
+                  {
+                    "actor": "other",
+                    "do": "click",
+                    "in": {
+                      "contains": "Induction Cooktop",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-name"
+                  },
+                  {
+                    "actor": "other",
+                    "do": "fill",
+                    "testid": "review-rating",
+                    "text": "4"
+                  },
+                  {
+                    "actor": "other",
+                    "do": "fill",
+                    "testid": "review-input",
+                    "text": "does the job"
+                  },
+                  {
+                    "actor": "other",
+                    "do": "click",
+                    "testid": "review-submit"
+                  },
+                  {
+                    "actor": "other",
+                    "do": "expectNumber",
+                    "equals": 3,
+                    "testid": "review-average",
+                    "within": 10000
+                  },
+                  {
+                    "actors": [
+                      "author",
+                      "other"
+                    ],
+                    "do": "expectAgreement",
+                    "numeric": true,
+                    "testid": "review-average"
+                  }
+                ]
+              }
+            ],
+            "id": 6,
+            "name": "Reviews",
+            "note": "Both reviewers buy the item in setup: reviews are gated on a purchase, so an unpurchased reviewer would be refused by a compliant app.",
+            "setup": [
+              {
+                "actor": "author",
+                "do": "signUp",
+                "name": "hal"
+              },
+              {
+                "actor": "other",
+                "do": "signUp",
+                "name": "ivy"
+              },
+              {
+                "actor": "author",
+                "do": "click",
+                "in": {
+                  "contains": "Induction Cooktop",
+                  "testid": "item-card"
+                },
+                "testid": "buy-now"
+              },
+              {
+                "actor": "author",
+                "do": "wait",
+                "ms": 800
+              },
+              {
+                "actor": "other",
+                "do": "click",
+                "in": {
+                  "contains": "Induction Cooktop",
+                  "testid": "item-card"
+                },
+                "testid": "buy-now"
+              },
+              {
+                "actor": "other",
+                "do": "wait",
+                "ms": 800
+              }
+            ]
+          },
+          {
+            "actors": [
+              "admin",
+              "customer",
+              "visitor"
+            ],
+            "criteria": [
+              {
+                "desc": "the admin area is for admins only",
+                "id": "7a",
+                "points": 1,
+                "statedBy": "admin accounts see an admin area; customers do not",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "expect",
+                    "testid": "admin-link"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "customer",
+                    "do": "expect",
+                    "testid": "admin-link"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "customer",
+                    "do": "expect",
+                    "testid": "admin-panel"
+                  }
+                ]
+              },
+              {
+                "desc": "admin lists every item, every warehouse, and what each warehouse holds",
+                "id": "7b",
+                "points": 1,
+                "statedBy": "admin lists every item with its stock, every warehouse, and the stock of\neach item in each warehouse",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "testid": "admin-link"
+                  },
+                  {
+                    "actor": "admin",
+                    "count": 12,
+                    "do": "expect",
+                    "testid": "admin-item-row"
+                  },
+                  {
+                    "actor": "admin",
+                    "contains": "East",
+                    "do": "expect",
+                    "testid": "admin-warehouse-item"
+                  },
+                  {
+                    "actor": "admin",
+                    "contains": "West",
+                    "do": "expect",
+                    "testid": "admin-warehouse-item"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "equals": 100,
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "admin-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "the storefront stock is the sum across warehouses, and a restock raises it live",
+                "id": "7c",
+                "points": 2,
+                "statedBy": "an item's stock on the storefront is the sum of that item's units across all\nwarehouses",
+                "steps": [
+                  {
+                    "actor": "visitor",
+                    "do": "pressKey",
+                    "key": "Escape",
+                    "settleMs": 800
+                  },
+                  {
+                    "actor": "visitor",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Gaming Mouse"
+                  },
+                  {
+                    "actor": "visitor",
+                    "do": "expectNumber",
+                    "equals": 100,
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "restock-input",
+                    "text": "25"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "restock-submit"
+                  },
+                  {
+                    "actor": "visitor",
+                    "do": "expectNumber",
+                    "equals": 125,
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "equals": 125,
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "admin-stock"
+                  }
+                ]
+              }
+            ],
+            "id": 7,
+            "name": "Admin and warehouses",
+            "setup": [
+              {
+                "actor": "customer",
+                "do": "signUp",
+                "name": "jon"
+              },
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              }
+            ]
+          }
+        ],
+        "level": 1,
+        "name": "Storefront and warehouse — features",
+        "note": "Each feature is given its own seeded items where it mutates stock, because features share one database and a purchase in one would otherwise move another's numbers. Items reserved per feature: F2 Coffee Grinder, F3 Espresso Machine + Mirrorless Camera, F4 Headphones + Laptop Stand, F6 Induction Cooktop, F7 Gaming Mouse. Panels are closed after use and items are reached via search, because the storefront shows only the top ten and earlier features change that ranking.",
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses"
+      },
+      "path": "scenarios/01-features.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "buyer",
+              "guest"
+            ],
+            "criteria": [
+              {
+                "desc": "a purchase request replayed without a session creates no order and moves no stock",
+                "id": "101a",
+                "points": 2,
+                "statedBy": "the server must refuse a purchase request that arrives without a valid session",
+                "steps": [
+                  {
+                    "actor": "buyer",
+                    "do": "expectNumber",
+                    "equals": 100,
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "wait",
+                    "ms": 1500
+                  },
+                  {
+                    "actor": "guest",
+                    "do": "replayAs",
+                    "from": "buyer",
+                    "match": "buy",
+                    "settleMs": 2500
+                  },
+                  {
+                    "actor": "guest",
+                    "do": "expectReplayRejected"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "expectNumber",
+                    "equals": 99,
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  }
+                ]
+              }
+            ],
+            "id": 101,
+            "name": "Purchase requires an account",
+            "setup": [
+              {
+                "actor": "buyer",
+                "do": "signUp",
+                "name": "kim"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "victim",
+              "attacker"
+            ],
+            "criteria": [
+              {
+                "desc": "an order cannot be placed in someone else's name by editing the request",
+                "id": "102a",
+                "points": 2,
+                "statedBy": "knowing someone's username must never grant access to it",
+                "steps": [
+                  {
+                    "actor": "attacker",
+                    "do": "click",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "attacker",
+                    "do": "wait",
+                    "ms": 1500
+                  },
+                  {
+                    "actor": "attacker",
+                    "do": "forgeWrite",
+                    "fromActor": "victim",
+                    "settleMs": 2500
+                  },
+                  {
+                    "actor": "attacker",
+                    "do": "expectForgeryRejected"
+                  },
+                  {
+                    "actor": "victim",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "victim",
+                    "contains": "Desk Lamp",
+                    "do": "expect",
+                    "testid": "order-item"
+                  }
+                ]
+              }
+            ],
+            "id": 102,
+            "name": "Purchases are attributed to whoever made them",
+            "setup": [
+              {
+                "actor": "victim",
+                "do": "signUp",
+                "name": "lee"
+              },
+              {
+                "actor": "attacker",
+                "do": "signUp",
+                "name": "mel"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "admin",
+              "customer"
+            ],
+            "criteria": [
+              {
+                "desc": "a restock replayed by a customer is refused and changes no stock",
+                "id": "103a",
+                "points": 2,
+                "statedBy": "the server must refuse admin actions from a non-admin account",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "testid": "admin-link"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "restock-input",
+                    "text": "10"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "restock-submit"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "wait",
+                    "ms": 2000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "pressKey",
+                    "key": "Escape",
+                    "settleMs": 800
+                  },
+                  {
+                    "actor": "customer",
+                    "as": "purifier-after-admin-restock",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "replayAs",
+                    "from": "admin",
+                    "match": "restock",
+                    "settleMs": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectReplayRejected"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "item-card"
+                    },
+                    "plus": 0,
+                    "relativeTo": "purifier-after-admin-restock",
+                    "testid": "item-stock"
+                  }
+                ]
+              }
+            ],
+            "id": 103,
+            "name": "Stock is administered by admins only",
+            "setup": [
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "customer",
+                "do": "signUp",
+                "name": "ned"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "buyer"
+            ],
+            "criteria": [
+              {
+                "desc": "a purchase request with the price edited does not sell the item for less",
+                "id": "104a",
+                "points": 2,
+                "statedBy": "the price at the time of purchase",
+                "steps": [
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "wait",
+                    "ms": 1500
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "replayAs",
+                    "from": "buyer",
+                    "match": "buy",
+                    "settleMs": 2500,
+                    "swap": {
+                      "find": "449",
+                      "with": "1"
+                    }
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "expectReplayRejected"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "buyer",
+                    "atLeast": 449,
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "order-item"
+                    },
+                    "testid": "order-total"
+                  }
+                ]
+              }
+            ],
+            "id": 104,
+            "name": "The price is the store's to set",
+            "setup": [
+              {
+                "actor": "buyer",
+                "do": "signUp",
+                "name": "oli"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "shopper"
+            ],
+            "criteria": [
+              {
+                "desc": "cart and order history survive a reload as the same account",
+                "id": "105a",
+                "points": 1,
+                "statedBy": "persists across a page reload",
+                "steps": [
+                  {
+                    "actor": "shopper",
+                    "do": "click",
+                    "in": {
+                      "contains": "Keyboard",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "click",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "reload",
+                    "settleMs": 4000
+                  },
+                  {
+                    "actor": "shopper",
+                    "contains": "pat",
+                    "do": "expect",
+                    "testid": "current-user"
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "click",
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "shopper",
+                    "contains": "Keyboard",
+                    "do": "expect",
+                    "testid": "cart-item"
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "shopper",
+                    "contains": "Headphones",
+                    "do": "expect",
+                    "testid": "order-item"
+                  }
+                ]
+              },
+              {
+                "desc": "the same account survives the connection dropping and coming back",
+                "id": "105b",
+                "points": 1,
+                "statedBy": "across the connection dropping and re-establishing",
+                "steps": [
+                  {
+                    "actor": "shopper",
+                    "do": "setOffline",
+                    "offline": true,
+                    "settleMs": 3000
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "setOffline",
+                    "offline": false,
+                    "settleMs": 6000
+                  },
+                  {
+                    "actor": "shopper",
+                    "contains": "pat",
+                    "do": "expect",
+                    "testid": "current-user"
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "click",
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "shopper",
+                    "contains": "Keyboard",
+                    "do": "expect",
+                    "testid": "cart-item"
+                  }
+                ]
+              }
+            ],
+            "id": 105,
+            "name": "An account keeps what belongs to it",
+            "setup": [
+              {
+                "actor": "shopper",
+                "do": "signUp",
+                "name": "pat"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "one",
+              "two"
+            ],
+            "criteria": [
+              {
+                "desc": "a customer's order history contains only their own orders",
+                "id": "106a",
+                "points": 1,
+                "statedBy": "a customer sees only their own orders",
+                "steps": [
+                  {
+                    "actor": "one",
+                    "do": "click",
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "one",
+                    "do": "wait",
+                    "ms": 2000
+                  },
+                  {
+                    "actor": "two",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "two",
+                    "contains": "Coffee Grinder",
+                    "do": "expect",
+                    "testid": "order-item"
+                  }
+                ]
+              }
+            ],
+            "id": 106,
+            "name": "One customer's orders are not another's",
+            "setup": [
+              {
+                "actor": "one",
+                "do": "signUp",
+                "name": "quin"
+              },
+              {
+                "actor": "two",
+                "do": "signUp",
+                "name": "ros"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "buyer",
+              "admin"
+            ],
+            "criteria": [
+              {
+                "desc": "revenue rises by exactly what was bought",
+                "id": "107a",
+                "points": 1,
+                "statedBy": "the sum of all order totals",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "testid": "admin-link"
+                  },
+                  {
+                    "actor": "admin",
+                    "as": "revenue-before",
+                    "do": "recordNumber",
+                    "testid": "admin-revenue"
+                  },
+                  {
+                    "actor": "admin",
+                    "as": "brick-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Laptop Stand",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "admin-stock"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "pressKey",
+                    "key": "Escape",
+                    "settleMs": 800
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Laptop Stand",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "wait",
+                    "ms": 1000
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Laptop Stand",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "wait",
+                    "ms": 2000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "plus": 58,
+                    "relativeTo": "revenue-before",
+                    "testid": "admin-revenue",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "what the store sold is what left the warehouses, and a fresh client agrees",
+                "id": "107b",
+                "points": 1,
+                "statedBy": "must always equal what the orders themselves add up to",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Laptop Stand",
+                      "testid": "admin-item-row"
+                    },
+                    "plus": -2,
+                    "relativeTo": "brick-before",
+                    "testid": "admin-stock"
+                  },
+                  {
+                    "actor": "buyer",
+                    "do": "freshClient"
+                  },
+                  {
+                    "actor": "buyer-fresh",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Laptop Stand",
+                      "testid": "item-card"
+                    },
+                    "plus": -2,
+                    "relativeTo": "brick-before",
+                    "testid": "item-stock"
+                  }
+                ]
+              }
+            ],
+            "id": 107,
+            "name": "The books balance",
+            "setup": [
+              {
+                "actor": "buyer",
+                "do": "signUp",
+                "name": "sam"
+              },
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "owner",
+              "stranger"
+            ],
+            "criteria": [
+              {
+                "desc": "someone who never bought the item cannot review it",
+                "id": "108a",
+                "points": 2,
+                "statedBy": "refuses a review from someone who has never ordered the item",
+                "steps": [
+                  {
+                    "actor": "stranger",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Webcam"
+                  },
+                  {
+                    "actor": "stranger",
+                    "do": "click",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-name"
+                  },
+                  {
+                    "actor": "stranger",
+                    "do": "fill",
+                    "testid": "review-rating",
+                    "text": "5"
+                  },
+                  {
+                    "actor": "stranger",
+                    "do": "fill",
+                    "testid": "review-input",
+                    "text": "never bought this"
+                  },
+                  {
+                    "actor": "stranger",
+                    "do": "click",
+                    "testid": "review-submit"
+                  },
+                  {
+                    "actor": "stranger",
+                    "do": "expect",
+                    "testid": "review-error",
+                    "within": 6000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "stranger",
+                    "contains": "never bought this",
+                    "do": "expect",
+                    "testid": "review-item"
+                  }
+                ]
+              },
+              {
+                "desc": "buying the item earns the right to review it",
+                "id": "108b",
+                "points": 1,
+                "statedBy": "a review of an item they have bought",
+                "steps": [
+                  {
+                    "actor": "owner",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Webcam"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "click",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "wait",
+                    "ms": 2000
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "click",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-name"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "fill",
+                    "testid": "review-rating",
+                    "text": "4"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "fill",
+                    "testid": "review-input",
+                    "text": "bought and used it"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "click",
+                    "testid": "review-submit"
+                  },
+                  {
+                    "actor": "owner",
+                    "contains": "bought and used it",
+                    "do": "expect",
+                    "testid": "review-item",
+                    "within": 8000
+                  }
+                ]
+              }
+            ],
+            "id": 108,
+            "name": "A review is a claim about a purchase",
+            "setup": [
+              {
+                "actor": "owner",
+                "do": "signUp",
+                "name": "tam"
+              },
+              {
+                "actor": "stranger",
+                "do": "signUp",
+                "name": "uma"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "owner",
+              "stranger"
+            ],
+            "criteria": [
+              {
+                "desc": "one customer’s cart request replayed by another leaves the owner’s cart untouched",
+                "id": "109a",
+                "note": "A cart add request that contains only an item and quantity is legitimately reusable by another authenticated customer: the server applies it to the caller's own cart. The ownership assertion below is the security boundary; requiring every replay to return non-2xx incorrectly rejects identity-derived APIs.",
+                "points": 2,
+                "statedBy": "nobody else can read or change it",
+                "steps": [
+                  {
+                    "actor": "owner",
+                    "do": "click",
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "wait",
+                    "ms": 1500
+                  },
+                  {
+                    "actor": "stranger",
+                    "do": "replayAs",
+                    "from": "owner",
+                    "match": "cart",
+                    "settleMs": 2500
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "click",
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "expectNumber",
+                    "equals": 1,
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "cart-item"
+                    },
+                    "testid": "cart-quantity"
+                  }
+                ]
+              },
+              {
+                "desc": "a quantity below one is refused rather than credited",
+                "id": "109b",
+                "points": 1,
+                "statedBy": "a request carrying zero or a negative quantity is refused and changes nothing",
+                "steps": [
+                  {
+                    "actor": "owner",
+                    "do": "replayAs",
+                    "from": "owner",
+                    "match": "cart",
+                    "settleMs": 2500,
+                    "swap": {
+                      "find": "\"quantity\":1",
+                      "with": "\"quantity\":-3"
+                    }
+                  },
+                  {
+                    "actor": "owner",
+                    "atLeast": 0,
+                    "do": "expectNumber",
+                    "testid": "cart-total"
+                  },
+                  {
+                    "actor": "owner",
+                    "atLeast": 1,
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "cart-item"
+                    },
+                    "testid": "cart-quantity"
+                  }
+                ]
+              }
+            ],
+            "id": 109,
+            "name": "A cart is nobody else’s business",
+            "setup": [
+              {
+                "actor": "owner",
+                "do": "signUp",
+                "name": "vic"
+              },
+              {
+                "actor": "stranger",
+                "do": "signUp",
+                "name": "wes"
+              }
+            ]
+          }
+        ],
+        "level": 1,
+        "name": "Storefront and warehouse — invariants",
+        "note": "Cross-cutting properties, scored separately from features because an app can implement every feature and still let anyone spend anyone else's money. Each is stated as an outcome a customer would recognise, not as a protocol detail — a backend must not lose points for being harder to inspect, nor gain them for it. 108 and 109 cover what a customer may assert about things that are not theirs: a rating is a claim about a purchase, and a cart belongs to exactly one account.",
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses"
+      },
+      "path": "scenarios/01-invariants.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "viewer"
+            ],
+            "criteria": [
+              {
+                "desc": "a back-office script sets Desk Lamp's East stock to 5, directly in the database; an anonymous viewer with the storefront already open sees 50 without touching the page",
+                "id": "901a",
+                "note": "WITHHELD until proven against a mutant (backoffice-writes-via-server) and a real failing build. The script is the app's own scripts/backoffice.mjs, required by the spec to write to the database without the web server's help — the way a cron job or another team's service would.",
+                "points": 0,
+                "statedBy": "when data changes by a path its server never saw",
+                "steps": [
+                  {
+                    "do": "dbSetStock",
+                    "item": "Desk Lamp",
+                    "quantity": 5,
+                    "settleMs": 4000,
+                    "warehouse": "East"
+                  },
+                  {
+                    "actor": "viewer",
+                    "do": "expectNumber",
+                    "equals": 50,
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "the out-of-band change survives a reload — the page did not merely patch its own memory",
+                "id": "901b",
+                "note": "WITHHELD — promoted together with 901a.",
+                "points": 0,
+                "statedBy": "the app must remain correct - and its open pages current",
+                "steps": [
+                  {
+                    "actor": "viewer",
+                    "do": "reload",
+                    "settleMs": 3000
+                  },
+                  {
+                    "actor": "viewer",
+                    "do": "expectNumber",
+                    "equals": 50,
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "a stock correction that lands while the app server is down shows on an open storefront once the server returns: East 5 + West 10 = 15, no reload",
+                "id": "901c",
+                "note": "WITHHELD — same promotion rule, plus this is the anti-cheat phase: a script that talks to the app server fails here outright. Fire-and-forget event relays (NOTIFY) also fail unless the app refetches on reconnect.",
+                "points": 1,
+                "provenBy": "PROMOTED 2026-08-09 on evidence from two real builds rather than a mutant, which is stronger: it FAILED postgres-ecom-run0 (a one-shot build that scored 50/50 on features and invariants) and PASSED spacetime-ecom-run0 the same day. The postgres app calls pg_notify from its route handlers, so a correction written directly to the database while the server was down was never announced and nothing reconciled on reconnect: the database read 15 and the storefront read 50. SpacetimeDB re-reads committed state on resubscribe and showed 15. 901a and 901b pass on both stacks and stay at 0 — a criterion nothing has ever failed has not yet shown it can discriminate.",
+                "statedBy": "a page that was open across a restart must end up showing the current numbers",
+                "steps": [
+                  {
+                    "do": "stopAppServer"
+                  },
+                  {
+                    "do": "dbSetStock",
+                    "item": "Desk Lamp",
+                    "quantity": 10,
+                    "settleMs": 4000,
+                    "warehouse": "West"
+                  },
+                  {
+                    "do": "startAppServer"
+                  },
+                  {
+                    "actor": "viewer",
+                    "do": "expectNumber",
+                    "equals": 15,
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock",
+                    "within": 20000
+                  }
+                ]
+              },
+              {
+                "desc": "the client, not the server, misses the window: a correction lands while this browser is disconnected, and the page is current again once it reconnects",
+                "id": "901d",
+                "points": 0,
+                "steps": [
+                  {
+                    "actor": "viewer",
+                    "do": "setOffline",
+                    "offline": true
+                  },
+                  {
+                    "do": "dbSetStock",
+                    "item": "Desk Lamp",
+                    "quantity": 7,
+                    "settleMs": 4000,
+                    "warehouse": "East"
+                  },
+                  {
+                    "actor": "viewer",
+                    "do": "setOffline",
+                    "offline": false
+                  },
+                  {
+                    "actor": "viewer",
+                    "do": "expectNumber",
+                    "equals": 17,
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock",
+                    "within": 20000
+                  }
+                ],
+                "withheld": "WITHHELD until it has failed one real build and passed another, the same gate 901c cleared. Distinct from 901c: there the SERVER was down, so nothing was listening at all. Here the server stays up and sees the write; it is this CLIENT that was disconnected. An app that resumes its stream on reconnect without asking for current state stays wrong, and a dropped connection is far more common than a deploy — a closed laptop, a tunnel, a flaky phone."
+              }
+            ],
+            "id": 901,
+            "name": "A write from outside the app is visible without reload",
+            "setup": [
+              {
+                "actor": "viewer",
+                "do": "expectNumber",
+                "equals": 100,
+                "in": {
+                  "contains": "Desk Lamp",
+                  "testid": "item-card"
+                },
+                "testid": "item-stock"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "reader",
+              "reviewer"
+            ],
+            "criteria": [
+              {
+                "desc": "one customer opens the Keyboard's reviews at the same moment another posts one: the opener ends with that review exactly once — not zero (stale fetch), not twice (fetch merged with its own live echo)",
+                "id": "902a",
+                "note": "WITHHELD until proven against a mutant (fetch-then-append-dupe) and a real failing build. The race window is real and the criterion may need repetition to be reliable; INCONCLUSIVE on a missed race, never a false FAIL.",
+                "points": 0,
+                "steps": [
+                  {
+                    "branches": [
+                      [
+                        {
+                          "actor": "reader",
+                          "do": "click",
+                          "in": {
+                            "contains": "Keyboard",
+                            "testid": "item-card"
+                          },
+                          "testid": "item-name"
+                        }
+                      ],
+                      [
+                        {
+                          "actor": "reviewer",
+                          "do": "fill",
+                          "testid": "review-input",
+                          "text": "race-review-kbd"
+                        },
+                        {
+                          "actor": "reviewer",
+                          "do": "click",
+                          "testid": "review-submit"
+                        }
+                      ]
+                    ],
+                    "do": "race",
+                    "settleMs": 4000
+                  },
+                  {
+                    "actor": "reader",
+                    "contains": "race-review-kbd",
+                    "do": "expectElementCount",
+                    "equals": 1,
+                    "testid": "review-item",
+                    "within": 10000
+                  }
+                ]
+              }
+            ],
+            "id": 902,
+            "name": "A list being opened while its contents change",
+            "setup": [
+              {
+                "actor": "reviewer",
+                "do": "signUp",
+                "name": "raceR"
+              },
+              {
+                "actor": "reader",
+                "do": "signUp",
+                "name": "raceL"
+              },
+              {
+                "actor": "reviewer",
+                "do": "click",
+                "in": {
+                  "contains": "Keyboard",
+                  "testid": "item-card"
+                },
+                "testid": "buy-now"
+              },
+              {
+                "actor": "reviewer",
+                "do": "wait",
+                "ms": 800
+              },
+              {
+                "actor": "reviewer",
+                "do": "click",
+                "in": {
+                  "contains": "Keyboard",
+                  "testid": "item-card"
+                },
+                "settleMs": 1200,
+                "testid": "item-name"
+              },
+              {
+                "actor": "reviewer",
+                "do": "fill",
+                "testid": "review-rating",
+                "text": "5"
+              }
+            ]
+          }
+        ],
+        "level": 1,
+        "name": "Storefront and warehouse — systems",
+        "note": "Properties of the system, not of any one feature: what happens when the database changes underneath the app, and when two things happen at the same time. These are the failures that appear in production and never in a demo — a broadcast layer only announces writes that went through it, and a fetch-then-merge list drops or duplicates whatever moved while it was fetching. Every criterion is withheld at 0 points until it demonstrably fails a real build AND its mutant is CAUGHT, the same promotion rule as contention.",
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses"
+      },
+      "path": "scenarios/01-systems.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "customer",
+              "staff",
+              "admin"
+            ],
+            "criteria": [
+              {
+                "desc": "an order placed by a customer appears in the staff queue without a reload",
+                "id": "1a",
+                "points": 2,
+                "statedBy": "appears in the fulfilment queue in the order it was placed",
+                "steps": [
+                  {
+                    "actor": "staff",
+                    "do": "click",
+                    "testid": "staff-link"
+                  },
+                  {
+                    "actor": "staff",
+                    "as": "depth-before",
+                    "do": "recordNumber",
+                    "testid": "queue-depth"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Desk Lamp"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "staff",
+                    "contains": "Desk Lamp",
+                    "do": "expect",
+                    "testid": "queue-item",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "staff",
+                    "do": "expectNumber",
+                    "plus": 1,
+                    "relativeTo": "depth-before",
+                    "testid": "queue-depth"
+                  }
+                ]
+              },
+              {
+                "desc": "the queue names the warehouse the order will ship from",
+                "id": "1b",
+                "points": 1,
+                "statedBy": "which warehouse each will ship from",
+                "steps": [
+                  {
+                    "actor": "staff",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "queue-item"
+                    },
+                    "testid": "queue-warehouse"
+                  }
+                ]
+              },
+              {
+                "desc": "shipping removes the order from the queue for staff and marks it shipped for the customer, live",
+                "id": "1c",
+                "points": 2,
+                "statedBy": "it leaves the queue for everyone watching the queue, and the customer's order history shows it as shipped, live",
+                "steps": [
+                  {
+                    "actor": "staff",
+                    "do": "click",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "queue-item"
+                    },
+                    "testid": "ship-submit"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "staff",
+                    "contains": "Desk Lamp",
+                    "do": "expect",
+                    "testid": "queue-item",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "contains": "hipped",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "order-item"
+                    },
+                    "testid": "order-status",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "the fulfilment area is for staff and admins, not customers",
+                "id": "1d",
+                "points": 1,
+                "statedBy": "a staff account signs in like anyone else but sees the fulfilment area instead of the admin area",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "expect",
+                    "testid": "staff-link"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "customer",
+                    "do": "expect",
+                    "testid": "staff-link"
+                  }
+                ]
+              },
+              {
+                "desc": "the server refuses a ship request from a customer, not just the button",
+                "id": "1e",
+                "points": 2,
+                "statedBy": "staff cannot change prices or create items; admins can do everything staff can",
+                "steps": [
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Webcam"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "replayAs",
+                    "from": "staff",
+                    "match": "ship",
+                    "settleMs": 2500,
+                    "swap": {
+                      "find": "Desk Lamp",
+                      "with": "Webcam"
+                    }
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectReplayRejected"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "order-item"
+                    },
+                    "notContains": "hipped",
+                    "testid": "order-status"
+                  }
+                ]
+              }
+            ],
+            "id": 1,
+            "name": "Fulfilment queue",
+            "setup": [
+              {
+                "actor": "customer",
+                "do": "signUp",
+                "name": "fq"
+              },
+              {
+                "actor": "staff",
+                "do": "signIn",
+                "exact": true,
+                "name": "staff",
+                "password": "stackbench-staff-2026"
+              },
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "admin",
+              "staff",
+              "visitor"
+            ],
+            "criteria": [
+              {
+                "desc": "a transfer moves stock without creating or destroying any",
+                "id": "2a",
+                "points": 3,
+                "statedBy": "a transfer moves stock, it does not create or destroy it",
+                "steps": [
+                  {
+                    "actor": "visitor",
+                    "as": "total-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "admin",
+                    "as": "east-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "admin-location-qty"
+                  },
+                  {
+                    "actor": "admin",
+                    "as": "west-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "West",
+                      "testid": "admin-warehouse-item"
+                    },
+                    "testid": "warehouse-total"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-from",
+                    "text": "East"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-to",
+                    "text": "West"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-qty",
+                    "text": "10"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-submit"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-location-row"
+                    },
+                    "plus": -10,
+                    "relativeTo": "east-before",
+                    "testid": "admin-location-qty"
+                  },
+                  {
+                    "actor": "visitor",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "item-card"
+                    },
+                    "plus": 0,
+                    "relativeTo": "total-before",
+                    "testid": "item-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "the warehouse totals move live as stock is transferred",
+                "id": "2b",
+                "points": 2,
+                "statedBy": "the per-warehouse numbers staff and admins see both move at once",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "West",
+                      "testid": "admin-warehouse-item"
+                    },
+                    "plus": 10,
+                    "relativeTo": "west-before",
+                    "testid": "warehouse-total",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "a transfer that would overdraw a warehouse is refused and changes nothing",
+                "id": "2c",
+                "points": 2,
+                "statedBy": "a transfer that would leave a warehouse short is refused and changes nothing",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "as": "total-guard",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "admin-stock"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-from",
+                    "text": "East"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-to",
+                    "text": "West"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-qty",
+                    "text": "99999"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-submit"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expect",
+                    "testid": "order-error",
+                    "within": 6000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "plus": 0,
+                    "relativeTo": "total-guard",
+                    "testid": "admin-stock"
+                  }
+                ]
+              }
+            ],
+            "id": 2,
+            "name": "Moving stock between warehouses",
+            "setup": [
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "staff",
+                "do": "signIn",
+                "exact": true,
+                "name": "staff",
+                "password": "stackbench-staff-2026"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "testid": "admin-link"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "customer",
+              "staff",
+              "admin"
+            ],
+            "criteria": [
+              {
+                "desc": "cancelling a pending order returns its stock, empties it from the queue and lowers revenue",
+                "id": "3a",
+                "points": 3,
+                "statedBy": "the stock goes back to the warehouse it came from, the order leaves the fulfilment queue, and revenue falls",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "as": "rev-before",
+                    "do": "recordNumber",
+                    "testid": "admin-revenue"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Coffee Grinder"
+                  },
+                  {
+                    "actor": "customer",
+                    "as": "stock-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "order-item"
+                    },
+                    "testid": "cancel-order"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "absent": true,
+                    "actor": "staff",
+                    "contains": "Coffee Grinder",
+                    "do": "expect",
+                    "testid": "queue-item",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "plus": 0,
+                    "relativeTo": "rev-before",
+                    "testid": "admin-revenue",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "pressKey",
+                    "key": "Escape"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "item-card"
+                    },
+                    "plus": 0,
+                    "relativeTo": "stock-before",
+                    "testid": "item-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "a cancelled order is shown as cancelled in the customer’s history",
+                "id": "3b",
+                "points": 1,
+                "statedBy": "a customer can cancel an order that has not shipped",
+                "steps": [
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "settleMs": 1200,
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "contains": "ancel",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Coffee Grinder",
+                      "testid": "order-item"
+                    },
+                    "testid": "order-status",
+                    "within": 8000
+                  }
+                ]
+              },
+              {
+                "desc": "returning an item from a shipped order brings the stock back and lowers revenue",
+                "id": "3c",
+                "points": 3,
+                "statedBy": "the stock comes back, revenue falls by what was paid for it, and the order shows the item as returned",
+                "steps": [
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Keyboard"
+                  },
+                  {
+                    "actor": "customer",
+                    "as": "kb-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Keyboard",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "admin",
+                    "as": "rev2-before",
+                    "do": "recordNumber",
+                    "testid": "admin-revenue"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Keyboard",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "staff",
+                    "do": "click",
+                    "in": {
+                      "contains": "Keyboard",
+                      "testid": "queue-item"
+                    },
+                    "testid": "ship-submit"
+                  },
+                  {
+                    "actor": "staff",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Keyboard",
+                      "testid": "order-item"
+                    },
+                    "testid": "return-item"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "plus": 0,
+                    "relativeTo": "rev2-before",
+                    "testid": "admin-revenue",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "pressKey",
+                    "key": "Escape"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Keyboard",
+                      "testid": "item-card"
+                    },
+                    "plus": 0,
+                    "relativeTo": "kb-before",
+                    "testid": "item-stock"
+                  }
+                ]
+              }
+            ],
+            "id": 3,
+            "name": "Cancelling and returning",
+            "setup": [
+              {
+                "actor": "customer",
+                "do": "signUp",
+                "name": "cr"
+              },
+              {
+                "actor": "staff",
+                "do": "signIn",
+                "exact": true,
+                "name": "staff",
+                "password": "stackbench-staff-2026"
+              },
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "testid": "admin-link"
+              },
+              {
+                "actor": "staff",
+                "do": "click",
+                "testid": "staff-link"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "admin",
+              "customer",
+              "visitor"
+            ],
+            "criteria": [
+              {
+                "desc": "a customer's receipt keeps the price that was paid after the price changes",
+                "id": "4a",
+                "points": 3,
+                "statedBy": "past orders keep the price that was paid",
+                "steps": [
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Air Purifier"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "price-input",
+                    "text": "1.00"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "price-submit"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "atLeast": 189,
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "order-item"
+                    },
+                    "testid": "order-total"
+                  }
+                ]
+              },
+              {
+                "desc": "the new price reaches a signed-out visitor without a reload",
+                "id": "4b",
+                "points": 2,
+                "statedBy": "the storefront shows the new price immediately, to everyone",
+                "steps": [
+                  {
+                    "actor": "visitor",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Air Purifier"
+                  },
+                  {
+                    "actor": "visitor",
+                    "do": "expectNumber",
+                    "equals": 1,
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-price",
+                    "within": 10000
+                  }
+                ]
+              }
+            ],
+            "id": 4,
+            "name": "Prices change, history does not",
+            "setup": [
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "customer",
+                "do": "signUp",
+                "name": "pr"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "testid": "admin-link"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "admin",
+              "customer",
+              "visitor"
+            ],
+            "criteria": [
+              {
+                "desc": "an item falling to ten units or fewer joins the low-stock list, live",
+                "id": "5a",
+                "points": 3,
+                "statedBy": "every item whose total is at or below 10 units",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "contains": "Mirrorless Camera",
+                    "do": "expect",
+                    "testid": "low-stock-item",
+                    "within": 8000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "admin",
+                    "contains": "Webcam",
+                    "do": "expect",
+                    "testid": "low-stock-item"
+                  }
+                ]
+              },
+              {
+                "desc": "a purchase moves that category's units and revenue, live",
+                "id": "5b",
+                "points": 3,
+                "statedBy": "for each\ncategory, how many units have been sold and the revenue they earned, live",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "as": "audio-units",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Audio",
+                      "testid": "category-row"
+                    },
+                    "testid": "category-units"
+                  },
+                  {
+                    "actor": "admin",
+                    "as": "audio-rev",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Audio",
+                      "testid": "category-row"
+                    },
+                    "testid": "category-revenue"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Bluetooth Speaker"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Audio",
+                      "testid": "category-row"
+                    },
+                    "plus": 1,
+                    "relativeTo": "audio-units",
+                    "testid": "category-units",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Audio",
+                      "testid": "category-row"
+                    },
+                    "plus": 79.5,
+                    "relativeTo": "audio-rev",
+                    "testid": "category-revenue",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "buying from a category makes that category's other items recommended",
+                "id": "5c",
+                "points": 2,
+                "statedBy": "the items from categories\nthey have bought from",
+                "steps": [
+                  {
+                    "actor": "customer",
+                    "do": "pressKey",
+                    "key": "Escape"
+                  },
+                  {
+                    "actor": "customer",
+                    "contains": "Headphones",
+                    "do": "expect",
+                    "testid": "recommended-item",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "a signed-out visitor sees best sellers in the recommendations slot",
+                "id": "5d",
+                "points": 1,
+                "statedBy": "for a signed-out visitor this is simply the best sellers",
+                "steps": [
+                  {
+                    "actor": "visitor",
+                    "do": "expect",
+                    "testid": "recommended-item",
+                    "within": 10000
+                  }
+                ]
+              }
+            ],
+            "id": 5,
+            "name": "The operational views",
+            "setup": [
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "customer",
+                "do": "signUp",
+                "name": "ops"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "testid": "admin-link"
+              }
+            ]
+          }
+        ],
+        "level": 2,
+        "name": "Running the business — features",
+        "note": "The level's thesis is that eight actions each touch several of ten live views. These features are therefore written as ONE action watched by SEVERAL viewers at once, not as one action checked once — a backend that updates the view the actor is looking at and forgets the others fails on the watcher, not on the actor. Items are reached by search because earlier features re-rank the storefront. Panels are closed with Escape, which the spec requires, rather than by clicking an opener again.",
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses|\\/transfer|\\/cancel|\\/return|\\/ship|\\/price|\\/fulfil"
+      },
+      "path": "scenarios/02-features.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "admin",
+              "customer"
+            ],
+            "criteria": [
+              {
+                "desc": "a customer replaying an admin's transfer moves no stock",
+                "id": "201a",
+                "points": 2,
+                "statedBy": "an admin can transfer a number of units of an item from one warehouse to another",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-from",
+                    "text": "East"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-to",
+                    "text": "West"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-qty",
+                    "text": "5"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-submit"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Gaming Mouse"
+                  },
+                  {
+                    "actor": "customer",
+                    "as": "after-admin-move",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "replayAs",
+                    "from": "admin",
+                    "match": "transfer",
+                    "settleMs": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectReplayRejected"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "item-card"
+                    },
+                    "plus": 0,
+                    "relativeTo": "after-admin-move",
+                    "testid": "item-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "a customer cannot set a price by replaying an admin's change",
+                "id": "201b",
+                "points": 2,
+                "statedBy": "an admin can change an item's price",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "price-input",
+                    "text": "77.00"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "price-submit"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "replayAs",
+                    "from": "admin",
+                    "match": "price",
+                    "settleMs": 2500,
+                    "swap": {
+                      "find": "77",
+                      "with": "1"
+                    }
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectReplayRejected"
+                  },
+                  {
+                    "actor": "customer",
+                    "atLeast": 77,
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Gaming Mouse",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-price"
+                  }
+                ]
+              },
+              {
+                "desc": "a customer cannot ship their own order",
+                "id": "201c",
+                "note": "DOM diagnostic: checks the ship control is absent for a customer. The SERVER-side refusal of a customer's ship request is now criterion 1e, which replays a real ship as the customer and requires the server to reject it. Kept at 0 points so hiding the button is never mistaken for enforcement.",
+                "points": 0,
+                "statedBy": "staff cannot change prices or create items; admins can do everything staff can",
+                "steps": [
+                  {
+                    "actor": "customer",
+                    "do": "pressKey",
+                    "key": "Escape"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Laptop Stand"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Laptop Stand",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "customer",
+                    "do": "expect",
+                    "testid": "ship-submit"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Laptop Stand",
+                      "testid": "order-item"
+                    },
+                    "notContains": "hipped",
+                    "testid": "order-status"
+                  }
+                ]
+              }
+            ],
+            "id": 201,
+            "name": "Operating the store requires being an operator",
+            "setup": [
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "customer",
+                "do": "signUp",
+                "name": "notstaff"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "testid": "admin-link"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "admin",
+              "customer"
+            ],
+            "criteria": [
+              {
+                "desc": "a transfer changes where stock is, never how much there is",
+                "id": "202a",
+                "points": 2,
+                "statedBy": "a transfer moves stock, it does not create or destroy it",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "as": "espresso-total",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "admin-stock"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-from",
+                    "text": "East"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-to",
+                    "text": "West"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-qty",
+                    "text": "17"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "transfer-submit"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "wait",
+                    "ms": 3000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "admin-item-row"
+                    },
+                    "plus": 0,
+                    "relativeTo": "espresso-total",
+                    "testid": "admin-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "a sale and its cancellation leave the shelf exactly as they found it",
+                "id": "202b",
+                "points": 2,
+                "statedBy": "the stock goes back to the warehouse it came from",
+                "steps": [
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Induction Cooktop"
+                  },
+                  {
+                    "actor": "customer",
+                    "as": "cooktop-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Induction Cooktop",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Induction Cooktop",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Induction Cooktop",
+                      "testid": "item-card"
+                    },
+                    "plus": -1,
+                    "relativeTo": "cooktop-before",
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Induction Cooktop",
+                      "testid": "order-item"
+                    },
+                    "testid": "cancel-order"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "pressKey",
+                    "key": "Escape"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Induction Cooktop",
+                      "testid": "item-card"
+                    },
+                    "plus": 0,
+                    "relativeTo": "cooktop-before",
+                    "testid": "item-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "a fresh client sees the same totals, so nothing was only corrected in one browser",
+                "id": "202c",
+                "points": 1,
+                "statedBy": "every one of these numbers is the same for every person looking at it",
+                "steps": [
+                  {
+                    "actor": "customer",
+                    "do": "freshClient"
+                  },
+                  {
+                    "actor": "customer-fresh",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 2000,
+                    "testid": "search-input",
+                    "text": "Induction Cooktop"
+                  },
+                  {
+                    "actor": "customer-fresh",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Induction Cooktop",
+                      "testid": "item-card"
+                    },
+                    "plus": 0,
+                    "relativeTo": "cooktop-before",
+                    "testid": "item-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "a transfer racing a purchase loses no unit between the rows: total = before − sold, exactly, however the two interleave",
+                "id": "202d",
+                "note": "WITHHELD until proven against a mutant (transfer-read-modify-write) and a real failing build. A non-transactional transfer reads both rows, computes, writes both — a purchase landing between the read and the write is erased. Sequential tests cannot see this; 202a passes either way.",
+                "points": 0,
+                "statedBy": "a transfer moves stock, it does not create or destroy it",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "as": "hp-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "admin-stock"
+                  },
+                  {
+                    "branches": [
+                      [
+                        {
+                          "actor": "admin",
+                          "do": "fill",
+                          "in": {
+                            "contains": "Headphones",
+                            "testid": "admin-item-row"
+                          },
+                          "testid": "transfer-from",
+                          "text": "East"
+                        },
+                        {
+                          "actor": "admin",
+                          "do": "fill",
+                          "in": {
+                            "contains": "Headphones",
+                            "testid": "admin-item-row"
+                          },
+                          "testid": "transfer-to",
+                          "text": "West"
+                        },
+                        {
+                          "actor": "admin",
+                          "do": "fill",
+                          "in": {
+                            "contains": "Headphones",
+                            "testid": "admin-item-row"
+                          },
+                          "testid": "transfer-qty",
+                          "text": "25"
+                        },
+                        {
+                          "actor": "admin",
+                          "do": "click",
+                          "in": {
+                            "contains": "Headphones",
+                            "testid": "admin-item-row"
+                          },
+                          "testid": "transfer-submit"
+                        }
+                      ],
+                      [
+                        {
+                          "actor": "customer",
+                          "do": "click",
+                          "in": {
+                            "contains": "Headphones",
+                            "testid": "item-card"
+                          },
+                          "testid": "buy-now"
+                        }
+                      ]
+                    ],
+                    "do": "race",
+                    "settleMs": 5000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "admin-item-row"
+                    },
+                    "plus": -1,
+                    "relativeTo": "hp-before",
+                    "testid": "admin-stock",
+                    "within": 12000
+                  }
+                ]
+              }
+            ],
+            "id": 202,
+            "name": "Stock is conserved however it moves",
+            "setup": [
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "customer",
+                "do": "signUp",
+                "name": "conserve"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "testid": "admin-link"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "admin",
+              "customer"
+            ],
+            "criteria": [
+              {
+                "desc": "revenue rises by what was bought and falls by what was cancelled",
+                "id": "203a",
+                "points": 3,
+                "statedBy": "revenue always equals the sum of orders that are still standing",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "as": "rev-start",
+                    "do": "recordNumber",
+                    "testid": "admin-revenue"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Desk Lamp"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "plus": 42,
+                    "relativeTo": "rev-start",
+                    "testid": "admin-revenue",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "order-item"
+                    },
+                    "testid": "cancel-order"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "plus": 0,
+                    "relativeTo": "rev-start",
+                    "testid": "admin-revenue",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "a price change does not rewrite revenue already earned",
+                "id": "203b",
+                "points": 2,
+                "statedBy": "changing a price never alters the history, the revenue already recorded",
+                "steps": [
+                  {
+                    "actor": "customer",
+                    "do": "pressKey",
+                    "key": "Escape"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Webcam"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "admin",
+                    "as": "rev-after-sale",
+                    "do": "recordNumber",
+                    "testid": "admin-revenue"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "price-input",
+                    "text": "5.00"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "price-submit"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "wait",
+                    "ms": 3000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "plus": 0,
+                    "relativeTo": "rev-after-sale",
+                    "testid": "admin-revenue"
+                  }
+                ]
+              }
+            ],
+            "id": 203,
+            "name": "The books still balance once money can flow backwards",
+            "setup": [
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "customer",
+                "do": "signUp",
+                "name": "books"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "testid": "admin-link"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "one",
+              "two"
+            ],
+            "criteria": [
+              {
+                "desc": "one customer cannot cancel another's order",
+                "id": "204a",
+                "points": 2,
+                "statedBy": "a customer can cancel an order that has not shipped",
+                "steps": [
+                  {
+                    "actor": "one",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1200,
+                    "testid": "search-input",
+                    "text": "Chisel"
+                  },
+                  {
+                    "actor": "one",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Laptop Stand"
+                  },
+                  {
+                    "actor": "one",
+                    "do": "click",
+                    "in": {
+                      "contains": "Laptop Stand",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "one",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "one",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "one",
+                    "do": "click",
+                    "in": {
+                      "contains": "Laptop Stand",
+                      "testid": "order-item"
+                    },
+                    "testid": "cancel-order"
+                  },
+                  {
+                    "actor": "one",
+                    "do": "wait",
+                    "ms": 2000
+                  },
+                  {
+                    "actor": "two",
+                    "do": "replayAs",
+                    "from": "one",
+                    "match": "cancel",
+                    "settleMs": 2500
+                  },
+                  {
+                    "actor": "two",
+                    "do": "expectReplayRejected"
+                  },
+                  {
+                    "actor": "two",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "two",
+                    "contains": "Laptop Stand",
+                    "do": "expect",
+                    "testid": "order-item"
+                  }
+                ]
+              }
+            ],
+            "id": 204,
+            "name": "An order belongs to the person who placed it",
+            "setup": [
+              {
+                "actor": "one",
+                "do": "signUp",
+                "name": "owner"
+              },
+              {
+                "actor": "two",
+                "do": "signUp",
+                "name": "other"
+              }
+            ]
+          }
+        ],
+        "level": 2,
+        "name": "Running the business — invariants",
+        "note": "Properties that must survive the new operations regardless of which feature works. Level 2 adds two roles and six ways to move stock or money, so the questions are: can someone do an operator's job without being an operator, does conservation still hold once stock can flow backwards, and does anything a customer sends decide what the store charges. Stated as outcomes a person would recognise, and scored so a backend is never penalised for a check the harness could not run against it.",
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses|\\/transfer|\\/cancel|\\/return|\\/ship|\\/price|\\/fulfil"
+      },
+      "path": "scenarios/02-invariants.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "shopper",
+              "watcher"
+            ],
+            "criteria": [
+              {
+                "desc": "adding to the cart takes a unit off the shelf immediately, for a signed-out viewer who never touched the page",
+                "id": "301a",
+                "points": 2,
+                "statedBy": "storefront stock drops immediately, for everyone",
+                "steps": [
+                  {
+                    "actor": "shopper",
+                    "do": "click",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "item-card"
+                    },
+                    "settleMs": 1500,
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "item-card"
+                    },
+                    "plus": -1,
+                    "relativeTo": "lamp-before",
+                    "testid": "item-stock",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "the cart line shows the reservation counting down",
+                "id": "301b",
+                "points": 1,
+                "statedBy": "the cart line shows the reservation's remaining time, live",
+                "steps": [
+                  {
+                    "actor": "shopper",
+                    "do": "click",
+                    "settleMs": 1200,
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "cart-item"
+                    },
+                    "testid": "cart-reservation-timer",
+                    "within": 8000
+                  }
+                ]
+              },
+              {
+                "desc": "left alone, the reservation expires on its own: the unit returns to the shelf for the watcher without a reload, and the line is marked expired rather than vanishing",
+                "id": "301c",
+                "note": "waits out the spec's 90-second window plus slack; slow by nature.",
+                "points": 3,
+                "statedBy": "the reservation expires on its own and the unit returns to\nstorefront stock - visibly, without anyone reloading",
+                "steps": [
+                  {
+                    "actor": "shopper",
+                    "do": "wait",
+                    "ms": 100000
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "item-card"
+                    },
+                    "plus": 0,
+                    "relativeTo": "lamp-before",
+                    "testid": "item-stock",
+                    "within": 30000
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "cart-item"
+                    },
+                    "testid": "cart-item-expired",
+                    "within": 15000
+                  }
+                ]
+              }
+            ],
+            "id": 301,
+            "name": "A reservation holds stock and then releases it",
+            "setup": [
+              {
+                "actor": "shopper",
+                "do": "signUp",
+                "name": "resa"
+              },
+              {
+                "actor": "watcher",
+                "as": "lamp-before",
+                "do": "recordNumber",
+                "in": {
+                  "contains": "Desk Lamp",
+                  "testid": "item-card"
+                },
+                "testid": "item-stock"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "admin",
+              "watcher"
+            ],
+            "criteria": [
+              {
+                "desc": "a scheduled restock appears as pending with time remaining, and has not yet changed stock",
+                "id": "302a",
+                "points": 2,
+                "statedBy": "the pending restocks list shows each one with its remaining time, live",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "testid": "schedule-restock-item",
+                    "text": "Webcam"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "testid": "schedule-restock-warehouse",
+                    "text": "East"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "testid": "schedule-restock-qty",
+                    "text": "7"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "testid": "schedule-restock-delay",
+                    "text": "45"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "settleMs": 2000,
+                    "testid": "schedule-restock-submit"
+                  },
+                  {
+                    "actor": "admin",
+                    "contains": "Webcam",
+                    "do": "expect",
+                    "testid": "pending-restock-item",
+                    "within": 8000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "pending-restock-item"
+                    },
+                    "testid": "pending-restock-remaining",
+                    "within": 8000
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "item-card"
+                    },
+                    "plus": 0,
+                    "relativeTo": "webcam-before",
+                    "testid": "item-stock"
+                  }
+                ]
+              },
+              {
+                "desc": "when the delay elapses it applies itself: stock rises for a viewer who did nothing, and it leaves the pending list",
+                "id": "302b",
+                "points": 3,
+                "statedBy": "the entry leaves the pending list, and it appears in the stock ledger\nwith the time it actually ran",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "wait",
+                    "ms": 55000
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Webcam",
+                      "testid": "item-card"
+                    },
+                    "plus": 7,
+                    "relativeTo": "webcam-before",
+                    "testid": "item-stock",
+                    "within": 30000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "admin",
+                    "contains": "Webcam",
+                    "do": "expect",
+                    "testid": "pending-restock-item",
+                    "within": 15000
+                  }
+                ]
+              },
+              {
+                "desc": "a cancelled restock never applies",
+                "id": "302c",
+                "points": 2,
+                "statedBy": "an admin can cancel a pending restock before it fires; cancelled restocks\nnever apply",
+                "steps": [
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "testid": "schedule-restock-item",
+                    "text": "Keyboard"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "testid": "schedule-restock-warehouse",
+                    "text": "West"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "testid": "schedule-restock-qty",
+                    "text": "9"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "testid": "schedule-restock-delay",
+                    "text": "40"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "settleMs": 2000,
+                    "testid": "schedule-restock-submit"
+                  },
+                  {
+                    "actor": "watcher",
+                    "as": "kbd-before",
+                    "do": "recordNumber",
+                    "in": {
+                      "contains": "Keyboard",
+                      "testid": "item-card"
+                    },
+                    "testid": "item-stock"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Keyboard",
+                      "testid": "pending-restock-item"
+                    },
+                    "settleMs": 2000,
+                    "testid": "pending-restock-cancel"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "wait",
+                    "ms": 50000
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Keyboard",
+                      "testid": "item-card"
+                    },
+                    "plus": 0,
+                    "relativeTo": "kbd-before",
+                    "testid": "item-stock",
+                    "within": 10000
+                  }
+                ]
+              }
+            ],
+            "id": 302,
+            "name": "A restock scheduled for later applies itself",
+            "setup": [
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "settleMs": 1500,
+                "testid": "admin-link"
+              },
+              {
+                "actor": "watcher",
+                "as": "webcam-before",
+                "do": "recordNumber",
+                "in": {
+                  "contains": "Webcam",
+                  "testid": "item-card"
+                },
+                "testid": "item-stock"
+              }
+            ]
+          }
+        ],
+        "level": 3,
+        "name": "Work that happens later — features",
+        "note": "Deferred work observed from the outside: a reservation that releases itself, a restock that fires on a timer, an order that advances with nobody watching. Every wait here is real time — these criteria are slow by nature and the timings come from the spec (90s reservation, 60s transitions), not from guesses about implementation.",
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses|\\/schedule"
+      },
+      "path": "scenarios/03-features.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "admin",
+              "watcher"
+            ],
+            "criteria": [
+              {
+                "desc": "a restock scheduled before a restart still fires after it, once, at its own time — an in-memory timer does not survive and must not be how this was built",
+                "id": "311a",
+                "points": 4,
+                "statedBy": "work scheduled\nbefore a restart fires after it, once, at the right time",
+                "steps": [
+                  {
+                    "do": "restartBackend",
+                    "settleMs": 15000
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "reload",
+                    "settleMs": 5000
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "item-card"
+                    },
+                    "plus": 5,
+                    "relativeTo": "air-before",
+                    "testid": "item-stock",
+                    "within": 90000
+                  }
+                ]
+              },
+              {
+                "desc": "it fired exactly once — the restart did not replay it",
+                "id": "311b",
+                "points": 3,
+                "statedBy": "must never double-apply\na scheduled restock or advance an order twice",
+                "steps": [
+                  {
+                    "actor": "watcher",
+                    "do": "wait",
+                    "ms": 20000
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Air Purifier",
+                      "testid": "item-card"
+                    },
+                    "plus": 5,
+                    "relativeTo": "air-before",
+                    "testid": "item-stock"
+                  }
+                ]
+              }
+            ],
+            "id": 311,
+            "name": "Scheduled work survives a restart",
+            "setup": [
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "settleMs": 1500,
+                "testid": "admin-link"
+              },
+              {
+                "actor": "watcher",
+                "as": "air-before",
+                "do": "recordNumber",
+                "in": {
+                  "contains": "Air Purifier",
+                  "testid": "item-card"
+                },
+                "testid": "item-stock"
+              },
+              {
+                "actor": "admin",
+                "do": "fill",
+                "testid": "schedule-restock-item",
+                "text": "Air Purifier"
+              },
+              {
+                "actor": "admin",
+                "do": "fill",
+                "testid": "schedule-restock-warehouse",
+                "text": "East"
+              },
+              {
+                "actor": "admin",
+                "do": "fill",
+                "testid": "schedule-restock-qty",
+                "text": "5"
+              },
+              {
+                "actor": "admin",
+                "do": "fill",
+                "testid": "schedule-restock-delay",
+                "text": "70"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "settleMs": 2000,
+                "testid": "schedule-restock-submit"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "admin",
+              "watcher"
+            ],
+            "criteria": [
+              {
+                "desc": "a restock due in three minutes has not applied thirty seconds after a restart — re-reading pending work must not run it",
+                "id": "312a",
+                "points": 3,
+                "statedBy": "a restart must not cause pending work to run\nimmediately",
+                "steps": [
+                  {
+                    "do": "restartBackend",
+                    "settleMs": 15000
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "reload",
+                    "settleMs": 5000
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "wait",
+                    "ms": 25000
+                  },
+                  {
+                    "actor": "watcher",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Espresso Machine",
+                      "testid": "item-card"
+                    },
+                    "plus": 0,
+                    "relativeTo": "esp-before",
+                    "testid": "item-stock"
+                  }
+                ]
+              }
+            ],
+            "id": 312,
+            "name": "A restart does not make pending work fire early",
+            "setup": [
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "settleMs": 1500,
+                "testid": "admin-link"
+              },
+              {
+                "actor": "watcher",
+                "as": "esp-before",
+                "do": "recordNumber",
+                "in": {
+                  "contains": "Espresso Machine",
+                  "testid": "item-card"
+                },
+                "testid": "item-stock"
+              },
+              {
+                "actor": "admin",
+                "do": "fill",
+                "testid": "schedule-restock-item",
+                "text": "Espresso Machine"
+              },
+              {
+                "actor": "admin",
+                "do": "fill",
+                "testid": "schedule-restock-warehouse",
+                "text": "West"
+              },
+              {
+                "actor": "admin",
+                "do": "fill",
+                "testid": "schedule-restock-qty",
+                "text": "4"
+              },
+              {
+                "actor": "admin",
+                "do": "fill",
+                "testid": "schedule-restock-delay",
+                "text": "180"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "settleMs": 2000,
+                "testid": "schedule-restock-submit"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "shopper",
+              "admin"
+            ],
+            "criteria": [
+              {
+                "desc": "a reservation taken and left to expire returns exactly what it took, counted in the admin's own totals",
+                "id": "313a",
+                "points": 3,
+                "statedBy": "units are never created or destroyed by the\npassage of time",
+                "steps": [
+                  {
+                    "actor": "shopper",
+                    "do": "click",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "item-card"
+                    },
+                    "settleMs": 1500,
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "admin-item-row"
+                    },
+                    "plus": -1,
+                    "relativeTo": "spk-before",
+                    "testid": "admin-stock",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "shopper",
+                    "do": "wait",
+                    "ms": 100000
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "expectNumber",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "admin-item-row"
+                    },
+                    "plus": 0,
+                    "relativeTo": "spk-before",
+                    "testid": "admin-stock",
+                    "within": 30000
+                  }
+                ]
+              }
+            ],
+            "id": 313,
+            "name": "Time does not create or destroy stock",
+            "setup": [
+              {
+                "actor": "shopper",
+                "do": "signUp",
+                "name": "consv"
+              },
+              {
+                "actor": "admin",
+                "do": "signIn",
+                "exact": true,
+                "name": "admin",
+                "password": "stackbench-admin-2026"
+              },
+              {
+                "actor": "admin",
+                "do": "click",
+                "settleMs": 1500,
+                "testid": "admin-link"
+              },
+              {
+                "actor": "admin",
+                "as": "spk-before",
+                "do": "recordNumber",
+                "in": {
+                  "contains": "Bluetooth Speaker",
+                  "testid": "admin-item-row"
+                },
+                "testid": "admin-stock"
+              }
+            ]
+          }
+        ],
+        "level": 3,
+        "name": "Work that happens later — invariants",
+        "note": "What must hold about deferred work regardless of how it is implemented: it survives a restart, it fires once, it does not fire early, and time never creates or destroys stock. This is the level where in-memory timers stop being an implementation detail and become a defect.",
+        "schemaVersion": 1,
+        "track": "ecommerce",
+        "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses|\\/schedule"
+      },
+      "path": "scenarios/03-invariants.json"
+    }
+  ],
+  "track": "ecommerce"
+}
