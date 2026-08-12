@@ -48,6 +48,37 @@ export function attemptArgv(plan, attempt, output) {
   return args;
 }
 
+export function validateCampaignRun(plan, attempt, run, { buildImage = null } = {}) {
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
+    && item.model === attempt.model && item.guidance === attempt.guidance
+    && canonicalDefinitionJson(item.skills) === canonicalDefinitionJson(attempt.skills));
+  const expectedLevels = [...attempt.levels].sort((a, b) => a - b);
+  const actualLevels = (run.levels ?? []).map(level => level.level).sort((a, b) => a - b);
+  if (run.artifactEnvelope?.attempt?.parentId !== attempt.id
+    || run.track !== plan.definition.track
+    || run.backend !== attempt.stack
+    || run.model !== attempt.model
+    || run.guidance !== attempt.guidance
+    || canonicalDefinitionJson(run.selectionRequest) !== canonicalDefinitionJson(plan.definition.selection)
+    || canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills)
+    || canonicalDefinitionJson(actualLevels) !== canonicalDefinitionJson(expectedLevels)
+    || run.artifactEnvelope?.identities?.agentAdapter?.sha256 !== agent?.identity.sha256
+    || run.artifactEnvelope?.identities?.engine?.sha256 !== plan.identities.engine.sha256
+    || run.artifactEnvelope?.identities?.stackAdapter?.id !== attempt.stack
+    || run.artifactEnvelope?.identities?.stackAdapter?.version
+      !== plan.stacks.find(item => item.id === attempt.stack)?.version
+    || (plan.definition.runtime.buildImage !== null
+      && run.runtime?.buildImage !== plan.definition.runtime.buildImage)
+    || (plan.definition.runtime.buildImage === null && buildImage !== null
+      && run.runtime?.buildImage !== buildImage)
+    || (plan.definition.budgets.maxCostUsdPerAttempt !== null
+      && (!Number.isFinite(run.totals?.costUsd)
+        || run.totals.costUsd > plan.definition.budgets.maxCostUsdPerAttempt))) {
+    throw new Error('run.json does not match its planned campaign attempt');
+  }
+  return run;
+}
+
 function readAttemptResult(plan, attempt, output, processResult) {
   const runPath = join(output, 'run.json');
   let run = null;
@@ -55,31 +86,7 @@ function readAttemptResult(plan, attempt, output, processResult) {
   if (existsSync(runPath)) {
     try {
       run = readArtifactPayload(runPath, { expectedKind: 'benchmark_run' });
-      const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
-        && item.model === attempt.model && item.guidance === attempt.guidance
-        && canonicalDefinitionJson(item.skills) === canonicalDefinitionJson(attempt.skills));
-      const expectedLevels = [...attempt.levels].sort((a, b) => a - b);
-      const actualLevels = (run.levels ?? []).map(level => level.level).sort((a, b) => a - b);
-      if (run.artifactEnvelope.attempt.parentId !== attempt.id
-        || run.track !== plan.definition.track
-        || run.backend !== attempt.stack
-        || run.model !== attempt.model
-        || run.guidance !== attempt.guidance
-        || canonicalDefinitionJson(run.selectionRequest) !== canonicalDefinitionJson(plan.definition.selection)
-        || canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills)
-        || canonicalDefinitionJson(actualLevels) !== canonicalDefinitionJson(expectedLevels)
-        || run.artifactEnvelope.identities.agentAdapter?.sha256 !== agent?.identity.sha256
-        || run.artifactEnvelope.identities.engine?.sha256 !== plan.identities.engine.sha256
-        || run.artifactEnvelope.identities.stackAdapter?.id !== attempt.stack
-        || run.artifactEnvelope.identities.stackAdapter?.version
-          !== plan.stacks.find(item => item.id === attempt.stack)?.version
-        || run.runtime?.buildImage !== (plan.definition.runtime.buildImage
-          ?? processResult.buildImage)
-        || (plan.definition.budgets.maxCostUsdPerAttempt !== null
-          && (!Number.isFinite(run.totals?.costUsd)
-            || run.totals.costUsd > plan.definition.budgets.maxCostUsdPerAttempt))) {
-        throw new Error('run.json does not match its planned campaign attempt');
-      }
+      validateCampaignRun(plan, attempt, run, { buildImage: processResult.buildImage });
     }
     catch (error) { artifactError = error; }
   }

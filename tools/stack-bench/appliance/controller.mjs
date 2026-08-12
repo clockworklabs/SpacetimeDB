@@ -32,6 +32,7 @@ function help() {
     + '  campaign prepare|run <file> --out <dir>  checkpoint or execute a frozen plan\n'
     + '  campaign reconcile <file> --out <dir>  prove cleanup for interrupted work\n'
     + '  campaign status <dir>         inspect exact durable campaign state\n'
+    + '  campaign report <dir>         regenerate deterministic JSON and static HTML\n'
     + '  run <exact run options>        execute and retain one requested run\n'
     + '  verify-release <manifest>      verify candidate files or a qualified signed release\n'
     + '  recover <private-state>        retry authenticated cleanup or retain quarantine\n'

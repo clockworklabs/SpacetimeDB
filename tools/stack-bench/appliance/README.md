@@ -119,6 +119,21 @@ refuses. Run `campaign reconcile <campaign.json> --out <campaign-directory>`;
 it advances the record only if the private supervisor evidence proves exact-
 owned cleanup. It never invents a result or silently starts a duplicate.
 
+After any completed or stopped campaign, regenerate the report only from its
+stored evidence:
+
+```sh
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  campaign report /var/lib/stack-bench/results/campaign-001
+```
+
+This writes `report/report.json` and self-contained `report/report.html`. The
+report states the exact scope and campaign status, keeps invalid executions and
+retries visible, links raw run artifacts, applies the declared dispersion, and
+does not impute missing metrics. Deleting only the `report` directory and
+running the command again produces the same report identity and bytes.
+
 To run one already-decided attempt directly:
 
 ```sh

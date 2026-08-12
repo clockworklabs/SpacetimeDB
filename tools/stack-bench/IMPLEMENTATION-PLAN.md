@@ -626,6 +626,13 @@ Generate JSON tables and self-contained static HTML from the artifact read model
 Report dispersion, sample size, invalid-run rate, limitations, and raw-evidence
 links without making causal claims the experiment does not support.
 
+Implemented. The typed read model independently revalidates every completed run
+against its planned attempt, reports every attempt/execution, keeps invalid data
+separate, aggregates only present metrics using the declared dispersion, and
+writes content-identified JSON plus escaped static HTML with relative evidence
+links. Focused tests delete and regenerate both files byte-for-byte. Full host
+and Linux appliance acceptance remain before closing the work package.
+
 E5 exit: deleting generated report output and regenerating it from immutable raw
 artifacts produces the same report identity.
 
@@ -700,8 +707,11 @@ them. Live qualification does not run concurrently with executable harness edits
 18. [x] SB-403 interruption quarantine and authenticated recovery.
 19. [ ] SB-501 frozen campaign manifest (strict compiler and deterministic plan
     expansion implemented; current definition qualification and scheduler handoff remain).
-20. [ ] SB-502 idempotent scheduler (strict durable state and resume validation
-    implemented; execution ownership, admission, launch, and reconciliation remain).
+20. [x] SB-502 idempotent scheduler (strict durable state, exclusive execution,
+    campaign-wide admission, bounded launch, resume validation, and proven-cleanup
+    reconciliation accepted on the host and the exact Linux appliance image).
+21. [ ] SB-503 deterministic report (typed JSON/HTML generation implemented;
+    complete host and Linux acceptance remain).
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.

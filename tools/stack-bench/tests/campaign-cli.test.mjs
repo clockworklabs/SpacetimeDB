@@ -13,6 +13,7 @@ test('campaign CLI separates read-only, preparation, execution, and status comma
   assert.equal(parseCampaignArgs(argv('reconcile', './campaign.json', '--out', './results')).command,
     'reconcile');
   assert.equal(parseCampaignArgs(argv('status', './results')).command, 'status');
+  assert.equal(parseCampaignArgs(argv('report', './results')).command, 'report');
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json')), /usage/);
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json', '--out', './a', '--out', './b')),
     /usage/);

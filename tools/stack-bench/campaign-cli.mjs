@@ -5,25 +5,31 @@ import { pathToFileURL } from 'node:url';
 
 import { compileCampaignFile } from './campaign-compiler.mjs';
 import { executeCampaign, inspectCampaign, prepareCampaign, reconcileCampaign } from './campaign-runner.mjs';
+import { generateCampaignReport } from './campaign-report.mjs';
 
 export function parseCampaignArgs(argv) {
   const [command, path, ...rest] = argv.slice(2);
   if (['validate', 'show'].includes(command) && path && rest.length === 0) {
     return { command, path: resolve(path) };
   }
-  if (command === 'status' && path && rest.length === 0) {
+  if (['status', 'report'].includes(command) && path && rest.length === 0) {
     return { command, directory: resolve(path) };
   }
   if (['prepare', 'run', 'reconcile'].includes(command) && path && rest.length === 2 && rest[0] === '--out') {
     return { command, path: resolve(path), directory: resolve(rest[1]) };
   }
-  throw new Error('usage: campaign-cli.mjs validate|show <campaign.json> | prepare|run|reconcile <campaign.json> --out <directory> | status <directory>');
+  throw new Error('usage: campaign-cli.mjs validate|show <campaign.json> | prepare|run|reconcile <campaign.json> --out <directory> | status|report <directory>');
 }
 
 async function main() {
   const args = parseCampaignArgs(process.argv);
   if (args.command === 'status') {
     console.log(JSON.stringify(inspectCampaign(args.directory).state, null, 2));
+    return;
+  }
+  if (args.command === 'report') {
+    const generated = generateCampaignReport(args.directory);
+    console.log(`${generated.reportPath}\n${generated.htmlPath}\n${generated.report.contentSha256}`);
     return;
   }
   if (args.command === 'prepare') {
