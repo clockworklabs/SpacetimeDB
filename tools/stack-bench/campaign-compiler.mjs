@@ -240,17 +240,48 @@ function calibrationIdentity(value) {
   return value ? { id: value.id, version: value.version, sha256: value.contentSha256, state: value.state } : null;
 }
 
-export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
-  const absolute = exactSource(resolve(path));
-  const definition = validateCampaignDefinition(loadJson(absolute), {
-    source: relative(process.cwd(), absolute).replaceAll('\\', '/'),
+function campaignIdentityDocument(definition, engine, bindings, stacks, agents) {
+  return canonicalizeDefinition({ campaignSchemaVersion: CAMPAIGN_SCHEMA_VERSION,
+    definition, engine, bindings, stacks, agents });
+}
+
+function expandAttempts(definition, requestedLevels, stacks, agents) {
+  const conditions = agents.flatMap((agent, agentIndex) => stacks.map(stack => ({
+    agent,
+    agentIndex,
+    stack,
+    key: canonicalDefinitionJson({ agent: { adapter: agent.adapter, model: agent.model,
+      guidance: agent.guidance, skills: agent.skills }, stack: stack.id }),
+  }))).sort((left, right) => {
+    const leftHash = sha256(`${definition.ordering.seed}\0${left.key}`);
+    const rightHash = sha256(`${definition.ordering.seed}\0${right.key}`);
+    return leftHash.localeCompare(rightHash) || left.key.localeCompare(right.key);
   });
+  const attempts = [];
+  for (let repetition = 1; repetition <= definition.repetitions; repetition += 1) {
+    rotate(conditions, (repetition - 1) % conditions.length)
+      .forEach(({ agent, agentIndex, stack }, order) => attempts.push({
+        id: `${definition.id}-r${repetition}-a${agentIndex + 1}-${stack.id}`,
+        repetition,
+        order: order + 1,
+        stack: stack.id,
+        agentAdapter: agent.adapter,
+        model: agent.model,
+        guidance: agent.guidance,
+        skills: agent.skills,
+        levels: requestedLevels,
+        parentAttemptId: definition.id,
+      }));
+  }
+  return attempts;
+}
+
+function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
   if (!listTracks({ includeInternal: true }).includes(definition.track)) {
     fail('track', `is unknown; available tracks: ${listTracks({ includeInternal: true }).join(', ')}`);
   }
   const track = loadTrack(definition.track);
-  const requestedLevels = definition.levels;
-  const bindings = requestedLevels.map(level => {
+  const bindings = definition.levels.map(level => {
     const binding = resolveLegacyRecipeRelease(track, level);
     if (!binding) fail('levels', `L${level} has no recipe release`);
     const selection = resolveRecipeSelection(binding.release, {
@@ -305,44 +336,22 @@ export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
       }
     }
   }
+  return { bindings, stacks, agents };
+}
+
+export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
+  const absolute = exactSource(resolve(path));
+  const definition = validateCampaignDefinition(loadJson(absolute), {
+    source: relative(process.cwd(), absolute).replaceAll('\\', '/'),
+  });
+  const requestedLevels = definition.levels;
+  const { bindings, stacks, agents } = resolveCampaignInputs(definition, { stackBenchRoot });
 
   const sourceSha256 = sha256(readFileSync(absolute));
-  const identityDocument = canonicalizeDefinition({
-    campaignSchemaVersion: CAMPAIGN_SCHEMA_VERSION,
-    definition,
-    engine: currentEngineIdentity(),
-    bindings,
-    stacks,
-    agents,
-  });
+  const engine = currentEngineIdentity();
+  const identityDocument = campaignIdentityDocument(definition, engine, bindings, stacks, agents);
   const contentSha256 = sha256(canonicalDefinitionJson(identityDocument));
-  const conditions = agents.flatMap((agent, agentIndex) => stacks.map(stack => ({
-    agent,
-    agentIndex,
-    stack,
-    key: canonicalDefinitionJson({ agent: { adapter: agent.adapter, model: agent.model,
-      guidance: agent.guidance, skills: agent.skills }, stack: stack.id }),
-  }))).sort((left, right) => {
-    const leftHash = sha256(`${definition.ordering.seed}\0${left.key}`);
-    const rightHash = sha256(`${definition.ordering.seed}\0${right.key}`);
-    return leftHash.localeCompare(rightHash) || left.key.localeCompare(right.key);
-  });
-  const attempts = [];
-  for (let repetition = 1; repetition <= definition.repetitions; repetition += 1) {
-    rotate(conditions, (repetition - 1) % conditions.length)
-      .forEach(({ agent, agentIndex, stack }, order) => attempts.push({
-        id: `${definition.id}-r${repetition}-a${agentIndex + 1}-${stack.id}`,
-        repetition,
-        order: order + 1,
-        stack: stack.id,
-        agentAdapter: agent.adapter,
-        model: agent.model,
-        guidance: agent.guidance,
-        skills: agent.skills,
-        levels: requestedLevels,
-        parentAttemptId: definition.id,
-      }));
-  }
+  const attempts = expandAttempts(definition, requestedLevels, stacks, agents);
   return canonicalizeDefinition({
     campaignSchemaVersion: CAMPAIGN_SCHEMA_VERSION,
     id: definition.id,
@@ -352,7 +361,7 @@ export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
     source: { sha256: sourceSha256 },
     contentSha256,
     definition,
-    identities: { engine: currentEngineIdentity() },
+    identities: { engine },
     bindings,
     stacks,
     agents,
@@ -362,9 +371,55 @@ export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
   });
 }
 
-export function campaignIdentity(plan) {
-  if (!plan || typeof plan.contentSha256 !== 'string' || !HASH.test(plan.contentSha256)) {
-    throw new Error('campaign identity requires a compiled campaign');
+export function validateCompiledCampaignPlan(input) {
+  if (!object(input)) throw new Error('compiled campaign plan must be an object');
+  const plan = canonicalizeDefinition(input);
+  const fields = new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
+    'contentSha256', 'definition', 'identities', 'bindings', 'stacks', 'agents', 'attempts', 'summary']);
+  for (const key of Object.keys(plan)) if (!fields.has(key)) throw new Error(`compiled campaign plan.${key} is unknown`);
+  if (plan.campaignSchemaVersion !== CAMPAIGN_SCHEMA_VERSION) throw new Error('compiled campaign schema is unsupported');
+  const definition = validateCampaignDefinition(plan.definition, { source: 'compiled campaign definition' });
+  for (const field of ['id', 'version', 'state', 'title']) {
+    if (plan[field] !== definition[field]) throw new Error(`compiled campaign ${field} does not match its definition`);
   }
-  return { id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state };
+  if (!object(plan.source) || Object.keys(plan.source).length !== 1 || !HASH.test(plan.source.sha256)) {
+    throw new Error('compiled campaign source identity is invalid');
+  }
+  if (!object(plan.identities) || !object(plan.identities.engine)) {
+    throw new Error('compiled campaign engine identity is missing');
+  }
+  if (!Array.isArray(plan.bindings) || plan.bindings.length !== definition.levels.length
+    || !Array.isArray(plan.stacks) || plan.stacks.length !== definition.stacks.length
+    || !Array.isArray(plan.agents) || plan.agents.length !== definition.agents.length) {
+    throw new Error('compiled campaign resolved inputs are incomplete');
+  }
+  const currentEngine = currentEngineIdentity();
+  if (canonicalDefinitionJson(plan.identities.engine) !== canonicalDefinitionJson(currentEngine)) {
+    throw new Error('compiled campaign engine identity does not match this executable');
+  }
+  const resolved = resolveCampaignInputs(definition);
+  for (const field of ['bindings', 'stacks', 'agents']) {
+    if (canonicalDefinitionJson(plan[field]) !== canonicalDefinitionJson(resolved[field])) {
+      throw new Error(`compiled campaign ${field} do not match current resolved inputs`);
+    }
+  }
+  const expectedSha256 = sha256(canonicalDefinitionJson(campaignIdentityDocument(
+    definition, plan.identities.engine, plan.bindings, plan.stacks, plan.agents)));
+  if (plan.contentSha256 !== expectedSha256) throw new Error('compiled campaign content identity does not match its inputs');
+  const expectedAttempts = expandAttempts(definition, definition.levels, plan.stacks, plan.agents);
+  if (canonicalDefinitionJson(plan.attempts) !== canonicalDefinitionJson(expectedAttempts)) {
+    throw new Error('compiled campaign attempt schedule does not match its inputs');
+  }
+  const expectedSummary = { attempts: expectedAttempts.length, stacks: plan.stacks.length,
+    agents: plan.agents.length, repetitions: definition.repetitions };
+  if (canonicalDefinitionJson(plan.summary) !== canonicalDefinitionJson(expectedSummary)) {
+    throw new Error('compiled campaign summary does not match its inputs');
+  }
+  return plan;
+}
+
+export function campaignIdentity(plan) {
+  const validated = validateCompiledCampaignPlan(plan);
+  return { id: validated.id, version: validated.version, sha256: validated.contentSha256,
+    state: validated.state };
 }

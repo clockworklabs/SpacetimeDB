@@ -598,13 +598,21 @@ seeded balanced rotation into immutable attempts without starting a model. Draft
 plans may expose incomplete qualification honestly. Frozen plans fail unless
 every selected recipe, fixture, calibration and alias is qualified/promoted and
 the exact release manifest, controller/build image digests, timeout, cost cap,
-retry/exclusion rules, pricing, and analysis policy are present. Scheduler state,
-campaign artifact envelopes, and appliance execution remain SB-502 work.
+retry/exclusion rules, pricing, and analysis policy are present. The compiled
+plan is now revalidated from those inputs before scheduler resume; current
+definition qualification and appliance execution remain.
 
 ### SB-502: Idempotent scheduler
 
 Materialize immutable attempts, enforce resource admission, resume safely, and
 record every invalid attempt rather than silently retrying it away.
+
+In progress. Typed campaign plan/state artifacts now materialize the exact
+attempt schedule, allow only one active execution, append retry evidence, bind
+derived output directories, and fail closed on malformed identity, schedule,
+timestamps, transitions, summaries, missing artifacts, or nonzero process exit.
+Remaining work is exclusive campaign-directory ownership, bounded attempt
+launch/termination, preflight admission, and proven interruption reconciliation.
 
 ### SB-503: Deterministic report
 
@@ -686,6 +694,8 @@ them. Live qualification does not run concurrently with executable harness edits
 18. [x] SB-403 interruption quarantine and authenticated recovery.
 19. [ ] SB-501 frozen campaign manifest (strict compiler and deterministic plan
     expansion implemented; current definition qualification and scheduler handoff remain).
+20. [ ] SB-502 idempotent scheduler (strict durable state and resume validation
+    implemented; execution ownership, admission, launch, and reconciliation remain).
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.

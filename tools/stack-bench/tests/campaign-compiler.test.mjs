@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { campaignIdentity, compileCampaignFile, validateCampaignDefinition } from '../campaign-compiler.mjs';
+import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
+  validateCompiledCampaignPlan } from '../campaign-compiler.mjs';
 
 function definition(overrides = {}) {
   return {
@@ -146,4 +147,19 @@ test('the packaged model-free campaign example compiles without starting work', 
   const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance', 'campaign.example.json'));
   assert.equal(plan.state, 'draft');
   assert.deepEqual(plan.summary, { agents: 1, attempts: 9, repetitions: 3, stacks: 3 });
+});
+
+test('compiled campaign validation rejects a rewritten identity, schedule, or summary', () => {
+  const plan = compile(definition());
+  assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
+  assert.throws(() => validateCompiledCampaignPlan({ ...plan, contentSha256: 'a'.repeat(64) }),
+    /content identity/);
+  const schedule = structuredClone(plan);
+  schedule.attempts[0].stack = schedule.attempts[0].stack === 'postgres' ? 'mongodb' : 'postgres';
+  assert.throws(() => validateCompiledCampaignPlan(schedule), /attempt schedule/);
+  const resolved = structuredClone(plan);
+  resolved.bindings[0].promotion.status = 'promoted';
+  assert.throws(() => validateCompiledCampaignPlan(resolved), /bindings.*current resolved inputs/);
+  assert.throws(() => validateCompiledCampaignPlan({ ...plan,
+    summary: { ...plan.summary, attempts: 99 } }), /summary/);
 });
