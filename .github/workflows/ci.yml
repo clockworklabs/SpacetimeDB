@@ -22,6 +22,25 @@ permissions:
   pull-requests: read
 
 jobs:
+  release_dependencies:
+    if: ${{ github.event_name == 'pull_request' }}
+    name: Release dependencies
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Check release dependencies
+        run: >-
+          cargo ci other-workflows check-release-deps
+          --repo clockworklabs/SpacetimeDB
+          --pr-number "${{ github.event.pull_request.number }}"
+
   merge_queue_noop:
     name: Detect merge queue no-op
     runs-on: ubuntu-latest

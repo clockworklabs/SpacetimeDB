@@ -26,3 +26,7 @@ so that you're confident that all the changes work as expected! -->
 
 - [ ] <!-- maybe a test you want to do -->
 - [ ] <!-- maybe a test you want a reviewer to do, so they can check it off when they're satisfied. -->
+
+# Must be released
+
+<!-- List PRs that must be included in a release before this PR can merge. Supported forms include #123, SpacetimeDB#123, clockworklabs/SpacetimeDB#123, and GitHub PR URLs. Leave this section empty if there are none. -->
