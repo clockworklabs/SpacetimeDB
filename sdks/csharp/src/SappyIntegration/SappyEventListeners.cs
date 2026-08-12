@@ -1,6 +1,5 @@
 #if SAPPY
 using System;
-using System.Collections.Generic;
 using Sappy;
 using SpacetimeDB.EventHandling;
 
@@ -9,7 +8,7 @@ namespace SpacetimeDB.SappyIntegration
     public class SappyEventListeners<T> : IEventListeners<T> where T : Delegate
     {
         private SapDelegate<T> Targets { get; } = new();
-        private Dictionary<int, SapTarget<T>> Cache { get; } = new(4);
+        private DelegateIndex<T, SapTarget<T>> Cache { get; } = new(4);
 
         public void Add(SapTarget<T> listener) => Targets.Add(listener);
         public void Remove(SapTarget<T> listener) => Targets.Remove(listener);
@@ -20,18 +19,21 @@ namespace SpacetimeDB.SappyIntegration
 
         public void Add(T listener)
         {
-            if(listener == null) return;
-            var hashCode = listener.GetHashCode();
-            if(!Cache.TryGetValue(hashCode, out var target)) {
-                target = new SapTarget<T>(listener);
-                Cache.Add(hashCode, target);
-            }
+            if (listener == null) return;
+            if (Cache.Contains(listener)) return;
+
+            var target = new SapTarget<T>(listener);
+            Cache.AddUnchecked(listener, target);
             Add(target);
         }
+
         public void Remove(T listener)
         {
-            if(listener == null || !Cache.TryGetValue(listener.GetHashCode(), out var target)) return;
-            Remove(target);
+            if (listener == null) return;
+            if (Cache.Remove(listener, out var target))
+            {
+                Remove(target);
+            }
         }
 
         public static SappyEventListeners<T> operator +(SappyEventListeners<T> a, SapTarget<T> b)
