@@ -26,6 +26,8 @@ The table attribute uses `scheduled` (with a "d") because it refers to the **sch
 In TypeScript, declare the binding on the reducer with the `onSchedule` option:
 
 ```typescript
+import { schema, table, t } from 'spacetimedb/server';
+
 const reminder = table(
   { name: 'reminder' },
   {
@@ -34,6 +36,9 @@ const reminder = table(
     message: t.string(),
   }
 );
+
+const spacetimedb = schema({ reminder });
+export default spacetimedb;
 
 export const sendReminder = spacetimedb.reducer(
   { onSchedule: reminder },
