@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileCalibrationDefinition, compileCalibrationFile,
+import { calibrationQualificationIdentity, compileCalibrationDefinition, compileCalibrationFile,
   resolveCalibrationForRelease } from '../calibration-compiler.mjs';
 import { checkCalibrations } from '../check-calibration.mjs';
 import { resolveLegacyRecipeRelease } from '../recipe-release.mjs';
@@ -61,8 +61,29 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   assert.equal(first.controls.filter(control => control.role === 'promotion-gate').length, 2);
   assert.equal(new Set(first.controls.map(control => control.stableKey)).size, 9);
   assert.match(first.contentSha256, /^[a-f0-9]{64}$/);
+  assert.match(first.qualificationSha256, /^[a-f0-9]{64}$/);
+  assert.equal(calibrationQualificationIdentity(first).sha256, first.qualificationSha256);
   assert.deepEqual(checkCalibrations({ trackName: 'ecommerce' }).map(result => result.id),
     ['ecommerce.l1-standard-calibration']);
+});
+
+test('qualification identity excludes governance transitions but binds executable controls', () => {
+  const plan = current().plan;
+  const governance = structuredClone(plan);
+  governance.state = 'qualified';
+  governance.promotion.status = 'promoted';
+  governance.promotion.catalogSha256 = '0'.repeat(64);
+  governance.qualification.evidence = [{ kind: 'reference', stack: 'mongodb', repetition: 1,
+    path: 'results/evidence.json', sha256: '1'.repeat(64) }];
+  governance.qualification.stacks.forEach(stack => { stack.status = 'qualified'; });
+  governance.references.registrySha256 = '2'.repeat(64);
+  governance.references.entries.forEach(entry => { entry.status = 'active'; });
+  governance.mutations.forEach(entry => { entry.status = 'active'; entry.sha256 = '3'.repeat(64); });
+  assert.equal(calibrationQualificationIdentity(governance).sha256, plan.qualificationSha256);
+
+  const changed = structuredClone(plan);
+  changed.nullControl.repetitions += 1;
+  assert.notEqual(calibrationQualificationIdentity(changed).sha256, plan.qualificationSha256);
 });
 
 test('set-like calibration source ordering does not change its identity', () => {

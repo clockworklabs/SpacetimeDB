@@ -267,6 +267,53 @@ function verifyEvidence(entries, stackBenchRoot, at) {
   });
 }
 
+function mutationExecutionSha256(manifest) {
+  const { status: _status, ...execution } = manifest;
+  return sha256(canonicalDefinitionJson(canonicalizeDefinition(execution)));
+}
+
+export function calibrationQualificationIdentity(calibration) {
+  if (!calibration || typeof calibration !== 'object') {
+    throw new Error('calibration qualification identity requires a compiled calibration');
+  }
+  const document = canonicalizeDefinition({
+    schemaVersion: CALIBRATION_SCHEMA_VERSION,
+    id: calibration.id,
+    version: calibration.version,
+    track: calibration.track,
+    recipe: {
+      id: calibration.recipe?.id,
+      version: calibration.recipe?.version,
+      meaningSha256: calibration.recipe?.meaningSha256,
+      executionSha256: calibration.recipe?.executionSha256,
+      contentSha256: calibration.recipe?.contentSha256,
+    },
+    fixture: { id: calibration.fixture?.id, version: calibration.fixture?.version },
+    references: (calibration.references?.entries ?? []).map(entry => ({
+      backend: entry.backend, id: entry.id, sourceSha256: entry.sourceSha256,
+    })).sort((a, b) => a.backend.localeCompare(b.backend)),
+    mutations: (calibration.mutations ?? []).map(entry => ({
+      backend: entry.backend, referenceId: entry.referenceId,
+      executionSha256: entry.executionSha256,
+    })).sort((a, b) => a.backend.localeCompare(b.backend)),
+    nullControl: calibration.nullControl,
+    controls: (calibration.controls ?? []).map(control => ({ ...control,
+      mutationTargets: [...control.mutationTargets].sort(),
+    })).sort((a, b) => a.stableKey.localeCompare(b.stableKey)),
+    qualification: {
+      exactCombinationRequired: calibration.qualification?.exactCombinationRequired,
+      referenceRepetitions: calibration.qualification?.referenceRepetitions,
+      mutationRepetitions: calibration.qualification?.mutationRepetitions,
+      stacks: (calibration.qualification?.stacks ?? []).map(stack => ({
+        id: stack.id, supported: stack.status !== 'unsupported',
+      })).sort((a, b) => a.id.localeCompare(b.id)),
+    },
+    equivalenceDecisions: calibration.equivalenceDecisions,
+  });
+  return { id: calibration.id, version: calibration.version,
+    sha256: sha256(canonicalDefinitionJson(document)) };
+}
+
 export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchRoot, release } = {}) {
   if (!release) throw new Error('calibration compilation requires the resolved recipe release');
   const root = realpathSync(resolve(trackRoot));
@@ -345,7 +392,8 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
       mutationTargetRefs.set(targetRef, new Set(stableKeys));
       targets.push({ id: mutation.id, stableKeys });
     }
-    return { ...selection, path: ref.relative, status: manifest.status, targets };
+    return { ...selection, path: ref.relative, status: manifest.status,
+      executionSha256: mutationExecutionSha256(manifest), targets };
   });
 
   const zeroPoint = new Set(release.checkCatalog.filter(check => check.points === 0)
@@ -455,7 +503,9 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
         .localeCompare(`${b.fromExecutionSha256}:${b.toExecutionSha256}`)),
     promotion: { ...calibration.promotion, catalogPath: catalogRef.relative },
   });
-  return { ...plan, contentSha256: sha256(canonicalDefinitionJson(plan)) };
+  const qualificationSha256 = calibrationQualificationIdentity(plan).sha256;
+  return { ...plan, qualificationSha256,
+    contentSha256: sha256(canonicalDefinitionJson({ ...plan, qualificationSha256 })) };
 }
 
 export function resolveCalibrationForRelease(release, { trackRoot, stackBenchRoot } = {}) {

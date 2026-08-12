@@ -3,12 +3,20 @@ import test from 'node:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { auditReferenceRun, rescueSupervisedLease, runBounded } from '../reference-live.mjs';
+import { auditReferenceRun, referenceQualificationContext,
+  rescueSupervisedLease, runBounded } from '../reference-live.mjs';
 import { writeArtifact, writeRunJson } from '../artifacts.mjs';
 import { createCheckEvidence } from '../check-evidence.mjs';
 
 const fixture = { backend: 'mongodb', track: 'ecommerce', level: 1,
   imported: { sourceSha256: 'a'.repeat(64) } };
+
+test('reference qualification resolves the exact executable calibration identity', () => {
+  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-mongodb',
+    imported: { sourceSha256: 'd746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a' } });
+  assert.equal(context.identity.id, 'ecommerce.l1-standard-calibration');
+  assert.equal(context.identity.sha256, context.calibration.qualificationSha256);
+});
 
 function writeEvidence(root, { id, points, passed }) {
   mkdirSync(join(root, 'grading'), { recursive: true });

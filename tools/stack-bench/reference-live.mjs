@@ -20,6 +20,9 @@ import { inspectImportedReference, loadReferenceRegistry, validateReferenceRegis
 import { killTree } from './platform.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { recoverSupervisedRun, validateSupervisorState } from './recovery.mjs';
+import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
+import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { loadTrack } from './tracks.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const BENCH = join(ROOT, 'bench.mjs');
@@ -187,6 +190,19 @@ export function auditReferenceRun(output, fixture, { requireMutationControl = fa
     mutations: mutationControl?.summary ?? null };
 }
 
+export function referenceQualificationContext(fixture) {
+  const track = loadTrack(fixture.track);
+  const binding = resolveLegacyRecipeRelease(track, fixture.level);
+  if (!binding) throw new Error(`${fixture.track} L${fixture.level} has no recipe release`);
+  const calibration = resolveCalibrationForRelease(binding.release,
+    { trackRoot: track.dir, stackBenchRoot: ROOT });
+  if (!calibration) throw new Error(`${binding.release.id}@${binding.release.version} has no calibration`);
+  const reference = calibration.references.entries.find(entry => entry.backend === fixture.backend
+    && entry.id === fixture.id && entry.sourceSha256 === fixture.imported.sourceSha256);
+  if (!reference) throw new Error(`${fixture.id} is not selected by calibration ${calibration.id}`);
+  return { binding, calibration, identity: calibrationQualificationIdentity(calibration) };
+}
+
 async function runOnce(fixture, args, id, repetition) {
   const work = mkdtempSync(join(tmpdir(), `stack-bench-reference-live-${fixture.backend}-`));
   const app = join(work, 'app');
@@ -259,12 +275,16 @@ async function main() {
   if (!fixture) throw new Error(`no imported ecommerce L1 fixture for ${args.backend}`);
   const inspection = inspectImportedReference(fixture);
   if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
+  const context = referenceQualificationContext(fixture);
 
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const id = `reference-live-${fixture.backend}-${stamp}-${process.pid}`;
   const artifact = { id, kind: 'reference_qualification', fixture: fixture.id,
     identities: emptyArtifactIdentities({
       fixture: { id: fixture.id, sha256: fixture.imported.sourceSha256, state: fixture.status },
+      recipe: { id: context.binding.release.id, version: context.binding.release.version,
+        sha256: context.binding.release.contentSha256, state: context.binding.release.state },
+      calibration: { ...context.identity, state: context.calibration.state },
       stackAdapter: { id: fixture.backend },
     }),
     fixtureSha256: fixture.imported.sourceSha256, requiredRepetitions: args.repetitions,
