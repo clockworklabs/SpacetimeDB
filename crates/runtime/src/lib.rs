@@ -461,10 +461,10 @@ mod tests {
 
         {
             let _inner = handle.enter();
-            assert!(matches!(crate::current(), Handle::Simulation(_)));
+            assert!(matches!(crate::Handle::current(), Handle::Simulation(_)));
         }
 
-        assert!(matches!(crate::current(), Handle::Simulation(_)));
+        assert!(matches!(crate::Handle::current(), Handle::Simulation(_)));
         drop(outer);
     }
 
