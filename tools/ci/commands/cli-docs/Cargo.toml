@@ -7,5 +7,4 @@ edition.workspace = true
 anyhow.workspace = true
 duct.workspace = true
 clap.workspace = true
-ci-args = { path = "../../args" }
 ci-common = { path = "../../common" }

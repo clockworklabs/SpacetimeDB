@@ -6,7 +6,6 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-ci-args = { path = "../../args" }
 ci-common = { path = "../../common" }
 duct.workspace = true
 regex.workspace = true

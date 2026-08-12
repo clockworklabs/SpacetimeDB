@@ -1,15 +1,11 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
-use ci_args::version_upgrade_check::Args;
 use clap::Parser;
 use duct::cmd;
 
 /// Verifies that the repository version upgrade tool still works.
 #[derive(Parser)]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
+struct Cli {}
 
 fn run_version_upgrade_check() -> Result<()> {
     cmd!(

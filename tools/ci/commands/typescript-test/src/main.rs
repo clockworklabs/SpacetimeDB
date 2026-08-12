@@ -1,16 +1,12 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, Result};
-use ci_args::typescript_test::Args;
 use ci_common::pnpm;
 use clap::Parser;
 use duct::cmd;
 
 /// Runs TypeScript workspace tests and template build checks.
 #[derive(Parser)]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
+struct Cli {}
 
 fn main() -> Result<()> {
     Cli::parse();

@@ -1,8 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
-use ci_args::cli_docs::Args;
 use ci_common::pnpm;
-use clap::Parser;
+use clap::{Args as ClapArgs, Parser};
 use duct::cmd;
 use std::env;
 
@@ -11,6 +10,15 @@ use std::env;
 struct Cli {
     #[command(flatten)]
     args: Args,
+}
+
+#[derive(ClapArgs)]
+struct Args {
+    #[arg(
+        long,
+        long_help = "specify a custom path to the SpacetimeDB repository root (where the main Cargo.toml is located)"
+    )]
+    spacetime_path: Option<String>,
 }
 
 fn main() -> Result<()> {

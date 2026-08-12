@@ -1,15 +1,11 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, Result};
-use ci_args::publish_checks::Args;
 use clap::Parser;
 use duct::cmd;
 
 /// Checks that publishable crates satisfy publish constraints.
 #[derive(Parser)]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
+struct Cli {}
 
 fn main() -> Result<()> {
     Cli::parse();

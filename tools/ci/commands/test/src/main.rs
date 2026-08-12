@@ -1,6 +1,5 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
-use ci_args::test::Args;
 use ci_common::pnpm;
 use clap::Parser;
 use duct::cmd;
@@ -11,10 +10,7 @@ use duct::cmd;
 /// This does not include Unreal tests.
 /// This expects to run in a clean git state.
 #[derive(Parser)]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
+struct Cli {}
 
 fn main() -> Result<()> {
     Cli::parse();

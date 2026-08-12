@@ -1,7 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, Context, Result};
-use ci_args::lint::Args;
 use ci_common::{ensure_repo_root, pnpm};
 use clap::Parser;
 use duct::cmd;
@@ -17,10 +16,7 @@ use std::path::PathBuf;
 /// Runs rustfmt, clippy, csharpier, TypeScript lint, and generates rust docs to ensure there
 /// are no warnings.
 #[derive(Parser)]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
+struct Cli {}
 
 fn package_json_pnpm_version(package_manager: &str) -> Option<&str> {
     package_manager.strip_prefix("pnpm@")

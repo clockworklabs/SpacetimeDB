@@ -1,7 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
-use ci_args::update_flow::Args;
-use clap::Parser;
+use clap::{Args as ClapArgs, Parser};
 use duct::cmd;
 
 #[derive(Parser)]
@@ -12,6 +11,22 @@ use duct::cmd;
 struct Cli {
     #[command(flatten)]
     args: Args,
+}
+
+#[derive(ClapArgs)]
+struct Args {
+    #[arg(
+        long,
+        long_help = "Target triple to build for, by default the current target. Used by github workflows to check the update flow on multiple platforms."
+    )]
+    target: Option<String>,
+
+    #[arg(
+        long,
+        default_value = "false",
+        long_help = "Whether to enable github token authentication feature when building the update binary. By default this is disabled."
+    )]
+    github_token_auth: bool,
 }
 
 fn main() -> Result<()> {

@@ -903,18 +903,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "ci-args"
-version = "0.1.0"
-dependencies = [
- "clap 4.5.50",
-]
-
-[[package]]
 name = "ci-cla-assistant"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "clap 4.5.50",
  "reqwest 0.12.24",
  "serde",
@@ -926,7 +918,6 @@ name = "ci-cli-docs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "ci-common",
  "clap 4.5.50",
  "duct",
@@ -937,7 +928,6 @@ name = "ci-codeowners-check"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "ci-common",
  "clap 4.5.50",
  "duct",
@@ -958,7 +948,6 @@ name = "ci-coordinate-internal-tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "clap 4.5.50",
  "duct",
  "serde",
@@ -970,7 +959,6 @@ name = "ci-docs-build"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "ci-common",
  "clap 4.5.50",
 ]
@@ -980,7 +968,6 @@ name = "ci-global-json-policy"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "ci-common",
  "clap 4.5.50",
  "duct",
@@ -991,7 +978,6 @@ name = "ci-keynote-bench"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "clap 4.5.50",
  "keynote-bench-harness",
  "spacetimedb-guard",
@@ -1002,7 +988,6 @@ name = "ci-lint"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "ci-common",
  "clap 4.5.50",
  "duct",
@@ -1014,7 +999,6 @@ name = "ci-publish-checks"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "clap 4.5.50",
  "duct",
 ]
@@ -1024,7 +1008,6 @@ name = "ci-smoketests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "ci-common",
  "clap 4.5.50",
  "duct",
@@ -1037,7 +1020,6 @@ name = "ci-test"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "ci-common",
  "clap 4.5.50",
  "duct",
@@ -1048,7 +1030,6 @@ name = "ci-typescript-test"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "ci-common",
  "clap 4.5.50",
  "duct",
@@ -1059,7 +1040,6 @@ name = "ci-update-flow"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "clap 4.5.50",
  "duct",
  "tempfile",
@@ -1070,7 +1050,6 @@ name = "ci-version-upgrade-check"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "clap 4.5.50",
  "duct",
 ]
@@ -1080,7 +1059,6 @@ name = "ci-wasm-bindings"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "ci-common",
  "clap 4.5.50",
  "duct",
@@ -1091,7 +1069,6 @@ name = "ci-workflow-watch"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "ci-args",
  "clap 4.5.50",
  "serde",
  "serde_json",

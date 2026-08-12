@@ -1,8 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, ensure, Context, Result};
-use ci_args::coordinate_internal_tests::Args;
-use clap::Parser;
+use clap::{Args as ClapArgs, Parser};
 use duct::{cmd, Expression};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -22,6 +21,18 @@ const PRIVATE_DEFAULT_BRANCH: &str = "master";
 struct Cli {
     #[command(flatten)]
     args: Args,
+}
+
+/// Selects or starts the private workflow for a public Internal Tests run.
+#[derive(ClapArgs)]
+struct Args {
+    /// Immutable public commit to test.
+    #[arg(long)]
+    public_sha: String,
+
+    /// Public pull request number, when coordinating a pull request run.
+    #[arg(long)]
+    public_pr_number: Option<u64>,
 }
 
 #[derive(Debug)]

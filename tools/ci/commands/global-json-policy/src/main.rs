@@ -1,7 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, Result};
-use ci_args::global_json_policy::Args;
 use ci_common::ensure_repo_root;
 use clap::Parser;
 use duct::cmd;
@@ -10,10 +9,7 @@ use std::path::{Path, PathBuf};
 
 /// Verify that any non-root global.json files are symlinks to the root global.json.
 #[derive(Parser)]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
+struct Cli {}
 
 fn git_tracked_files(pathspec: &str) -> Result<Vec<PathBuf>> {
     let output = cmd!("git", "ls-files", pathspec).read()?;

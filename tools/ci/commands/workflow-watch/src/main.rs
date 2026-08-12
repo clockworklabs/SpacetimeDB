@@ -1,6 +1,5 @@
 use anyhow::{bail, Context, Result};
-use ci_args::workflow_watch::Args;
-use clap::Parser;
+use clap::{Args as ClapArgs, Parser};
 use serde::Deserialize;
 use std::process::Command;
 
@@ -9,6 +8,25 @@ use std::process::Command;
 struct Cli {
     #[command(flatten)]
     args: Args,
+}
+
+#[derive(ClapArgs)]
+struct Args {
+    /// Repository containing the workflow run, in owner/repo form.
+    #[arg(long)]
+    repo: String,
+
+    /// GitHub Actions workflow run ID.
+    #[arg(long)]
+    run_id: u64,
+
+    /// Seconds to sleep between polls.
+    #[arg(long, default_value_t = 30)]
+    interval_seconds: u64,
+
+    /// Maximum number of polls before timing out. Polls forever by default.
+    #[arg(long)]
+    max_attempts: Option<u64>,
 }
 
 #[derive(Deserialize)]

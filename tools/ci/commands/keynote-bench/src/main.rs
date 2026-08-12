@@ -1,5 +1,4 @@
 use anyhow::Result;
-use ci_args::keynote_bench::Args;
 use clap::Parser;
 use keynote_bench_harness::KeynoteBenchConfig;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
@@ -10,10 +9,7 @@ use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
 /// keynote SpacetimeDB benchmark for 60 seconds against the TypeScript and Rust modules, and
 /// fails if throughput is below 275K TPS for TypeScript or 300K TPS for Rust.
 #[derive(Parser)]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
+struct Cli {}
 
 fn main() -> Result<()> {
     Cli::parse();

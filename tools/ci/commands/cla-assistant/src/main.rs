@@ -4,8 +4,7 @@ use std::collections::BTreeMap;
 use std::env;
 
 use anyhow::{anyhow, bail, Context, Result};
-use ci_args::cla_assistant::{Args, ClaAssistantCmd, RetryArgs, StatusArgs};
-use clap::Parser;
+use clap::{ArgGroup, Args as ClapArgs, Parser, Subcommand};
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::de::DeserializeOwned;
@@ -18,6 +17,53 @@ const CLA_CONTEXT: &str = "license/cla";
 struct Cli {
     #[command(flatten)]
     args: Args,
+}
+
+#[derive(ClapArgs)]
+struct Args {
+    #[command(subcommand)]
+    cmd: ClaAssistantCmd,
+}
+
+#[derive(Subcommand)]
+enum ClaAssistantCmd {
+    /// Retries CLA Assistant if `license/cla` is the only remaining PR blocker.
+    Retry(RetryArgs),
+
+    /// Returns the `license/cla` status for a pull request or commit SHA.
+    Status(StatusArgs),
+}
+
+#[derive(ClapArgs)]
+struct RetryArgs {
+    /// Pull request number to check.
+    #[arg(long)]
+    pr_number: u64,
+
+    /// Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY.
+    #[arg(long)]
+    repo: Option<String>,
+}
+
+#[derive(ClapArgs)]
+#[command(group(
+    ArgGroup::new("target")
+        .required(true)
+        .multiple(false)
+        .args(["pr", "sha"]),
+))]
+struct StatusArgs {
+    /// Pull request number whose head commit should be checked.
+    #[arg(long)]
+    pr: Option<u64>,
+
+    /// Commit SHA to check.
+    #[arg(long)]
+    sha: Option<String>,
+
+    /// Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY.
+    #[arg(long)]
+    repo: Option<String>,
 }
 
 fn main() -> Result<()> {
