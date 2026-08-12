@@ -14,12 +14,6 @@ const CLA_CONTEXT: &str = "license/cla";
 
 #[derive(Parser)]
 #[command(about = "Interacts with CLA Assistant.")]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
-
-#[derive(ClapArgs)]
 struct Args {
     #[command(subcommand)]
     cmd: ClaAssistantCmd,
@@ -67,7 +61,7 @@ struct StatusArgs {
 }
 
 fn main() -> Result<()> {
-    match Cli::parse().args.cmd {
+    match Args::parse().cmd {
         ClaAssistantCmd::Retry(args) => retry(args),
         ClaAssistantCmd::Status(args) => status(args),
     }

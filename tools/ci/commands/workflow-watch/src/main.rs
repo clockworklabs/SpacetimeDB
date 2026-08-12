@@ -1,16 +1,10 @@
 use anyhow::{bail, Context, Result};
-use clap::{Args as ClapArgs, Parser};
+use clap::Parser;
 use serde::Deserialize;
 use std::process::Command;
 
 #[derive(Parser)]
 #[command(about = "Waits for a GitHub Actions workflow run to complete.")]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
-
-#[derive(ClapArgs)]
 struct Args {
     /// Repository containing the workflow run, in owner/repo form.
     #[arg(long)]
@@ -90,6 +84,6 @@ fn watch_workflow_run(repo: &str, run_id: u64, interval_seconds: u64, max_attemp
 }
 
 fn main() -> Result<()> {
-    let args = Cli::parse().args;
+    let args = Args::parse();
     watch_workflow_run(&args.repo, args.run_id, args.interval_seconds, args.max_attempts)
 }

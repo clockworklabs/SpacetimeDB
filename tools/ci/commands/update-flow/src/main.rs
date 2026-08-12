@@ -1,6 +1,6 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
-use clap::{Args as ClapArgs, Parser};
+use clap::Parser;
 use duct::cmd;
 
 #[derive(Parser)]
@@ -8,12 +8,6 @@ use duct::cmd;
     about = "Tests the update flow",
     long_about = "Tests the update flow\n\nTests the self-update flow by building the spacetimedb-update binary for the specified target, by default the current target, and performing a self-install into a temporary directory."
 )]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
-
-#[derive(ClapArgs)]
 struct Args {
     #[arg(
         long,
@@ -33,7 +27,7 @@ fn main() -> Result<()> {
     let Args {
         target,
         github_token_auth,
-    } = Cli::parse().args;
+    } = Args::parse();
     let mut common_args = vec![];
     if let Some(target) = target.as_ref() {
         common_args.push("--target");

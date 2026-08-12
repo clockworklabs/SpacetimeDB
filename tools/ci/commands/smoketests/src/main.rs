@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, ensure, Context, Result};
 use ci_common::ensure_repo_root;
-use clap::{Args as ClapArgs, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
 use std::ffi::OsStr;
@@ -18,12 +18,6 @@ use tempfile::TempDir;
 /// This command builds the binaries needed by the smoketests, then runs them. This prevents
 /// race conditions when running tests in parallel with nextest, where multiple test processes
 /// might try to build the same binaries simultaneously.
-struct Cli {
-    #[command(flatten)]
-    args: SmoketestsArgs,
-}
-
-#[derive(ClapArgs)]
 struct SmoketestsArgs {
     #[command(subcommand)]
     cmd: Option<SmoketestCmd>,
@@ -63,7 +57,7 @@ enum SmoketestCmd {
 }
 
 fn main() -> Result<()> {
-    let args = Cli::parse().args;
+    let args = SmoketestsArgs::parse();
     match args.cmd {
         Some(SmoketestCmd::Prepare) => {
             build_cli()?;

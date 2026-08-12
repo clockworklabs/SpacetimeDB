@@ -1,18 +1,12 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::Result;
 use ci_common::pnpm;
-use clap::{Args as ClapArgs, Parser};
+use clap::Parser;
 use duct::cmd;
 use std::env;
 
 #[derive(Parser)]
 #[command(about = "Generates CLI documentation and checks for changes")]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
-
-#[derive(ClapArgs)]
 struct Args {
     #[arg(
         long,
@@ -22,7 +16,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let Args { spacetime_path } = Cli::parse().args;
+    let Args { spacetime_path } = Args::parse();
     if let Some(path) = spacetime_path {
         env::set_current_dir(path).ok();
     }

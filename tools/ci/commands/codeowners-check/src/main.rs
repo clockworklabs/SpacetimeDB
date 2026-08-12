@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
 use ci_common::ensure_repo_root;
-use clap::{Args as ClapArgs, Parser};
+use clap::Parser;
 use duct::cmd;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -10,12 +10,6 @@ const REPO: &str = "clockworklabs/SpacetimeDB";
 
 #[derive(Parser)]
 #[command(about = "Checks that sensitive CODEOWNERS-controlled files have the required approvals.")]
-struct Cli {
-    #[command(flatten)]
-    args: Args,
-}
-
-#[derive(ClapArgs)]
 struct Args {
     /// Git ref to compare against, usually origin/<pull request base branch>.
     #[arg(long)]
@@ -27,7 +21,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let args = Cli::parse().args;
+    let args = Args::parse();
 
     ensure_repo_root()?;
 
