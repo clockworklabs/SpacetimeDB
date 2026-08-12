@@ -182,6 +182,8 @@ fn archive_smoketests(archive_file: &Path) -> Result<()> {
     Ok(())
 }
 
+// TODO: Share smoketest setup and cleanup with `run_smoketest` so the archive
+// and local execution paths cannot drift.
 fn run_smoketest_archive(archive_file: &Path, args: Vec<String>) -> Result<()> {
     let workspace_root = env::current_dir()?;
     let archive_file = if archive_file.is_absolute() {
