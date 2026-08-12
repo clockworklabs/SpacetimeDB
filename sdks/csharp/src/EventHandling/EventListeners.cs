@@ -25,7 +25,6 @@ namespace SpacetimeDB.EventHandling
         
         public static void SetFactory(IEventListenersFactory factory)
         {
-            if(CustomFactory != null) throw new InvalidOperationException("EventListenersFactory can only be set once.");
             CustomFactory = factory;
         }
     }
