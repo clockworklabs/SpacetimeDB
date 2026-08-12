@@ -10,6 +10,8 @@ const COMMANDS = Object.freeze({
   'init-deps': [join(ROOT, 'appliance', 'dependency-volume.mjs'), 'init'],
   'verify-deps': [join(ROOT, 'appliance', 'dependency-volume.mjs'), 'verify'],
   'preflight': [join(ROOT, 'preflight.mjs')],
+  'qualify-reference': [join(ROOT, 'reference-live.mjs')],
+  'qualify-null': [join(ROOT, 'null-control.mjs')],
   'campaign': [join(ROOT, 'campaign-cli.mjs')],
   'run': [join(ROOT, 'bench.mjs')],
   'verify-release': [join(ROOT, 'release-manifest.mjs'), 'verify'],
@@ -28,6 +30,8 @@ function help() {
   process.stdout.write('Stack Bench controller\n\n'
     + 'Commands:\n'
     + '  preflight <exact run options>  verify the runner without a model call\n'
+    + '  qualify-reference <scope>      repeat a pristine or mutation reference gate\n'
+    + '  qualify-null <scope>           run the exact null-oracle gate\n'
     + '  campaign validate|show <file>  compile the exact comparison plan without running it\n'
     + '  campaign prepare|run <file> --out <dir>  checkpoint or execute a frozen plan\n'
     + '  campaign reconcile <file> --out <dir>  prove cleanup for interrupted work\n'

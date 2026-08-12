@@ -22,7 +22,7 @@ import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { recoverSupervisedRun, validateSupervisorState } from './recovery.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
-import { loadTrack } from './tracks.mjs';
+import { listTracks, loadTrack } from './tracks.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const BENCH = join(ROOT, 'bench.mjs');
@@ -37,10 +37,13 @@ function qualificationInputs() {
   } });
 }
 
-function parseArgs(argv) {
-  const args = { repetitions: 2, runIndex: 0, spacetimePort: 3310, timeoutMinutes: 60 };
+export function parseReferenceQualificationArgs(argv) {
+  const args = { track: 'ecommerce', level: 1, repetitions: 2,
+    runIndex: 0, spacetimePort: 3310, timeoutMinutes: 60 };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--backend') args.backend = argv[++i];
+    else if (argv[i] === '--track') args.track = argv[++i];
+    else if (argv[i] === '--level') args.level = Number(argv[++i]);
     else if (argv[i] === '--repetitions') args.repetitions = Number(argv[++i]);
     else if (argv[i] === '--run-index') args.runIndex = Number(argv[++i]);
     else if (argv[i] === '--spacetime-port') args.spacetimePort = Number(argv[++i]);
@@ -51,6 +54,11 @@ function parseArgs(argv) {
   }
   if (!STACK_ADAPTER_REGISTRY.ids.includes(args.backend)) {
     throw new Error(`--backend must be one of ${STACK_ADAPTER_REGISTRY.ids.join(', ')}`);
+  }
+  if (!listTracks().includes(args.track)) throw new Error(`--track is unknown: ${args.track}`);
+  const track = loadTrack(args.track);
+  if (!Number.isInteger(args.level) || args.level < 1 || args.level > track.validatedThrough) {
+    throw new Error(`--level must be validated for ${args.track} (1-${track.validatedThrough})`);
   }
   if (!Number.isInteger(args.repetitions) || args.repetitions < 2) {
     throw new Error('--repetitions must be an integer of at least 2');
@@ -266,13 +274,13 @@ async function runOnce(fixture, args, id, repetition) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv);
+  const args = parseReferenceQualificationArgs(process.argv);
   const registry = loadReferenceRegistry();
   const validation = validateReferenceRegistry(registry);
   if (!validation.ok) throw new Error(`reference registry is invalid:\n${validation.issues.join('\n')}`);
   const fixture = registry.fixtures.find(candidate => candidate.backend === args.backend
-    && candidate.track === 'ecommerce' && candidate.level === 1 && candidate.status !== 'blocked');
-  if (!fixture) throw new Error(`no imported ecommerce L1 fixture for ${args.backend}`);
+    && candidate.track === args.track && candidate.level === args.level && candidate.status !== 'blocked');
+  if (!fixture) throw new Error(`no imported ${args.track} L${args.level} fixture for ${args.backend}`);
   const inspection = inspectImportedReference(fixture);
   if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
   const context = referenceQualificationContext(fixture);

@@ -3,13 +3,22 @@ import test from 'node:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { auditReferenceRun, referenceQualificationContext,
+import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
   rescueSupervisedLease, runBounded } from '../reference-live.mjs';
 import { writeArtifact, writeRunJson } from '../artifacts.mjs';
 import { createCheckEvidence } from '../check-evidence.mjs';
 
 const fixture = { backend: 'mongodb', track: 'ecommerce', level: 1,
   imported: { sourceSha256: 'a'.repeat(64) } };
+
+test('reference qualification requires an explicit valid stack scope', () => {
+  const args = parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
+    '--track', 'ecommerce', '--level', '2']);
+  assert.equal(args.track, 'ecommerce');
+  assert.equal(args.level, 2);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--track', 'ecommerce', '--level', '3']), /validated/);
+});
 
 test('reference qualification resolves the exact executable calibration identity', () => {
   const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-mongodb',

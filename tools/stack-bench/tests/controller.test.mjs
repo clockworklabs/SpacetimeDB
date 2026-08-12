@@ -20,5 +20,10 @@ test('controller exposes a small explicit operator command surface', () => {
     '--out', '/results/campaign-001']);
   assert.deepEqual(campaignRun.args.slice(1), ['run', '/plans/campaign.json',
     '--out', '/results/campaign-001']);
+  const reference = resolveControllerCommand(['qualify-reference', '--backend', 'postgres',
+    '--track', 'ecommerce', '--level', '1']);
+  assert.match(reference.args[0], /reference-live\.mjs$/);
+  const nullControl = resolveControllerCommand(['qualify-null', '--track', 'ecommerce', '--level', '1']);
+  assert.match(nullControl.args[0], /null-control\.mjs$/);
   assert.throws(() => resolveControllerCommand(['shell']), /unknown controller command/);
 });

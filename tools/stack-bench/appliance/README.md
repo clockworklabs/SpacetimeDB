@@ -135,6 +135,24 @@ fixture, calibration, runtime-image, release, and pricing identities, applies
 the declared dispersion, and does not impute missing metrics. Deleting only the `report` directory and
 running the command again produces the same report identity and bytes.
 
+Qualification is also an explicit appliance operation. Select one validated
+track/level and backend; reference and mutation evidence are separate retained
+artifacts, while the null gate is stack-independent:
+
+```sh
+controller qualify-reference --backend postgres --track ecommerce --level 1 \
+  --repetitions 2 --out /var/lib/stack-bench/results/qualification/postgres-reference.json
+controller qualify-reference --backend postgres --track ecommerce --level 1 \
+  --repetitions 2 --mutations \
+  --out /var/lib/stack-bench/results/qualification/postgres-mutation.json
+controller qualify-null --track ecommerce --level 1 \
+  --out /var/lib/stack-bench/results/qualification/ecommerce-l1-null.json
+```
+
+Each scoped qualification artifact binds the executable calibration identity.
+Evidence from another recipe, fixture, mutation set, control policy, or declared
+repetition plan cannot be substituted during promotion.
+
 To run one already-decided attempt directly:
 
 ```sh

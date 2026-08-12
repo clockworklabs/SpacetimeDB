@@ -7,22 +7,31 @@ import { createServer } from 'node:http';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readArtifactPayload, writeRunJson } from './artifacts.mjs';
+import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { analyseNullReports } from './null-control-analysis.mjs';
+import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
 import { listTracks, loadTrack, suitesFor } from './tracks.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const GRADE = join(ROOT, 'grader', 'grade.mjs');
 
-function parseArgs(argv) {
-  const args = { tracks: listTracks(), audit: false };
+export function parseNullControlArgs(argv) {
+  const args = { tracks: listTracks(), level: null, audit: false };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--track') args.tracks = argv[++i].split(',').filter(Boolean);
+    else if (argv[i] === '--level') args.level = Number(argv[++i]);
     else if (argv[i] === '--out') args.out = argv[++i];
     else if (argv[i] === '--audit') args.audit = true;
     else if (argv[i] === '--parent-attempt-id') args.parentAttemptId = argv[++i];
     else { console.error(`Unknown argument: ${argv[i]}`); process.exit(2); }
+  }
+  if (args.level !== null && (!Number.isInteger(args.level) || args.level < 1)) {
+    throw new Error('--level must be a positive integer');
+  }
+  if (args.level !== null && args.tracks.length !== 1) {
+    throw new Error('--level requires exactly one --track');
   }
   return args;
 }
@@ -40,10 +49,11 @@ function runGrade(argv, timeoutMs = 300_000) {
   });
 }
 
-function uniqueValidatedSuites(track) {
+function uniqueValidatedSuites(track, selectedLevel = null) {
   const seen = new Set();
   const suites = [];
   for (let level = 1; level <= track.validatedThrough; level++) {
+    if (selectedLevel !== null && level !== selectedLevel) continue;
     for (const suite of suitesFor(track, level)) {
       if (seen.has(suite.spec)) continue;
       seen.add(suite.spec);
@@ -62,7 +72,7 @@ async function listen(server) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv);
+  const args = parseNullControlArgs(process.argv);
   const nullAttemptId = `null-control-${new Date().toISOString().replace(/[:.]/g, '-')}`;
   const work = mkdtempSync(join(tmpdir(), 'stack-bench-null-'));
   const app = join(work, 'app');
@@ -84,12 +94,23 @@ async function main() {
 
   const started = Date.now();
   const suiteReports = [];
+  let qualification = null;
   try {
     const port = await listen(server);
     const url = `http://127.0.0.1:${port}`;
     for (const trackName of args.tracks) {
       const track = loadTrack(trackName);
-      for (const suite of uniqueValidatedSuites(track)) {
+      if (args.level !== null && args.level > track.validatedThrough) {
+        throw new Error(`L${args.level} is not validated for ${trackName}`);
+      }
+      if (args.level !== null) {
+        const binding = resolveLegacyRecipeRelease(track, args.level);
+        const calibration = resolveCalibrationForRelease(binding?.release ?? null,
+          { trackRoot: track.dir, stackBenchRoot: ROOT });
+        if (!calibration) throw new Error(`${trackName} L${args.level} has no calibration`);
+        qualification = { binding, calibration, identity: calibrationQualificationIdentity(calibration) };
+      }
+      for (const suite of uniqueValidatedSuites(track, args.level)) {
         const reportPath = join(reportsDir, `${trackName}-l${suite.level}-${suite.id.replaceAll('@', '-')}.json`);
         process.stdout.write(`${trackName} L${suite.level} ${suite.id} (${basename(suite.spec)}) ... `);
         await runGrade(['--url', url, '--level', String(suite.level), '--spec', suite.spec,
@@ -109,6 +130,11 @@ async function main() {
       startedAt: new Date(started).toISOString(),
       completedAt: new Date().toISOString(),
       parentAttemptId: args.parentAttemptId ?? null,
+      identities: qualification ? {
+        recipe: { id: qualification.binding.release.id, version: qualification.binding.release.version,
+          sha256: qualification.binding.release.contentSha256, state: qualification.binding.release.state },
+        calibration: { ...qualification.identity, state: qualification.calibration.state },
+      } : undefined,
       durationMs: Date.now() - started,
       tracks: args.tracks,
       ...analysis,
@@ -131,7 +157,9 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(error.stack ?? error.message);
-  process.exitCode = 2;
-});
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  main().catch(error => {
+    console.error(error.stack ?? error.message);
+    process.exitCode = 2;
+  });
+}
