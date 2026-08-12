@@ -231,13 +231,13 @@ jobs:
           }
           cargo ci smoketests -- --test-threads=1          
 
-      - name: Upload Cargo timing reports
+      - name: Upload timing reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cargo-timings-smoketests-${{ matrix.name }}
-          path: ${{ github.workspace }}/target/cargo-timings/
-          retention-days: 30
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          retention-days: 14
 
   # this is a no-op version of the above check with a trivially-passing body.
   # we can't just let the check be entirely skipped because each matrix target is a required check,
@@ -358,6 +358,14 @@ jobs:
           source ~/emsdk/emsdk_env.sh
           cargo ci test
 
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-test
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          retention-days: 14
+
   index_scan_bench:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
@@ -445,13 +453,13 @@ jobs:
       - name: Run ci lint
         run: cargo ci lint
 
-      - name: Upload public lint Cargo timing reports
+      - name: Upload timing reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cargo-timings-public-lints
-          path: ${{ github.workspace }}/target/cargo-timings/
-          retention-days: 30
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          retention-days: 14
 
   codeowners_check:
     if: ${{ github.event_name == 'pull_request' }}
@@ -486,6 +494,14 @@ jobs:
           cargo ci other-workflows codeowners-check \
             --base-ref "origin/${{ github.event.pull_request.base.ref }}" \
             --pr-number "${{ github.event.pull_request.number }}"
+
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-codeowners-check
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          retention-days: 14
 
   wasm_bindings:
     needs: [merge_queue_noop]
@@ -522,6 +538,14 @@ jobs:
       - name: Run bindgen tests
         run: cargo ci wasm-bindings
 
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-wasm-bindings
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          retention-days: 14
+
   publish_checks:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
@@ -537,6 +561,14 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - name: Run checks
         run: cargo ci publish-checks
+
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-publish-checks
+          path: ${{ github.workspace }}/target/cargo-timings/
+          retention-days: 14
 
   update:
     needs: [merge_queue_noop]
@@ -568,6 +600,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo ci update-flow --target=${{ matrix.target }} --github-token-auth
+
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-update-flow-${{ matrix.target }}
+          path: ${{ github.workspace }}/target/cargo-timings/
+          retention-days: 14
 
   # this is a no-op version of the above check with a trivially-passing body.
   # we can't just let the check be entirely skipped because each matrix target is a required check,
@@ -747,6 +787,14 @@ jobs:
       - name: Check for docs change
         run: |
           cargo ci cli-docs
+
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-cli-docs
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          retention-days: 14
 
   unity-testsuite:
     needs: [merge_queue_noop, lints]
@@ -1220,6 +1268,14 @@ jobs:
       - name: Check global.json policy
         run: cargo ci global-json-policy
 
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-global-json-policy
+          path: ${{ github.workspace }}/target/cargo-timings/
+          retention-days: 14
+
   smoketests_mod_rs_complete:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
@@ -1279,6 +1335,14 @@ jobs:
         run: |
           cargo ci smoketests check-mod-list
 
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-smoketests-mod-rs-complete
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          retention-days: 14
+
   docs-build:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
@@ -1319,6 +1383,14 @@ jobs:
 
       - name: Docusaurus build
         run: cargo ci docs
+
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-docs-build
+          path: ${{ github.workspace }}/target/cargo-timings/
+          retention-days: 14
 
   typescript-test:
     needs: [merge_queue_noop]
@@ -1425,6 +1497,14 @@ jobs:
 
       - name: Run TypeScript tests
         run: cargo ci typescript-test
+
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-typescript-test
+          path: ${{ github.workspace }}/target/cargo-timings/
+          retention-days: 14
 
       # - name: Run quickstart-chat tests
       #   working-directory: examples/quickstart-chat

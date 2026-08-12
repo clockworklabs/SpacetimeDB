@@ -108,7 +108,7 @@ fn is_skipped(command: &Command, skips: &[String]) -> bool {
 }
 
 fn run_package(package: &str, args: &[String]) -> Result<()> {
-    let mut cargo_args = vec!["run", "--package", package, "--"];
+    let mut cargo_args = vec!["run", "--timings", "--package", package, "--"];
     cargo_args.extend(args.iter().map(String::as_str));
     cmd("cargo", cargo_args).run()?;
     Ok(())
