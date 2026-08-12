@@ -81,6 +81,8 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
     steps: &upload-build-artifact-steps
       - &find-git-ref
         name: Find Git ref
@@ -107,35 +109,67 @@ jobs:
         name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - &cache-rust-dependencies
-        name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          cache-on-failure: false
-          cache-all-crates: true
-          cache-workspace-crates: true
-          prefix-key: v1
+      - &verify-openssl-assembler
+        name: Verify OpenSSL assembler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: nasm -v
 
-      # Some runner caches contain V8 metadata without the corresponding static library.
-      - name: Check v8 outputs
+      # v1 is a manual schema for invalidating this cache if its layout changes.
+      # The v8 version is fixed and needs to be manually kept in sync with Cargo.lock.
+      # It should hardly ever be updated, so prefer this over more auto-derivation machinery.
+      # The target triple identifies OS and ABI.
+      # CI always uses release with default features, so no other inputs are needed.
+      - &cache-rusty-v8
+        name: Cache rusty_v8
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
+          key: rusty-v8-v1-145.0.0-${{ env.TARGET_TRIPLE }}
+
+      # v1 is a manual schema for invalidating this cache if its layout changes.
+      # The openssl-src version in fixed and needs to be manually kept in sync with Cargo.lock.
+      # It should hardly ever be updated, so prefer this over more auto-derivation machinery.
+      # The Windows jobs force NASM; all other OpenSSL options are fixed by openssl-src/CI,
+      # so these inputs fully identify the native installation.
+      - &cache-openssl
+        name: Cache OpenSSL
+        id: cache-openssl
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ci-cache/openssl
+          key: openssl-v1-300.5.3+3.5.4-${{ env.TARGET_TRIPLE }}${{ env.OPENSSL_CACHE_SUFFIX }}
+
+      - &configure-cached-openssl
+        name: Configure cached OpenSSL
+        if: steps.cache-openssl.outputs.cache-hit == 'true'
         shell: bash
         run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --timings --release -p v8
-          fi
+          # Reuse the cached vendored output as a prebuilt OpenSSL installation.
+          echo "OPENSSL_NO_VENDOR=1" >>"$GITHUB_ENV"
+          echo "OPENSSL_DIR=${{ github.workspace }}/.ci-cache/openssl" >>"$GITHUB_ENV"
 
-      - name: Build smoketest binaries
+      - name: Build CLI and standalone
         shell: bash
         run: |
           cargo build --timings --release \
             -p spacetimedb-cli \
             -p spacetimedb-standalone \
             --features spacetimedb-standalone/allow_loopback_http_for_tests
+
+      - &prepare-openssl-cache
+        name: Prepare OpenSSL cache
+        if: steps.cache-openssl.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          openssl_installs=(target/release/build/openssl-sys-*/out/openssl-build/install)
+          if (( ${#openssl_installs[@]} != 1 )); then
+            echo "Expected one vendored OpenSSL installation, found ${#openssl_installs[@]}."
+            exit 1
+          fi
+          mkdir -p .ci-cache/openssl
+          cp -R "${openssl_installs[0]}/." .ci-cache/openssl/
 
       - name: Package build artifacts
         shell: bash
@@ -174,6 +208,9 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: windows
       EXE_SUFFIX: .exe
+      TARGET_TRIPLE: x86_64-pc-windows-msvc
+      OPENSSL_CACHE_SUFFIX: -nasm
+      OPENSSL_RUST_USE_NASM: "1"
     steps: *upload-build-artifact-steps
 
   smoketest_build_linux:
@@ -186,6 +223,8 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
     steps: &smoketest-build-steps
       - *find-git-ref
 
@@ -194,7 +233,10 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
-      - *cache-rust-dependencies
+      - *verify-openssl-assembler
+      - *cache-rusty-v8
+      - *cache-openssl
+      - *configure-cached-openssl
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
@@ -214,6 +256,8 @@ jobs:
           tar -czf smoketest-support.tar.gz \
             "target/debug/ci${EXE_SUFFIX}" \
             "${precompiled_modules[@]}"
+
+      - *prepare-openssl-cache
 
       - name: Upload Cargo timing reports
         if: always()
@@ -246,6 +290,9 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: windows
       EXE_SUFFIX: .exe
+      TARGET_TRIPLE: x86_64-pc-windows-msvc
+      OPENSSL_CACHE_SUFFIX: -nasm
+      OPENSSL_RUST_USE_NASM: "1"
     steps: *smoketest-build-steps
 
   smoketest_partitions_linux:
