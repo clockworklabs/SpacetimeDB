@@ -74,6 +74,7 @@ function parseArgs(argv) {
       // under test in the cost work; passed straight through to agent.mjs.
       case '--skills': a.skills = argv[++i]; break;
       case '--api-key': a.apiKey = argv[++i]; break;
+      case '--api-key-file': a.apiKeyFile = resolve(argv[++i]); break;
       case '--mutations': a.mutations = resolve(argv[++i]); break;
       // Start from an existing built app (a preserved L1 source) and UPGRADE it,
       // instead of rebuilding the lower level. The correct L1 that scored 51/51
@@ -87,6 +88,16 @@ function parseArgs(argv) {
   if (!a.backend) {
     console.error('Usage: node bench.mjs --backend <b> --levels 1-3 [--fix-rounds 3] [--run-index N]');
     process.exit(2);
+  }
+  const configuredKeyFile = a.apiKeyFile
+    ?? (process.env.STACK_BENCH_API_KEY_FILE ? resolve(process.env.STACK_BENCH_API_KEY_FILE) : null)
+    ?? (process.env.ANTHROPIC_API_KEY_FILE ? resolve(process.env.ANTHROPIC_API_KEY_FILE) : null);
+  if (a.apiKey && configuredKeyFile) throw new Error('use only one of --api-key and --api-key-file');
+  if (configuredKeyFile) {
+    const value = readFileSync(configuredKeyFile, 'utf8').trim();
+    if (!value) throw new Error(`API key file is empty: ${configuredKeyFile}`);
+    a.apiKey = value;
+    a.apiKeyFile = configuredKeyFile;
   }
   const [from, to] = a.levels.split('-').map(Number);
   a.levelList = Array.from({ length: (to ?? from) - from + 1 }, (_, i) => from + i);
@@ -297,6 +308,19 @@ function runMutationControl(args, appDir, url, track) {
     results: artifact.results ?? [] };
 }
 
+function validateMutationInput(args) {
+  if (!args.mutations) return;
+  if (!args.app) throw new Error('--mutations requires an explicit pristine --app');
+  const manifest = JSON.parse(readFileSync(args.mutations, 'utf8'));
+  if (!/^[a-f0-9]{64}$/.test(manifest.fixtureSha256 ?? '')) {
+    throw new Error('mutation manifest has no valid fixtureSha256');
+  }
+  const fixture = hashDirectory(args.app);
+  if (fixture.sha256 !== manifest.fixtureSha256) {
+    throw new Error(`mutation manifest targets fixture ${manifest.fixtureSha256}, not ${fixture.sha256}`);
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   const stackAdapter = STACK_ADAPTER_REGISTRY.get(args.backend);
@@ -322,6 +346,10 @@ async function main() {
     }
     if (binding) resolveRecipeSelection(binding.release, args);
   }
+  // Caller-owned mutation inputs are pure request data. Reject them before
+  // checking credentials, Docker, ports, or any other ambient runner state so
+  // an invalid experiment can never be masked by an unrelated preflight error.
+  validateMutationInput(args);
   assertNoPortCollisions();
   // The deterministic adapter/stack is the model-free unit loop. Real runs
   // prove the exact requested scope, engine, image, credentials, storage and
@@ -331,7 +359,7 @@ async function main() {
     levelList: args.levelList, runIndex: args.runIndex, agentAdapter: args.agentAdapter,
     packIds: args.packIds, checkKeys: args.checkKeys, smoke: true,
     image: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
-    resultsDir: resolve(args.out ?? join(ROOT, 'results')),
+    resultsDir: resolve(args.out ?? process.env.STACK_BENCH_RESULTS_DIR ?? join(ROOT, 'results')),
   }, { env: args.apiKey && agentAdapter.apiKeyEnvironmentVariable
     ? { ...process.env, [agentAdapter.apiKeyEnvironmentVariable]: '<provided-by-argument>' }
     : process.env });
@@ -380,7 +408,7 @@ async function main() {
   const artifactLabel = `${runDir}-${runId}`;
   // Default results never reuse a directory. The stable backend/run name is a
   // grouping directory only; every artifact beneath it belongs to one run id.
-  args.out ??= join(ROOT, 'results', runDir, runId);
+  args.out ??= join(process.env.STACK_BENCH_RESULTS_DIR ?? join(ROOT, 'results'), runDir, runId);
   mkdirSync(args.out, { recursive: true });
   if (existsSync(join(args.out, 'run.json'))) {
     throw new Error(`refusing to reuse result directory containing run.json: ${args.out}`);
@@ -400,17 +428,6 @@ async function main() {
   // teardown handlers existed, leaving a dead-owner lock and private lease.
   const ownWorkDir = !args.app;
   const appDir = args.app ?? join(workDirFor(track, args.backend, args.runIndex, runId), 'app');
-  if (args.mutations) {
-    if (!args.app) throw new Error('--mutations requires an explicit pristine --app');
-    const manifest = JSON.parse(readFileSync(args.mutations, 'utf8'));
-    if (!/^[a-f0-9]{64}$/.test(manifest.fixtureSha256 ?? '')) {
-      throw new Error('mutation manifest has no valid fixtureSha256');
-    }
-    const fixture = hashDirectory(appDir);
-    if (fixture.sha256 !== manifest.fixtureSha256) {
-      throw new Error(`mutation manifest targets fixture ${manifest.fixtureSha256}, not ${fixture.sha256}`);
-    }
-  }
 
   // Every destructive or lifecycle operation is tied to this record. A boolean
   // "owned" flag could say yes without identifying what was owned, and after a

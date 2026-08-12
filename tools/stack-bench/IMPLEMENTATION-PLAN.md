@@ -526,8 +526,29 @@ Compose secrets. Release-manifest schema v1 now requires digest-only
 controller/build/PostgreSQL/MongoDB images, one SBOM and signature per image,
 checksummed operator/dependency/Compose/secrets/support files, HTTPS-only
 declared destinations, and safe secret targets. Bundle verification detects
-missing, changed, non-regular, or escaping files. No controller image or
-distributable Compose bundle has been produced yet. The current verifier labels
+missing, changed, non-regular, or escaping files.
+
+The runtime packaging slice is implemented. The digest-pinned controller base
+contains Playwright, Docker CLI/Compose, and the harness; a one-shot initializer
+copies 287 exact SDK/CLI/standalone files to a marked named volume and refuses
+unmarked, changed, or wrong-release content. Stack build plans accept explicit
+bind or named-volume mounts and expose only stack-declared dependencies to the
+coding container. The dedicated-runner Compose file uses Linux/amd64, host
+networking, the local Docker socket, `/var/lib/stack-bench`, a Compose secret,
+read-only controller filesystem, dropped capabilities, and digest-pinned
+database services. `appliance/README.md` documents the concrete build,
+preflight, run, result-retention, and risk boundaries.
+
+The controller image builds successfully, launches Chromium, reaches Docker
+29.6.2 through the mounted socket, initializes and re-verifies the dependency
+volume idempotently, and passes **203/203 tests inside Linux**, including two
+real Playwright grades. That Linux run exposed and fixed checkout-byte reference
+hash drift, a Windows-only test path, namespace-blind port checking, and
+mutation validation that happened after ambient preflight.
+
+This is still not a distributable release. Image publication, real SBOM and
+signature generation/verification, release bundle assembly, and two clean
+dedicated-runner reproductions remain. The current verifier labels
 its result `candidate-file-integrity` and explicitly refuses a `qualified`
 manifest until real cryptographic signature verification is implemented.
 
@@ -627,7 +648,8 @@ them. Live qualification does not run concurrently with executable harness edits
 14. [x] SB-303 versioned agent adapter contract and deterministic fake/fault proof.
 15. [x] SB-304 shared classification and rendering cleanup.
 16. [x] SB-401 exact-scope preflight and mandatory no-model paid-run admission.
-17. [ ] SB-402 distributable OCI/Compose release.
+17. [ ] SB-402 distributable OCI/Compose release (runtime packaging proven;
+    signed bundle and clean-runner reproduction remain).
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.

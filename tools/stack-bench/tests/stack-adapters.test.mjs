@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
 import { createStackAdapterRegistry, executeStackCapability,
@@ -27,13 +28,24 @@ test('built-in and deterministic test stack adapters preserve the proven port gr
 });
 
 test('build-container plans expose only artifacts owned by the selected stack', () => {
-  const appDir = 'C:\\bench\\run\\app';
-  const repo = 'C:\\repo';
+  const appDir = resolve('bench', 'run', 'app');
+  const repo = resolve('repo');
   const spacetime = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
     'build-container', 'plan', { repo, appDir });
   assert.equal(spacetime.mounts.some(mount => mount.target === '/deps/spacetimedb-cli'), true);
   assert.equal(spacetime.mounts.some(mount => mount.target === '/root/.config/spacetime'), true);
   assert.equal(spacetime.readyFile, '/deps/.ready');
+  const appliance = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
+    'build-container', 'plan', {
+      repo, appDir, env: { STACK_BENCH_RELEASE_DEPS_VOLUME: 'stack-bench-release-deps' },
+    });
+  assert.deepEqual(appliance.requiredPaths, []);
+  assert.deepEqual(appliance.mounts, [
+    { kind: 'bind', source: resolve(appDir, '..', '.spacetime-cli-config'),
+      target: '/root/.config/spacetime', readOnly: false },
+    { kind: 'volume', source: 'stack-bench-release-deps', target: '/release-deps', readOnly: true },
+  ]);
+  assert.match(appliance.init, /test -x \/release-deps\/spacetimedb-cli/);
   for (const id of ['postgres', 'mongodb', 'stub']) {
     const plan = executeStackCapability(STACK_ADAPTER_REGISTRY.get(id),
       'build-container', 'plan', { repo, appDir });

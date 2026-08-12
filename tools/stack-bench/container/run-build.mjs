@@ -29,6 +29,7 @@ import { resolveContainerImage } from '../container-image.mjs';
 import { executeStackCapability } from '../stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../product-config.mjs';
+import { dockerMountArguments } from '../container-mount.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d = null) => { const i = argv.indexOf(k); return i === -1 ? d : argv[i + 1]; };
@@ -58,7 +59,9 @@ const effort = opt('--effort', 'high');
 const model = opt('--model', 'claude-sonnet-5');
 const ports = (opt('--ports', '') || '').split(',').filter(Boolean);
 
-const containerPlan = executeStackCapability(adapter, 'build-container', 'plan', { repo: REPO, appDir });
+const containerPlan = executeStackCapability(adapter, 'build-container', 'plan', {
+  repo: REPO, appDir, env: process.env,
+});
 if (!containerPlan || !Array.isArray(containerPlan.requiredPaths)
   || !Array.isArray(containerPlan.ensureDirectories) || !Array.isArray(containerPlan.mounts)
   || typeof containerPlan.init !== 'string' || !containerPlan.init) {
@@ -185,11 +188,11 @@ if (!existing) {
     }
   }
   for (const mount of containerPlan.mounts) {
-    if (!mount || typeof mount.source !== 'string' || typeof mount.target !== 'string') {
-      console.error(`run-build.mjs: ${backend} adapter returned an invalid container mount`);
+    try { create.push(...dockerMountArguments(mount)); }
+    catch (error) {
+      console.error(`run-build.mjs: ${backend} adapter returned an invalid container mount: ${error.message}`);
       process.exit(2);
     }
-    create.push('-v', `${mount.source}:${mount.target}${mount.readOnly ? ':ro' : ''}`);
   }
 
   // Dev servers start inside the container and the grader runs on the host, so

@@ -28,6 +28,7 @@ import { hashDirectory, sessionProvenance, sha256 } from './provenance.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
+import { dockerMountArguments } from './container-mount.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(ROOT, '..', '..');
@@ -113,7 +114,8 @@ const C_BIN = '/deps/spacetimedb-cli';
 // The Linux build of the repository's CLI, which is what a container mounts at
 // C_BIN. Built by container/build-linux-cli.sh; target/release holds the
 // Windows binary and the two must not be confused for each other.
-const LINUX_CLI = join(ROOT, 'container', 'bin', 'spacetimedb-cli');
+const LINUX_CLI = process.env.STACK_BENCH_LINUX_CLI
+  ?? join(ROOT, 'container', 'bin', 'spacetimedb-cli');
 
 // What the session ACTUALLY thought, read back from its own transcript.
 //
@@ -163,9 +165,14 @@ function thinkingVolume(appDir, sessionId) {
 // retracted finding here before.
 function linuxSpacetimeVersion(image) {
   try {
+    const releaseVolume = process.env.STACK_BENCH_RELEASE_DEPS_VOLUME?.trim() || null;
+    const mountArgs = releaseVolume
+      ? dockerMountArguments({ kind: 'volume', source: releaseVolume,
+        target: '/release-deps', readOnly: true })
+      : ['-v', `${LINUX_CLI}:/deps/spacetimedb-cli:ro`];
+    const entrypoint = releaseVolume ? '/release-deps/spacetimedb-cli' : '/deps/spacetimedb-cli';
     const out = execFileSync('docker',
-      ['run', '--rm', '-v', `${LINUX_CLI}:/deps/spacetimedb-cli:ro`,
-        '--entrypoint', '/deps/spacetimedb-cli', image, '--version'],
+      ['run', '--rm', ...mountArgs, '--entrypoint', entrypoint, image, '--version'],
       { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, MSYS_NO_PATHCONV: '1' },
         timeout: CONTROL_COMMAND_TIMEOUT_MS });
     const commit = out.match(/Commit:\s*([0-9a-f]+)/i)?.[1] ?? null;

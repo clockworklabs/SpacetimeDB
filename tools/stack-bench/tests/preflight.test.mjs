@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { parsePreflightArgs, runPreflight } from '../preflight.mjs';
+import { parsePreflightArgs, probeLoopbackPort, runPreflight } from '../preflight.mjs';
 import { createArtifact, validateArtifact } from '../artifacts.mjs';
 
 const IMAGE_ID = `sha256:${'a'.repeat(64)}`;
@@ -39,7 +39,7 @@ test('preflight validates exact scope and a model-free container/result-volume s
     };
     const report = runPreflight(request(root, ['--smoke']), {
       run, now: Date.parse('2026-08-12T12:00:00.100Z'), env: {}, home: root,
-      pidsOnPort: () => [],
+      pidsOnPort: () => [], probePort: () => ({ free: true }),
     });
     assert.equal(report.ok, true, JSON.stringify(report.checks, null, 2));
     assert.equal(report.request.smoke, true);
@@ -58,7 +58,7 @@ test('preflight fails closed on inherited ownership, unavailable Docker, and occ
       run: () => { throw new Error('daemon unavailable'); },
       now: Date.parse('2026-08-12T12:00:00Z'),
       env: { STACK_BENCH_LEASE_TOKEN: 'must-not-be-reported' }, home: root,
-      pidsOnPort: () => ['4242'],
+      pidsOnPort: () => ['4242'], probePort: () => ({ free: false }),
     });
     assert.equal(report.ok, false);
     assert.equal(report.checks.find(check => check.id === 'ambient.stack_bench_lease_token').status, 'fail');
@@ -85,8 +85,20 @@ test('unknown requested scope becomes a failed report instead of terminating the
         : args[0] === 'compose' ? '2.40.0'
           : args[3] === '{{.Os}}/{{.Architecture}}' ? 'linux/amd64' : IMAGE_ID,
       now: Date.parse('2026-08-12T12:00:00Z'), env: {}, home: root, pidsOnPort: () => [],
+      probePort: () => ({ free: true }),
     });
     assert.equal(report.ok, false);
     assert.equal(report.checks.find(check => check.id === 'request.scope').status, 'fail');
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('loopback port proof detects a listener without relying on process visibility', async t => {
+  const { createServer } = await import('node:net');
+  const server = createServer();
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolveListen);
+  });
+  t.after(() => server.close());
+  assert.deepEqual(probeLoopbackPort(server.address().port), { free: false });
 });

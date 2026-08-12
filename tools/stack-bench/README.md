@@ -206,6 +206,7 @@ The grader never reloads except to probe for that, so "real-time" means real-tim
 | `grader/mutation-test.mjs` | validates the grader by injecting known defects |
 | `linter/lint.mjs` | checks the app exposes the contract's test ids |
 | `docker-compose.yaml` | the Postgres and MongoDB services |
+| `appliance/` | dedicated Linux runner controller image, Compose bundle, and operator guide |
 | `reset-db.sh`, `restart-backend.sh` | environment control used by the suites |
 | `tracks.mjs` | resolves a track: its paths, suites, ports and names |
 | `tracks/<name>/` | one application: prompts, contracts, scenarios, lint walk |

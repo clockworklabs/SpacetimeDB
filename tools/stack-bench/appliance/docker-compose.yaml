@@ -1,0 +1,102 @@
+name: stack-bench-appliance
+
+services:
+  deps-init:
+    image: ${STACK_BENCH_CONTROLLER_IMAGE:?set STACK_BENCH_CONTROLLER_IMAGE to the manifest digest reference}
+    platform: linux/amd64
+    command: ["init-deps"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - type: volume
+        source: release-deps
+        target: /opt/stack-bench-release-deps
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+
+  controller:
+    image: ${STACK_BENCH_CONTROLLER_IMAGE:?set STACK_BENCH_CONTROLLER_IMAGE to the manifest digest reference}
+    platform: linux/amd64
+    init: true
+    network_mode: host
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      deps-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    environment:
+      STACK_BENCH_IMAGE: ${STACK_BENCH_BUILD_IMAGE:?set STACK_BENCH_BUILD_IMAGE to the manifest digest reference}
+      STACK_BENCH_APPLIANCE: "1"
+      STACK_BENCH_COMPOSE_FILE: /opt/stack-bench/appliance/docker-compose.yaml
+      STACK_BENCH_WORK_DIR: /var/lib/stack-bench/work
+      STACK_BENCH_RESULTS_DIR: /var/lib/stack-bench/results
+      STACK_BENCH_RELEASE_DEPS_VOLUME: stack-bench-release-deps
+      STACK_BENCH_LINUX_CLI: /opt/stack-bench-release-deps/spacetimedb-cli
+      STDB_PACKAGE: /opt/stack-bench-release-deps/bindings-typescript
+      SPACETIME_BIN: /opt/stack-bench-release-deps/spacetimedb-cli
+      ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
+      HOME: /var/lib/stack-bench/controller-home
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: bind
+        source: /var/lib/stack-bench
+        target: /var/lib/stack-bench
+      - type: volume
+        source: release-deps
+        target: /opt/stack-bench-release-deps
+        read_only: true
+    secrets:
+      - anthropic_api_key
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+    command: ["--help"]
+
+  postgres:
+    image: postgres:16@sha256:803ea6da631eab4a350da4ba87541e4737197b8c26ec0feb23ff6f9714212d1d
+    platform: linux/amd64
+    container_name: stack-bench-postgres
+    ports: ["6532:5432"]
+    environment:
+      POSTGRES_USER: stackbench
+      POSTGRES_PASSWORD: stackbench
+      POSTGRES_DB: stackbench
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stackbench"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  mongodb:
+    image: mongo:7@sha256:8ecb514b00bdcc0bde67ef4e6c330385377a9dc68e24ee94e28c07c891647348
+    platform: linux/amd64
+    container_name: stack-bench-mongodb
+    ports: ["6537:27017"]
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  release-deps:
+    name: stack-bench-release-deps
+  pgdata:
+    name: stack-bench-appliance-pgdata
+  mongodata:
+    name: stack-bench-appliance-mongodata
+
+secrets:
+  anthropic_api_key:
+    file: ${STACK_BENCH_ANTHROPIC_API_KEY_FILE:?set STACK_BENCH_ANTHROPIC_API_KEY_FILE to a readable secret file}

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   existsSync, mkdirSync, openSync, closeSync, readFileSync, readSync, renameSync, rmSync,
   statfsSync, writeFileSync,
@@ -21,8 +21,9 @@ import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from './track
 import { pidsOnPort } from './platform.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const COMPOSE = join(ROOT, 'docker-compose.yaml');
-const LINUX_CLI = join(ROOT, 'container', 'bin', 'spacetimedb-cli');
+const COMPOSE = process.env.STACK_BENCH_COMPOSE_FILE ?? join(ROOT, 'docker-compose.yaml');
+const LINUX_CLI = process.env.STACK_BENCH_LINUX_CLI
+  ?? join(ROOT, 'container', 'bin', 'spacetimedb-cli');
 const GIB = 1024 ** 3;
 
 function splitList(value) {
@@ -84,6 +85,10 @@ function checkResult(id, status, summary, remediation = null, evidence = null) {
 function credentialReady(adapter, env, home, exists) {
   const environment = adapter.apiKeyEnvironmentVariable;
   if (environment && env[environment]) return { ok: true, source: `environment:${environment}` };
+  const keyFileVariable = environment ? `${environment}_FILE` : null;
+  if (keyFileVariable && env[keyFileVariable] && exists(resolve(env[keyFileVariable]))) {
+    return { ok: true, source: `secret-file:${keyFileVariable}` };
+  }
   const file = adapter.credentialFiles.find(relative => exists(join(home, relative)));
   if (file) return { ok: true, source: `file:${file.replaceAll('\\', '/')}` };
   if (!environment && adapter.credentialFiles.length === 0) return { ok: true, source: 'not-required' };
@@ -103,6 +108,21 @@ function inspectLinuxCli(path = LINUX_CLI) {
     return { ok: [0x3e, 0xb7].includes(machine), arch: machine === 0x3e ? 'x86_64'
       : machine === 0xb7 ? 'aarch64' : `machine-${machine}` };
   } catch { return { ok: false, arch: null }; }
+}
+
+export function probeLoopbackPort(port, { spawn = spawnSync } = {}) {
+  if (!Number.isInteger(Number(port)) || Number(port) < 1 || Number(port) > 65535) {
+    throw new Error(`invalid TCP port ${port}`);
+  }
+  const script = "const net=require('node:net');const s=net.createServer();"
+    + "s.once('error',e=>{console.error(e.code||e.message);process.exit(e.code==='EADDRINUSE'?3:2)});"
+    + "s.listen(Number(process.argv[1]),'127.0.0.1',()=>s.close(()=>process.exit(0)));";
+  const result = spawn(process.execPath, ['-e', script, String(port)], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10_000,
+  });
+  if (result.status === 0) return { free: true };
+  if (result.status === 3 && String(result.stderr).includes('EADDRINUSE')) return { free: false };
+  throw new Error(String(result.stderr || result.error?.message || `probe exited ${result.status}`).trim());
 }
 
 function runSmoke({ command, imageId, resultsDir, destinations, marker }) {
@@ -125,6 +145,7 @@ export function runPreflight(request, dependencies = {}) {
   const home = dependencies.home ?? homedir();
   const exists = dependencies.exists ?? existsSync;
   const inspectPorts = dependencies.pidsOnPort ?? pidsOnPort;
+  const probePort = dependencies.probePort ?? probeLoopbackPort;
   const checks = [];
   const add = (...args) => checks.push(checkResult(...args));
   let track;
@@ -153,9 +174,13 @@ export function runPreflight(request, dependencies = {}) {
   const nodeMajor = Number(process.versions.node.split('.')[0]);
   add('host.node', nodeMajor >= 22 ? 'pass' : 'fail', `Node ${process.versions.node}`,
     nodeMajor >= 22 ? null : 'Install Node 22 or newer.');
-  const supportedHost = ['win32', 'linux'].includes(process.platform) && ['x64', 'arm64'].includes(process.arch);
+  const appliance = env.STACK_BENCH_APPLIANCE === '1';
+  const supportedHost = appliance
+    ? process.platform === 'linux' && process.arch === 'x64'
+    : ['win32', 'linux'].includes(process.platform) && ['x64', 'arm64'].includes(process.arch);
   add('host.architecture', supportedHost ? 'pass' : 'fail', `${process.platform}/${process.arch}`,
-    supportedHost ? null : 'Use a supported x64 or arm64 Windows/Linux host.');
+    supportedHost ? null : appliance ? 'Run the appliance on its supported linux/amd64 dedicated runner.'
+      : 'Use a supported x64 or arm64 Windows/Linux host.');
 
   for (const name of ['STACK_BENCH_LEASE', 'STACK_BENCH_LEASE_TOKEN', 'STACK_BENCH_SUPERVISOR_STATE']) {
     if (env[name]) add(`ambient.${name.toLowerCase()}`, 'fail', `${name} is already set`,
@@ -191,7 +216,9 @@ export function runPreflight(request, dependencies = {}) {
   let imageId = null;
   try {
     dockerInfo = JSON.parse(run('docker', ['info', '--format', '{{json .}}']));
-    const ok = dockerInfo.OSType === 'linux' && ['x86_64', 'aarch64'].includes(dockerInfo.Architecture);
+    const ok = dockerInfo.OSType === 'linux' && (appliance
+      ? dockerInfo.Architecture === 'x86_64'
+      : ['x86_64', 'aarch64'].includes(dockerInfo.Architecture));
     add('docker.engine', ok ? 'pass' : 'fail',
       `Docker ${dockerInfo.ServerVersion ?? 'unknown'} (${dockerInfo.OSType}/${dockerInfo.Architecture})`,
       ok ? null : 'Use a supported x86_64 or aarch64 Linux-container Docker engine.');
@@ -271,10 +298,12 @@ export function runPreflight(request, dependencies = {}) {
       for (const [role, port] of Object.entries(ports)) {
         if (port == null || role === 'db' || role === 'dbPort') continue;
         try {
-          const listeners = inspectPorts(port, { strict: true });
-          add(`port.${backend}.${role}`, listeners.length ? 'fail' : 'pass', listeners.length
-            ? `Port ${port} is already in use by PID(s) ${listeners.join(', ')}` : `Port ${port} is free`,
-          listeners.length ? 'Stop the listener or choose a different --run-index.' : null);
+          const availability = probePort(port);
+          const listeners = availability.free ? [] : inspectPorts(port);
+          add(`port.${backend}.${role}`, availability.free ? 'pass' : 'fail', availability.free
+            ? `Port ${port} is free`
+            : `Port ${port} is already in use${listeners.length ? ` by PID(s) ${listeners.join(', ')}` : ''}`,
+          availability.free ? null : 'Stop the listener or choose a different --run-index.');
         } catch (error) {
           add(`port.${backend}.${role}`, 'fail', `Cannot prove port ${port} is free`,
             'Install netstat on Windows or lsof/ss on Linux so port ownership can be checked.');
@@ -288,11 +317,12 @@ export function runPreflight(request, dependencies = {}) {
       const runtime = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
         'orchestrator', 'config', { root: ROOT, env, helpers: { exists } });
       const port = Number(new URL(runtime.lease.serverUri).port);
-      const listeners = inspectPorts(port, { strict: true });
-      add('port.spacetime.host', listeners.length ? 'fail' : 'pass', listeners.length
-        ? `Dedicated host port ${port} is already in use by PID(s) ${listeners.join(', ')}`
-        : `Dedicated host port ${port} is free`,
-      listeners.length ? 'Stop the listener or choose another loopback STACK_BENCH_STDB_URI port.' : null);
+      const availability = probePort(port);
+      const listeners = availability.free ? [] : inspectPorts(port);
+      add('port.spacetime.host', availability.free ? 'pass' : 'fail', availability.free
+        ? `Dedicated host port ${port} is free`
+        : `Dedicated host port ${port} is already in use${listeners.length ? ` by PID(s) ${listeners.join(', ')}` : ''}`,
+      availability.free ? null : 'Stop the listener or choose another loopback STACK_BENCH_STDB_URI port.');
     } catch (error) {
       add('port.spacetime.host', 'fail', `Cannot validate the dedicated SpacetimeDB host port: ${error.message}`,
         'Use an explicit, free loopback STACK_BENCH_STDB_URI port.');

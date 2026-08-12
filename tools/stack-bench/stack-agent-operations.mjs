@@ -40,19 +40,45 @@ export function emptySetupMetadata() {
   return { spacetime: null, spacetimeBindings: null, database: null };
 }
 
-export function spacetimeBuildContainerPlan({ repo, appDir }) {
+export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
   const bindings = join(repo, 'crates', 'bindings-typescript');
   const cli = join(repo, 'tools', 'stack-bench', 'container', 'bin', 'spacetimedb-cli');
   const standalone = join(repo, 'tools', 'stack-bench', 'container', 'bin', 'spacetimedb-standalone');
   const config = resolve(appDir, '..', '.spacetime-cli-config');
+  const releaseVolume = env.STACK_BENCH_RELEASE_DEPS_VOLUME?.trim() || null;
+  if (releaseVolume) {
+    return {
+      requiredPaths: [],
+      ensureDirectories: [config],
+      mounts: [
+        { kind: 'bind', source: config, target: '/root/.config/spacetime', readOnly: false },
+        { kind: 'volume', source: releaseVolume, target: '/release-deps', readOnly: true },
+      ],
+      init: 'set -eu; '
+        + 'test -d /release-deps/bindings-typescript; '
+        + 'test -x /release-deps/spacetimedb-cli; '
+        + 'test -x /release-deps/spacetimedb-standalone; '
+        + 'mkdir -p /deps/bindings-typescript; '
+        + 'cp -a /release-deps/bindings-typescript/. /deps/bindings-typescript/; '
+        + 'ln -s /release-deps/spacetimedb-cli /deps/spacetimedb-cli; '
+        + 'ln -s /release-deps/spacetimedb-standalone /deps/spacetimedb-standalone; '
+        + 'cd /deps/bindings-typescript; '
+        + 'npm install --omit=dev --ignore-scripts --no-audit --no-fund; '
+        + 'pack_name=$(npm pack --pack-destination /deps --silent); '
+        + 'mv "/deps/$pack_name" /deps/spacetimedb.tgz; '
+        + 'touch /deps/.ready; exec sleep infinity',
+      readyFile: '/deps/.ready',
+      readyDescription: 'SpacetimeDB SDK staging',
+    };
+  }
   return {
     requiredPaths: [bindings, cli, standalone],
     ensureDirectories: [config],
     mounts: [
-      { source: config, target: '/root/.config/spacetime', readOnly: false },
-      { source: bindings, target: '/deps-src/bindings-typescript', readOnly: true },
-      { source: cli, target: '/deps/spacetimedb-cli', readOnly: true },
-      { source: standalone, target: '/deps/spacetimedb-standalone', readOnly: true },
+      { kind: 'bind', source: config, target: '/root/.config/spacetime', readOnly: false },
+      { kind: 'bind', source: bindings, target: '/deps-src/bindings-typescript', readOnly: true },
+      { kind: 'bind', source: cli, target: '/deps/spacetimedb-cli', readOnly: true },
+      { kind: 'bind', source: standalone, target: '/deps/spacetimedb-standalone', readOnly: true },
     ],
     init: 'set -eu; mkdir -p /deps/bindings-typescript; '
       + 'cp -a /deps-src/bindings-typescript/. /deps/bindings-typescript/; '

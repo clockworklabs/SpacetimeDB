@@ -15,7 +15,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/mongodb",
-        "sourceSha256": "42e2323e26d41d91ff9f563cf2af51af2d4cb887abd63c12da145aa0a049a13e"
+        "sourceSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a"
       },
       "archivedEvidence": [
         "archive/pre-v1/results/mongodb-ecom-run0/grading/grading-features.json",
@@ -40,7 +40,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/postgres",
-        "sourceSha256": "cd8a0106e59892da68deb8becbcd670dec80d53657259d1cc6fa76b535e616ee"
+        "sourceSha256": "3c727e41aaa8f9a6b23d109c4d5a3043632342f3dc7e1349f9b130e8a3f99dd9"
       },
       "archivedEvidence": [
         "archive/pre-v1/results/postgres-ecom-l2/grading/grading-contention.json",
@@ -64,7 +64,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/spacetime",
-        "sourceSha256": "b035e5354f1a947d422225f8b9a73a296179258a75c8cac81fd51684bd65c85e"
+        "sourceSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1"
       },
       "archivedEvidence": [
         "archive/pre-v1/results/spacetime-ecom-trial2/grading/grading-features.json",
