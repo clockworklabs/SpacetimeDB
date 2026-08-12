@@ -53,6 +53,16 @@ pub enum Handle {
     Simulation(sim::Handle),
 }
 
+impl fmt::Debug for Handle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Tokio(_) => f.write_str("Handle::Tokio"),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(_) => f.write_str("Handle::Simulation"),
+        }
+    }
+}
+
 pub struct JoinHandle<T> {
     inner: JoinHandleInner<T>,
 }
@@ -133,6 +143,16 @@ impl fmt::Display for JoinError {
 }
 
 impl std::error::Error for JoinError {}
+
+impl JoinError {
+    pub fn is_panic(&self) -> bool {
+        match &self.inner {
+            JoinErrorInner::Tokio(error) => error.is_panic(),
+            #[cfg(feature = "simulation")]
+            JoinErrorInner::Simulation(_) => false,
+        }
+    }
+}
 
 impl<T> JoinHandleInner<T> {
     fn abort_handle(&self) -> AbortHandle {
@@ -238,19 +258,22 @@ impl fmt::Display for RuntimeTimeout {
 
 impl std::error::Error for RuntimeTimeout {}
 
-/// Return the runtime handle active on this OS thread.
-pub fn current() -> Handle {
-    #[cfg(feature = "simulation")]
-    if let Some(handle) = sim_std::try_current_handle() {
-        return handle;
-    }
-
-    Handle::tokio_current()
-}
-
 /// Spawn a task on the current Runtime
 pub fn spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
-    current().spawn(future)
+    Handle::current().spawn(future)
+}
+
+/// Run blocking work on the current runtime.
+///
+/// Tokio runs `f` on its blocking thread pool. The simulation backend runs `f`
+/// as a normal simulated task on the single executor thread, so it preserves
+/// deterministic scheduling but does not provide blocking-pool parallelism.
+pub async fn spawn_blocking<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    Handle::current().spawn_blocking(f).await
 }
 
 /// Spawn a task on the current Tokio runtime, bypassing simulation enter state.
@@ -262,7 +285,7 @@ pub fn tokio_spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + '
 
 /// Sleep on the currently active Runtime
 pub async fn sleep(duration: Duration) {
-    current().sleep(duration).await
+    Handle::current().sleep(duration).await
 }
 
 impl Handle {
@@ -272,6 +295,16 @@ impl Handle {
 
     pub fn tokio_current() -> Self {
         Self::tokio(TokioHandle::current())
+    }
+
+    /// Return the runtime handle active on this OS thread.
+    pub fn current() -> Handle {
+        #[cfg(feature = "simulation")]
+        if let Some(handle) = sim_std::try_current_handle() {
+            return handle;
+        }
+
+        Handle::tokio_current()
     }
 }
 
@@ -304,6 +337,14 @@ impl Handle {
             Self::Simulation(handle) => JoinHandle {
                 inner: JoinHandleInner::Simulation(handle.spawn(future)),
             },
+        }
+    }
+
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        match self {
+            Self::Tokio(handle) => handle.block_on(future),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => handle.block_on(future),
         }
     }
 

@@ -5,10 +5,8 @@ use std::{
 
 use futures::TryFutureExt;
 use log::{debug, error, info, trace, warn};
-use tokio::{
-    io::{AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt},
-    task::spawn_blocking,
-};
+use spacetimedb_runtime::spawn_blocking;
+use tokio::io::{AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt};
 
 use crate::{
     commit, error,
@@ -217,7 +215,6 @@ where
                     move || create_segment(repo, last_written_tx_range, commitlog_options, header)
                 })
                 .await
-                .unwrap()
                 .map(|(segment, index)| (segment.into_async_writer(), index))?;
                 stream.consume(segment::Header::LEN as _);
 
@@ -425,8 +422,7 @@ impl<W: AsyncWriteExt + AsyncFsync + Unpin> CurrentSegment<W> {
                     .ok();
                 index
             })
-            .await
-            .unwrap();
+            .await;
             self.offset_index = Some(index);
         }
 

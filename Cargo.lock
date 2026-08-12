@@ -8028,6 +8028,7 @@ dependencies = [
  "spacetimedb-fs-utils",
  "spacetimedb-paths",
  "spacetimedb-primitives",
+ "spacetimedb-runtime",
  "spacetimedb-sats",
  "tempfile",
  "thiserror 1.0.69",

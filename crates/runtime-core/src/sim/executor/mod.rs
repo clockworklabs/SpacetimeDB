@@ -379,7 +379,6 @@ impl Handle {
         self.executor.spawn(future)
     }
 
-
     /// Return the current virtual time for this runtime.
     pub fn now(&self) -> Duration {
         self.executor.time.now()
@@ -796,7 +795,6 @@ impl Executor {
             .unwrap_or(NodeId::MAIN)
     }
 
-
     fn assert_main_or_node(&self, node: NodeId) {
         let caller = self.current_node();
         assert!(
@@ -1070,7 +1068,6 @@ mod tests {
 
         runtime.block_on(task).expect("parent task should panic first");
     }
-
 
     #[test]
     fn runtime_config_sets_seed() {

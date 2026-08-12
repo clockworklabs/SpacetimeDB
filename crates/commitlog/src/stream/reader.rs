@@ -4,10 +4,8 @@ use async_stream::try_stream;
 use bytes::{Buf as _, Bytes};
 use futures::Stream;
 use log::{trace, warn};
-use tokio::{
-    io::{self, AsyncBufRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _},
-    task::spawn_blocking,
-};
+use spacetimedb_runtime::spawn_blocking;
+use tokio::io::{self, AsyncBufRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _};
 use tokio_util::io::SyncIoBridge;
 
 use crate::{
@@ -107,8 +105,7 @@ fn read_segment(
                 }
                 segment.into_inner()
             })
-            .await
-            .unwrap();
+            .await;
         }
 
         let checksum_len = CHECKSUM_LEN[segment_header.checksum_algorithm as usize];
