@@ -60,30 +60,30 @@ fn response_body(response: &str) -> &str {
         .map_or(response, |(_, body)| body)
 }
 
-fn watch_workflow_run(repo: &str, run_id: u64, interval_seconds: u64, max_attempts: Option<u64>) -> Result<()> {
-    println!("Waiting for workflow result... https://github.com/{repo}/actions/runs/{run_id}");
+fn main() -> Result<()> {
+    let args = Args::parse();
+
+    println!(
+        "Waiting for workflow result... https://github.com/{}/actions/runs/{}",
+        args.repo, args.run_id
+    );
 
     let mut attempts = 0;
     loop {
         attempts += 1;
-        let run = get_workflow_run(repo, run_id)?;
+        let run = get_workflow_run(&args.repo, args.run_id)?;
         if run.status == "completed" {
             let conclusion = run.conclusion.as_deref().unwrap_or("success");
             if conclusion == "success" {
                 return Ok(());
             }
-            bail!("workflow run {run_id} completed with conclusion: {conclusion}");
+            bail!("workflow run {} completed with conclusion: {conclusion}", args.run_id);
         }
 
-        if max_attempts.is_some_and(|max| attempts >= max) {
-            bail!("timed out waiting for workflow run {run_id} to complete")
+        if args.max_attempts.is_some_and(|max| attempts >= max) {
+            bail!("timed out waiting for workflow run {} to complete", args.run_id)
         }
 
-        std::thread::sleep(std::time::Duration::from_secs(interval_seconds));
+        std::thread::sleep(std::time::Duration::from_secs(args.interval_seconds));
     }
-}
-
-fn main() -> Result<()> {
-    let args = Args::parse();
-    watch_workflow_run(&args.repo, args.run_id, args.interval_seconds, args.max_attempts)
 }
