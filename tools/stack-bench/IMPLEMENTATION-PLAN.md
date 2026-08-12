@@ -710,8 +710,8 @@ them. Live qualification does not run concurrently with executable harness edits
 20. [x] SB-502 idempotent scheduler (strict durable state, exclusive execution,
     campaign-wide admission, bounded launch, resume validation, and proven-cleanup
     reconciliation accepted on the host and the exact Linux appliance image).
-21. [ ] SB-503 deterministic report (typed JSON/HTML generation implemented;
-    complete host and Linux acceptance remain).
+21. [x] SB-503 deterministic report (typed JSON/HTML generation accepted on
+    the host and the exact Linux appliance image with byte-stable regeneration).
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.

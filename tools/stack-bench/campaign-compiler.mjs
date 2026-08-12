@@ -211,9 +211,6 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     for (const field of ['releaseManifestSha256', 'controllerImage', 'buildImage']) {
       if (value.runtime[field] === null) fail(`${source}.runtime.${field}`, 'is required for a frozen campaign');
     }
-    if (value.agents.some(agent => agent.adapter !== 'claude-code')) {
-      fail(`${source}.state`, 'cannot freeze an agent adapter that does not enforce maxCostUsdPerAttempt');
-    }
   }
   return canonicalizeDefinition(value);
 }

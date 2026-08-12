@@ -143,6 +143,17 @@ test('a campaign cannot be frozen before every selected definition is qualified 
   /cannot freeze with unqualified L1/);
 });
 
+test('frozen manifest validation does not hard-code an agent provider', () => {
+  const runtime = { releaseManifestSha256: 'a'.repeat(64),
+    controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
+    buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
+    platform: 'linux/amd64' };
+  const validated = validateCampaignDefinition(definition({ state: 'frozen', runtime,
+    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
+  assert.equal(validated.agents[0].adapter, 'deterministic');
+  assert.throws(() => compile(validated), /cannot freeze with unqualified L1/);
+});
+
 test('the packaged model-free campaign example compiles without starting work', () => {
   const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance', 'campaign.example.json'));
   assert.equal(plan.state, 'draft');
