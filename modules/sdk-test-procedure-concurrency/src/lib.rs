@@ -76,13 +76,14 @@ struct ScheduledReducerRow {
     #[auto_inc]
     scheduled_id: u64,
     scheduled_at: ScheduleAt,
+    insertion_context: String,
 }
 
 #[reducer]
-fn insert_scheduled_reducer(ctx: &ReducerContext, _schedule: ScheduledReducerRow) {
+fn insert_scheduled_reducer(ctx: &ReducerContext, schedule: ScheduledReducerRow) {
     ctx.db.procedure_concurrency_row().insert(ProcedureConcurrencyRow {
         insertion_order: 0,
-        insertion_context: "scheduled_reducer".into(),
+        insertion_context: schedule.insertion_context,
     });
 }
 
@@ -93,6 +94,7 @@ fn procedure_schedule_reducer_between_inserts(ctx: &mut ProcedureContext) {
         ctx.db.scheduled_reducer_row().insert(ScheduledReducerRow {
             scheduled_id: 0,
             scheduled_at: ctx.timestamp.into(),
+            insertion_context: "scheduled_reducer".into(),
         });
     });
     poll_until_tx_true(
@@ -119,9 +121,8 @@ struct ScheduledProcedureRow {
 #[procedure]
 fn scheduled_procedure_sleep_between_inserts(ctx: &mut ProcedureContext, _schedule: ScheduledProcedureRow) {
     ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "scheduled_procedure_before"));
-    // Unfortunately, we can't poll and wake on event here,
-    // as (until https://github.com/clockworklabs/SpacetimeDB/pull/5224 is fixed)
-    // the scheduled reducer actually won't run until after this procedure fully completes.
+    // Sleep long enough for the later scheduled reducer to run while this
+    // procedure is still suspended.
     ctx.sleep_until(ctx.timestamp + Duration::from_secs(10));
     ctx.with_tx(|ctx| insert_procedure_concurrency_row(ctx, "scheduled_procedure_after"));
 }
@@ -135,5 +136,11 @@ fn schedule_procedure_then_reducer(ctx: &ReducerContext) {
     ctx.db.scheduled_reducer_row().insert(ScheduledReducerRow {
         scheduled_id: 0,
         scheduled_at: (ctx.timestamp + Duration::from_secs(2)).into(),
+        insertion_context: "scheduled_reducer_1".into(),
+    });
+    ctx.db.scheduled_reducer_row().insert(ScheduledReducerRow {
+        scheduled_id: 0,
+        scheduled_at: (ctx.timestamp + Duration::from_secs(3)).into(),
+        insertion_context: "scheduled_reducer_2".into(),
     });
 }
