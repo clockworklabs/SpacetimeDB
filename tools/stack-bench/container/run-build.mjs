@@ -30,6 +30,7 @@ import { executeStackCapability } from '../stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../product-config.mjs';
 import { dockerMountArguments } from '../container-mount.mjs';
+import { dockerHostGatewayArguments } from '../docker-network.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d = null) => { const i = argv.indexOf(k); return i === -1 ? d : argv[i + 1]; };
@@ -203,6 +204,7 @@ if (!existing) {
     '-v', `${resolve(appDir)}:/app`,
   ];
   create.push('--network', expectedNetworkMode);
+  create.push(...dockerHostGatewayArguments(expectedNetworkMode));
   if (projects) create.push('-v', `${projects}:/root/.claude/projects/-app`);
   if (!prepareOnly && !apiKey) create.push('-v', `${creds}:/root/.claude/.credentials.json`);
   // The selected adapter owns every stack-specific mount. Giving a treatment

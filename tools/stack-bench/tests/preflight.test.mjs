@@ -33,6 +33,7 @@ test('preflight validates exact scope and a model-free container/result-volume s
         writeFileSync(join(mount, marker), 'container-write-ok');
         return JSON.stringify({ platform: 'linux', arch: 'x64', node: 'v22.0.0',
           reached: [{ url: 'https://registry.npmjs.org', status: 200 }],
+          tcpReached: [],
           diskFreeBytes: 20 * 1024 ** 3 });
       }
       throw new Error(`unexpected docker command: ${args.join(' ')}`);
@@ -44,6 +45,8 @@ test('preflight validates exact scope and a model-free container/result-volume s
     assert.equal(report.ok, true, JSON.stringify(report.checks, null, 2));
     assert.equal(report.request.smoke, true);
     assert.equal(report.checks.find(check => check.id === 'smoke.container').status, 'pass');
+    assert.match(report.checks.find(check => check.id === 'smoke.container').summary,
+      /0 database route\(s\)/);
     assert.equal(report.checks.find(check => check.id === 'storage.container').status, 'pass');
     assert.equal(report.checks.some(check => check.id === 'outbound.container'), false);
     const artifact = createArtifact({ kind: 'preflight', id: 'preflight-test', payload: report });

@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { AGENT_ADAPTER_REGISTRY } from './agent-adapters.mjs';
 import { parseImageId } from './container-image.mjs';
+import { dockerHostGatewayArguments, DOCKER_HOST_ALIAS } from './docker-network.mjs';
 import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
   PREFLIGHT_RESOURCE_FLOORS } from './product-config.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
@@ -125,16 +126,21 @@ export function probeLoopbackPort(port, { spawn = spawnSync } = {}) {
   throw new Error(String(result.stderr || result.error?.message || `probe exited ${result.status}`).trim());
 }
 
-function runSmoke({ command, imageId, resultsDir, destinations, marker }) {
-  const script = `const fs=require('node:fs');(async()=>{const urls=JSON.parse(process.argv[1]);`
+function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, marker }) {
+  const script = `const fs=require('node:fs'),net=require('node:net');(async()=>{const urls=JSON.parse(process.argv[1]);`
+    + `const ports=JSON.parse(process.argv[2]);const tcpReached=[];`
+    + `const reach=port=>new Promise((ok,fail)=>{const s=net.createConnection({host:'${DOCKER_HOST_ALIAS}',port});`
+    + `const t=setTimeout(()=>s.destroy(new Error('timeout')),5000);s.once('connect',()=>{clearTimeout(t);s.end();ok()});`
+    + `s.once('error',e=>{clearTimeout(t);fail(new Error('${DOCKER_HOST_ALIAS}:'+port+': '+e.message))})});`
     + `const reached=[];for(const url of urls){try{const r=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(15000)});`
     + `reached.push({url,status:r.status})}catch(e){throw new Error(url+': '+e.message)}}`
-    + `fs.writeFileSync('/results/'+process.argv[2],'container-write-ok');const s=fs.statfsSync('/',{bigint:true});`
+    + `for(const port of ports){await reach(port);tcpReached.push(port)}`
+    + `fs.writeFileSync('/results/'+process.argv[3],'container-write-ok');const s=fs.statfsSync('/',{bigint:true});`
     + `process.stdout.write(JSON.stringify({platform:process.platform,arch:process.arch,node:process.version,reached,`
-    + `diskFreeBytes:Number(s.bavail*s.bsize)}))})()`;
-  const output = command('docker', ['run', '--rm', '--add-host', 'host.docker.internal:host-gateway',
+    + `tcpReached,diskFreeBytes:Number(s.bavail*s.bsize)}))})()`;
+  const output = command('docker', ['run', '--rm', ...dockerHostGatewayArguments(),
     '-v', `${resultsDir}:/results`, imageId, 'node', '-e', script,
-    JSON.stringify(destinations), marker]);
+    JSON.stringify(destinations), JSON.stringify(tcpPorts), marker]);
   return JSON.parse(output);
 }
 
@@ -349,15 +355,18 @@ export function runPreflight(request, dependencies = {}) {
     const marker = `.preflight-container-${process.pid}-${Math.random().toString(16).slice(2)}`;
     const destinations = [...new Set([...BUILD_OUTBOUND_DESTINATIONS,
       ...(agent?.outboundDestinations ?? [])])].sort();
+    const tcpPorts = track ? request.backends.filter(backend => ['postgres', 'mongodb'].includes(backend))
+      .map(backend => portsFor(track, backend, request.runIndex).dbPort).sort((a, b) => a - b) : [];
     try {
       const smoke = runSmoke({ command: run, imageId, resultsDir: request.resultsDir,
-        destinations, marker });
+        destinations, tcpPorts, marker });
       const persisted = exists(join(request.resultsDir, marker));
       rmSync(join(request.resultsDir, marker), { force: true });
       const smokeReady = smoke.platform === 'linux' && Number(smoke.node?.match(/^v(\d+)/)?.[1]) >= 22
-        && persisted;
+        && persisted && JSON.stringify(smoke.tcpReached) === JSON.stringify(tcpPorts);
       add('smoke.container', smokeReady ? 'pass' : 'fail',
-        `Container ${smoke.platform}/${smoke.arch} ${smoke.node}; ${smoke.reached.length} outbound destination(s); result mount ${persisted ? 'persistent' : 'failed'}`,
+        `Container ${smoke.platform}/${smoke.arch} ${smoke.node}; ${smoke.reached.length} outbound destination(s); `
+          + `${smoke.tcpReached?.length ?? 0} database route(s); result mount ${persisted ? 'persistent' : 'failed'}`,
       smokeReady ? null : 'Fix container Node/runtime, networking, or the persistent results mount.', smoke);
       add('storage.container', smoke.diskFreeBytes >= PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes ? 'pass' : 'fail',
         `${bytes(smoke.diskFreeBytes)} free in Docker storage`,
