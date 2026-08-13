@@ -174,10 +174,12 @@ async function getItemsLive() {
   const [items, stockMap, purchaseMap] = await Promise.all([Item.find(), getStockByItem(), getPurchaseCounts()]);
   const enriched = items.map((it) => {
     const json = it.toJSON();
+    const id = it._id.toString();
     return {
       ...json,
-      stock: stockMap.get(json._id.toString()) || 0,
-      purchaseCount: purchaseMap.get(json._id.toString()) || 0,
+      id,
+      stock: stockMap.get(id) || 0,
+      purchaseCount: purchaseMap.get(id) || 0,
     };
   });
   enriched.sort((a, b) => {
@@ -206,7 +208,7 @@ async function getRecommendedItems(userId: string | null) {
   const cart = await Cart.findOne({ userId });
   const cartItemIds = new Set((cart?.items || []).map((l) => l.itemId.toString()));
 
-  return itemsLive.filter((it) => categories.has(it.category) && !cartItemIds.has(it._id.toString()));
+  return itemsLive.filter((it) => categories.has(it.category) && !cartItemIds.has(it.id));
 }
 
 async function getFulfilmentQueue() {
@@ -257,7 +259,8 @@ async function getAdminOverview() {
   const warehouseMap = new Map(warehouses.map((w) => [w._id.toString(), w]));
   const itemsOut = items.map((it) => {
     const json = it.toJSON();
-    return { ...json, stock: stockMap.get(json._id.toString()) || 0 };
+    const id = it._id.toString();
+    return { ...json, id, stock: stockMap.get(id) || 0 };
   });
   const locations = stockRows.map((row) => {
     const itemId = row.item_id.toString();
