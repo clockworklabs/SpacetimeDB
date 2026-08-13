@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 
 import { compilePromotionFile } from './composition-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
-import { mutationTargetKeys, validateMutationDefinitions } from './mutation-analysis.mjs';
+import { mutationScenario, mutationTargetKeys, validateMutationDefinitions } from './mutation-analysis.mjs';
 import { sha256 } from './provenance.mjs';
 import { loadReferenceRegistry, validateReferenceRegistry } from './reference-fixtures.mjs';
 import { readArtifact } from './artifacts.mjs';
@@ -505,12 +505,13 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
       fail(at, 'mutation manifest targets another benchmark');
     }
     if (manifest.fixtureSha256 !== reference.sourceSha256) fail(at, 'mutation fixture hash does not match its reference');
-    const definitions = validateMutationDefinitions(manifest.mutations);
+    const definitions = validateMutationDefinitions(manifest.mutations,
+      { defaultScenario: manifest.scenario, requireScenario: true });
     if (!definitions.ok) fail(at, `invalid mutation definitions: ${definitions.issues.map(issue => issue.kind).join(', ')}`);
-    const scenario = String(manifest.scenario).replaceAll('\\', '/')
-      .replace(new RegExp(`^tracks/${release.track}/`), '');
     const targets = [];
     for (const mutation of manifest.mutations) {
+      const scenario = mutationScenario(manifest, mutation).replaceAll('\\', '/')
+        .replace(new RegExp(`^tracks/${release.track}/`), '');
       const stableKeys = mutationTargetKeys(mutation).map(key => {
         const split = key.indexOf(':');
         const stable = stableByLegacyKey.get(`${scenario}:${key.slice(0, split)}:${key.slice(split + 1)}`);

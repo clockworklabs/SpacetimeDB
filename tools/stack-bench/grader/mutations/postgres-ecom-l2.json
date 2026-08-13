@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "fixtureSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc",
+  "backend": "postgres",
+  "track": "ecommerce",
+  "level": 2,
+  "scenario": "tracks/ecommerce/scenarios/01-contention.json",
+  "note": "Exact defects for the maintained PostgreSQL oracle reused by L2. Inherited contention and L2 fulfilment authorization are independently graded under their own scenarios.",
+  "mutations": [
+    {
+      "id": "oversell-no-row-lock",
+      "kills": ["201a", "201b"],
+      "desc": "Drop FOR UPDATE from the positive-stock row selection so concurrent buyers can select the same last unit.",
+      "breaks": 201,
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "           FOR UPDATE\n           LIMIT 1",
+          "replace": "           LIMIT 1"
+        }
+      ]
+    },
+    {
+      "id": "checkout-does-not-empty-cart",
+      "kills": ["203b"],
+      "desc": "Keep checked-out cart lines so a second checkout can create another order from the same cart.",
+      "breaks": 203,
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      await client.query(`DELETE FROM cart_item WHERE cart_id = $1`, [cartId]);",
+          "replace": "      // mutant: checked-out cart lines remain"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "kills": ["201c"],
+      "desc": "Replace the staff gate on the ship route with ordinary authentication, allowing a customer to ship their own pending order.",
+      "breaks": 201,
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/fulfilment/ship\",\n  requireStaff,",
+          "replace": "app.post(\n  \"/api/fulfilment/ship\",\n  requireAuth,"
+        }
+      ]
+    }
+  ]
+}

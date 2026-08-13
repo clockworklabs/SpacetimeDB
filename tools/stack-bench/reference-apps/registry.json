@@ -93,7 +93,7 @@
         "path": "reference-apps/ecommerce/l2/mongodb",
         "sourceSha256": "fdc61b01b3510f569cf5118461aea633f26b32ae28cceffa652c7596123ac7a3"
       },
-      "mutationManifests": [],
+      "mutationManifests": ["grader/mutations/mongodb-ecom-l2.json"],
       "qualification": "Not qualified; requires the current L2 reference, mutation, budget, and null gates."
     },
     {
@@ -111,7 +111,7 @@
         "path": "reference-apps/ecommerce/postgres",
         "sourceSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc"
       },
-      "mutationManifests": [],
+      "mutationManifests": ["grader/mutations/postgres-ecom-l2.json"],
       "qualification": "Not qualified; requires the current L2 reference, mutation, budget, and null gates."
     },
     {
@@ -129,7 +129,7 @@
         "path": "reference-apps/ecommerce/l2/spacetime",
         "sourceSha256": "36780c7ca3a443f5669c346fafb9891bcfeead0970988d6cbdb6b5da53e14e39"
       },
-      "mutationManifests": [],
+      "mutationManifests": ["grader/mutations/spacetime-ecom-l2.json"],
       "qualification": "Not qualified; requires the current L2 reference, mutation, budget, and null gates."
     },
     {

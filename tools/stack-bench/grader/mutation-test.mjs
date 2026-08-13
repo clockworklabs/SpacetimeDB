@@ -34,6 +34,7 @@ import { emptyArtifactIdentities, readArtifactPayload, writeRunJson } from "../a
 import { controlBackend } from "../backend-control.mjs";
 import {
   classifyMutationResult,
+  groupMutationsByScenario,
   mutationEdits,
   mutationTargetKeys,
   resolveMutationFile,
@@ -218,7 +219,7 @@ async function main() {
   if (!["candidate", "active"].includes(spec.status)) {
     throw new Error(`mutation manifest is ${spec.status ?? "missing a status"}; only candidate or active manifests are executable`);
   }
-  for (const field of ["backend", "track", "level", "scenario", "fixtureSha256"]) {
+  for (const field of ["backend", "track", "level", "fixtureSha256"]) {
     if (spec[field] == null) {
       throw new Error(`mutation manifest requires ${field}`);
     }
@@ -237,23 +238,16 @@ async function main() {
   if (args.level && Number(args.level) !== Number(spec.level)) {
     throw new Error(`--level conflicts with manifest level ${spec.level}`);
   }
-  const declaredSpec = resolve(HERE, "..", spec.scenario);
-  if (!declaredSpec.startsWith(`${TRACKS}${sep}`)) {
-    throw new Error(`mutation scenario escapes the tracks directory: ${spec.scenario}`);
-  }
-  if (args.spec && resolve(args.spec) !== declaredSpec) {
-    throw new Error(`--spec conflicts with manifest scenario ${spec.scenario}`);
-  }
   args.backend = spec.backend;
   args.track = spec.track;
   args.level = String(spec.level);
-  args.spec = declaredSpec;
   const track = loadTrack(args.track);
   args.slug ??= track.slug;
   args.probe ??= track.restartProbe;
   args.dbName ??= dbName(track, Number(args.runIndex));
   args.reseedOnReset = track.reseedOnReset;
-  const definitions = validateMutationDefinitions(spec.mutations);
+  const definitions = validateMutationDefinitions(spec.mutations,
+    { defaultScenario: spec.scenario, requireScenario: true });
   if (!definitions.ok) {
     throw new Error(
       `invalid mutation manifest: ${
@@ -262,6 +256,20 @@ async function main() {
         ).join(", ")
       }`,
     );
+  }
+  const groups = new Map();
+  for (const [scenario, mutations] of groupMutationsByScenario(spec)) {
+    const declaredSpec = resolve(HERE, "..", scenario);
+    if (!declaredSpec.startsWith(`${TRACKS}${sep}`)) {
+      throw new Error(`mutation scenario escapes the tracks directory: ${scenario}`);
+    }
+    groups.set(declaredSpec, mutations);
+  }
+  if (args.spec) {
+    const requested = resolve(args.spec);
+    if (groups.size !== 1 || !groups.has(requested)) {
+      throw new Error('--spec conflicts with the mutation manifest scenario selection');
+    }
   }
   const work = mkdtempSync(join(tmpdir(), "stack-bench-mutation-"));
   const reportPath = join(work, "grade.json");
@@ -296,60 +304,66 @@ async function main() {
     }
   }
 
-  console.log("Baseline (unmutated app)...");
-  await waitForApp(args);
-  const baseline = await grade(args, reportPath);
-  const baselineValidation = validateMutationBaseline(baseline, spec.mutations);
-  if (!baselineValidation.ok) {
-    throw new Error(
-      `reference baseline is not known-good: ${
-        JSON.stringify(baselineValidation.issues)
-      }`,
-    );
-  }
-  console.log(
-    `  baseline: ${baseline.total}/${baseline.max}  ${
-      baseline.features.map((f) => `F${f.id}:${f.score}`).join(" ")
-    }\n`,
-  );
-
   const results = [];
-  for (const m of spec.mutations) {
-    const target = resolveMutationFile(args.app, m.file);
-    const backup = `${target}.mutation-backup`;
-    const original = readFileSync(target, "utf8");
-    const edits = mutationEdits(m);
-
-    copyFileSync(target, backup);
-    let r;
-    try {
-      writeFileSync(
-        target,
-        edits.reduce((src, e) => src.replace(e.find, e.replace), original),
-      );
-      await sleep(m.settleMs ?? 4000); // let the watcher notice the edit
-      r = await grade(args, reportPath);
-    } finally {
-      copyFileSync(backup, target);
-      unlinkSync(backup);
-      await sleep(m.settleMs ?? 4000);
-      await reset(args);
-      await waitForApp(args); // healthy again before the next probe
-    }
-
-    const classified = classifyMutationResult(baseline, r, m);
-    results.push({ id: m.id, targets: mutationTargetKeys(m), ...classified });
-    console.log(
-      `${classified.status.padEnd(20)} ${m.id} — expected ${
-        classified.targetKeys.join(", ")
-      }`,
-    );
-    if (classified.regressions.length) {
-      console.log(
-        `    failed criteria: ${
-          classified.regressions.map((item) => item.key).join(", ")
+  const baselines = [];
+  for (const [scenarioPath, mutations] of groups) {
+    args.spec = scenarioPath;
+    console.log(`Baseline (unmutated app, ${scenarioPath})...`);
+    await waitForApp(args);
+    const baseline = await grade(args, reportPath);
+    const baselineValidation = validateMutationBaseline(baseline, mutations);
+    if (!baselineValidation.ok) {
+      throw new Error(
+        `reference baseline is not known-good for ${scenarioPath}: ${
+          JSON.stringify(baselineValidation.issues)
         }`,
       );
+    }
+    console.log(
+      `  baseline: ${baseline.total}/${baseline.max}  ${
+        baseline.features.map((f) => `F${f.id}:${f.score}`).join(" ")
+      }\n`,
+    );
+    baselines.push({ scenario: scenarioPath, total: baseline.total, max: baseline.max });
+
+    for (const m of mutations) {
+      const target = resolveMutationFile(args.app, m.file);
+      const backup = `${target}.mutation-backup`;
+      const original = readFileSync(target, "utf8");
+      const edits = mutationEdits(m);
+
+      copyFileSync(target, backup);
+      let r;
+      try {
+        writeFileSync(
+          target,
+          edits.reduce((src, e) => src.replace(e.find, e.replace), original),
+        );
+        await sleep(m.settleMs ?? 4000); // let the watcher notice the edit
+        r = await grade(args, reportPath);
+      } finally {
+        copyFileSync(backup, target);
+        unlinkSync(backup);
+        await sleep(m.settleMs ?? 4000);
+        await reset(args);
+        await waitForApp(args); // healthy again before the next probe
+      }
+
+      const classified = classifyMutationResult(baseline, r, m);
+      results.push({ id: m.id, scenario: scenarioPath,
+        targets: mutationTargetKeys(m), ...classified });
+      console.log(
+        `${classified.status.padEnd(20)} ${m.id} — expected ${
+          classified.targetKeys.join(", ")
+        }`,
+      );
+      if (classified.regressions.length) {
+        console.log(
+          `    failed criteria: ${
+            classified.regressions.map((item) => item.key).join(", ")
+          }`,
+        );
+      }
     }
   }
 
@@ -370,10 +384,14 @@ async function main() {
     mutations: resolve(args.mutations),
     manifestStatus: spec.status,
     fixtureSha256: spec.fixtureSha256,
-    spec: resolve(args.spec),
+    spec: baselines.map(entry => entry.scenario),
     backend: args.backend,
     track: args.track,
-    baseline: { total: baseline.total, max: baseline.max },
+    baseline: {
+      total: baselines.reduce((sum, entry) => sum + Number(entry.total), 0),
+      max: baselines.reduce((sum, entry) => sum + Number(entry.max), 0),
+      scenarios: baselines,
+    },
     ok: clean.length === results.length,
     summary: { caught: clean.length, total: results.length },
     results,

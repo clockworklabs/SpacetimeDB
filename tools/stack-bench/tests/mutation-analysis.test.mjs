@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyMutationResult, validateMutationBaseline,
-  resolveMutationFile, validateMutationDefinitions } from '../mutation-analysis.mjs';
+import { classifyMutationResult, groupMutationsByScenario, mutationScenario,
+  validateMutationBaseline, resolveMutationFile,
+  validateMutationDefinitions } from '../mutation-analysis.mjs';
 import { createCheckEvidence } from '../check-evidence.mjs';
 
 const report = (criteria, setupError = null) => ({
@@ -30,6 +31,22 @@ test('mutation definitions name exact criteria and contain real edits', () => {
   assert.equal(invalid.ok, false);
   assert.deepEqual([...new Set(invalid.issues.map(issue => issue.kind))],
     ['bad_file', 'bad_feature', 'bad_kills', 'bad_edit', 'duplicate_id', 'missing_edits']);
+});
+
+test('mutation scenarios may override a manifest default and are required for execution', () => {
+  const valid = { ...mutation, file: 'src/app.ts', find: 'correct', replace: 'broken' };
+  assert.equal(mutationScenario({ scenario: 'scenarios/base.json' }, valid), 'scenarios/base.json');
+  assert.equal(mutationScenario({ scenario: 'scenarios/base.json' },
+    { ...valid, scenario: 'scenarios/upgrade.json' }), 'scenarios/upgrade.json');
+  assert.equal(validateMutationDefinitions([valid], { requireScenario: true }).ok, false);
+  assert.equal(validateMutationDefinitions([{ ...valid, scenario: 'scenarios/upgrade.json' }],
+    { requireScenario: true }).ok, true);
+  const groups = groupMutationsByScenario({ scenario: 'scenarios/base.json', mutations: [
+    valid, { ...valid, id: 'upgrade', scenario: 'scenarios/upgrade.json' },
+  ] });
+  assert.deepEqual([...groups.keys()], ['scenarios/base.json', 'scenarios/upgrade.json']);
+  assert.deepEqual([...groups.values()].map(entries => entries.map(entry => entry.id)),
+    [['break-b'], ['upgrade']]);
 });
 
 test('a mutation can declare exact targets across multiple features', () => {

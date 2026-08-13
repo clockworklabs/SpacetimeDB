@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "fixtureSha256": "36780c7ca3a443f5669c346fafb9891bcfeead0970988d6cbdb6b5da53e14e39",
+  "backend": "spacetime",
+  "track": "ecommerce",
+  "level": 2,
+  "scenario": "tracks/ecommerce/scenarios/01-contention.json",
+  "note": "Exact defects for the maintained SpacetimeDB L2 oracle. The missing reservation mutation establishes stock/order consequences rather than claiming reducer transactions have a row-lock analogue. The L2 authorization mutant removes the sender-role check from shipping.",
+  "mutations": [
+    {
+      "id": "purchase-does-not-reserve-stock",
+      "targets": [
+        { "feature": 201, "criterion": "201a" },
+        { "feature": 201, "criterion": "201b" },
+        { "feature": 202, "criterion": "202a" }
+      ],
+      "desc": "Omit the inventory reservation from buy-now while preserving order creation. This is an application defect, not a concurrency defect equivalent to removing a database lock.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  const allocations = decrementStockTracked(ctx, itemId, 1);",
+          "replace": "  const allocations: Array<{ warehouseId: bigint; quantity: number }> = [];"
+        }
+      ]
+    },
+    {
+      "id": "checkout-does-not-empty-cart",
+      "kills": ["203b"],
+      "desc": "Keep checked-out cart lines so the next serialized checkout creates another order from the same cart.",
+      "breaks": 203,
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  for (const line of lines) ctx.db.cartItem.id.delete(line.id);",
+          "replace": "  // mutant: checked-out lines remain in the cart"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "kills": ["201c"],
+      "desc": "Remove the sender-role check from the shipping reducer so any authenticated customer can ship a pending order.",
+      "breaks": 201,
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "export const shipOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  requireStaffOrAdmin(ctx);",
+          "replace": "export const shipOrder = spacetimedb.reducer({ orderId: t.u64() }, (ctx, { orderId }) => {\n  // mutant: no staff role check"
+        }
+      ]
+    }
+  ]
+}

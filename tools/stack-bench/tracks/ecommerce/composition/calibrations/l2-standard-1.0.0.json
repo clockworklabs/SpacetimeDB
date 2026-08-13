@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "kind": "calibration-manifest",
+  "id": "ecommerce.l2-standard-calibration",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Ecommerce L2 standard calibration candidate",
+  "track": "ecommerce",
+  "recipe": {
+    "path": "../recipes/l2-standard-1.0.0.json",
+    "id": "ecommerce.l2-standard",
+    "version": "1.0.0",
+    "meaningSha256": "b22f391b631a0df029db9ec83a0df00ffff29c0eaacadd40b7c9f045a9cabdf3",
+    "executionSha256": "a0b04ab679b463706667e8c4834396047227373240d4d2c339415fe2c50cd235",
+    "contentSha256": "e14633d19bb4349f8a210cac3c94291b6458c3c7bb5b0c5b9afd13f967837824"
+  },
+  "fixture": {
+    "id": "ecommerce.operations",
+    "version": "1.0.0",
+    "sourceSha256": "6723eea9af659be9af3d9047d76eb3fcb0f4f79991c3f8c5115e0d35f6e6a186"
+  },
+  "references": {
+    "registryPath": "reference-apps/registry.json",
+    "entries": [
+      { "backend": "mongodb", "id": "ecommerce-l2-mongodb", "sourceSha256": "fdc61b01b3510f569cf5118461aea633f26b32ae28cceffa652c7596123ac7a3" },
+      { "backend": "postgres", "id": "ecommerce-l2-postgres", "sourceSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc" },
+      { "backend": "spacetime", "id": "ecommerce-l2-spacetime", "sourceSha256": "36780c7ca3a443f5669c346fafb9891bcfeead0970988d6cbdb6b5da53e14e39" }
+    ]
+  },
+  "mutations": [
+    { "backend": "mongodb", "path": "grader/mutations/mongodb-ecom-l2.json", "sha256": "0d34c6d863340e2e5fd83cef48b813082625c35c36ae629a5e2fe19ce16d075f", "referenceId": "ecommerce-l2-mongodb" },
+    { "backend": "postgres", "path": "grader/mutations/postgres-ecom-l2.json", "sha256": "7bec0a9766e922077c34f710b68fe7679757bb91f05ee2f17e0b0f954b3bbbbc", "referenceId": "ecommerce-l2-postgres" },
+    { "backend": "spacetime", "path": "grader/mutations/spacetime-ecom-l2.json", "sha256": "e62e445dcc0a6513746409bcdbbc80dcfccc62eff44987da129fda26e61b752f", "referenceId": "ecommerce-l2-spacetime" }
+  ],
+  "nullControl": {
+    "pointBearing": "must-fail-conclusively",
+    "zeroPoint": "typed-policy",
+    "repetitions": 1
+  },
+  "controls": [
+    {
+      "stableKey": "ecommerce.operations-access.operator-authorization.201c",
+      "role": "promotion-gate",
+      "promotionPolicy": "must-pass-reference-and-kill-declared-mutant",
+      "mutationTargets": ["mongodb:customer-can-ship-order", "postgres:customer-can-ship-order", "spacetime:customer-can-ship-order"]
+    },
+    {
+      "stableKey": "ecommerce.inventory-operations.stock-conservation.202d",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The transfer-versus-purchase interleaving check has no exact cross-stack mutation yet."
+    },
+    {
+      "stableKey": "ecommerce.operations-access.order-owner.204a",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The scenario must target a still-pending order and catch an ownership mutant before promotion."
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.last-unit-sold-once.201b",
+      "role": "promotion-gate",
+      "promotionPolicy": "must-pass-reference-and-kill-declared-mutant",
+      "mutationTargets": ["mongodb:oversell-unguarded-decrement", "postgres:oversell-no-row-lock", "spacetime:purchase-does-not-reserve-stock"]
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.last-unit-sold-once.201c",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The assertion requires an admin-facing revenue observation and has no exact mutant yet."
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.restock-during-rush.202-control",
+      "role": "precondition",
+      "promotionPolicy": "must-pass-reference",
+      "mutationTargets": []
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.restock-during-rush.202a",
+      "role": "promotion-gate",
+      "promotionPolicy": "must-pass-reference-and-kill-declared-mutant",
+      "mutationTargets": ["spacetime:purchase-does-not-reserve-stock"]
+    },
+    {
+      "stableKey": "ecommerce.cart-checkout.duplicate-checkout.203a",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The assertion has passed repeated development runs but has no exact mutant."
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.external-write-visible.901a",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The out-of-band propagation assertion has no exact cross-stack mutation evidence."
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.external-write-visible.901b",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The persistence assertion has no exact cross-stack mutation evidence."
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.external-write-visible.901d",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The disconnected-client recovery assertion still needs contrasting real builds and mutation evidence."
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.list-open-during-change.902a",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The enumeration-race assertion has no exact cross-stack mutation evidence."
+    }
+  ],
+  "qualification": {
+    "exactCombinationRequired": true,
+    "referenceRepetitions": 2,
+    "mutationRepetitions": 2,
+    "stacks": [
+      { "id": "mongodb", "status": "candidate" },
+      { "id": "postgres", "status": "candidate" },
+      { "id": "spacetime", "status": "candidate" }
+    ],
+    "evidence": []
+  },
+  "equivalenceDecisions": [],
+  "promotion": {
+    "catalogPath": "composition/promotions.json",
+    "catalogSha256": "6a71c797b167961816523dee1144f7ffa85ae67f3a65ad329e0aa25590e72fe8",
+    "alias": "L2",
+    "status": "candidate"
+  }
+}

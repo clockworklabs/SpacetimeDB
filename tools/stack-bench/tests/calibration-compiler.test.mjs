@@ -20,13 +20,15 @@ function current() {
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release }) };
 }
 
-test('runtime calibration resolution is exact and returns null for an uncalibrated recipe', () => {
+test('runtime calibration resolution is exact for qualified and draft recipes', () => {
   const l1 = resolveLegacyRecipeRelease(TRACK, 1).release;
   const resolved = resolveCalibrationForRelease(l1, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
   assert.equal(resolved.id, 'ecommerce.l1-standard-calibration');
   assert.match(resolved.contentSha256, /^[a-f0-9]{64}$/);
   const l2 = resolveLegacyRecipeRelease(TRACK, 2).release;
-  assert.equal(resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT }), null);
+  const draft = resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
+  assert.equal(draft.id, 'ecommerce.l2-standard-calibration');
+  assert.equal(draft.state, 'draft');
 });
 
 function temporaryCalibration(change) {
@@ -65,7 +67,7 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   assert.match(first.qualificationSha256, /^[a-f0-9]{64}$/);
   assert.equal(calibrationQualificationIdentity(first).sha256, first.qualificationSha256);
   assert.deepEqual(checkCalibrations({ trackName: 'ecommerce' }).map(result => result.id),
-    ['ecommerce.l1-standard-calibration']);
+    ['ecommerce.l1-standard-calibration', 'ecommerce.l2-standard-calibration']);
 });
 
 test('qualification evidence is semantically bound and tampering fails closed', () => {

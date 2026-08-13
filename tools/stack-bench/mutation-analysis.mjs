@@ -21,6 +21,22 @@ export function mutationTargetKeys(mutation) {
   return (mutation.kills ?? []).map(criterion => criterionKey(mutation.breaks, criterion));
 }
 
+export function mutationScenario(manifest, mutation) {
+  const scenario = mutation?.scenario ?? manifest?.scenario;
+  return typeof scenario === 'string' && scenario.trim() ? scenario : null;
+}
+
+export function groupMutationsByScenario(manifest) {
+  const groups = new Map();
+  for (const mutation of manifest?.mutations ?? []) {
+    const scenario = mutationScenario(manifest, mutation);
+    if (!scenario) throw new Error(`mutation ${mutation?.id ?? '<unnamed>'} has no scenario`);
+    if (!groups.has(scenario)) groups.set(scenario, []);
+    groups.get(scenario).push(mutation);
+  }
+  return groups;
+}
+
 export function resolveMutationFile(app, file) {
   const root = resolve(app);
   const target = resolve(root, file);
@@ -30,7 +46,8 @@ export function resolveMutationFile(app, file) {
   return target;
 }
 
-export function validateMutationDefinitions(mutations) {
+export function validateMutationDefinitions(mutations,
+  { defaultScenario = null, requireScenario = false } = {}) {
   const issues = [];
   const ids = new Set();
   for (const mutation of mutations ?? []) {
@@ -38,6 +55,13 @@ export function validateMutationDefinitions(mutations) {
     else if (ids.has(mutation.id)) issues.push({ kind: 'duplicate_id', mutation: mutation.id });
     else ids.add(mutation.id);
     if (typeof mutation.file !== 'string' || !mutation.file) issues.push({ kind: 'bad_file', mutation: mutation.id });
+    if (mutation.scenario !== undefined
+      && (typeof mutation.scenario !== 'string' || !mutation.scenario.trim())) {
+      issues.push({ kind: 'bad_scenario', mutation: mutation.id });
+    }
+    if (requireScenario && !mutationScenario({ scenario: defaultScenario }, mutation)) {
+      issues.push({ kind: 'missing_scenario', mutation: mutation.id });
+    }
     const hasExactTargets = Array.isArray(mutation.targets);
     if (hasExactTargets) {
       const keys = mutation.targets.map(target => target && typeof target === 'object'

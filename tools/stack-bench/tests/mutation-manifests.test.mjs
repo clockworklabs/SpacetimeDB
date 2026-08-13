@@ -3,7 +3,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { mutationEdits, mutationTargetKeys, validateMutationDefinitions } from '../mutation-analysis.mjs';
+import { mutationEdits, mutationScenario, mutationTargetKeys,
+  validateMutationDefinitions } from '../mutation-analysis.mjs';
 import { loadReferenceRegistry } from '../reference-fixtures.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -14,20 +15,22 @@ test('every mutation manifest binds valid edits to exact scenario criteria', () 
   assert.ok(files.length > 0, 'expected mutation manifests');
   for (const file of files) {
     const manifest = JSON.parse(readFileSync(join(MUTATIONS, file), 'utf8'));
-    const definitions = validateMutationDefinitions(manifest.mutations);
+    const definitions = validateMutationDefinitions(manifest.mutations,
+      { defaultScenario: manifest.scenario, requireScenario: true });
     assert.deepEqual(definitions.issues, [], `${file} has an invalid mutation definition`);
     assert.match(manifest.status, /^(active|candidate|legacy-unreproducible)$/);
     if (manifest.status !== 'legacy-unreproducible') assert.equal(manifest.schemaVersion, 1);
     assert.match(manifest.backend, /^(spacetime|postgres|mongodb)$/);
     assert.equal(typeof manifest.track, 'string');
     assert.ok(Number.isInteger(manifest.level) && manifest.level > 0);
-    assert.equal(typeof manifest.scenario, 'string');
     if (manifest.status !== 'legacy-unreproducible') {
       assert.match(manifest.fixtureSha256, /^[a-f0-9]{64}$/);
     }
 
-    const scenario = JSON.parse(readFileSync(join(ROOT, manifest.scenario), 'utf8'));
     for (const mutation of manifest.mutations) {
+      const scenarioPath = mutationScenario(manifest, mutation);
+      assert.equal(typeof scenarioPath, 'string');
+      const scenario = JSON.parse(readFileSync(join(ROOT, scenarioPath), 'utf8'));
       for (const target of mutationTargetKeys(mutation)) {
         const [featureId, ...criterionParts] = target.split(':');
         const feature = scenario.features.find(candidate => String(candidate.id) === featureId);

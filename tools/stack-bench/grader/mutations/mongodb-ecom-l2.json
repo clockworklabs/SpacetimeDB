@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "fixtureSha256": "fdc61b01b3510f569cf5118461aea633f26b32ae28cceffa652c7596123ac7a3",
+  "backend": "mongodb",
+  "track": "ecommerce",
+  "level": 2,
+  "scenario": "tracks/ecommerce/scenarios/01-contention.json",
+  "note": "Exact defects for the maintained MongoDB L2 oracle. The inherited contention mutants retain L1 coverage; the per-mutation scenario override proves the L2 fulfilment authorization oracle without splitting one fixture's mutation evidence.",
+  "mutations": [
+    {
+      "id": "oversell-unguarded-decrement",
+      "kills": ["201a", "201b"],
+      "desc": "Remove the quantity guard from the atomic stock decrement so concurrent buyers can reserve units after stock is exhausted.",
+      "breaks": 201,
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "{ item_id: item._id, quantity: { $gte: 1 } },",
+          "replace": "{ item_id: item._id },"
+        }
+      ]
+    },
+    {
+      "id": "checkout-not-idempotent",
+      "kills": ["203b"],
+      "desc": "Replace the atomic claim-and-clear with a read so concurrent checkouts can both create an order from the same cart.",
+      "breaks": 203,
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "const claimedCart = await Cart.findOneAndUpdate({ userId }, { $set: { items: [] } });",
+          "replace": "const claimedCart = await Cart.findOne({ userId });"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "kills": ["201c"],
+      "desc": "Remove the staff authorization middleware from the ship route while retaining authentication, allowing a customer to ship their own pending order.",
+      "breaks": 201,
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/fulfilment/:id/ship\", requireAuth, requireStaff, async (req, res) => {",
+          "replace": "app.post(\"/api/fulfilment/:id/ship\", requireAuth, async (req, res) => {"
+        }
+      ]
+    }
+  ]
+}
