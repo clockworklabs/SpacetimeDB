@@ -1,8 +1,8 @@
-export const AGENT_ADAPTER_SCHEMA_VERSION = 1;
+export const AGENT_ADAPTER_SCHEMA_VERSION = 2;
 
 const FIELDS = new Set(['schemaVersion', 'id', 'version', 'entrypoint', 'modes', 'deadlineMs',
   'defaultModel', 'apiKeyEnvironmentVariable', 'credentialFiles', 'outboundDestinations',
-  'costLimit']);
+  'requiredExecutables', 'costLimit']);
 const RESULT_FIELDS = new Set(['appDir', 'mode', 'level', 'track', 'backend', 'model', 'guidance',
   'stack', 'setup', 'costUsd', 'tokens', 'outputTokens', 'usage', 'provenance', 'turns',
   'promptBytes', 'tokensPerTurn', 'thinking', 'durationMs', 'sessionId', 'ok',
@@ -51,6 +51,7 @@ export function defineAgentAdapter(value) {
   for (const [field, validate] of [
     ['credentialFiles', relativeCredential],
     ['outboundDestinations', secureDestination],
+    ['requiredExecutables', item => typeof item === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._+-]*$/.test(item)],
   ]) {
     if (!Array.isArray(value[field]) || value[field].some(item => !validate(item))
       || new Set(value[field]).size !== value[field].length) {
@@ -59,7 +60,8 @@ export function defineAgentAdapter(value) {
   }
   return Object.freeze({ ...value, modes: Object.freeze([...value.modes].sort()),
     credentialFiles: Object.freeze([...value.credentialFiles].sort()),
-    outboundDestinations: Object.freeze([...value.outboundDestinations].sort()) });
+    outboundDestinations: Object.freeze([...value.outboundDestinations].sort()),
+    requiredExecutables: Object.freeze([...value.requiredExecutables].sort()) });
 }
 
 export function createAgentAdapterRegistry(adapters) {

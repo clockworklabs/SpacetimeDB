@@ -126,21 +126,26 @@ export function probeLoopbackPort(port, { spawn = spawnSync } = {}) {
   throw new Error(String(result.stderr || result.error?.message || `probe exited ${result.status}`).trim());
 }
 
-function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, marker }) {
-  const script = `const fs=require('node:fs'),net=require('node:net');(async()=>{const urls=JSON.parse(process.argv[1]);`
-    + `const ports=JSON.parse(process.argv[2]);const tcpReached=[];`
+function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requiredExecutables, marker }) {
+  const script = `const fs=require('node:fs'),net=require('node:net'),path=require('node:path');`
+    + `(async()=>{const urls=JSON.parse(process.argv[1]);const ports=JSON.parse(process.argv[2]);`
+    + `const required=JSON.parse(process.argv[3]);const tcpReached=[];`
+    + `const executablePaths=required.map(name=>{for(const dir of (process.env.PATH||'').split(':')){`
+    + `const candidate=path.join(dir,name);try{fs.accessSync(candidate,fs.constants.X_OK);return candidate}catch{}}`
+    + `throw new Error('required executable not found: '+name)});`
     + `const reach=port=>new Promise((ok,fail)=>{const s=net.createConnection({host:'${DOCKER_HOST_ALIAS}',port});`
     + `const t=setTimeout(()=>s.destroy(new Error('timeout')),5000);s.once('connect',()=>{clearTimeout(t);s.end();ok()});`
     + `s.once('error',e=>{clearTimeout(t);fail(new Error('${DOCKER_HOST_ALIAS}:'+port+': '+e.message))})});`
     + `const reached=[];for(const url of urls){try{const r=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(15000)});`
     + `reached.push({url,status:r.status})}catch(e){throw new Error(url+': '+e.message)}}`
     + `for(const port of ports){await reach(port);tcpReached.push(port)}`
-    + `fs.writeFileSync('/results/'+process.argv[3],'container-write-ok');const s=fs.statfsSync('/',{bigint:true});`
+    + `fs.writeFileSync('/results/'+process.argv[4],'container-write-ok');const s=fs.statfsSync('/',{bigint:true});`
     + `process.stdout.write(JSON.stringify({platform:process.platform,arch:process.arch,node:process.version,reached,`
-    + `tcpReached,diskFreeBytes:Number(s.bavail*s.bsize)}))})()`;
+    + `tcpReached,executables:Object.fromEntries(required.map((name,index)=>[name,executablePaths[index]])),`
+    + `diskFreeBytes:Number(s.bavail*s.bsize)}))})()`;
   const output = command('docker', ['run', '--rm', ...dockerHostGatewayArguments(),
     '-v', `${resultsDir}:/results`, imageId, 'node', '-e', script,
-    JSON.stringify(destinations), JSON.stringify(tcpPorts), marker]);
+    JSON.stringify(destinations), JSON.stringify(tcpPorts), JSON.stringify(requiredExecutables), marker]);
   return JSON.parse(output);
 }
 
@@ -360,15 +365,19 @@ export function runPreflight(request, dependencies = {}) {
       .map(backend => portsFor(track, backend, request.runIndex).dbPort).sort((a, b) => a - b) : [];
     try {
       const smoke = runSmoke({ command: run, imageId, resultsDir: request.resultsDir,
-        destinations, tcpPorts, marker });
+        destinations, tcpPorts, requiredExecutables: agent?.requiredExecutables ?? [], marker });
       const persisted = exists(join(request.resultsDir, marker));
       rmSync(join(request.resultsDir, marker), { force: true });
       const smokeReady = smoke.platform === 'linux' && Number(smoke.node?.match(/^v(\d+)/)?.[1]) >= 22
-        && persisted && JSON.stringify(smoke.tcpReached) === JSON.stringify(tcpPorts);
+        && persisted && JSON.stringify(smoke.tcpReached) === JSON.stringify(tcpPorts)
+        && JSON.stringify(Object.keys(smoke.executables ?? {}).sort())
+          === JSON.stringify([...(agent?.requiredExecutables ?? [])].sort());
       add('smoke.container', smokeReady ? 'pass' : 'fail',
         `Container ${smoke.platform}/${smoke.arch} ${smoke.node}; ${smoke.reached.length} outbound destination(s); `
-          + `${smoke.tcpReached?.length ?? 0} database route(s); result mount ${persisted ? 'persistent' : 'failed'}`,
-      smokeReady ? null : 'Fix container Node/runtime, networking, or the persistent results mount.', smoke);
+          + `${smoke.tcpReached?.length ?? 0} database route(s); `
+          + `${Object.keys(smoke.executables ?? {}).length} agent executable(s); `
+          + `result mount ${persisted ? 'persistent' : 'failed'}`,
+      smokeReady ? null : 'Fix the agent executable, container Node/runtime, networking, or persistent results mount.', smoke);
       add('storage.container', smoke.diskFreeBytes >= PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes ? 'pass' : 'fail',
         `${bytes(smoke.diskFreeBytes)} free in Docker storage`,
         smoke.diskFreeBytes >= PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes ? null

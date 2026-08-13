@@ -34,6 +34,7 @@ test('preflight validates exact scope and a model-free container/result-volume s
         return JSON.stringify({ platform: 'linux', arch: 'x64', node: 'v22.0.0',
           reached: [{ url: 'https://registry.npmjs.org', status: 200 }],
           tcpReached: [],
+          executables: {},
           diskFreeBytes: 20 * 1024 ** 3 });
       }
       throw new Error(`unexpected docker command: ${args.join(' ')}`);
@@ -47,11 +48,43 @@ test('preflight validates exact scope and a model-free container/result-volume s
     assert.equal(report.request.smoke, true);
     assert.equal(report.checks.find(check => check.id === 'smoke.container').status, 'pass');
     assert.match(report.checks.find(check => check.id === 'smoke.container').summary,
-      /0 database route\(s\)/);
+      /0 database route\(s\); 0 agent executable\(s\)/);
     assert.equal(report.checks.find(check => check.id === 'storage.container').status, 'pass');
     assert.equal(report.checks.some(check => check.id === 'outbound.container'), false);
     const artifact = createArtifact({ kind: 'preflight', id: 'preflight-test', payload: report });
     assert.equal(validateArtifact(artifact).payload.ok, true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('preflight fails before a paid run when the selected agent executable is absent', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-agent-'));
+  try {
+    const selected = parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'stub',
+      '--track', 'loop', '--levels', '1', '--agent-adapter', 'claude-code',
+      '--results-dir', root, '--smoke']);
+    let requestedExecutables;
+    const run = (_file, args) => {
+      if (args[0] === 'info') return dockerInfo();
+      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
+        ? 'linux/amd64' : `${IMAGE_ID}\n`;
+      if (args[0] === 'run') {
+        const mount = args[args.indexOf('-v') + 1].split(':/results')[0];
+        writeFileSync(join(mount, args.at(-1)), 'container-write-ok');
+        requestedExecutables = JSON.parse(args.at(-2));
+        return JSON.stringify({ platform: 'linux', arch: 'x64', node: 'v22.0.0',
+          reached: [], tcpReached: [], executables: {}, diskFreeBytes: 20 * 1024 ** 3 });
+      }
+      throw new Error(`unexpected docker command: ${args.join(' ')}`);
+    };
+    const report = runPreflight(selected, { run, now: Date.parse('2026-08-12T12:00:00.100Z'),
+      env: { ANTHROPIC_API_KEY: '<test-present>' }, home: root,
+      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }), pidsOnPort: () => [],
+      probePort: () => ({ free: true }) });
+    assert.deepEqual(requestedExecutables, ['claude']);
+    assert.equal(report.ok, false);
+    assert.equal(report.checks.find(check => check.id === 'smoke.container').status, 'fail');
+    assert.doesNotMatch(JSON.stringify(report), /test-present/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

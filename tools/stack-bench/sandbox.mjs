@@ -80,6 +80,17 @@ export const DENY = [
 // whether a run counts.
 export const ALLOW = ['Bash'];
 
+// The controller and coding image are separate trust zones in appliance mode.
+// A direct CLI probe belongs only to the legacy single-host topology: the
+// controller deliberately has no model CLI, while the coding container has no
+// harness, scenarios, result history, or Docker socket to probe against.
+export function sandboxProbeMode({ appliance = false, explicitlySkipped = false,
+  stackRequired = false } = {}) {
+  if (!stackRequired) return 'not-required';
+  if (explicitlySkipped) return 'explicitly-skipped';
+  return appliance ? 'container-isolation' : 'direct-cli';
+}
+
 export function writeSandbox(appDir) {
   const p = join(appDir, '.sandbox-settings.json');
   writeFileSync(p, JSON.stringify({ permissions: { allow: ALLOW, deny: DENY } }, null, 2));

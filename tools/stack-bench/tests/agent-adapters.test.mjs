@@ -14,9 +14,10 @@ test('built-in agent adapters are statically registered and content identified',
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const identity = agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));
     assert.equal(identity.id, id);
-    assert.equal(identity.version, '1.0.0');
+    assert.equal(identity.version, id === 'claude-code' ? '1.1.0' : '1.0.0');
     assert.match(identity.sha256, /^[a-f0-9]{64}$/);
   }
+  assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').requiredExecutables, ['claude']);
 });
 
 test('requests are normalized and unsupported modes fail before launch', () => {
@@ -51,7 +52,7 @@ test('malformed and duplicate agent adapters fail at registry construction', () 
   const source = { schemaVersion: AGENT_ADAPTER_SCHEMA_VERSION, id: 'fake', version: '1.0.0',
     entrypoint: 'fake.mjs', modes: ['build'], deadlineMs: 1000,
     defaultModel: 'fake-model', apiKeyEnvironmentVariable: null,
-    credentialFiles: [], outboundDestinations: [], costLimit: 'unsupported' };
+    credentialFiles: [], outboundDestinations: [], requiredExecutables: [], costLimit: 'unsupported' };
   assert.equal(defineAgentAdapter(source).id, 'fake');
   assert.throws(() => createAgentAdapterRegistry([source, source]), /duplicate/);
   assert.throws(() => defineAgentAdapter({ ...source, version: 'latest' }), /version/);
@@ -59,5 +60,7 @@ test('malformed and duplicate agent adapters fail at registry construction', () 
   assert.throws(() => defineAgentAdapter({ ...source, credentialFiles: ['..\\secret'] }), /credentialFiles/);
   assert.throws(() => defineAgentAdapter({ ...source, outboundDestinations: ['http://insecure.example'] }),
     /outboundDestinations/);
+  assert.throws(() => defineAgentAdapter({ ...source, requiredExecutables: ['../claude'] }),
+    /requiredExecutables/);
   assert.throws(() => defineAgentAdapter({ ...source, command: 'node' }), /command is unknown/);
 });

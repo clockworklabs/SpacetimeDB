@@ -8,10 +8,11 @@ import { sha256 } from './provenance.mjs';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const adapter = (id, entrypoint, defaultModel,
   { modes = ['build', 'upgrade', 'fix'], apiKeyEnvironmentVariable = null,
-    credentialFiles = [], outboundDestinations = [], costLimit = 'unsupported' } = {}) => ({
+    credentialFiles = [], outboundDestinations = [], requiredExecutables = [],
+    costLimit = 'unsupported', version = '1.0.0' } = {}) => ({
   schemaVersion: AGENT_ADAPTER_SCHEMA_VERSION,
-  id, version: '1.0.0', entrypoint: join(ROOT, entrypoint), modes, defaultModel,
-  apiKeyEnvironmentVariable, credentialFiles, outboundDestinations, costLimit,
+  id, version, entrypoint: join(ROOT, entrypoint), modes, defaultModel,
+  apiKeyEnvironmentVariable, credentialFiles, outboundDestinations, requiredExecutables, costLimit,
   deadlineMs: 75 * 60_000,
 });
 
@@ -20,7 +21,8 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
     { apiKeyEnvironmentVariable: 'ANTHROPIC_API_KEY',
       costLimit: 'native',
       credentialFiles: [join('.claude', '.credentials.json')],
-      outboundDestinations: ['https://api.anthropic.com'] }),
+      outboundDestinations: ['https://api.anthropic.com'], requiredExecutables: ['claude'],
+      version: '1.1.0' }),
   adapter('deterministic', join('fixtures', 'stub-agent.mjs'), 'deterministic', { costLimit: 'non-billable' }),
   adapter('fault-injection', join('fixtures', 'fault-agent.mjs'), 'fault-injection', { costLimit: 'non-billable' }),
   adapter('reference-fixture', 'reference-agent.mjs', 'reference-fixture',
@@ -38,7 +40,8 @@ export function agentAdapterIdentity(value) {
         costLimit: value.costLimit,
         apiKeyEnvironmentVariable: value.apiKeyEnvironmentVariable,
         credentialFiles: value.credentialFiles,
-        outboundDestinations: value.outboundDestinations })}\0`),
+        outboundDestinations: value.outboundDestinations,
+        requiredExecutables: value.requiredExecutables })}\0`),
       readFileSync(value.entrypoint),
     ])),
   };

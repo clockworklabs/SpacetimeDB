@@ -45,6 +45,7 @@ import { runPreflight } from './preflight.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from './recovery.mjs';
 import { resolveAgentCredential } from './agent-credentials.mjs';
+import { sandboxProbeMode } from './sandbox.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
@@ -391,18 +392,25 @@ async function main() {
       + `this run also requests L${beyondValidatedLevels.join(', L')}. The result will record those exact levels.`);
   }
 
-  // Prove the sandbox before spending a run on it. The rules have already been
+  // In the single-host topology, prove the sandbox before spending a run on it.
+  // The rules have already been
   // wrong twice in ways that read as fine: a deny list shipped under
   // --dangerously-skip-permissions enforced nothing at all, and the first probe
   // to check it reported a pass by matching the word "denied" inside the file it
   // had just read. Neither showed up as an error — both would have produced a
-  // full set of confident, void scores. One cheap session up front is worth less
-  // than the run it protects.
+  // full set of confident, void scores. In the appliance, the stronger boundary
+  // is structural: the model runs in a separate container where the controller,
+  // grader, scenarios, prior results, and Docker socket do not exist. Running
+  // this probe in the controller would test the wrong image and trust zone.
   // The stub backend is the offline test loop: no model, no cost, nothing to
   // protect. Spending a real CLI session probing it would make the one test
   // that is supposed to run for free stop being free.
-  if (!args.skipProbe && executeStackCapability(stackAdapter,
-    'run-policy', 'sandbox-probe-required')) {
+  const probeMode = sandboxProbeMode({ appliance: process.env.STACK_BENCH_APPLIANCE === '1',
+    explicitlySkipped: args.skipProbe, stackRequired: executeStackCapability(stackAdapter,
+      'run-policy', 'sandbox-probe-required') });
+  if (probeMode === 'container-isolation') {
+    console.log('  sandbox    ... coding container is isolated from the controller and grading files');
+  } else if (probeMode === 'direct-cli') {
     console.log('  sandbox    ... probing the deny rules');
     try {
       sh('node', [join(ROOT, 'probe-sandbox.mjs'), '--mode', 'acceptEdits', '--model', args.model],

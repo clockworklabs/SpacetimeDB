@@ -470,14 +470,15 @@ Normalize build/upgrade/repair requests, cancellation, completion, duration,
 usage, transcript references, cache settings, and raw provider metadata. Ship a
 deterministic fake/fault adapter before qualifying another live provider.
 
-Implemented as agent adapter schema v1 with static registration for the current
+Implemented as agent adapter schema v2 with static registration for the current
 Claude Code implementation, deterministic loop fixture, lifecycle fault
 injector, and model-free canonical-reference deployer. The adapter owns its
 entrypoint, supported modes, deadline, default model, and API-key environment
 name. The engine sends one normalized request and rejects unknown adapters,
 unsupported modes, malformed registrations, mismatched request/result identity,
-unknown result fields, invalid usage/cost/duration values, or missing setup and
-session state. Result records carry normalized usage and transcript references;
+unknown result fields, invalid usage/cost/duration values, missing build-image
+executables, or missing setup and session state. Result records carry normalized
+usage and transcript references;
 the adapter identity hashes both its execution file and behavior-affecting
 configuration. `--agent` arbitrary-path execution was removed in favor of the
 static `--agent-adapter` boundary. The full deterministic loop exercises build
