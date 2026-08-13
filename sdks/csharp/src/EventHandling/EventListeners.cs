@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace SpacetimeDB.EventHandling
@@ -10,6 +10,17 @@ namespace SpacetimeDB.EventHandling
 
         void Add(T listener);
         void Remove(T listener);
+        
+        public static IEventListeners<T> operator +(IEventListeners<T> a, T b)
+        {
+            a.Add(b);
+            return a;
+        }
+        public static IEventListeners<T> operator -(IEventListeners<T> a, T b)
+        {
+            a.Remove(b);
+            return a;
+        }
     }
 
     public interface IEventListenersFactory
