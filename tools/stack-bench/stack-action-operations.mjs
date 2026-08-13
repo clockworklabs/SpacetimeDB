@@ -13,6 +13,10 @@ export function spacetimeNamedActionRequest({ action, input = {}, spacetime }) {
     url: spacetime && `${spacetime.uri}/v1/database/${spacetime.mod}/call/${action.reducer}`,
     body: JSON.stringify(input.args ?? action.args ?? []),
     missingNote: `no reducer named "${action.reducer}"`,
+    // The reducer-call HTTP endpoint maps a reducer's deliberate application
+    // failure to 530. This is not a generic server-error allowance: only this
+    // adapter may classify that exact status as an application rejection.
+    applicationRejectionStatuses: [530],
   };
 }
 

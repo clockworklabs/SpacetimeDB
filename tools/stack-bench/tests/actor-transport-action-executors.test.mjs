@@ -237,7 +237,7 @@ test('replay uses an authenticated named action when the source write is an opaq
     spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
     fetchImpl: async (url, options) => {
       requests.push({ url, options });
-      return { status: 403, ok: false };
+      return { status: 530, ok: false };
     },
   });
 
@@ -247,7 +247,7 @@ test('replay uses an authenticated named action when the source write is an opaq
       attribute: 'data-entity-id', valueType: 'number' }, settleMs: 0 }, provided);
   assert.equal(replayed.status, 'passed');
   assert.deepEqual(replayed.observation,
-    { attempted: true, accepted: false, status: 403, namedAction: 'ship' });
+    { attempted: true, accepted: false, status: 530, namedAction: 'ship' });
   assert.equal(requests[0].url, 'http://127.0.0.1:3000/v1/database/shop/call/ship_order');
   assert.equal(requests[0].options.body, '[52]');
   assert.equal(requests[0].options.headers.Authorization, 'Bearer eyJcustomer.token.value');
@@ -257,8 +257,8 @@ test('replay uses an authenticated named action when the source write is an opaq
   assert.equal(rejected.observation.classification, 'verified');
 });
 
-test('a replay transport failure or server error is not accepted as authorization evidence', async () => {
-  for (const status of [0, 503]) {
+test('a redirect, transport failure, or undeclared server error is not authorization evidence', async () => {
+  for (const status of [0, 302, 503]) {
     const actor = { name: 'customer', replay: { accepted: false, status, method: 'POST', url: '/ship' } };
     const provided = services(new Map([['customer', actor]]));
     const checked = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);

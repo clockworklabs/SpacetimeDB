@@ -443,7 +443,8 @@ async function replayAs({ input, capabilities, signal }) {
         signal,
       }).catch(error => ({ status: 0, ok: false, error: error.message }));
       actor.replay = { accepted: response.ok, status: response.status, url: request.url,
-        method: 'POST', namedAction: action.id };
+        method: 'POST', namedAction: action.id,
+        applicationRejected: (request.applicationRejectionStatuses ?? []).includes(response.status) };
       await transport.sleep(input.settleMs ?? 2000, signal);
       return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status,
         namedAction: action.id };
@@ -519,7 +520,8 @@ async function expectReplayRejected({ input, capabilities }) {
   if (replay.accepted) {
     fail(`server ACCEPTED ${replay.method} ${replay.url} from ${actor.name}, who is not allowed to do it (HTTP ${replay.status}) — the check is in the interface, not the server`);
   }
-  if (!Number.isInteger(replay.status) || replay.status <= 0 || replay.status >= 500) {
+  if (!(Number.isInteger(replay.status) && replay.status >= 400 && replay.status < 500)
+    && replay.applicationRejected !== true) {
     fail(`the ${replay.namedAction ? `named action "${replay.namedAction}"` : 'replayed request'} failed with `
       + `${replay.status ? `HTTP ${replay.status}` : 'no server response'} — this does not prove an authorization refusal`);
   }
