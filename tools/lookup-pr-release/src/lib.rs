@@ -173,6 +173,7 @@ fn range_contains_pr(client: &impl Github, repo: &str, base: Option<&str>, head:
             client.get::<Vec<CompareCommit>>(&format!("repos/{repo}/commits?sha={head}&per_page=100&page={page}"))?
         };
         let page_len = commits.len();
+        // N.B. that this is based on commit subject lines, so it can technically be spoofed.
         if commits
             .iter()
             .any(|commit| subject_matches(&commit.commit.message, suffix))
