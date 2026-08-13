@@ -9,7 +9,8 @@ import { releaseSourceIdentity } from '../release-source.mjs';
 function repository() {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-'));
   const files = ['.dockerignore', 'licenses/BSL.txt', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
-    'crates/bindings-typescript/package.json', 'tools/stack-bench/bench.mjs'];
+    'crates/bindings-typescript/package.json', 'skills/typescript-server/SKILL.md',
+    'tools/stack-bench/bench.mjs'];
   for (const path of files) {
     const absolute = join(root, ...path.split('/'));
     mkdirSync(dirname(absolute), { recursive: true });
@@ -36,6 +37,7 @@ test('release source identity hashes only the exact tracked build inputs', () =>
     assert.equal(before.revision, 'a'.repeat(40));
     assert.equal(before.files, files.length);
     assert.equal(before.paths.includes('pnpm-lock.yaml'), true);
+    assert.equal(before.paths.includes('skills'), true);
     writeFileSync(join(root, 'tools', 'stack-bench', 'JOURNAL.local.md'), 'different local notes\n');
     assert.deepEqual(releaseSourceIdentity(root, { runGit: git(files) }), before);
     writeFileSync(join(root, 'tools', 'stack-bench', 'bench.mjs'), 'changed tracked input\n');

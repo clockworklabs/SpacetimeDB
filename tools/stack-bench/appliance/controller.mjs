@@ -28,6 +28,21 @@ export function resolveControllerCommand(argv) {
   return { executable: process.execPath, args: [...COMMANDS[command], ...rest] };
 }
 
+export function controllerChildEnvironment(source = process.env) {
+  const mode = source.STACK_BENCH_AGENT_AUTH ?? 'credentials';
+  if (!['credentials', 'api-key'].includes(mode)) {
+    throw new Error('STACK_BENCH_AGENT_AUTH must be credentials or api-key');
+  }
+  const env = { ...source };
+  delete env.ANTHROPIC_API_KEY_FILE;
+  if (mode === 'api-key') {
+    const path = source.STACK_BENCH_ANTHROPIC_API_KEY_FILE?.trim();
+    if (!path) throw new Error('api-key auth requires STACK_BENCH_ANTHROPIC_API_KEY_FILE');
+    env.ANTHROPIC_API_KEY_FILE = path;
+  }
+  return env;
+}
+
 function help() {
   process.stdout.write('Stack Bench controller\n\n'
     + 'Commands:\n'
@@ -51,7 +66,8 @@ function help() {
 async function main(argv) {
   const resolved = resolveControllerCommand(argv.slice(2));
   if (!resolved) { help(); return; }
-  const child = spawn(resolved.executable, resolved.args, { stdio: 'inherit', env: process.env });
+  const child = spawn(resolved.executable, resolved.args,
+    { stdio: 'inherit', env: controllerChildEnvironment(process.env) });
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => child.kill(signal));
   const outcome = await new Promise((resolveExit, reject) => {
     child.once('error', reject);

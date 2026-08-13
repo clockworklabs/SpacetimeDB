@@ -43,6 +43,7 @@ ENV STACK_BENCH_SOURCE_REVISION=$SOURCE_REVISION \
     STACK_BENCH_SOURCE_SHA256=$SOURCE_SHA256
 
 COPY tools/stack-bench/ ./
+COPY skills/ /skills/
 COPY crates/bindings-typescript/ /opt/stack-bench-embedded-deps/bindings-typescript/
 COPY --from=sdk-build /workspace/crates/bindings-typescript/dist/ /opt/stack-bench-embedded-deps/bindings-typescript/dist/
 COPY licenses/BSL.txt /opt/stack-bench-embedded-deps/BSL.txt

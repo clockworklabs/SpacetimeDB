@@ -62,9 +62,14 @@ the downloaded bundle.
    controller CLI state and the CLI's live transcript cache; it is outside the
    read-only image. Completed runs archive transcripts and the generated
    SpacetimeDB friction log under `results/` for durable artifact collection.
-2. Write the provider API key as the only line in
-   `/var/lib/stack-bench/secrets/anthropic_api_key`; set mode `0600`.
-3. Copy `operator.env.example` to `/var/lib/stack-bench/operator.env`, replace the two
+2. For subscription billing, copy the dedicated runner's Claude credentials to
+   `/var/lib/stack-bench/controller-home/.claude/.credentials.json`; set the file
+   and its parent directory to mode `0600` and `0700`. For API billing, write the
+   provider API key as the only line in a mode-`0600` file below
+   `/var/lib/stack-bench/secrets` and select `api-key` in the operator environment.
+   Never configure both modes for one run.
+3. Copy `operator.env.example` to `/var/lib/stack-bench/operator.env`, select the
+   intended credential mode, replace the two
    example image values with exact `@sha256:` references from the release
    manifest, and copy that manifest to the configured path below
    `/var/lib/stack-bench`.
@@ -160,7 +165,8 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
 
 The `reference-fixture` adapter makes this qualification preflight model-free;
 it does not call a provider or spend model tokens. Paid campaign preflight must
-instead select the campaign's real agent adapter and have its credential ready.
+instead select the campaign's real agent adapter and have the credential mode
+used by that campaign ready.
 
 Each scoped qualification artifact binds the executable calibration identity.
 Evidence from another recipe, fixture, mutation set, control policy, or declared

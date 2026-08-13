@@ -9,6 +9,7 @@ import { hashFiles } from './provenance.mjs';
 
 const RELEASE_SOURCE_PATHS = Object.freeze([
   'tools/stack-bench',
+  'skills',
   'crates/bindings-typescript',
   'licenses/BSL.txt',
   'package.json',

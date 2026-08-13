@@ -39,7 +39,7 @@ import { resolveRecipeSelection } from './recipe-selection.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
-import { agentRequestArgv, validateAgentResult } from './agent-adapter-contract.mjs';
+import { agentRequestArgv, agentSessionFailure, validateAgentResult } from './agent-adapter-contract.mjs';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from './agent-adapters.mjs';
 import { runPreflight } from './preflight.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
@@ -368,6 +368,7 @@ async function main() {
   const preflight = args.backend === 'stub' ? null : runPreflight({
     backends: [args.backend], track: args.track, levels: args.levels,
     levelList: args.levelList, runIndex: args.runIndex, agentAdapter: args.agentAdapter,
+    agentSkills: args.skills?.split(',').filter(Boolean) ?? null,
     packIds: args.packIds, checkKeys: args.checkKeys, smoke: true,
     supervisorState: process.env.STACK_BENCH_SUPERVISOR_STATE ?? null,
     image: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
@@ -726,14 +727,15 @@ async function main() {
     run.setup ??= build.setup;
     // No session, no app. Grading an empty directory yields a real-looking zero
     // that is a harness failure, not a result for this backend.
-    if (!build.sessionId) {
-      console.log(`  ABORTED: the coding session never ran — see ${join(appDir, `.session-*-l${level}.json`)}`);
-      run.levels.push({ level, score: null, max: null, error: 'coding session did not run',
-        outcome: { kind: 'harness_failure', phase: 'coding-session',
-          reason: 'coding session did not run', appFailures: [], inconclusive: [] },
+    const buildFailure = agentSessionFailure(build);
+    if (buildFailure) {
+      console.log(`  ABORTED: ${buildFailure.reason} — see ${join(appDir, `.session-*-l${level}.json`)}`);
+      run.levels.push({ level, score: null, max: null, error: buildFailure.reason,
+        outcome: buildFailure,
         buildSession: { sessionId: build.sessionId ?? null, costUsd: build.costUsd,
           durationMs: build.durationMs, usage: build.usage ?? null,
-          transcript: build.transcript ?? null, provenance: build.provenance ?? null },
+          transcript: build.transcript ?? null, provenance: build.provenance ?? null,
+          providerMetadata: build.providerMetadata ?? null },
         sessionTotals: summarizeSessions([build]),
         costUsd: build.costUsd, durationMs: Date.now() - t0 });
       break;
@@ -827,7 +829,14 @@ async function main() {
         tokens: fix.tokens ?? null, outputTokens: fix.outputTokens ?? null,
         turns: fix.turns ?? null, promptBytes: fix.promptBytes ?? null,
         thinking: fix.thinking ?? null, transcript: fix.transcript ?? null,
-        provenance: fix.provenance ?? null });
+        provenance: fix.provenance ?? null, providerMetadata: fix.providerMetadata ?? null });
+
+      const fixFailure = agentSessionFailure(fix);
+      if (fixFailure) {
+        console.log(`    coding session failed: ${fixFailure.reason}; stopping repairs`);
+        bundle = { outcome: fixFailure };
+        break;
+      }
 
       // Check the round that just ran, before paying to grade it. A fix session
       // that read the scenario file is not going to be redeemed by another
@@ -907,7 +916,7 @@ async function main() {
       tokens: build.tokens ?? null, outputTokens: build.outputTokens ?? null,
       turns: build.turns ?? null, promptBytes: build.promptBytes ?? null,
       thinking: build.thinking ?? null, transcript: build.transcript ?? null,
-      provenance: build.provenance ?? null };
+      provenance: build.provenance ?? null, providerMetadata: build.providerMetadata ?? null };
     const sessionTotals = summarizeSessions([buildSession, ...fixSessions]);
     run.levels.push({
       level,

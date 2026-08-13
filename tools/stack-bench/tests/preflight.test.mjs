@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -34,7 +34,7 @@ test('preflight validates exact scope and a model-free container/result-volume s
         return JSON.stringify({ platform: 'linux', arch: 'x64', node: 'v22.0.0',
           reached: [{ url: 'https://registry.npmjs.org', status: 200 }],
           tcpReached: [],
-          executables: {},
+          executables: {}, credentialStatus: 'not-checked',
           diskFreeBytes: 20 * 1024 ** 3 });
       }
       throw new Error(`unexpected docker command: ${args.join(' ')}`);
@@ -71,9 +71,10 @@ test('preflight fails before a paid run when the selected agent executable is ab
       if (args[0] === 'run') {
         const mount = args[args.indexOf('-v') + 1].split(':/results')[0];
         writeFileSync(join(mount, args.at(-1)), 'container-write-ok');
-        requestedExecutables = JSON.parse(args.at(-2));
+        requestedExecutables = JSON.parse(args.at(-3));
         return JSON.stringify({ platform: 'linux', arch: 'x64', node: 'v22.0.0',
-          reached: [], tcpReached: [], executables: {}, diskFreeBytes: 20 * 1024 ** 3 });
+          reached: [], tcpReached: [], executables: {}, credentialStatus: 'not-checked',
+          diskFreeBytes: 20 * 1024 ** 3 });
       }
       throw new Error(`unexpected docker command: ${args.join(' ')}`);
     };
@@ -85,6 +86,61 @@ test('preflight fails before a paid run when the selected agent executable is ab
     assert.equal(report.ok, false);
     assert.equal(report.checks.find(check => check.id === 'smoke.container').status, 'fail');
     assert.doesNotMatch(JSON.stringify(report), /test-present/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('subscription credential status is checked inside the exact build image without a model call', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-credential-'));
+  try {
+    const credential = join(root, '.claude', '.credentials.json');
+    mkdirSync(join(root, '.claude'));
+    writeFileSync(credential, '{}');
+    const selected = parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'stub',
+      '--track', 'loop', '--levels', '1', '--agent-adapter', 'claude-code',
+      '--results-dir', root, '--smoke']);
+    let dockerArgs;
+    const run = (_file, args) => {
+      if (args[0] === 'info') return dockerInfo();
+      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
+        ? 'linux/amd64' : `${IMAGE_ID}\n`;
+      if (args[0] === 'run') {
+        dockerArgs = args;
+        const mount = args[args.indexOf('-v') + 1].split(':/results')[0];
+        writeFileSync(join(mount, args.at(-1)), 'container-write-ok');
+        return JSON.stringify({ platform: 'linux', arch: 'x64', node: 'v22.0.0', reached: [],
+          tcpReached: [], executables: { claude: '/usr/local/bin/claude' },
+          credentialStatus: 'ready', diskFreeBytes: 20 * 1024 ** 3 });
+      }
+      throw new Error(`unexpected docker command: ${args.join(' ')}`);
+    };
+    const report = runPreflight(selected, { run, now: Date.parse('2026-08-12T12:00:00.100Z'),
+      env: {}, home: root, statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
+      pidsOnPort: () => [], probePort: () => ({ free: true }) });
+    assert.equal(report.checks.find(check => check.id === 'agent.authentication').status, 'pass');
+    assert.match(dockerArgs[dockerArgs.indexOf('--mount') + 1],
+      /dst=\/root\/\.claude\/\.credentials\.json,readonly$/);
+    assert.deepEqual(JSON.parse(dockerArgs.at(-2)), ['claude', 'auth', 'status', '--json']);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('preflight fails before launch when a stack default skill document is absent', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-materials-'));
+  try {
+    const selected = parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'spacetime',
+      '--track', 'ecommerce', '--levels', '1', '--agent-adapter', 'claude-code',
+      '--results-dir', root]);
+    const report = runPreflight(selected, {
+      run: () => { throw new Error('Docker unavailable in this focused test'); },
+      env: { ANTHROPIC_API_KEY: '<test-present>' }, home: root,
+      exists: path => !String(path).includes(`${join('skills', 'typescript-server')}`),
+      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }), pidsOnPort: () => [],
+      probePort: () => ({ free: true }),
+    });
+    const materials = report.checks.find(check => check.id === 'materials.spacetime.skills');
+    assert.equal(materials.status, 'fail');
+    assert.deepEqual(materials.evidence.skills, ['typescript-server', 'typescript-client']);
+    assert.equal(materials.evidence.missing.length, 1);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

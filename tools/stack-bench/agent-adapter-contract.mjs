@@ -2,7 +2,7 @@ export const AGENT_ADAPTER_SCHEMA_VERSION = 2;
 
 const FIELDS = new Set(['schemaVersion', 'id', 'version', 'entrypoint', 'modes', 'deadlineMs',
   'defaultModel', 'apiKeyEnvironmentVariable', 'credentialFiles', 'outboundDestinations',
-  'requiredExecutables', 'costLimit']);
+  'requiredExecutables', 'credentialStatusCommand', 'usesStackSkills', 'costLimit']);
 const RESULT_FIELDS = new Set(['appDir', 'mode', 'level', 'track', 'backend', 'model', 'guidance',
   'stack', 'setup', 'costUsd', 'tokens', 'outputTokens', 'usage', 'provenance', 'turns',
   'promptBytes', 'tokensPerTurn', 'thinking', 'durationMs', 'sessionId', 'ok',
@@ -37,6 +37,15 @@ export function defineAgentAdapter(value) {
   if (!COST_LIMITS.has(value.costLimit)) {
     throw new Error(`agent adapter ${value.id}.costLimit is invalid`);
   }
+  if (typeof value.usesStackSkills !== 'boolean') {
+    throw new Error(`agent adapter ${value.id}.usesStackSkills is invalid`);
+  }
+  if (value.credentialStatusCommand !== null
+    && (!Array.isArray(value.credentialStatusCommand) || value.credentialStatusCommand.length === 0
+      || value.credentialStatusCommand.some(item => typeof item !== 'string' || !item
+        || /[\r\n\0]/.test(item)))) {
+    throw new Error(`agent adapter ${value.id}.credentialStatusCommand is invalid`);
+  }
   if (value.apiKeyEnvironmentVariable !== null
     && (typeof value.apiKeyEnvironmentVariable !== 'string'
       || !/^[A-Z][A-Z0-9_]*$/.test(value.apiKeyEnvironmentVariable))) {
@@ -61,7 +70,9 @@ export function defineAgentAdapter(value) {
   return Object.freeze({ ...value, modes: Object.freeze([...value.modes].sort()),
     credentialFiles: Object.freeze([...value.credentialFiles].sort()),
     outboundDestinations: Object.freeze([...value.outboundDestinations].sort()),
-    requiredExecutables: Object.freeze([...value.requiredExecutables].sort()) });
+    requiredExecutables: Object.freeze([...value.requiredExecutables].sort()),
+    credentialStatusCommand: value.credentialStatusCommand === null ? null
+      : Object.freeze([...value.credentialStatusCommand]) });
 }
 
 export function createAgentAdapterRegistry(adapters) {
@@ -151,6 +162,15 @@ export function validateAgentResult(value, request) {
       ? { kind: 'provider-session', id: value.sessionId }
       : null),
   };
+}
+
+export function agentSessionFailure(result) {
+  if (result.ok === true && result.sessionId) return null;
+  const failureCode = result.providerMetadata?.failureCode;
+  return { kind: 'harness_failure', phase: 'coding-session',
+    reason: typeof failureCode === 'string' && failureCode ? failureCode
+      : result.sessionId ? 'coding session reported failure' : 'coding session did not run',
+    appFailures: [], inconclusive: [], harnessFailures: [] };
 }
 
 export function agentRequestArgv(adapter, request) {

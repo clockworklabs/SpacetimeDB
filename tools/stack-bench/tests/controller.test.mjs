@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { resolveControllerCommand } from '../appliance/controller.mjs';
+import { controllerChildEnvironment, resolveControllerCommand } from '../appliance/controller.mjs';
 
 test('controller exposes a small explicit operator command surface', () => {
   assert.equal(resolveControllerCommand([]), null);
@@ -32,4 +32,18 @@ test('controller exposes a small explicit operator command surface', () => {
     '--level', '1', '--evidence', '/results/mongodb.json', '--out', '/results/budgets.json']);
   assert.match(budget.args[0], /pack-budget\.mjs$/);
   assert.throws(() => resolveControllerCommand(['shell']), /unknown controller command/);
+});
+
+test('controller selects exactly one explicit agent credential mode', () => {
+  const credentials = controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'credentials',
+    ANTHROPIC_API_KEY_FILE: '/must/not/leak', KEEP: 'yes' });
+  assert.equal(credentials.KEEP, 'yes');
+  assert.equal(credentials.ANTHROPIC_API_KEY_FILE, undefined);
+  const apiKey = controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'api-key',
+    STACK_BENCH_ANTHROPIC_API_KEY_FILE: '/private/key' });
+  assert.equal(apiKey.ANTHROPIC_API_KEY_FILE, '/private/key');
+  assert.throws(() => controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'api-key' }),
+    /requires STACK_BENCH_ANTHROPIC_API_KEY_FILE/);
+  assert.throws(() => controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'ambient' }),
+    /must be credentials or api-key/);
 });

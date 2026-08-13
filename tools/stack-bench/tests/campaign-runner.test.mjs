@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileCampaignFile } from '../campaign-compiler.mjs';
-import { readArtifact } from '../artifacts.mjs';
+import { emptyArtifactIdentities, readArtifact } from '../artifacts.mjs';
 import { attemptArgv, campaignExecutionEnvironment, executeCampaign,
-  reconcileCampaign, runCampaignAdmission } from '../campaign-runner.mjs';
+  reconcileCampaign, runCampaignAdmission, validateCampaignRun } from '../campaign-runner.mjs';
 import { sha256 } from '../provenance.mjs';
 import { claimNextAttempt, initializeCampaignDirectory,
   writeCampaignState } from '../campaign-scheduler.mjs';
@@ -69,6 +69,24 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
     '--model', 'deterministic', '--guidance', 'prescribed', '--fix-rounds', '3',
     '--parent-attempt-id', plan.attempts[0].id, '--no-media',
   ]);
+});
+
+test('campaign validation retains a failed level prefix without accepting partial application results', () => {
+  const plan = compileCampaignFile(example);
+  const attempt = plan.attempts.find(item => item.levels.length > 1) ?? { ...plan.attempts[0], levels: [1, 2] };
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
+  const stack = plan.stacks.find(item => item.id === attempt.stack);
+  const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
+    identities: emptyArtifactIdentities({ engine: plan.identities.engine,
+      agentAdapter: agent.identity, stackAdapter: stack }) },
+  track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+  guidance: attempt.guidance, selectionRequest: plan.definition.selection, skills: attempt.skills,
+  runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 }, levels: [{ level: 1 }],
+  outcome: { kind: 'harness_failure', reason: 'provider-session-error' } };
+  assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  assert.throws(() => validateCampaignRun(plan, attempt,
+    { ...run, outcome: { kind: 'app_failure' } }, { buildImage: 'test-build-image' }),
+  /does not match/);
 });
 
 test('draft campaigns cannot start unless an explicit test-only caller permits them', async () => {

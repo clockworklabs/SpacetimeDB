@@ -474,7 +474,9 @@ Implemented as agent adapter schema v2 with static registration for the current
 Claude Code implementation, deterministic loop fixture, lifecycle fault
 injector, and model-free canonical-reference deployer. The adapter owns its
 entrypoint, supported modes, deadline, default model, and API-key environment
-name. The engine sends one normalized request and rejects unknown adapters,
+name. It also declares required build-image executables, a no-model credential
+status command, and whether stack skill documents are part of its prompt. The
+engine sends one normalized request and rejects unknown adapters,
 unsupported modes, malformed registrations, mismatched request/result identity,
 unknown result fields, invalid usage/cost/duration values, missing build-image
 executables, or missing setup and session state. Result records carry normalized

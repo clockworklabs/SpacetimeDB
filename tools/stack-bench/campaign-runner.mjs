@@ -56,6 +56,10 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
     && canonicalDefinitionJson(item.skills) === canonicalDefinitionJson(attempt.skills));
   const expectedLevels = [...attempt.levels].sort((a, b) => a - b);
   const actualLevels = (run.levels ?? []).map(level => level.level).sort((a, b) => a - b);
+  const exactLevels = canonicalDefinitionJson(actualLevels) === canonicalDefinitionJson(expectedLevels);
+  const interruptedPrefix = actualLevels.length < expectedLevels.length
+    && actualLevels.every((level, index) => level === expectedLevels[index])
+    && ['harness_failure', 'ungraded'].includes(run.outcome?.kind);
   if (run.artifactEnvelope?.attempt?.parentId !== attempt.id
     || run.track !== plan.definition.track
     || run.backend !== attempt.stack
@@ -63,7 +67,7 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
     || run.guidance !== attempt.guidance
     || canonicalDefinitionJson(run.selectionRequest) !== canonicalDefinitionJson(plan.definition.selection)
     || canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills)
-    || canonicalDefinitionJson(actualLevels) !== canonicalDefinitionJson(expectedLevels)
+    || (!exactLevels && !interruptedPrefix)
     || run.artifactEnvelope?.identities?.agentAdapter?.sha256 !== agent?.identity.sha256
     || run.artifactEnvelope?.identities?.engine?.sha256 !== plan.identities.engine.sha256
     || run.artifactEnvelope?.identities?.stackAdapter?.id !== attempt.stack

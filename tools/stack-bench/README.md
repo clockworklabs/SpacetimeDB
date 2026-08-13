@@ -32,8 +32,8 @@ npm run test:container
 
 `preflight` says whether the exact requested run can start and gives a concrete
 fix for each failure. It checks Docker/Compose, resource floors, image and
-database identities, credentials, ports, clock, storage, and inherited run
-state. `--smoke` uses no model: it starts the real build image, checks declared
+database identities, credential presence, selected agent materials, ports,
+clock, storage, and inherited run state. `--smoke` uses no model: it starts the real build image, checks declared
 outbound destinations, and proves its result-volume write survives on the host.
 Every real benchmark runs that full smoke automatically before any model call
 and stores the result as `preflight.json`; the explicit command is for fixing

@@ -29,6 +29,7 @@ import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
 import { dockerMountArguments } from './container-mount.mjs';
+import { readAgentSkillDocuments, selectAgentSkills } from './agent-materials.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(ROOT, '..', '..');
@@ -343,13 +344,6 @@ function backendDoc(args, p, track) {
 // it a build hand-rolls that loop, and one run that had the knowledge came in
 // at $10.29/32min against $22.51/127min without. That was n=1 and is exactly
 // what --skills exists to settle.
-function skillDocs(skills) {
-  const strip = md => md.replace(/^---\n[\s\S]*?\n---\n/, '');
-  return skills
-    .map(s => strip(readFileSync(join(REPO, 'skills', s, 'SKILL.md'), 'utf8')))
-    .join('\n\n---\n\n');
-}
-
 // Naming the linter's path anywhere the build can read it is a signpost to the
 // harness: two directory listings from there sit grade.mjs and the scenario
 // files that define the score. Moving it out of the prompt and into a shim
@@ -524,7 +518,7 @@ function buildPrompt(args, p, track, lintPort, materials = {}) {
     '',
     backendDoc(args, p, track),
   ];
-  const skills = materials.skillsText ?? skillDocs(args.backend, args.skills ?? DEFAULT_SKILLS);
+  const skills = materials.skillsText ?? readAgentSkillDocuments(REPO, args.skills ?? []);
   if (skills) common.push('', '---', '', skills);
 
   if (args.mode === 'fix') {
@@ -586,8 +580,8 @@ async function main() {
   const imageIdentity = resolveContainerImage(IMAGE);
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const defaultSkills = executeStackCapability(adapter, 'agent', 'default-skills');
-  const selectedSkills = defaultSkills.length ? (args.skills ?? defaultSkills) : [];
-  const skillsText = skillDocs(selectedSkills);
+  const selectedSkills = selectAgentSkills(defaultSkills, args.skills ?? null);
+  const skillsText = readAgentSkillDocuments(REPO, selectedSkills);
   const recipeBinding = resolveLegacyRecipeRelease(track, args.level);
   const requirementText = recipeBinding?.plan.recipe.task.requirementText ?? levelPrompt(track, args.level);
   const contractText = recipeBinding?.plan.recipe.task.contractText ?? appendix(track, args.level);
@@ -793,6 +787,7 @@ async function main() {
     durationMs: Date.now() - started,
     sessionId: result.session_id ?? null,
     ok: result.is_error === false,
+    providerMetadata: { failureCode: result.is_error === true ? 'provider-session-error' : null },
   };
   writeFileSync(join(args.app, `.session-${args.mode}-l${args.level}.json`), JSON.stringify({ ...out, text: result.result }, null, 2));
   console.log(JSON.stringify(out));

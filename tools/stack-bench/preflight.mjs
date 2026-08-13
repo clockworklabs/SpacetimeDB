@@ -12,6 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { AGENT_ADAPTER_REGISTRY } from './agent-adapters.mjs';
 import { parseImageId } from './container-image.mjs';
 import { dockerHostGatewayArguments, DOCKER_HOST_ALIAS } from './docker-network.mjs';
+import { dockerMountArguments } from './container-mount.mjs';
 import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
   PREFLIGHT_RESOURCE_FLOORS } from './product-config.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
@@ -20,8 +21,10 @@ import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from './tracks.mjs';
 import { pidsOnPort } from './platform.mjs';
+import { agentSkillPaths, selectAgentSkills } from './agent-materials.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const REPO = resolve(ROOT, '..', '..');
 const COMPOSE = process.env.STACK_BENCH_COMPOSE_FILE ?? join(ROOT, 'docker-compose.yaml');
 const LINUX_CLI = process.env.STACK_BENCH_LINUX_CLI
   ?? join(ROOT, 'container', 'bin', 'spacetimedb-cli');
@@ -126,26 +129,34 @@ export function probeLoopbackPort(port, { spawn = spawnSync } = {}) {
   throw new Error(String(result.stderr || result.error?.message || `probe exited ${result.status}`).trim());
 }
 
-function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requiredExecutables, marker }) {
+function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requiredExecutables,
+  credentialStatusCommand, credentialMount, marker }) {
   const script = `const fs=require('node:fs'),net=require('node:net'),path=require('node:path');`
+    + `const {spawnSync}=require('node:child_process');`
     + `(async()=>{const urls=JSON.parse(process.argv[1]);const ports=JSON.parse(process.argv[2]);`
-    + `const required=JSON.parse(process.argv[3]);const tcpReached=[];`
+    + `const required=JSON.parse(process.argv[3]);const statusCommand=JSON.parse(process.argv[4]);`
+    + `const tcpReached=[];let credentialStatus='not-checked';`
     + `const executablePaths=required.map(name=>{for(const dir of (process.env.PATH||'').split(':')){`
     + `const candidate=path.join(dir,name);try{fs.accessSync(candidate,fs.constants.X_OK);return candidate}catch{}}`
     + `throw new Error('required executable not found: '+name)});`
+    + `if(statusCommand){const r=spawnSync(statusCommand[0],statusCommand.slice(1),{encoding:'utf8'});`
+    + `if(r.status!==0)throw new Error('credential status command failed');credentialStatus='ready'}`
     + `const reach=port=>new Promise((ok,fail)=>{const s=net.createConnection({host:'${DOCKER_HOST_ALIAS}',port});`
     + `const t=setTimeout(()=>s.destroy(new Error('timeout')),5000);s.once('connect',()=>{clearTimeout(t);s.end();ok()});`
     + `s.once('error',e=>{clearTimeout(t);fail(new Error('${DOCKER_HOST_ALIAS}:'+port+': '+e.message))})});`
     + `const reached=[];for(const url of urls){try{const r=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(15000)});`
     + `reached.push({url,status:r.status})}catch(e){throw new Error(url+': '+e.message)}}`
     + `for(const port of ports){await reach(port);tcpReached.push(port)}`
-    + `fs.writeFileSync('/results/'+process.argv[4],'container-write-ok');const s=fs.statfsSync('/',{bigint:true});`
+    + `fs.writeFileSync('/results/'+process.argv[5],'container-write-ok');const s=fs.statfsSync('/',{bigint:true});`
     + `process.stdout.write(JSON.stringify({platform:process.platform,arch:process.arch,node:process.version,reached,`
     + `tcpReached,executables:Object.fromEntries(required.map((name,index)=>[name,executablePaths[index]])),`
+    + `credentialStatus,`
     + `diskFreeBytes:Number(s.bavail*s.bsize)}))})()`;
   const output = command('docker', ['run', '--rm', ...dockerHostGatewayArguments(),
+    ...(credentialMount ? dockerMountArguments(credentialMount) : []),
     '-v', `${resultsDir}:/results`, imageId, 'node', '-e', script,
-    JSON.stringify(destinations), JSON.stringify(tcpPorts), JSON.stringify(requiredExecutables), marker]);
+    JSON.stringify(destinations), JSON.stringify(tcpPorts), JSON.stringify(requiredExecutables),
+    JSON.stringify(credentialStatusCommand), marker]);
   return JSON.parse(output);
 }
 
@@ -315,6 +326,16 @@ export function runPreflight(request, dependencies = {}) {
 
   if (track) {
     for (const backend of request.backends) {
+      const defaults = executeStackCapability(STACK_ADAPTER_REGISTRY.get(backend),
+        'agent', 'default-skills');
+      const skills = agent?.usesStackSkills
+        ? selectAgentSkills(defaults, request.agentSkills ?? null) : [];
+      const missingSkills = agentSkillPaths(REPO, skills).filter(path => !exists(path));
+      add(`materials.${backend}.skills`, missingSkills.length ? 'fail' : 'pass', skills.length
+        ? `${skills.length} selected skill document(s) are present`
+        : 'No skill documents are required', missingSkills.length
+          ? `Install the selected skill documents in ${join(REPO, 'skills')} before running.` : null,
+      { skills, missing: missingSkills });
       const ports = portsFor(track, backend, request.runIndex);
       for (const [role, port] of Object.entries(ports)) {
         if (port == null || role === 'db' || role === 'dbPort') continue;
@@ -363,9 +384,15 @@ export function runPreflight(request, dependencies = {}) {
       ...(agent?.outboundDestinations ?? [])])].sort();
     const tcpPorts = track ? request.backends.filter(backend => ['postgres', 'mongodb'].includes(backend))
       .map(backend => portsFor(track, backend, request.runIndex).dbPort).sort((a, b) => a - b) : [];
+    const fileCredential = auth.source?.startsWith('file:') ? auth.source.slice('file:'.length) : null;
+    const credentialStatusCommand = fileCredential ? agent?.credentialStatusCommand ?? null : null;
+    const credentialMount = credentialStatusCommand ? { kind: 'bind',
+      source: join(home, fileCredential), target: `/root/${fileCredential.replaceAll('\\', '/')}`,
+      readOnly: true } : null;
     try {
       const smoke = runSmoke({ command: run, imageId, resultsDir: request.resultsDir,
-        destinations, tcpPorts, requiredExecutables: agent?.requiredExecutables ?? [], marker });
+        destinations, tcpPorts, requiredExecutables: agent?.requiredExecutables ?? [],
+        credentialStatusCommand, credentialMount, marker });
       const persisted = exists(join(request.resultsDir, marker));
       rmSync(join(request.resultsDir, marker), { force: true });
       const smokeReady = smoke.platform === 'linux' && Number(smoke.node?.match(/^v(\d+)/)?.[1]) >= 22
@@ -382,6 +409,12 @@ export function runPreflight(request, dependencies = {}) {
         `${bytes(smoke.diskFreeBytes)} free in Docker storage`,
         smoke.diskFreeBytes >= PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes ? null
           : `Provide at least ${bytes(PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes)} free in Docker storage.`);
+      if (agent?.credentialStatusCommand) add('agent.authentication',
+        smoke.credentialStatus === 'ready' ? 'pass' : 'warn',
+        smoke.credentialStatus === 'ready' ? 'Agent credential status is ready in the build image'
+          : 'Credential presence was checked, but its live status was not',
+      smoke.credentialStatus === 'ready' ? null
+        : 'Use subscription credentials to enable a no-model status check, or verify an API key separately.');
     } catch (error) {
       rmSync(join(request.resultsDir, marker), { force: true });
       add('smoke.container', 'fail', `No-model container smoke failed: ${String(error.message).split('\n')[0]}`,
@@ -395,6 +428,7 @@ export function runPreflight(request, dependencies = {}) {
     request: { backends: request.backends, track: request.track, levels: request.levelList,
       runIndex: request.runIndex, agentAdapter: request.agentAdapter, packs: request.packIds,
       checks: request.checkKeys, image: request.image, resultsDir: request.resultsDir,
+      agentSkills: request.agentSkills ?? null,
       smoke: request.smoke },
     ok: !checks.some(check => check.status === 'fail'),
     summary: { passed: checks.filter(check => check.status === 'pass').length,

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { AGENT_ADAPTER_SCHEMA_VERSION, agentRequestArgv, createAgentAdapterRegistry,
-  defineAgentAdapter, validateAgentResult } from '../agent-adapter-contract.mjs';
+  agentSessionFailure, defineAgentAdapter, validateAgentResult } from '../agent-adapter-contract.mjs';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../agent-adapters.mjs';
 
 const request = { mode: 'build', level: 1, app: 'C:\\bench\\app', backend: 'stub',
@@ -18,6 +18,9 @@ test('built-in agent adapters are statically registered and content identified',
     assert.match(identity.sha256, /^[a-f0-9]{64}$/);
   }
   assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').requiredExecutables, ['claude']);
+  assert.equal(AGENT_ADAPTER_REGISTRY.get('claude-code').usesStackSkills, true);
+  assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').credentialStatusCommand,
+    ['claude', 'auth', 'status', '--json']);
 });
 
 test('requests are normalized and unsupported modes fail before launch', () => {
@@ -48,11 +51,23 @@ test('completion validation rejects wrong identity and malformed usage', () => {
   assert.throws(() => validateAgentResult({ ...valid, sessionId: undefined }, request), /sessionId/);
 });
 
+test('an unsuccessful provider session is a harness failure even when it has an id', () => {
+  assert.equal(agentSessionFailure({ ok: true, sessionId: 'session-1' }), null);
+  assert.deepEqual(agentSessionFailure({ ok: false, sessionId: 'session-2',
+    providerMetadata: { failureCode: 'provider-session-error' } }), {
+    kind: 'harness_failure', phase: 'coding-session', reason: 'provider-session-error',
+    appFailures: [], inconclusive: [], harnessFailures: [],
+  });
+  assert.equal(agentSessionFailure({ ok: true, sessionId: null }).reason, 'coding session did not run');
+});
+
 test('malformed and duplicate agent adapters fail at registry construction', () => {
   const source = { schemaVersion: AGENT_ADAPTER_SCHEMA_VERSION, id: 'fake', version: '1.0.0',
     entrypoint: 'fake.mjs', modes: ['build'], deadlineMs: 1000,
     defaultModel: 'fake-model', apiKeyEnvironmentVariable: null,
-    credentialFiles: [], outboundDestinations: [], requiredExecutables: [], costLimit: 'unsupported' };
+    credentialFiles: [], outboundDestinations: [], requiredExecutables: [],
+    credentialStatusCommand: null, usesStackSkills: false,
+    costLimit: 'unsupported' };
   assert.equal(defineAgentAdapter(source).id, 'fake');
   assert.throws(() => createAgentAdapterRegistry([source, source]), /duplicate/);
   assert.throws(() => defineAgentAdapter({ ...source, version: 'latest' }), /version/);
@@ -62,5 +77,7 @@ test('malformed and duplicate agent adapters fail at registry construction', () 
     /outboundDestinations/);
   assert.throws(() => defineAgentAdapter({ ...source, requiredExecutables: ['../claude'] }),
     /requiredExecutables/);
+  assert.throws(() => defineAgentAdapter({ ...source, credentialStatusCommand: ['claude', 'bad\narg'] }),
+    /credentialStatusCommand/);
   assert.throws(() => defineAgentAdapter({ ...source, command: 'node' }), /command is unknown/);
 });

@@ -9,10 +9,12 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const adapter = (id, entrypoint, defaultModel,
   { modes = ['build', 'upgrade', 'fix'], apiKeyEnvironmentVariable = null,
     credentialFiles = [], outboundDestinations = [], requiredExecutables = [],
+    credentialStatusCommand = null, usesStackSkills = false,
     costLimit = 'unsupported', version = '1.0.0' } = {}) => ({
   schemaVersion: AGENT_ADAPTER_SCHEMA_VERSION,
   id, version, entrypoint: join(ROOT, entrypoint), modes, defaultModel,
-  apiKeyEnvironmentVariable, credentialFiles, outboundDestinations, requiredExecutables, costLimit,
+  apiKeyEnvironmentVariable, credentialFiles, outboundDestinations, requiredExecutables,
+  credentialStatusCommand, usesStackSkills, costLimit,
   deadlineMs: 75 * 60_000,
 });
 
@@ -22,7 +24,8 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       costLimit: 'native',
       credentialFiles: [join('.claude', '.credentials.json')],
       outboundDestinations: ['https://api.anthropic.com'], requiredExecutables: ['claude'],
-      version: '1.1.0' }),
+      credentialStatusCommand: ['claude', 'auth', 'status', '--json'],
+      usesStackSkills: true, version: '1.1.0' }),
   adapter('deterministic', join('fixtures', 'stub-agent.mjs'), 'deterministic', { costLimit: 'non-billable' }),
   adapter('fault-injection', join('fixtures', 'fault-agent.mjs'), 'fault-injection', { costLimit: 'non-billable' }),
   adapter('reference-fixture', 'reference-agent.mjs', 'reference-fixture',
@@ -41,7 +44,9 @@ export function agentAdapterIdentity(value) {
         apiKeyEnvironmentVariable: value.apiKeyEnvironmentVariable,
         credentialFiles: value.credentialFiles,
         outboundDestinations: value.outboundDestinations,
-        requiredExecutables: value.requiredExecutables })}\0`),
+        requiredExecutables: value.requiredExecutables,
+        credentialStatusCommand: value.credentialStatusCommand,
+        usesStackSkills: value.usesStackSkills })}\0`),
       readFileSync(value.entrypoint),
     ])),
   };
