@@ -1437,7 +1437,7 @@ jobs:
 
   release_dependencies:
     if: ${{ github.event_name == 'pull_request' }}
-    name: Release dependencies
+    name: Check release dependencies
     runs-on: spacetimedb-new-runner-2
     permissions:
       contents: read
