@@ -7,7 +7,7 @@ use std::process::Command;
 
 #[derive(Parser)]
 #[command(about = "Waits for a GitHub Actions workflow run to complete.")]
-struct Args {
+struct Cli {
     /// Repository containing the workflow run, in owner/repo form.
     #[arg(long)]
     repo: String,
@@ -63,7 +63,7 @@ fn response_body(response: &str) -> &str {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = Cli::parse();
 
     println!(
         "Waiting for workflow result... https://github.com/{}/actions/runs/{}",

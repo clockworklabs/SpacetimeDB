@@ -10,7 +10,7 @@ const REPO: &str = "clockworklabs/SpacetimeDB";
 
 #[derive(Parser)]
 #[command(about = "Checks that sensitive CODEOWNERS-controlled files have the required approvals.")]
-struct Args {
+struct Cli {
     /// Git ref to compare against, usually origin/<pull request base branch>.
     #[arg(long)]
     base_ref: String,
@@ -21,7 +21,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = Cli::parse();
 
     ensure_repo_root()?;
 
