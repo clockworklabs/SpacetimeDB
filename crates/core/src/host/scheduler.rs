@@ -6,6 +6,7 @@ use crate::db::relational_db::RelationalDB;
 use crate::host::module_host::{CallProcedureParams, ModuleInfo};
 use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::{InvalidProcedureArguments, InvalidReducerArguments, NoSuchModule};
+use crate::worker_metrics::WORKER_METRICS;
 use anyhow::anyhow;
 use core::time::Duration;
 use futures::future::BoxFuture;
@@ -18,7 +19,7 @@ use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StScheduledFields, ST_SCHEDULED_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::scheduler::ScheduleAt;
-use spacetimedb_lib::{TimeDuration, Timestamp};
+use spacetimedb_lib::{Identity, TimeDuration, Timestamp};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::bsatn::ToBsatn as _;
 use spacetimedb_sats::AlgebraicValue;
@@ -154,6 +155,7 @@ impl SchedulerStarter {
                 queue,
                 key_map,
                 active_calls: FuturesUnordered::new(),
+                database_identity: module_host.info().database_identity,
                 module_host: module_host.downgrade(),
             }
             .run(),
@@ -280,6 +282,7 @@ struct SchedulerActor {
     queue: DelayQueue<QueueItem>,
     key_map: FxHashMap<ScheduledFunctionId, delay_queue::Key>,
     active_calls: FuturesUnordered<ScheduledFunctionFuture>,
+    database_identity: Identity,
     module_host: WeakModuleHost,
 }
 
@@ -340,8 +343,10 @@ spacetimedb_table::static_assert_size!(QueueItem, 64);
 impl SchedulerActor {
     async fn run(mut self) {
         let mut closing = false;
+        self.update_active_calls_metric();
         loop {
             if closing && self.active_calls.is_empty() {
+                self.update_active_calls_metric();
                 break;
             }
 
@@ -408,9 +413,11 @@ impl SchedulerActor {
         };
 
         self.active_calls.push(call_scheduled_function(module_host, item));
+        self.update_active_calls_metric();
     }
 
     fn handle_completion(&mut self, completion: ScheduledFunctionCompletion) {
+        self.update_active_calls_metric();
         let ScheduledFunctionCompletion { item, result } = completion;
 
         let result = match result {
@@ -448,6 +455,13 @@ impl SchedulerActor {
                 }
             }
         }
+    }
+
+    fn update_active_calls_metric(&self) {
+        WORKER_METRICS
+            .scheduler_active_scheduled_functions
+            .with_label_values(&self.database_identity)
+            .set(self.active_calls.len() as i64);
     }
 }
 
