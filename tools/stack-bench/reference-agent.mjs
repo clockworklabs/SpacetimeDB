@@ -70,10 +70,16 @@ function docker(container, cwd, command, commandArgs = [], env = {}) {
     { encoding: 'utf8', stdio: 'pipe', maxBuffer: 64 * 1024 * 1024 });
 }
 
-function startDetached(container, cwd, logName, env = {}) {
+export function referenceDevCommand(logName, { networkVisible = false } = {}) {
+  if (!/^[a-z0-9-]+$/.test(logName)) throw new Error(`unsafe reference log name ${logName}`);
+  const networkArgs = networkVisible ? ' -- --host 0.0.0.0' : '';
+  return `exec npm run dev${networkArgs} > /tmp/${logName}.log 2>&1`;
+}
+
+function startDetached(container, cwd, logName, env = {}, options = {}) {
   const args = ['exec', '-d', '-w', cwd];
   for (const [name, value] of Object.entries(env)) args.push('-e', `${name}=${value}`);
-  args.push(container, 'sh', '-lc', `exec npm run dev > /tmp/${logName}.log 2>&1`);
+  args.push(container, 'sh', '-lc', referenceDevCommand(logName, options));
   runSync('starting detached reference service', 'docker', args, { stdio: 'pipe' });
 }
 
