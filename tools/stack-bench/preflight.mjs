@@ -140,7 +140,7 @@ function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requir
     + `const candidate=path.join(dir,name);try{fs.accessSync(candidate,fs.constants.X_OK);return candidate}catch{}}`
     + `throw new Error('required executable not found: '+name)});`
     + `if(statusCommand){const r=spawnSync(statusCommand[0],statusCommand.slice(1),{encoding:'utf8'});`
-    + `if(r.status!==0)throw new Error('credential status command failed');credentialStatus='ready'}`
+    + `credentialStatus=r.status===0?'ready':'not-ready'}`
     + `const reach=port=>new Promise((ok,fail)=>{const s=net.createConnection({host:'${DOCKER_HOST_ALIAS}',port});`
     + `const t=setTimeout(()=>s.destroy(new Error('timeout')),5000);s.once('connect',()=>{clearTimeout(t);s.end();ok()});`
     + `s.once('error',e=>{clearTimeout(t);fail(new Error('${DOCKER_HOST_ALIAS}:'+port+': '+e.message))})});`
@@ -410,11 +410,11 @@ export function runPreflight(request, dependencies = {}) {
         smoke.diskFreeBytes >= PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes ? null
           : `Provide at least ${bytes(PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes)} free in Docker storage.`);
       if (agent?.credentialStatusCommand) add('agent.authentication',
-        smoke.credentialStatus === 'ready' ? 'pass' : 'warn',
+        smoke.credentialStatus === 'ready' ? 'pass' : 'fail',
         smoke.credentialStatus === 'ready' ? 'Local agent credential status is ready in the build image'
-          : 'Credential presence was checked, but its live status was not',
+          : 'Agent credential is not logged in for the selected billing mode',
       smoke.credentialStatus === 'ready' ? null
-        : 'Use subscription credentials to enable a no-model status check, or verify an API key separately.');
+        : 'Refresh the selected agent login before starting a campaign.');
       if (smoke.credentialStatus === 'ready') add('agent.authentication-provider', 'warn',
         'No-model preflight did not ask the provider to accept the credential',
         'Refresh/login before a campaign if the credential has not completed a recent provider request.');

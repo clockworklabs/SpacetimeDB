@@ -100,6 +100,7 @@ test('subscription credential status is checked inside the exact build image wit
       '--track', 'loop', '--levels', '1', '--agent-adapter', 'claude-code',
       '--results-dir', root, '--smoke']);
     let dockerArgs;
+    let credentialStatus = 'ready';
     const run = (_file, args) => {
       if (args[0] === 'info') return dockerInfo();
       if (args[0] === 'compose') return '2.40.0';
@@ -111,7 +112,7 @@ test('subscription credential status is checked inside the exact build image wit
         writeFileSync(join(mount, args.at(-1)), 'container-write-ok');
         return JSON.stringify({ platform: 'linux', arch: 'x64', node: 'v22.0.0', reached: [],
           tcpReached: [], executables: { claude: '/usr/local/bin/claude' },
-          credentialStatus: 'ready', diskFreeBytes: 20 * 1024 ** 3 });
+          credentialStatus, diskFreeBytes: 20 * 1024 ** 3 });
       }
       throw new Error(`unexpected docker command: ${args.join(' ')}`);
     };
@@ -126,6 +127,14 @@ test('subscription credential status is checked inside the exact build image wit
       /dst=\/root\/\.claude\/\.credentials\.json,readonly$/);
     assert.deepEqual(JSON.parse(dockerArgs.at(-2)),
       AGENT_ADAPTER_REGISTRY.get('claude-code').credentialStatusCommand);
+    credentialStatus = 'not-ready';
+    const loggedOut = runPreflight(selected, { run, now: Date.parse('2026-08-12T12:00:00.100Z'),
+      env: {}, home: root, statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
+      pidsOnPort: () => [], probePort: () => ({ free: true }) });
+    assert.equal(loggedOut.ok, false);
+    assert.equal(loggedOut.checks.find(check => check.id === 'agent.authentication').status, 'fail');
+    assert.match(loggedOut.checks.find(check => check.id === 'agent.authentication').remediation,
+      /Refresh/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
