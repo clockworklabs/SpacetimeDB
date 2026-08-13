@@ -9,6 +9,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const REGISTRY = join(ROOT, 'reference-apps', 'registry.json');
 const BACKENDS = new Set(['spacetime', 'postgres', 'mongodb']);
 const STATUSES = new Set(['blocked', 'candidate', 'active']);
+const ORIGIN_KINDS = new Set(['authored', 'historical-import']);
 const FIXTURE_KINDS = new Set(['node-api', 'spacetime']);
 const FORBIDDEN_DIRECTORIES = new Set(['node_modules', 'dist', 'module_bindings', 'stack-bench']);
 const FORBIDDEN_FILES = [/^\.env(?:\..*)?$/i, /\.mutation-backup(?:\..*)?$/i];
@@ -21,13 +22,12 @@ export function loadReferenceRegistry(path = REGISTRY) {
 
 export function validateReferenceRegistry(registry, { root = ROOT } = {}) {
   const issues = [];
-  if (registry?.schemaVersion !== 2) issues.push('schemaVersion must be 2');
+  if (registry?.schemaVersion !== 3) issues.push('schemaVersion must be 3');
   if (!Array.isArray(registry?.fixtures) || registry.fixtures.length === 0) {
     return { ok: false, issues: [...issues, 'fixtures must be a non-empty array'] };
   }
   const ids = new Set();
   const tuples = new Set();
-  const targets = new Set();
   const referencedManifests = new Map();
   for (const fixture of registry.fixtures) {
     const label = fixture.id ?? '<unnamed>';
@@ -42,8 +42,7 @@ export function validateReferenceRegistry(registry, { root = ROOT } = {}) {
     tuples.add(tuple);
     if (typeof fixture.targetPath !== 'string' || !fixture.targetPath.startsWith('reference-apps/')) {
       issues.push(`${label}: targetPath must stay under reference-apps/`);
-    } else if (targets.has(fixture.targetPath)) issues.push(`${label}: duplicate targetPath`);
-    targets.add(fixture.targetPath);
+    }
     if (!Array.isArray(fixture.mutationManifests)) issues.push(`${label}: mutationManifests must be an array`);
     for (const manifestPath of fixture.mutationManifests ?? []) {
       if (referencedManifests.has(manifestPath)) issues.push(`${label}: ${manifestPath} is already owned by ${referencedManifests.get(manifestPath)}`);
@@ -68,21 +67,32 @@ export function validateReferenceRegistry(registry, { root = ROOT } = {}) {
       if (typeof fixture.blockedReason !== 'string' || !fixture.blockedReason) issues.push(`${label}: blockedReason is required`);
       continue;
     }
-    if (!fixture.origin || typeof fixture.origin.source !== 'string' ||
-        !/^[a-f0-9]{64}$/.test(fixture.origin.sourceSha256 ?? '')) {
-      issues.push(`${label}: candidate origin and sourceSha256 are required`);
-    } else if (!isSafeRelativePath(fixture.origin.source)
-        || !fixture.origin.source.replaceAll('\\', '/').startsWith('archive/pre-v1/results/')) {
-      issues.push(`${label}: candidate origin must stay inside archive/pre-v1/results`);
-    }
-    if (!Array.isArray(fixture.archivedEvidence) || fixture.archivedEvidence.length === 0) {
-      issues.push(`${label}: archivedEvidence is required`);
-    } else {
-      for (const path of fixture.archivedEvidence) {
+    if (!ORIGIN_KINDS.has(fixture.origin?.kind)) {
+      issues.push(`${label}: origin kind must be authored or historical-import`);
+    } else if (fixture.origin.kind === 'historical-import') {
+      if (typeof fixture.origin.source !== 'string'
+          || !/^[a-f0-9]{64}$/.test(fixture.origin.sourceSha256 ?? '')) {
+        issues.push(`${label}: historical origin source and sourceSha256 are required`);
+      } else if (!isSafeRelativePath(fixture.origin.source)
+          || !fixture.origin.source.replaceAll('\\', '/').startsWith('archive/pre-v1/results/')) {
+        issues.push(`${label}: historical origin must stay inside archive/pre-v1/results`);
+      }
+      if (!Array.isArray(fixture.archivedEvidence) || fixture.archivedEvidence.length === 0) {
+        issues.push(`${label}: historical origin requires archivedEvidence`);
+      }
+      for (const path of fixture.archivedEvidence ?? []) {
         if (!isSafeRelativePath(path)
           || !path.replaceAll('\\', '/').startsWith('archive/pre-v1/results/')) {
           issues.push(`${label}: archived evidence must stay inside archive/pre-v1/results`);
         }
+      }
+    } else {
+      if (typeof fixture.origin.note !== 'string' || !fixture.origin.note.trim()) {
+        issues.push(`${label}: authored origin requires a provenance note`);
+      }
+      if (fixture.archivedEvidence !== undefined
+          && (!Array.isArray(fixture.archivedEvidence) || fixture.archivedEvidence.length !== 0)) {
+        issues.push(`${label}: authored origin cannot claim archivedEvidence`);
       }
     }
     if (!fixture.imported || fixture.imported.path !== fixture.targetPath ||
@@ -159,6 +169,12 @@ export function inspectImportedReference(fixture, { root = ROOT } = {}) {
 }
 
 export function inspectReferenceCandidate(fixture, { root = ROOT } = {}) {
+  if (fixture.origin?.kind === 'authored') {
+    const imported = inspectImportedReference(fixture, { root });
+    return { id: fixture.id, origin: 'authored', available: imported.available,
+      ok: imported.ok, sourceSha256: imported.sourceSha256,
+      sourceFiles: imported.sourceFiles, archivedEvidence: 0, failures: imported.failures };
+  }
   const source = join(root, fixture.origin?.source ?? '');
   const failures = [];
   if (!existsSync(source)) return { id: fixture.id, available: false, ok: false, failures: ['source is unavailable'] };
@@ -168,7 +184,7 @@ export function inspectReferenceCandidate(fixture, { root = ROOT } = {}) {
     const full = join(root, evidencePath);
     if (!existsSync(full)) failures.push(`missing archived evidence ${evidencePath}`);
   }
-  return { id: fixture.id, available: true, ok: failures.length === 0,
+  return { id: fixture.id, origin: 'historical-import', available: true, ok: failures.length === 0,
     sourceSha256: sourceHash.sha256, sourceFiles: sourceHash.files.length,
     archivedEvidence: fixture.archivedEvidence?.length ?? 0, failures };
 }

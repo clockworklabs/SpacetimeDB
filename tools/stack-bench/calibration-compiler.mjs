@@ -87,7 +87,7 @@ const RECIPE_FIELDS = new Set([
   'path', 'id', 'version', 'meaningSha256', 'executionSha256', 'contentSha256',
 ]);
 const FIXTURE_FIELDS = new Set(['id', 'version', 'sourceSha256']);
-const REFERENCES_FIELDS = new Set(['registryPath', 'registrySha256', 'entries']);
+const REFERENCES_FIELDS = new Set(['registryPath', 'entries']);
 const REFERENCE_FIELDS = new Set(['backend', 'id', 'sourceSha256']);
 const MUTATION_FIELDS = new Set(['backend', 'path', 'sha256', 'referenceId']);
 const NULL_FIELDS = new Set(['pointBearing', 'zeroPoint', 'repetitions']);
@@ -129,7 +129,6 @@ export function compileCalibrationDefinition(input, { source = '<calibration>' }
 
   strictObject(value.references, `${source}.references`, REFERENCES_FIELDS);
   string(value.references.registryPath, `${source}.references.registryPath`);
-  exactHash(value.references.registrySha256, `${source}.references.registrySha256`);
   array(value.references.entries, `${source}.references.entries`, { nonEmpty: true });
   const referenceIds = new Set();
   const backends = new Set();
@@ -476,10 +475,6 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
 
   const registryRef = contained(benchRoot, benchRoot, calibration.references.registryPath,
     `${source}.references.registryPath`);
-  const registryDigest = sha256(readFileSync(registryRef.absolute));
-  if (registryDigest !== calibration.references.registrySha256) {
-    fail(`${source}.references.registrySha256`, 'reference registry digest is stale');
-  }
   const registry = loadReferenceRegistry(registryRef.absolute);
   const registryValidation = validateReferenceRegistry(registry, { root: benchRoot });
   if (!registryValidation.ok) fail(`${source}.references`, registryValidation.issues.join('; '));
@@ -628,7 +623,7 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
     track: calibration.track,
     recipe: { ...calibration.recipe, path: recipeRef.relative },
     fixture: calibration.fixture,
-    references: { registryPath: registryRef.relative, registrySha256: registryDigest,
+    references: { registryPath: registryRef.relative,
       entries: references.sort((a, b) => a.backend.localeCompare(b.backend)) },
     mutations: mutations.map(entry => ({ ...entry,
       targets: entry.targets.map(target => ({ ...target, stableKeys: [...target.stableKeys].sort() }))

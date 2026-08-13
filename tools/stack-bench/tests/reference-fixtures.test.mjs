@@ -7,12 +7,12 @@ import { hashDirectory } from '../provenance.mjs';
 import { inspectReferenceCandidate, loadReferenceRegistry,
   inspectImportedReference, validateReferenceRegistry } from '../reference-fixtures.mjs';
 
-test('the reference registry binds candidate, blocked and legacy manifest lifecycles', () => {
+test('the reference registry binds active, blocked, and historical provenance lifecycles', () => {
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 3);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 0);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 3);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
   escaped.fixtures[0].archivedEvidence = ['results/unbound-grade.json'];
@@ -55,12 +55,49 @@ test('candidate inspection binds exact source bytes and treats archived evidence
     writeFileSync(evidencePath, 'pre-v1 bytes that the active harness must not parse\n');
     const fixture = { id: 'candidate', origin: { source: 'candidate', sourceSha256: hashDirectory(source).sha256 },
       archivedEvidence: ['grade.json'] };
+    fixture.origin.kind = 'historical-import';
     assert.deepEqual(inspectReferenceCandidate(fixture, { root }), {
-      id: 'candidate', available: true, ok: true, sourceSha256: fixture.origin.sourceSha256,
+      id: 'candidate', origin: 'historical-import', available: true, ok: true, sourceSha256: fixture.origin.sourceSha256,
       sourceFiles: 1, archivedEvidence: 1, failures: [],
     });
     writeFileSync(join(source, 'app.txt'), 'changed\n');
     assert.equal(inspectReferenceCandidate(fixture, { root }).ok, false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('authored references bind checked-in bytes without inventing historical evidence', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-authored-reference-'));
+  try {
+    const target = join(root, 'reference-apps', 'authored');
+    mkdirSync(join(target, 'server'), { recursive: true });
+    writeFileSync(join(target, 'server', 'package.json'), '{}\n');
+    writeFileSync(join(target, 'server', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'reference.json'), JSON.stringify({
+      schemaVersion: 1, kind: 'node-api', installDirectories: ['server'],
+    }));
+    const fixture = { id: 'authored', backend: 'mongodb', track: 'ecommerce', level: 2,
+      status: 'candidate', targetPath: 'reference-apps/authored', mutationManifests: [],
+      origin: { kind: 'authored', note: 'Maintained as a benchmark oracle.' },
+      imported: { path: 'reference-apps/authored', sourceSha256: hashDirectory(target).sha256 } };
+    const registry = { schemaVersion: 3, fixtures: [fixture] };
+
+    assert.deepEqual(validateReferenceRegistry(registry, { root }).issues, []);
+    const reused = structuredClone(fixture);
+    reused.id = 'authored-next-level';
+    reused.level = 3;
+    registry.fixtures.push(reused);
+    assert.deepEqual(validateReferenceRegistry(registry, { root }).issues, []);
+    assert.deepEqual(inspectReferenceCandidate(fixture, { root }), {
+      id: 'authored', origin: 'authored', available: true, ok: true,
+      sourceSha256: fixture.imported.sourceSha256, sourceFiles: 3,
+      archivedEvidence: 0, failures: [],
+    });
+
+    fixture.archivedEvidence = ['archive/pre-v1/results/fake.json'];
+    assert(validateReferenceRegistry(registry, { root }).issues
+      .some(issue => issue.includes('cannot claim archivedEvidence')));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

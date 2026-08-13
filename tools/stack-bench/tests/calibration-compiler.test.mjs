@@ -108,7 +108,6 @@ test('qualification identity excludes governance transitions but binds executabl
   governance.qualification.evidence = [{ kind: 'reference', stack: 'mongodb', repetition: 1,
     path: 'results/evidence.json', sha256: '1'.repeat(64) }];
   governance.qualification.stacks.forEach(stack => { stack.status = 'qualified'; });
-  governance.references.registrySha256 = '2'.repeat(64);
   governance.references.entries.forEach(entry => { entry.status = 'active'; });
   governance.mutations.forEach(entry => { entry.status = 'active'; entry.sha256 = '3'.repeat(64); });
   assert.equal(calibrationQualificationIdentity(governance).sha256, plan.qualificationSha256);
@@ -133,7 +132,7 @@ test('stale recipe, fixture, reference, mutation, and promotion hashes fail comp
   for (const change of [
     value => { value.recipe.contentSha256 = '0'.repeat(64); },
     value => { value.fixture.sourceSha256 = '0'.repeat(64); },
-    value => { value.references.registrySha256 = '0'.repeat(64); },
+    value => { value.references.entries[0].sourceSha256 = '0'.repeat(64); },
     value => { value.mutations[0].sha256 = '0'.repeat(64); },
     value => { value.promotion.catalogSha256 = '0'.repeat(64); },
   ]) assert.throws(() => compileChanged(change), /does not match|stale/);

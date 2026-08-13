@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "kind": "spacetime",
+  "installDirectories": ["backend/spacetimedb", "client"],
+  "moduleDirectory": "backend/spacetimedb",
+  "bindingsDirectory": "client/src/module_bindings",
+  "client": { "directory": "client", "script": "dev", "port": 6473 },
+  "requiredEnvironment": ["VITE_MODULE_NAME", "VITE_SPACETIMEDB_URI", "VITE_PORT"]
+}

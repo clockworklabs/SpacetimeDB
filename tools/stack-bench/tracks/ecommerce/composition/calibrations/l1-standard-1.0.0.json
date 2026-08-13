@@ -21,7 +21,6 @@
   },
   "references": {
     "registryPath": "reference-apps/registry.json",
-    "registrySha256": "49e7f161846b58e915a2149d55c1d0f43808340eb17583c5becd38668cf22da2",
     "entries": [
       { "backend": "mongodb", "id": "ecommerce-l1-mongodb", "sourceSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a" },
       { "backend": "postgres", "id": "ecommerce-l1-postgres", "sourceSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc" },

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "kind": "node-api",
+  "installDirectories": ["server", "client"],
+  "server": { "directory": "server", "script": "dev", "port": 6401 },
+  "client": { "directory": "client", "script": "dev", "port": 6673 },
+  "requiredEnvironment": ["DATABASE_URL", "JWT_SECRET", "PORT", "API_PORT", "VITE_PORT"]
+}

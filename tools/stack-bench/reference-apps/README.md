@@ -13,6 +13,16 @@ the best way to build the application.
   every mutation anchor is unique, and every mutant is cleanly caught at its
   declared criterion without setup failure, inconclusive evidence, or collateral.
 
+Provenance is explicit and does not imply quality. `historical-import` records a
+preserved source tree and opaque old evidence; `authored` identifies a maintained
+benchmark oracle with no historical claim. Both remain candidates until the same
+current Docker qualification gates pass.
+
+Logical track/level entries may reuse one source directory when they bind the
+same exact hash. Qualification and mutation evidence remain separate per level;
+the registry does not require duplicate source trees merely to create a new
+selection.
+
 Promotion is fail-closed. An application is not active because an old score was
 full, because a source tree happens to compile, or because a feature score drops
 after mutation. The following must all be true:
@@ -35,9 +45,9 @@ production-ready application templates.
 
 Run `npm run test:references` from `tools/stack-bench` for the model-free Docker
 compile matrix. It copies each fixture to a temporary workspace and leaves the
-canonical source untouched. The current three ecommerce candidates passed this
-gate on 2026-08-11; they are not active until live grading and mutation gates
-also pass.
+canonical source untouched. The resulting artifact records exactly which
+reference hashes compiled. Compile success is not live grading or promotion
+evidence.
 
 Run `npm run qualify:reference -- --backend <mongodb|postgres|spacetime>` for
 the live gate. It always performs at least two clean Docker runs, audits scored
