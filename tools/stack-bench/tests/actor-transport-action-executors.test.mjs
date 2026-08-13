@@ -166,6 +166,48 @@ test('replay retargeting maps nested entity ids by field and relationship depth'
   assert.match(rejected.summary, /server ACCEPTED/);
 });
 
+test('replay uses the target actor browser cookie when request capture omits it', async () => {
+  const requests = [];
+  const actor = (name, received, writes, sid) => ({
+    name,
+    received: received.map(value => JSON.stringify(value)),
+    writes,
+    context: { cookies: async () => [{ name: 'sid', value: sid }] },
+    page: {
+      evaluate: async () => null,
+      request: { fetch: async (url, options) => {
+        requests.push({ url, options });
+        return { status: () => 403, ok: () => false };
+      } },
+    },
+  });
+  const staff = actor('staff', [{ queue: [{
+    id: 41, items: [{ itemId: 7, name: 'Desk Lamp' }],
+  }] }], [{
+    url: 'http://app.test/api/fulfilment/ship', method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: { orderId: 41 },
+  }], 'staff-session');
+  const customer = actor('customer', [{ orders: [{
+    id: 52, items: [{ itemId: 8, name: 'Webcam' }],
+  }] }], [{
+    url: 'http://app.test/api/items/8/buy', method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: null,
+  }], 'customer-session');
+  const provided = services(new Map([['staff', staff], ['customer', customer]]));
+
+  const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
+    swap: { find: 'Desk Lamp', with: 'Webcam' }, settleMs: 0 }, provided);
+  assert.equal(replayed.status, 'passed');
+  assert.deepEqual(replayed.observation,
+    { attempted: true, accepted: false, status: 403 });
+  assert.deepEqual(JSON.parse(requests[0].options.data), { orderId: 52 });
+  assert.match(requests[0].options.headers.Cookie, /sid=customer-session/);
+
+  const rejected = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+  assert.equal(rejected.status, 'passed');
+  assert.equal(rejected.observation.classification, 'verified');
+});
+
 test('a missing numeric literal is not fabricated into an entity-id retarget', async () => {
   const requests = [];
   const buyer = {

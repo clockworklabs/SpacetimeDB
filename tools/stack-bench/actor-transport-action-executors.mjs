@@ -392,7 +392,7 @@ async function replayAs({ input, capabilities, signal }) {
       : `no HTTP write from ${input.from} matching "${input.match}"` };
     return { attempted: false };
   }
-  const mine = authFor(actor);
+  const mine = authFor(actor) ?? await browserCredentials(actor);
   if (!mine) {
     actor.replay = { inconclusive: true,
       reason: `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused` };
