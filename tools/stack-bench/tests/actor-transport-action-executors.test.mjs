@@ -166,6 +166,30 @@ test('replay retargeting maps nested entity ids by field and relationship depth'
   assert.match(rejected.summary, /server ACCEPTED/);
 });
 
+test('a missing numeric literal is not fabricated into an entity-id retarget', async () => {
+  const requests = [];
+  const buyer = {
+    name: 'buyer',
+    received: [JSON.stringify({ items: [{ _id: 'item-espresso', name: 'Espresso Machine', price: 449 }] })],
+    writes: [{
+      url: 'http://app.test/api/items/item-espresso/buy', method: 'POST',
+      headers: { authorization: 'Bearer buyer-token' }, body: null,
+    }],
+    page: { request: { fetch: async (...args) => { requests.push(args); } } },
+  };
+  const provided = services(new Map([['buyer', buyer]]));
+  const replayed = await run({ do: 'replayAs', actor: 'buyer', from: 'buyer', match: 'buy',
+    swap: { find: '449', with: '1' }, settleMs: 0 }, provided);
+  assert.equal(replayed.status, 'passed');
+  assert.deepEqual(replayed.observation, { attempted: false });
+  assert.equal(requests.length, 0);
+
+  const checked = await run({ do: 'expectReplayRejected', actor: 'buyer' }, provided);
+  assert.equal(checked.status, 'passed');
+  assert.equal(checked.observation.classification, 'unverified');
+  assert.match(provided.verification[0][1], /request has no value to edit/);
+});
+
 test('named calls preserve actor credentials, result state, and application assertions', async () => {
   const requests = [];
   const actor = name => ({

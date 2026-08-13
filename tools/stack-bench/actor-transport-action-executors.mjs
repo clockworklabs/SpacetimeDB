@@ -58,6 +58,7 @@ const mentions = (value, token) => tokenRe(token).test(value);
 const swapToken = (value, from, to) => value.replace(tokenRe(from), to);
 
 const normalizedIdKey = key => key.replaceAll('_', '').toLowerCase();
+const numericLiteral = value => /^-?(?:\d+\.?\d*|\.\d+)$/.test(value.trim());
 
 // Return ids from the entity containing `needle`, deepest first. Keeping the
 // id field and its distance from the matching value lets a replay map an order
@@ -96,8 +97,13 @@ function discoverIds(actor, needle) {
       parsed = true;
     } catch { /* non-JSON transport payload */ }
     if (parsed) continue;
+    // Opaque transport text is only safe for entity labels represented as a
+    // complete quoted value. Searching for a bare number such as "1" would
+    // associate it with almost every id in a payload and fabricate a retarget.
+    const quotedNeedle = JSON.stringify(needle);
     const needleOffsets = [];
-    for (let index = chunk.indexOf(needle); index !== -1; index = chunk.indexOf(needle, index + 1)) {
+    for (let index = chunk.indexOf(quotedNeedle); index !== -1;
+      index = chunk.indexOf(quotedNeedle, index + 1)) {
       needleOffsets.push(index);
     }
     if (!needleOffsets.length) continue;
@@ -404,6 +410,11 @@ async function replayAs({ input, capabilities, signal }) {
     let fromToken = find;
     let toToken = to;
     if (!mentions(url, fromToken) && !mentions(data ?? '', fromToken)) {
+      if (numericLiteral(find) || numericLiteral(to)) {
+        actor.replay = { inconclusive: true,
+          reason: `literal "${find}" does not appear in ${write.method} ${write.url} — the request has no value to edit` };
+        return { attempted: false };
+      }
       const candidates = [...discoverIds(source, find), ...discoverIds(actor, find)];
       const resolvedFrom = candidates.find(candidate =>
         mentions(url, candidate.value) || mentions(data ?? '', candidate.value));
