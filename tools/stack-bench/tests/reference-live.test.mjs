@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
-  referenceQualificationPaths, referenceQualificationWorkRoot, rescueSupervisedLease,
+  referenceQualificationPaths, referenceQualificationRunner, referenceQualificationWorkRoot, rescueSupervisedLease,
   runBounded } from '../reference-live.mjs';
 import { writeArtifact, writeRunJson } from '../artifacts.mjs';
 import { createCheckEvidence } from '../check-evidence.mjs';
@@ -42,6 +42,16 @@ test('reference qualification keeps underlying runs beside the requested artifac
 test('reference qualification uses the daemon-visible appliance work root', () => {
   assert.equal(referenceQualificationWorkRoot({ STACK_BENCH_WORK_DIR: '/var/lib/stack-bench/work' }),
     resolve('/var/lib/stack-bench/work'));
+});
+
+test('reference qualification records whether its controller is the supported Linux appliance', () => {
+  assert.deepEqual(referenceQualificationRunner({ env: { STACK_BENCH_APPLIANCE: '1' },
+    platform: 'linux', architecture: 'x64' }), {
+    schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
+  });
+  assert.deepEqual(referenceQualificationRunner({ env: {}, platform: 'win32', architecture: 'x64' }), {
+    schemaVersion: 1, mode: 'local-controller', platform: 'win32', architecture: 'x64',
+  });
 });
 
 function writeEvidence(root, { id, points, passed }) {

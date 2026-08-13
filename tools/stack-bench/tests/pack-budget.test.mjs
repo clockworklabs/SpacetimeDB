@@ -37,6 +37,7 @@ function reference(stack, stackIndex, overrides = {}) {
     }),
     payload: { fixture: fixture.id, fixtureSha256: fixture.sourceSha256,
       requiredRepetitions: 2, isolation: 'docker', mutationControl: false,
+      runner: { schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64' },
       stable: true, sameImage: true, sameHarness: true, harnessSha256: 'b'.repeat(64), ok: true,
       runs: [1, 2].map(repetition => ({ repetition, ok: true, packRuntime: runtime(stackIndex, repetition) })),
       ...overrides } });
@@ -77,6 +78,19 @@ test('budget recommendation rejects mutation, duplicate, incomplete, and cross-s
   staleRuntime[0].runtimeCalibration.sha256 = 'f'.repeat(64);
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: staleRuntime }),
     /retainedRuntimeCalibration.sha256/);
+});
+
+test('budget recommendation rejects timing captured outside the Linux appliance', () => {
+  const local = exactEvidence();
+  local[0].artifact.payload.runner.mode = 'local-controller';
+  local[0].artifact.payload.runner.platform = 'win32';
+  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: local }),
+    /not supported appliance timing evidence/);
+
+  const legacy = exactEvidence();
+  delete legacy[0].artifact.payload.runner;
+  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: legacy }),
+    /runner\.schemaVersion must be 1/);
 });
 
 test('budget CLI parsing requires explicit unique evidence and output', () => {

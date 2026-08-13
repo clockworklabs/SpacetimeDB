@@ -131,6 +131,13 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
   assert.throws(() => writeArtifact('unused.json', missingIdentitySlot), /identities\.experiment is required/);
   assert.throws(() => createArtifact({ kind: 'grade', id: 'x', identities: { engine: null } }),
     /identities\.engine is required/);
+  assert.doesNotThrow(() => createArtifact({ kind: 'reference_qualification', id: 'legacy-reference' }));
+  assert.throws(() => createArtifact({ kind: 'reference_qualification', id: 'bad-runner', payload: {
+    runner: { schemaVersion: 1, mode: 'desktop', platform: 'win32', architecture: 'x64' },
+  } }), /runner\.mode is invalid/);
+  assert.throws(() => createArtifact({ kind: 'reference_qualification', id: 'future-runner', payload: {
+    runner: { schemaVersion: 2, mode: 'appliance', platform: 'linux', architecture: 'x64' },
+  } }), /runner\.schemaVersion must be 1/);
 });
 
 test('public artifacts reject secret-bearing fields before touching disk', () => {

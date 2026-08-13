@@ -156,13 +156,19 @@ repetition plan cannot be substituted during promotion.
 Reference qualification also retains each complete underlying benchmark run in
 a sibling `<artifact-name>.runs/` directory. Keep that directory with the JSON;
 the run paths recorded in the artifact are relative to the artifact itself.
+New reference artifacts record the controller mode, operating system, and CPU
+architecture. Local-controller runs remain useful diagnostics, but only timing
+from the supported Linux/amd64 appliance can be used to recommend pack budgets.
+Artifacts created before runner identity was recorded remain readable, but are
+not accepted as budget inputs.
 
 Before the first qualification of a recipe whose packs still have unmeasured
 runtime budgets, run the `budgetPreparation.commands` printed by
 `qualification status`. They collect pristine references for every supported
 stack and then run `pack-budget recommend`. The recommendation command verifies
 the exact recipe, calibration, fixture, engine, stack coverage, repetitions,
-retained raw runs, and component arithmetic. Its policy takes the largest
+controller environment, retained raw runs, and component arithmetic. Its
+policy takes the largest
 observed pack runtime, doubles it, and rounds upward to the next second. It
 writes a review artifact and never edits pack definitions. After reviewing and
 applying the bounds in source, rebuild the appliance and run the normal

@@ -71,7 +71,7 @@ const PAYLOAD_FIELDS = Object.freeze({
   preflight: new Set(['schemaVersion', 'generatedAt', 'request', 'ok', 'summary', 'checks']),
   reference_build: new Set(['isolation', 'image', 'fixtures', 'ok']),
   reference_qualification: new Set(['fixture', 'fixtureSha256', 'requiredRepetitions', 'isolation',
-    'mutationControl', 'runs', 'stable', 'sameImage', 'sameHarness', 'harnessSha256', 'ok']),
+    'runner', 'mutationControl', 'runs', 'stable', 'sameImage', 'sameHarness', 'harnessSha256', 'ok']),
   recovery: new Set(['schemaVersion', 'status', 'runId', 'backend', 'reason', 'cleanup',
     'resources', 'instructions']),
 });
@@ -195,7 +195,26 @@ function validatePayload(kind, payload) {
   }
   if (kind === 'performance_run') { objectWhenPresent('deliveryLatencyMs'); objectWhenPresent('server'); }
   if (kind === 'reference_build') arrayWhenPresent('fixtures');
-  if (kind === 'reference_qualification') arrayWhenPresent('runs');
+  if (kind === 'reference_qualification') {
+    arrayWhenPresent('runs'); objectWhenPresent('runner');
+    if (payload.runner !== undefined) {
+      const allowed = new Set(['schemaVersion', 'mode', 'platform', 'architecture']);
+      for (const key of Object.keys(payload.runner)) {
+        if (!allowed.has(key)) fail(`reference_qualification payload.runner.${key} is unknown`);
+      }
+      if (payload.runner.schemaVersion !== 1) {
+        fail('reference_qualification payload.runner.schemaVersion must be 1');
+      }
+      if (!['appliance', 'local-controller'].includes(payload.runner.mode)) {
+        fail('reference_qualification payload.runner.mode is invalid');
+      }
+      for (const field of ['platform', 'architecture']) {
+        if (typeof payload.runner[field] !== 'string' || !payload.runner[field]) {
+          fail(`reference_qualification payload.runner.${field} must be a non-empty string`);
+        }
+      }
+    }
+  }
   if (kind === 'recovery') { objectWhenPresent('cleanup'); objectWhenPresent('resources');
     arrayWhenPresent('instructions'); }
   if (kind === 'contract_lint') { arrayWhenPresent('results'); objectWhenPresent('counts'); }
