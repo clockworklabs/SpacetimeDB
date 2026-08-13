@@ -125,7 +125,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
   } })), /exact image digest/);
 });
 
-test('a campaign cannot be frozen before every selected definition is qualified and promoted', () => {
+test('frozen campaigns require release metadata and both promoted levels compile', () => {
   assert.throws(() => compile(definition({ state: 'frozen' })), /maxCostUsdPerAttempt.*required/);
   const runtime = { releaseManifestSha256: 'a'.repeat(64),
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
@@ -141,10 +141,12 @@ test('a campaign cannot be frozen before every selected definition is qualified 
     pricing: claudePricing,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
   assert.equal(frozen.state, 'frozen');
-  assert.throws(() => compile(definition({ state: 'frozen', levels: [2], runtime,
+  const l2 = compile(definition({ state: 'frozen', levels: [2], runtime,
     agents: claudeAgent, pricing: claudePricing,
-    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } })),
-  /cannot freeze with unqualified L2/);
+    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
+  assert.equal(l2.state, 'frozen');
+  assert.equal(l2.bindings[0].promotion.status, 'promoted');
+  assert.equal(l2.bindings[0].calibration.state, 'qualified');
 });
 
 test('frozen manifest validation does not hard-code an agent provider', () => {

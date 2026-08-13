@@ -43,9 +43,10 @@ test('every mutation manifest binds valid edits to exact scenario criteria', () 
   }
 });
 
-test('candidate mutation anchors match their hash-bound canonical fixture exactly once', () => {
+test('current mutation anchors match their hash-bound canonical fixture exactly once', () => {
   const registry = loadReferenceRegistry();
-  for (const fixture of registry.fixtures.filter(candidate => candidate.status === 'candidate')) {
+  for (const fixture of registry.fixtures.filter(candidate =>
+    candidate.status === 'candidate' || candidate.status === 'active')) {
     for (const relativeManifest of fixture.mutationManifests) {
       const manifest = JSON.parse(readFileSync(join(ROOT, relativeManifest), 'utf8'));
       assert.equal(manifest.fixtureSha256, fixture.imported.sourceSha256,

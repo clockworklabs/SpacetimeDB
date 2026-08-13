@@ -75,7 +75,7 @@ these packages land, but cannot be promoted or used in a measured campaign.
   unknown future schemas fail closed; pre-v1 bytes live in a checksummed archive.
 - [x] Active track manifests declare suite inheritance explicitly. Legacy v0
   manifests receive the old name-based behavior only inside the compiler.
-- [x] Unit/integration baseline: 275 tests passing through typed check evidence,
+- [x] Unit/integration baseline: 291 tests passing through typed check evidence,
   complete stack adapters, and the versioned agent-adapter boundary.
 - [x] Product composition decisions are defined: behavior packs, scored recipes,
   versioned fixtures, and independent experiment plans.
@@ -87,8 +87,8 @@ these packages land, but cannot be promoted or used in a measured campaign.
   registries.
 - [x] Ecommerce L1 has current repeated Docker reference, mutation, and null
   evidence for all three stacks and is promoted.
-- [ ] Ecommerce L2 definition hardening and qualification are in progress; it
-  has no calibration or L2 reference/mutation evidence yet.
+- [x] Ecommerce L2 has current repeated Linux/amd64 Docker reference, mutation,
+  and null evidence for all three stacks and is promoted.
 
 ## E0 - compatibility characterization
 
@@ -159,8 +159,8 @@ Acceptance:
 
 Implemented as eight behavior packs, two exact fixture sets, L1/L2 compatibility
 recipes, one explicitly scored smoke recipe, and a separate promotion catalog
-holding a promoted L1 and candidate L2. L1 compiles to 48 checks/51 points; the
-current L2 draft compiles to 53 checks/75 points with the same suite order.
+holding promoted L1 and L2 aliases. L1 compiles to 48 checks/51 points; L2
+compiles to 53 checks/75 aggregate points with the same suite order.
 Draft packs may declare an unmeasured budget, but qualification requires a bound.
 Legacy source-point scoring is rejected outside an explicitly marked migration
 recipe. The live runner consumes the exact resolved release.
@@ -189,7 +189,8 @@ digests, a source manifest, and a compact stable-key check catalog; fixture
 credentials and the full executable plan are not copied into results. L2 binds
 the exact L1 release hashes. Ecommerce L1/L2 runner compatibility fails before
 browser work on alias ambiguity, level/scoring/plan drift, or a parent/child
-hash mismatch. Candidate status is recorded and is not presented as promotion.
+hash mismatch. Promotion status is recorded explicitly and never inferred from
+a passing score.
 
 ### SB-104: Calibration manifest - complete
 
@@ -211,10 +212,10 @@ Acceptance:
   new manifest.
 
 Implemented as a strict, hash-bound calibration source and compiler. Ecommerce
-L1 is qualified from its exact repeated evidence. L2 has a draft calibration
-with exact references, mutations, controls, evidence slots, and a required
-Linux/amd64 appliance runner; it is waiting on measured pack budgets before
-qualification can launch. A calibration binds the exact recipe/fixture,
+L1 and L2 are qualified from their exact repeated evidence. L2 binds measured
+pack budgets, two reference and two mutation repetitions for each supported
+stack, one null control, and a required Linux/amd64 appliance runner. A
+calibration binds the exact recipe/fixture,
 canonical reference registry entries and sources, exact mutation manifests and
 targets, null policy, repetition counts, stack states, evidence slots,
 equivalence decisions, and alias catalog. Every zero-point check requires one

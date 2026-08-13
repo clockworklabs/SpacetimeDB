@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.operations-access",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Fulfilment and operator access",
   "description": "The fulfilment queue, operator authorization, and order ownership during operations.",
   "requiresPacks": [],

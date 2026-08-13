@@ -75,7 +75,7 @@ test('ecommerce L1 and L2 recipes preserve current suite, feature, check, order,
   });
   assert.deepEqual(promotions.entries.map(entry => [entry.alias, entry.status, entry.recipe.id]), [
     ['L1', 'promoted', 'ecommerce.l1-standard'],
-    ['L2', 'candidate', 'ecommerce.l2-standard'],
+    ['L2', 'promoted', 'ecommerce.l2-standard'],
   ]);
 });
 

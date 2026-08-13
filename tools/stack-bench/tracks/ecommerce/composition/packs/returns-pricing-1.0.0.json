@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.returns-pricing",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Returns and pricing history",
   "description": "Cancellation, returns, mutable catalog prices, immutable order history, and refunds.",
   "requiresPacks": [],

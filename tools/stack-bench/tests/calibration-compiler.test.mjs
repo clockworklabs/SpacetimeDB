@@ -20,16 +20,16 @@ function current() {
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release }) };
 }
 
-test('runtime calibration resolution is exact for qualified and draft recipes', () => {
+test('runtime calibration resolution is exact for both qualified recipes', () => {
   const l1 = resolveLegacyRecipeRelease(TRACK, 1).release;
   const resolved = resolveCalibrationForRelease(l1, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
   assert.equal(resolved.id, 'ecommerce.l1-standard-calibration');
   assert.match(resolved.contentSha256, /^[a-f0-9]{64}$/);
   const l2 = resolveLegacyRecipeRelease(TRACK, 2).release;
-  const draft = resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
-  assert.equal(draft.id, 'ecommerce.l2-standard-calibration');
-  assert.equal(draft.state, 'draft');
-  assert.deepEqual(draft.qualification.runner, {
+  const qualified = resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
+  assert.equal(qualified.id, 'ecommerce.l2-standard-calibration');
+  assert.equal(qualified.state, 'qualified');
+  assert.deepEqual(qualified.qualification.runner, {
     schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
   });
 });

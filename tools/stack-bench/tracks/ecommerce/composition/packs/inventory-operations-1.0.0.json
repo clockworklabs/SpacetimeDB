@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.inventory-operations",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Inventory operations",
   "description": "Warehouse transfers, operational inventory views, and stock conservation.",
   "requiresPacks": [],

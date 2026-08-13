@@ -26,7 +26,7 @@ level/suite files remain compatibility inputs during that migration. Pack-owned
 requirements and hook fragments now compose the exact builder task alongside
 the checks, while check-only filters leave that task fixed. The first
 composition source slice now validates eight ecommerce packs, two
-fixture sets, L1/L2 parity recipes, a smaller smoke recipe, and candidate aliases;
+fixture sets, L1/L2 parity recipes, a smaller smoke recipe, and promoted aliases;
 runtime still executes the compatibility scenarios, but every grade and bundle
 now binds the exact compiled recipe, pack, fixture, applicable calibration, and
 selected stable-check scope. Pack/check selection drives that executor, and the
@@ -230,13 +230,12 @@ Current execution order:
 3. **Completed 2026-08-13:** freeze separate L2 reference revisions for MongoDB,
    PostgreSQL, and SpacetimeDB. Do not edit the qualified L1 reference bytes in
    place.
-4. **In progress:** L2 mutation controls and a draft calibration now bind the
-   exact recipe, fixture, references, controls, null policy, evidence plan, and
-   required Linux/amd64 appliance runner. Collect pristine appliance timing for
-   all three stacks, review the generated limits, and bind those pack budgets.
-5. Run the exact L2 reference and mutation gates twice per backend plus the null
-   gate, then promote the recipe only if every evidence slot passes.
-6. Execute a repeated frozen L1-to-L2 campaign and publish the exact scope and
+4. **Completed 2026-08-13:** measure pristine appliance timing for all three
+   stacks, review the generated limits, and bind the L2 pack budgets.
+5. **Completed 2026-08-13:** run the exact L2 reference and mutation gates twice
+   per backend plus the null gate, bind all 13 evidence slots, and promote the
+   qualified recipe, fixture, packs, stacks, references, and alias.
+6. **Next:** execute a repeated frozen L1-to-L2 campaign and publish the exact scope and
    dispersion. Reconstruct other tracks only after this first product path is
    reproducible end to end.
 
@@ -246,7 +245,7 @@ Current execution order:
   criterion from zero points.
 - [x] Re-run L1 on all three backends under the frozen harness and archive the
   raw qualification evidence with checksums.
-- [ ] Re-run L2 on all three backends under the frozen harness and archive the
+- [x] Re-run L2 on all three backends under the frozen harness and archive the
   raw qualification evidence with checksums.
 - [ ] Predeclare the repeated-run design and report dispersion; a single matched
   run remains exploratory rather than a headline comparison.

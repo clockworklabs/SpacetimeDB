@@ -13,7 +13,7 @@
     },
     {
       "alias": "L2",
-      "status": "candidate",
+      "status": "promoted",
       "recipe": { "path": "recipes/l2-standard-1.0.0.json", "id": "ecommerce.l2-standard", "version": "1.0.0" }
     }
   ]
