@@ -909,6 +909,7 @@ dependencies = [
  "anyhow",
  "clap 4.5.50",
  "lookup-pr-release",
+ "regex",
  "serde",
 ]
 
@@ -4131,7 +4132,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap 4.5.50",
- "regex",
  "serde",
  "serde_json",
 ]
