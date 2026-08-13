@@ -19,7 +19,7 @@ destroy it after copying verified results elsewhere.
   wrong-release content.
 - `docker-compose.yaml` starts the controller, one-shot dependency initializer,
   and digest-pinned PostgreSQL and MongoDB services.
-- `secrets.env.example` documents the three operator-supplied values. It never
+- `operator.env.example` documents the three operator-supplied values. It never
   contains a real secret or a usable mutable image tag.
 
 The coding container receives the selected app, its own transcript directory,
@@ -64,7 +64,7 @@ the downloaded bundle.
    SpacetimeDB friction log under `results/` for durable artifact collection.
 2. Write the provider API key as the only line in
    `/var/lib/stack-bench/secrets/anthropic_api_key`; set mode `0600`.
-3. Copy `secrets.env.example` to an operator-owned file and replace the two
+3. Copy `operator.env.example` to `/var/lib/stack-bench/operator.env` and replace the two
    example image values with exact `@sha256:` references from the release
    manifest.
 4. Pull and verify every manifest image before starting any service.
@@ -141,14 +141,20 @@ track/level and backend; reference and mutation evidence are separate retained
 artifacts, while the null gate is stack-independent:
 
 ```sh
-controller qualify-reference --backend postgres --track ecommerce --level 1 \
-  --repetitions 2 --out /var/lib/stack-bench/results/qualification/postgres-reference.json
-controller qualify-reference --backend postgres --track ecommerce --level 1 \
-  --repetitions 2 --mutations \
-  --out /var/lib/stack-bench/results/qualification/postgres-mutation.json
-controller qualify-null --track ecommerce --level 1 \
-  --out /var/lib/stack-bench/results/qualification/ecommerce-l1-null.json
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  preflight --agent-adapter reference-fixture \
+  --backend mongodb,postgres,spacetime --track ecommerce --levels 2 \
+  --run-index 0 --smoke
+
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  qualification status --track ecommerce --level 2
 ```
+
+The `reference-fixture` adapter makes this qualification preflight model-free;
+it does not call a provider or spend model tokens. Paid campaign preflight must
+instead select the campaign's real agent adapter and have its credential ready.
 
 Each scoped qualification artifact binds the executable calibration identity.
 Evidence from another recipe, fixture, mutation set, control policy, or declared
@@ -165,21 +171,29 @@ Artifacts created before runner identity was recorded remain readable, but are
 not accepted where the selected calibration requires that identity.
 
 Before the first qualification of a recipe whose packs still have unmeasured
-runtime budgets, run the `budgetPreparation.commands` printed by
-`qualification status`. They collect pristine references for every supported
-stack and then run `pack-budget recommend`. The recommendation command verifies
-the exact recipe, calibration, fixture, engine, stack coverage, repetitions,
-controller environment, retained raw runs, and component arithmetic. Its
-policy takes the largest
-observed pack runtime, doubles it, and rounds upward to the next second. It
-writes a review artifact and never edits pack definitions. After reviewing and
-applying the bounds in source, rebuild the appliance and run the normal
-qualification commands again against the new exact execution identity.
+runtime budgets, run each `budgetPreparation.commands` entry printed by
+`qualification status` through the same Compose prefix shown above. Those
+commands collect pristine references for every supported stack and then run
+`pack-budget recommend`. The recommendation command verifies the exact recipe,
+calibration, fixture, engine, stack coverage, repetitions, controller
+environment, retained raw runs, and component arithmetic. Its policy takes the
+largest observed pack runtime, doubles it, and rounds upward to the next second.
+It writes a review artifact and never edits pack definitions.
+
+Review the recommendation, apply the accepted bounds to the pack definitions,
+commit them, and build a new exact controller image. The budget-measurement
+artifacts are inputs to that source change; they are not the final qualification
+evidence because the executable identity changes when the bounds are added.
+On the new image, require a green preflight and run every command in the
+`commands` array through the Compose prefix. Only those post-budget reference,
+mutation, and null artifacts can be bound to promotion.
 
 Before launching the official repetitions, inspect the exact go/no-go record:
 
 ```sh
-controller qualification status --track ecommerce --level 1
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  qualification status --track ecommerce --level 2
 ```
 
 It is read-only. The JSON separates launch blockers, required evidence and
