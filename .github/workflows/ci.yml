@@ -284,7 +284,7 @@ jobs:
     needs: [upload-build-artifacts-windows]
     name: Build smoketests (Windows)
     runs-on: spacetimedb-windows-runner-testing
-    timeout-minutes: 15
+    timeout-minutes: 45
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
