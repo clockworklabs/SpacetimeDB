@@ -720,6 +720,8 @@ fn next_interval_reschedule(last_intended_at: Timestamp, interval: TimeDuration)
     }
 }
 
+/// Returns the first interval tick after `now`, anchored at `last_intended_at`,
+/// skipping any ticks that have already been missed.
 fn next_interval_tick_after(last_intended_at: Timestamp, interval: TimeDuration, now: Timestamp) -> Timestamp {
     let interval = interval.abs();
     let interval_micros = interval.to_micros();
