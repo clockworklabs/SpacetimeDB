@@ -8,7 +8,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { leaseFromEnv } from './backend-lease.mjs';
 import { dbName, loadTrack, moduleName, portsFor } from './tracks.mjs';
 import { fetchStatus } from './readiness.mjs';
@@ -22,16 +22,18 @@ const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 const COMMAND_TIMEOUT_MS = 15 * 60_000;
 const delay = ms => new Promise(resolveDelay => setTimeout(resolveDelay, ms));
 const phase = message => process.stderr.write(`[reference-agent] ${message}\n`);
-process.on('beforeExit', code => phase(`beforeExit code=${code}`));
-process.on('exit', code => phase(`exit code=${code}`));
-for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
-  process.on(signal, () => {
-    phase(`received ${signal}`);
-    process.exit(128 + { SIGINT: 2, SIGTERM: 15, SIGHUP: 1 }[signal]);
-  });
+function installProcessHandlers() {
+  process.on('beforeExit', code => phase(`beforeExit code=${code}`));
+  process.on('exit', code => phase(`exit code=${code}`));
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(signal, () => {
+      phase(`received ${signal}`);
+      process.exit(128 + { SIGINT: 2, SIGTERM: 15, SIGHUP: 1 }[signal]);
+    });
+  }
 }
 
-function parseArgs(argv) {
+export function parseReferenceAgentArgs(argv) {
   const args = {};
   for (let i = 2; i < argv.length; i += 2) args[argv[i].replace(/^--/, '')] = argv[i + 1];
   if (!args.backend || !args.app || !args.track || !args.level || !args['run-index']) {
@@ -39,8 +41,12 @@ function parseArgs(argv) {
   }
   args.level = Number(args.level);
   args.runIndex = Number(args['run-index']);
-  if (args.mode !== 'build' || args.level !== 1) {
-    throw new Error(`reference-agent supports only a clean L1 build, got ${args.mode}/L${args.level}`);
+  if (args.mode !== 'build') throw new Error(`reference-agent supports only build mode, got ${args.mode}`);
+  if (!Number.isSafeInteger(args.level) || args.level < 1) {
+    throw new Error(`reference-agent requires a positive integer level, got ${args.level}`);
+  }
+  if (!Number.isSafeInteger(args.runIndex) || args.runIndex < 0) {
+    throw new Error(`reference-agent requires a non-negative integer run-index, got ${args.runIndex}`);
   }
   return args;
 }
@@ -91,7 +97,7 @@ function containerLogs(container, ...names) {
 async function main() {
   const started = Date.now();
   phase('starting');
-  const args = parseArgs(process.argv);
+  const args = parseReferenceAgentArgs(process.argv);
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const track = loadTrack(args.track);
   const ports = portsFor(track, args.backend, args.runIndex);
@@ -127,4 +133,7 @@ async function main() {
     sessionId: `reference-${args.backend}-${Date.now()}`, ok: true }));
 }
 
-main().catch(error => { console.error(error.stack ?? error.message); process.exitCode = 1; });
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  installProcessHandlers();
+  main().catch(error => { console.error(error.stack ?? error.message); process.exitCode = 1; });
+}
