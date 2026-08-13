@@ -144,6 +144,10 @@ fn main() -> Result<()> {
     let section =
         validated_release_section(body, &template).context("failed to validate the `Must be released` section")?;
     let dependencies = references(section, &args.repo)?;
+    if dependencies.is_empty() {
+        println!("No PR mentions found, so trivially succeeding.");
+        return Ok(());
+    }
     let mut unreleased = Vec::new();
     let mut errors = Vec::new();
 
@@ -202,7 +206,9 @@ mod tests {
         let unchanged = "# Must be released\r\n\r\n<!-- default instructions -->   \r\n";
         let empty = "# Must be released\n";
         assert!(validated_release_section(unchanged, template).is_err());
-        assert_eq!(validated_release_section(empty, template).unwrap(), "");
+        let section = validated_release_section(empty, template).unwrap();
+        assert_eq!(section, "");
+        assert!(references(section, "clockworklabs/SpacetimeDB").unwrap().is_empty());
     }
 
     #[test]
