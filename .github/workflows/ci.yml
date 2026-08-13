@@ -75,7 +75,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Linux)
     runs-on: spacetimedb-new-runner-2
-    timeout-minutes: 15
+    timeout-minutes: 45
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -202,7 +202,7 @@ jobs:
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Windows)
     runs-on: spacetimedb-windows-runner-testing
-    timeout-minutes: 15
+    timeout-minutes: 45
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -217,7 +217,7 @@ jobs:
     needs: [upload-build-artifacts-linux]
     name: Build smoketests (Linux)
     runs-on: spacetimedb-new-runner-2
-    timeout-minutes: 15
+    timeout-minutes: 45
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -303,7 +303,7 @@ jobs:
       matrix:
         partition: [1, 2]
     runs-on: spacetimedb-new-runner-2
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
@@ -453,7 +453,7 @@ jobs:
       matrix:
         partition: [1, 2, 3, 4]
     runs-on: spacetimedb-windows-runner-testing
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
