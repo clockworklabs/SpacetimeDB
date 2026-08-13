@@ -120,7 +120,7 @@ export const stock = table(
 );
 
 // The reducer is what keeps the pair unique:
-const existing = ctx.db.stock.by_item_warehouse.filter([itemId, warehouseId])[0];
+const existing = [...ctx.db.stock.by_item_warehouse.filter([itemId, warehouseId])][0];
 if (existing) ctx.db.stock.id.update({ ...existing, quantity: existing.quantity + n });
 else ctx.db.stock.insert({ id: 0n, itemId, warehouseId, quantity: n });
 ```
