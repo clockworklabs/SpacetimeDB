@@ -21,16 +21,16 @@
   },
   "references": {
     "registryPath": "reference-apps/registry.json",
-    "registrySha256": "2e98a5b8d2455f2cfc03c97891d65c2869601db2ec0ba242deda4799e682ec2d",
+    "registrySha256": "998266d2c0959af93f4df3d0be8afe136a46cfd5d4fa224a1c3b9594654cf699",
     "entries": [
       { "backend": "mongodb", "id": "ecommerce-l1-mongodb", "sourceSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a" },
-      { "backend": "postgres", "id": "ecommerce-l1-postgres", "sourceSha256": "3c727e41aaa8f9a6b23d109c4d5a3043632342f3dc7e1349f9b130e8a3f99dd9" },
+      { "backend": "postgres", "id": "ecommerce-l1-postgres", "sourceSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc" },
       { "backend": "spacetime", "id": "ecommerce-l1-spacetime", "sourceSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1" }
     ]
   },
   "mutations": [
     { "backend": "mongodb", "path": "grader/mutations/mongodb-ecom-l1.json", "sha256": "bb286e671042963855fa40a9c5976fcbc01829758aed1896589e370df78cc8ef", "referenceId": "ecommerce-l1-mongodb" },
-    { "backend": "postgres", "path": "grader/mutations/postgres-ecom-l1.json", "sha256": "ec9ce635994edc621be3880b1c9e250bf2907cf8a8f2148b66edbfffcc046a26", "referenceId": "ecommerce-l1-postgres" },
+    { "backend": "postgres", "path": "grader/mutations/postgres-ecom-l1.json", "sha256": "153c32d7f8762bd735a41ac4c7cb5e0ef2f58b154c23ee909e0053c427f65362", "referenceId": "ecommerce-l1-postgres" },
     { "backend": "spacetime", "path": "grader/mutations/spacetime-ecom-l1.json", "sha256": "147f1b4e096302e7acb3490253a68662df62cca1bbfef90527d13c2cc7cfcd2e", "referenceId": "ecommerce-l1-spacetime" }
   ],
   "nullControl": {

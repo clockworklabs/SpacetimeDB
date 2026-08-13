@@ -72,6 +72,13 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const socketRef = useRef<Socket | null>(null);
+  const cartObservationRef = useRef(0);
+
+  function applyCartResponse(state: CartState, observedAtRequest: number) {
+    // A socket update may carry state committed after this request began. Do
+    // not let a slower HTTP response roll the live cart back to an older view.
+    if (cartObservationRef.current === observedAtRequest) setCart(state);
+  }
 
   function pushToast(kind: Toast["kind"], message: string) {
     const id = ++toastId;
@@ -109,7 +116,10 @@ export default function App() {
     socket.on("connect", () => setConnected(true));
     socket.on("disconnect", () => setConnected(false));
     socket.on("items:update", (payload: { items: Item[] }) => setItems(payload.items));
-    socket.on("cart:update", (payload: CartState) => setCart(payload));
+    socket.on("cart:update", (payload: CartState) => {
+      cartObservationRef.current += 1;
+      setCart(payload);
+    });
     socket.on("orders:update", (payload: { orders: Order[] }) => setOrders(payload.orders));
     socket.on("admin:update", (payload: AdminState) => setAdmin(payload));
     socket.on("queue:update", (payload: QueueState) => setQueue(payload));
@@ -128,6 +138,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const observedAtRequest = ++cartObservationRef.current;
     if (!account) {
       setCart({ items: [], total: 0 });
       setOrders([]);
@@ -135,7 +146,7 @@ export default function App() {
       setQueue({ queue: [], depth: 0 });
       return;
     }
-    api<CartState>("/api/cart").then(setCart).catch(() => {});
+    api<CartState>("/api/cart").then(state => applyCartResponse(state, observedAtRequest)).catch(() => {});
     api<{ orders: Order[] }>("/api/orders").then((r) => setOrders(r.orders)).catch(() => {});
     if (account.isAdmin) {
       api<AdminState>("/api/admin/state").then(setAdmin).catch(() => {});
@@ -240,11 +251,12 @@ export default function App() {
 
   async function addToCart(itemId: number) {
     try {
+      const observedAtRequest = cartObservationRef.current;
       const state = await api<CartState>("/api/cart", {
         method: "POST",
         body: JSON.stringify({ itemId, quantity: 1 }),
       });
-      setCart(state);
+      applyCartResponse(state, observedAtRequest);
     } catch (err: any) {
       pushToast("buy-error", err.message);
     }
@@ -252,11 +264,12 @@ export default function App() {
 
   async function changeCartQuantity(itemId: number, quantity: number) {
     try {
+      const observedAtRequest = cartObservationRef.current;
       const state = await api<CartState>(`/api/cart/${itemId}`, {
         method: "PATCH",
         body: JSON.stringify({ quantity }),
       });
-      setCart(state);
+      applyCartResponse(state, observedAtRequest);
     } catch (err: any) {
       pushToast("buy-error", err.message);
     }
@@ -264,8 +277,9 @@ export default function App() {
 
   async function removeCartLine(itemId: number) {
     try {
+      const observedAtRequest = cartObservationRef.current;
       const state = await api<CartState>(`/api/cart/${itemId}`, { method: "DELETE" });
-      setCart(state);
+      applyCartResponse(state, observedAtRequest);
     } catch (err: any) {
       pushToast("buy-error", err.message);
     }

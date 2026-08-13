@@ -40,7 +40,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/postgres",
-        "sourceSha256": "3c727e41aaa8f9a6b23d109c4d5a3043632342f3dc7e1349f9b130e8a3f99dd9"
+        "sourceSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc"
       },
       "archivedEvidence": [
         "archive/pre-v1/results/postgres-ecom-l2/grading/grading-contention.json",
