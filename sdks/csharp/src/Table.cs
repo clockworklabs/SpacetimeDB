@@ -708,7 +708,7 @@ namespace SpacetimeDB
         {
             foreach (var reset in Resets)
             {
-            reset();
+                reset();
             }
         }
     }
