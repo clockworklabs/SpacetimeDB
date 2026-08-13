@@ -48,6 +48,7 @@ test('build-container plans expose only artifacts owned by the selected stack', 
     { kind: 'volume', source: 'stack-bench-release-deps', target: '/release-deps', readOnly: true },
   ]);
   assert.match(appliance.init, /test -x \/release-deps\/spacetimedb-cli/);
+  assert.match(appliance.init, /mkdir -p \/deps/);
   assert.match(appliance.init, /test -f \/release-deps\/spacetimedb\.tgz/);
   assert.doesNotMatch(appliance.init, /npm install|npm pack/);
   assert.equal(appliance.networkNamespace, 'host');

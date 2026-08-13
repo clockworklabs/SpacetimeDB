@@ -56,6 +56,7 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
         { kind: 'volume', source: releaseVolume, target: '/release-deps', readOnly: true },
       ],
       init: 'set -eu; '
+        + 'mkdir -p /deps; '
         + 'test -d /release-deps/bindings-typescript; '
         + 'test -x /release-deps/spacetimedb-cli; '
         + 'test -x /release-deps/spacetimedb-standalone; '
