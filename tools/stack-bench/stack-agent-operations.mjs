@@ -48,6 +48,7 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
   const releaseVolume = env.STACK_BENCH_RELEASE_DEPS_VOLUME?.trim() || null;
   if (releaseVolume) {
     return {
+      networkNamespace: env.STACK_BENCH_APPLIANCE === '1' ? 'controller' : null,
       requiredPaths: [],
       ensureDirectories: [config],
       mounts: [
@@ -72,6 +73,7 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
     };
   }
   return {
+    networkNamespace: null,
     requiredPaths: [bindings, cli, standalone],
     ensureDirectories: [config],
     mounts: [
@@ -94,6 +96,7 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
 
 export function standardBuildContainerPlan() {
   return {
+    networkNamespace: null,
     requiredPaths: [], ensureDirectories: [], mounts: [],
     init: 'exec sleep infinity', readyFile: null, readyDescription: null,
   };

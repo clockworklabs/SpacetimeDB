@@ -74,6 +74,10 @@ test('leases reject unknown lifecycle states and malformed process identities', 
   f.lease.resources.launchedPid = null;
   f.lease.resources.listenerPids = ['not-a-pid'];
   assert.throws(() => writeBackendLease(f.path, f.lease), /listenerPids must contain only positive/);
+  f.lease.resources.listenerPids = [];
+  f.lease.resources.buildContainer = { name: 'build', id: 'container-id', image: 'image-id',
+    owned: true, networkMode: 'ambient' };
+  assert.throws(() => writeBackendLease(f.path, f.lease), /buildContainer.networkMode is invalid/);
 });
 
 test('public lease evidence hashes rather than exposes the ownership token', () => {

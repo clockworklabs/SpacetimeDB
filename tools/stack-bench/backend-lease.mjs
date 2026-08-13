@@ -103,6 +103,10 @@ export function validateBackendLease(lease, { token, backend, runId, active = fa
     requireString(lease.resources.buildContainer.id, 'buildContainer.id');
     requireString(lease.resources.buildContainer.image, 'buildContainer.image');
     if (lease.resources.buildContainer.owned !== true) fail('buildContainer must be benchmark-owned');
+    if (lease.resources.buildContainer.networkMode != null
+      && !['bridge', 'shared-controller'].includes(lease.resources.buildContainer.networkMode)) {
+      fail('buildContainer.networkMode is invalid');
+    }
   }
   if (!Array.isArray(lease.resources?.locks)) fail('locks must be an array');
   if (lease.resources.launchedPid !== null

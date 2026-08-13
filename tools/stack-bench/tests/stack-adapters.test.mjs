@@ -35,9 +35,11 @@ test('build-container plans expose only artifacts owned by the selected stack', 
   assert.equal(spacetime.mounts.some(mount => mount.target === '/deps/spacetimedb-cli'), true);
   assert.equal(spacetime.mounts.some(mount => mount.target === '/root/.config/spacetime'), true);
   assert.equal(spacetime.readyFile, '/deps/.ready');
+  assert.equal(spacetime.networkNamespace, null);
   const appliance = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
     'build-container', 'plan', {
-      repo, appDir, env: { STACK_BENCH_RELEASE_DEPS_VOLUME: 'stack-bench-release-deps' },
+      repo, appDir, env: { STACK_BENCH_RELEASE_DEPS_VOLUME: 'stack-bench-release-deps',
+        STACK_BENCH_APPLIANCE: '1' },
     });
   assert.deepEqual(appliance.requiredPaths, []);
   assert.deepEqual(appliance.mounts, [
@@ -46,12 +48,14 @@ test('build-container plans expose only artifacts owned by the selected stack', 
     { kind: 'volume', source: 'stack-bench-release-deps', target: '/release-deps', readOnly: true },
   ]);
   assert.match(appliance.init, /test -x \/release-deps\/spacetimedb-cli/);
+  assert.equal(appliance.networkNamespace, 'controller');
   for (const id of ['postgres', 'mongodb', 'stub']) {
     const plan = executeStackCapability(STACK_ADAPTER_REGISTRY.get(id),
       'build-container', 'plan', { repo, appDir });
     assert.deepEqual(plan.mounts, [], `${id} must not receive another stack's artifacts`);
     assert.deepEqual(plan.requiredPaths, []);
     assert.equal(plan.readyFile, null);
+    assert.equal(plan.networkNamespace, null);
   }
 });
 

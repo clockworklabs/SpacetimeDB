@@ -7,8 +7,18 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { createBackendLease, writeBackendLease } from '../backend-lease.mjs';
 import { resetBackend } from '../reset-backend.mjs';
+import { containerReachableSpacetimeUri } from '../spacetime-target.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+test('Spacetime container targets follow their recorded network topology', () => {
+  const lease = { resources: { serverUri: 'http://127.0.0.1:3310', buildContainer: null } };
+  assert.equal(containerReachableSpacetimeUri(lease), 'http://host.docker.internal:3310');
+  lease.resources.buildContainer = { networkMode: 'shared-controller' };
+  assert.equal(containerReachableSpacetimeUri(lease), 'http://127.0.0.1:3310');
+  assert.throws(() => containerReachableSpacetimeUri(lease, 'unknown'),
+    /unsupported build container network mode/);
+});
 
 test('the Node reset entrypoint refuses without an authenticated lease', () => {
   const env = { ...process.env };

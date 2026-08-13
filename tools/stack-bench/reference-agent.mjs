@@ -112,6 +112,7 @@ async function main() {
   phase(`prepared build container ${identity.containerName}`);
   await executeStackCapability(adapter, 'reference', 'deploy', {
     args, metadata, lease, track, container: identity.containerName, ports,
+    buildNetworkMode: identity.networkMode,
     helpers: { dbName, loadTrack, moduleName, runSync, docker, startDetached, waitFor, containerLogs, phase },
   });
 

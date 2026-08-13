@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { containerReachableSpacetimeUri } from './spacetime-target.mjs';
 
 function validateHostedDatabase({ args, lease, track, helpers }) {
   const expected = helpers.dbName(track, args.runIndex);
@@ -78,14 +79,14 @@ export function deployMongoDbReference(input) {
   });
 }
 
-export async function deploySpacetimeReference({ args, metadata, lease, container, ports, helpers }) {
+export async function deploySpacetimeReference({ args, metadata, lease, container, ports,
+  buildNetworkMode, helpers }) {
   for (const directory of metadata.installDirectories) {
     helpers.docker(container, `/app/${directory}`, 'npm', ['ci', '--no-audit', '--no-fund']);
   }
   const module = helpers.moduleName(helpers.loadTrack(args.track), args.runIndex);
   if (lease.resources.module !== module) throw new Error(`lease module is not ${module}`);
-  const hostUri = lease.resources.serverUri.replace('127.0.0.1', 'host.docker.internal')
-    .replace('localhost', 'host.docker.internal');
+  const hostUri = containerReachableSpacetimeUri(lease, buildNetworkMode);
   helpers.docker(container, `/app/${metadata.moduleDirectory}`, '/deps/spacetimedb-cli',
     ['publish', module, '--module-path', `/app/${metadata.moduleDirectory}`, '-s', hostUri, '-y']);
   helpers.docker(container, `/app/${metadata.moduleDirectory}`, '/deps/spacetimedb-cli',

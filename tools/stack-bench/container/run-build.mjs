@@ -69,6 +69,7 @@ const containerPlan = executeStackCapability(adapter, 'build-container', 'plan',
 });
 if (!containerPlan || !Array.isArray(containerPlan.requiredPaths)
   || !Array.isArray(containerPlan.ensureDirectories) || !Array.isArray(containerPlan.mounts)
+  || ![null, 'controller'].includes(containerPlan.networkNamespace ?? null)
   || typeof containerPlan.init !== 'string' || !containerPlan.init) {
   console.error(`run-build.mjs: ${backend} adapter returned an invalid build-container plan`);
   process.exit(2);
@@ -131,13 +132,39 @@ for (const directory of containerPlan.ensureDirectories) mkdirSync(directory, { 
 const containerName = `stack-bench-${basename(dirname(resolve(appDir)))}`;
 const dockerEnv = { ...process.env, MSYS_NO_PATHCONV: '1' };
 
+function resolveControllerNetwork() {
+  if (containerPlan.networkNamespace !== 'controller') return null;
+  if (process.env.STACK_BENCH_APPLIANCE !== '1') {
+    throw new Error('the controller network namespace is available only in appliance mode');
+  }
+  const hostname = process.env.HOSTNAME?.trim() ?? '';
+  if (!/^[0-9a-f]{12,64}$/i.test(hostname)) {
+    throw new Error(`cannot identify the appliance controller container from HOSTNAME=${hostname || '<unset>'}`);
+  }
+  const inspected = spawnSync('docker', ['inspect', '--format', '{{.Id}}', hostname],
+    { encoding: 'utf8', env: dockerEnv, timeout: DOCKER_TIMEOUT_MS });
+  const id = inspected.status === 0 ? inspected.stdout.trim() : '';
+  if (!/^[0-9a-f]{64}$/i.test(id) || !id.startsWith(hostname)) {
+    throw new Error('cannot resolve the appliance controller container identity');
+  }
+  return id;
+}
+
+let controllerNetworkId;
+try { controllerNetworkId = resolveControllerNetwork(); }
+catch (error) {
+  console.error(`run-build.mjs: ${error.message}`);
+  process.exit(2);
+}
+const expectedNetworkMode = controllerNetworkId ? `container:${controllerNetworkId}` : 'bridge';
+
 function inspectContainer(name) {
   const r = spawnSync('docker', ['inspect', '--format',
-    '{{.Id}} {{.Image}} {{.State.Running}}', name],
+    '{{.Id}} {{.Image}} {{.State.Running}} {{.HostConfig.NetworkMode}}', name],
   { encoding: 'utf8', env: dockerEnv, timeout: DOCKER_TIMEOUT_MS });
   if (r.status !== 0) return null;
-  const [id, inspectedImage, running] = r.stdout.trim().split(/\s+/, 3);
-  return { id, image: inspectedImage, running: running === 'true' };
+  const [id, inspectedImage, running, networkMode] = r.stdout.trim().split(/\s+/, 4);
+  return { id, image: inspectedImage, running: running === 'true', networkMode };
 }
 
 // Resolve ownership before looking at, reusing, or creating a container. A
@@ -168,6 +195,11 @@ if (existing) {
     console.error(`run-build.mjs: leased container ${containerName} stopped unexpectedly; refusing to replace it`);
     process.exit(3);
   }
+  if (existing.networkMode !== expectedNetworkMode) {
+    console.error(`run-build.mjs: leased container ${containerName} uses network ${existing.networkMode}, `
+      + `expected ${expectedNetworkMode}`);
+    process.exit(3);
+  }
 } else if (priorContainer) {
   console.error(`run-build.mjs: leased container ${priorContainer.name}/${priorContainer.id} is missing`);
   process.exit(3);
@@ -181,6 +213,7 @@ if (!existing) {
     'run', '-d', '--init', '--name', containerName,
     '-v', `${resolve(appDir)}:/app`,
   ];
+  create.push('--network', expectedNetworkMode);
   if (projects) create.push('-v', `${projects}:/root/.claude/projects/-app`);
   if (!prepareOnly && !apiKey) create.push('-v', `${creds}:/root/.claude/.credentials.json`);
   // The selected adapter owns every stack-specific mount. Giving a treatment
@@ -204,7 +237,7 @@ if (!existing) {
   // the track's port window has to be published. Publishing happens at create
   // time only — a port cannot be added to a running container, which is the
   // other reason the session cannot own the container's lifetime.
-  for (const p of ports) create.push('-p', `${p}:${p}`);
+  if (!controllerNetworkId) for (const p of ports) create.push('-p', `${p}:${p}`);
 
   // `--init` gives the container a real PID 1. Without it the dev servers the
   // build leaves behind are reparented to `sleep`, which never reaps them.
@@ -236,6 +269,7 @@ try {
   updateBackendLease(path, { token: lease.ownershipToken, backend, runId: lease.runId }, next => {
     next.resources.buildContainer = {
       name: containerName, id: containerId, image: containerImage, owned: true, running: true,
+      networkMode: controllerNetworkId ? 'shared-controller' : 'bridge',
     };
     return next;
   });
@@ -275,7 +309,8 @@ if (containerPlan.readyFile) {
 
 if (prepareOnly) {
   process.stdout.write(`${JSON.stringify({ containerName,
-    identity: `${containerId} ${containerImage}` })}\n`);
+    identity: `${containerId} ${containerImage}`,
+    networkMode: controllerNetworkId ? 'shared-controller' : 'bridge' })}\n`);
   process.exit(0);
 }
 
