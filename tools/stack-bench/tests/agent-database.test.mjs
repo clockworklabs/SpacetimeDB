@@ -79,6 +79,10 @@ test('Spacetime cleanup ignores absence but rejects authorization and transport 
     const absent = Object.assign(new Error('404 Not Found'), { stderr: '404 Not Found' });
     assert.doesNotThrow(() => ensureDatabase('spacetime', 0, null, track, true,
       { exec: () => { throw absent; }, stdbBin: 'spacetime-test' }));
+    const currentCliAbsent = Object.assign(new Error('command failed'),
+      { stderr: Buffer.from('Error: failed to find database `stackbench-ecom-run0`.\n') });
+    assert.doesNotThrow(() => ensureDatabase('spacetime', 0, null, track, true,
+      { exec: () => { throw currentCliAbsent; }, stdbBin: 'spacetime-test' }));
     const unauthorized = Object.assign(new Error('401 Unauthorized'), { stderr: '401 Unauthorized' });
     assert.throws(() => ensureDatabase('spacetime', 0, null, track, true,
       { exec: () => { throw unauthorized; }, stdbBin: 'spacetime-test' }),

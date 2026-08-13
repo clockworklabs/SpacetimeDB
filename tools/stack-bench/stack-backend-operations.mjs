@@ -177,7 +177,11 @@ export function prepareSpacetimeDatabase({ lease, name, wipe, exec = execFileSyn
     console.error(`  deleted module ${lease.resources.module} — a build starts with none published`);
   } catch (error) {
     const detail = `${error.stdout ?? ''}${error.stderr ?? ''}${error.message ?? ''}`;
-    if (!/(?:404\s+Not Found|no such database)/i.test(detail)) {
+    // `spacetime delete` has used each of these messages for an absent database
+    // across CLI/API versions. A clean first run has nothing to delete, so only
+    // that specific condition is idempotent; auth, transport, and server errors
+    // must still stop the run.
+    if (!/(?:404\s+Not Found|no such database|failed to find database)/i.test(detail)) {
       throw new Error(`could not delete prior module ${lease.resources.module}: ${detail.trim().split('\n')[0]}`,
         { cause: error });
     }
