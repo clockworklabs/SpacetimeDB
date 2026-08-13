@@ -166,11 +166,11 @@ test('replay retargeting maps nested entity ids by field and relationship depth'
   assert.match(rejected.summary, /server ACCEPTED/);
 });
 
-test('replay uses the target actor browser cookie when request capture omits it', async () => {
+test('replay decodes Socket.IO entities and uses the target actor browser cookie', async () => {
   const requests = [];
   const actor = (name, received, writes, sid) => ({
     name,
-    received: received.map(value => JSON.stringify(value)),
+    received,
     writes,
     context: { cookies: async () => [{ name: 'sid', value: sid }] },
     page: {
@@ -181,15 +181,18 @@ test('replay uses the target actor browser cookie when request capture omits it'
       } },
     },
   });
-  const staff = actor('staff', [{ queue: [{
+  const staff = actor('staff', [JSON.stringify({ queue: [{
     id: 41, items: [{ itemId: 7, name: 'Desk Lamp' }],
-  }] }], [{
+  }] })], [{
     url: 'http://app.test/api/fulfilment/ship', method: 'POST',
     headers: { 'content-type': 'application/json' }, body: { orderId: 41 },
   }], 'staff-session');
-  const customer = actor('customer', [{ orders: [{
-    id: 52, items: [{ itemId: 8, name: 'Webcam' }],
-  }] }], [{
+  const customer = actor('customer', [
+    JSON.stringify({ items: [{ id: 8, name: 'Webcam' }] }),
+    `42["orders:update",${JSON.stringify({ orders: [{
+      id: 52, items: [{ orderItemId: 61, itemId: 8, name: 'Webcam' }],
+    }] })}]`,
+  ], [{
     url: 'http://app.test/api/items/8/buy', method: 'POST',
     headers: { 'content-type': 'application/json' }, body: null,
   }], 'customer-session');

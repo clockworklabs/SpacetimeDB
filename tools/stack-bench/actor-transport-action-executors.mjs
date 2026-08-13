@@ -60,6 +60,26 @@ const swapToken = (value, from, to) => value.replace(tokenRe(from), to);
 const normalizedIdKey = key => key.replaceAll('_', '').toLowerCase();
 const numericLiteral = value => /^-?(?:\d+\.?\d*|\.\d+)$/.test(value.trim());
 
+function transportJson(chunk) {
+  const candidates = new Set([chunk]);
+  for (const line of chunk.split(/\r?\n/)) {
+    if (line.trim()) candidates.add(line.trim());
+    const sse = line.match(/^data:\s*(.+)$/);
+    if (sse) candidates.add(sse[1]);
+  }
+  const parsed = [];
+  for (const candidate of candidates) {
+    try {
+      parsed.push(JSON.parse(candidate));
+      continue;
+    } catch { /* try a Socket.IO event packet */ }
+    const socketEvent = candidate.match(/^42(?:\/[^,]+,)?\d*(\[.*\])$/s);
+    if (!socketEvent) continue;
+    try { parsed.push(JSON.parse(socketEvent[1])); } catch { /* malformed packet */ }
+  }
+  return parsed;
+}
+
 // Return ids from the entity containing `needle`, deepest first. Keeping the
 // id field and its distance from the matching value lets a replay map an order
 // id to another order id instead of accidentally substituting a nested item id.
@@ -91,12 +111,9 @@ function discoverIds(actor, needle) {
     return nearest;
   };
   for (const chunk of actor.received ?? []) {
-    let parsed = false;
-    try {
-      visit(JSON.parse(chunk));
-      parsed = true;
-    } catch { /* non-JSON transport payload */ }
-    if (parsed) continue;
+    const payloads = transportJson(chunk);
+    for (const payload of payloads) visit(payload);
+    if (payloads.length) continue;
     // Opaque transport text is only safe for entity labels represented as a
     // complete quoted value. Searching for a bare number such as "1" would
     // associate it with almost every id in a payload and fabricate a retarget.
