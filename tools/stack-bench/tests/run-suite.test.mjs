@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { childFailureDetail } from '../run-suite.mjs';
+
+test('grader child diagnostics retain the cause instead of only trailing stack frames', () => {
+  const stderr = [
+    'Error: check evidence action is malformed',
+    '    at validateCheckEvidence (check-evidence.mjs:1:1)',
+    '    at buildCheckEvidence (grade.mjs:2:2)',
+    '    at gradeFeature (grade.mjs:3:3)',
+    '    at async main (grade.mjs:4:4)',
+    '',
+    'Node.js v24.18.1',
+  ].join('\n');
+  const detail = childFailureDetail({ stderr, message: 'command failed' });
+  assert.match(detail, /^Error: check evidence action is malformed \|/);
+  assert.match(detail, /gradeFeature/);
+  assert.doesNotMatch(detail, /validateCheckEvidence/);
+});

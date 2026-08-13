@@ -16,7 +16,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadTrack, suitesFor, DEFAULT_TRACK } from './tracks.mjs';
 import { answers as hostAnswers } from './platform.mjs';
 import { controlBackend } from './backend-control.mjs';
@@ -32,6 +32,16 @@ import { aggregatePackRuntime, exceededPackBudgets } from './pack-runtime.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RESET = join(ROOT, 'reset-backend.mjs');
+
+export function childFailureDetail(failure = null, stdout = '', limit = 600) {
+  const lines = [failure?.stderr, stdout, failure?.message]
+    .filter(value => value !== undefined && value !== null && String(value).trim())
+    .join('\n').trim().split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (!lines.length) return '';
+  const cause = lines.find(line => !line.startsWith('at ') && !/^Node\.js v/.test(line)) ?? lines[0];
+  const selected = [cause, ...lines.slice(-4)].filter((line, index, all) => all.indexOf(line) === index);
+  return selected.join(' | ').slice(0, limit);
+}
 
 function parseArgs(argv) {
   const a = { level: '1', reset: true, media: true, runIndex: 0, track: DEFAULT_TRACK,
@@ -255,8 +265,7 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
   }
   if (!existsSync(out)) {
     console.log('NO REPORT');
-    const detail = `${failure?.stderr ?? ''}${stdout}${failure?.message ?? ''}`
-      .trim().split(/\r?\n/).slice(-4).join(' | ').slice(0, 600);
+    const detail = childFailureDetail(failure, stdout);
     throw new Error(`grader produced no report for ${suite.id}${detail ? `: ${detail}` : ''}`);
   }
   const r = readArtifactPayload(out, { expectedKind: 'grade' });
@@ -533,4 +542,4 @@ async function main() {
   console.log(`  bundle: ${join(args.out, 'bundle.json')}`);
 }
 
-main();
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) main();
