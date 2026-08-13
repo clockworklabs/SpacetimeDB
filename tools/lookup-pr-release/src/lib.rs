@@ -354,6 +354,26 @@ mod tests {
         );
     }
 
+    fn assert_live_release(pr_number: u64, expected_tag: &str) {
+        let release = lookup(&Gh, "clockworklabs/SpacetimeDB", pr_number, false)
+            .unwrap_or_else(|error| panic!("failed to look up SpacetimeDB#{pr_number}: {error:#}"))
+            .unwrap_or_else(|| panic!("SpacetimeDB#{pr_number} has not been released"));
+        assert_eq!(
+            release.tag, expected_tag,
+            "unexpected earliest release for SpacetimeDB#{pr_number}"
+        );
+    }
+
+    #[test]
+    fn live_pr_5255_was_released_in_v2_6_0() {
+        assert_live_release(5255, "v2.6.0");
+    }
+
+    #[test]
+    fn live_pr_5645_was_released_in_v2_8_0() {
+        assert_live_release(5645, "v2.8.0");
+    }
+
     #[test]
     fn loads_release_pages_until_it_finds_the_preceding_release() {
         let mut first_page = Vec::new();
