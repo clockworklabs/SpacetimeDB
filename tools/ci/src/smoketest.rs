@@ -4,7 +4,7 @@ use clap::{Args, Subcommand};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::{env, fs};
 use tempfile::TempDir;
@@ -36,6 +36,7 @@ pub struct SmoketestsArgs {
     #[arg(long, num_args = 0..=1, require_equals = true, default_missing_value = "")]
     auth_host: Option<String>,
 
+    /// Run .NET smoketests.
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     dotnet: bool,
 
@@ -46,11 +47,29 @@ pub struct SmoketestsArgs {
 
 #[derive(Subcommand)]
 enum SmoketestCmd {
-    /// Only build binaries without running tests
+    /// Local helper: only build binaries without running tests.
     ///
     /// Use this before running `cargo test --all` to ensure binaries are built.
     Prepare,
     CheckModList,
+
+    /// CI build job: build dependencies and archive the smoketest binaries.
+    Archive {
+        /// Path to the nextest archive to create.
+        #[arg(long)]
+        archive_file: PathBuf,
+    },
+
+    /// CI partition job: run smoketests from an existing nextest archive.
+    RunArchive {
+        /// Path to the nextest archive to run.
+        #[arg(long)]
+        archive_file: PathBuf,
+
+        /// Additional arguments to pass to nextest.
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
+    },
 }
 
 pub fn run(args: SmoketestsArgs) -> Result<()> {
@@ -66,6 +85,8 @@ pub fn run(args: SmoketestsArgs) -> Result<()> {
             eprintln!("smoketests/mod.rs is up to date.");
             Ok(())
         }
+        Some(SmoketestCmd::Archive { archive_file }) => archive_smoketests(&archive_file),
+        Some(SmoketestCmd::RunArchive { archive_file, args }) => run_smoketest_archive(&archive_file, args),
         None => run_smoketest(args.server, args.dotnet, args.auth_host.as_deref(), args.args),
     }
 }
@@ -139,6 +160,58 @@ fn build_precompiled_modules() -> Result<()> {
 
     ensure!(status.success(), "Failed to build pre-compiled modules");
     eprintln!("Pre-compiled modules built.\n");
+    Ok(())
+}
+
+fn archive_smoketests(archive_file: &Path) -> Result<()> {
+    build_precompiled_modules()?;
+
+    let status = Command::new("cargo")
+        .args([
+            "nextest",
+            "archive",
+            "--release",
+            "--timings",
+            "-p",
+            "spacetimedb-smoketests",
+            "--archive-file",
+        ])
+        .arg(archive_file)
+        .status()?;
+    ensure!(status.success(), "Failed to archive smoketests");
+    Ok(())
+}
+
+// TODO: Share smoketest setup and cleanup with `run_smoketest` so the archive
+// and local execution paths cannot drift.
+fn run_smoketest_archive(archive_file: &Path, args: Vec<String>) -> Result<()> {
+    let workspace_root = env::current_dir()?;
+    let archive_file = if archive_file.is_absolute() {
+        archive_file.to_path_buf()
+    } else {
+        workspace_root.join(archive_file)
+    };
+
+    // CI supplies the release CLI and standalone through the shared build artifact.
+    let cli_path = ensure_binaries_built();
+    let base_config_dir = prepare_base_config(&cli_path, None, None)?;
+    let base_config_path = base_config_dir.path().join("config.toml");
+
+    let mut cmd = Command::new("cargo");
+    set_env(&mut cmd, None, true, false, &base_config_path);
+    cmd.args(["nextest", "run", "--archive-file"])
+        .arg(archive_file)
+        .args(["--workspace-remap"])
+        .arg(&workspace_root)
+        .args(["--no-fail-fast", "--no-tests", "pass", "-j", "1"])
+        .args(args);
+
+    ensure!(cmd.status()?.success(), "Tests failed");
+    let diff_status = cmd!("bash", "tools/check-diff.sh", "crates/smoketests").run()?;
+    ensure!(
+        diff_status.status.success(),
+        "There is a diff in the smoketests directory."
+    );
     Ok(())
 }
 
