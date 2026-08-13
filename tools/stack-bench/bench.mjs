@@ -44,6 +44,7 @@ import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from './agent-adapters.m
 import { runPreflight } from './preflight.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from './recovery.mjs';
+import { resolveAgentCredential } from './agent-credentials.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
@@ -90,16 +91,6 @@ function parseArgs(argv) {
   if (!a.backend) {
     console.error('Usage: node bench.mjs --backend <b> --levels 1-3 [--fix-rounds 3] [--run-index N]');
     process.exit(2);
-  }
-  const configuredKeyFile = a.apiKeyFile
-    ?? (process.env.STACK_BENCH_API_KEY_FILE ? resolve(process.env.STACK_BENCH_API_KEY_FILE) : null)
-    ?? (process.env.ANTHROPIC_API_KEY_FILE ? resolve(process.env.ANTHROPIC_API_KEY_FILE) : null);
-  if (a.apiKey && configuredKeyFile) throw new Error('use only one of --api-key and --api-key-file');
-  if (configuredKeyFile) {
-    const value = readFileSync(configuredKeyFile, 'utf8').trim();
-    if (!value) throw new Error(`API key file is empty: ${configuredKeyFile}`);
-    a.apiKey = value;
-    a.apiKeyFile = configuredKeyFile;
   }
   const [from, to] = a.levels.split('-').map(Number);
   a.levelList = Array.from({ length: (to ?? from) - from + 1 }, (_, i) => from + i);
@@ -343,6 +334,7 @@ async function main() {
   const args = parseArgs(process.argv);
   const stackAdapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const agentAdapter = AGENT_ADAPTER_REGISTRY.get(args.agentAdapter);
+  resolveAgentCredential(args, agentAdapter);
   args.model ??= agentAdapter.defaultModel;
   if (args.retainBackend
     && !executeStackCapability(stackAdapter, 'run-policy', 'retain-host-supported')) {
