@@ -102,14 +102,14 @@
       "track": "ecommerce",
       "level": 2,
       "status": "candidate",
-      "targetPath": "reference-apps/ecommerce/postgres",
+      "targetPath": "reference-apps/ecommerce/l2/postgres",
       "origin": {
         "kind": "authored",
-        "note": "The maintained PostgreSQL oracle is reused by exact source hash and qualified separately for L2."
+        "note": "The maintained PostgreSQL L2 oracle was forked from the qualified L1 bytes so L2 fixes cannot invalidate L1 evidence."
       },
       "imported": {
-        "path": "reference-apps/ecommerce/postgres",
-        "sourceSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc"
+        "path": "reference-apps/ecommerce/l2/postgres",
+        "sourceSha256": "421b1d32e24f74acbd668adbe1cf88fcadece67d70d11089532ca8d14d30f6f5"
       },
       "mutationManifests": ["grader/mutations/postgres-ecom-l2.json"],
       "qualification": "Not qualified; requires the current L2 reference, mutation, budget, and null gates."
