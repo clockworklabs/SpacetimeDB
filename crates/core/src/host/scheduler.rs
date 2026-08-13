@@ -448,7 +448,7 @@ struct Reschedule {
 }
 
 #[derive(Clone)]
-struct ScheduledFunctionTiming {
+struct ScheduledInvocation {
     function_name: Arc<str>,
     intended_at: Timestamp,
 }
@@ -522,7 +522,7 @@ fn prepare_scheduled_procedure_call(
     inst: &mut impl WasmInstance,
 ) -> ScheduledProcedureStep {
     let ScheduledFunctionParams(item) = params;
-    let timing = scheduled_function_timing_for_item(&item);
+    let timing = scheduled_invocation_for_item(&item);
     let id = scheduled_item_id(&item);
     let db = &**module_info.relational_db();
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
@@ -547,18 +547,13 @@ fn prepare_scheduled_procedure_call(
         }
     };
 
+    let intended_at = timing.as_ref().map_or(timestamp, |timing| timing.intended_at);
+
     // For scheduled procedures, it's incorrect to retry them if execution aborts midway,
     // so we must remove the schedule row before executing.
-    let reschedule = id.and_then(|id| {
-        let reschedule_from = timing.as_ref().map(|timing| timing.intended_at).unwrap_or(timestamp);
-        delete_scheduled_function_row(module_info, db, id, Some(tx), reschedule_from, inst_common, inst)
-    });
-    let delay = timing.map(|timing| {
-        (
-            timing.function_name,
-            scheduled_function_delay(timestamp, timing.intended_at),
-        )
-    });
+    let reschedule =
+        id.and_then(|id| delete_scheduled_function_row(module_info, db, id, Some(tx), intended_at, inst_common, inst));
+    let delay = timing.map(|timing| (timing.function_name, scheduled_function_delay(timestamp, intended_at)));
     ScheduledProcedureStep::Procedure {
         params: Box::new(params),
         reschedule,
@@ -573,7 +568,7 @@ fn call_scheduled_reducer_until_done(
     inst: &mut impl WasmInstance,
 ) -> (CallScheduledFunctionResult, bool) {
     let ScheduledFunctionParams(item) = params;
-    let timing = scheduled_function_timing_for_item(&item);
+    let timing = scheduled_invocation_for_item(&item);
     let id = scheduled_item_id(&item);
     let db = &**module_info.relational_db();
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
@@ -598,12 +593,12 @@ fn call_scheduled_reducer_until_done(
         }
     };
 
+    let intended_at = timing.as_ref().map_or(timestamp, |timing| timing.intended_at);
     if let Some(timing) = timing.as_ref() {
-        let delay = scheduled_function_delay(timestamp, timing.intended_at);
+        let delay = scheduled_function_delay(timestamp, intended_at);
         record_scheduled_function_delay(module_info, &timing.function_name, delay);
     }
-    let reschedule_from = timing.as_ref().map(|timing| timing.intended_at).unwrap_or(timestamp);
-    call_scheduled_reducer_with_tx(module_info, db, id, tx, reschedule_from, params, inst_common, inst)
+    call_scheduled_reducer_with_tx(module_info, db, id, tx, intended_at, params, inst_common, inst)
 }
 
 fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
@@ -613,9 +608,9 @@ fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
     }
 }
 
-fn scheduled_function_timing_for_item(item: &QueueItem) -> Option<ScheduledFunctionTiming> {
+fn scheduled_invocation_for_item(item: &QueueItem) -> Option<ScheduledInvocation> {
     match item {
-        QueueItem::Id { function_name, at, .. } => Some(ScheduledFunctionTiming {
+        QueueItem::Id { function_name, at, .. } => Some(ScheduledInvocation {
             function_name: function_name.clone(),
             intended_at: *at,
         }),
