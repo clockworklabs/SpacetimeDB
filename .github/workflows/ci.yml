@@ -201,7 +201,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Windows)
-    runs-on: spacetimedb-windows-runner
+    runs-on: spacetimedb-windows-runner-testing
     timeout-minutes: 15
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -283,7 +283,7 @@ jobs:
   smoketest_build_windows:
     needs: [upload-build-artifacts-windows]
     name: Build smoketests (Windows)
-    runs-on: spacetimedb-windows-runner
+    runs-on: spacetimedb-windows-runner-testing
     timeout-minutes: 15
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -452,7 +452,7 @@ jobs:
       fail-fast: false
       matrix:
         partition: [1, 2, 3, 4]
-    runs-on: spacetimedb-windows-runner
+    runs-on: spacetimedb-windows-runner-testing
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
