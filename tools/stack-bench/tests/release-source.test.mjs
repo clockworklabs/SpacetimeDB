@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -52,4 +52,15 @@ test('release source identity refuses a changed or untracked release input', () 
       { changed: ' M tools/stack-bench/bench.mjs\n?? tools/stack-bench/local.mjs\n' }) }),
     /release source paths are not clean/);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('controller build context includes every repository root copied by its Dockerfile', () => {
+  const dockerfile = readFileSync(join(import.meta.dirname, '..', 'appliance', 'Controller.Dockerfile'), 'utf8');
+  const ignore = readFileSync(join(import.meta.dirname, '..', 'appliance',
+    'Controller.Dockerfile.dockerignore'), 'utf8');
+  const roots = [...dockerfile.matchAll(/^COPY (?!-)\s*([^/\s]+)(?:\/|\s)/gm)].map(match => match[1]);
+  for (const root of new Set(roots)) {
+    assert.match(ignore, new RegExp(`^!${root}(?:\\r?\\n|/)`, 'm'),
+      `${root} is copied but excluded from the controller build context`);
+  }
 });

@@ -2,6 +2,8 @@
 !tools
 !tools/stack-bench
 !tools/stack-bench/**
+!skills
+!skills/**
 !crates
 !crates/bindings-typescript
 !crates/bindings-typescript/**
