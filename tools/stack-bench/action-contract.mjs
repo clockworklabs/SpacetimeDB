@@ -1,3 +1,5 @@
+import { evidenceNowMs } from './evidence-timing.mjs';
+
 export const ACTION_PLUGIN_SCHEMA_VERSION = 1;
 export const ACTION_INPUT_SCHEMA_VERSION = 1;
 export const ACTION_EVIDENCE_SCHEMA_VERSION = 1;
@@ -146,6 +148,7 @@ export class ActionInconclusive extends ClassifiedActionError {
 }
 
 function evidence(plugin, startedAtMs, completedAtMs, status, code, summary, details = {}) {
+  const safeCompletedAtMs = Math.max(startedAtMs, completedAtMs);
   return {
     schemaVersion: ACTION_EVIDENCE_SCHEMA_VERSION,
     action: { id: plugin.id, version: plugin.version },
@@ -157,7 +160,8 @@ function evidence(plugin, startedAtMs, completedAtMs, status, code, summary, det
     observation: details.observation ?? null,
     expected: details.expected ?? null,
     retryable: details.retryable ?? false,
-    timing: { startedAtMs, completedAtMs, durationMs: Math.max(0, completedAtMs - startedAtMs),
+    timing: { startedAtMs, completedAtMs: safeCompletedAtMs,
+      durationMs: safeCompletedAtMs - startedAtMs,
       deadlineMs: plugin.deadline.timeoutMs },
     attachments: [],
     sensitivity: [...plugin.redaction.sensitivity],
@@ -179,7 +183,7 @@ function structuredValue(value, seen = new Set()) {
 }
 
 export async function executeAction(registry, id, input, runContext, {
-  now = () => Date.now(), setTimer = setTimeout, clearTimer = clearTimeout,
+  now = evidenceNowMs, setTimer = setTimeout, clearTimer = clearTimeout,
 } = {}) {
   const plugin = registry.get(id);
   const context = createActionRunContext(runContext);

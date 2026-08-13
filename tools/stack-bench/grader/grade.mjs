@@ -31,6 +31,7 @@ import { selectScenarioChecks } from '../recipe-selection.mjs';
 import { ACTION_REGISTRY } from '../action-catalog.mjs';
 import { createActionRunContext, executeAction } from '../action-contract.mjs';
 import { createCheckEvidence, evidenceDisposition, evidenceIsMeasured, evidencePassed } from '../check-evidence.mjs';
+import { evidenceNowMs } from '../evidence-timing.mjs';
 import { renderEvidenceConsoleLine } from '../evidence-presentation.mjs';
 import { measureGradePackRuntime } from '../pack-runtime.mjs';
 import { executeStackCapability } from '../stack-adapter-contract.mjs';
@@ -534,7 +535,7 @@ function buildCheckEvidence({ ctx, phase, startedAtMs, failure = null, actor = n
     status: 'passed', code: 'completed', actor: null, summary: null,
     observation: null, expected: null, retryable: false,
   };
-  const completedAtMs = Date.now();
+  const completedAtMs = Math.max(startedAtMs, evidenceNowMs());
   const evidenceSummary = summary ?? classified.summary;
   return createCheckEvidence({
     ...classified,
@@ -618,7 +619,7 @@ async function gradeFeature(browser, feature, args, runCtx) {
     return captured;
   };
 
-  const setupStartedAtMs = Date.now();
+  const setupStartedAtMs = evidenceNowMs();
   ctx.actionEvidence = [];
   try {
     // Setup is not scored, but a failure makes the feature untestable (0).
@@ -664,7 +665,7 @@ async function gradeFeature(browser, feature, args, runCtx) {
   for (const criterion of feature.criteria) {
     let failure = null, detail = null, activeActor = null;
     let criterionScreenshots = [];
-    const criterionStartedAtMs = Date.now();
+    const criterionStartedAtMs = evidenceNowMs();
     ctx.actionEvidence = [];
     ctx.serverCheck = null;
     try {

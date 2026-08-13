@@ -100,6 +100,19 @@ test('a successful action sees only declared capabilities and returns structured
   assert.equal(result.timing.deadlineMs, 250);
 });
 
+test('action evidence remains coherent if an injected wall clock moves backward', async () => {
+  const registry = createActionRegistry([plugin()]);
+  const ticks = [100, 95];
+  const result = await executeAction(registry, 'fakeAction', { do: 'fakeAction' },
+    context(() => ({ ok: true })), { now: () => ticks.shift() });
+  assert.deepEqual(result.timing, {
+    startedAtMs: 100,
+    completedAtMs: 100,
+    durationMs: 0,
+    deadlineMs: 250,
+  });
+});
+
 test('application failure and inconclusive results stay distinct', async () => {
   const registry = createActionRegistry([plugin()]);
   const failed = await executeAction(registry, 'fakeAction', { do: 'fakeAction' },
