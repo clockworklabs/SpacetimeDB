@@ -2,7 +2,7 @@ name: Git tree checks
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, edited]
+    types: [opened, reopened, edited]
   # TODO: This isn't used, probably remove it?
   merge_group:
 permissions: read-all
