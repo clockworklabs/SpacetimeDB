@@ -1284,10 +1284,15 @@ jobs:
           dotnet workload config --update-mode manifests
           dotnet workload update --from-previous-sdk
           # Explicitly install wasi-experimental for .NET 8 SDK (needed for test_build_csharp_module)
-          # Create temp global.json to target .NET 8 SDK for workload install
-          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > global.json
-          dotnet workload install wasi-experimental
-          rm global.json
+          # Create temp global.json to target .NET 8 SDK for workload install without
+          # overwriting the repository's .NET 10 global.json, which later C# harness
+          # tests rely on for SDK selection.
+          workload_dir="$(mktemp -d)"
+          echo '{"sdk":{"version":"8.0.100","rollForward":"latestFeature"}}' > "$workload_dir/global.json"
+          (
+            cd "$workload_dir"
+            dotnet workload install wasi-experimental
+          )
 
       - name: Override NuGet packages
         run: |
@@ -1357,6 +1362,9 @@ jobs:
           cargo install --force --path crates/standalone --features allow_loopback_http_for_tests --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+
+      - name: Run C# SDK harness tests
+        run: cargo test -p sdk-csharp-test-harness --test sdk_csharp
 
       - name: Check quickstart-chat bindings are up to date
         run: |
