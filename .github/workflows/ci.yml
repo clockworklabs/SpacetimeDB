@@ -128,27 +128,6 @@ jobs:
           path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
           key: rusty-v8-v1-145.0.0-${{ env.TARGET_TRIPLE }}
 
-      - &cache-rusty-v8-debug
-        name: Cache rusty_v8 (debug)
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
-          key: rusty-v8-debug-v1-145.0.0-${{ env.TARGET_TRIPLE }}
-
-      - &restore-rusty-v8
-        name: Restore rusty_v8
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
-          key: rusty-v8-v1-145.0.0-${{ env.TARGET_TRIPLE }}
-
-      - &restore-rusty-v8-debug
-        name: Restore rusty_v8 (debug)
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
-          key: rusty-v8-debug-v1-145.0.0-${{ env.TARGET_TRIPLE }}
-
       # v1 is a manual schema for invalidating this cache if its layout changes.
       # The openssl-src version in fixed and needs to be manually kept in sync with Cargo.lock.
       # It should hardly ever be updated, so prefer this over more auto-derivation machinery.
@@ -170,14 +149,6 @@ jobs:
           # Reuse the cached vendored output as a prebuilt OpenSSL installation.
           echo "OPENSSL_NO_VENDOR=1" >>"$GITHUB_ENV"
           echo "OPENSSL_DIR=${{ github.workspace }}/.ci-cache/openssl" >>"$GITHUB_ENV"
-
-      - &restore-openssl
-        name: Restore OpenSSL
-        id: cache-openssl
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ github.workspace }}/.ci-cache/openssl
-          key: openssl-v1-300.5.3+3.5.4-${{ env.TARGET_TRIPLE }}${{ env.OPENSSL_CACHE_SUFFIX }}
 
       - name: Build CLI and standalone
         shell: bash
@@ -264,8 +235,19 @@ jobs:
       - *set-default-rust-toolchain
 
       - *verify-openssl-assembler
-      - *restore-rusty-v8
-      - *restore-openssl
+      - &restore-rusty-v8
+        name: Restore rusty_v8
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
+          key: rusty-v8-v1-145.0.0-${{ env.TARGET_TRIPLE }}
+      - &restore-openssl
+        name: Restore OpenSSL
+        id: cache-openssl
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.ci-cache/openssl
+          key: openssl-v1-300.5.3+3.5.4-${{ env.TARGET_TRIPLE }}${{ env.OPENSSL_CACHE_SUFFIX }}
       - *configure-cached-openssl
 
       - name: Install cargo-nextest
@@ -286,8 +268,6 @@ jobs:
           tar -czf smoketest-support.tar.gz \
             "target/debug/ci${EXE_SUFFIX}" \
             "${precompiled_modules[@]}"
-
-      - *prepare-openssl-cache
 
       - name: Upload Cargo timing reports
         if: always()
@@ -545,7 +525,12 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-      - *restore-rusty-v8-debug
+      - &restore-rusty-v8-debug
+        name: Restore rusty_v8 (debug)
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
+          key: rusty-v8-debug-v1-145.0.0-${{ env.TARGET_TRIPLE }}
       - *restore-rusty-v8
       - *restore-openssl
       - *configure-cached-openssl
@@ -665,7 +650,11 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - *cache-rusty-v8-debug
+      - name: Cache rusty_v8 (debug)
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
+          key: rusty-v8-debug-v1-145.0.0-${{ env.TARGET_TRIPLE }}
       - *restore-openssl
       - *configure-cached-openssl
 
