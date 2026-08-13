@@ -6,6 +6,7 @@ import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-pl
 import { mutationTargetKeys, validateMutationDefinitions } from './mutation-analysis.mjs';
 import { sha256 } from './provenance.mjs';
 import { loadReferenceRegistry, validateReferenceRegistry } from './reference-fixtures.mjs';
+import { readArtifact } from './artifacts.mjs';
 
 export const CALIBRATION_SCHEMA_VERSION = 1;
 
@@ -267,6 +268,139 @@ function verifyEvidence(entries, stackBenchRoot, at) {
   });
 }
 
+function evidenceFailure(at, message) {
+  fail(at, `qualification artifact ${message}`);
+}
+
+function exactEvidenceIdentity(actual, expected, at) {
+  if (!actual || actual.id !== expected.id || actual.version !== expected.version
+    || actual.sha256 !== expected.sha256) {
+    evidenceFailure(at, `has wrong ${at.split('.').at(-1)} identity`);
+  }
+}
+
+export function validateQualificationEvidenceArtifact(artifact, entry,
+  { calibration, qualificationIdentity, release, references }) {
+  const at = `evidence.${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`;
+  if (!artifact || typeof artifact !== 'object') evidenceFailure(at, 'is not an artifact');
+  exactEvidenceIdentity(artifact.identities?.recipe,
+    { id: release.id, version: release.version, sha256: release.contentSha256 }, `${at}.recipe`);
+  exactEvidenceIdentity(artifact.identities?.calibration, qualificationIdentity,
+    `${at}.calibration`);
+  if (!artifact.identities?.engine?.sha256) evidenceFailure(at, 'has no engine content identity');
+
+  const scoredChecks = release.checkCatalog.filter(check => check.points > 0);
+  const zeroPointChecks = release.checkCatalog.filter(check => check.points === 0);
+  if (entry.kind === 'null') {
+    if (artifact.kind !== 'null_control') evidenceFailure(at, `is ${artifact.kind}, not null_control`);
+    const payload = artifact.payload;
+    if (payload.ok !== true) evidenceFailure(at, 'did not pass');
+    if (canonicalDefinitionJson(payload.tracks) !== canonicalDefinitionJson([release.track])) {
+      evidenceFailure(at, 'targets another track');
+    }
+    const summary = payload.summary;
+    const expectedPoints = scoredChecks.reduce((sum, check) => sum + check.points, 0);
+    if (summary?.criteria !== scoredChecks.length || summary?.points !== expectedPoints
+      || summary.expectedFailures?.criteria !== scoredChecks.length
+      || summary.expectedFailures?.points !== expectedPoints
+      || summary.vacuousPasses?.criteria !== 0 || summary.vacuousPasses?.points !== 0
+      || summary.oracleGaps?.criteria !== 0 || summary.oracleGaps?.points !== 0
+      || summary.unscored?.criteria !== zeroPointChecks.length
+      || summary.unscored?.passed !== 0 || summary.unscored?.failed !== zeroPointChecks.length
+      || summary.unscored?.inconclusive !== 0) {
+      evidenceFailure(at, 'does not prove the complete null policy');
+    }
+    const expected = new Map(scoredChecks.map(check => [
+      `${check.source}:${check.featureId}:${check.criterionId}`, check,
+    ]));
+    for (const result of payload.criteria ?? []) {
+      const key = `${result.scenario}:${result.feature}:${result.criterion}`;
+      const check = expected.get(key);
+      if (!check || result.track !== release.track || result.level !== release.compatibility.legacyLevel
+        || result.points !== check.points || result.status !== 'expected_fail'
+        || result.evidenceStatus !== 'failed') {
+        evidenceFailure(at, `contains invalid null result ${key}`);
+      }
+      expected.delete(key);
+    }
+    if (expected.size !== 0) evidenceFailure(at, 'does not cover every selected check exactly once');
+    return;
+  }
+
+  if (artifact.kind !== 'reference_qualification') {
+    evidenceFailure(at, `is ${artifact.kind}, not reference_qualification`);
+  }
+  const reference = references.find(candidate => candidate.backend === entry.stack);
+  if (!reference) evidenceFailure(at, `targets undeclared stack ${entry.stack}`);
+  exactEvidenceIdentity(artifact.identities?.fixture,
+    { id: reference.id, version: null, sha256: reference.sourceSha256 }, `${at}.fixture`);
+  if (artifact.identities?.stackAdapter?.id !== entry.stack) evidenceFailure(at, 'has wrong stack adapter');
+  const payload = artifact.payload;
+  const mutationControl = entry.kind === 'mutation';
+  const requiredRepetitions = mutationControl
+    ? calibration.qualification.mutationRepetitions : calibration.qualification.referenceRepetitions;
+  if (payload.fixture !== reference.id || payload.fixtureSha256 !== reference.sourceSha256
+    || payload.requiredRepetitions !== requiredRepetitions || payload.isolation !== 'docker'
+    || payload.mutationControl !== mutationControl || payload.ok !== true
+    || payload.stable !== true || payload.sameImage !== true || payload.sameHarness !== true
+    || !payload.harnessSha256 || payload.runs?.length !== requiredRepetitions) {
+    evidenceFailure(at, 'does not satisfy the repeated Docker gate');
+  }
+  const repetitions = new Set();
+  for (const run of payload.runs) {
+    repetitions.add(run.repetition);
+    if (run.ok !== true || run.processError !== null || run.outcome !== 'passed'
+      || run.score !== `${release.scoring.points}/${release.scoring.points}`
+      || run.criteria !== release.scoring.checks || run.zeroPointCriteria !== zeroPointChecks.length
+      || !run.imageId || run.harnessSha256Before !== payload.harnessSha256
+      || run.harnessSha256After !== payload.harnessSha256 || run.failures?.length !== 0
+      || !Array.isArray(run.packRuntime?.packs)
+      || run.packRuntime.packs.length !== release.components.packs.length
+      || run.packRuntime.packs.some(pack => pack.exceeded !== false)) {
+      evidenceFailure(at, `contains failed or incomplete repetition ${run.repetition}`);
+    }
+    if (mutationControl) {
+      if (!run.mutations || run.mutations.total < 1 || run.mutations.caught !== run.mutations.total) {
+        evidenceFailure(at, `did not catch every mutation in repetition ${run.repetition}`);
+      }
+    } else if (run.mutations !== null) {
+      evidenceFailure(at, `reference repetition ${run.repetition} contains mutation results`);
+    }
+  }
+  if (repetitions.size !== requiredRepetitions
+    || !Array.from({ length: requiredRepetitions }, (_, index) => index + 1)
+      .every(repetition => repetitions.has(repetition))) {
+    evidenceFailure(at, 'does not contain the exact repetition set');
+  }
+  if (!repetitions.has(entry.repetition)) evidenceFailure(at, 'does not contain its declared repetition');
+}
+
+function verifyQualificationEvidence(entries, stackBenchRoot, at, context) {
+  const artifacts = new Map();
+  const normalized = verifyEvidence(entries, stackBenchRoot, at);
+  const engines = new Set();
+  const harnesses = new Set();
+  const images = new Set();
+  normalized.forEach((entry, index) => {
+    let artifact = artifacts.get(entry.path);
+    if (!artifact) {
+      try { artifact = readArtifact(resolve(stackBenchRoot, entry.path)); }
+      catch (error) { fail(`${at}[${index}].path`, `is not a valid artifact: ${error.message}`); }
+      artifacts.set(entry.path, artifact);
+    }
+    validateQualificationEvidenceArtifact(artifact, entry, context);
+    engines.add(artifact.identities.engine.sha256);
+    if (entry.kind !== 'null') {
+      harnesses.add(artifact.payload.harnessSha256);
+      for (const run of artifact.payload.runs) images.add(run.imageId);
+    }
+  });
+  if (engines.size > 1) fail(at, 'qualification artifacts were produced by different engines');
+  if (harnesses.size > 1) fail(at, 'qualification artifacts use different harnesses');
+  if (images.size > 1) fail(at, 'qualification artifacts use different build images');
+  return normalized;
+}
+
 function mutationExecutionSha256(manifest) {
   const { status: _status, ...execution } = manifest;
   return sha256(canonicalDefinitionJson(canonicalizeDefinition(execution)));
@@ -410,8 +544,18 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
   });
   if (zeroPoint.size) fail(`${source}.controls`, `missing zero-point checks: ${[...zeroPoint].sort().join(', ')}`);
 
-  const evidence = verifyEvidence(calibration.qualification.evidence, benchRoot,
-    `${source}.qualification.evidence`);
+  const qualificationIdentity = calibrationQualificationIdentity({
+    ...calibration,
+    references: { ...calibration.references, entries: references },
+    mutations,
+  });
+  const evidence = verifyQualificationEvidence(calibration.qualification.evidence, benchRoot,
+    `${source}.qualification.evidence`, {
+      calibration,
+      qualificationIdentity,
+      release,
+      references,
+    });
   const equivalenceDecisions = calibration.equivalenceDecisions.map((decision, index) => ({
     ...decision,
     evidence: verifyEvidence(decision.evidence, benchRoot, `${source}.equivalenceDecisions[${index}].evidence`),

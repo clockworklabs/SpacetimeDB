@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { calibrationQualificationIdentity, compileCalibrationDefinition, compileCalibrationFile,
-  resolveCalibrationForRelease } from '../calibration-compiler.mjs';
+  resolveCalibrationForRelease, validateQualificationEvidenceArtifact } from '../calibration-compiler.mjs';
+import { readArtifact } from '../artifacts.mjs';
 import { checkCalibrations } from '../check-calibration.mjs';
 import { resolveLegacyRecipeRelease } from '../recipe-release.mjs';
 import { loadTrack } from '../tracks.mjs';
@@ -65,6 +66,37 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   assert.equal(calibrationQualificationIdentity(first).sha256, first.qualificationSha256);
   assert.deepEqual(checkCalibrations({ trackName: 'ecommerce' }).map(result => result.id),
     ['ecommerce.l1-standard-calibration']);
+});
+
+test('qualification evidence is semantically bound and tampering fails closed', () => {
+  const { binding, plan } = current();
+  const context = {
+    calibration: plan,
+    qualificationIdentity: calibrationQualificationIdentity(plan),
+    release: binding.release,
+    references: plan.references.entries,
+  };
+  const referenceEntry = plan.qualification.evidence.find(entry =>
+    entry.kind === 'reference' && entry.stack === 'mongodb' && entry.repetition === 1);
+  const reference = readArtifact(join(ROOT, referenceEntry.path));
+  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(reference, referenceEntry, context));
+
+  const wrongStack = structuredClone(reference);
+  wrongStack.identities.stackAdapter.id = 'postgres';
+  assert.throws(() => validateQualificationEvidenceArtifact(wrongStack, referenceEntry, context),
+    /wrong stack adapter/);
+
+  const hiddenFailure = structuredClone(reference);
+  hiddenFailure.payload.runs[0].ok = false;
+  assert.throws(() => validateQualificationEvidenceArtifact(hiddenFailure, referenceEntry, context),
+    /failed or incomplete repetition/);
+
+  const nullEntry = plan.qualification.evidence.find(entry => entry.kind === 'null');
+  const nullArtifact = readArtifact(join(ROOT, nullEntry.path));
+  const vacuous = structuredClone(nullArtifact);
+  vacuous.payload.summary.vacuousPasses.criteria = 1;
+  assert.throws(() => validateQualificationEvidenceArtifact(vacuous, nullEntry, context),
+    /complete null policy/);
 });
 
 test('qualification identity excludes governance transitions but binds executable controls', () => {
@@ -137,6 +169,7 @@ test('equivalence decisions require two distinct executions and hash-bound evide
   }];
   assert.throws(() => compileCalibrationDefinition(definition), /must compare different execution hashes/);
   assert.throws(() => compileChanged(value => {
+    value.qualification.evidence = [];
     value.equivalenceDecisions = [{
       fromExecutionSha256: '1'.repeat(64),
       toExecutionSha256: '2'.repeat(64),
