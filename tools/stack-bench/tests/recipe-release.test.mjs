@@ -63,8 +63,8 @@ test('recipe releases are deterministic, compact, and bind L2 to the exact L1 re
     join(ECOMMERCE, 'composition', 'recipes', 'l2-standard-1.0.0.json'),
     { trackRoot: ECOMMERCE },
   );
-  assert.equal(l2.checkCatalog.length, 52);
-  assert.equal(l2.scoring.points, 74);
+  assert.equal(l2.checkCatalog.length, 53);
+  assert.equal(l2.scoring.points, 75);
   assert.equal(l2.task.baseRecipe.contentSha256, l1a.contentSha256);
   assert(!JSON.stringify(l2).includes('stackbench-staff-2026'));
 });
@@ -137,7 +137,7 @@ test('legacy runner binding fails closed on drift and emits only the suite check
   assert(artifactBinding.sourceRelease.components.packs.every(pack => /^[a-f0-9]{64}$/.test(pack.sha256)));
   const bundled = bundleRecipeRelease(binding);
   assert.equal(bundled.selection.alias, 'L2');
-  assert.equal(bundled.checkCatalog.length, 52);
+  assert.equal(bundled.checkCatalog.length, 53);
   assert(!JSON.stringify(bundled).includes('stackbench-staff-2026'));
   assert.throws(() => resolveGradeRecipeRelease(track, 2,
     join(track.dir, 'scenarios', '03-features.json')), /does not select scenario/);

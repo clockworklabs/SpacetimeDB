@@ -221,21 +221,30 @@ null build scores zero on every criterion that carries points.
 
 Current execution order:
 
-1. Run each ecommerce L1 candidate through the live Docker grader twice and
-   require identical all-criterion outcomes.
-2. Regenerate each ecommerce mutation manifest against the checked-in hash and
-   require exact, collateral-free kills.
-3. Promote those three fixtures to `active`, then make their live matrix a CI
-   gate.
-4. Reconstruct chat L1 reference apps and repeat the same gates before extending
-   either track beyond the validated L1-L2 baseline.
+1. **Completed 2026-08-13:** qualify and promote ecommerce L1 on all three
+   backends with repeated Docker reference, mutation, and null evidence.
+2. **In progress:** audit ecommerce L2 requirement coverage and remove false
+   passes before collecting evidence. The contract linter must visit operations
+   and fulfilment, every scored assertion must test what its description claims,
+   and ambiguous controls stay at zero points.
+3. Freeze separate L2 reference revisions for MongoDB, PostgreSQL, and
+   SpacetimeDB. Do not edit the qualified L1 reference bytes in place.
+4. Add L2 mutation controls, measure pack runtimes, and bind the exact recipe,
+   fixture, references, controls, budgets, and null policy in an L2 calibration.
+5. Run the exact L2 reference and mutation gates twice per backend plus the null
+   gate, then promote the recipe only if every evidence slot passes.
+6. Execute a repeated frozen L1-to-L2 campaign and publish the exact scope and
+   dispersion. Reconstruct other tracks only after this first product path is
+   reproducible end to end.
 
 - [ ] Require every point-bearing criterion to cite prompt text or declare a
   reviewed invariant rationale. Resolve the current `statedBy` warnings.
 - [ ] Require a passing reference app and a caught mutation before promoting a
   criterion from zero points.
-- [ ] Re-run L1-L2 on all three backends under the frozen harness and archive the
-  raw evidence bundle with checksums.
+- [x] Re-run L1 on all three backends under the frozen harness and archive the
+  raw qualification evidence with checksums.
+- [ ] Re-run L2 on all three backends under the frozen harness and archive the
+  raw qualification evidence with checksums.
 - [ ] Predeclare the repeated-run design and report dispersion; a single matched
   run remains exploratory rather than a headline comparison.
 

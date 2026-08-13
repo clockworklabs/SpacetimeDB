@@ -743,7 +743,8 @@
         {
           "id": "204a",
           "desc": "one customer cannot cancel another's order",
-          "points": 2,
+          "points": 0,
+          "note": "WITHHELD: the current replay happens after the owner's cancellation, so a state-only rejection can masquerade as an ownership check. Restore points only after the harness can replay a captured cancellation against a still-pending order and a cross-account authorization mutant is caught.",
           "steps": [
             {
               "do": "fill",

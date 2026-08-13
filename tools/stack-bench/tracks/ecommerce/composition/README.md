@@ -29,12 +29,11 @@ npm run check:calibration
 ```
 
 Current status: these sources compile and prove exact L1/L2 membership, ordering,
-check, and score parity. The live L1/L2 runner resolves the candidate alias,
+check, and score parity. The live runner resolves the requested alias,
 rechecks that parity before launching a browser, and records the exact recipe
-identity in every grade and bundle. It still uses the selected scenario files
-through the legacy action dispatcher; general execution of arbitrary recipes
-and explicit recipe weights remains later work. These recipes are candidates,
-not promotion evidence.
+identity in every grade and bundle. Scenario actions execute through the
+versioned, capability-scoped action registry. L1 is promoted; L2 remains a
+candidate and is not promotion evidence.
 
 Task fragments are source slices identified by permanent IDs, a numeric order,
 an exact contained path, optional unique start/end markers, and the task modes
@@ -60,8 +59,8 @@ the hashes are the proof:
 Saved releases include source digests and the compact check catalog. They do not
 copy fixture passwords, prompt contents, or the full executable grader plan.
 
-The current L1 calibration is draft. It hashes all three candidate reference
-apps and their exact mutation manifests, requires two clean reference and two
-mutation repetitions per supported stack, and gives every zero-point check an
-explicit role. That records what remains to qualify; it is not evidence that
-qualification already happened.
+The current L1 calibration is qualified. It binds all three active reference
+apps and their exact mutation manifests to repeated Docker reference, mutation,
+and null evidence. L2 has no calibration yet: its recipe, fixture, and three new
+packs remain draft until separate L2 references, controls, measured budgets, and
+repeated evidence exist.

@@ -75,19 +75,20 @@ these packages land, but cannot be promoted or used in a measured campaign.
   unknown future schemas fail closed; pre-v1 bytes live in a checksummed archive.
 - [x] Active track manifests declare suite inheritance explicitly. Legacy v0
   manifests receive the old name-based behavior only inside the compiler.
-- [x] Unit/integration baseline: 186 tests passing through typed check evidence,
+- [x] Unit/integration baseline: 275 tests passing through typed check evidence,
   complete stack adapters, and the versioned agent-adapter boundary.
 - [x] Product composition decisions are defined: behavior packs, scored recipes,
   versioned fixtures, and independent experiment plans.
 - [x] Pack, recipe, fixture, and promotion source contracts are implemented for
   validated ecommerce L1/L2, with exact compatibility parity and a smoke mix.
-- [x] Ecommerce L1/L2 grades resolve the candidate alias before browser work,
+- [x] Ecommerce L1/L2 grades resolve the alias before browser work,
   prove exact legacy execution/scoring parity, and store the resolved recipe
-  identity. The legacy scenario dispatcher remains the execution adapter while
-  action extraction proceeds.
-- [ ] The frozen three-stack live qualification is not current. An earlier
-  Spacetime pass predates executable compiler changes; a Mongo repetition was
-  infrastructure-invalid; PostgreSQL has not run under the new hash.
+  identity. All scenario actions execute through versioned, capability-scoped
+  registries.
+- [x] Ecommerce L1 has current repeated Docker reference, mutation, and null
+  evidence for all three stacks and is promoted.
+- [ ] Ecommerce L2 definition hardening and qualification are in progress; it
+  has no calibration or L2 reference/mutation evidence yet.
 
 ## E0 - compatibility characterization
 
@@ -156,13 +157,13 @@ Acceptance:
 - the compatibility recipe preserves current L1/L2 execution and scoring under
   the existing goldens.
 
-Implemented as seven behavior packs, two exact fixture sets, L1/L2 compatibility
+Implemented as eight behavior packs, two exact fixture sets, L1/L2 compatibility
 recipes, one explicitly scored smoke recipe, and a separate promotion catalog
-holding L1/L2 as candidates. L1 compiles to the current 48 checks/51 points; L2
-compiles to the current 52 checks/74 points with the same suite and feature order.
+holding a promoted L1 and candidate L2. L1 compiles to 48 checks/51 points; the
+current L2 draft compiles to 53 checks/75 points with the same suite order.
 Draft packs may declare an unmeasured budget, but qualification requires a bound.
 Legacy source-point scoring is rejected outside an explicitly marked migration
-recipe. The live runner does not consume these candidates yet.
+recipe. The live runner consumes the exact resolved release.
 
 ### SB-103: Compiled recipe release and identity - complete
 
@@ -209,13 +210,13 @@ Acceptance:
 - calibration cannot be reused after recipe or fixture drift without an explicit
   new manifest.
 
-Implemented as a strict, hash-bound calibration source and compiler. The current
-ecommerce L1 calibration remains draft and all three stacks remain candidate;
-this records required work without inventing qualification. It binds the exact
-recipe/fixture, canonical reference registry entries and sources, exact mutation
-manifests and targets, null policy, repetition counts, stack states, evidence
-slots, equivalence decisions, and alias catalog. All nine zero-point checks have
-one typed policy. Source validation rejects drift, incomplete controls, unknown
+Implemented as a strict, hash-bound calibration source and compiler. Ecommerce
+L1 is qualified from its exact repeated evidence; L2 has no calibration yet and
+cannot launch qualification. A calibration binds the exact recipe/fixture,
+canonical reference registry entries and sources, exact mutation manifests and
+targets, null policy, repetition counts, stack states, evidence slots,
+equivalence decisions, and alias catalog. Every zero-point check requires one
+typed policy. Source validation rejects drift, incomplete controls, unknown
 mutants, unsupported stack mismatches, under-specified evidence repetitions,
 and draft calibration presented as promoted. `check:calibration` is the direct
 validation entry point and is part of Linux CI; the appliance's public

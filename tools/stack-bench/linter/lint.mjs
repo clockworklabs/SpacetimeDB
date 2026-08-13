@@ -85,6 +85,18 @@ async function checkHook(page, hook, results) {
   }
 }
 
+export function completeUnvisitedHooks(hooks, results) {
+  const visited = new Set(results.map(result => result.id));
+  for (const hook of hooks) {
+    if (visited.has(hook.id)) continue;
+    results.push(hook.stage === 'scenario'
+      ? { id: hook.id, status: 'SCENARIO', detail: hook.note }
+      : { id: hook.id, status: 'BLOCKED',
+          detail: `the golden path did not visit contract stage ${JSON.stringify(hook.stage)}` });
+  }
+  return results;
+}
+
 async function run() {
   const args = parseArgs(process.argv);
   const track = loadTrack(args.track);
@@ -106,6 +118,9 @@ async function run() {
     // application-specific, so each track brings its own.
     const { walk } = await import(pathToFileURL(track.walk).href);
     await walk({ page, args, hooks, byStage, blocked, checkHook, results, uniq, tid, CHECK_TIMEOUT });
+    // A successful walk used to omit unknown or forgotten stages and still
+    // report PASS. Every lintable hook must now have explicit evidence.
+    completeUnvisitedHooks(hooks, results);
   } catch (err) {
     console.error(`Golden path aborted: ${err.message}`);
     for (const h of hooks) {
@@ -155,4 +170,4 @@ async function run() {
   process.exit(failures.length === 0 ? 0 : 1);
 }
 
-run();
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) run();

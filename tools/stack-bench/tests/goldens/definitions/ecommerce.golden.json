@@ -3900,6 +3900,94 @@
                     "within": 10000
                   }
                 ]
+              },
+              {
+                "desc": "a price change updates an open cart and checkout charges the new price",
+                "id": "4c",
+                "points": 3,
+                "statedBy": "an item in someone's cart at the moment the price changes is charged the new price at checkout, and the cart total they are looking at updates to match",
+                "steps": [
+                  {
+                    "actor": "customer",
+                    "do": "pressKey",
+                    "key": "Escape"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Desk Lamp"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "testid": "cart-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectNumber",
+                    "equals": 42,
+                    "testid": "cart-total"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "price-input",
+                    "text": "52.00"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "admin-item-row"
+                    },
+                    "testid": "price-submit"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectNumber",
+                    "equals": 52,
+                    "testid": "cart-total",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "testid": "checkout-submit"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "settleMs": 1500,
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "expectNumber",
+                    "equals": 52,
+                    "in": {
+                      "contains": "Desk Lamp",
+                      "testid": "order-item"
+                    },
+                    "testid": "order-total"
+                  }
+                ]
               }
             ],
             "id": 4,
@@ -3935,7 +4023,7 @@
                 "desc": "an item falling to ten units or fewer joins the low-stock list, live",
                 "id": "5a",
                 "points": 3,
-                "statedBy": "every item whose total is at or below 10 units",
+                "statedBy": "items enter and leave this list as stock moves, sells, is restocked, cancelled or returned",
                 "steps": [
                   {
                     "actor": "admin",
@@ -3945,11 +4033,55 @@
                     "within": 8000
                   },
                   {
+                    "actor": "admin",
+                    "do": "fill",
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "restock-input",
+                    "text": "8"
+                  },
+                  {
+                    "actor": "admin",
+                    "do": "click",
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "admin-location-row"
+                    },
+                    "testid": "restock-submit"
+                  },
+                  {
                     "absent": true,
                     "actor": "admin",
-                    "contains": "Webcam",
+                    "contains": "Mirrorless Camera",
                     "do": "expect",
-                    "testid": "low-stock-item"
+                    "testid": "low-stock-item",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Mirrorless Camera"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Mirrorless Camera",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
+                  {
+                    "actor": "admin",
+                    "contains": "Mirrorless Camera",
+                    "do": "expect",
+                    "testid": "low-stock-item",
+                    "within": 10000
                   }
                 ]
               },
@@ -4026,7 +4158,7 @@
                 "desc": "buying from a category makes that category's other items recommended",
                 "id": "5c",
                 "points": 2,
-                "statedBy": "the items from categories\nthey have bought from",
+                "statedBy": "the items from categories\nthey have bought from, most-purchased first, excluding items already in\ntheir cart",
                 "steps": [
                   {
                     "actor": "customer",
@@ -4034,6 +4166,36 @@
                     "key": "Escape"
                   },
                   {
+                    "actor": "customer",
+                    "contains": "Headphones",
+                    "do": "expect",
+                    "testid": "recommended-item",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Headphones"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Headphones",
+                      "testid": "item-card"
+                    },
+                    "testid": "add-to-cart"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "pressKey",
+                    "key": "Escape"
+                  },
+                  {
+                    "absent": true,
                     "actor": "customer",
                     "contains": "Headphones",
                     "do": "expect",
@@ -4050,6 +4212,7 @@
                 "steps": [
                   {
                     "actor": "visitor",
+                    "contains": "Bluetooth Speaker",
                     "do": "expect",
                     "testid": "recommended-item",
                     "within": 10000
@@ -4816,7 +4979,8 @@
               {
                 "desc": "one customer cannot cancel another's order",
                 "id": "204a",
-                "points": 2,
+                "note": "WITHHELD: the current replay happens after the owner's cancellation, so a state-only rejection can masquerade as an ownership check. Restore points only after the harness can replay a captured cancellation against a still-pending order and a cross-account authorization mutant is caught.",
+                "points": 0,
                 "statedBy": "a customer can cancel an order that has not shipped",
                 "steps": [
                   {

@@ -153,6 +153,26 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
     const link = page.locator(tid('admin-link')).first();
     if (await link.isVisible().catch(() => false)) await link.click();
     for (const h of byStage('admin')) await checkHook(page, h, results); // check all, non-blocking
+
+    // L2 adds controls to the admin panel itself. Check all of them before
+    // navigating to fulfilment so a missing control cannot be hidden by the
+    // later page transition.
+    for (const h of byStage('operations')) await checkHook(page, h, results);
+
+    // Checkout above leaves a pending order, so the admin (who may do
+    // everything staff can) can reach a non-empty fulfilment queue. This makes
+    // queue-item, queue-warehouse and ship-submit genuinely lintable instead
+    // of silently absent from the report.
+    const fulfilmentHooks = byStage('fulfilment');
+    if (fulfilmentHooks.length) {
+      const staffLink = page.locator(tid('staff-link')).first();
+      if (await staffLink.isVisible().catch(() => false)) {
+        await staffLink.click();
+        for (const h of fulfilmentHooks) await checkHook(page, h, results);
+      } else {
+        blocked('fulfilment');
+      }
+    }
   } else blocked('admin');
 
   for (const h of byStage('scenario')) {
