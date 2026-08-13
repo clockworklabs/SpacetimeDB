@@ -1,6 +1,17 @@
 # syntax=docker/dockerfile:1.7
 
 FROM docker:29.6.2-cli@sha256:feb2d49bd65f274b3e4b4620beabe2f4691e5287e496da9fbc9830ed5f780676 AS docker-cli
+FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:c091b21d9fae78c76e85cd4356431e9b018402f172a214fc7d7a5e9a7e29d8ac AS sdk-build
+
+WORKDIR /workspace
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY crates/bindings-typescript/ crates/bindings-typescript/
+RUN corepack enable \
+    && pnpm --filter spacetimedb install --frozen-lockfile --ignore-scripts \
+    && pnpm --filter spacetimedb run build \
+    && test -f crates/bindings-typescript/dist/server/index.d.ts \
+    && test -f crates/bindings-typescript/dist/server/index.mjs
+
 FROM mcr.microsoft.com/playwright:v1.62.1-noble@sha256:c091b21d9fae78c76e85cd4356431e9b018402f172a214fc7d7a5e9a7e29d8ac
 
 ENV NODE_ENV=production \
@@ -33,6 +44,7 @@ ENV STACK_BENCH_SOURCE_REVISION=$SOURCE_REVISION \
 
 COPY tools/stack-bench/ ./
 COPY crates/bindings-typescript/ /opt/stack-bench-embedded-deps/bindings-typescript/
+COPY --from=sdk-build /workspace/crates/bindings-typescript/dist/ /opt/stack-bench-embedded-deps/bindings-typescript/dist/
 COPY licenses/BSL.txt /opt/stack-bench-embedded-deps/BSL.txt
 COPY tools/stack-bench/container/bin/spacetimedb-cli /opt/stack-bench-embedded-deps/spacetimedb-cli
 COPY tools/stack-bench/container/bin/spacetimedb-standalone /opt/stack-bench-embedded-deps/spacetimedb-standalone
@@ -43,6 +55,12 @@ RUN rm /opt/stack-bench-embedded-deps/bindings-typescript/LICENSE.txt \
     && chmod 0444 /opt/stack-bench-embedded-deps/bindings-typescript/LICENSE.txt \
     && chmod 0555 /opt/stack-bench-embedded-deps/spacetimedb-cli \
       /opt/stack-bench-embedded-deps/spacetimedb-standalone \
+    && cd /opt/stack-bench-embedded-deps/bindings-typescript \
+    && pack_name="$(npm pack --pack-destination /opt/stack-bench-embedded-deps --silent)" \
+    && mv "/opt/stack-bench-embedded-deps/$pack_name" /opt/stack-bench-embedded-deps/spacetimedb.tgz \
+    && tar -tzf /opt/stack-bench-embedded-deps/spacetimedb.tgz | grep -Fxq package/dist/server/index.d.ts \
+    && tar -tzf /opt/stack-bench-embedded-deps/spacetimedb.tgz | grep -Fxq package/dist/server/index.mjs \
+    && cd /opt/stack-bench \
     && node appliance/dependency-volume.mjs manifest \
       --source /opt/stack-bench-embedded-deps \
       --out /opt/stack-bench/dependency-manifest.json \

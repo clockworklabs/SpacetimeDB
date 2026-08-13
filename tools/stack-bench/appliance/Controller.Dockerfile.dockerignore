@@ -7,6 +7,9 @@
 !crates/bindings-typescript/**
 !licenses
 !licenses/BSL.txt
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
 
 **/node_modules
 **/dist

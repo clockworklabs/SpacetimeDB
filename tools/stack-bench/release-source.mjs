@@ -11,6 +11,9 @@ const RELEASE_SOURCE_PATHS = Object.freeze([
   'tools/stack-bench',
   'crates/bindings-typescript',
   'licenses/BSL.txt',
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
   '.dockerignore',
   '.gitattributes',
 ]);

@@ -59,14 +59,10 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
         + 'test -d /release-deps/bindings-typescript; '
         + 'test -x /release-deps/spacetimedb-cli; '
         + 'test -x /release-deps/spacetimedb-standalone; '
-        + 'mkdir -p /deps/bindings-typescript; '
-        + 'cp -a /release-deps/bindings-typescript/. /deps/bindings-typescript/; '
+        + 'test -f /release-deps/spacetimedb.tgz; '
         + 'ln -s /release-deps/spacetimedb-cli /deps/spacetimedb-cli; '
         + 'ln -s /release-deps/spacetimedb-standalone /deps/spacetimedb-standalone; '
-        + 'cd /deps/bindings-typescript; '
-        + 'npm install --omit=dev --ignore-scripts --no-audit --no-fund; '
-        + 'pack_name=$(npm pack --pack-destination /deps --silent); '
-        + 'mv "/deps/$pack_name" /deps/spacetimedb.tgz; '
+        + 'ln -s /release-deps/spacetimedb.tgz /deps/spacetimedb.tgz; '
         + 'touch /deps/.ready; exec sleep infinity',
       readyFile: '/deps/.ready',
       readyDescription: 'SpacetimeDB SDK staging',
@@ -82,7 +78,10 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
       { kind: 'bind', source: cli, target: '/deps/spacetimedb-cli', readOnly: true },
       { kind: 'bind', source: standalone, target: '/deps/spacetimedb-standalone', readOnly: true },
     ],
-    init: 'set -eu; mkdir -p /deps/bindings-typescript; '
+    init: 'set -eu; '
+      + 'test -f /deps-src/bindings-typescript/dist/server/index.d.ts; '
+      + 'test -f /deps-src/bindings-typescript/dist/server/index.mjs; '
+      + 'mkdir -p /deps/bindings-typescript; '
       + 'cp -a /deps-src/bindings-typescript/. /deps/bindings-typescript/; '
       + 'cd /deps/bindings-typescript; '
       + 'npm install --omit=dev --ignore-scripts --no-audit --no-fund; '
