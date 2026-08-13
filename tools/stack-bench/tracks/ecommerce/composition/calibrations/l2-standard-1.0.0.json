@@ -28,9 +28,9 @@
     ]
   },
   "mutations": [
-    { "backend": "mongodb", "path": "grader/mutations/mongodb-ecom-l2.json", "sha256": "0703e915dad626acb537387a5284851c44480be2f959985b47a77d0a62c5f67b", "referenceId": "ecommerce-l2-mongodb" },
-    { "backend": "postgres", "path": "grader/mutations/postgres-ecom-l2.json", "sha256": "df5da58ca593ccae2b05e85a32be5b139489a40c0c4862e43a38782b9dd015a9", "referenceId": "ecommerce-l2-postgres" },
-    { "backend": "spacetime", "path": "grader/mutations/spacetime-ecom-l2.json", "sha256": "9677c9e3c0287b7d3b0cb7a8eb061e729e3e9994e70dee18a4148a7442d6712c", "referenceId": "ecommerce-l2-spacetime" }
+    { "backend": "mongodb", "path": "grader/mutations/mongodb-ecom-l2.json", "sha256": "872f1deba41b0ae2a2b6e6da5da22cdcbc975689983ad8a98e8c20b21f6aeb16", "referenceId": "ecommerce-l2-mongodb" },
+    { "backend": "postgres", "path": "grader/mutations/postgres-ecom-l2.json", "sha256": "551429afea172ee8577bd4e7d6609d89ac3cc80056479d84796bc22262400bdc", "referenceId": "ecommerce-l2-postgres" },
+    { "backend": "spacetime", "path": "grader/mutations/spacetime-ecom-l2.json", "sha256": "b6ade6fba64cfd68cc9136d5ce03ecf0ea523b13cfa33129fc25ea0fcf588cfb", "referenceId": "ecommerce-l2-spacetime" }
   ],
   "nullControl": {
     "pointBearing": "must-fail-conclusively",
@@ -40,9 +40,10 @@
   "controls": [
     {
       "stableKey": "ecommerce.operations-access.operator-authorization.201c",
-      "role": "promotion-gate",
-      "promotionPolicy": "must-pass-reference-and-kill-declared-mutant",
-      "mutationTargets": ["mongodb:customer-can-ship-order", "postgres:customer-can-ship-order", "spacetime:customer-can-ship-order"]
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The hidden ship control is a useful UI diagnostic, but server-side authorization is proved by criterion 1e and its cross-stack mutations."
     },
     {
       "stableKey": "ecommerce.inventory-operations.stock-conservation.202d",

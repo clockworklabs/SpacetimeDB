@@ -36,10 +36,10 @@
     },
     {
       "id": "customer-can-ship-order",
-      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
-      "kills": ["201c"],
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "kills": ["1e"],
       "desc": "Remove the staff authorization middleware from the ship route while retaining authentication, allowing a customer to ship their own pending order.",
-      "breaks": 201,
+      "breaks": 1,
       "file": "server/src/index.ts",
       "edits": [
         {
