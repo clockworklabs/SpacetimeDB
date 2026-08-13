@@ -17,6 +17,9 @@ test('reference qualification requires an explicit valid stack scope', () => {
     '--track', 'ecommerce', '--level', '2']);
   assert.equal(args.track, 'ecommerce');
   assert.equal(args.level, 2);
+  assert.equal(args.mutations, false);
+  assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
+    '--mutations']).mutations, true);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '3']), /validated/);
 });

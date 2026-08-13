@@ -39,7 +39,7 @@ function qualificationInputs() {
 
 export function parseReferenceQualificationArgs(argv) {
   const args = { track: 'ecommerce', level: 1, repetitions: 2,
-    runIndex: 0, spacetimePort: 3310, timeoutMinutes: 60 };
+    runIndex: 0, spacetimePort: 3310, timeoutMinutes: 60, mutations: false };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--backend') args.backend = argv[++i];
     else if (argv[i] === '--track') args.track = argv[++i];
