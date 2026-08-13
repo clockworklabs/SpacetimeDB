@@ -11,8 +11,8 @@ test('the reference registry binds candidate, blocked and legacy manifest lifecy
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 0);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 3);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 3);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 0);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
   escaped.fixtures[0].archivedEvidence = ['results/unbound-grade.json'];

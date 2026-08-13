@@ -82,6 +82,7 @@ test('recipe diff separates categories and names exact calibration work invalida
     const original = join(root, 'composition', 'recipes', 'l1-standard-1.0.0.json');
     const changed = join(root, 'composition', 'recipes', 'l1-fixture-variant.json');
     const value = JSON.parse(readFileSync(original, 'utf8'));
+    value.state = 'draft';
     value.fixture = { path: '../fixtures/operations-1.0.0.json',
       id: 'ecommerce.operations', version: '1.0.0' };
     writeFileSync(changed, `${JSON.stringify(value, null, 2)}\n`);
@@ -97,8 +98,8 @@ test('recipe diff separates categories and names exact calibration work invalida
     assert.equal(diff.calibrations.length, 1);
     assert.equal(diff.calibrations[0].id, 'ecommerce.l1-standard-calibration');
     assert.deepEqual(diff.calibrations[0].invalidated, [
-      'recipe binding', 'fixture binding', 'reference repetitions', 'mutation repetitions',
-      'null repetitions', 'promotion decision',
+      'recipe binding', 'recipe qualification state', 'fixture binding',
+      'reference repetitions', 'mutation repetitions', 'null repetitions', 'promotion decision',
     ]);
   } finally { rmSync(temporary, { recursive: true, force: true }); }
 });

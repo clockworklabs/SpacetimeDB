@@ -53,7 +53,7 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   const first = current().plan;
   const second = current().plan;
   assert.deepEqual(first, second);
-  assert.equal(first.state, 'draft');
+  assert.equal(first.state, 'qualified');
   assert.equal(first.recipe.contentSha256, current().binding.release.contentSha256);
   assert.equal(first.fixture.sourceSha256, current().binding.release.components.fixture.sha256);
   assert.equal(first.references.entries.length, 3);
@@ -152,11 +152,12 @@ test('every zero-point check requires one typed policy with valid mutation targe
   }), /duplicates|not an unassigned/);
 });
 
-test('draft component evidence cannot be mislabeled as a qualified calibration or promoted alias', () => {
-  assert.throws(() => compileChanged(value => { value.state = 'qualified'; }),
-    /cannot qualify a draft or retired recipe/);
-  assert.throws(() => compileChanged(value => { value.promotion.status = 'promoted'; }),
-    /does not resolve|requires a qualified calibration/);
+test('qualified calibration cannot downgrade a supported stack or its promoted state', () => {
+  assert.throws(() => compileChanged(value => {
+    value.qualification.stacks[0].status = 'candidate';
+  }), /every supported stack must be qualified/);
+  assert.throws(() => compileChanged(value => { value.state = 'draft'; }),
+    /promoted alias requires a qualified calibration/);
 });
 
 test('equivalence decisions require two distinct executions and hash-bound evidence', () => {

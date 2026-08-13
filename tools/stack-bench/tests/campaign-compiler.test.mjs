@@ -137,10 +137,14 @@ test('a campaign cannot be frozen before every selected definition is qualified 
     source: 'test snapshot', models: { 'claude-sonnet-5': {
       inputPerMillion: 1, outputPerMillion: 1, cacheWritePerMillion: 1, cacheReadPerMillion: 1,
     } } };
-  assert.throws(() => compile(definition({ state: 'frozen', runtime, agents: claudeAgent,
+  const frozen = compile(definition({ state: 'frozen', runtime, agents: claudeAgent,
     pricing: claudePricing,
+    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
+  assert.equal(frozen.state, 'frozen');
+  assert.throws(() => compile(definition({ state: 'frozen', levels: [2], runtime,
+    agents: claudeAgent, pricing: claudePricing,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } })),
-  /cannot freeze with unqualified L1/);
+  /cannot freeze with unqualified L2/);
 });
 
 test('frozen manifest validation does not hard-code an agent provider', () => {
@@ -151,7 +155,7 @@ test('frozen manifest validation does not hard-code an agent provider', () => {
   const validated = validateCampaignDefinition(definition({ state: 'frozen', runtime,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
   assert.equal(validated.agents[0].adapter, 'deterministic');
-  assert.throws(() => compile(validated), /cannot freeze with unqualified L1/);
+  assert.equal(compile(validated).state, 'frozen');
 });
 
 test('the packaged model-free campaign example compiles without starting work', () => {
@@ -169,7 +173,7 @@ test('compiled campaign validation rejects a rewritten identity, schedule, or su
   schedule.attempts[0].stack = schedule.attempts[0].stack === 'postgres' ? 'mongodb' : 'postgres';
   assert.throws(() => validateCompiledCampaignPlan(schedule), /attempt schedule/);
   const resolved = structuredClone(plan);
-  resolved.bindings[0].promotion.status = 'promoted';
+  resolved.bindings[0].promotion.status = 'candidate';
   assert.throws(() => validateCompiledCampaignPlan(resolved), /bindings.*current resolved inputs/);
   assert.throws(() => validateCompiledCampaignPlan({ ...plan,
     summary: { ...plan.summary, attempts: 99 } }), /summary/);

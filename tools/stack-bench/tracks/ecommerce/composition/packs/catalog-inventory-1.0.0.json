@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.catalog-inventory",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Catalog and inventory",
   "description": "Public catalog behavior, warehouse administration, stock authority, concurrency, and external writes.",
   "requiresPacks": [],

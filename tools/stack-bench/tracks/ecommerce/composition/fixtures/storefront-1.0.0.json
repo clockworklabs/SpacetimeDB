@@ -3,7 +3,7 @@
   "kind": "fixture-set",
   "id": "ecommerce.storefront",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Ecommerce storefront starting data",
   "warehouses": ["East", "West"],
   "items": [

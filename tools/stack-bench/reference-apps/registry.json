@@ -6,7 +6,7 @@
       "backend": "mongodb",
       "track": "ecommerce",
       "level": 1,
-      "status": "candidate",
+      "status": "active",
       "targetPath": "reference-apps/ecommerce/mongodb",
       "origin": {
         "result": "archive/pre-v1/results/mongodb-ecom-run0",
@@ -24,14 +24,14 @@
         "archive/pre-v1/results/mongodb-ecom-run0/grading/grading-systems.json"
       ],
       "mutationManifests": ["grader/mutations/mongodb-ecom-l1.json"],
-      "qualification": "Pre-v1 reports are archived as historical context only; current Docker qualification is required."
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1/."
     },
     {
       "id": "ecommerce-l1-postgres",
       "backend": "postgres",
       "track": "ecommerce",
       "level": 1,
-      "status": "candidate",
+      "status": "active",
       "targetPath": "reference-apps/ecommerce/postgres",
       "origin": {
         "result": "archive/pre-v1/results/postgres-ecom-l2",
@@ -48,14 +48,14 @@
         "archive/pre-v1/results/postgres-ecom-l2/grading/grading-systems@L1.json"
       ],
       "mutationManifests": ["grader/mutations/postgres-ecom-l1.json"],
-      "qualification": "Pre-v1 reports are archived as historical context only; current Docker qualification is required."
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1/."
     },
     {
       "id": "ecommerce-l1-spacetime",
       "backend": "spacetime",
       "track": "ecommerce",
       "level": 1,
-      "status": "candidate",
+      "status": "active",
       "targetPath": "reference-apps/ecommerce/spacetime",
       "origin": {
         "result": "archive/pre-v1/results/spacetime-ecom-trial2",
@@ -73,7 +73,7 @@
         "archive/pre-v1/results/spacetime-ecom-trial2/grading/grading-systems.json"
       ],
       "mutationManifests": ["grader/mutations/spacetime-ecom-l1.json"],
-      "qualification": "Pre-v1 reports are archived as historical context only; current Docker qualification is required."
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1/."
     },
     {
       "id": "chat-l1-mongodb",

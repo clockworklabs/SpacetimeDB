@@ -3,7 +3,7 @@
   "kind": "benchmark-recipe",
   "id": "ecommerce.l1-standard",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Ecommerce L1 compatibility recipe",
   "track": "ecommerce",
   "compatibility": { "legacyLevel": 1 },

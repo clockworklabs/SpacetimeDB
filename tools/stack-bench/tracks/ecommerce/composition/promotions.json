@@ -3,12 +3,12 @@
   "kind": "promotion-catalog",
   "id": "ecommerce.recipes",
   "version": "1.0.0",
-  "state": "draft",
-  "title": "Ecommerce recipe candidates",
+  "state": "qualified",
+  "title": "Ecommerce recipe releases",
   "entries": [
     {
       "alias": "L1",
-      "status": "candidate",
+      "status": "promoted",
       "recipe": { "path": "recipes/l1-standard-1.0.0.json", "id": "ecommerce.l1-standard", "version": "1.0.0" }
     },
     {

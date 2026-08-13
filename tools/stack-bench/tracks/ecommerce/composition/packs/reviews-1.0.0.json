@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.reviews",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Verified-purchase reviews",
   "description": "Review creation, uniqueness, and proof of purchase.",
   "requiresPacks": [],
