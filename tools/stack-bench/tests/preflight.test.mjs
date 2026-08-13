@@ -40,6 +40,7 @@ test('preflight validates exact scope and a model-free container/result-volume s
     };
     const report = runPreflight(request(root, ['--smoke']), {
       run, now: Date.parse('2026-08-12T12:00:00.100Z'), env: {}, home: root,
+      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
       pidsOnPort: () => [], probePort: () => ({ free: true }),
     });
     assert.equal(report.ok, true, JSON.stringify(report.checks, null, 2));

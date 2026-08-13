@@ -29,7 +29,9 @@ const bashEnv = overrides => ({
 });
 
 function workspace() {
-  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reset-'));
+  const runtimeRoot = process.env.STACK_BENCH_RUNTIME_DIR ?? tmpdir();
+  mkdirSync(runtimeRoot, { recursive: true });
+  const root = mkdtempSync(join(runtimeRoot, 'stack-bench-reset-'));
   const app = join(root, 'app');
   mkdirSync(join(app, 'client', 'src'), { recursive: true });
   mkdirSync(join(app, 'backend', 'spacetimedb'), { recursive: true });

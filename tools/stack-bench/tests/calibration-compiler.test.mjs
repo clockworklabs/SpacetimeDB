@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
@@ -35,22 +36,22 @@ test('runtime calibration resolution is exact for both qualified recipes', () =>
 });
 
 function temporaryCalibration(change) {
-  const directory = mkdtempSync(join(TRACK.dir, 'composition', 'calibrations', '.test-'));
-  const path = join(directory, 'calibration.json');
+  const directory = mkdtempSync(join(tmpdir(), 'stack-bench-calibration-'));
+  const trackRoot = join(directory, 'ecommerce');
+  cpSync(TRACK.dir, trackRoot, { recursive: true });
+  const path = join(trackRoot, 'composition', 'calibrations', 'l1-standard-1.0.0.json');
   const value = JSON.parse(readFileSync(CALIBRATION, 'utf8'));
-  // The source moved one directory deeper for this isolated copy.
-  value.recipe.path = '../../recipes/l1-standard-1.0.0.json';
   change(value);
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
-  return { directory, path };
+  return { directory, path, trackRoot };
 }
 
 function compileChanged(change) {
   const temporary = temporaryCalibration(change);
   try {
-    const release = resolveLegacyRecipeRelease(TRACK, 1).release;
+    const release = resolveLegacyRecipeRelease({ ...TRACK, dir: temporary.trackRoot }, 1).release;
     return compileCalibrationFile(temporary.path,
-      { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release });
+      { trackRoot: temporary.trackRoot, stackBenchRoot: ROOT, release });
   } finally { rmSync(temporary.directory, { recursive: true, force: true }); }
 }
 

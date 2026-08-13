@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import test from 'node:test';
 import { ARTIFACT_SCHEMA_VERSION, createArtifact, readArtifact, readArtifactPayload,
   readRunJson, writeArtifact, writeRunJson } from '../artifacts.mjs';
@@ -10,12 +10,23 @@ import { createCheckEvidence } from '../check-evidence.mjs';
 
 const BENCH_ROOT = join(import.meta.dirname, '..');
 
-function freshEngineIdentity() {
+function freshEngineIdentity(root = BENCH_ROOT) {
   const result = spawnSync(process.execPath, ['--input-type=module', '--eval',
     "import { currentEngineIdentity } from './artifacts.mjs'; console.log(JSON.stringify(currentEngineIdentity()));"],
-  { cwd: BENCH_ROOT, encoding: 'utf8' });
+  { cwd: root, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   return JSON.parse(result.stdout);
+}
+
+function writableEngineRoot() {
+  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-engine-'));
+  const root = join(temp, 'stack-bench');
+  const excluded = new Set(['archive', 'node_modules', 'reference-apps', 'results', 'tests', 'tracks']);
+  cpSync(BENCH_ROOT, root, { recursive: true, filter: source => {
+    if (source === BENCH_ROOT) return true;
+    return !excluded.has(relative(BENCH_ROOT, source).split(/[\\/]/)[0]);
+  } });
+  return { temp, root };
 }
 
 test('run artifacts are atomic and identify the producing run', () => {
@@ -192,20 +203,23 @@ test('active readers reject unversioned files without inferring their kind', () 
 });
 
 test('engine identity ignores hidden runtime work directories', () => {
-  const before = freshEngineIdentity();
-  const runtime = mkdtempSync(join(BENCH_ROOT, '.engine-runtime-'));
+  const copy = writableEngineRoot();
+  const before = freshEngineIdentity(copy.root);
+  const runtime = mkdtempSync(join(copy.root, '.engine-runtime-'));
   try {
     writeFileSync(join(runtime, 'generated.mjs'), 'this is generated runtime state, not harness code\n');
     writeFileSync(join(runtime, 'session.json'), '{"turns":999}\n');
-    assert.deepEqual(freshEngineIdentity(), before);
-  } finally { rmSync(runtime, { recursive: true, force: true }); }
+    assert.deepEqual(freshEngineIdentity(copy.root), before);
+  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
 });
 
 test('engine identity excludes the inert historical archive', () => {
-  const before = freshEngineIdentity();
-  const runtime = mkdtempSync(join(BENCH_ROOT, 'archive', '.engine-runtime-'));
+  const copy = writableEngineRoot();
+  const before = freshEngineIdentity(copy.root);
+  mkdirSync(join(copy.root, 'archive'));
+  const runtime = mkdtempSync(join(copy.root, 'archive', '.engine-runtime-'));
   try {
     writeFileSync(join(runtime, 'historical.mjs'), 'archived generated code is not the active harness\n');
-    assert.deepEqual(freshEngineIdentity(), before);
-  } finally { rmSync(runtime, { recursive: true, force: true }); }
+    assert.deepEqual(freshEngineIdentity(copy.root), before);
+  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
 });

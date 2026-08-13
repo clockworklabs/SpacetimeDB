@@ -150,6 +150,7 @@ export function runPreflight(request, dependencies = {}) {
   const now = dependencies.now ?? Date.now();
   const home = dependencies.home ?? homedir();
   const exists = dependencies.exists ?? existsSync;
+  const statfs = dependencies.statfs ?? statfsSync;
   const inspectPorts = dependencies.pidsOnPort ?? pidsOnPort;
   const probePort = dependencies.probePort ?? probeLoopbackPort;
   const checks = [];
@@ -216,7 +217,7 @@ export function runPreflight(request, dependencies = {}) {
   try {
     writeFileSync(join(request.resultsDir, hostMarker), 'host-write-ok', { flag: 'wx', mode: 0o600 });
     rmSync(join(request.resultsDir, hostMarker));
-    const stats = statfsSync(request.resultsDir, { bigint: true });
+    const stats = statfs(request.resultsDir, { bigint: true });
     const free = stats.bavail * stats.bsize;
     add('storage.results', free >= BigInt(PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes) ? 'pass' : 'fail',
       `${bytes(free)} free at ${request.resultsDir}`,
