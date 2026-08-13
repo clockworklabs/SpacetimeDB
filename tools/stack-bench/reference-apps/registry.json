@@ -127,7 +127,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/l2/spacetime",
-        "sourceSha256": "36780c7ca3a443f5669c346fafb9891bcfeead0970988d6cbdb6b5da53e14e39"
+        "sourceSha256": "4c27ce3492bba80304017c75711585f45d1436ecc947fa9062bfdcad2eb7f670"
       },
       "mutationManifests": ["grader/mutations/spacetime-ecom-l2.json"],
       "qualification": "Not qualified; requires the current L2 reference, mutation, budget, and null gates."
