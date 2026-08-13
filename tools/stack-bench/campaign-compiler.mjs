@@ -208,7 +208,7 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     if (value.budgets.maxCostUsdPerAttempt === null) {
       fail(`${source}.budgets.maxCostUsdPerAttempt`, 'is required for a frozen campaign');
     }
-    for (const field of ['releaseManifestSha256', 'controllerImage', 'buildImage']) {
+    for (const field of ['controllerImage', 'buildImage']) {
       if (value.runtime[field] === null) fail(`${source}.runtime.${field}`, 'is required for a frozen campaign');
     }
   }

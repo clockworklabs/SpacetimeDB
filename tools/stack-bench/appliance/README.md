@@ -92,13 +92,14 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
 ```
 
 The campaign file is caller-owned under `/var/lib/stack-bench`. A draft can be
-inspected while definitions are still candidates. A frozen campaign additionally
-requires qualified/promoted definitions plus exact release and image identities;
-the compiler refuses to fill those in from ambient state. At execution time the
-controller also hashes and validates the configured release manifest, checks its
-controller and build-sandbox image references, and refuses a Compose controller
-image that differs from the campaign. This runtime binding does not replace the
-separate release-bundle signature/integrity verification.
+inspected while definitions are still candidates. A frozen campaign requires
+qualified/promoted definitions plus exact controller and build image identities;
+the compiler refuses to fill those in from ambient state. An internal campaign
+may leave `releaseManifestSha256` null so distribution packaging does not block
+measurement. When a distributed release manifest is named, execution hashes and
+validates it and checks its controller/build-sandbox image references. In either
+case, the running Compose controller must match the campaign. This runtime binding
+does not replace separate release-bundle signature/integrity verification.
 `campaign.example.json` is a zero-cost deterministic draft showing the complete
 shape; copy it outside the image and replace its study inputs before use.
 

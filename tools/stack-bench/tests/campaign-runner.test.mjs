@@ -102,6 +102,12 @@ test('a frozen campaign proves its release and both runtime images before admiss
     const env = { STACK_BENCH_CONTROLLER_IMAGE: runtime.controllerImage,
       STACK_BENCH_RELEASE_MANIFEST: path };
     assert.equal(campaignExecutionEnvironment(plan, env).STACK_BENCH_IMAGE, runtime.buildImage);
+    const internalPlan = { state: 'frozen', definition: { runtime: {
+      ...runtime, releaseManifestSha256: null,
+    } } };
+    assert.equal(campaignExecutionEnvironment(internalPlan, {
+      STACK_BENCH_CONTROLLER_IMAGE: runtime.controllerImage,
+    }).STACK_BENCH_IMAGE, runtime.buildImage);
     assert.throws(() => campaignExecutionEnvironment(plan, { ...env,
       STACK_BENCH_CONTROLLER_IMAGE: `registry.example/controller@sha256:${'1'.repeat(64)}` }),
     /controller image does not match/);

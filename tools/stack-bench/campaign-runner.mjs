@@ -104,6 +104,7 @@ export function verifyCampaignRuntime(plan, env = process.env) {
   if (env.STACK_BENCH_CONTROLLER_IMAGE !== expected.controllerImage) {
     throw new Error('running controller image does not match the frozen campaign');
   }
+  if (expected.releaseManifestSha256 === null) return structuredClone(expected);
   if (typeof env.STACK_BENCH_RELEASE_MANIFEST !== 'string'
     || env.STACK_BENCH_RELEASE_MANIFEST.trim() === '') {
     throw new Error('STACK_BENCH_RELEASE_MANIFEST is required for a frozen campaign');

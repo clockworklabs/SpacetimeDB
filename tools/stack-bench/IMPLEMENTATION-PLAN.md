@@ -603,12 +603,14 @@ resolve current recipe/fixture/calibration and adapter identities, and expand a
 seeded balanced rotation into immutable attempts without starting a model. Draft
 plans may expose incomplete qualification honestly. Frozen plans fail unless
 every selected recipe, fixture, calibration and alias is qualified/promoted and
-the exact release manifest, controller/build image digests, timeout, cost cap,
+the exact controller/build image digests, timeout, cost cap,
 retry/exclusion rules, pricing, and analysis policy are present. The compiled
 plan is revalidated from those inputs before scheduler resume. Execution now
-hashes and validates the named release manifest and refuses mismatched controller,
-build-sandbox, or platform identities instead of treating frozen runtime fields
-as descriptive labels. Ecommerce L1 and L2 definitions are qualified and promoted;
+refuses mismatched controller, build-sandbox, or platform identities instead of
+treating frozen runtime fields as descriptive labels. If a distribution release
+manifest is selected, its exact hash and image bindings are enforced as well;
+internal measurement does not require unfinished signing/SBOM packaging.
+Ecommerce L1 and L2 definitions are qualified and promoted;
 the remaining work is to run an intentionally selected campaign, not to complete
 the manifest implementation.
 

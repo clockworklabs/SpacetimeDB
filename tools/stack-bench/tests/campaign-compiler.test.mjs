@@ -125,7 +125,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
   } })), /exact image digest/);
 });
 
-test('frozen campaigns require release metadata and both promoted levels compile', () => {
+test('frozen campaigns require exact runtime images and both promoted levels compile', () => {
   assert.throws(() => compile(definition({ state: 'frozen' })), /maxCostUsdPerAttempt.*required/);
   const runtime = { releaseManifestSha256: 'a'.repeat(64),
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
@@ -141,6 +141,11 @@ test('frozen campaigns require release metadata and both promoted levels compile
     pricing: claudePricing,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
   assert.equal(frozen.state, 'frozen');
+  const internal = compile(definition({ state: 'frozen', runtime: {
+    ...runtime, releaseManifestSha256: null,
+  }, agents: claudeAgent, pricing: claudePricing,
+  budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
+  assert.equal(internal.definition.runtime.releaseManifestSha256, null);
   const l2 = compile(definition({ state: 'frozen', levels: [2], runtime,
     agents: claudeAgent, pricing: claudePricing,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
