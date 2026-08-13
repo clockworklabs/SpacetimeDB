@@ -14,7 +14,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 test('Spacetime container targets follow their recorded network topology', () => {
   const lease = { resources: { serverUri: 'http://127.0.0.1:3310', buildContainer: null } };
   assert.equal(containerReachableSpacetimeUri(lease), 'http://host.docker.internal:3310');
-  lease.resources.buildContainer = { networkMode: 'shared-controller' };
+  lease.resources.buildContainer = { networkMode: 'host' };
   assert.equal(containerReachableSpacetimeUri(lease), 'http://127.0.0.1:3310');
   assert.throws(() => containerReachableSpacetimeUri(lease, 'unknown'),
     /unsupported build container network mode/);

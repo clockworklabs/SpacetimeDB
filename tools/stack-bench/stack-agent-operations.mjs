@@ -48,7 +48,7 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
   const releaseVolume = env.STACK_BENCH_RELEASE_DEPS_VOLUME?.trim() || null;
   if (releaseVolume) {
     return {
-      networkNamespace: env.STACK_BENCH_APPLIANCE === '1' ? 'controller' : null,
+      networkNamespace: env.STACK_BENCH_APPLIANCE === '1' ? 'host' : null,
       requiredPaths: [],
       ensureDirectories: [config],
       mounts: [

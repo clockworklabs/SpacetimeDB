@@ -7,7 +7,7 @@ import { leaseFromEnv } from './backend-lease.mjs';
 
 export function containerReachableSpacetimeUri(lease, networkMode = null) {
   const mode = networkMode ?? lease.resources.buildContainer?.networkMode ?? 'bridge';
-  if (mode === 'shared-controller') return lease.resources.serverUri;
+  if (mode === 'host') return lease.resources.serverUri;
   if (mode !== 'bridge') throw new Error(`unsupported build container network mode ${mode}`);
   return lease.resources.serverUri
     .replace('127.0.0.1', 'host.docker.internal')
