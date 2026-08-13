@@ -36,7 +36,8 @@ const IDENTITY_FIELD = /^(user_?id|sender_?id|author_?id|from_?user|identity)$/i
 const CONTENT_FIELD = /^(content|text|message|body|msg)$/i;
 const ROOM_FIELD = /^(room_?id|channel_?id|conversation_?id)$/i;
 const AUTH_HEADER = /^(authorization|cookie|x-auth-token|x-session|x-token|x-user)/i;
-const ID_KEY = /"(?:_?id|user_?id|userId|memberId|member_id)"\s*:\s*"?([A-Za-z0-9_-]{1,64})"?/g;
+const ID_FIELD = /^(?:_?id|[A-Za-z][A-Za-z0-9_]*_?id)$/i;
+const ID_KEY = /"(_?id|[A-Za-z][A-Za-z0-9_]*_?id)"\s*:\s*"?([A-Za-z0-9_-]{1,64})"?/gi;
 
 const fail = message => { throw new ActionApplicationFailure(message); };
 const inconclusive = message => { throw new ActionInconclusive(message); };
@@ -56,19 +57,58 @@ const tokenRe = token => new RegExp(
 const mentions = (value, token) => tokenRe(token).test(value);
 const swapToken = (value, from, to) => value.replace(tokenRe(from), to);
 
-function discoverIds(actor, username) {
-  const found = new Set();
-  const quoted = `"${username}"`;
-  for (const chunk of actor.received) {
-    let index = chunk.indexOf(quoted);
-    while (index !== -1) {
-      for (const match of chunk.slice(Math.max(0, index - 200), index + 200).matchAll(ID_KEY)) {
-        found.add(match[1]);
+const normalizedIdKey = key => key.replaceAll('_', '').toLowerCase();
+
+// Return ids from the entity containing `needle`, deepest first. Keeping the
+// id field and its distance from the matching value lets a replay map an order
+// id to another order id instead of accidentally substituting a nested item id.
+// JSON is preferred; the text fallback covers NDJSON/SSE and opaque payloads.
+function discoverIds(actor, needle) {
+  const found = new Map();
+  const add = (key, value, relationDepth = null, proximity = Number.MAX_SAFE_INTEGER) => {
+    if (typeof value !== 'string' && typeof value !== 'number') return;
+    const candidate = {
+      key: normalizedIdKey(key), value: String(value), relationDepth, proximity,
+    };
+    const identity = `${candidate.key}\0${candidate.value}\0${relationDepth ?? ''}`;
+    if (!found.has(identity) || proximity < found.get(identity).proximity) found.set(identity, candidate);
+  };
+  const visit = value => {
+    if (typeof value === 'string') return value.includes(needle) ? 0 : null;
+    if (!value || typeof value !== 'object') return null;
+    let nearest = null;
+    const children = Array.isArray(value) ? value : Object.values(value);
+    for (const child of children) {
+      const distance = visit(child);
+      if (distance !== null) nearest = nearest === null ? distance + 1 : Math.min(nearest, distance + 1);
+    }
+    if (nearest !== null && !Array.isArray(value)) {
+      for (const [key, candidate] of Object.entries(value)) {
+        if (ID_FIELD.test(key)) add(key, candidate, nearest);
       }
-      index = chunk.indexOf(quoted, index + 1);
+    }
+    return nearest;
+  };
+  for (const chunk of actor.received ?? []) {
+    let parsed = false;
+    try {
+      visit(JSON.parse(chunk));
+      parsed = true;
+    } catch { /* non-JSON transport payload */ }
+    if (parsed) continue;
+    const needleOffsets = [];
+    for (let index = chunk.indexOf(needle); index !== -1; index = chunk.indexOf(needle, index + 1)) {
+      needleOffsets.push(index);
+    }
+    if (!needleOffsets.length) continue;
+    for (const match of chunk.matchAll(ID_KEY)) {
+      const proximity = Math.min(...needleOffsets.map(index => Math.abs((match.index ?? 0) - index)));
+      add(match[1], match[2], null, proximity);
     }
   }
-  return [...found];
+  return [...found.values()].sort((left, right) =>
+    (left.relationDepth ?? Number.MAX_SAFE_INTEGER) - (right.relationDepth ?? Number.MAX_SAFE_INTEGER)
+      || left.proximity - right.proximity);
 }
 
 export function replayHeaders(write, overrides = {}) {
@@ -365,16 +405,22 @@ async function replayAs({ input, capabilities, signal }) {
     let toToken = to;
     if (!mentions(url, fromToken) && !mentions(data ?? '', fromToken)) {
       const candidates = [...discoverIds(source, find), ...discoverIds(actor, find)];
-      const resolvedFrom = candidates.find(candidate => mentions(url, candidate) || mentions(data ?? '', candidate));
-      const resolvedTo = [...discoverIds(source, to), ...discoverIds(actor, to)]
-        .find(candidate => candidate !== resolvedFrom);
+      const resolvedFrom = candidates.find(candidate =>
+        mentions(url, candidate.value) || mentions(data ?? '', candidate.value));
+      const targets = [...discoverIds(source, to), ...discoverIds(actor, to)];
+      const resolvedTo = targets.find(candidate => candidate.value !== resolvedFrom?.value
+          && candidate.key === resolvedFrom?.key
+          && candidate.relationDepth === resolvedFrom?.relationDepth)
+        ?? targets.find(candidate => candidate.value !== resolvedFrom?.value
+          && candidate.key === resolvedFrom?.key)
+        ?? targets.find(candidate => candidate.value !== resolvedFrom?.value);
       if (!resolvedFrom || !resolvedTo) {
         actor.replay = { inconclusive: true,
           reason: `neither "${find}" nor an id resolved for it appears in ${write.method} ${write.url} — cannot retarget the replay` };
         return { attempted: false };
       }
-      fromToken = resolvedFrom;
-      toToken = resolvedTo;
+      fromToken = resolvedFrom.value;
+      toToken = resolvedTo.value;
     }
     url = swapToken(url, fromToken, toToken);
     if (data) data = swapToken(data, fromToken, toToken);

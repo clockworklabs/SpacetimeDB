@@ -125,6 +125,47 @@ test('an unreplayable WebSocket write records structural evidence, not a fabrica
   assert.deepEqual(provided.verification.map(([kind]) => kind), ['structural']);
 });
 
+test('replay retargeting maps nested entity ids by field and relationship depth', async () => {
+  const requests = [];
+  const actor = (name, received, writes) => ({
+    name,
+    received: received.map(value => JSON.stringify(value)),
+    writes,
+    page: {
+      request: { fetch: async (url, options) => {
+        requests.push({ url, options });
+        return { status: () => 200, ok: () => true };
+      } },
+    },
+  });
+  const staff = actor('staff', [{ orders: [{
+    _id: 'order-desk', userId: 'staff-user',
+    items: [{ itemId: 'item-desk', name: 'Desk Lamp' }],
+  }] }], [{
+    url: 'http://app.test/api/fulfilment/order-desk/ship', method: 'POST',
+    headers: { authorization: 'Bearer staff-token' }, body: null,
+  }]);
+  const customer = actor('customer', [{ order: {
+    _id: 'order-webcam', userId: 'customer-user',
+    items: [{ itemId: 'item-webcam', name: 'Webcam' }],
+  } }], [{
+    url: 'http://app.test/api/items/item-webcam/buy', method: 'POST',
+    headers: { authorization: 'Bearer customer-token' }, body: null,
+  }]);
+  const provided = services(new Map([['staff', staff], ['customer', customer]]));
+  const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
+    swap: { find: 'Desk Lamp', with: 'Webcam' }, settleMs: 0 }, provided);
+  assert.equal(replayed.status, 'passed');
+  assert.deepEqual(replayed.observation,
+    { attempted: true, accepted: true, status: 200 });
+  assert.equal(requests[0].url, 'http://app.test/api/fulfilment/order-webcam/ship');
+  assert.equal(requests[0].options.headers.authorization, 'Bearer customer-token');
+
+  const rejected = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+  assert.equal(rejected.status, 'failed');
+  assert.match(rejected.summary, /server ACCEPTED/);
+});
+
 test('named calls preserve actor credentials, result state, and application assertions', async () => {
   const requests = [];
   const actor = name => ({
