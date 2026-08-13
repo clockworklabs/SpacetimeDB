@@ -59,8 +59,9 @@ the downloaded bundle.
 
 1. Create `/var/lib/stack-bench/{work,results,secrets,controller-home}` with
    access limited to the appliance operator. `controller-home` holds only
-   controller CLI state and per-run agent transcripts; it is outside the
-   read-only image and persists for artifact/audit collection.
+   controller CLI state and the CLI's live transcript cache; it is outside the
+   read-only image. Completed runs archive transcripts and the generated
+   SpacetimeDB friction log under `results/` for durable artifact collection.
 2. Write the provider API key as the only line in
    `/var/lib/stack-bench/secrets/anthropic_api_key`; set mode `0600`.
 3. Copy `secrets.env.example` to an operator-owned file and replace the two
@@ -193,6 +194,8 @@ infer a special label from a partial selection; it states what was run.
 ## Cleanup and recovery boundary
 
 Results remain under `/var/lib/stack-bench/results` after the controller exits.
+This includes archived model transcripts and the SpacetimeDB friction log; they
+must not depend on the CLI's 30-day live-cache retention.
 Do not delete that directory until its artifact manifest has been verified and
 copied off the runner. Every run writes a public recovery status and keeps
 private authenticated recovery authority until exact-owned cleanup succeeds.

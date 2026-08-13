@@ -34,10 +34,12 @@
 
 import { readFileSync, readdirSync, existsSync, appendFileSync, statSync, openSync as fsOpenSync, closeSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { operationalOutputRoot } from './operational-paths.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const OPERATIONAL_ROOT = operationalOutputRoot(ROOT);
 
 // Concurrent runs append here: n=5 isolated trials all write one friction
 // record, and interleaved appends can split an entry down the middle. An
@@ -65,7 +67,7 @@ const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d :
 
 const label = arg('--label');
 if (!label) { console.error('need --label <transcripts folder>'); process.exit(2); }
-const OUT = join(ROOT, arg('--out', 'STDB-FRICTION.md'));
+const OUT = resolve(OPERATIONAL_ROOT, arg('--out', 'STDB-FRICTION.md'));
 
 function findClaude() {
   const appData = process.env.APPDATA ?? join(process.env.HOME ?? '', 'AppData', 'Roaming');
@@ -127,7 +129,7 @@ function actionLog(dir, sinceMs) {
   return { log: out.join('\n'), turns: turn };
 }
 
-const dir = join(ROOT, 'transcripts', label);
+const dir = join(OPERATIONAL_ROOT, 'transcripts', label);
 if (!existsSync(dir)) { console.error(`no archived transcripts at ${dir}`); process.exit(2); }
 const files = readdirSync(dir).filter(f => f.endsWith('.jsonl'))
   .map(f => statSync(join(dir, f)).mtimeMs).sort((a, b) => a - b);
@@ -141,7 +143,7 @@ if (!mine.turns) { console.error('nothing to review'); process.exit(2); }
 // SpacetimeDB needed that they did not.
 const compare = [];
 for (const other of String(arg('--compare', '')).split(',').filter(Boolean)) {
-  const transcriptRoot = join(ROOT, 'transcripts');
+  const transcriptRoot = join(OPERATIONAL_ROOT, 'transcripts');
   const exact = join(transcriptRoot, other);
   const latest = existsSync(transcriptRoot)
     ? readdirSync(transcriptRoot)

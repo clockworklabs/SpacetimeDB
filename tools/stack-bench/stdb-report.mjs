@@ -21,10 +21,12 @@
 //                        [--out STDB-FRICTION.md] [--print]
 
 import { readFileSync, readdirSync, existsSync, appendFileSync, writeFileSync, statSync, openSync as fsOpenSync, closeSync, rmSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { operationalOutputRoot } from './operational-paths.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const OPERATIONAL_ROOT = operationalOutputRoot(ROOT);
 
 // Concurrent runs append here: n=5 isolated trials all write one friction
 // record, and interleaved appends can split an entry down the middle. An
@@ -52,8 +54,8 @@ const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d :
 
 const label = arg('--label');
 if (!label) { console.error('need --label <transcripts folder>'); process.exit(2); }
-const OUT = join(ROOT, arg('--out', 'STDB-FRICTION.md'));
-const dir = join(ROOT, 'transcripts', label);
+const OUT = resolve(OPERATIONAL_ROOT, arg('--out', 'STDB-FRICTION.md'));
+const dir = join(OPERATIONAL_ROOT, 'transcripts', label);
 if (!existsSync(dir)) { console.error(`no archived transcripts at ${dir}`); process.exit(2); }
 
 // ── Reading the transcripts ────────────────────────────────────────────────

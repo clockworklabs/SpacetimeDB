@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Copy each run's session transcript out of the CLI's store and into the repo.
+// Copy each run's session transcript out of the CLI's store and into durable
+// operational storage. A source checkout keeps the historical repo-local
+// layout; the read-only appliance uses STACK_BENCH_RESULTS_DIR.
 //
 // The transcripts are the only record of what a build actually read, so they
 // are the whole evidence base for the contamination audit — a score is only
@@ -18,12 +20,14 @@ import { readdirSync, existsSync, copyFileSync, mkdirSync, statSync } from 'node
 import { join, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { operationalOutputRoot } from './operational-paths.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const OPERATIONAL_ROOT = operationalOutputRoot(ROOT);
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d : process.argv[i + 1]; };
 
 const RESULTS = resolve(arg('--results', join(ROOT, 'results')));
-const OUT = resolve(arg('--out', join(ROOT, 'transcripts')));
+const OUT = resolve(arg('--out', join(OPERATIONAL_ROOT, 'transcripts')));
 const STORE = join(homedir(), '.claude', 'projects');
 
 // The CLI files a session under a folder named for the directory it ran in,

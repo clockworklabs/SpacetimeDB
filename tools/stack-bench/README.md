@@ -13,6 +13,7 @@ varies.
 - `HISTORY.md` — what the benchmark has learned, newest first (start here)
 - `FINDINGS.md` — product bugs with reproductions
 - `STDB-FRICTION.md` — per-run SpacetimeDB friction, appended automatically
+  beside local results (under the durable results directory in the appliance)
 - `ROADMAP.md` — what is still to build, in priority order
 
 ## Run it
