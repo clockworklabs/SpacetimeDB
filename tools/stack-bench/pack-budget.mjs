@@ -47,6 +47,14 @@ function equalIdentity(actual, expected, at) {
   }
 }
 
+function equalIdentityFields(actual, expected, fields, at) {
+  for (const field of fields) {
+    if ((actual?.[field] ?? null) !== (expected?.[field] ?? null)) {
+      throw new Error(`${at}.${field} does not match the selected qualification scope`);
+    }
+  }
+}
+
 function positiveInteger(value, at) {
   if (!Number.isInteger(value) || value < 0) throw new Error(`${at} must be a non-negative integer`);
   return value;
@@ -78,6 +86,8 @@ export function recommendPackBudgets({ binding, calibration, evidence }) {
       sha256: binding.release.contentSha256 }, `${item.path}.identities.recipe`);
     equalIdentity(artifact.identities.calibration, calibrationIdentity,
       `${item.path}.identities.calibration`);
+    equalIdentity(item.runtimeCalibration, { id: calibration.id, version: calibration.version,
+      sha256: calibration.contentSha256 }, `${item.path}.retainedRuntimeCalibration`);
     const stack = artifact.identities.stackAdapter?.id;
     if (!expectedStacks.includes(stack)) throw new Error(`${item.path} has unexpected stack ${stack ?? '<missing>'}`);
     if (stacks.has(stack)) throw new Error(`reference evidence repeats stack ${stack}`);
@@ -169,23 +179,35 @@ function containedRunPath(artifactPath, runOutput) {
 export function loadPackBudgetEvidence(paths) {
   return paths.map(path => {
     const artifact = readArtifact(path, { expectedKind: 'reference_qualification' });
+    let runtimeCalibration = null;
     for (const run of artifact.payload.runs ?? []) {
       const output = containedRunPath(path, run.output);
       const bundlePath = resolve(output, 'grading', 'bundle.json');
       const runPath = resolve(output, 'run.json');
       if (!existsSync(runPath)) throw new Error(`${path} retained run is missing ${runPath}`);
       if (!existsSync(bundlePath)) throw new Error(`${path} retained run is missing ${bundlePath}`);
-      readArtifact(runPath, { expectedKind: 'benchmark_run' });
+      const raw = readArtifact(runPath, { expectedKind: 'benchmark_run' });
       const bundle = readArtifact(bundlePath, { expectedKind: 'grade_bundle' });
-      for (const identity of ['engine', 'recipe', 'calibration', 'stackAdapter']) {
+      equalIdentity(raw.identities.engine, artifact.identities.engine,
+        `${path} retained run ${run.repetition}.identities.engine`);
+      equalIdentityFields(raw.identities.stackAdapter, artifact.identities.stackAdapter, ['id'],
+        `${path} retained run ${run.repetition}.identities.stackAdapter`);
+      equalIdentityFields(raw.identities.agentAdapter, { id: 'reference-fixture' }, ['id'],
+        `${path} retained run ${run.repetition}.identities.agentAdapter`);
+      for (const identity of ['engine', 'recipe', 'stackAdapter']) {
         equalIdentity(bundle.identities[identity], artifact.identities[identity],
           `${path} retained run ${run.repetition}.identities.${identity}`);
       }
+      equalIdentityFields(bundle.identities.calibration, artifact.identities.calibration,
+        ['id', 'version'], `${path} retained run ${run.repetition}.identities.calibration`);
+      if (runtimeCalibration === null) runtimeCalibration = bundle.identities.calibration;
+      else equalIdentity(bundle.identities.calibration, runtimeCalibration,
+        `${path} retained run ${run.repetition}.identities.calibration`);
       if (canonicalDefinitionJson(bundle.payload.packRuntime) !== canonicalDefinitionJson(run.packRuntime)) {
         throw new Error(`${path} pack runtime summary differs from retained run ${run.repetition}`);
       }
     }
-    return { path, sha256: sha256(readFileSync(path)), artifact };
+    return { path, sha256: sha256(readFileSync(path)), artifact, runtimeCalibration };
   });
 }
 

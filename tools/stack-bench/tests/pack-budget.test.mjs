@@ -45,6 +45,8 @@ function reference(stack, stackIndex, overrides = {}) {
 function exactEvidence() {
   return ['mongodb', 'postgres', 'spacetime'].map((stack, index) => ({
     path: `${stack}.json`, sha256: String(index).repeat(64), artifact: reference(stack, index),
+    runtimeCalibration: { id: calibration.id, version: calibration.version,
+      sha256: calibration.contentSha256 },
   }));
 }
 
@@ -71,6 +73,10 @@ test('budget recommendation rejects mutation, duplicate, incomplete, and cross-s
   stale[0].artifact.identities.recipe.sha256 = 'f'.repeat(64);
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: stale }),
     /does not match the selected qualification scope/);
+  const staleRuntime = exactEvidence();
+  staleRuntime[0].runtimeCalibration.sha256 = 'f'.repeat(64);
+  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: staleRuntime }),
+    /retainedRuntimeCalibration.sha256/);
 });
 
 test('budget CLI parsing requires explicit unique evidence and output', () => {
@@ -91,18 +97,29 @@ test('budget evidence loader verifies retained raw runs against their summary', 
       run.output = `mongodb.runs/r${run.repetition}`;
       const output = join(root, 'mongodb.runs', `r${run.repetition}`);
       mkdirSync(join(output, 'grading'), { recursive: true });
-      writeArtifact(join(output, 'run.json'), { kind: 'benchmark_run', id: `run-${run.repetition}` });
+      const raw = createArtifact({ kind: 'benchmark_run', id: `run-${run.repetition}`,
+        identities: recipeArtifactIdentities(null, { engine: artifact.identities.engine,
+          agentAdapter: { id: 'reference-fixture' }, stackAdapter: { id: 'mongodb' } }) });
+      writeArtifact(join(output, 'run.json'), raw);
       writeArtifact(join(output, 'grading', 'bundle.json'), { kind: 'grade_bundle',
-        id: `bundle-${run.repetition}`, identities: artifact.identities,
+        id: `bundle-${run.repetition}`, identities: recipeArtifactIdentities(binding.release, {
+          engine: artifact.identities.engine, stackAdapter: artifact.identities.stackAdapter,
+          calibration: { id: calibration.id, version: calibration.version,
+            sha256: calibration.contentSha256 } }),
         payload: { packRuntime: run.packRuntime } });
     }
     writeArtifact(path, artifact);
     const loaded = loadPackBudgetEvidence([path]);
     assert.equal(loaded.length, 1);
     assert.match(loaded[0].sha256, /^[a-f0-9]{64}$/);
+    assert.equal(loaded[0].runtimeCalibration.sha256, calibration.contentSha256);
 
     const bundlePath = join(root, 'mongodb.runs', 'r1', 'grading', 'bundle.json');
-    const changed = createArtifact({ kind: 'grade_bundle', id: 'changed', identities: artifact.identities,
+    const changed = createArtifact({ kind: 'grade_bundle', id: 'changed',
+      identities: recipeArtifactIdentities(binding.release, {
+        engine: artifact.identities.engine, stackAdapter: artifact.identities.stackAdapter,
+        calibration: { id: calibration.id, version: calibration.version,
+          sha256: calibration.contentSha256 } }),
       payload: { packRuntime: runtime(2, 2) } });
     writeArtifact(bundlePath, changed);
     assert.throws(() => loadPackBudgetEvidence([path]), /summary differs/);
