@@ -53,7 +53,8 @@ const COMMAND_TIMEOUT_MS = 20 * 60_000;
 function parseArgs(argv) {
   const a = { model: null, agentAdapter: 'claude-code',
     fixRounds: 3, runIndex: 0, levels: '1', media: true,
-    guidance: 'prescribed', track: DEFAULT_TRACK, packIds: [], checkKeys: [] };
+    guidance: 'prescribed', track: DEFAULT_TRACK, packIds: [], checkKeys: [],
+    behavioralReview: false };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--backend': a.backend = argv[++i]; break;
@@ -71,6 +72,7 @@ function parseArgs(argv) {
       case '--agent-adapter': a.agentAdapter = argv[++i]; break;
       case '--no-media': a.media = false; break;
       case '--retain-backend': a.retainBackend = true; break;
+      case '--behavioral-review': a.behavioralReview = true; break;
       case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
       case '--skip-probe': a.skipProbe = true; break;
@@ -1054,16 +1056,21 @@ async function main() {
     } catch (e) {
       console.log(`  (stdb friction report failed: ${String(e.message).split('\n')[0]})`);
     }
-    // The counted errors are half the picture. The other half — repeated cycles,
-    // workarounds, and API used wrongly but successfully — only shows in the
-    // shape of what the model did, so the behavioural review runs too.
-    try {
-      sh('node', [join(ROOT, 'stdb-review.mjs'), '--label', artifactLabel,
-        '--source', join(args.out, 'source'),
-        '--compare', executeStackCapability(stackAdapter, 'run-policy', 'product-review-comparisons')
-          .map(b => resultsName(track, b, args.runIndex)).join(',')], { stdio: 'inherit' });
-    } catch (e) {
-      console.log(`  (stdb behavioural review failed: ${String(e.message).split('\n')[0]})`);
+    // The deeper behavioural review is a separate model session. It is useful
+    // product research, but running it implicitly would add unmetered provider
+    // usage to a benchmark attempt and make campaign cost accounting false.
+    // Keep the model-free friction report above automatic; make this analysis
+    // explicit and never run it for an incomplete attempt.
+    if (args.behavioralReview
+      && !['harness_failure', 'ungraded'].includes(run.outcome?.kind)) {
+      try {
+        sh('node', [join(ROOT, 'stdb-review.mjs'), '--label', artifactLabel,
+          '--source', join(args.out, 'source'),
+          '--compare', executeStackCapability(stackAdapter, 'run-policy', 'product-review-comparisons')
+            .map(b => resultsName(track, b, args.runIndex)).join(',')], { stdio: 'inherit' });
+      } catch (e) {
+        console.log(`  (stdb behavioural review failed: ${String(e.message).split('\n')[0]})`);
+      }
     }
   }
 

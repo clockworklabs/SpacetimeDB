@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -155,6 +155,8 @@ test('model-free campaign execution checkpoints a retry and every completed atte
       execute: async (command, argv, options) => {
         calls.push({ command, argv, options });
         const output = argv[argv.indexOf('--out') + 1];
+        assert.equal(existsSync(output), true,
+          'every execution, including a retry, must have a preflight-mountable output directory');
         const parent = argv[argv.indexOf('--parent-attempt-id') + 1];
         const { emptyArtifactIdentities, writeRunJson } = await import('../artifacts.mjs');
         if (calls.length === 1) return { code: 1, timedOut: false };

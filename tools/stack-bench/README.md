@@ -16,6 +16,11 @@ varies.
   beside local results (under the durable results directory in the appliance)
 - `ROADMAP.md` — what is still to build, in priority order
 
+The optional model-based SpacetimeDB behavioral review is separate from the
+measured coding sessions. Run it deliberately with `--behavioral-review`; it is
+off by default so campaign cost and token accounting never omit a hidden model
+call. The model-free friction report remains automatic.
+
 ## Run it
 
 Install the locked harness dependencies and browser once per checkout:

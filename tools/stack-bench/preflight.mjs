@@ -411,10 +411,13 @@ export function runPreflight(request, dependencies = {}) {
           : `Provide at least ${bytes(PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes)} free in Docker storage.`);
       if (agent?.credentialStatusCommand) add('agent.authentication',
         smoke.credentialStatus === 'ready' ? 'pass' : 'warn',
-        smoke.credentialStatus === 'ready' ? 'Agent credential status is ready in the build image'
+        smoke.credentialStatus === 'ready' ? 'Local agent credential status is ready in the build image'
           : 'Credential presence was checked, but its live status was not',
       smoke.credentialStatus === 'ready' ? null
         : 'Use subscription credentials to enable a no-model status check, or verify an API key separately.');
+      if (smoke.credentialStatus === 'ready') add('agent.authentication-provider', 'warn',
+        'No-model preflight did not ask the provider to accept the credential',
+        'Refresh/login before a campaign if the credential has not completed a recent provider request.');
     } catch (error) {
       rmSync(join(request.resultsDir, marker), { force: true });
       add('smoke.container', 'fail', `No-model container smoke failed: ${String(error.message).split('\n')[0]}`,

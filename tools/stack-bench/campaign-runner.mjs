@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -329,6 +329,11 @@ export async function executeCampaign(campaignFile, directory,
       state = next.state;
       writeCampaignState(initialized.paths.state, plan, state);
       const output = contained(initialized.paths.root, next.claim.output, 'attempt output');
+      // Preflight bind-mounts the exact attempt output to prove that evidence is
+      // durable. The first execution's parent may already exist, while a retry's
+      // execution-N directory never does; create both by the same rule before
+      // starting the child so retries cannot fail for a different topology.
+      mkdirSync(output, { recursive: true });
       const supervisorState = contained(initialized.paths.root,
         join('.private', `${next.claim.executionId}.supervisor.json`), 'supervisor state');
       const processResult = await execute(process.execPath,

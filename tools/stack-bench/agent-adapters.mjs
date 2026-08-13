@@ -6,6 +6,11 @@ import { AGENT_ADAPTER_SCHEMA_VERSION, createAgentAdapterRegistry } from './agen
 import { sha256 } from './provenance.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const CLAUDE_SUBSCRIPTION_STATUS_COMMAND = ['node', '-e',
+  "const {spawnSync}=require('node:child_process');"
+  + "const r=spawnSync('claude',['auth','status','--json'],{encoding:'utf8'});"
+  + "let s=null;try{s=JSON.parse(r.stdout)}catch{};"
+  + "process.exit(r.status===0&&s?.loggedIn===true&&s?.authMethod==='claude.ai'?0:1)"];
 const adapter = (id, entrypoint, defaultModel,
   { modes = ['build', 'upgrade', 'fix'], apiKeyEnvironmentVariable = null,
     credentialFiles = [], outboundDestinations = [], requiredExecutables = [],
@@ -24,8 +29,11 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       costLimit: 'native',
       credentialFiles: [join('.claude', '.credentials.json')],
       outboundDestinations: ['https://api.anthropic.com'], requiredExecutables: ['claude'],
-      credentialStatusCommand: ['claude', 'auth', 'status', '--json'],
-      usesStackSkills: true, version: '1.1.0' }),
+      // `claude auth status --json` exits zero even when it reports
+      // `loggedIn:false`; the adapter command must turn semantic logout into a
+      // failed preflight without making a provider request.
+      credentialStatusCommand: CLAUDE_SUBSCRIPTION_STATUS_COMMAND,
+      usesStackSkills: true, version: '1.2.0' }),
   adapter('deterministic', join('fixtures', 'stub-agent.mjs'), 'deterministic', { costLimit: 'non-billable' }),
   adapter('fault-injection', join('fixtures', 'fault-agent.mjs'), 'fault-injection', { costLimit: 'non-billable' }),
   adapter('reference-fixture', 'reference-agent.mjs', 'reference-fixture',

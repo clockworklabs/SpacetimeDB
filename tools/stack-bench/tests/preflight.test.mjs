@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import { parsePreflightArgs, probeLoopbackPort, runPreflight } from '../preflight.mjs';
 import { createArtifact, validateArtifact } from '../artifacts.mjs';
+import { AGENT_ADAPTER_REGISTRY } from '../agent-adapters.mjs';
 
 const IMAGE_ID = `sha256:${'a'.repeat(64)}`;
 
@@ -118,9 +119,13 @@ test('subscription credential status is checked inside the exact build image wit
       env: {}, home: root, statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
       pidsOnPort: () => [], probePort: () => ({ free: true }) });
     assert.equal(report.checks.find(check => check.id === 'agent.authentication').status, 'pass');
+    assert.equal(report.checks.find(check => check.id === 'agent.authentication-provider').status, 'warn');
+    assert.match(report.checks.find(check => check.id === 'agent.authentication-provider').summary,
+      /did not ask the provider/);
     assert.match(dockerArgs[dockerArgs.indexOf('--mount') + 1],
       /dst=\/root\/\.claude\/\.credentials\.json,readonly$/);
-    assert.deepEqual(JSON.parse(dockerArgs.at(-2)), ['claude', 'auth', 'status', '--json']);
+    assert.deepEqual(JSON.parse(dockerArgs.at(-2)),
+      AGENT_ADAPTER_REGISTRY.get('claude-code').credentialStatusCommand);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
