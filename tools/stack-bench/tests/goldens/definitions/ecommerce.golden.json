@@ -4704,6 +4704,14 @@
                     "testid": "admin-stock"
                   },
                   {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Headphones"
+                  },
+                  {
                     "branches": [
                       [
                         {

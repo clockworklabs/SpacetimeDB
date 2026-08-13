@@ -91,7 +91,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/l2/mongodb",
-        "sourceSha256": "53bac80a63afa61934eda7796497be1a72fb9845b5b10c3155e8e84a4b49141c"
+        "sourceSha256": "d731971c6ba93cfd364c08077c3b619f8901cbc74777644a23620cfaf5917377"
       },
       "mutationManifests": ["grader/mutations/mongodb-ecom-l2.json"],
       "qualification": "Not qualified; requires the current L2 reference, mutation, budget, and null gates."

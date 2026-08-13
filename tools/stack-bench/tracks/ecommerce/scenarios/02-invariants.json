@@ -474,6 +474,14 @@
               "as": "hp-before"
             },
             {
+              "do": "fill",
+              "actor": "customer",
+              "testid": "search-input",
+              "text": "Headphones",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
               "do": "race",
               "branches": [
                 [

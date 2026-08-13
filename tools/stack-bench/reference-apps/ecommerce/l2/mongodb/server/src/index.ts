@@ -362,6 +362,11 @@ async function broadcastCart(userId: string) {
   io.to(`user:${userId}`).emit("cart:update", cart);
 }
 
+async function broadcastCartsContainingItem(itemId: Types.ObjectId) {
+  const userIds = await Cart.distinct("userId", { "items.itemId": itemId });
+  await Promise.all(userIds.map((userId) => broadcastCart(String(userId))));
+}
+
 async function broadcastOrders(userId: string) {
   const orders = await Order.find({ userId }).sort({ createdAt: -1 });
   io.to(`user:${userId}`).emit("orders:update", orders.map((o) => o.toJSON()));
@@ -891,7 +896,12 @@ app.post("/api/admin/price", requireAuth, requireAdmin, async (req, res) => {
   const item = await Item.findByIdAndUpdate(itemId, { price: priceNum }, { new: true });
   if (!item) return res.status(404).json({ error: "Item not found" });
 
-  await Promise.all([broadcastItems(), broadcastAdmin(), broadcastRecommendedForAll()]);
+  await Promise.all([
+    broadcastItems(),
+    broadcastAdmin(),
+    broadcastRecommendedForAll(),
+    broadcastCartsContainingItem(item._id),
+  ]);
   res.json(await getAdminOverview());
 });
 
