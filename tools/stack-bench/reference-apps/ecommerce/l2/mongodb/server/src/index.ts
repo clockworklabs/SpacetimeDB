@@ -914,8 +914,8 @@ app.get("/api/fulfilment/queue", requireAuth, requireStaff, async (_req, res) =>
   res.json({ orders, depth: orders.length });
 });
 
-app.post("/api/fulfilment/:id/ship", requireAuth, requireStaff, async (req, res) => {
-  const order = await Order.findById(req.params.id);
+app.post("/api/fulfilment/ship", requireAuth, requireStaff, async (req, res) => {
+  const order = await Order.findById(req.body?.orderId);
   if (!order) return res.status(404).json({ error: "Order not found" });
   if (order.status !== "pending") {
     return res.status(400).json({ error: "Order is not waiting to be shipped" });

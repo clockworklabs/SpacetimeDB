@@ -3246,9 +3246,28 @@
                   },
                   {
                     "actor": "customer",
+                    "do": "click",
+                    "testid": "orders-toggle"
+                  },
+                  {
+                    "actor": "customer",
                     "do": "replayAs",
                     "from": "staff",
                     "match": "ship",
+                    "namedAction": {
+                      "args": [
+                        0
+                      ],
+                      "id": "ship",
+                      "path": "/api/fulfilment/ship",
+                      "reducer": "ship_order"
+                    },
+                    "namedTarget": {
+                      "attribute": "data-entity-id",
+                      "contains": "Webcam",
+                      "testid": "order-item",
+                      "valueType": "number"
+                    },
                     "settleMs": 2500,
                     "swap": {
                       "find": "Desk Lamp",
@@ -3258,11 +3277,6 @@
                   {
                     "actor": "customer",
                     "do": "expectReplayRejected"
-                  },
-                  {
-                    "actor": "customer",
-                    "do": "click",
-                    "testid": "orders-toggle"
                   },
                   {
                     "actor": "customer",

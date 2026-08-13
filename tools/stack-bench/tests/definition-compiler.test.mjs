@@ -115,6 +115,17 @@ test('extracted action inputs expose their runtime options without allowing scri
     actors: ['a', 'b'], action: 'checkout', settleMs: 1, args: [], body: {} })));
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'signUp', actor: 'a',
     name: 'seeded', exact: true })));
+  const namedReplay = { do: 'replayAs', actor: 'a', from: 'staff', match: 'ship',
+    namedAction: { id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0] },
+    namedTarget: { testid: 'order-item', contains: 'Webcam',
+      attribute: 'data-entity-id', valueType: 'number' } };
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario(namedReplay)));
+  const { namedAction: _omitted, ...missingNamedAction } = namedReplay;
+  assert.throws(() => compileScenarioDefinition(scenario(missingNamedAction)),
+    /namedAction and namedTarget must be supplied together/);
+  assert.throws(() => compileScenarioDefinition(scenario({ ...namedReplay,
+    namedTarget: { ...namedReplay.namedTarget, valueType: 'bigint' } })),
+  /valueType: must be "number" or "string"/);
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'runScript',
     script: '../outside.mjs', args: [] })), /\.script: has the wrong type or value/);
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'runScript',

@@ -40,6 +40,11 @@ others.
   from — the warehouse holding stock for that item, chosen the same way a purchase
   drains it
 
+The Level 1 named-action rule also applies to shipping. Name the ordinary
+server write `ship`: server-based stacks expose `POST /api/fulfilment/ship`
+with `{ "orderId": ... }`, and SpacetimeDB exposes reducer `shipOrder`. The
+same authentication and staff-only authorization apply through this path.
+
 ### Moving stock
 
 - An admin can **transfer** a number of units of an item from one warehouse to

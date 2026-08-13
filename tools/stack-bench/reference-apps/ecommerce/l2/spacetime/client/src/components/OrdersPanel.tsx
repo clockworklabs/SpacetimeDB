@@ -64,7 +64,12 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
         <div className="panel-body" data-testid="order-list">
           {orders.length === 0 && <div className="empty-state">You have no past orders yet.</div>}
           {orders.map((order) => (
-            <div className="order-item" data-testid="order-item" key={String(order.orderId)}>
+            <div
+              className="order-item"
+              data-testid="order-item"
+              data-entity-id={String(order.orderId)}
+              key={String(order.orderId)}
+            >
               <div className="order-item-names">{order.items.map((i) => i.name).join(', ')}</div>
               <div className="order-item-meta">{order.createdAt.toLocaleString()}</div>
               <div className="order-item-row">

@@ -40,6 +40,7 @@ function capabilities(id, actionCategory) {
   if (id === 'startAppServer' || id === 'stopAppServer') return ['application-lifecycle'];
   if (id === 'wait') return ['actors', 'clock'];
   if (id === 'callConcurrently' || id === 'expectCallOutcomes') return ['actors', 'named-actions'];
+  if (id === 'replayAs') return ['actors', 'named-actions', 'transport-observation'];
   if (actionCategory === 'transport') return ['actors', 'transport-observation'];
   if (actionCategory === 'concurrency') return ['actors', 'concurrency'];
   if (actionCategory === 'browser-observation') return ['actors', 'browser-observation'];

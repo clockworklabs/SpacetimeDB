@@ -86,7 +86,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
   recordNumber: fields({ ...actor, testid: nonEmptyString, as: nonEmptyString }, locator),
   reload: fields({ ...actor, settleMs: number }),
   replayAs: fields({ ...actor, from: nonEmptyString, match: string },
-    { swap: object, ...settle }),
+    { swap: object, namedAction: object, namedTarget: object, ...settle }),
   replayConcurrently: fields({ ...actors, settleMs: number },
     { match: string, method: nonEmptyString }),
   restartBackend: fields({ settleMs: number }),
@@ -127,6 +127,25 @@ function validateSwap(value, at) {
   strictObject(value, at, new Set(['find', 'with']));
   if (!string(value.find)) fail(`${at}.find`, 'must be a string');
   if (!string(value.with)) fail(`${at}.with`, 'must be a string');
+}
+
+function validateNamedTarget(value, at) {
+  strictObject(value, at, new Set(['testid', 'contains', 'attribute', 'valueType']));
+  if (!nonEmptyString(value.testid)) fail(`${at}.testid`, 'must be a non-empty string');
+  if (value.contains !== undefined && !string(value.contains)) fail(`${at}.contains`, 'must be a string');
+  if (!nonEmptyString(value.attribute)) fail(`${at}.attribute`, 'must be a non-empty string');
+  if (value.valueType !== undefined && !['number', 'string'].includes(value.valueType)) {
+    fail(`${at}.valueType`, 'must be "number" or "string"');
+  }
+}
+
+function validateInlineNamedAction(value, at) {
+  strictObject(value, at, new Set(['id', 'path', 'reducer', 'args']));
+  for (const key of ['id', 'path', 'reducer']) {
+    if (!nonEmptyString(value[key])) fail(`${at}.${key}`, 'must be a non-empty string');
+  }
+  if (!value.path.startsWith('/')) fail(`${at}.path`, 'must be an absolute HTTP path');
+  if (!anyArray(value.args)) fail(`${at}.args`, 'must be an array');
 }
 
 function validateSenders(value, at) {
@@ -170,6 +189,11 @@ function validateStep(step, at) {
   }
   if (step.in) validateLocator(step.in, `${at}.in`);
   if (step.swap) validateSwap(step.swap, `${at}.swap`);
+  if (step.namedAction) validateInlineNamedAction(step.namedAction, `${at}.namedAction`);
+  if (step.namedTarget) validateNamedTarget(step.namedTarget, `${at}.namedTarget`);
+  if (step.do === 'replayAs' && Boolean(step.namedAction) !== Boolean(step.namedTarget)) {
+    fail(at, 'replayAs namedAction and namedTarget must be supplied together');
+  }
   if (step.do === 'sendConcurrently') validateSenders(step.senders, `${at}.senders`);
   if (step.do === 'clickConcurrently' && step.targets) {
     validateTargets(step.targets, step.actors, `${at}.targets`);

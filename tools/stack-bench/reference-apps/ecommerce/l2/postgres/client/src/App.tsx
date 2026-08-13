@@ -913,7 +913,7 @@ function OrdersPanel(props: {
       ) : (
         <div className="stack">
           {orders.map((o) => (
-            <div className="order-item" data-testid="order-item" key={o.id}>
+            <div className="order-item" data-testid="order-item" data-entity-id={String(o.id)} key={o.id}>
               <div className="order-item-top">
                 <span className="muted">{new Date(o.createdAt).toLocaleString()}</span>
                 <span className={`order-status order-status-${o.status}`} data-testid="order-status">

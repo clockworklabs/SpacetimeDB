@@ -404,6 +404,50 @@ async function replayAs({ input, capabilities, signal }) {
     .find(candidate => `${candidate.method} ${candidate.url} ${JSON.stringify(candidate.body)}`
       .toLowerCase().includes(needle));
   if (!write) {
+    if (input.namedAction && input.namedTarget) {
+      const named = capabilities['named-actions'];
+      const action = input.namedAction;
+      const target = actor.loc(input.namedTarget.testid, { contains: input.namedTarget.contains });
+      await target.waitFor({ state: 'visible', timeout: transport.defaultWithin });
+      const rawValue = await target.getAttribute(input.namedTarget.attribute);
+      if (rawValue === null || rawValue === '') {
+        actor.replay = { inconclusive: true,
+          reason: `${input.namedTarget.testid} exposes no ${input.namedTarget.attribute} value for the named replay` };
+        return { attempted: false };
+      }
+      let value = rawValue;
+      if (input.namedTarget.valueType === 'number') {
+        value = Number(rawValue);
+        if (!Number.isSafeInteger(value)) {
+          actor.replay = { inconclusive: true,
+            reason: `${input.namedTarget.attribute} is not a safe integer for named action "${action.id}"` };
+          return { attempted: false };
+        }
+      }
+      const mine = authFor(actor) ?? await browserCredentials(actor);
+      if (!mine) {
+        actor.replay = { inconclusive: true,
+          reason: `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused` };
+        return { attempted: false };
+      }
+      const request = named.request(action, { ...input, args: [value, ...(action.args ?? []).slice(1)] });
+      if (!request?.url) {
+        actor.replay = { inconclusive: true,
+          reason: `could not resolve where to send named action "${action.id}" for this backend` };
+        return { attempted: false };
+      }
+      const response = await named.fetch(request.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...mine },
+        body: request.body,
+        signal,
+      }).catch(error => ({ status: 0, ok: false, error: error.message }));
+      actor.replay = { accepted: response.ok, status: response.status, url: request.url,
+        method: 'POST', namedAction: action.id };
+      await transport.sleep(input.settleMs ?? 2000, signal);
+      return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status,
+        namedAction: action.id };
+    }
     actor.replay = { inconclusive: true, reason: source.lastWsWrite
       ? `${input.from} writes over WebSocket ("${source.lastWsWrite.event}") — identity comes from the connection, replay not attempted`
       : `no HTTP write from ${input.from} matching "${input.match}"` };
@@ -474,6 +518,10 @@ async function expectReplayRejected({ input, capabilities }) {
   }
   if (replay.accepted) {
     fail(`server ACCEPTED ${replay.method} ${replay.url} from ${actor.name}, who is not allowed to do it (HTTP ${replay.status}) — the check is in the interface, not the server`);
+  }
+  if (!Number.isInteger(replay.status) || replay.status <= 0 || replay.status >= 500) {
+    fail(`the ${replay.namedAction ? `named action "${replay.namedAction}"` : 'replayed request'} failed with `
+      + `${replay.status ? `HTTP ${replay.status}` : 'no server response'} — this does not prove an authorization refusal`);
   }
   transport.verification.verified(
     `${actor.name}: server refused ${replay.method} ${replay.url} (HTTP ${replay.status})`);

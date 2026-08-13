@@ -211,6 +211,63 @@ test('replay decodes Socket.IO entities and uses the target actor browser cookie
   assert.equal(rejected.observation.classification, 'verified');
 });
 
+test('replay uses an authenticated named action when the source write is an opaque WebSocket call', async () => {
+  const requests = [];
+  const source = { name: 'staff', writes: [], received: [],
+    lastWsWrite: { event: 'binary reducer call', body: {} } };
+  const customer = {
+    name: 'customer', writes: [], received: [],
+    loc: (testid, options) => {
+      assert.equal(testid, 'order-item');
+      assert.deepEqual(options, { contains: 'Webcam' });
+      return {
+        waitFor: async value => assert.deepEqual(value, { state: 'visible', timeout: 5000 }),
+        getAttribute: async attribute => {
+          assert.equal(attribute, 'data-entity-id');
+          return '52';
+        },
+      };
+    },
+    context: { cookies: async () => [] },
+    page: { evaluate: async () => 'eyJcustomer.token.value' },
+  };
+  const provided = services(new Map([['staff', source], ['customer', customer]]), {
+    backend: 'spacetime',
+    actions: [{ id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0] }],
+    spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return { status: 403, ok: false };
+    },
+  });
+
+  const replayed = await run({ do: 'replayAs', actor: 'customer', from: 'staff', match: 'ship',
+    namedAction: { id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0] },
+    namedTarget: { testid: 'order-item', contains: 'Webcam',
+      attribute: 'data-entity-id', valueType: 'number' }, settleMs: 0 }, provided);
+  assert.equal(replayed.status, 'passed');
+  assert.deepEqual(replayed.observation,
+    { attempted: true, accepted: false, status: 403, namedAction: 'ship' });
+  assert.equal(requests[0].url, 'http://127.0.0.1:3000/v1/database/shop/call/ship_order');
+  assert.equal(requests[0].options.body, '[52]');
+  assert.equal(requests[0].options.headers.Authorization, 'Bearer eyJcustomer.token.value');
+
+  const rejected = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+  assert.equal(rejected.status, 'passed');
+  assert.equal(rejected.observation.classification, 'verified');
+});
+
+test('a replay transport failure or server error is not accepted as authorization evidence', async () => {
+  for (const status of [0, 503]) {
+    const actor = { name: 'customer', replay: { accepted: false, status, method: 'POST', url: '/ship' } };
+    const provided = services(new Map([['customer', actor]]));
+    const checked = await run({ do: 'expectReplayRejected', actor: 'customer' }, provided);
+    assert.equal(checked.status, 'failed');
+    assert.match(checked.summary, /does not prove an authorization refusal/);
+    assert.equal(provided.verification.length, 0);
+  }
+});
+
 test('a missing numeric literal is not fabricated into an entity-id retarget', async () => {
   const requests = [];
   const buyer = {

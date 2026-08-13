@@ -435,7 +435,10 @@ export default function App() {
 
   const handleShipOrder = async (orderId: string) => {
     try {
-      await apiFetch(`/api/fulfilment/${orderId}/ship`, token, { method: "POST" });
+      await apiFetch("/api/fulfilment/ship", token, {
+        method: "POST",
+        body: JSON.stringify({ orderId }),
+      });
     } catch (err: any) {
       showOrderError(err.message);
     }
@@ -666,7 +669,7 @@ export default function App() {
             <div className="empty-state">You haven't placed any orders yet</div>
           ) : (
             orders.map((order) => (
-              <div className="order-item" data-testid="order-item" key={order.id}>
+              <div className="order-item" data-testid="order-item" data-entity-id={String(order.id)} key={order.id}>
                 <div className="order-item-header">
                   <span>{new Date(order.createdAt).toLocaleString()}</span>
                   <span data-testid="order-status">{order.status}</span>

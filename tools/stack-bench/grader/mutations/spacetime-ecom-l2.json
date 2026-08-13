@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "status": "candidate",
-  "fixtureSha256": "db8bb2c54920f12523b7fe8f4c69637076be15c4808c3eab7596ba74052c3327",
+  "fixtureSha256": "cd562347bede7943167f776bf48dde1fc8e06a963ad1a2cd111bb020c9d7a375",
   "backend": "spacetime",
   "track": "ecommerce",
   "level": 2,

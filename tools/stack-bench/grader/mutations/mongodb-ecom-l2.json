@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "status": "candidate",
-  "fixtureSha256": "d731971c6ba93cfd364c08077c3b619f8901cbc74777644a23620cfaf5917377",
+  "fixtureSha256": "6aafa2ec888b4049a87f488469f16118cd480517bfa876e57538f751744d1c7b",
   "backend": "mongodb",
   "track": "ecommerce",
   "level": 2,
@@ -43,8 +43,8 @@
       "file": "server/src/index.ts",
       "edits": [
         {
-          "find": "app.post(\"/api/fulfilment/:id/ship\", requireAuth, requireStaff, async (req, res) => {",
-          "replace": "app.post(\"/api/fulfilment/:id/ship\", requireAuth, async (req, res) => {"
+          "find": "app.post(\"/api/fulfilment/ship\", requireAuth, requireStaff, async (req, res) => {",
+          "replace": "app.post(\"/api/fulfilment/ship\", requireAuth, async (req, res) => {"
         }
       ]
     }

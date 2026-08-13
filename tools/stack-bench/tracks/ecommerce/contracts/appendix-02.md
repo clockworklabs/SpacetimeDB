@@ -49,7 +49,7 @@ Rules:
 | `cart-total` | the cart's total price |
 | `checkout-submit` | button that turns the cart into an order |
 | `order-list` | the container holding the customer's orders, opened by orders-toggle |
-| `order-item` | one per order, containing the names of the items bought |
+| `order-item` | one per order, containing the names of the items bought; set `data-entity-id` to that order's server identifier |
 | `order-total` | an order's total price |
 | `admin-panel` | the admin area's container; present only for an admin account |
 | `admin-item-row` | one per item in the admin item list, containing that item's name |

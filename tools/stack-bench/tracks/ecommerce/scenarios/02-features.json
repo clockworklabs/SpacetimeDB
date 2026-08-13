@@ -191,10 +191,27 @@
               "ms": 2500
             },
             {
+              "do": "click",
+              "actor": "customer",
+              "testid": "orders-toggle"
+            },
+            {
               "do": "replayAs",
               "actor": "customer",
               "from": "staff",
               "match": "ship",
+              "namedAction": {
+                "id": "ship",
+                "path": "/api/fulfilment/ship",
+                "reducer": "ship_order",
+                "args": [0]
+              },
+              "namedTarget": {
+                "testid": "order-item",
+                "contains": "Webcam",
+                "attribute": "data-entity-id",
+                "valueType": "number"
+              },
               "swap": {
                 "find": "Desk Lamp",
                 "with": "Webcam"
@@ -204,11 +221,6 @@
             {
               "do": "expectReplayRejected",
               "actor": "customer"
-            },
-            {
-              "do": "click",
-              "actor": "customer",
-              "testid": "orders-toggle"
             },
             {
               "do": "expect",
