@@ -152,6 +152,9 @@ controller qualify-null --track ecommerce --level 1 \
 Each scoped qualification artifact binds the executable calibration identity.
 Evidence from another recipe, fixture, mutation set, control policy, or declared
 repetition plan cannot be substituted during promotion.
+Reference qualification also retains each complete underlying benchmark run in
+a sibling `<artifact-name>.runs/` directory. Keep that directory with the JSON;
+the run paths recorded in the artifact are relative to the artifact itself.
 
 Before launching the official repetitions, inspect the exact go/no-go record:
 

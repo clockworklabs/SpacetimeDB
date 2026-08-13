@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
-  rescueSupervisedLease, runBounded } from '../reference-live.mjs';
+  referenceQualificationPaths, rescueSupervisedLease, runBounded } from '../reference-live.mjs';
 import { writeArtifact, writeRunJson } from '../artifacts.mjs';
 import { createCheckEvidence } from '../check-evidence.mjs';
 
@@ -25,6 +25,14 @@ test('reference qualification resolves the exact executable calibration identity
     imported: { sourceSha256: 'd746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a' } });
   assert.equal(context.identity.id, 'ecommerce.l1-standard-calibration');
   assert.equal(context.identity.sha256, context.calibration.qualificationSha256);
+});
+
+test('reference qualification keeps underlying runs beside the requested artifact', () => {
+  const root = join(tmpdir(), 'stack-bench-reference-output-test');
+  const paths = referenceQualificationPaths({ out: join(root, 'postgres-reference.json') }, 'ignored-id');
+  assert.equal(paths.artifactPath, join(root, 'postgres-reference.json'));
+  assert.equal(paths.artifactDirectory, root);
+  assert.equal(paths.runsRoot, join(root, 'postgres-reference.runs'));
 });
 
 function writeEvidence(root, { id, points, passed }) {

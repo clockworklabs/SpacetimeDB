@@ -9,7 +9,7 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
@@ -211,10 +211,20 @@ export function referenceQualificationContext(fixture) {
   return { binding, calibration, identity: calibrationQualificationIdentity(calibration) };
 }
 
+export function referenceQualificationPaths(args, id) {
+  const artifactPath = args.out ?? join(ROOT, 'results', 'reference-live', `${id}.json`);
+  const artifactName = basename(artifactPath, extname(artifactPath));
+  return {
+    artifactPath,
+    artifactDirectory: dirname(artifactPath),
+    runsRoot: join(dirname(artifactPath), `${artifactName}.runs`),
+  };
+}
+
 async function runOnce(fixture, args, id, repetition) {
   const work = mkdtempSync(join(tmpdir(), `stack-bench-reference-live-${fixture.backend}-`));
   const app = join(work, 'app');
-  const output = join(ROOT, 'results', 'reference-live', `${id}-r${repetition + 1}`);
+  const output = join(args.runsRoot, `r${repetition + 1}`);
   const supervisorState = join(work, 'supervisor-state.json');
   const started = Date.now();
   const harnessBefore = qualificationInputs();
@@ -268,7 +278,8 @@ async function runOnce(fixture, args, id, repetition) {
   }
   if (processError) audit.failures.unshift(`benchmark process failed: ${processError}`);
   audit.ok = audit.failures.length === 0;
-  return { repetition: repetition + 1, output: relative(ROOT, output).replaceAll('\\', '/'),
+  return { repetition: repetition + 1,
+    output: relative(args.artifactDirectory, output).replaceAll('\\', '/'),
     durationMs: Date.now() - started, processError,
     harnessSha256Before: harnessBefore.sha256, harnessSha256After: harnessAfter.sha256, ...audit };
 }
@@ -287,6 +298,15 @@ async function main() {
 
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const id = `reference-live-${fixture.backend}-${stamp}-${process.pid}`;
+  const paths = referenceQualificationPaths(args, id);
+  if (existsSync(paths.artifactPath)) {
+    throw new Error(`refusing to replace existing qualification artifact: ${paths.artifactPath}`);
+  }
+  if (existsSync(paths.runsRoot)) {
+    throw new Error(`refusing to reuse existing qualification run directory: ${paths.runsRoot}`);
+  }
+  args.artifactDirectory = paths.artifactDirectory;
+  args.runsRoot = paths.runsRoot;
   const artifact = { id, kind: 'reference_qualification', fixture: fixture.id,
     identities: emptyArtifactIdentities({
       fixture: { id: fixture.id, sha256: fixture.imported.sourceSha256, state: fixture.status },
@@ -317,9 +337,8 @@ async function main() {
   artifact.ok = complete
     && artifact.runs.every(run => run.ok) && artifact.stable && artifact.sameImage && artifact.sameHarness;
   artifact.completedAt = new Date().toISOString();
-  const out = args.out ?? join(ROOT, 'results', 'reference-live', `${id}.json`);
-  writeRunJson(out, artifact);
-  console.log(JSON.stringify({ ok: artifact.ok, artifact: out, stable: artifact.stable,
+  writeRunJson(paths.artifactPath, artifact);
+  console.log(JSON.stringify({ ok: artifact.ok, artifact: paths.artifactPath, stable: artifact.stable,
     sameImage: artifact.sameImage, sameHarness: artifact.sameHarness,
     runs: artifact.runs.map(({ repetition, ok, score, criteria,
       zeroPointCriteria, mutations, failures }) => ({ repetition, ok, score, criteria, zeroPointCriteria,
