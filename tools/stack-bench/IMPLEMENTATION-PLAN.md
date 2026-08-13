@@ -211,13 +211,17 @@ Acceptance:
   new manifest.
 
 Implemented as a strict, hash-bound calibration source and compiler. Ecommerce
-L1 is qualified from its exact repeated evidence; L2 has no calibration yet and
-cannot launch qualification. A calibration binds the exact recipe/fixture,
+L1 is qualified from its exact repeated evidence. L2 has a draft calibration
+with exact references, mutations, controls, evidence slots, and a required
+Linux/amd64 appliance runner; it is waiting on measured pack budgets before
+qualification can launch. A calibration binds the exact recipe/fixture,
 canonical reference registry entries and sources, exact mutation manifests and
 targets, null policy, repetition counts, stack states, evidence slots,
 equivalence decisions, and alias catalog. Every zero-point check requires one
-typed policy. Source validation rejects drift, incomplete controls, unknown
-mutants, unsupported stack mismatches, under-specified evidence repetitions,
+typed policy. When declared, runner identity participates in qualification
+identity and is required on reference, mutation, and null evidence. Source
+validation rejects drift, incomplete controls, unknown mutants, unsupported
+stack mismatches, under-specified evidence repetitions,
 and draft calibration presented as promoted. `check:calibration` is the direct
 validation entry point and is part of Linux CI; the appliance's public
 `preflight` command will call the same compiler in SB-401.

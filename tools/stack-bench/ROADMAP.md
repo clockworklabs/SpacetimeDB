@@ -223,14 +223,17 @@ Current execution order:
 
 1. **Completed 2026-08-13:** qualify and promote ecommerce L1 on all three
    backends with repeated Docker reference, mutation, and null evidence.
-2. **In progress:** audit ecommerce L2 requirement coverage and remove false
-   passes before collecting evidence. The contract linter must visit operations
-   and fulfilment, every scored assertion must test what its description claims,
-   and ambiguous controls stay at zero points.
-3. Freeze separate L2 reference revisions for MongoDB, PostgreSQL, and
-   SpacetimeDB. Do not edit the qualified L1 reference bytes in place.
-4. Add L2 mutation controls, measure pack runtimes, and bind the exact recipe,
-   fixture, references, controls, budgets, and null policy in an L2 calibration.
+2. **Completed 2026-08-13:** audit ecommerce L2 requirement coverage and remove
+   false passes before collecting evidence. The contract linter must visit
+   operations and fulfilment, every scored assertion must test what its
+   description claims, and ambiguous controls stay at zero points.
+3. **Completed 2026-08-13:** freeze separate L2 reference revisions for MongoDB,
+   PostgreSQL, and SpacetimeDB. Do not edit the qualified L1 reference bytes in
+   place.
+4. **In progress:** L2 mutation controls and a draft calibration now bind the
+   exact recipe, fixture, references, controls, null policy, evidence plan, and
+   required Linux/amd64 appliance runner. Collect pristine appliance timing for
+   all three stacks, review the generated limits, and bind those pack budgets.
 5. Run the exact L2 reference and mutation gates twice per backend plus the null
    gate, then promote the recipe only if every evidence slot passes.
 6. Execute a repeated frozen L1-to-L2 campaign and publish the exact scope and
