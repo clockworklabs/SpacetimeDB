@@ -124,7 +124,7 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
   }, { nonEmpty: true, sort: true });
   const agentKeys = value.agents.map(agent => canonicalDefinitionJson(agent));
   if (new Set(agentKeys).size !== agentKeys.length) fail(`${source}.agents`, 'contains a duplicate configuration');
-  integer(value.repetitions, `${source}.repetitions`, { min: 2, max: 100 });
+  integer(value.repetitions, `${source}.repetitions`, { min: 1, max: 100 });
 
   strict(value.ordering, `${source}.ordering`, ORDERING_FIELDS);
   if (value.ordering.method !== 'balanced-rotation') fail(`${source}.ordering.method`, 'must be balanced-rotation');

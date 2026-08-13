@@ -104,10 +104,15 @@ test('balanced rotation covers every stack-agent condition and rotates the globa
     .map(attempt => `${attempt.agentAdapter}:${attempt.stack}`)).size, 6);
 });
 
+test('a one-repetition pilot is allowed and reports its exact sample size', () => {
+  const plan = compile(definition({ repetitions: 1 }));
+  assert.equal(plan.summary.repetitions, 1);
+  assert.equal(plan.summary.attempts, 3);
+});
+
 test('campaign validation rejects ambiguity, silent fallback, and incomplete analysis policy', () => {
   assert.throws(() => validateCampaignDefinition({ ...definition(), surprise: true }), /surprise.*unknown/);
   assert.throws(() => validateCampaignDefinition(definition({ levels: [1, 3] })), /ascending and contiguous/);
-  assert.throws(() => validateCampaignDefinition(definition({ repetitions: 1 })), /at least|from 2/);
   assert.throws(() => validateCampaignDefinition(definition({ stacks: [
     { id: 'postgres', adapterVersion: '1.0.0' }, { id: 'postgres', adapterVersion: '1.0.0' },
   ] })), /duplicates|name each stack once/);
