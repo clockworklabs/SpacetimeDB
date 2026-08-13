@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { parsePreflightArgs, probeLoopbackPort, runPreflight } from '../preflight.mjs';
@@ -75,6 +75,15 @@ test('preflight argument parsing rejects ambiguous ranges and missing backends',
     '--levels', '3-1']), /--levels/);
   assert.throws(() => parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'stub',
     '--mystery']), /unknown argument/);
+});
+
+test('appliance preflight defaults to its configured persistent result directory', () => {
+  const resultsDir = resolve(tmpdir(), 'stack-bench-appliance-results');
+  const parsed = parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'postgres'], {
+    env: { STACK_BENCH_RESULTS_DIR: resultsDir, STACK_BENCH_IMAGE: 'exact-build-image' },
+  });
+  assert.equal(parsed.resultsDir, resultsDir);
+  assert.equal(parsed.image, 'exact-build-image');
 });
 
 test('unknown requested scope becomes a failed report instead of terminating the process', () => {

@@ -30,11 +30,11 @@ function splitList(value) {
   return String(value).split(',').map(item => item.trim()).filter(Boolean);
 }
 
-export function parsePreflightArgs(argv) {
+export function parsePreflightArgs(argv, { env = process.env } = {}) {
   const request = { backends: [], track: 'ecommerce', levels: '1', runIndex: 0,
     agentAdapter: 'claude-code', packIds: [], checkKeys: [], smoke: false,
-    image: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
-    resultsDir: join(ROOT, 'results') };
+    image: env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
+    resultsDir: resolve(env.STACK_BENCH_RESULTS_DIR ?? join(ROOT, 'results')) };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--backend': request.backends.push(...splitList(argv[++i])); break;
