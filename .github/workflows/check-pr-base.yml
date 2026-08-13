@@ -7,6 +7,10 @@ on:
   merge_group:
 permissions: read-all
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.inputs.pr_number || format('sha-{0}', github.sha) }}
+  cancel-in-progress: true
+
 jobs:
   check_base_ref:
     name: Based on `master`
