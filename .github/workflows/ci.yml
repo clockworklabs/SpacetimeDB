@@ -119,7 +119,8 @@ jobs:
       # The v8 version is fixed and needs to be manually kept in sync with Cargo.lock.
       # It should hardly ever be updated, so prefer this over more auto-derivation machinery.
       # The target triple identifies OS and ABI.
-      # CI always uses release with default features, so no other inputs are needed.
+      # Release CI uses default features, so no other inputs are needed. Debug has a
+      # separate key because Cargo stores the native output under a different profile.
       - &cache-rusty-v8
         name: Cache rusty_v8
         uses: actions/cache@v4
@@ -234,8 +235,19 @@ jobs:
       - *set-default-rust-toolchain
 
       - *verify-openssl-assembler
-      - *cache-rusty-v8
-      - *cache-openssl
+      - &restore-rusty-v8
+        name: Restore rusty_v8
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
+          key: rusty-v8-v1-145.0.0-${{ env.TARGET_TRIPLE }}
+      - &restore-openssl
+        name: Restore OpenSSL
+        id: cache-openssl
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.ci-cache/openssl
+          key: openssl-v1-300.5.3+3.5.4-${{ env.TARGET_TRIPLE }}${{ env.OPENSSL_CACHE_SUFFIX }}
       - *configure-cached-openssl
 
       - name: Install cargo-nextest
@@ -256,8 +268,6 @@ jobs:
           tar -czf smoketest-support.tar.gz \
             "target/debug/ci${EXE_SUFFIX}" \
             "${precompiled_modules[@]}"
-
-      - *prepare-openssl-cache
 
       - name: Upload Cargo timing reports
         if: always()
@@ -500,6 +510,8 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Find Git ref
@@ -522,24 +534,15 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      - &restore-rusty-v8-debug
+        name: Restore rusty_v8 (debug)
+        uses: actions/cache/restore@v4
         with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
-      - name: Check v8 outputs
-        shell: bash
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
+          path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
+          key: rusty-v8-debug-v1-145.0.0-${{ env.TARGET_TRIPLE }}
+      - *restore-rusty-v8
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -614,6 +617,8 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - name: Find Git ref
         env:
@@ -636,13 +641,9 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb-index-scan
-          cache-on-failure: false
-          prefix-key: v1
+      - *restore-rusty-v8
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - name: Run index scan benchmark regression check
         run: cargo run --release -p spacetimedb-index-scan-gate
@@ -655,6 +656,8 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -664,14 +667,13 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      - name: Cache rusty_v8 (debug)
+        uses: actions/cache@v4
         with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+          path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
+          key: rusty-v8-debug-v1-145.0.0-${{ env.TARGET_TRIPLE }}
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -717,14 +719,6 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          save-if: false
-          prefix-key: v1
-
       - name: Run CODEOWNERS check
         run: |
           cargo ci other-workflows codeowners-check \
@@ -747,6 +741,8 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - uses: actions/checkout@v3
 
@@ -755,14 +751,9 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
+      - *restore-rusty-v8-debug
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -1011,15 +1002,6 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the smoketests job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
       - name: Check for docs change
         run: |
           cargo ci cli-docs
@@ -1045,6 +1027,8 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
       UNITY_VERSION: 2022.3.32f1
     steps:
       - name: Checkout repository
@@ -1098,28 +1082,9 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
+      - *restore-rusty-v8
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
@@ -1198,6 +1163,8 @@ jobs:
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
       UseLocalBsatnRuntime: true
     steps:
       - name: Checkout repository
@@ -1239,28 +1206,9 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
+      - *restore-rusty-v8
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
@@ -1326,6 +1274,8 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - name: Checkout repository
         id: checkout-stdb
@@ -1377,34 +1327,10 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean -p v8 || true
-            cargo build -p v8
-          fi
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean --release -p v8 || true
-            cargo build --release -p v8
-          fi
+      - *restore-rusty-v8-debug
+      - *restore-rusty-v8
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
@@ -1493,14 +1419,6 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          save-if: false
-          prefix-key: v1
-
       - name: Check global.json policy
         run: cargo ci global-json-policy
 
@@ -1522,6 +1440,8 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - name: Find Git ref
         env:
@@ -1542,30 +1462,9 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          cache-on-failure: false
-          cache-all-crates: true
-          cache-workspace-crates: true
-          prefix-key: v1
-
-      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # However, we've been unable to fix it so... /shrug
-      - name: Check v8 outputs
-        shell: bash
-        run: |
-          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
-            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo clean -p v8 || true
-            cargo build -p v8
-          fi
+      - *restore-rusty-v8-debug
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - name: Verify crates/smoketests/tests/smoketests/mod.rs lists all entries
         run: |
@@ -1634,7 +1533,10 @@ jobs:
     name: TypeScript - Tests
     runs-on: spacetimedb-new-runner-2
     env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      TARGET_TRIPLE: x86_64-unknown-linux-gnu
+      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -1692,33 +1594,9 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          # Let the main CI job save the cache since it builds the most things
-          save-if: false
-          prefix-key: v1
-
-      # # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
-      # # ChatGPT suspects that this could be due to different build invocations using the same target dir,
-      # # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
-      # # `cargo build --manifest-path` (which apparently build different dependency trees).
-      # # However, we've been unable to fix it so... /shrug
-      # - name: Check v8 outputs
-      #   run: |
-      #     find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
-      #     if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
-      #       echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-      #       cargo clean -p v8 || true
-      #       cargo build -p v8
-      #     fi
-      #     if ! [ -f "${CARGO_TARGET_DIR}"/release/gn_out/obj/librusty_v8.a ]; then
-      #       echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-      #       cargo clean --release -p v8 || true
-      #       cargo build --release -p v8
-      #     fi
+      - *restore-rusty-v8-debug
+      - *restore-openssl
+      - *configure-cached-openssl
 
       # - name: Install SpacetimeDB CLI from the local checkout
       #   run: |
