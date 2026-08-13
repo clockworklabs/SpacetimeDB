@@ -8,7 +8,7 @@
 
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -221,8 +221,14 @@ export function referenceQualificationPaths(args, id) {
   };
 }
 
+export function referenceQualificationWorkRoot(env = process.env) {
+  return resolve(env.STACK_BENCH_WORK_DIR ?? tmpdir());
+}
+
 async function runOnce(fixture, args, id, repetition) {
-  const work = mkdtempSync(join(tmpdir(), `stack-bench-reference-live-${fixture.backend}-`));
+  const workRoot = referenceQualificationWorkRoot();
+  mkdirSync(workRoot, { recursive: true });
+  const work = mkdtempSync(join(workRoot, `reference-live-${fixture.backend}-`));
   const app = join(work, 'app');
   const output = join(args.runsRoot, `r${repetition + 1}`);
   const supervisorState = join(work, 'supervisor-state.json');

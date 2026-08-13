@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
-  referenceQualificationPaths, rescueSupervisedLease, runBounded } from '../reference-live.mjs';
+  referenceQualificationPaths, referenceQualificationWorkRoot, rescueSupervisedLease,
+  runBounded } from '../reference-live.mjs';
 import { writeArtifact, writeRunJson } from '../artifacts.mjs';
 import { createCheckEvidence } from '../check-evidence.mjs';
 
@@ -33,6 +34,11 @@ test('reference qualification keeps underlying runs beside the requested artifac
   assert.equal(paths.artifactPath, join(root, 'postgres-reference.json'));
   assert.equal(paths.artifactDirectory, root);
   assert.equal(paths.runsRoot, join(root, 'postgres-reference.runs'));
+});
+
+test('reference qualification uses the daemon-visible appliance work root', () => {
+  assert.equal(referenceQualificationWorkRoot({ STACK_BENCH_WORK_DIR: '/var/lib/stack-bench/work' }),
+    resolve('/var/lib/stack-bench/work'));
 });
 
 function writeEvidence(root, { id, points, passed }) {
