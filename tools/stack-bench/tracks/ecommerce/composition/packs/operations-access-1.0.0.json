@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "request-replay"],
   "evidence": ["browser-observation", "server-refusal"],
-  "budget": { "status": "unmeasured" },
+  "budget": { "status": "bounded", "maxRuntimeMs": 68000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l2.staff-fulfilment", "path": "prompts/02-operations.md", "order": 20, "from": "## New: warehouse staff", "until": "### Moving stock", "modes": ["upgrade"] }

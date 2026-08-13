@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "request-replay"],
   "evidence": ["browser-observation", "server-refusal"],
-  "budget": { "status": "unmeasured" },
+  "budget": { "status": "bounded", "maxRuntimeMs": 63000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l2.stock-transfer", "path": "prompts/02-operations.md", "order": 30, "from": "### Moving stock", "until": "### Cancelling and returning", "modes": ["upgrade"] },

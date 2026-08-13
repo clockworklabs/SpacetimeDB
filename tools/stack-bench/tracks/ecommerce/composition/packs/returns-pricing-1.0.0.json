@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],
-  "budget": { "status": "unmeasured" },
+  "budget": { "status": "bounded", "maxRuntimeMs": 94000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l2.returns-pricing", "path": "prompts/02-operations.md", "order": 40, "from": "### Cancelling and returning", "until": "### Live operational views", "modes": ["upgrade"] },
