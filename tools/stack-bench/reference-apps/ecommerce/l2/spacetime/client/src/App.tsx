@@ -11,6 +11,7 @@ import AuthWidget from './components/AuthWidget';
 import { formatMoney } from './types';
 
 const LOW_STOCK_THRESHOLD = 10;
+type ActivePanel = 'cart' | 'orders' | 'admin' | 'staff' | null;
 
 function microsToDate(micros: bigint): Date {
   return new Date(Number(micros / 1000n));
@@ -45,20 +46,14 @@ export default function App() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItemId, setSelectedItemId] = useState<bigint | null>(null);
-  const [cartOpen, setCartOpen] = useState(false);
-  const [ordersOpen, setOrdersOpen] = useState(false);
-  const [adminOpen, setAdminOpen] = useState(false);
-  const [staffOpen, setStaffOpen] = useState(false);
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [buyError, setBuyError] = useState<string | null>(null);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Escape') return;
       setSelectedItemId(null);
-      setCartOpen(false);
-      setOrdersOpen(false);
-      setAdminOpen(false);
-      setStaffOpen(false);
+      setActivePanel(null);
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
@@ -206,6 +201,7 @@ export default function App() {
   };
 
   const handleSignOut = async () => {
+    setActivePanel(null);
     try {
       await conn?.reducers.signOut({});
     } catch {
@@ -281,7 +277,11 @@ export default function App() {
           data-testid="search-input"
           placeholder="Search items..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setSelectedItemId(null);
+            setActivePanel(null);
+          }}
         />
         <div className="header-spacer" />
         <div className="header-actions">
@@ -290,17 +290,17 @@ export default function App() {
               type="button"
               className="btn btn-ghost btn-sm"
               data-testid="admin-link"
-              onClick={() => setAdminOpen(true)}
+              onClick={() => setActivePanel('admin')}
             >
               Admin
             </button>
           )}
-          {isStaff && !isAdmin && (
+          {(isStaff || isAdmin) && (
             <button
               type="button"
               className="btn btn-ghost btn-sm"
               data-testid="staff-link"
-              onClick={() => setStaffOpen(true)}
+              onClick={() => setActivePanel('staff')}
             >
               Fulfilment
             </button>
@@ -310,7 +310,7 @@ export default function App() {
               type="button"
               className="btn btn-ghost btn-sm"
               data-testid="orders-toggle"
-              onClick={() => setOrdersOpen(true)}
+              onClick={() => setActivePanel('orders')}
             >
               Orders
             </button>
@@ -319,7 +319,7 @@ export default function App() {
             type="button"
             className="btn btn-ghost btn-sm"
             data-testid="cart-toggle"
-            onClick={() => setCartOpen(true)}
+            onClick={() => setActivePanel('cart')}
           >
             Cart <span className="badge" data-testid="cart-count" style={{ marginLeft: 6 }}>{cartCount}</span>
           </button>
@@ -406,28 +406,28 @@ export default function App() {
         )}
       </main>
 
-      {cartOpen && (
+      {activePanel === 'cart' && (
         <CartPanel
           lines={cartLines}
-          onClose={() => setCartOpen(false)}
+          onClose={() => setActivePanel(null)}
           onChangeQuantity={handleChangeQuantity}
           onRemove={handleRemove}
           onCheckout={handleCheckout}
         />
       )}
 
-      {ordersOpen && (
+      {activePanel === 'orders' && isSignedIn && (
         <OrdersPanel
           orders={orderViews}
-          onClose={() => setOrdersOpen(false)}
+          onClose={() => setActivePanel(null)}
           onCancel={handleCancelOrder}
           onReturn={handleReturnItem}
         />
       )}
 
-      {adminOpen && isAdmin && (
+      {activePanel === 'admin' && isAdmin && (
         <>
-          <div className="backdrop" onClick={() => setAdminOpen(false)} />
+          <div className="backdrop" onClick={() => setActivePanel(null)} />
           <div className="panel" style={{ width: 'min(900px, 96vw)' }}>
             <div className="panel-header">
               <h2>Admin</h2>
@@ -435,7 +435,7 @@ export default function App() {
                 type="button"
                 className="close-btn"
                 aria-label="Close"
-                onClick={() => setAdminOpen(false)}
+                onClick={() => setActivePanel(null)}
               >
                 ×
               </button>
@@ -462,9 +462,9 @@ export default function App() {
         </>
       )}
 
-      {staffOpen && isStaff && (
+      {activePanel === 'staff' && (isStaff || isAdmin) && (
         <>
-          <div className="backdrop" onClick={() => setStaffOpen(false)} />
+          <div className="backdrop" onClick={() => setActivePanel(null)} />
           <div className="panel" style={{ width: 'min(700px, 96vw)' }}>
             <div className="panel-header">
               <h2>Fulfilment</h2>
@@ -472,7 +472,7 @@ export default function App() {
                 type="button"
                 className="close-btn"
                 aria-label="Close"
-                onClick={() => setStaffOpen(false)}
+                onClick={() => setActivePanel(null)}
               >
                 ×
               </button>
