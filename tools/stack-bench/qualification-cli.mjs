@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
 import { listTracks, loadTrack } from './tracks.mjs';
+import { PACK_BUDGET_POLICY } from './pack-budget.mjs';
 
 export function parseQualificationArgs(argv) {
   const args = { command: argv[2], track: null, level: null };
@@ -104,12 +105,24 @@ export function qualificationReadiness(trackName, level) {
   const output = '/var/lib/stack-bench/results/qualification';
   const stacks = calibration.qualification.stacks
     .filter(stack => stack.status !== 'unsupported').map(stack => stack.id).sort();
+  const budgetEvidence = stacks.map(stack => `${output}/budget-input/${trackName}-l${level}-${stack}.json`);
+  const budgetPreparationRequired = launchBlockers.some(item => item.code === 'pack_budget_unbounded');
   return {
     qualificationSchemaVersion: 1,
     scope: { track: trackName, level, recipe: { id: binding.release.id,
       version: binding.release.version, contentSha256: binding.release.contentSha256 },
     calibration: { ...identity, contentSha256: calibration.contentSha256 } },
     launch: { ok: launchBlockers.length === 0, blockers: launchBlockers },
+    budgetPreparation: {
+      required: budgetPreparationRequired,
+      policy: PACK_BUDGET_POLICY,
+      commands: budgetPreparationRequired ? [
+        ...stacks.map((stack, index) =>
+          `qualify-reference --backend ${stack} --track ${trackName} --level ${level} --repetitions ${calibration.qualification.referenceRepetitions} --out ${budgetEvidence[index]}`),
+        `pack-budget recommend --track ${trackName} --level ${level} ${budgetEvidence
+          .map(path => `--evidence ${path}`).join(' ')} --out ${output}/${trackName}-l${level}-pack-budgets.json`,
+      ] : [],
+    },
     requiredEvidence,
     commands: [
       ...stacks.flatMap(stack => [

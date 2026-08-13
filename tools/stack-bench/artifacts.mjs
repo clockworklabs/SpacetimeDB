@@ -22,6 +22,7 @@ export const ARTIFACT_KINDS = Object.freeze([
   'grade_bundle',
   'mutation_control',
   'null_control',
+  'pack_budget_measurement',
   'performance_run',
   'preflight',
   'reference_build',
@@ -62,6 +63,8 @@ const PAYLOAD_FIELDS = Object.freeze({
   mutation_control: new Set(['durationMs', 'app', 'mutations', 'manifestStatus', 'fixtureSha256',
     'spec', 'backend', 'track', 'ok', 'outcome', 'baseline', 'summary', 'results']),
   null_control: new Set(['durationMs', 'tracks', 'ok', 'summary', 'criteria']),
+  pack_budget_measurement: new Set(['schemaVersion', 'track', 'level', 'policy', 'evidence',
+    'samples', 'recommendations']),
   performance_run: new Set(['label', 'backend', 'url', 'clients', 'rounds', 'warmupDiscarded',
     'seededBefore', 'sent', 'delivered', 'lost', 'elapsedMs', 'deliveryLatencyMs', 'server',
     'cpuSecondsPer1kDelivered']),
@@ -186,6 +189,10 @@ function validatePayload(kind, payload) {
   }
   if (kind === 'mutation_control') arrayWhenPresent('results');
   if (kind === 'null_control') arrayWhenPresent('criteria');
+  if (kind === 'pack_budget_measurement') {
+    objectWhenPresent('policy'); arrayWhenPresent('evidence'); arrayWhenPresent('samples');
+    arrayWhenPresent('recommendations');
+  }
   if (kind === 'performance_run') { objectWhenPresent('deliveryLatencyMs'); objectWhenPresent('server'); }
   if (kind === 'reference_build') arrayWhenPresent('fixtures');
   if (kind === 'reference_qualification') arrayWhenPresent('runs');

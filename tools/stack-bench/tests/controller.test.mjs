@@ -28,5 +28,8 @@ test('controller exposes a small explicit operator command surface', () => {
   const qualification = resolveControllerCommand(['qualification', 'status',
     '--track', 'ecommerce', '--level', '1']);
   assert.match(qualification.args[0], /qualification-cli\.mjs$/);
+  const budget = resolveControllerCommand(['pack-budget', 'recommend', '--track', 'ecommerce',
+    '--level', '1', '--evidence', '/results/mongodb.json', '--out', '/results/budgets.json']);
+  assert.match(budget.args[0], /pack-budget\.mjs$/);
   assert.throws(() => resolveControllerCommand(['shell']), /unknown controller command/);
 });

@@ -8,6 +8,9 @@ test('qualification status lists exact evidence and current launch blockers with
   assert.match(status.scope.calibration.sha256, /^[a-f0-9]{64}$/);
   assert.equal(status.requiredEvidence.length, 13);
   assert.equal(status.commands.length, 7);
+  assert.equal(status.budgetPreparation.required, true);
+  assert.equal(status.budgetPreparation.commands.length, 4);
+  assert.match(status.budgetPreparation.commands.at(-1), /^pack-budget recommend /);
   assert.equal(status.launch.ok, false);
   assert(status.launch.blockers.some(item => item.code === 'pack_budget_unbounded'));
   assert.equal(status.promotion.ready, false);
