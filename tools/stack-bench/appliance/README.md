@@ -162,13 +162,18 @@ repetition plan cannot be substituted during promotion.
 Reference qualification also retains each complete underlying benchmark run in
 a sibling `<artifact-name>.runs/` directory. Keep that directory with the JSON;
 the run paths recorded in the artifact are relative to the artifact itself.
-New reference artifacts record the controller mode, operating system, and CPU
-architecture, and new null-control artifacts do the same. A calibration may
-bind an exact runner environment; ecommerce L2 requires the supported
-Linux/amd64 appliance for reference, mutation, null, and budget evidence.
+New reference and null-control artifacts record the controller mode, operating
+system, CPU architecture, Docker Engine version, Docker-reported kernel,
+Docker architecture, CPU allocation, and memory allocation. A calibration may
+bind a supported class of runner; ecommerce L2 requires the Linux/amd64
+appliance for reference, mutation, null, and budget evidence. Every artifact in
+one qualification or budget-measurement set must also report the same complete
+runner snapshot, so timings from materially different environments cannot be
+silently combined.
 Local-controller runs remain useful diagnostics but cannot promote that recipe.
-Artifacts created before runner identity was recorded remain readable, but are
-not accepted where the selected calibration requires that identity.
+Artifacts created before runner identity or the complete runner observation was
+recorded remain readable, but are not accepted where the selected calibration
+requires that evidence.
 
 Before the first qualification of a recipe whose packs still have unmeasured
 runtime budgets, run each `budgetPreparation.commands` entry printed by

@@ -18,6 +18,9 @@ const calibration = structuredClone(resolveCalibrationForRelease(binding.release
 calibration.qualification.runner = {
   schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
 };
+const applianceRunner = Object.freeze({ ...calibration.qualification.runner,
+  dockerEngineVersion: '29.1.2', dockerOs: 'linux', dockerArchitecture: 'x86_64',
+  kernelVersion: '6.8.0-test', cpuCount: 8, memoryBytes: 16_000_000_000 });
 
 function runtime(stackIndex, repetition) {
   const counts = new Map(binding.release.checkCatalog.map(check => [check.packId, 0]));
@@ -40,7 +43,7 @@ function reference(stack, stackIndex, overrides = {}) {
     }),
     payload: { fixture: fixture.id, fixtureSha256: fixture.sourceSha256,
       requiredRepetitions: 2, isolation: 'docker', mutationControl: false,
-      runner: { schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64' },
+      runner: { ...applianceRunner },
       stable: true, sameImage: true, sameHarness: true, harnessSha256: 'b'.repeat(64), ok: true,
       runs: [1, 2].map(repetition => ({ repetition, ok: true, packRuntime: runtime(stackIndex, repetition) })),
       ...overrides } });
@@ -62,6 +65,7 @@ test('budget recommendation requires every exact reference repetition and applie
   assert(result.recommendations.every(item => item.maxRuntimeMs === 3_000));
   assert.equal(PACK_BUDGET_POLICY.multiplier, 2);
   assert.deepEqual(result.measuredEngine, currentEngineIdentity());
+  assert.deepEqual(result.measuredRunner, applianceRunner);
 });
 
 test('budget recommendation rejects mutation, duplicate, incomplete, and cross-scope evidence', () => {
@@ -94,6 +98,16 @@ test('budget recommendation rejects timing captured outside the Linux appliance'
   delete legacy[0].artifact.payload.runner;
   assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: legacy }),
     /runner\.schemaVersion must be 1/);
+
+  const unobserved = exactEvidence();
+  unobserved[0].artifact.payload.runner = { ...calibration.qualification.runner };
+  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: unobserved }),
+    /runner observation is missing/);
+
+  const mixed = exactEvidence();
+  mixed[1].artifact.payload.runner.cpuCount = 16;
+  assert.throws(() => recommendPackBudgets({ binding, calibration, evidence: mixed }),
+    /different appliance runner environment/);
 });
 
 test('budget CLI parsing requires explicit unique evidence and output', () => {

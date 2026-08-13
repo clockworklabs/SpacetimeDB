@@ -103,10 +103,16 @@ test('qualification evidence is semantically bound and tampering fails closed', 
   const runnerIdentity = calibrationQualificationIdentity(runnerBound);
   const runnerReference = structuredClone(reference);
   runnerReference.identities.calibration = { ...runnerIdentity, state: runnerBound.state };
-  runnerReference.payload.runner = structuredClone(runnerBound.qualification.runner);
+  runnerReference.payload.runner = { ...runnerBound.qualification.runner,
+    dockerEngineVersion: '29.1.2', dockerOs: 'linux', dockerArchitecture: 'x86_64',
+    kernelVersion: '6.8.0-test', cpuCount: 8, memoryBytes: 16_000_000_000 };
   const runnerContext = { ...context, calibration: runnerBound, qualificationIdentity: runnerIdentity };
   assert.doesNotThrow(() => validateQualificationEvidenceArtifact(runnerReference, referenceEntry,
     runnerContext));
+  const unobservedRunner = structuredClone(runnerReference);
+  unobservedRunner.payload.runner = structuredClone(runnerBound.qualification.runner);
+  assert.throws(() => validateQualificationEvidenceArtifact(unobservedRunner, referenceEntry,
+    runnerContext), /no complete appliance runner observation/);
   runnerReference.payload.runner.mode = 'local-controller';
   runnerReference.payload.runner.platform = 'win32';
   assert.throws(() => validateQualificationEvidenceArtifact(runnerReference, referenceEntry,

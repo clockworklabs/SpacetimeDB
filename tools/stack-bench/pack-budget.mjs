@@ -11,6 +11,7 @@ import { canonicalDefinitionJson } from './definition-plan.mjs';
 import { PACK_RUNTIME_METRIC } from './pack-runtime.mjs';
 import { sha256 } from './provenance.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { missingRunnerObservation } from './runner-environment.mjs';
 import { listTracks, loadTrack } from './tracks.mjs';
 
 export const PACK_BUDGET_POLICY = Object.freeze({
@@ -27,6 +28,10 @@ function requireSupportedBudgetRunner(runner, expectedRunner, path) {
     if (runner?.[field] !== expected) {
       throw new Error(`${path} is not supported appliance timing evidence: runner.${field} must be ${expected}`);
     }
+  }
+  const missing = missingRunnerObservation(runner);
+  if (missing.length) {
+    throw new Error(`${path} is not supported appliance timing evidence: runner observation is missing ${missing.join(', ')}`);
   }
 }
 
@@ -82,6 +87,7 @@ export function recommendPackBudgets({ binding, calibration, evidence }) {
   const stacks = new Set();
   const samples = [];
   let measuredEngine = null;
+  let measuredRunner = null;
 
   for (const item of evidence) {
     const artifact = item.artifact;
@@ -109,6 +115,10 @@ export function recommendPackBudgets({ binding, calibration, evidence }) {
     }
     if (payload.isolation !== 'docker') throw new Error(`${item.path} was not produced in Docker`);
     requireSupportedBudgetRunner(payload.runner, calibration.qualification.runner, item.path);
+    if (measuredRunner === null) measuredRunner = payload.runner;
+    else if (canonicalDefinitionJson(payload.runner) !== canonicalDefinitionJson(measuredRunner)) {
+      throw new Error(`${item.path} was measured on a different appliance runner environment`);
+    }
     if (payload.requiredRepetitions !== calibration.qualification.referenceRepetitions
       || payload.runs?.length !== payload.requiredRepetitions) {
       throw new Error(`${item.path} does not contain the declared reference repetitions`);
@@ -169,7 +179,7 @@ export function recommendPackBudgets({ binding, calibration, evidence }) {
     return { packId, sampleCount: observed.length,
       observedMinRuntimeMs: Math.min(...observed), observedMaxRuntimeMs, maxRuntimeMs };
   });
-  return { measuredEngine, samples, recommendations };
+  return { measuredEngine, measuredRunner, samples, recommendations };
 }
 
 function containedRunPath(artifactPath, runOutput) {
@@ -239,6 +249,7 @@ function main() {
       calibration: { ...calibrationQualificationIdentity(calibration), state: calibration.state },
     }),
     payload: { schemaVersion: 1, track: args.track, level: args.level, policy: PACK_BUDGET_POLICY,
+      runner: result.measuredRunner,
       evidence: loaded.map(item => ({ path: relative(dirname(args.out), item.path).replaceAll('\\', '/'),
         sha256: item.sha256, stack: item.artifact.identities.stackAdapter.id })),
       samples: result.samples, recommendations: result.recommendations } });

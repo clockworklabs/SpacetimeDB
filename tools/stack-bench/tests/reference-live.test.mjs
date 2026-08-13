@@ -46,12 +46,20 @@ test('reference qualification uses the daemon-visible appliance work root', () =
 
 test('reference qualification records whether its controller is the supported Linux appliance', () => {
   assert.deepEqual(referenceQualificationRunner({ env: { STACK_BENCH_APPLIANCE: '1' },
-    platform: 'linux', architecture: 'x64' }), {
+    platform: 'linux', architecture: 'x64', dockerInfo: {
+      ServerVersion: '29.1.2', OSType: 'linux', Architecture: 'x86_64',
+      KernelVersion: '6.8.0-test', NCPU: 8, MemTotal: 16_000_000_000,
+    } }), {
     schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
+    dockerEngineVersion: '29.1.2', dockerOs: 'linux', dockerArchitecture: 'x86_64',
+    kernelVersion: '6.8.0-test', cpuCount: 8, memoryBytes: 16_000_000_000,
   });
   assert.deepEqual(referenceQualificationRunner({ env: {}, platform: 'win32', architecture: 'x64' }), {
     schemaVersion: 1, mode: 'local-controller', platform: 'win32', architecture: 'x64',
   });
+  assert.throws(() => referenceQualificationRunner({ env: { STACK_BENCH_APPLIANCE: '1' },
+    platform: 'linux', architecture: 'x64', dockerInfo: {} }),
+  /Docker daemon inspection did not return ServerVersion/);
 });
 
 function writeEvidence(root, { id, points, passed }) {

@@ -139,8 +139,17 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
     runner: { schemaVersion: 2, mode: 'appliance', platform: 'linux', architecture: 'x64' },
   } }), /runner\.schemaVersion must be 1/);
   assert.doesNotThrow(() => createArtifact({ kind: 'null_control', id: 'typed-runner', payload: {
+    runner: { schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
+      dockerEngineVersion: '29.1.2', dockerOs: 'linux', dockerArchitecture: 'x86_64',
+      kernelVersion: '6.8.0-test', cpuCount: 8, memoryBytes: 16_000_000_000 },
+  } }));
+  assert.doesNotThrow(() => createArtifact({ kind: 'reference_qualification', id: 'legacy-base-runner', payload: {
     runner: { schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64' },
   } }));
+  assert.throws(() => createArtifact({ kind: 'reference_qualification', id: 'partial-runner', payload: {
+    runner: { schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
+      dockerEngineVersion: '29.1.2' },
+  } }), /runner\.dockerOs must be a non-empty string/);
 });
 
 test('public artifacts reject secret-bearing fields before touching disk', () => {

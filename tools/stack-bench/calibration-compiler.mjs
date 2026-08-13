@@ -7,6 +7,7 @@ import { mutationScenario, mutationTargetKeys, validateMutationDefinitions } fro
 import { sha256 } from './provenance.mjs';
 import { loadReferenceRegistry, validateReferenceRegistry } from './reference-fixtures.mjs';
 import { readArtifact } from './artifacts.mjs';
+import { missingRunnerObservation } from './runner-environment.mjs';
 
 export const CALIBRATION_SCHEMA_VERSION = 1;
 
@@ -296,9 +297,15 @@ export function validateQualificationEvidenceArtifact(artifact, entry,
   exactEvidenceIdentity(artifact.identities?.calibration, qualificationIdentity,
     `${at}.calibration`);
   if (!artifact.identities?.engine?.sha256) evidenceFailure(at, 'has no engine content identity');
-  if (calibration.qualification.runner !== undefined
-    && canonicalDefinitionJson(artifact.payload?.runner) !== canonicalDefinitionJson(calibration.qualification.runner)) {
-    evidenceFailure(at, 'has the wrong controller runner environment');
+  if (calibration.qualification.runner !== undefined) {
+    for (const [field, expected] of Object.entries(calibration.qualification.runner)) {
+      if (artifact.payload?.runner?.[field] !== expected) {
+        evidenceFailure(at, 'has the wrong controller runner environment');
+      }
+    }
+    const missing = missingRunnerObservation(artifact.payload?.runner);
+    if (missing.length) evidenceFailure(at,
+      `has no complete appliance runner observation (missing ${missing.join(', ')})`);
   }
 
   const scoredChecks = release.checkCatalog.filter(check => check.points > 0);
@@ -393,6 +400,7 @@ function verifyQualificationEvidence(entries, stackBenchRoot, at, context) {
   const engines = new Set();
   const harnesses = new Set();
   const images = new Set();
+  const runners = new Set();
   normalized.forEach((entry, index) => {
     let artifact = artifacts.get(entry.path);
     if (!artifact) {
@@ -402,6 +410,9 @@ function verifyQualificationEvidence(entries, stackBenchRoot, at, context) {
     }
     validateQualificationEvidenceArtifact(artifact, entry, context);
     engines.add(artifact.identities.engine.sha256);
+    if (context.calibration.qualification.runner !== undefined) {
+      runners.add(canonicalDefinitionJson(artifact.payload.runner));
+    }
     if (entry.kind !== 'null') {
       harnesses.add(artifact.payload.harnessSha256);
       for (const run of artifact.payload.runs) images.add(run.imageId);
@@ -410,6 +421,7 @@ function verifyQualificationEvidence(entries, stackBenchRoot, at, context) {
   if (engines.size > 1) fail(at, 'qualification artifacts were produced by different engines');
   if (harnesses.size > 1) fail(at, 'qualification artifacts use different harnesses');
   if (images.size > 1) fail(at, 'qualification artifacts use different build images');
+  if (runners.size > 1) fail(at, 'qualification artifacts use different appliance runner environments');
   return normalized;
 }
 

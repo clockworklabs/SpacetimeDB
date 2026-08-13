@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { hashDirectory } from './provenance.mjs';
 import { validateCheckEvidence } from './check-evidence.mjs';
+import { RUNNER_OBSERVATION_FIELDS } from './runner-environment.mjs';
 
 export const ARTIFACT_SCHEMA_VERSION = 2;
 
@@ -64,7 +65,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'spec', 'backend', 'track', 'ok', 'outcome', 'baseline', 'summary', 'results']),
   null_control: new Set(['durationMs', 'runner', 'tracks', 'ok', 'summary', 'criteria']),
   pack_budget_measurement: new Set(['schemaVersion', 'track', 'level', 'policy', 'evidence',
-    'samples', 'recommendations']),
+    'runner', 'samples', 'recommendations']),
   performance_run: new Set(['label', 'backend', 'url', 'clients', 'rounds', 'warmupDiscarded',
     'seededBefore', 'sent', 'delivered', 'lost', 'elapsedMs', 'deliveryLatencyMs', 'server',
     'cpuSecondsPer1kDelivered']),
@@ -153,7 +154,8 @@ function validatePayload(kind, payload) {
   const runnerWhenPresent = () => {
     if (payload.runner === undefined) return;
     objectWhenPresent('runner');
-    const allowed = new Set(['schemaVersion', 'mode', 'platform', 'architecture']);
+    const allowed = new Set(['schemaVersion', 'mode', 'platform', 'architecture',
+      ...RUNNER_OBSERVATION_FIELDS]);
     for (const key of Object.keys(payload.runner)) {
       if (!allowed.has(key)) fail(`${kind} payload.runner.${key} is unknown`);
     }
@@ -164,6 +166,25 @@ function validatePayload(kind, payload) {
     for (const field of ['platform', 'architecture']) {
       if (typeof payload.runner[field] !== 'string' || !payload.runner[field]) {
         fail(`${kind} payload.runner.${field} must be a non-empty string`);
+      }
+    }
+    const observedFields = RUNNER_OBSERVATION_FIELDS.filter(field => payload.runner[field] !== undefined);
+    if (payload.runner.mode === 'appliance' && observedFields.length > 0) {
+      for (const field of ['dockerEngineVersion', 'dockerOs', 'dockerArchitecture', 'kernelVersion']) {
+        if (typeof payload.runner[field] !== 'string' || !payload.runner[field]) {
+          fail(`${kind} payload.runner.${field} must be a non-empty string for an appliance runner`);
+        }
+      }
+      for (const field of ['cpuCount', 'memoryBytes']) {
+        if (!Number.isSafeInteger(payload.runner[field]) || payload.runner[field] < 1) {
+          fail(`${kind} payload.runner.${field} must be a positive integer for an appliance runner`);
+        }
+      }
+    } else if (payload.runner.mode !== 'appliance') {
+      for (const field of RUNNER_OBSERVATION_FIELDS) {
+        if (payload.runner[field] !== undefined) {
+          fail(`${kind} payload.runner.${field} is only valid for an appliance runner`);
+        }
       }
     }
   };
@@ -208,7 +229,7 @@ function validatePayload(kind, payload) {
   if (kind === 'null_control') { arrayWhenPresent('criteria'); runnerWhenPresent(); }
   if (kind === 'pack_budget_measurement') {
     objectWhenPresent('policy'); arrayWhenPresent('evidence'); arrayWhenPresent('samples');
-    arrayWhenPresent('recommendations');
+    arrayWhenPresent('recommendations'); runnerWhenPresent();
   }
   if (kind === 'performance_run') { objectWhenPresent('deliveryLatencyMs'); objectWhenPresent('server'); }
   if (kind === 'reference_build') arrayWhenPresent('fixtures');
