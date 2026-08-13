@@ -135,6 +135,12 @@ namespace SpacetimeDB
         where DbConnection : DbConnectionBase<DbConnection, Tables, Reducer>, new()
         where Tables : RemoteTablesBase
     {
+        /// <remarks>
+        /// This isn't reset since [RuntimeInitializeOnLoadMethod] methods cannot be in generic types
+        /// We assume that the user will reset this if needed; Unity will give an error about this field not being reset.
+        /// One way we can get around this in the future is using <see href="https://docs.unity3d.com/6000.5/Documentation/ScriptReference/Unity.Scripting.LifecycleManagement.AutoStaticsCleanupAttribute.html">AutoStaticsCleanup</see> 
+        /// But that requires Unity 6.5
+        /// <remarks>
         internal static bool IsTesting { get; set; } = false;
 
         public static DbConnectionBuilder<DbConnection> Builder() => new();
@@ -291,23 +297,6 @@ namespace SpacetimeDB
         private CancellationToken _parseCancellationToken => _parseCancellationTokenSource.Token;
 
         private static readonly Status Committed = new Status.Committed(default);
-
-#if UNITY_5_3_OR_NEWER
-        /// <summary>
-        /// Resets the static instance to prevent data persistence when Enter Play Mode Options (Disable Domain Reloading) is active.
-        /// RuntimeInitializeOnLoadMethod is used since it is supported in older versions of Unity.
-        /// AutoStaticsCleanup and NoAutoStaticsCleanup is only supported in Unity 6+
-        /// </summary>
-        /// <remarks>
-        /// See the <see href="https://docs.unity3d.com/6000.5/Documentation/Manual/domain-reloading.html">Unity Domain Reloading Manual</see> 
-        /// and the <see href="https://docs.unity3d.com/6000.5/Documentation/ScriptReference/RuntimeInitializeOnLoadMethodAttribute.html">RuntimeInitializeOnLoadMethodAttribute API Docs</see> for details.
-        /// </remarks>
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        private static void ResetStaticFields()
-        {
-            IsTesting = false;
-        }
-#endif
 
         /// <summary>
         /// Get a description of a message suitable for storing in the tracker metadata.
