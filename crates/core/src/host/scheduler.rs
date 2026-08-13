@@ -309,9 +309,13 @@ enum ScheduledFunctionKind {
 
 type ScheduledFunctionFuture = BoxFuture<'static, ScheduledFunctionCompletion>;
 
+// The outer result is from `catch_unwind`, so `Err` means the scheduled call panicked.
+// The inner result is the normal module-host call result, such as `NoSuchModule`.
+type ScheduledFunctionCallResult = std::thread::Result<Result<CallScheduledFunctionResult, CallScheduledFunctionError>>;
+
 struct ScheduledFunctionCompletion {
     item: QueueItem,
-    result: std::thread::Result<Result<CallScheduledFunctionResult, CallScheduledFunctionError>>,
+    result: ScheduledFunctionCallResult,
 }
 
 impl ScheduledFunctionParams {
