@@ -625,11 +625,9 @@ public static class Module
         try
         {
             var senderIdentity = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
             );
-            var connectionId = ConnectionId.From(
-                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
-            );
+            var connectionId = ConnectionId.From(MemoryMarshal.AsBytes([conn_id_0, conn_id_1]));
             var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
             var time = timestamp.ToStd();
 
@@ -714,11 +712,9 @@ public static class Module
         try
         {
             var sender = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
             );
-            var connectionId = ConnectionId.From(
-                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
-            );
+            var connectionId = ConnectionId.From(MemoryMarshal.AsBytes([conn_id_0, conn_id_1]));
             var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
             var time = timestamp.ToStd();
 
@@ -897,7 +893,7 @@ public static class Module
         try
         {
             var sender = Identity.From(
-                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
             );
             var ctx = newViewContext!(sender);
             using var stream = args.Consume(ref viewArgsBuffer);
