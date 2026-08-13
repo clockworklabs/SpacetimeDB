@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],
-  "budget": { "status": "unmeasured" },
+  "budget": { "status": "bounded", "maxRuntimeMs": 18000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l1.accounts-before-session", "path": "prompts/01-storefront.md", "order": 30, "from": "### Accounts", "until": "- A signed-in session", "modes": ["fresh"] },

@@ -11,8 +11,8 @@
     "id": "ecommerce.l1-standard",
     "version": "1.0.0",
     "meaningSha256": "390c018bdf4d9f199456e42d5f471d52c28e63bd899bf6b7acbc447509b5f065",
-    "executionSha256": "476931b00047256f6c4500536ab290a92bcceb48654954192b8435e592f1b324",
-    "contentSha256": "711288f7e7de014cda14a68f1b236e4d2f242ac8eb967cd75e6a0c80fb71aeaa"
+    "executionSha256": "39ab33f25e51dc474d49210190ae684e0bcec1fb2ecee5a66d6dde99fd143b25",
+    "contentSha256": "5cc3041070f3a18fe3dbacb741c3116fff7d92c7e4504c18e12ea42e6a7e4dad"
   },
   "fixture": {
     "id": "ecommerce.storefront",

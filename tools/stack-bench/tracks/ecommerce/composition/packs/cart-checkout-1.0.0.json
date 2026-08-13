@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "concurrent-actors"],
   "evidence": ["browser-observation", "concurrent-outcome"],
-  "budget": { "status": "unmeasured" },
+  "budget": { "status": "bounded", "maxRuntimeMs": 130000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l1.buying", "path": "prompts/01-storefront.md", "order": 70, "from": "### Buying", "until": "### Cart", "modes": ["fresh"] },

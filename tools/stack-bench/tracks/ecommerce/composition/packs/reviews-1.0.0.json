@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],
-  "budget": { "status": "unmeasured" },
+  "budget": { "status": "bounded", "maxRuntimeMs": 29000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l1.reviews", "path": "prompts/01-storefront.md", "order": 90, "from": "### Reviews", "until": "### Admin", "modes": ["fresh"] }

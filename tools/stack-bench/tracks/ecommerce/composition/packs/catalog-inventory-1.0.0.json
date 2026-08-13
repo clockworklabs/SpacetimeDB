@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "direct-database-write"],
   "evidence": ["browser-observation", "database-observation"],
-  "budget": { "status": "unmeasured" },
+  "budget": { "status": "bounded", "maxRuntimeMs": 145000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l1.browsing", "path": "prompts/01-storefront.md", "order": 60, "from": "### Browsing", "until": "### Buying", "modes": ["fresh"] },

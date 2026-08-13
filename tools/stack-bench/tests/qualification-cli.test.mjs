@@ -3,16 +3,15 @@ import test from 'node:test';
 
 import { parseQualificationArgs, qualificationReadiness } from '../qualification-cli.mjs';
 
-test('qualification status lists exact evidence and current launch blockers without writing', () => {
+test('qualification status lists exact evidence and launch readiness without writing', () => {
   const status = qualificationReadiness('ecommerce', 1);
   assert.match(status.scope.calibration.sha256, /^[a-f0-9]{64}$/);
   assert.equal(status.requiredEvidence.length, 13);
   assert.equal(status.commands.length, 7);
-  assert.equal(status.budgetPreparation.required, true);
-  assert.equal(status.budgetPreparation.commands.length, 4);
-  assert.match(status.budgetPreparation.commands.at(-1), /^pack-budget recommend /);
-  assert.equal(status.launch.ok, false);
-  assert(status.launch.blockers.some(item => item.code === 'pack_budget_unbounded'));
+  assert.equal(status.budgetPreparation.required, false);
+  assert.deepEqual(status.budgetPreparation.commands, []);
+  assert.equal(status.launch.ok, true);
+  assert.deepEqual(status.launch.blockers, []);
   assert.equal(status.promotion.ready, false);
   assert(status.promotion.blockers.some(item => item.code === 'evidence_missing'));
   assert(status.promotion.governance.some(item => item.path === 'recipe.state'

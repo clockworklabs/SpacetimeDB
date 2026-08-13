@@ -10,7 +10,7 @@
   "conflictsWith": [],
   "capabilities": ["browser", "backend-lifecycle"],
   "evidence": ["browser-observation", "fresh-client-observation"],
-  "budget": { "status": "unmeasured" },
+  "budget": { "status": "bounded", "maxRuntimeMs": 36000 },
   "task": {
     "requirements": [
       { "id": "ecommerce.l1.session-durability", "path": "prompts/01-storefront.md", "order": 40, "from": "- A signed-in session", "until": "- Usernames are unique.", "modes": ["fresh"] }

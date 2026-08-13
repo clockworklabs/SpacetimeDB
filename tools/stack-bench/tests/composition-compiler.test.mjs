@@ -116,7 +116,7 @@ test('the smoke recipe reuses two behavior packs without duplicating their defin
   assert.deepEqual(plan.execution[0].checkGroups.map(group => group.feature.id), [1, 6]);
   assert.equal(plan.checks.length, 7);
   assert.equal(plan.scoring.points, 8);
-  assert.equal(plan.packs[0].budget.status, 'unmeasured');
+  assert.equal(plan.packs[0].budget.status, 'bounded');
   assert(plan.packs[0].actions.includes('signUp'));
   assert.match(plan.recipe.task.requirementText, /### Accounts/);
   assert.match(plan.recipe.task.requirementText, /### Reviews/);
