@@ -1,5 +1,5 @@
 [package]
-name = "ci"
+name = "ci-common"
 version = "0.1.0"
 edition.workspace = true
 
