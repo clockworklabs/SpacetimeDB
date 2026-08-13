@@ -138,6 +138,9 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
   assert.throws(() => createArtifact({ kind: 'reference_qualification', id: 'future-runner', payload: {
     runner: { schemaVersion: 2, mode: 'appliance', platform: 'linux', architecture: 'x64' },
   } }), /runner\.schemaVersion must be 1/);
+  assert.doesNotThrow(() => createArtifact({ kind: 'null_control', id: 'typed-runner', payload: {
+    runner: { schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64' },
+  } }));
 });
 
 test('public artifacts reject secret-bearing fields before touching disk', () => {

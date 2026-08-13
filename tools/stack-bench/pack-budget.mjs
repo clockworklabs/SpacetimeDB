@@ -21,15 +21,9 @@ export const PACK_BUDGET_POLICY = Object.freeze({
   minimumMs: 1_000,
 });
 
-export const PACK_BUDGET_RUNNER = Object.freeze({
-  schemaVersion: 1,
-  mode: 'appliance',
-  platform: 'linux',
-  architecture: 'x64',
-});
-
-function requireSupportedBudgetRunner(runner, path) {
-  for (const [field, expected] of Object.entries(PACK_BUDGET_RUNNER)) {
+function requireSupportedBudgetRunner(runner, expectedRunner, path) {
+  if (!expectedRunner) throw new Error('selected calibration does not declare a qualification runner');
+  for (const [field, expected] of Object.entries(expectedRunner)) {
     if (runner?.[field] !== expected) {
       throw new Error(`${path} is not supported appliance timing evidence: runner.${field} must be ${expected}`);
     }
@@ -114,7 +108,7 @@ export function recommendPackBudgets({ binding, calibration, evidence }) {
       throw new Error(`${item.path} fixture does not match the selected ${stack} reference`);
     }
     if (payload.isolation !== 'docker') throw new Error(`${item.path} was not produced in Docker`);
-    requireSupportedBudgetRunner(payload.runner, item.path);
+    requireSupportedBudgetRunner(payload.runner, calibration.qualification.runner, item.path);
     if (payload.requiredRepetitions !== calibration.qualification.referenceRepetitions
       || payload.runs?.length !== payload.requiredRepetitions) {
       throw new Error(`${item.path} does not contain the declared reference repetitions`);

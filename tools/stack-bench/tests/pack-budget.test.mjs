@@ -14,7 +14,10 @@ import { loadTrack } from '../tracks.mjs';
 
 const track = loadTrack('ecommerce');
 const binding = resolveLegacyRecipeRelease(track, 1);
-const calibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir });
+const calibration = structuredClone(resolveCalibrationForRelease(binding.release, { trackRoot: track.dir }));
+calibration.qualification.runner = {
+  schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
+};
 
 function runtime(stackIndex, repetition) {
   const counts = new Map(binding.release.checkCatalog.map(check => [check.packId, 0]));

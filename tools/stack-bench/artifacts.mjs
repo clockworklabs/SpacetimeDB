@@ -62,7 +62,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'actions', 'selection', 'packRuntime']),
   mutation_control: new Set(['durationMs', 'app', 'mutations', 'manifestStatus', 'fixtureSha256',
     'spec', 'backend', 'track', 'ok', 'outcome', 'baseline', 'summary', 'results']),
-  null_control: new Set(['durationMs', 'tracks', 'ok', 'summary', 'criteria']),
+  null_control: new Set(['durationMs', 'runner', 'tracks', 'ok', 'summary', 'criteria']),
   pack_budget_measurement: new Set(['schemaVersion', 'track', 'level', 'policy', 'evidence',
     'samples', 'recommendations']),
   performance_run: new Set(['label', 'backend', 'url', 'clients', 'rounds', 'warmupDiscarded',
@@ -150,6 +150,23 @@ function validatePayload(kind, payload) {
       fail(`${kind} payload.${field} must be an object when present`);
     }
   };
+  const runnerWhenPresent = () => {
+    if (payload.runner === undefined) return;
+    objectWhenPresent('runner');
+    const allowed = new Set(['schemaVersion', 'mode', 'platform', 'architecture']);
+    for (const key of Object.keys(payload.runner)) {
+      if (!allowed.has(key)) fail(`${kind} payload.runner.${key} is unknown`);
+    }
+    if (payload.runner.schemaVersion !== 1) fail(`${kind} payload.runner.schemaVersion must be 1`);
+    if (!['appliance', 'local-controller'].includes(payload.runner.mode)) {
+      fail(`${kind} payload.runner.mode is invalid`);
+    }
+    for (const field of ['platform', 'architecture']) {
+      if (typeof payload.runner[field] !== 'string' || !payload.runner[field]) {
+        fail(`${kind} payload.runner.${field} must be a non-empty string`);
+      }
+    }
+  };
   if (kind === 'benchmark_run') arrayWhenPresent('levels');
   const validateGradeFeatures = (features, at) => {
     if (!Array.isArray(features)) return;
@@ -188,7 +205,7 @@ function validatePayload(kind, payload) {
     }
   }
   if (kind === 'mutation_control') arrayWhenPresent('results');
-  if (kind === 'null_control') arrayWhenPresent('criteria');
+  if (kind === 'null_control') { arrayWhenPresent('criteria'); runnerWhenPresent(); }
   if (kind === 'pack_budget_measurement') {
     objectWhenPresent('policy'); arrayWhenPresent('evidence'); arrayWhenPresent('samples');
     arrayWhenPresent('recommendations');
@@ -196,24 +213,7 @@ function validatePayload(kind, payload) {
   if (kind === 'performance_run') { objectWhenPresent('deliveryLatencyMs'); objectWhenPresent('server'); }
   if (kind === 'reference_build') arrayWhenPresent('fixtures');
   if (kind === 'reference_qualification') {
-    arrayWhenPresent('runs'); objectWhenPresent('runner');
-    if (payload.runner !== undefined) {
-      const allowed = new Set(['schemaVersion', 'mode', 'platform', 'architecture']);
-      for (const key of Object.keys(payload.runner)) {
-        if (!allowed.has(key)) fail(`reference_qualification payload.runner.${key} is unknown`);
-      }
-      if (payload.runner.schemaVersion !== 1) {
-        fail('reference_qualification payload.runner.schemaVersion must be 1');
-      }
-      if (!['appliance', 'local-controller'].includes(payload.runner.mode)) {
-        fail('reference_qualification payload.runner.mode is invalid');
-      }
-      for (const field of ['platform', 'architecture']) {
-        if (typeof payload.runner[field] !== 'string' || !payload.runner[field]) {
-          fail(`reference_qualification payload.runner.${field} must be a non-empty string`);
-        }
-      }
-    }
+    arrayWhenPresent('runs'); runnerWhenPresent();
   }
   if (kind === 'recovery') { objectWhenPresent('cleanup'); objectWhenPresent('resources');
     arrayWhenPresent('instructions'); }

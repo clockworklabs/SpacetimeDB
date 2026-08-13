@@ -23,6 +23,9 @@ import { recoverSupervisedRun, validateSupervisorState } from './recovery.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
 import { listTracks, loadTrack } from './tracks.mjs';
+import { controllerRunner } from './runner-environment.mjs';
+
+export { controllerRunner as referenceQualificationRunner } from './runner-environment.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const BENCH = join(ROOT, 'bench.mjs');
@@ -225,12 +228,6 @@ export function referenceQualificationWorkRoot(env = process.env) {
   return resolve(env.STACK_BENCH_WORK_DIR ?? tmpdir());
 }
 
-export function referenceQualificationRunner({ env = process.env, platform = process.platform,
-  architecture = process.arch } = {}) {
-  return { schemaVersion: 1, mode: env.STACK_BENCH_APPLIANCE === '1' ? 'appliance' : 'local-controller',
-    platform, architecture };
-}
-
 async function runOnce(fixture, args, id, repetition) {
   const workRoot = referenceQualificationWorkRoot();
   mkdirSync(workRoot, { recursive: true });
@@ -329,7 +326,7 @@ async function main() {
     }),
     fixtureSha256: fixture.imported.sourceSha256, requiredRepetitions: args.repetitions,
     startedAt: new Date().toISOString(), isolation: 'docker',
-    runner: referenceQualificationRunner(), mutationControl: args.mutations, runs: [] };
+    runner: controllerRunner(), mutationControl: args.mutations, runs: [] };
   for (let repetition = 0; repetition < args.repetitions; repetition++) {
     console.log(`\nqualifying ${fixture.id}: clean run ${repetition + 1}/${args.repetitions}`);
     const run = await runOnce(fixture, args, id, repetition);

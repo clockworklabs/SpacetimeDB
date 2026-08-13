@@ -111,7 +111,8 @@ export function qualificationReadiness(trackName, level) {
     qualificationSchemaVersion: 1,
     scope: { track: trackName, level, recipe: { id: binding.release.id,
       version: binding.release.version, contentSha256: binding.release.contentSha256 },
-    calibration: { ...identity, contentSha256: calibration.contentSha256 } },
+    calibration: { ...identity, contentSha256: calibration.contentSha256 },
+    runner: calibration.qualification.runner ?? null },
     launch: { ok: launchBlockers.length === 0, blockers: launchBlockers },
     budgetPreparation: {
       required: budgetPreparationRequired,

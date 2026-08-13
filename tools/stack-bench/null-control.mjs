@@ -13,6 +13,7 @@ import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '
 import { analyseNullReports } from './null-control-analysis.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
 import { listTracks, loadTrack, suitesFor } from './tracks.mjs';
+import { controllerRunner } from './runner-environment.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const GRADE = join(ROOT, 'grader', 'grade.mjs');
@@ -136,6 +137,7 @@ async function main() {
         calibration: { ...qualification.identity, state: qualification.calibration.state },
       } : undefined,
       durationMs: Date.now() - started,
+      runner: controllerRunner(),
       tracks: args.tracks,
       ...analysis,
     };

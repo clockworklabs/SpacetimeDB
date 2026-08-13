@@ -26,3 +26,10 @@ test('qualification status rejects ambiguous or unvalidated scope', () => {
   assert.throws(() => parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
     '--track', 'ecommerce']), /usage/);
 });
+
+test('qualification status exposes the exact runner required by a recipe', () => {
+  const status = qualificationReadiness('ecommerce', 2);
+  assert.deepEqual(status.scope.runner, {
+    schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
+  });
+});

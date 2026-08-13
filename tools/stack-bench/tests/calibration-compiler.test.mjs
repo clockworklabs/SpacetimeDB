@@ -29,6 +29,9 @@ test('runtime calibration resolution is exact for qualified and draft recipes', 
   const draft = resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
   assert.equal(draft.id, 'ecommerce.l2-standard-calibration');
   assert.equal(draft.state, 'draft');
+  assert.deepEqual(draft.qualification.runner, {
+    schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
+  });
 });
 
 function temporaryCalibration(change) {
@@ -93,6 +96,22 @@ test('qualification evidence is semantically bound and tampering fails closed', 
   assert.throws(() => validateQualificationEvidenceArtifact(hiddenFailure, referenceEntry, context),
     /failed or incomplete repetition/);
 
+  const runnerBound = structuredClone(plan);
+  runnerBound.qualification.runner = {
+    schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
+  };
+  const runnerIdentity = calibrationQualificationIdentity(runnerBound);
+  const runnerReference = structuredClone(reference);
+  runnerReference.identities.calibration = { ...runnerIdentity, state: runnerBound.state };
+  runnerReference.payload.runner = structuredClone(runnerBound.qualification.runner);
+  const runnerContext = { ...context, calibration: runnerBound, qualificationIdentity: runnerIdentity };
+  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(runnerReference, referenceEntry,
+    runnerContext));
+  runnerReference.payload.runner.mode = 'local-controller';
+  runnerReference.payload.runner.platform = 'win32';
+  assert.throws(() => validateQualificationEvidenceArtifact(runnerReference, referenceEntry,
+    runnerContext), /wrong controller runner environment/);
+
   const nullEntry = plan.qualification.evidence.find(entry => entry.kind === 'null');
   const nullArtifact = readArtifact(join(ROOT, nullEntry.path));
   const vacuous = structuredClone(nullArtifact);
@@ -117,6 +136,12 @@ test('qualification identity excludes governance transitions but binds executabl
   const changed = structuredClone(plan);
   changed.nullControl.repetitions += 1;
   assert.notEqual(calibrationQualificationIdentity(changed).sha256, plan.qualificationSha256);
+
+  const changedRunner = structuredClone(plan);
+  changedRunner.qualification.runner = {
+    schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
+  };
+  assert.notEqual(calibrationQualificationIdentity(changedRunner).sha256, plan.qualificationSha256);
 });
 
 test('set-like calibration source ordering does not change its identity', () => {

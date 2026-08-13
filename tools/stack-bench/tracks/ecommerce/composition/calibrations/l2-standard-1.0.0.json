@@ -123,6 +123,12 @@
     "exactCombinationRequired": true,
     "referenceRepetitions": 2,
     "mutationRepetitions": 2,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64"
+    },
     "stacks": [
       { "id": "mongodb", "status": "candidate" },
       { "id": "postgres", "status": "candidate" },

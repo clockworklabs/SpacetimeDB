@@ -93,8 +93,9 @@ const MUTATION_FIELDS = new Set(['backend', 'path', 'sha256', 'referenceId']);
 const NULL_FIELDS = new Set(['pointBearing', 'zeroPoint', 'repetitions']);
 const CONTROL_FIELDS = new Set(['stableKey', 'role', 'promotionPolicy', 'mutationTargets', 'reason']);
 const QUALIFICATION_FIELDS = new Set([
-  'exactCombinationRequired', 'referenceRepetitions', 'mutationRepetitions', 'stacks', 'evidence',
+  'exactCombinationRequired', 'referenceRepetitions', 'mutationRepetitions', 'runner', 'stacks', 'evidence',
 ]);
+const RUNNER_FIELDS = new Set(['schemaVersion', 'mode', 'platform', 'architecture']);
 const STACK_FIELDS = new Set(['id', 'status']);
 const EVIDENCE_FIELDS = new Set(['kind', 'stack', 'repetition', 'path', 'sha256']);
 const EQUIVALENCE_EVIDENCE_FIELDS = new Set(['path', 'sha256']);
@@ -205,6 +206,14 @@ export function compileCalibrationDefinition(input, { source = '<calibration>' }
       fail(`${source}.qualification.${field}`, 'must be an integer of at least 2');
     }
   }
+  if (value.qualification.runner !== undefined) {
+    const at = `${source}.qualification.runner`;
+    strictObject(value.qualification.runner, at, RUNNER_FIELDS);
+    if (value.qualification.runner.schemaVersion !== 1) fail(`${at}.schemaVersion`, 'must be 1');
+    if (value.qualification.runner.mode !== 'appliance') fail(`${at}.mode`, 'must be appliance');
+    string(value.qualification.runner.platform, `${at}.platform`);
+    string(value.qualification.runner.architecture, `${at}.architecture`);
+  }
   array(value.qualification.stacks, `${source}.qualification.stacks`, { nonEmpty: true });
   const stackIds = new Set();
   value.qualification.stacks.forEach((stack, index) => {
@@ -287,6 +296,10 @@ export function validateQualificationEvidenceArtifact(artifact, entry,
   exactEvidenceIdentity(artifact.identities?.calibration, qualificationIdentity,
     `${at}.calibration`);
   if (!artifact.identities?.engine?.sha256) evidenceFailure(at, 'has no engine content identity');
+  if (calibration.qualification.runner !== undefined
+    && canonicalDefinitionJson(artifact.payload?.runner) !== canonicalDefinitionJson(calibration.qualification.runner)) {
+    evidenceFailure(at, 'has the wrong controller runner environment');
+  }
 
   const scoredChecks = release.checkCatalog.filter(check => check.points > 0);
   const zeroPointChecks = release.checkCatalog.filter(check => check.points === 0);
@@ -437,6 +450,7 @@ export function calibrationQualificationIdentity(calibration) {
       exactCombinationRequired: calibration.qualification?.exactCombinationRequired,
       referenceRepetitions: calibration.qualification?.referenceRepetitions,
       mutationRepetitions: calibration.qualification?.mutationRepetitions,
+      ...(calibration.qualification?.runner ? { runner: calibration.qualification.runner } : {}),
       stacks: (calibration.qualification?.stacks ?? []).map(stack => ({
         id: stack.id, supported: stack.status !== 'unsupported',
       })).sort((a, b) => a.id.localeCompare(b.id)),

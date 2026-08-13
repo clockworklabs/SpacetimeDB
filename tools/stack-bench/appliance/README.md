@@ -157,10 +157,12 @@ Reference qualification also retains each complete underlying benchmark run in
 a sibling `<artifact-name>.runs/` directory. Keep that directory with the JSON;
 the run paths recorded in the artifact are relative to the artifact itself.
 New reference artifacts record the controller mode, operating system, and CPU
-architecture. Local-controller runs remain useful diagnostics, but only timing
-from the supported Linux/amd64 appliance can be used to recommend pack budgets.
+architecture, and new null-control artifacts do the same. A calibration may
+bind an exact runner environment; ecommerce L2 requires the supported
+Linux/amd64 appliance for reference, mutation, null, and budget evidence.
+Local-controller runs remain useful diagnostics but cannot promote that recipe.
 Artifacts created before runner identity was recorded remain readable, but are
-not accepted as budget inputs.
+not accepted where the selected calibration requires that identity.
 
 Before the first qualification of a recipe whose packs still have unmeasured
 runtime budgets, run the `budgetPreparation.commands` printed by
