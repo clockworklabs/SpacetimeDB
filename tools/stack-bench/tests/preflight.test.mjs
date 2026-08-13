@@ -69,6 +69,28 @@ test('preflight fails closed on inherited ownership, unavailable Docker, and occ
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('a supervised benchmark accepts only its exact fresh handoff path', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-supervisor-'));
+  try {
+    const supervisorState = join(root, 'supervisor.json');
+    const dependencies = { run: () => { throw new Error('daemon unavailable'); },
+      now: Date.parse('2026-08-12T12:00:00Z'), home: root, pidsOnPort: () => [],
+      probePort: () => ({ free: true }) };
+    const accepted = runPreflight({ ...request(root), supervisorState }, {
+      ...dependencies, env: { STACK_BENCH_SUPERVISOR_STATE: supervisorState },
+    });
+    assert.equal(accepted.checks.find(check =>
+      check.id === 'ambient.stack_bench_supervisor_state').status, 'pass');
+
+    writeFileSync(supervisorState, '{}');
+    const stale = runPreflight({ ...request(root), supervisorState }, {
+      ...dependencies, env: { STACK_BENCH_SUPERVISOR_STATE: supervisorState },
+    });
+    assert.equal(stale.checks.find(check =>
+      check.id === 'ambient.stack_bench_supervisor_state').status, 'fail');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('preflight argument parsing rejects ambiguous ranges and missing backends', () => {
   assert.throws(() => parsePreflightArgs(['node', 'preflight.mjs']), /--backend is required/);
   assert.throws(() => parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'stub',

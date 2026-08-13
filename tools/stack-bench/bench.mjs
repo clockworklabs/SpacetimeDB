@@ -376,6 +376,7 @@ async function main() {
     backends: [args.backend], track: args.track, levels: args.levels,
     levelList: args.levelList, runIndex: args.runIndex, agentAdapter: args.agentAdapter,
     packIds: args.packIds, checkKeys: args.checkKeys, smoke: true,
+    supervisorState: process.env.STACK_BENCH_SUPERVISOR_STATE ?? null,
     image: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
     resultsDir: resolve(args.out ?? process.env.STACK_BENCH_RESULTS_DIR ?? join(ROOT, 'results')),
   }, { env: args.apiKey && agentAdapter.apiKeyEnvironmentVariable

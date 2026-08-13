@@ -182,9 +182,18 @@ export function runPreflight(request, dependencies = {}) {
     supportedHost ? null : appliance ? 'Run the appliance on its supported linux/amd64 dedicated runner.'
       : 'Use a supported x64 or arm64 Windows/Linux host.');
 
-  for (const name of ['STACK_BENCH_LEASE', 'STACK_BENCH_LEASE_TOKEN', 'STACK_BENCH_SUPERVISOR_STATE']) {
+  for (const name of ['STACK_BENCH_LEASE', 'STACK_BENCH_LEASE_TOKEN']) {
     if (env[name]) add(`ambient.${name.toLowerCase()}`, 'fail', `${name} is already set`,
       `Unset ${name}; preflight must not inherit another run's ownership state.`);
+  }
+  if (env.STACK_BENCH_SUPERVISOR_STATE) {
+    const expected = request.supervisorState
+      && resolve(request.supervisorState) === resolve(env.STACK_BENCH_SUPERVISOR_STATE)
+      && !exists(resolve(env.STACK_BENCH_SUPERVISOR_STATE));
+    add('ambient.stack_bench_supervisor_state', expected ? 'pass' : 'fail', expected
+      ? 'Fresh supervisor handoff path is reserved for this run'
+      : 'STACK_BENCH_SUPERVISOR_STATE is inherited or already exists', expected ? null
+        : 'Unset inherited supervisor state; supervised callers must reserve a fresh path for this exact run.');
   }
   if (env.DOCKER_HOST && /^(?:tcp|ssh):/i.test(env.DOCKER_HOST)) {
     add('ambient.docker-host', 'fail', 'Remote Docker endpoint is configured',
