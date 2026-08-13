@@ -28,6 +28,7 @@ import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { renderEvidenceConsoleLine } from './evidence-presentation.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
+import { aggregatePackRuntime, exceededPackBudgets } from './pack-runtime.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RESET = join(ROOT, 'reset-backend.mjs');
@@ -339,6 +340,9 @@ async function main() {
     level: Number(args.level), suites: {}, totals: {},
     selection: selection ? { ...selection, attemptedChecks: [], reportedChecks: [], notRun: [] } : null,
   };
+  const selectedPackIds = new Set(selection?.checks.map(check => check.packId) ?? []);
+  const selectedPackDefinitions = recipeBinding?.plan.packs
+    .filter(pack => selectedPackIds.has(pack.id)) ?? [];
   const writeBundle = () => writeArtifact(join(args.out, 'bundle.json'), {
     kind: 'grade_bundle',
     id: bundleArtifactId,
@@ -493,6 +497,22 @@ async function main() {
     }
     bundle.suites[suite.id] = r;
     if (bundle.selection) bundle.selection.reportedChecks.push(...selectedChecks.map(check => check.stableKey));
+    if (selection) {
+      bundle.packRuntime = aggregatePackRuntime(
+        Object.values(bundle.suites).filter(candidate => candidate?.packRuntime),
+        selectedPackDefinitions);
+      const exceeded = exceededPackBudgets(bundle.packRuntime);
+      if (exceeded.length) {
+        const reason = `pack runtime budget exceeded: ${exceeded.map(pack =>
+          `${pack.id} ${pack.measuredRuntimeMs}ms > ${pack.budget.maxRuntimeMs}ms`).join(', ')}`;
+        markRemainingNotRun(reason);
+        bundle.error = reason;
+        bundle.outcome = { kind: 'harness_failure', phase: 'pack-runtime-budget', reason };
+        writeBundle();
+        console.log(`\nABORTED: ${reason}`);
+        process.exit(1);
+      }
+    }
     if (suite.inherited) { regTotal += r.total; regMax += r.max; }
     else { total += r.total; max += r.max; }
     if (r.environment?.preexistingRooms > 0) dirty = true;

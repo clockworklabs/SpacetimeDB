@@ -32,6 +32,7 @@ import { ACTION_REGISTRY } from '../action-catalog.mjs';
 import { createActionRunContext, executeAction } from '../action-contract.mjs';
 import { createCheckEvidence, evidenceDisposition, evidenceIsMeasured, evidencePassed } from '../check-evidence.mjs';
 import { renderEvidenceConsoleLine } from '../evidence-presentation.mjs';
+import { measureGradePackRuntime } from '../pack-runtime.mjs';
 import { executeStackCapability } from '../stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stack-adapters.mjs';
 import {
@@ -884,6 +885,8 @@ async function main() {
   }
 
   await browser.close();
+
+  if (recipeRelease) report.packRuntime = measureGradePackRuntime(report);
 
   console.log(`\nTOTAL ${report.total}/${report.max}`);
   if (args.out) {
