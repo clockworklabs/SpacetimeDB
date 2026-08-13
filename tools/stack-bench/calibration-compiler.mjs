@@ -288,6 +288,16 @@ function exactEvidenceIdentity(actual, expected, at) {
   }
 }
 
+function currentLevelPoints(release) {
+  // suitesFor() gives inherited guarantee suites an @L<n> suffix. The run's
+  // displayed score covers the selected level; inherited guarantees are
+  // reported separately even though the recipe's aggregate point total binds
+  // both. Keep the evidence gate aligned with that runtime contract.
+  return release.checkCatalog
+    .filter(check => !/@L[1-9]\d*$/.test(check.executionId))
+    .reduce((sum, check) => sum + check.points, 0);
+}
+
 export function validateQualificationEvidenceArtifact(artifact, entry,
   { calibration, qualificationIdentity, release, references }) {
   const at = `evidence.${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`;
@@ -366,10 +376,11 @@ export function validateQualificationEvidenceArtifact(artifact, entry,
     evidenceFailure(at, 'does not satisfy the repeated Docker gate');
   }
   const repetitions = new Set();
+  const expectedRunScore = currentLevelPoints(release);
   for (const run of payload.runs) {
     repetitions.add(run.repetition);
     if (run.ok !== true || run.processError !== null || run.outcome !== 'passed'
-      || run.score !== `${release.scoring.points}/${release.scoring.points}`
+      || run.score !== `${expectedRunScore}/${expectedRunScore}`
       || run.criteria !== release.scoring.checks || run.zeroPointCriteria !== zeroPointChecks.length
       || !run.imageId || run.harnessSha256Before !== payload.harnessSha256
       || run.harnessSha256After !== payload.harnessSha256 || run.failures?.length !== 0

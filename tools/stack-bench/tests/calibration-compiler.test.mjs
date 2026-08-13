@@ -126,6 +126,25 @@ test('qualification evidence is semantically bound and tampering fails closed', 
     /complete null policy/);
 });
 
+test('multi-level evidence validates the current score and inherited guarantees separately', () => {
+  const binding = resolveLegacyRecipeRelease(TRACK, 2);
+  const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
+    'l2-standard-1.0.0.json'), {
+    trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release,
+  });
+  const entry = plan.qualification.evidence.find(candidate =>
+    candidate.kind === 'reference' && candidate.stack === 'mongodb' && candidate.repetition === 1);
+  const artifact = readArtifact(join(ROOT, entry.path));
+  assert.equal(binding.release.scoring.points, 75);
+  assert.equal(artifact.payload.runs[0].score, '55/55');
+  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(artifact, entry, {
+    calibration: plan,
+    qualificationIdentity: calibrationQualificationIdentity(plan),
+    release: binding.release,
+    references: plan.references.entries,
+  }));
+});
+
 test('qualification identity excludes governance transitions but binds executable controls', () => {
   const plan = current().plan;
   const governance = structuredClone(plan);
