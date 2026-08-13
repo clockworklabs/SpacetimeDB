@@ -8,10 +8,56 @@ import { compileCampaignFile } from '../campaign-compiler.mjs';
 import { readArtifact } from '../artifacts.mjs';
 import { attemptArgv, campaignExecutionEnvironment, executeCampaign,
   reconcileCampaign, runCampaignAdmission } from '../campaign-runner.mjs';
+import { sha256 } from '../provenance.mjs';
 import { claimNextAttempt, initializeCampaignDirectory,
   writeCampaignState } from '../campaign-scheduler.mjs';
 
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
+
+function frozenRuntime(root) {
+  const digests = {
+    controller: 'b'.repeat(64),
+    'build-sandbox': 'c'.repeat(64),
+    postgres: 'd'.repeat(64),
+    mongodb: 'e'.repeat(64),
+  };
+  const images = Object.entries(digests).map(([role, digest]) => ({
+    id: `stack-bench-${role}`,
+    role,
+    reference: `registry.example/stack-bench/${role}@sha256:${digest}`,
+    digest,
+    platform: 'linux/amd64',
+    sbomPath: `sbom/${role}.spdx.json`,
+  }));
+  const file = (path, role) => ({ path, role, sha256: 'f'.repeat(64), bytes: 1 });
+  const manifest = {
+    schemaVersion: 2,
+    id: 'stack-bench-v1',
+    version: '1.0.0',
+    state: 'candidate',
+    sourceRevision: 'a'.repeat(40),
+    sourceSha256: 'a'.repeat(64),
+    supportedRunner: { os: 'linux', architecture: 'amd64', stateRoot: '/var/lib/stack-bench',
+      networkMode: 'host', dockerSocket: true },
+    images,
+    files: [file('compose.yaml', 'compose'), file('deps.tar.zst', 'dependency'),
+      file('OPERATOR.md', 'operator-guide'), file('secrets.example', 'secrets-template'),
+      file('SUPPORT.md', 'support-policy'),
+      ...images.map(image => file(image.sbomPath, 'sbom'))],
+    outboundDestinations: [],
+    secrets: [],
+    signing: null,
+  };
+  const content = `${JSON.stringify(manifest, null, 2)}\n`;
+  const path = join(root, 'release.json');
+  writeFileSync(path, content);
+  return { path, manifest, runtime: {
+    releaseManifestSha256: sha256(content),
+    controllerImage: images.find(image => image.role === 'controller').reference,
+    buildImage: images.find(image => image.role === 'build-sandbox').reference,
+    platform: 'linux/amd64',
+  } };
+}
 
 test('attempt argv is derived completely from the compiled campaign plan', () => {
   const plan = compileCampaignFile(example);
@@ -48,12 +94,31 @@ test('failed campaign admission leaves every attempt pending and unclaimed', asy
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('a frozen runtime image cannot be replaced by ambient controller state', () => {
-  const buildImage = `registry.example/build@sha256:${'c'.repeat(64)}`;
-  const plan = { definition: { runtime: { buildImage } } };
-  assert.equal(campaignExecutionEnvironment(plan, {}).STACK_BENCH_IMAGE, buildImage);
-  assert.throws(() => campaignExecutionEnvironment(plan,
-    { STACK_BENCH_IMAGE: `registry.example/build@sha256:${'d'.repeat(64)}` }), /conflicts/);
+test('a frozen campaign proves its release and both runtime images before admission', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runtime-'));
+  try {
+    const { path, manifest, runtime } = frozenRuntime(root);
+    const plan = { state: 'frozen', definition: { runtime } };
+    const env = { STACK_BENCH_CONTROLLER_IMAGE: runtime.controllerImage,
+      STACK_BENCH_RELEASE_MANIFEST: path };
+    assert.equal(campaignExecutionEnvironment(plan, env).STACK_BENCH_IMAGE, runtime.buildImage);
+    assert.throws(() => campaignExecutionEnvironment(plan, { ...env,
+      STACK_BENCH_CONTROLLER_IMAGE: `registry.example/controller@sha256:${'1'.repeat(64)}` }),
+    /controller image does not match/);
+    assert.throws(() => campaignExecutionEnvironment(plan, { ...env,
+      STACK_BENCH_IMAGE: `registry.example/build@sha256:${'2'.repeat(64)}` }), /conflicts/);
+    const wrongImages = structuredClone(manifest);
+    const wrongController = wrongImages.images.find(image => image.role === 'controller');
+    wrongController.digest = '1'.repeat(64);
+    wrongController.reference = `registry.example/stack-bench/controller@sha256:${wrongController.digest}`;
+    const wrongContent = `${JSON.stringify(wrongImages, null, 2)}\n`;
+    writeFileSync(path, wrongContent);
+    assert.throws(() => campaignExecutionEnvironment({ state: 'frozen', definition: {
+      runtime: { ...runtime, releaseManifestSha256: sha256(wrongContent) },
+    } }, env), /release manifest images do not match/);
+    writeFileSync(path, '{}\n');
+    assert.throws(() => campaignExecutionEnvironment(plan, env), /release manifest does not match/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('model-free campaign execution checkpoints a retry and every completed attempt', async () => {
@@ -142,6 +207,7 @@ test('campaign admission covers every stack once per distinct agent adapter and 
       },
     });
     assert.equal(admission.payload.ok, true);
+    assert.deepEqual(admission.payload.runtime, plan.definition.runtime);
     assert.equal(calls.length, 1);
     assert.deepEqual(calls[0].backends, ['mongodb', 'postgres', 'spacetime']);
     assert.equal(calls[0].smoke, true);

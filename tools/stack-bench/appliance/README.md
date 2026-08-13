@@ -64,9 +64,10 @@ the downloaded bundle.
    SpacetimeDB friction log under `results/` for durable artifact collection.
 2. Write the provider API key as the only line in
    `/var/lib/stack-bench/secrets/anthropic_api_key`; set mode `0600`.
-3. Copy `operator.env.example` to `/var/lib/stack-bench/operator.env` and replace the two
+3. Copy `operator.env.example` to `/var/lib/stack-bench/operator.env`, replace the two
    example image values with exact `@sha256:` references from the release
-   manifest.
+   manifest, and copy that manifest to the configured path below
+   `/var/lib/stack-bench`.
 4. Pull and verify every manifest image before starting any service.
 5. Render the Compose file and run the exact requested preflight.
 
@@ -93,7 +94,11 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
 The campaign file is caller-owned under `/var/lib/stack-bench`. A draft can be
 inspected while definitions are still candidates. A frozen campaign additionally
 requires qualified/promoted definitions plus exact release and image identities;
-the compiler refuses to fill those in from ambient state.
+the compiler refuses to fill those in from ambient state. At execution time the
+controller also hashes and validates the configured release manifest, checks its
+controller and build-sandbox image references, and refuses a Compose controller
+image that differs from the campaign. This runtime binding does not replace the
+separate release-bundle signature/integrity verification.
 `campaign.example.json` is a zero-cost deterministic draft showing the complete
 shape; copy it outside the image and replace its study inputs before use.
 

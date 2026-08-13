@@ -48,7 +48,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'mutationControl', 'totals', 'outcome', 'selectionRequest', 'skills', 'runtime']),
   bug_report_quality: new Set(['bugs', 'vague', 'vaguePct']),
   campaign_admission: new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
-    'ok', 'agents', 'reports']),
+    'ok', 'runtime', 'agents', 'reports']),
   campaign_plan: new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
     'contentSha256', 'definition', 'identities', 'bindings', 'stacks', 'agents', 'attempts', 'summary']),
   campaign_report: new Set(['reportSchemaVersion', 'campaign', 'scope', 'policy', 'attempts',

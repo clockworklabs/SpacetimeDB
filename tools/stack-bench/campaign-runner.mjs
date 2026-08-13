@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,6 +11,8 @@ import { claimNextAttempt, finishCampaignExecution, initializeCampaignDirectory,
 import { rescueSupervisedLease, runBounded } from './reference-live.mjs';
 import { canonicalDefinitionJson } from './definition-plan.mjs';
 import { runPreflight } from './preflight.mjs';
+import { sha256 } from './provenance.mjs';
+import { validateReleaseManifest } from './release-manifest.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const BENCH = join(ROOT, 'bench.mjs');
@@ -96,6 +98,40 @@ function readAttemptResult(plan, attempt, output, processResult) {
   return { exitCode: processResult.code, timedOut: processResult.timedOut, run };
 }
 
+export function verifyCampaignRuntime(plan, env = process.env) {
+  if (plan.state !== 'frozen') return structuredClone(plan.definition.runtime);
+  const expected = plan.definition.runtime;
+  if (env.STACK_BENCH_CONTROLLER_IMAGE !== expected.controllerImage) {
+    throw new Error('running controller image does not match the frozen campaign');
+  }
+  if (typeof env.STACK_BENCH_RELEASE_MANIFEST !== 'string'
+    || env.STACK_BENCH_RELEASE_MANIFEST.trim() === '') {
+    throw new Error('STACK_BENCH_RELEASE_MANIFEST is required for a frozen campaign');
+  }
+  let bytes;
+  try { bytes = readFileSync(resolve(env.STACK_BENCH_RELEASE_MANIFEST)); }
+  catch (error) {
+    throw new Error(`cannot read frozen campaign release manifest: ${error.message}`, { cause: error });
+  }
+  if (sha256(bytes) !== expected.releaseManifestSha256) {
+    throw new Error('release manifest does not match the frozen campaign');
+  }
+  let manifest;
+  try { manifest = validateReleaseManifest(JSON.parse(bytes.toString('utf8'))); }
+  catch (error) {
+    throw new Error(`frozen campaign release manifest is invalid: ${error.message}`, { cause: error });
+  }
+  const controller = manifest.images.find(image => image.role === 'controller');
+  const build = manifest.images.find(image => image.role === 'build-sandbox');
+  if (controller?.reference !== expected.controllerImage
+    || build?.reference !== expected.buildImage
+    || controller?.platform !== expected.platform
+    || build?.platform !== expected.platform) {
+    throw new Error('release manifest images do not match the frozen campaign');
+  }
+  return structuredClone(expected);
+}
+
 export function campaignExecutionEnvironment(plan, env = process.env) {
   const executionEnv = { ...env };
   if (plan.definition.runtime.buildImage !== null) {
@@ -105,6 +141,7 @@ export function campaignExecutionEnvironment(plan, env = process.env) {
     }
     executionEnv.STACK_BENCH_IMAGE = plan.definition.runtime.buildImage;
   }
+  verifyCampaignRuntime(plan, executionEnv);
   return executionEnv;
 }
 
@@ -113,12 +150,15 @@ function validateCampaignAdmission(input, plan, directory) {
     throw new Error('campaign admission payload must be an object');
   }
   const fields = new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
-    'ok', 'agents', 'reports']);
+    'ok', 'runtime', 'agents', 'reports']);
   for (const key of Object.keys(input)) if (!fields.has(key)) throw new Error(`campaign admission.${key} is unknown`);
   if (input.schemaVersion !== 1 || input.campaignId !== plan.id
     || input.campaignSha256 !== plan.contentSha256
     || typeof input.createdAt !== 'string' || Number.isNaN(Date.parse(input.createdAt))
     || typeof input.ok !== 'boolean') throw new Error('campaign admission identity or metadata is invalid');
+  if (canonicalDefinitionJson(input.runtime) !== canonicalDefinitionJson(plan.definition.runtime)) {
+    throw new Error('campaign admission runtime does not match the compiled plan');
+  }
   const expectedAgents = plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
     guidance: agent.guidance, skills: agent.skills, identity: agent.identity }));
   if (canonicalDefinitionJson(input.agents) !== canonicalDefinitionJson(expectedAgents)) {
@@ -192,6 +232,7 @@ export function inspectCampaign(directory) {
 export function runCampaignAdmission(plan, directory,
   { env = process.env, preflight = runPreflight, now = new Date().toISOString(),
     uuid = randomUUID } = {}) {
+  const executionEnv = campaignExecutionEnvironment(plan, env);
   const reports = [];
   for (const adapter of [...new Set(plan.agents.map(agent => agent.adapter))].sort()) {
     reports.push(preflight({
@@ -204,14 +245,15 @@ export function runCampaignAdmission(plan, directory,
       packIds: plan.definition.selection.packs,
       checkKeys: plan.definition.selection.checks,
       smoke: true,
-      image: plan.definition.runtime.buildImage ?? env.STACK_BENCH_IMAGE,
+      image: plan.definition.runtime.buildImage ?? executionEnv.STACK_BENCH_IMAGE,
       resultsDir: resolve(directory),
-    }, { env }));
+    }, { env: executionEnv }));
   }
   const id = `${plan.id}-admission-${now.replace(/[-:.TZ]/g, '').slice(0, 14)}-${uuid()}`;
   const payload = validateCampaignAdmission({ schemaVersion: 1, campaignId: plan.id,
     campaignSha256: plan.contentSha256, createdAt: now,
     ok: reports.every(report => report.ok),
+    runtime: plan.definition.runtime,
     agents: plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
       guidance: agent.guidance, skills: agent.skills, identity: agent.identity })),
     reports }, plan, directory);

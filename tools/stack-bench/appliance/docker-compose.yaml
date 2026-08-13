@@ -31,7 +31,9 @@ services:
       mongodb:
         condition: service_healthy
     environment:
+      STACK_BENCH_CONTROLLER_IMAGE: ${STACK_BENCH_CONTROLLER_IMAGE:?set STACK_BENCH_CONTROLLER_IMAGE to the manifest digest reference}
       STACK_BENCH_IMAGE: ${STACK_BENCH_BUILD_IMAGE:?set STACK_BENCH_BUILD_IMAGE to the manifest digest reference}
+      STACK_BENCH_RELEASE_MANIFEST: ${STACK_BENCH_RELEASE_MANIFEST:-}
       STACK_BENCH_APPLIANCE: "1"
       STACK_BENCH_COMPOSE_FILE: /opt/stack-bench/appliance/docker-compose.yaml
       STACK_BENCH_WORK_DIR: /var/lib/stack-bench/work

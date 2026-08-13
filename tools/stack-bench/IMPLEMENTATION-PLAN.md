@@ -598,33 +598,38 @@ Bind an exact recipe, fixtures, and calibration to stacks, models, settings,
 repetitions, counterbalanced order, budgets, retry/exclusion policy, pricing
 snapshot, and analysis plan before runs.
 
-In progress. A strict campaign schema and compiler now bind all of those inputs,
+Implemented. A strict campaign schema and compiler now bind all of those inputs,
 resolve current recipe/fixture/calibration and adapter identities, and expand a
 seeded balanced rotation into immutable attempts without starting a model. Draft
 plans may expose incomplete qualification honestly. Frozen plans fail unless
 every selected recipe, fixture, calibration and alias is qualified/promoted and
 the exact release manifest, controller/build image digests, timeout, cost cap,
 retry/exclusion rules, pricing, and analysis policy are present. The compiled
-plan is now revalidated from those inputs before scheduler resume; current
-definition qualification and appliance execution remain.
+plan is revalidated from those inputs before scheduler resume. Execution now
+hashes and validates the named release manifest and refuses mismatched controller,
+build-sandbox, or platform identities instead of treating frozen runtime fields
+as descriptive labels. Ecommerce L1 and L2 definitions are qualified and promoted;
+the remaining work is to run an intentionally selected campaign, not to complete
+the manifest implementation.
 
 ### SB-502: Idempotent scheduler
 
 Materialize immutable attempts, enforce resource admission, resume safely, and
 record every invalid attempt rather than silently retrying it away.
 
-In progress. Typed campaign plan/state artifacts now materialize the exact
+Implemented. Typed campaign plan/state artifacts now materialize the exact
 attempt schedule, allow only one active execution, append retry evidence, bind
 derived output directories, and fail closed on malformed identity, schedule,
 timestamps, transitions, summaries, missing artifacts, or nonzero process exit.
 The execution slice now provides token-bound exclusive ownership, plan-derived
 bounded launches, exact run-artifact binding, append-only retries, frozen image
 enforcement, and explicit supervisor-proven interruption reconciliation.
-Campaign-wide admission evidence and Docker acceptance remain before SB-502 is
-complete. Admission now writes a typed campaign artifact covering every selected
+Admission writes a typed campaign artifact covering every selected
 stack for each distinct agent adapter, requires the no-model container smoke,
-and binds each execution to that exact successful artifact. Docker acceptance
-of this final admission slice remains.
+binds each execution to that exact successful artifact, and records the runtime
+identity checked before admission. The scheduler and admission path passed in the
+locked Linux appliance; runtime-manifest enforcement is rechecked whenever its
+controller image changes.
 
 ### SB-503: Deterministic report
 
@@ -711,8 +716,8 @@ them. Live qualification does not run concurrently with executable harness edits
     candidate/qualified supply-chain tooling proven; image publication, real
     signing, and two clean-runner reproductions remain).
 18. [x] SB-403 interruption quarantine and authenticated recovery.
-19. [ ] SB-501 frozen campaign manifest (strict compiler and deterministic plan
-    expansion implemented; current definition qualification and scheduler handoff remain).
+19. [x] SB-501 frozen campaign manifest (strict compiler, deterministic expansion,
+    qualified L1/L2 resolution, scheduler handoff, and runtime identity enforcement).
 20. [x] SB-502 idempotent scheduler (strict durable state, exclusive execution,
     campaign-wide admission, bounded launch, resume validation, and proven-cleanup
     reconciliation accepted on the host and the exact Linux appliance image).
