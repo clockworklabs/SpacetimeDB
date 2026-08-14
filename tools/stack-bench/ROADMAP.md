@@ -401,7 +401,11 @@ story.
 
 **One-shot as the headline.** The unaided `firstBuild` score is the
 correctness-by-default story and is already recorded; report it first, with
-fix rounds as the separate cost-to-correct story.
+fix rounds as the separate correction story. A declared correction budget runs
+through a flat round; regressive or evidence-losing changes are rolled back.
+Every level records whether correction was unnecessary, succeeded, or exhausted
+the budget. Report successful cost to correct separately from money spent on an
+attempt that remained unresolved.
 
 **Invariant additions:** blind overwrite (two sessions edit one entity; an
 acknowledged write must never silently vanish), replay idempotency on money

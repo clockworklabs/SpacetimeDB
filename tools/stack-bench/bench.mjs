@@ -63,7 +63,7 @@ function parseArgs(argv) {
       case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--check': a.checkKeys.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--model': a.model = argv[++i]; break;
-      case '--fix-rounds': a.fixRounds = parseInt(argv[++i], 10); break;
+      case '--fix-rounds': a.fixRounds = Number(argv[++i]); break;
       case '--max-budget-usd': a.maxBudgetUsd = Number(argv[++i]); break;
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--out': a.out = argv[++i]; break;
@@ -97,6 +97,9 @@ function parseArgs(argv) {
   }
   const [from, to] = a.levels.split('-').map(Number);
   a.levelList = Array.from({ length: (to ?? from) - from + 1 }, (_, i) => from + i);
+  if (!Number.isInteger(a.fixRounds) || a.fixRounds < 0 || a.fixRounds > 20) {
+    throw new Error('--fix-rounds must be an integer from 0 through 20');
+  }
   if (a.maxBudgetUsd !== undefined && (!Number.isFinite(a.maxBudgetUsd) || a.maxBudgetUsd <= 0)) {
     throw new Error('--max-budget-usd must be a positive number');
   }
@@ -793,8 +796,8 @@ async function main() {
     let fixRounds = 0;
     let fixCost = 0;
     const fixSessions = [];
-    let stalled = false;
     let regressed = false;
+    let repairStopReason = null;
 
     // Hand back findings and let the agent fix, until clean or out of rounds.
     while (fixRounds < args.fixRounds) {
@@ -807,7 +810,10 @@ async function main() {
         if (err.status === 3) wroteReport = false;      // nothing failed
         else throw err;
       }
-      if (!wroteReport) break;
+      if (!wroteReport) {
+        repairStopReason = 'no-actionable-findings';
+        break;
+      }
 
       const before = bundle?.totals?.score ?? 0;
       const beforeMax = bundle?.totals?.max ?? 0;
@@ -837,6 +843,7 @@ async function main() {
       if (fixFailure) {
         console.log(`    coding session failed: ${fixFailure.reason}; stopping repairs`);
         bundle = { outcome: fixFailure };
+        repairStopReason = 'agent-session-failure';
         break;
       }
 
@@ -870,9 +877,10 @@ async function main() {
       // evidence and rolls the source back instead of hiding a regression.
       const shared = compareCriterionEvidence(beforeBundle, bundle);
       if (shared.count === 0 && shared.lostEvidence.length === 0 && shared.definitionChanges.length === 0) {
-        console.log('    no criteria were conclusively scored in both rounds; stopping');
-        stalled = true;
-        break;
+        console.log('    no criteria were conclusively scored in both rounds; rolling back this fix');
+        restoreSource(snapshot, appDir);
+        bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback${fixRounds}`, level, track, runId);
+        continue;
       }
       if (shared.points < Math.min(beforeMax, afterMax)) {
         console.log(`    comparing ${shared.points} point(s) across ${shared.count} criteria scored in both rounds`
@@ -885,21 +893,20 @@ async function main() {
         } else if (shared.definitionChanges.length) {
           console.log('    rubric points changed between grades; rolling back and stopping');
         } else {
-          console.log(`    regressed (${shared.before} -> ${shared.after} on shared criteria); rolling back and stopping`);
+          console.log(`    regressed (${shared.before} -> ${shared.after} on shared criteria); rolling back this fix`);
         }
         // Stop the servers BEFORE deleting what they are watching. Without
         // this, rolling back a regressed postgres run threw EBUSY on
         // app/server and took the whole finished run down with it.
         restoreSource(snapshot, appDir);
-        bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback`, level, track, runId);
+        bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback${fixRounds}`, level, track, runId);
         regressed = true;
-        stalled = true;
-        break;
+        continue;
       }
       if (shared.after === shared.before) {
-        console.log(`    no improvement (${shared.before} on shared criteria); stopping fix rounds`);
-        stalled = true;
-        break;
+        const remaining = args.fixRounds - fixRounds;
+        console.log(`    no improvement (${shared.before} on shared criteria); `
+          + (remaining > 0 ? `${remaining} correction round(s) remain` : 'correction budget exhausted'));
       }
     }
 
@@ -909,6 +916,20 @@ async function main() {
     // instead, and leave the score null.
     const finalBundleOutcome = classifyBundle(bundle);
     const graded = !['ungraded', 'harness_failure'].includes(finalBundleOutcome.kind);
+    const repairStatus = !graded ? 'ungraded'
+      : finalBundleOutcome.kind === 'passed' ? (fixRounds > 0 ? 'corrected' : 'not-needed')
+        : fixRounds >= args.fixRounds ? 'budget-exhausted' : 'incomplete';
+    const stopReason = repairStopReason ?? ({
+      'not-needed': 'not-needed',
+      corrected: 'passed',
+      'budget-exhausted': 'budget-exhausted',
+    }[repairStatus] ?? null);
+    const repair = {
+      status: repairStatus,
+      budgetRounds: args.fixRounds,
+      roundsUsed: fixRounds,
+      stopReason,
+    };
     if (!graded) {
       console.log(`  L${level}: GRADING DID NOT COMPLETE — no usable bundle. ` +
         `Score is unknown, not zero; re-grade this level before using the run.`);
@@ -953,7 +974,9 @@ async function main() {
       // level record was dropping it, so the guarantee was not holding.
       thinking: sessionTotals.thinking,
       fixRounds,
-      stalled,
+      repair,
+      // Keep the summary flag derived from the typed status so the two cannot drift.
+      stalled: repairStatus === 'budget-exhausted',
       regressed,
       outcome: finalBundleOutcome,
       durationSec: Math.round((Date.now() - t0) / 1000),
@@ -1078,8 +1101,10 @@ async function main() {
   for (const l of run.levels) {
     const unaided = l.firstBuild?.score != null ? `${l.firstBuild.score}/${l.firstBuild.max} unaided → ` : '';
     const score = l.graded ? `${unaided}${l.score}/${l.max}` : 'NOT GRADED';
+    const correction = l.repair?.status?.replaceAll('-', ' ') ?? 'unknown';
     console.log(`  L${l.level}: ${score}  ${l.fixRounds} fix round(s)  ` +
-      `$${((l.buildCostUsd ?? 0) + (l.fixCostUsd ?? 0)).toFixed(2)}  ${l.durationSec}s`);
+      `$${((l.buildCostUsd ?? 0) + (l.fixCostUsd ?? 0)).toFixed(2)} total` +
+      ` ($${(l.fixCostUsd ?? 0).toFixed(2)} correction)  ${correction}  ${l.durationSec}s`);
   }
   console.log(`  TOTAL ${run.totals.score}/${run.totals.max}  ` +
     `$${run.totals.costUsd}  ${run.totals.fixRounds} fix round(s)  ${run.totals.durationSec}s`);

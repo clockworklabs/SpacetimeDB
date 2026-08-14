@@ -7,7 +7,8 @@ import test from 'node:test';
 import { emptyArtifactIdentities, readArtifact, writeRunJson } from '../artifacts.mjs';
 import { compileCampaignFile } from '../campaign-compiler.mjs';
 import { buildCampaignReport, generateCampaignReport,
-  formatDurationMs, renderCampaignHtml, validateCampaignReport } from '../campaign-report.mjs';
+  campaignRunMetrics, formatDurationMs, renderCampaignHtml,
+  validateCampaignReport } from '../campaign-report.mjs';
 import { runCampaignAdmission } from '../campaign-runner.mjs';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution,
   initializeCampaignDirectory, writeCampaignState } from '../campaign-scheduler.mjs';
@@ -16,9 +17,15 @@ const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.j
 const created = '2026-08-12T00:00:00.000Z';
 
 function run(id, attempt, { score = 8, max = 10, first = 5, cost = 2, durationSec = 30 } = {}) {
-  return { id, parentAttemptId: attempt.id, outcome: { kind: 'passed' },
-    levels: [{ level: 1, firstBuild: { score: first, max }, score, max }],
-    totals: { score, max, costUsd: cost, durationSec, fixRounds: score === first ? 0 : 1 } };
+  const passed = score === max;
+  const fixRounds = passed ? (score === first ? 0 : 1) : 3;
+  const status = passed ? (fixRounds ? 'corrected' : 'not-needed') : 'budget-exhausted';
+  const outcome = { kind: passed ? 'passed' : 'app_failure' };
+  return { id, parentAttemptId: attempt.id, outcome,
+    levels: [{ level: 1, firstBuild: { score: first, max }, score, max,
+      fixCostUsd: fixRounds ? cost / 2 : 0, fixRounds,
+      repair: { status, budgetRounds: 3, roundsUsed: fixRounds, stopReason: null }, outcome }],
+    totals: { score, max, costUsd: cost, durationSec, fixRounds } };
 }
 
 test('report read model keeps invalid evidence separate and computes declared dispersion', () => {
@@ -53,6 +60,26 @@ test('report read model keeps invalid evidence separate and computes declared di
   assert.match(report.contentSha256, /^[a-f0-9]{64}$/);
   assert.throws(() => validateCampaignReport({ ...report,
     summary: { ...report.summary, completedAttempts: 99 } }), /content identity/);
+});
+
+test('correction metrics separate successful cost from unresolved spend', () => {
+  const corrected = campaignRunMetrics({ outcome: { kind: 'passed' },
+    levels: [{ firstBuild: { score: 5, max: 10 }, fixCostUsd: 1.25 }], totals: {} });
+  assert.equal(corrected.correctionSuccessRate, 1);
+  assert.equal(corrected.correctionCostUsd, 1.25);
+  assert.equal(corrected.correctionSpendUsd, 1.25);
+
+  const unresolved = campaignRunMetrics({ outcome: { kind: 'app_failure' },
+    levels: [{ firstBuild: { score: 5, max: 10 }, fixCostUsd: 2 }], totals: {} });
+  assert.equal(unresolved.correctionSuccessRate, 0);
+  assert.equal(unresolved.correctionCostUsd, null);
+  assert.equal(unresolved.correctionSpendUsd, 2);
+
+  const unaided = campaignRunMetrics({ outcome: { kind: 'passed' },
+    levels: [{ firstBuild: { score: 10, max: 10 }, fixCostUsd: 0 }], totals: {} });
+  assert.equal(unaided.correctionSuccessRate, null);
+  assert.equal(unaided.correctionCostUsd, null);
+  assert.equal(unaided.correctionSpendUsd, null);
 });
 
 test('report generation is byte-for-byte reproducible and links immutable raw evidence', () => {

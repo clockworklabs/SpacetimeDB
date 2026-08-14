@@ -640,6 +640,13 @@ identity checked before admission. The scheduler and admission path passed in th
 locked Linux appliance; runtime-manifest enforcement is rechecked whenever its
 controller image changes.
 
+Campaign admission also fails closed on correction accounting. A passing level
+must say correction was unnecessary or successful and must have a perfect final
+score. A failing completed level is admissible only after every declared repair
+round was used and the result says the budget was exhausted. Reports count cost
+to correct only when correction succeeds; spend on unresolved attempts remains
+visible as correction spend instead of being mislabeled as success.
+
 ### SB-503: Deterministic report
 
 Generate JSON tables and self-contained static HTML from the artifact read model.

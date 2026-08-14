@@ -5,6 +5,13 @@ applications. The agent builds an app from a fixed prompt; the harness verifies
 it by driving real clients, hands back anything that failed, and lets the agent
 fix it — recording score, cost, tokens, fix rounds and wall time.
 
+Correction rounds are a declared budget, not a promise that the first retry
+will improve the score. The harness keeps trying through a flat or rejected
+repair until the budget is used, while rolling back changes that lose evidence
+or make the score worse. Results record whether correction was unnecessary,
+succeeded, or exhausted its budget. Successful correction cost and unresolved
+correction spend are reported separately.
+
 Backends are interchangeable, so the model can be held fixed while the backend
 varies.
 
@@ -241,7 +248,7 @@ earned their place, mostly by catching this harness being wrong:
 
 ## What a run records
 
-Everything needed to audit a verdict afterwards, under `<app>/stack-bench/`:
+Evidence emitted into the result directory and `<app>/stack-bench/` includes:
 
 | Artifact | What it is |
 |---|---|
@@ -255,6 +262,7 @@ Everything needed to audit a verdict afterwards, under `<app>/stack-bench/`:
 | `records/bug-report-l<N>-round<M>.md` | what the agent was told each fix round |
 | `.session-<mode>-l<N>.json` | the agent session: cost, tokens, duration, final message |
 | `.prompt-<mode>-l<N>.md` | the exact prompt the agent received |
+| `run.json` | exact stack, model, recipe, test-pack, prompt, image, repair budget, outcome, usage, and timing for the run |
 
 Recording is on by default; `--no-media` turns it off for a quick check. Watching
 the failing actor's video is the fastest way to confirm a verdict is real before

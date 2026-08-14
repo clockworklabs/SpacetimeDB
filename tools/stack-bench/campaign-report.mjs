@@ -58,7 +58,7 @@ function summarize(values, dispersion) {
     min: present[0], max: present.at(-1) };
 }
 
-function metrics(run) {
+export function campaignRunMetrics(run) {
   const levels = run.levels ?? [];
   const completeFirstBuild = levels.length > 0 && levels.every(level =>
     number(level.firstBuild?.score) !== null && number(level.firstBuild?.max) !== null);
@@ -66,12 +66,24 @@ function metrics(run) {
     ? levels.reduce((total, level) => total + level.firstBuild.score, 0) : null;
   const firstMax = completeFirstBuild
     ? levels.reduce((total, level) => total + level.firstBuild.max, 0) : null;
+  const correctionNeeded = completeFirstBuild
+    ? levels.some(level => level.firstBuild.score < level.firstBuild.max) : null;
+  const completeCorrectionSpend = correctionNeeded === true
+    && levels.every(level => number(level.fixCostUsd) !== null);
+  const correctionSpendUsd = completeCorrectionSpend
+    ? Number(levels.reduce((total, level) => total + level.fixCostUsd, 0).toFixed(4)) : null;
+  const correctionSuccessRate = correctionNeeded !== true ? null
+    : run.outcome?.kind === 'passed' ? 1
+      : run.outcome?.kind === 'app_failure' ? 0 : null;
   return {
     firstBuildScoreRate: ratio(firstScore, firstMax),
     finalScoreRate: ratio(number(run.totals?.score), number(run.totals?.max)),
     totalCostUsd: number(run.totals?.costUsd),
     totalDurationMs: number(run.totals?.durationSec) === null ? null : run.totals.durationSec * 1000,
     fixRounds: number(run.totals?.fixRounds),
+    correctionSuccessRate,
+    correctionCostUsd: correctionSuccessRate === 1 ? correctionSpendUsd : null,
+    correctionSpendUsd,
   };
 }
 
@@ -146,7 +158,7 @@ export function buildCampaignReport(plan, state, readRun) {
         admissionId: execution.admissionId,
         admissionEvidence: `admissions/${execution.admissionId}.json`,
         evidence: execution.status === 'completed' ? `${execution.output}/run.json` : 'state.json',
-        metrics: run ? metrics(run) : null,
+        metrics: run ? campaignRunMetrics(run) : null,
       };
     });
     rows.push({ ...attempt.plan, status: attempt.status, executions,

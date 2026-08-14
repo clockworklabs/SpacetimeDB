@@ -13,7 +13,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const args = {};
 for (let i = 2; i < process.argv.length; i += 2) args[process.argv[i].replace(/^--/, '')] = process.argv[i + 1];
 
-const which = args.mode === 'fix' ? 'app-good' : 'app-broken';
+const which = args.mode === 'fix' && args.model !== 'deterministic-stall'
+  ? 'app-good' : 'app-broken';
 mkdirSync(args.app, { recursive: true });
 copyFileSync(join(HERE, which, 'index.html'), join(args.app, 'index.html'));
 

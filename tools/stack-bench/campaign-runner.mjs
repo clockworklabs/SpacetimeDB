@@ -84,6 +84,38 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
     && run.runtime?.buildImage !== plan.definition.runtime.buildImage, 'runtime.buildImage');
   mismatch(plan.definition.runtime.buildImage === null && buildImage !== null
     && run.runtime?.buildImage !== buildImage, 'runtime.buildImage');
+  if (exactLevels && ['passed', 'app_failure'].includes(run.outcome?.kind)) {
+    const levelOutcomes = (run.levels ?? []).map(level => level.outcome?.kind);
+    mismatch(run.outcome.kind === 'passed' && levelOutcomes.some(kind => kind !== 'passed'),
+      'outcome.kind');
+    mismatch(run.outcome.kind === 'app_failure'
+      && !levelOutcomes.some(kind => kind === 'app_failure'), 'outcome.kind');
+    for (const level of run.levels ?? []) {
+      const repair = level.repair;
+      const at = `levels.L${level.level}.repair`;
+      const validObject = repair && typeof repair === 'object' && !Array.isArray(repair);
+      mismatch(!validObject, at);
+      if (!validObject) continue;
+      mismatch(!Number.isInteger(level.fixRounds) || level.fixRounds < 0
+        || level.fixRounds > plan.definition.budgets.fixRounds, `levels.L${level.level}.fixRounds`);
+      mismatch(repair.budgetRounds !== plan.definition.budgets.fixRounds, `${at}.budgetRounds`);
+      mismatch(repair.roundsUsed !== level.fixRounds, `${at}.roundsUsed`);
+      const validScore = Number.isInteger(level.score) && Number.isInteger(level.max)
+        && level.max > 0 && level.score >= 0 && level.score <= level.max;
+      mismatch(!validScore, `levels.L${level.level}.score`);
+      if (level.outcome?.kind === 'passed') {
+        const expected = level.fixRounds > 0 ? 'corrected' : 'not-needed';
+        mismatch(repair.status !== expected, `${at}.status`);
+        mismatch(validScore && level.score !== level.max, `levels.L${level.level}.score`);
+      } else if (level.outcome?.kind === 'app_failure') {
+        mismatch(repair.status !== 'budget-exhausted', `${at}.status`);
+        mismatch(repair.roundsUsed !== repair.budgetRounds, `${at}.roundsUsed`);
+        mismatch(validScore && level.score === level.max, `levels.L${level.level}.score`);
+      } else {
+        mismatch(true, `${at}.levelOutcome`);
+      }
+    }
+  }
   if (plan.definition.budgets.maxCostUsdPerAttempt !== null) {
     const cost = run.totals?.costUsd;
     const missingAllowed = interruptedPrefix && actualLevels.length === 0 && cost == null;

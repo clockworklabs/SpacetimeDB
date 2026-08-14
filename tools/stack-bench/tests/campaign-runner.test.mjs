@@ -112,6 +112,34 @@ test('campaign validation accepts a zero-level interrupted run without invented 
   /does not match.*backend/);
 });
 
+test('campaign validation rejects an application result that stopped before its correction budget', () => {
+  const plan = compileCampaignFile(example);
+  const attempt = plan.attempts[0];
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
+  const stack = plan.stacks.find(item => item.id === attempt.stack);
+  const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
+    identities: emptyArtifactIdentities({ engine: plan.identities.engine,
+      agentAdapter: agent.identity, stackAdapter: stack }) },
+  track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+  guidance: attempt.guidance, selectionRequest: plan.definition.selection, skills: attempt.skills,
+  runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
+  levels: [{ level: 1, score: 0, max: 1, fixRounds: 1,
+    repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 1, stopReason: null },
+    outcome: { kind: 'app_failure' } }], outcome: { kind: 'app_failure' } };
+  assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
+    /levels\.L1\.repair/);
+  run.levels[0] = { ...run.levels[0], fixRounds: 3,
+    repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3, stopReason: null } };
+  assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  run.levels[0] = { ...run.levels[0], score: 1 };
+  assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
+    /levels\.L1\.score/);
+  run.levels[0] = { ...run.levels[0], score: 0, outcome: { kind: 'passed' },
+    repair: { status: 'corrected', budgetRounds: 3, roundsUsed: 3, stopReason: null } };
+  assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
+    /outcome\.kind/);
+});
+
 test('draft campaigns cannot start unless an explicit test-only caller permits them', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runner-draft-'));
   try {
@@ -195,7 +223,9 @@ test('model-free campaign execution checkpoints a retry and every completed atte
           guidance: attempt.guidance, selectionRequest: planned.definition.selection,
           skills: attempt.skills, runtime: { buildImage: options.env.STACK_BENCH_IMAGE },
           totals: { costUsd: 0 },
-          levels: attempt.levels.map(level => ({ level })),
+          levels: attempt.levels.map(level => ({ level, score: 1, max: 1, fixRounds: 0,
+            repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
+            outcome: { kind: 'passed' } })),
           outcome: { kind: 'passed' } });
         return { code: 0, timedOut: false };
       } });

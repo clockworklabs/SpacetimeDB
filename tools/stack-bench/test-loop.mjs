@@ -11,7 +11,7 @@
 //
 // Usage: node test-loop.mjs
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, rmSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,6 +51,13 @@ function runBench(extra = []) {
     return (err.stdout || '').toString() + (err.stderr || '').toString();
   }
 }
+
+const invalidRounds = spawnSync('node', [join(ROOT, 'bench.mjs'), '--backend', 'stub',
+  '--fix-rounds', '1.5'],
+  { encoding: 'utf8' });
+check('fractional correction budgets are rejected before a run starts',
+  invalidRounds.status !== 0
+    && /--fix-rounds must be an integer from 0 through 20/.test(invalidRounds.stderr));
 
 rmSync(WORK, { recursive: true, force: true });
 mkdirSync(APP, { recursive: true });
@@ -106,6 +113,10 @@ check('backend lease was released',
     && run.backendLease?.resources?.locks?.every(lock => lock.releasedAt),
   JSON.stringify(run.backendLease?.state));
 check('a fix round ran', level?.fixRounds === 1, `fixRounds=${level?.fixRounds}`);
+check('successful repair is explicit', level?.repair?.status === 'corrected'
+  && level.repair.budgetRounds === 1 && level.repair.roundsUsed === 1
+  && level.repair.stopReason === 'passed',
+  JSON.stringify(level?.repair));
 const reportPath = join(APP, 'BUG_REPORT.md');
 const reportExists = existsSync(reportPath);
 check('the bug report was written', reportExists);
@@ -152,6 +163,20 @@ runBench(['--fix-rounds', '0']);
 const capped = readRunJson(runPath);
 check('no fix ran when the cap is zero', capped.levels?.[0]?.fixRounds === 0);
 check('no bug report was written when no fix is allowed', !existsSync(join(APP, 'BUG_REPORT.md')));
+
+console.log('\nLoop test - flat corrections exhaust their declared budget');
+rmSync(WORK, { recursive: true, force: true });
+mkdirSync(APP, { recursive: true });
+runBench(['--fix-rounds', '2', '--model', 'deterministic-stall']);
+const exhausted = readRunJson(runPath);
+const exhaustedLevel = exhausted.levels?.[0];
+check('both correction rounds ran after the first flat result', exhaustedLevel?.fixRounds === 2,
+  `fixRounds=${exhaustedLevel?.fixRounds}`);
+check('an unresolved app records budget exhaustion', exhaustedLevel?.repair?.status === 'budget-exhausted'
+  && exhaustedLevel.repair.budgetRounds === 2 && exhaustedLevel.repair.roundsUsed === 2
+  && exhaustedLevel.repair.stopReason === 'budget-exhausted'
+  && exhaustedLevel.stalled === true && exhausted.outcome?.kind === 'app_failure',
+  JSON.stringify({ repair: exhaustedLevel?.repair, outcome: exhausted.outcome }));
 
 rmSync(WORK, { recursive: true, force: true });
 console.log(`\n${failures === 0 ? 'loop OK' : `${failures} check(s) failed`}`);
