@@ -20,8 +20,8 @@ function definition(overrides = {}) {
     selection: { packs: [], checks: [] },
     stacks: [
       { id: 'spacetime', adapterVersion: '1.0.0' },
-      { id: 'postgres', adapterVersion: '1.0.0' },
-      { id: 'mongodb', adapterVersion: '1.0.0' },
+      { id: 'postgres', adapterVersion: '1.1.0' },
+      { id: 'mongodb', adapterVersion: '1.1.0' },
     ],
     agents: [{ adapter: 'deterministic', adapterVersion: '1.0.0', model: 'deterministic',
       guidance: 'prescribed', skills: [] }],
@@ -114,7 +114,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
   assert.throws(() => validateCampaignDefinition({ ...definition(), surprise: true }), /surprise.*unknown/);
   assert.throws(() => validateCampaignDefinition(definition({ levels: [1, 3] })), /ascending and contiguous/);
   assert.throws(() => validateCampaignDefinition(definition({ stacks: [
-    { id: 'postgres', adapterVersion: '1.0.0' }, { id: 'postgres', adapterVersion: '1.0.0' },
+    { id: 'postgres', adapterVersion: '1.1.0' }, { id: 'postgres', adapterVersion: '1.1.0' },
   ] })), /duplicates|name each stack once/);
   assert.throws(() => validateCampaignDefinition(definition({ attemptPolicy: {
     retries: 1, retryOn: [], excludeFromAnalysis: [],
@@ -136,7 +136,7 @@ test('frozen campaigns require exact runtime images and both promoted levels com
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.3.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.4.0',
     model: 'claude-sonnet-5', guidance: 'prescribed', skills: [] }];
   const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
     source: 'test snapshot', models: { 'claude-sonnet-5': {

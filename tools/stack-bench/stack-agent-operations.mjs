@@ -94,9 +94,9 @@ export function spacetimeBuildContainerPlan({ repo, appDir, env = {} }) {
   };
 }
 
-export function standardBuildContainerPlan() {
+export function standardBuildContainerPlan({ env = {} } = {}) {
   return {
-    networkNamespace: null,
+    networkNamespace: env.STACK_BENCH_APPLIANCE === '1' ? 'host' : null,
     requiredPaths: [], ensureDirectories: [], mounts: [],
     init: 'exec sleep infinity', readyFile: null, readyDescription: null,
   };

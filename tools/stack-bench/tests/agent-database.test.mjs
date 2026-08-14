@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { codingSessionFailure, ensureDatabase } from '../agent.mjs';
+import { codingSessionFailure, ensureDatabase, hostServiceAddress, lintShimScript } from '../agent.mjs';
 import { createBackendLease, writeBackendLease } from '../backend-lease.mjs';
 import { loadTrack } from '../tracks.mjs';
 
@@ -99,4 +99,14 @@ test('coding session failures retain bounded stderr for nonzero exits', () => {
   assert.match(detail, /inner stderr tail/);
   assert.equal(detail.endsWith('x'.repeat(4000)), true);
   assert.equal(detail.includes('provider rejected the session'), false);
+});
+
+test('appliance lint endpoint is reachable only through its authenticated shim', () => {
+  assert.equal(hostServiceAddress({ STACK_BENCH_APPLIANCE: '1' }), '127.0.0.1');
+  assert.equal(hostServiceAddress({}), 'host.docker.internal');
+  assert.equal(hostServiceAddress({ STACK_BENCH_APPLIANCE: '1',
+    STACK_BENCH_HOST_ALIAS: 'explicit-host' }), 'explicit-host');
+  const script = lintShimScript('127.0.0.1', 43210, 'a'.repeat(64));
+  assert.match(script, /X-Stack-Bench-Lint-Token: a{64}/);
+  assert.match(script, /http:\/\/127\.0\.0\.1:43210\/lint/);
 });

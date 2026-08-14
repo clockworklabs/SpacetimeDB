@@ -7,7 +7,7 @@ import test from 'node:test';
 import { emptyArtifactIdentities, readArtifact, writeRunJson } from '../artifacts.mjs';
 import { compileCampaignFile } from '../campaign-compiler.mjs';
 import { buildCampaignReport, generateCampaignReport,
-  renderCampaignHtml, validateCampaignReport } from '../campaign-report.mjs';
+  formatDurationMs, renderCampaignHtml, validateCampaignReport } from '../campaign-report.mjs';
 import { runCampaignAdmission } from '../campaign-runner.mjs';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution,
   initializeCampaignDirectory, writeCampaignState } from '../campaign-scheduler.mjs';
@@ -113,4 +113,21 @@ test('HTML escapes caller-controlled labels and reports exact scope', () => {
   const { contentSha256: _old, ...body } = malformedScope;
   assert.throws(() => validateCampaignReport({ ...body, contentSha256: 'a'.repeat(64) }),
     /scope\.surprise is unknown/);
+});
+
+test('human reports format normalized usage and elapsed time for people', () => {
+  assert.equal(formatDurationMs(4_893_000), '1h 21m 33s');
+  assert.equal(formatDurationMs(125_000), '2m 5s');
+  assert.equal(formatDurationMs(9_000), '9s');
+  const plan = compileCampaignFile(example);
+  let state = createCampaignState(plan, { now: created });
+  const claimed = claimNextAttempt(state, { now: created, admissionId: 'admission-format' });
+  const evidence = run('run-format', claimed.claim.attempt,
+    { cost: 19.899, durationSec: 4_893 });
+  state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
+    { exitCode: 0, run: evidence }, { now: '2026-08-12T01:21:33.000Z' });
+  const html = renderCampaignHtml(buildCampaignReport(plan, state, () => evidence));
+  assert.match(html, /\$19\.899 normalized usage/);
+  assert.match(html, /1h 21m 33s/);
+  assert.doesNotMatch(html, />4893s</);
 });

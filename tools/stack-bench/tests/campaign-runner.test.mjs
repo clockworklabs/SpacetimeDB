@@ -258,7 +258,8 @@ test('campaign admission covers every stack once per distinct agent adapter and 
     assert.equal(admission.payload.ok, true);
     assert.deepEqual(admission.payload.runtime, plan.definition.runtime);
     assert.equal(calls.length, 1);
-    assert.deepEqual(calls[0].backends, ['mongodb', 'postgres', 'spacetime']);
+    assert.deepEqual([...calls[0].backends].sort(), ['mongodb', 'postgres', 'spacetime']);
+    assert.equal(new Set(calls[0].backends).size, 3);
     assert.equal(calls[0].smoke, true);
     assert.equal(readArtifact(admission.path,
       { expectedKind: 'campaign_admission' }).payload.campaignSha256, plan.contentSha256);

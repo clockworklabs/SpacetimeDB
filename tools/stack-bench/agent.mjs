@@ -13,6 +13,7 @@
 // Prints a JSON line: { appDir, costUsd, tokens, durationMs, sessionId, ok }
 
 import { execFileSync, spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync,
          openSync, readSync, closeSync } from 'node:fs';
 import { join, dirname, resolve, basename } from 'node:path';
@@ -118,7 +119,12 @@ const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 // addresses are rewritten to Docker's host alias. Dev-server ports are NOT
 // rewritten: those servers start inside the container and are published back
 // out, so the grader on the host still reaches them at localhost.
-const HOST_ADDR = process.env.STACK_BENCH_HOST_ALIAS ?? 'host.docker.internal';
+export function hostServiceAddress(env = process.env) {
+  return env.STACK_BENCH_HOST_ALIAS
+    ?? (env.STACK_BENCH_APPLIANCE === '1' ? '127.0.0.1' : 'host.docker.internal');
+}
+
+const HOST_ADDR = hostServiceAddress();
 const hostUrl = u => u.replace(/127\.0\.0\.1|localhost/g, HOST_ADDR);
 
 // Where the two artifacts under test are mounted. Container paths also keep the
@@ -379,9 +385,12 @@ function backendDoc(args, p, track) {
 // missing hooks after three fix rounds having never once seen a lint result.
 function startLintServer(cmd, appDir) {
   const portFile = join(appDir, '.lint-port');
+  const token = randomBytes(32).toString('hex');
   rmSync(portFile, { force: true });
+  const argv = [join(ROOT, 'lint-server.mjs'), '--port-file', portFile,
+    '--cmd', cmd, '--token', token];
   const child = spawn(process.execPath,
-    [join(ROOT, 'lint-server.mjs'), '--port-file', portFile, '--cmd', cmd],
+    argv,
     { detached: true, stdio: 'ignore' });
   child.unref();
 
@@ -390,7 +399,7 @@ function startLintServer(cmd, appDir) {
   for (let i = 0; i < 100; i++) {
     if (existsSync(portFile)) {
       const port = readFileSync(portFile, 'utf8').trim();
-      if (port) return { port, pid: child.pid };
+      if (port) return { port, pid: child.pid, token };
     }
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
   }
@@ -506,16 +515,22 @@ function resolveIsolation(args) {
   return decided;
 }
 
-function writeLintShim(appDir, port) {
+function writeLintShim(appDir, port, token) {
   const sh = join(appDir, 'check-hooks.sh');
-  writeFileSync(sh, '#!/usr/bin/env bash\n'
-    + '# Verifies the required data-testid hooks resolve in the running app.\n'
-    + `curl -sS --fail-with-body http://${HOST_ADDR}:${port}/lint\n`);
+  writeFileSync(sh, lintShimScript(HOST_ADDR, port, token));
   return './check-hooks.sh';
 }
 
-function buildPrompt(args, p, track, lintPort, materials = {}) {
-  const lint = args.printPrompt ? './check-hooks.sh' : writeLintShim(args.app, lintPort);
+export function lintShimScript(host, port, token) {
+  return '#!/usr/bin/env bash\n'
+    + '# Verifies the required data-testid hooks resolve in the running app.\n'
+    + `curl -sS --fail-with-body -H 'X-Stack-Bench-Lint-Token: ${token}' `
+    + `http://${host}:${port}/lint\n`;
+}
+
+function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
+  const lint = args.printPrompt ? './check-hooks.sh'
+    : writeLintShim(args.app, lintEndpoint.port, lintEndpoint.token);
   const common = [
     'The app lives in /app — work there.',
     // Container runs only, and identical for every backend so no stack gets
@@ -640,7 +655,6 @@ async function main() {
   const lintCmd = `node "${join(ROOT, 'linter', 'lint.mjs')}" --url http://localhost:${p.vite} --level ${args.level}`
     + (track.name === DEFAULT_TRACK ? '' : ` --track ${track.name}`);
   const lintServer = startLintServer(lintCmd, args.app);
-  const lintPort = lintServer.port;
   // A detached child outlives a parent that throws. Without this, every failed
   // build would leave a listener behind — the exact thing this harness has been
   // fixing all day.
@@ -648,7 +662,8 @@ async function main() {
   process.on('exit', stopLint);
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stopLint(); process.exit(130); });
 
-  const prompt = buildPrompt(args, p, track, lintPort, { skillsText, requirementText, contractText });
+  const prompt = buildPrompt(args, p, track, lintServer,
+    { skillsText, requirementText, contractText });
   const bugReportPath = join(args.app, 'BUG_REPORT.md');
   const bugReportText = args.mode === 'fix' && existsSync(bugReportPath)
     ? readFileSync(bugReportPath, 'utf8') : null;

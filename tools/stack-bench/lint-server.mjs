@@ -14,14 +14,35 @@
 
 import { createServer } from 'node:http';
 import { execSync } from 'node:child_process';
+import { timingSafeEqual } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 
 const arg = n => { const i = process.argv.indexOf(n); return i === -1 ? null : process.argv[i + 1]; };
 const portFile = arg('--port-file');
 const cmd = arg('--cmd');
-if (!portFile || !cmd) { console.error('need --port-file and --cmd'); process.exit(2); }
+const token = arg('--token');
+if (!portFile || !cmd || !token || !/^[a-f0-9]{64}$/.test(token)) {
+  console.error('need --port-file, --cmd, and a 256-bit hex --token');
+  process.exit(2);
+}
+
+function authorized(req) {
+  const supplied = req.headers['x-stack-bench-lint-token'];
+  if (typeof supplied !== 'string' || supplied.length !== token.length) return false;
+  return timingSafeEqual(Buffer.from(supplied), Buffer.from(token));
+}
 
 const server = createServer((req, res) => {
+  if (req.method !== 'GET' || req.url !== '/lint') {
+    res.writeHead(404, { 'content-type': 'text/plain' });
+    res.end('not found\n');
+    return;
+  }
+  if (!authorized(req)) {
+    res.writeHead(403, { 'content-type': 'text/plain' });
+    res.end('forbidden\n');
+    return;
+  }
   let out = '', ok = true;
   try {
     out = execSync(cmd, {

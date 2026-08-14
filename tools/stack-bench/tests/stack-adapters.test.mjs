@@ -9,6 +9,10 @@ import { STACK_ADAPTER_REGISTRY } from '../stack-adapters.mjs';
 test('built-in and deterministic test stack adapters preserve the proven port grid', () => {
   assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['mongodb', 'postgres', 'spacetime', 'stub']);
   const postgres = STACK_ADAPTER_REGISTRY.get('postgres');
+  assert.equal(postgres.version, '1.1.0');
+  assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.1.0');
+  assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.0.0');
+  assert.equal(STACK_ADAPTER_REGISTRY.get('stub').version, '1.0.0');
   assert.deepEqual(executeStackCapability(postgres, 'ports', 'for-run',
     { trackOffset: 100, runIndex: 2 }), { vite: 6375, express: 6103, dbPort: 6532 });
   const prepared = executeStackCapability(postgres, 'lease', 'prepare', {
@@ -59,6 +63,9 @@ test('build-container plans expose only artifacts owned by the selected stack', 
     assert.deepEqual(plan.requiredPaths, []);
     assert.equal(plan.readyFile, null);
     assert.equal(plan.networkNamespace, null);
+    const appliancePlan = executeStackCapability(STACK_ADAPTER_REGISTRY.get(id),
+      'build-container', 'plan', { repo, appDir, env: { STACK_BENCH_APPLIANCE: '1' } });
+    assert.equal(appliancePlan.networkNamespace, id === 'stub' ? null : 'host');
   }
 });
 

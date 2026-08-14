@@ -124,11 +124,10 @@ function runPolicyProvider(adapterId, values) {
     Object.entries(values).map(([name, value]) => [name, typeof value === 'function' ? value : () => value])));
 }
 
-function adapter(id, lease, capabilities = {}) {
+function adapter(id, lease, capabilities = {}, { version = '1.0.0' } = {}) {
   return {
     schemaVersion: STACK_ADAPTER_SCHEMA_VERSION,
-    id,
-    version: '1.0.0',
+    id, version,
     capabilities: { ports: portsProvider(id), lease, ...capabilities },
   };
 }
@@ -191,7 +190,7 @@ export const STACK_ADAPTER_REGISTRY = createStackAdapterRegistry([
     'build-container': operationProvider('postgres', 'build-container', { plan: standardBuildContainerPlan }),
     reference: operationProvider('postgres', 'reference', { deploy: deployPostgresReference }),
     orchestrator: operationProvider('postgres', 'orchestrator', { config: standardOrchestratorConfig }),
-  }),
+  }, { version: '1.1.0' }),
   adapter('mongodb', hostedLeaseProvider('mongodb'), {
     reset: operationProvider('mongodb', 'reset',
       { run: resetMongoDb, 'requires-reseed': () => true }),
@@ -220,7 +219,7 @@ export const STACK_ADAPTER_REGISTRY = createStackAdapterRegistry([
     'build-container': operationProvider('mongodb', 'build-container', { plan: standardBuildContainerPlan }),
     reference: operationProvider('mongodb', 'reference', { deploy: deployMongoDbReference }),
     orchestrator: operationProvider('mongodb', 'orchestrator', { config: standardOrchestratorConfig }),
-  }),
+  }, { version: '1.1.0' }),
   adapter('stub', resourceFreeLeaseProvider('stub'), {
     reset: operationProvider('stub', 'reset', { 'requires-reseed': () => false }),
     lifecycle: operationProvider('stub', 'lifecycle', { activate: activateHosted }),
@@ -242,7 +241,8 @@ export const STACK_ADAPTER_REGISTRY = createStackAdapterRegistry([
       'server-directory': () => 'server',
       'find-database-urls': () => [],
     }),
-    'build-container': operationProvider('stub', 'build-container', { plan: standardBuildContainerPlan }),
+    'build-container': operationProvider('stub', 'build-container',
+      { plan: () => standardBuildContainerPlan() }),
     orchestrator: operationProvider('stub', 'orchestrator', { config: standardOrchestratorConfig }),
   }),
 ]);
