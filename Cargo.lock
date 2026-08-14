@@ -899,18 +899,179 @@ name = "ci"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "chrono",
- "clap 4.5.50",
  "duct",
- "env_logger 0.10.2",
- "keynote-bench-harness",
- "log",
- "regex",
+]
+
+[[package]]
+name = "ci-cla-assistant"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
  "reqwest 0.12.24",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "ci-cli-docs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
+name = "ci-codeowners-check"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
+ "regex",
+ "serde_json",
+]
+
+[[package]]
+name = "ci-common"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+]
+
+[[package]]
+name = "ci-coordinate-internal-tests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "ci-docs-build"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+]
+
+[[package]]
+name = "ci-global-json-policy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
+name = "ci-keynote-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "keynote-bench-harness",
+ "spacetimedb-guard",
+]
+
+[[package]]
+name = "ci-lint"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
+ "serde_json",
+]
+
+[[package]]
+name = "ci-publish-checks"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
+name = "ci-smoketests"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
  "spacetimedb-guard",
  "tempfile",
+]
+
+[[package]]
+name = "ci-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
+name = "ci-typescript-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
+name = "ci-update-flow"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+ "tempfile",
+]
+
+[[package]]
+name = "ci-version-upgrade-check"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
+name = "ci-wasm-bindings"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
+name = "ci-workflow-watch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -8692,7 +8853,6 @@ dependencies = [
  "reqwest 0.12.24",
  "serde_json",
  "socket2 0.5.10",
- "spacetimedb-core",
  "spacetimedb-guard",
  "tempfile",
  "tokio",

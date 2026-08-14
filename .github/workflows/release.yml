@@ -73,11 +73,6 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache cargo
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: ./
-
       - name: Install cargo-release
         run: |
           cargo install --path tools/release

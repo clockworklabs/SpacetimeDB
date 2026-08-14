@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, ensure, Context, Result};
-use clap::{Args, Subcommand};
+use ci_common::ensure_repo_root;
+use clap::{Parser, Subcommand};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
 use std::ffi::OsStr;
@@ -9,13 +10,15 @@ use std::process::{Command, Stdio};
 use std::{env, fs};
 use tempfile::TempDir;
 
-use crate::util;
-
-#[derive(Args)]
+#[derive(Parser)]
+#[command(
+    about = "Runs smoketests",
+    long_about = "Runs smoketests\n\nExecutes the smoketests suite with some default exclusions."
+)]
 /// This command builds the binaries needed by the smoketests, then runs them. This prevents
 /// race conditions when running tests in parallel with nextest, where multiple test processes
 /// might try to build the same binaries simultaneously.
-pub struct SmoketestsArgs {
+struct SmoketestsArgs {
     #[command(subcommand)]
     cmd: Option<SmoketestCmd>,
 
@@ -72,7 +75,8 @@ enum SmoketestCmd {
     },
 }
 
-pub fn run(args: SmoketestsArgs) -> Result<()> {
+fn main() -> Result<()> {
+    let args = SmoketestsArgs::parse();
     match args.cmd {
         Some(SmoketestCmd::Prepare) => {
             build_cli()?;
@@ -365,7 +369,7 @@ fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, auth_host: b
 }
 
 fn check_smoketests_mod_rs_complete() -> Result<()> {
-    util::ensure_repo_root()?;
+    ensure_repo_root()?;
 
     let expected_dir = Path::new("crates/smoketests/tests/smoketests");
     let mut expected = std::collections::BTreeSet::<String>::new();
