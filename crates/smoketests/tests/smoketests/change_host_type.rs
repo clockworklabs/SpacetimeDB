@@ -1,5 +1,7 @@
-use spacetimedb::messages::control_db::HostType;
 use spacetimedb_smoketests::{require_local_server, require_pnpm, ModuleLanguage, Smoketest};
+
+const WASM_HOST_TYPE: &str = "0";
+const JS_HOST_TYPE: &str = "1";
 
 const TS_MODULE_BASIC: &str = r#"import { schema, t, table } from "spacetimedb/server";
 
@@ -107,21 +109,19 @@ fn test_repair_host_type() {
         .source(ModuleLanguage::TypeScript, "modules-basic-ts", TS_MODULE_BASIC)
         .run()
         .unwrap();
-    assert_host_type(&test, HostType::Js);
+    assert_host_type(&test, JS_HOST_TYPE);
     // Set the program kind to the wrong value.
-    test.sql_confirmed("update st_module set program_kind=0").unwrap();
-    assert_host_type(&test, HostType::Wasm);
+    test.sql_confirmed(&format!("update st_module set program_kind={WASM_HOST_TYPE}"))
+        .unwrap();
+    assert_host_type(&test, WASM_HOST_TYPE);
 
     // After restarting, the database both comes up and has the right host type.
     test.restart_server();
-    assert_host_type(&test, HostType::Js);
+    assert_host_type(&test, JS_HOST_TYPE);
 }
 
-fn assert_host_type(test: &Smoketest, host_type: HostType) {
+fn assert_host_type(test: &Smoketest, expected: &str) {
     let output = test.sql_confirmed("select program_kind from st_module").unwrap();
     let rows = output.lines().skip(2).map(|s| s.trim()).collect::<Vec<_>>();
-    match host_type {
-        HostType::Wasm => assert_eq!(&rows, &["0"]),
-        HostType::Js => assert_eq!(&rows, &["1"]),
-    }
+    assert_eq!(&rows, &[expected]);
 }
