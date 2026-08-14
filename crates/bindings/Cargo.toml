@@ -29,10 +29,8 @@ spacetimedb-query-builder.workspace = true
 anyhow.workspace = true
 bytemuck.workspace = true
 bytes.workspace = true
-derive_more.workspace = true
 http.workspace = true
 log.workspace = true
-scoped-tls.workspace = true
 
 rand08 = { workspace = true, optional = true }
 # we depend on getrandom and enable the `custom` feature, so that
@@ -44,6 +42,7 @@ serde_json.workspace = true
 [dev-dependencies]
 insta.workspace = true
 trybuild.workspace = true
+
 
 [lints]
 workspace = true

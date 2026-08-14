@@ -41,6 +41,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-cli-docs",
     },
     Command {
+        path: &["dep-check"],
+        package: "ci-dep-check",
+    },
+    Command {
         path: &["global-json-policy"],
         package: "ci-global-json-policy",
     },

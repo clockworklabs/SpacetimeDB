@@ -38,16 +38,9 @@ spacetimedb-memory-usage = { workspace = true, optional = true }
 spacetimedb-metrics = { workspace = true, optional = true }
 
 anyhow.workspace = true
-bitflags.workspace = true
-bytes.workspace = true
-chrono.workspace = true
 derive_more.workspace = true
-enum-as-inner.workspace = true
 hex.workspace = true
-itertools.workspace = true
-log.workspace = true
 serde = { workspace = true, optional = true }
-thiserror.workspace = true
 blake3.workspace = true
 enum-map = { workspace = true, optional = true }
 
@@ -57,7 +50,6 @@ proptest-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
 spacetimedb-sats = { path = "../sats", features = ["test"] }
-bytes.workspace = true
 serde_json.workspace = true
 insta.workspace = true
 ron.workspace = true
@@ -65,6 +57,7 @@ ron.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
 proptest-derive.workspace = true
+
 
 [lints]
 workspace = true
