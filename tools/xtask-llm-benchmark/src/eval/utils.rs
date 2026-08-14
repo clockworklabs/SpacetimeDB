@@ -110,8 +110,6 @@ pub(crate) fn run_with_timeout(mut cmd: Command, cwd: &Path, timeout: Duration) 
         if start.elapsed() >= timeout {
             let termination_error = kill_process_tree(&mut child).err();
             let _ = child.wait();
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
             let message = termination_error
                 .map(|error| format!("process timeout; failed to terminate process tree: {error}"))
                 .unwrap_or_else(|| "process timeout".to_string());
@@ -139,7 +137,7 @@ fn kill_process_tree(child: &mut Child) -> io::Result<()> {
 
     #[cfg(unix)]
     let killed = Command::new("kill")
-        .args(["-KILL", &format!("-{}", child.id())])
+        .args(["-KILL", "--", &format!("-{}", child.id())])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
