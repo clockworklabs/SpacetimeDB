@@ -197,7 +197,6 @@ fn archive_smoketests(archive_file: &Path, suite: SmoketestSuite) -> Result<()> 
         .args([
             "nextest",
             "archive",
-            "--release",
             "--timings",
             "-p",
             "spacetimedb-smoketests",
