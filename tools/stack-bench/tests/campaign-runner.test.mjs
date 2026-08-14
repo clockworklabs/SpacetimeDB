@@ -208,6 +208,9 @@ test('model-free campaign execution checkpoints a retry and every completed atte
         const output = argv[argv.indexOf('--out') + 1];
         assert.equal(existsSync(output), true,
           'every execution, including a retry, must have a preflight-mountable output directory');
+        assert.deepEqual(options.logs, {
+          stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log'),
+        });
         const parent = argv[argv.indexOf('--parent-attempt-id') + 1];
         const { emptyArtifactIdentities, writeRunJson } = await import('../artifacts.mjs');
         if (calls.length === 1) return { code: 1, timedOut: false };
@@ -234,6 +237,10 @@ test('model-free campaign execution checkpoints a retry and every completed atte
     assert.equal(state.summary.executions, 10);
     assert.deepEqual(state.attempts[0].executions.map(item => item.status), ['invalid', 'completed']);
     assert.equal(calls.every(call => call.options.timeoutMs === 240 * 60_000), true);
+    const processArtifact = readArtifact(join(root, state.attempts[0].executions[0].output, 'process.json'),
+      { expectedKind: 'campaign_process' });
+    assert.equal(processArtifact.payload.executionId, state.attempts[0].executions[0].id);
+    assert.equal(processArtifact.payload.exitCode, 1);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

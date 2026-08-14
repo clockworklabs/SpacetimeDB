@@ -1,8 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const VERSION = 1;
+const VERSION = 2;
 const HASH = /^[a-f0-9]{64}$/;
 const SAFE_ID = /^[a-z0-9][a-z0-9.-]*$/;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -14,10 +16,24 @@ function processAlive(pid) {
   catch (error) { return error.code === 'EPERM'; }
 }
 
+function controllerInstance(env = process.env) {
+  return env.STACK_BENCH_CONTROLLER_INSTANCE?.trim() || hostname();
+}
+
+function ownerAlive(record, currentInstance) {
+  if (record.ownerInstance === currentInstance) return processAlive(record.ownerPid);
+  try {
+    return execFileSync('docker', ['inspect', '--format', '{{.State.Running}}', record.ownerInstance],
+      { encoding: 'utf8', stdio: 'pipe', timeout: 15_000 }).trim() === 'true';
+  } catch {
+    return false;
+  }
+}
+
 function validateRecord(input, path = '<campaign-lock>') {
   if (!object(input)) fail(`${path} must contain an object`);
   const fields = new Set(['version', 'campaignId', 'campaignSha256', 'ownerPid',
-    'ownershipMarkerSha256', 'acquiredAt']);
+    'ownerInstance', 'ownershipMarkerSha256', 'acquiredAt']);
   for (const key of Object.keys(input)) if (!fields.has(key)) fail(`${path}.${key} is unknown`);
   for (const key of fields) if (!Object.hasOwn(input, key)) fail(`${path}.${key} is required`);
   if (input.version !== VERSION) fail(`${path}.version is unsupported`);
@@ -28,6 +44,9 @@ function validateRecord(input, path = '<campaign-lock>') {
     if (typeof input[field] !== 'string' || !HASH.test(input[field])) fail(`${path}.${field} is invalid`);
   }
   if (!Number.isInteger(input.ownerPid) || input.ownerPid <= 0) fail(`${path}.ownerPid is invalid`);
+  if (typeof input.ownerInstance !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(input.ownerInstance)) {
+    fail(`${path}.ownerInstance is invalid`);
+  }
   if (typeof input.acquiredAt !== 'string' || Number.isNaN(Date.parse(input.acquiredAt))) {
     fail(`${path}.acquiredAt is invalid`);
   }
@@ -45,7 +64,7 @@ function readRecord(path) {
 }
 
 export function acquireCampaignLock(directory, campaign,
-  { ownerPid = process.pid, now = new Date().toISOString(), alive = processAlive,
+  { ownerPid = process.pid, ownerInstance = controllerInstance(), now = new Date().toISOString(), alive = ownerAlive,
     uuid = randomUUID } = {}) {
   const root = resolve(directory);
   mkdirSync(root, { recursive: true });
@@ -55,6 +74,9 @@ export function acquireCampaignLock(directory, campaign,
     fail('a compiled campaign identity is required');
   }
   if (!Number.isInteger(ownerPid) || ownerPid <= 0) fail('ownerPid is invalid');
+  if (typeof ownerInstance !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/.test(ownerInstance)) {
+    fail('ownerInstance is invalid');
+  }
   if (typeof now !== 'string' || Number.isNaN(Date.parse(now))) fail('acquiredAt is invalid');
   const token = uuid();
   const record = validateRecord({
@@ -62,6 +84,7 @@ export function acquireCampaignLock(directory, campaign,
     campaignId: campaign.id,
     campaignSha256: campaign.contentSha256,
     ownerPid,
+    ownerInstance,
     ownershipMarkerSha256: tokenHash(token),
     acquiredAt: now,
   });
@@ -72,8 +95,8 @@ export function acquireCampaignLock(directory, campaign,
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
       const existing = readRecord(path);
-      if (alive(existing.ownerPid)) {
-        fail(`${campaign.id} is already controlled by pid ${existing.ownerPid}`);
+      if (alive(existing, ownerInstance)) {
+        fail(`${campaign.id} is already controlled by ${existing.ownerInstance} pid ${existing.ownerPid}`);
       }
       const stale = `${path}.stale-${uuid()}`;
       try {
@@ -101,6 +124,7 @@ export function releaseCampaignLock(lock) {
   if (existing.campaignId !== expected.campaignId
     || existing.campaignSha256 !== expected.campaignSha256
     || existing.ownerPid !== expected.ownerPid
+    || existing.ownerInstance !== expected.ownerInstance
     || existing.ownershipMarkerSha256 !== tokenHash(lock.token)) {
     try { renameSync(releasing, lock.path); }
     catch { /* preserve the moved evidence if another owner already acquired */ }

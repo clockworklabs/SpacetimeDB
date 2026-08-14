@@ -142,6 +142,12 @@ function readAttemptResult(plan, attempt, output, processResult) {
   if (artifactError) return { exitCode: processResult.code, timedOut: processResult.timedOut,
     run: { outcome: { kind: 'harness_failure',
       reason: `run.json is invalid: ${artifactError.message}` } } };
+  if (!run && processResult.code !== 0 && !processResult.timedOut) {
+    const detail = (processResult.stderrTail || processResult.stdoutTail || processResult.error?.message || '')
+      .split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(-4).join(' | ').slice(0, 800);
+    return { exitCode: processResult.code, timedOut: false, run: { outcome: {
+      kind: 'harness_failure', reason: detail || 'attempt ended before producing run.json' } } };
+  }
   return { exitCode: processResult.code, timedOut: processResult.timedOut, run };
 }
 
@@ -384,9 +390,21 @@ export async function executeCampaign(campaignFile, directory,
           cwd: ROOT,
           env: { ...executionEnv, STACK_BENCH_SUPERVISOR_STATE: supervisorState },
           stdio: 'inherit',
+          logs: { stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log') },
           timeoutMs: plan.definition.budgets.attemptTimeoutMinutes * 60_000,
         });
       processResult.buildImage = executionEnv.STACK_BENCH_IMAGE;
+      writeArtifact(join(output, 'process.json'), { kind: 'campaign_process',
+        id: `${next.claim.executionId}-process`,
+        attempt: { id: next.claim.executionId, parentId: next.claim.attempt.id },
+        identities: emptyArtifactIdentities({ experiment: {
+          id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state,
+        } }),
+        payload: { schemaVersion: 1, executionId: next.claim.executionId,
+          exitCode: processResult.code ?? null, signal: processResult.signal ?? null,
+          timedOut: processResult.timedOut === true,
+          streams: processResult.logs ? Object.fromEntries(Object.entries(processResult.logs)
+            .map(([name, log]) => [name, { ...log, path: `process.${name}.log` }])) : null } });
       let cleanupError = null;
       if (!processResult.ok && existsSync(supervisorState)) {
         try { rescueSupervisedLease(supervisorState, output); }

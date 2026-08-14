@@ -58,6 +58,13 @@ export function runExitCode(outcome) {
   return ['harness_failure', 'ungraded'].includes(outcome?.kind) ? 1 : 0;
 }
 
+// A ladder level builds on the source produced by the previous level. If that
+// level was not graded, proceeding would spend another model session on an
+// artifact whose baseline is unknown and produce a run that cannot be compared.
+export function ladderMayContinue(outcome) {
+  return !['harness_failure', 'ungraded'].includes(outcome?.kind);
+}
+
 export function mutationControlEligible(outcome) {
   return outcome?.kind === 'passed';
 }

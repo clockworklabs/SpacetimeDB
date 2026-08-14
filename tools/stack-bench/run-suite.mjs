@@ -176,18 +176,18 @@ function codeMetrics(args) {
   };
 }
 
-function resetDatabase(args, track) {
+function resetDatabase(args) {
   process.stdout.write('  reset database ... ');
   try {
     run(process.execPath, [RESET, args.backend, args.app]);
     console.log('ok');
   } catch (err) {
     console.log('FAILED');
-    const detail = `${err.stdout ?? ''}${err.stderr ?? ''}`.trim() || err.message || '';
-    console.log(`    ${detail.toString().split(/\r?\n/).slice(-4).join(' | ')}`);
-    return false;
+    const detail = childFailureDetail(err, err?.stdout);
+    console.log(`    ${detail}`);
+    return { ok: false, detail };
   }
-  return true;
+  return { ok: true, detail: null };
 }
 
 function lint(args) {
@@ -378,9 +378,12 @@ async function main() {
   // Reset before EVERY step, not once per run: the lint and each suite create
   // state of their own, so a single up-front reset leaves later suites grading
   // dirty state — which silently lowers scores.
+  let lastResetFailure = null;
   const freshen = async () => {
     if (!args.reset) return true;
-    if (!resetDatabase(args, track)) return false;
+    const reset = resetDatabase(args);
+    lastResetFailure = reset.detail;
+    if (!reset.ok) return false;
     // An app whose fixture data is created at startup has just had it wiped, so
     // the server has to come back before the state it seeds exists again.
     // Republishing a SpacetimeDB module re-runs `init`, so only the hosted
@@ -459,7 +462,7 @@ async function main() {
   }
 
   if (!(await freshen())) {
-    bundle.error = 'database reset failed — scores would not be comparable';
+    bundle.error = `database reset failed — scores would not be comparable${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
     bundle.outcome = { kind: 'harness_failure', phase: 'database-reset', reason: bundle.error };
     markRemainingNotRun('run aborted after database reset failed');
     writeBundle();
@@ -484,7 +487,7 @@ async function main() {
     if (!(await freshen())) {
       console.log(`  ${suite.id}: SKIPPED (reset failed)`);
       markRemainingNotRun('run aborted after database reset failed');
-      bundle.error = 'database reset failed — remaining selected checks did not run';
+      bundle.error = `database reset failed — remaining selected checks did not run${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
       bundle.outcome = { kind: 'harness_failure', phase: 'database-reset', reason: bundle.error };
       writeBundle();
       console.log(`\nABORTED: ${bundle.error}`);

@@ -8,7 +8,8 @@
 
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { closeSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync,
+  writeSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -80,9 +81,48 @@ export function parseReferenceQualificationArgs(argv) {
 }
 
 export function runBounded(command, argv,
-  { cwd, env, stdio = 'inherit', timeoutMs, terminate = killTree }) {
+  { cwd, env, stdio = 'inherit', timeoutMs, terminate = killTree, logs = null }) {
   return new Promise(resolveRun => {
-    const child = spawn(command, argv, { cwd, env, stdio });
+    const maximum = logs?.maxBytes ?? 4 * 1024 * 1024;
+    if (logs && (!Number.isInteger(maximum) || maximum <= 0)) {
+      throw new Error('runBounded logs.maxBytes must be a positive integer');
+    }
+    if (logs) {
+      for (const name of ['stdout', 'stderr']) {
+        if (typeof logs[name] !== 'string' || !logs[name]) {
+          throw new Error(`runBounded logs.${name} must be a path`);
+        }
+      }
+      if (resolve(logs.stdout) === resolve(logs.stderr)) {
+        throw new Error('runBounded stdout and stderr logs must use different paths');
+      }
+    }
+    const streams = logs ? Object.fromEntries(['stdout', 'stderr'].map(name => {
+      const path = resolve(logs[name]);
+      mkdirSync(dirname(path), { recursive: true });
+      return [name, { path, fd: openSync(path, 'w', 0o600), bytes: 0, retainedBytes: 0,
+        hash: createHash('sha256'), tail: '' }];
+    })) : null;
+    const child = spawn(command, argv, { cwd, env,
+      stdio: streams ? ['inherit', 'pipe', 'pipe'] : stdio });
+    const capture = (name, destination) => chunk => {
+      const state = streams[name];
+      const data = Buffer.from(chunk);
+      state.bytes += data.length;
+      const remaining = maximum - state.retainedBytes;
+      if (remaining > 0) {
+        const retained = data.subarray(0, remaining);
+        writeSync(state.fd, retained);
+        state.hash.update(retained);
+        state.retainedBytes += retained.length;
+      }
+      state.tail = `${state.tail}${data.toString('utf8')}`.slice(-2000);
+      destination.write(data);
+    };
+    if (streams) {
+      child.stdout.on('data', capture('stdout', process.stdout));
+      child.stderr.on('data', capture('stderr', process.stderr));
+    }
     let timedOut = false;
     let spawnError = null;
     const timer = setTimeout(() => {
@@ -95,7 +135,14 @@ export function runBounded(command, argv,
     child.once('error', error => { spawnError = error; });
     child.once('close', (code, signal) => {
       clearTimeout(timer);
-      resolveRun({ ok: !timedOut && !spawnError && code === 0, code, signal, timedOut, error: spawnError });
+      const captured = streams ? Object.fromEntries(Object.entries(streams).map(([name, state]) => {
+        closeSync(state.fd);
+        return [name, { path: state.path, sha256: state.hash.digest('hex'), bytes: state.bytes,
+          retainedBytes: state.retainedBytes, truncated: state.bytes > state.retainedBytes }];
+      })) : null;
+      resolveRun({ ok: !timedOut && !spawnError && code === 0, code, signal, timedOut,
+        error: spawnError, logs: captured,
+        stdoutTail: streams?.stdout.tail.trim() || '', stderrTail: streams?.stderr.tail.trim() || '' });
     });
   });
 }

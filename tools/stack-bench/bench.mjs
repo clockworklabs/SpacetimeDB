@@ -24,10 +24,11 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
   moduleName, dbName, DEFAULT_TRACK } from './tracks.mjs';
-import { killTree, sleepSync } from './platform.mjs';
+import { killTree } from './platform.mjs';
 import { compareCriterionEvidence } from './scoring.mjs';
 import { emptyArtifactIdentities, readArtifactPayload, writeArtifact, writeRunJson } from './artifacts.mjs';
-import { aggregateRunOutcome, classifyBundle, mutationControlEligible, runExitCode } from './outcomes.mjs';
+import { aggregateRunOutcome, classifyBundle, ladderMayContinue, mutationControlEligible,
+  runExitCode } from './outcomes.mjs';
 import { summarizeSessions } from './session-metrics.mjs';
 import { hashDirectory } from './provenance.mjs';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
@@ -46,6 +47,7 @@ import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from './recovery.mjs';
 import { resolveAgentCredential } from './agent-credentials.mjs';
 import { sandboxProbeMode } from './sandbox.mjs';
+import { restoreAppSource, seedAppSource, snapshotAppSource } from './source-snapshot.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
@@ -106,77 +108,14 @@ function parseArgs(argv) {
   return a;
 }
 
-// Source only — node_modules and build output are large and reproducible.
-//
-// `client` is copied whole rather than cherry-picked. Naming src, index.html
-// and vite.config.ts individually left out client/package.json and the
-// tsconfigs, which meant the snapshot could not be installed, built or run —
-// so the only runnable copy of any run was the stale results/<run>/app from an
-// older layout, and an investigation that needed to RUN the app got pushed onto
-// the wrong build. Evidence that cannot be executed is not evidence.
-const SOURCE_DIRS = ['backend', 'server', 'client',
-  // The back-office script is evidence — it is how each stack's model
-  // interpreted "write the database directly", and the first run to require
-  // one lost it to cleanup because it was not on this list.
-  'scripts', 'package.json'];
-
 function snapshotSource(appDir, to) {
-  rmSync(to, { recursive: true, force: true });
-  for (const rel of SOURCE_DIRS) {
-    const from = join(appDir, rel);
-    if (!existsSync(from)) continue;
-    cpSync(from, join(to, rel), {
-      recursive: true,
-      // Both separators: on Windows the path is `client\dist\out.js`, which a
-      // forward-slash-only class does not match, so build output was being
-      // snapshotted here all along. It went unnoticed while `client` was
-      // cherry-picked and dist was never walked.
-      filter: src => !/node_modules|[\\/]dist([\\/]|$)/.test(src),
-    });
-  }
+  snapshotAppSource(appDir, to);
 }
 
-// Rolling back deletes the app's source, and a dev server watching that
-// directory holds it open: an Express app under `server/` made rmSync throw
-// EBUSY, which killed a finished postgres run outright — after grading, before
-// its totals, transcripts or cleanup. The caller stops the servers first; this
-// retries anyway, because a watcher can take a moment to let go and losing a
-// completed run to a directory handle is a bad trade.
+// Restore in place: generated layouts are not prescribed, active watchers keep
+// their directory handles, and dependency folders survive at any depth.
 function restoreSource(from, appDir) {
-  for (const rel of SOURCE_DIRS) {
-    const src = join(from, rel);
-    if (!existsSync(src)) continue;
-    const dest = join(appDir, rel);
-
-    // Keep the installed dependencies. A snapshot holds source only, so
-    // deleting the whole directory and copying it back took node_modules with
-    // it — the rolled-back app could no longer run, its database reset failed
-    // with "you may have forgotten to install dependencies", and the level
-    // ended NOT GRADED. A regressed fix round destroyed its own run instead of
-    // falling back to the better source, which is the one thing rollback exists
-    // to do.
-    const mods = join(dest, 'node_modules');
-    const parked = join(appDir, `.node_modules-${rel.replace(/[\\/]/g, '_')}`);
-    let stashed = false;
-    if (existsSync(mods)) {
-      try { rmSync(parked, { recursive: true, force: true }); renameSync(mods, parked); stashed = true; }
-      catch { /* fall through: a reinstall is better than a failed restore */ }
-    }
-
-    for (let attempt = 0; ; attempt++) {
-      try { rmSync(dest, { recursive: true, force: true }); break; }
-      catch (err) {
-        if (attempt >= 5) throw err;
-        sleepSync(2000);
-      }
-    }
-    cpSync(src, dest, { recursive: true });
-
-    if (stashed) {
-      try { renameSync(parked, mods); }
-      catch { rmSync(parked, { recursive: true, force: true }); }
-    }
-  }
+  restoreAppSource(from, appDir);
 }
 
 // Did this build read the thing that grades it? Prevention has holes we know
@@ -667,17 +606,13 @@ async function main() {
   });
 
   // Seed the work dir from an existing app, so the first level upgrades it
-  // rather than building from nothing. Source only (SOURCE_DIRS); the upgrade
-  // session installs its own dependencies exactly as a developer checking out
-  // the L1 code would.
+  // rather than building from nothing. Source only; the upgrade session
+  // installs its own dependencies exactly as a developer checking out the
+  // earlier code would. The copy is layout-independent for neutral runs.
   if (args.seedFrom) {
     const from = resolve(args.seedFrom);
     if (!existsSync(from)) { console.error(`--seed-from path does not exist: ${from}`); process.exit(2); }
-    mkdirSync(appDir, { recursive: true });
-    for (const rel of SOURCE_DIRS) {
-      const src = join(from, rel);
-      if (existsSync(src)) cpSync(src, join(appDir, rel), { recursive: true });
-    }
+    seedAppSource(from, appDir);
     console.log(`  seeded from ${from} — level ${args.levelList[0]} will UPGRADE it, not rebuild`);
   }
 
@@ -798,9 +733,15 @@ async function main() {
     const fixSessions = [];
     let regressed = false;
     let repairStopReason = null;
+    const initialBundleOutcome = classifyBundle(bundle);
+    const initialGradeUsable = ladderMayContinue(initialBundleOutcome);
+    if (!initialGradeUsable) {
+      repairStopReason = 'initial-grading-failed';
+      console.log('  repairs skipped: the initial grade did not complete, so there are no reliable findings to fix');
+    }
 
     // Hand back findings and let the agent fix, until clean or out of rounds.
-    while (fixRounds < args.fixRounds) {
+    while (initialGradeUsable && fixRounds < args.fixRounds) {
       let wroteReport = true;
       try {
         sh('node', [join(ROOT, 'report-bugs.mjs'), '--app', appDir,
@@ -889,9 +830,9 @@ async function main() {
       const evidenceRegressed = shared.lostEvidence.length > 0 || shared.definitionChanges.length > 0;
       if (evidenceRegressed || shared.after < shared.before) {
         if (shared.lostEvidence.length) {
-          console.log(`    lost conclusive evidence for ${shared.lostEvidence.length} criterion/criteria; rolling back and stopping`);
+          console.log(`    lost conclusive evidence for ${shared.lostEvidence.length} criterion/criteria; rolling back this fix`);
         } else if (shared.definitionChanges.length) {
-          console.log('    rubric points changed between grades; rolling back and stopping');
+          console.log('    rubric points changed between grades; rolling back this fix');
         } else {
           console.log(`    regressed (${shared.before} -> ${shared.after} on shared criteria); rolling back this fix`);
         }
@@ -982,6 +923,10 @@ async function main() {
       durationSec: Math.round((Date.now() - t0) / 1000),
     });
     writeRunJson(join(args.out, 'run.json'), run);
+    if (!ladderMayContinue(finalBundleOutcome)) {
+      console.log(`  ladder stopped after L${level}: later levels require a usable L${level} baseline`);
+      break;
+    }
   }
 
   if (args.mutations) {

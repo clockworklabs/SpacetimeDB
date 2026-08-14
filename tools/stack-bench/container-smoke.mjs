@@ -132,6 +132,25 @@ async function main() {
     if (!logStreamingAuthorized) {
       throw new Error('`spacetime dev` published successfully but its log stream was not authorized');
     }
+    // The grader resets by republishing the same named database from this exact
+    // leased container. Prove that `-y` retained a reusable local identity,
+    // rather than merely proving that the first anonymous-looking publish ran.
+    execFileSync('docker', ['exec', containerName, 'sh', '-lc',
+      'for process in /proc/[0-9]*; do '
+      + 'test "$(cat "$process/comm" 2>/dev/null)" = spacetimedb-cli '
+      + '&& kill -TERM "${process##*/}" || true; done'], { stdio: 'pipe' });
+    await waitFor(() => dev.exitCode !== null, 15_000, 'spacetime dev to stop before reset publish');
+    const targetUri = containerReachableSpacetimeUri(lease, identity.networkMode);
+    execFileSync('docker', ['exec', containerName, 'sh', '-lc',
+      `cd /app/spacetimedb && /deps/spacetimedb-cli publish ${module} `
+      + `--no-config --module-path . -s ${targetUri} --delete-data -y`],
+    { stdio: 'pipe', timeout: 240_000 });
+    const afterReset = execFileSync(CLI, ['sql', module, 'SELECT * FROM smoke_item', '-s', uri],
+      { encoding: 'utf8', stdio: 'pipe' });
+    if (!/\bid\s*\|\s*value\b/.test(afterReset)) {
+      throw new Error(`SQL verification after reset publish failed:\n${afterReset}`);
+    }
+    console.log(JSON.stringify({ resetRepublished: true, resetSqlVerified: true }));
   } finally {
     if (dev && dev.exitCode === null) dev.kill('SIGTERM');
     try { execFileSync('docker', ['rm', '-f', containerName], { stdio: 'ignore' }); } catch { /* absent */ }

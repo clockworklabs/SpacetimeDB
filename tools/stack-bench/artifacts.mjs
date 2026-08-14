@@ -15,6 +15,7 @@ export const ARTIFACT_KINDS = Object.freeze([
   'backend_lease_evidence',
   'bug_report_quality',
   'campaign_admission',
+  'campaign_process',
   'campaign_plan',
   'campaign_report',
   'campaign_state',
@@ -49,6 +50,8 @@ const PAYLOAD_FIELDS = Object.freeze({
   bug_report_quality: new Set(['bugs', 'vague', 'vaguePct']),
   campaign_admission: new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
     'ok', 'runtime', 'agents', 'reports']),
+  campaign_process: new Set(['schemaVersion', 'executionId', 'exitCode', 'signal', 'timedOut',
+    'streams']),
   campaign_plan: new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
     'contentSha256', 'definition', 'identities', 'bindings', 'stacks', 'agents', 'attempts', 'summary']),
   campaign_report: new Set(['reportSchemaVersion', 'campaign', 'scope', 'policy', 'attempts',
@@ -189,6 +192,39 @@ function validatePayload(kind, payload) {
     }
   };
   if (kind === 'benchmark_run') arrayWhenPresent('levels');
+  if (kind === 'campaign_process') {
+    if (payload.schemaVersion !== 1) fail('campaign_process payload.schemaVersion must be 1');
+    if (typeof payload.executionId !== 'string' || !payload.executionId) {
+      fail('campaign_process payload.executionId is required');
+    }
+    if (payload.exitCode !== null && !Number.isInteger(payload.exitCode)) {
+      fail('campaign_process payload.exitCode must be an integer or null');
+    }
+    if (payload.signal !== null && typeof payload.signal !== 'string') {
+      fail('campaign_process payload.signal must be a string or null');
+    }
+    if (typeof payload.timedOut !== 'boolean') fail('campaign_process payload.timedOut must be boolean');
+    if (payload.streams !== null) {
+      objectWhenPresent('streams');
+      for (const [name, stream] of Object.entries(payload.streams)) {
+        if (!['stdout', 'stderr'].includes(name) || !isObject(stream)) {
+          fail(`campaign_process payload.streams.${name} is invalid`);
+        }
+        const allowed = new Set(['path', 'sha256', 'bytes', 'retainedBytes', 'truncated']);
+        for (const key of Object.keys(stream)) {
+          if (!allowed.has(key)) fail(`campaign_process payload.streams.${name}.${key} is unknown`);
+        }
+        if (stream.path !== `process.${name}.log`) fail(`campaign_process payload.streams.${name}.path is invalid`);
+        if (!HASH.test(stream.sha256)) fail(`campaign_process payload.streams.${name}.sha256 is invalid`);
+        if (!Number.isSafeInteger(stream.bytes) || stream.bytes < 0
+          || !Number.isSafeInteger(stream.retainedBytes) || stream.retainedBytes < 0
+          || stream.retainedBytes > stream.bytes) fail(`campaign_process payload.streams.${name} byte counts are invalid`);
+        if (stream.truncated !== (stream.bytes > stream.retainedBytes)) {
+          fail(`campaign_process payload.streams.${name}.truncated is inconsistent`);
+        }
+      }
+    }
+  }
   const validateGradeFeatures = (features, at) => {
     if (!Array.isArray(features)) return;
     features.forEach((feature, featureIndex) => {

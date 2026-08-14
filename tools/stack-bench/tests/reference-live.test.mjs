@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -143,6 +144,24 @@ test('reference qualification terminates a child at its repetition deadline', as
   assert.equal(result.ok, false);
   assert.equal(result.timedOut, true);
   assert(Date.now() - started < 10_000, 'timed-out child was not terminated promptly');
+});
+
+test('bounded execution tees useful tails and caps durable process logs', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-process-log-'));
+  try {
+    const result = await runBounded(process.execPath,
+      ['-e', 'process.stdout.write("abcdefgh"); process.stderr.write("actual failure\\n")'], {
+        stdio: 'inherit', timeoutMs: 5_000,
+        logs: { stdout: join(root, 'stdout.log'), stderr: join(root, 'stderr.log'), maxBytes: 5 },
+      });
+    assert.equal(result.ok, true);
+    assert.equal(readFileSync(join(root, 'stdout.log'), 'utf8'), 'abcde');
+    assert.equal(readFileSync(join(root, 'stderr.log'), 'utf8'), 'actua');
+    assert.deepEqual({ bytes: result.logs.stdout.bytes, retainedBytes: result.logs.stdout.retainedBytes,
+      truncated: result.logs.stdout.truncated }, { bytes: 8, retainedBytes: 5, truncated: true });
+    assert.match(result.stderrTail, /actual failure/);
+    assert.equal(result.logs.stdout.sha256, createHash('sha256').update('abcde').digest('hex'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('supervisor accepts a deleted private lease only with matching released evidence', () => {

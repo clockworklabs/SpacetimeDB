@@ -266,10 +266,10 @@ By SpacetimeDB surface: other (19), server API (schema / reducers) (16), client 
   - cost: Appeared on essentially every single `publish`/`generate` invocation across all sessions even though the build succeeded seconds later and typescript was correctly installed, forcing repeated manual judgment calls about whether the warning was real
   - evidence: `tsc not found in node_modules. Make sure you have the 'typescript' package as a dev-dependency and that your dependencies are installed. Build finished successfully.`
   - possible fix: Fix the tsc-detection check (it's producing a false positive even when `typescript` is a resolvable dependency and the build itself invokes tsc successfully) or remove the warning when the subsequent build succeeds
-- **No non-interactive flag to confirm a destructive republish; must pipe `echo y`** *(CLI/publish)*
-  - cost: Every republish after a schema change to an already-populated local DB required detecting the interactive y/n prompt and wrapping the command in `echo y | ...`, done ad hoc every time rather than via a documented flag
+- **Historical benchmark guidance failed to use the existing non-interactive publish flag** *(CLI/publish; corrected)*
+  - cost: Every republish after a schema change to an already-populated local DB used `echo y | ...` even though the CLI supports `--yes`/`-y`; piping stdin confirms a prompt but does not select the CLI's non-interactive local-authentication path
   - evidence: `echo y | D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/`
-  - possible fix: Add a `--yes`/`-y` (or `--delete-data`) flag to `spacetimedb-cli publish` so scripted/automated workflows don't need to pipe stdin to bypass the confirmation prompt
+  - correction: Stack Bench now prescribes `publish ... --yes` and forbids piped confirmation or anonymous named publishes. The installed CLI's `publish --help` documents `--yes`/`-y` and its `skip-login` behavior.
 - **CLI suggests a nonexistent `identity` subcommand** *(CLI/publish)*
   - cost: Two separate sessions independently tried `spacetimedb-cli identity list`/`identity --help` to inspect/manage identities (a reasonable guess given `--identity`-style flags elsewhere) and got an unhelpful nearest-match suggestion pointing at the unrelated `init` command
   - evidence: `error: unrecognized subcommand 'identity' tip: a similar subcommand exists: 'init'`
@@ -914,10 +914,10 @@ By SpacetimeDB surface: server API (schema / reducers) (5), other (2), generated
   - cost: Multiple greps/reads across reducers.ts, db_connection_impl.ts and errors.ts just to learn how a failed reducer call rejects and what shape/message the client receives, before it could write .catch(err => ...) error handling in the UI
   - evidence: `Bash: grep -rn "reject\|Promise<void>\|message" "D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/crates/bindings-typescript/src/sdk/reducers.ts" 2>/dev/null | he`
   - possible fix: Document the reducer promise rejection contract (SenderError -> Error.message shape) in the TypeScript SDK client docs so this doesn't require reading db_connection_impl.ts/errors.ts source.
-- **Publish prompts for interactive confirmation on schema changes with no non-interactive flag used** *(CLI/publish)*
-  - cost: Had to pipe `echo y |` into the publish command to get past a breaking-change confirmation prompt instead of using a documented non-interactive flag
+- **Historical run piped confirmation instead of using the CLI's non-interactive flag** *(CLI/publish; corrected)*
+  - cost: The run used `echo y |` to get past a breaking-change confirmation prompt instead of the documented `--yes`/`-y` path
   - evidence: `Bash: cd "C:/Users/bradl/AppData/Local/Temp/stack-bench-runs/spacetime-ecom-run0-20260809215454/app" && echo y | D:/Development/ClockworkLabs/SpacetimeDB/SpacetimeDB/`
-  - possible fix: Document (or surface in --help) a --yes/-y flag for `spacetime publish` so scripted/agent workflows don't need to pipe stdin to answer the breaking-change prompt.
+  - correction: `publish --help` already surfaces `--yes`/`-y`; the defect was in Stack Bench's prescribed command and has been corrected there.
 - **Client-disconnect lifecycle reducer fires on reload/reconnect, silently wiping session state** *(docs)*
   - cost: An entire second session (~60 actions, including writing a bespoke Playwright test harness) was spent diagnosing 6 separate reported bugs that all traced back to one root cause: the disconnect lifecycle reducer deleting the session row on every websocket drop, including page reloads that reconnect with the same identity/token
   - evidence: `The clearest bug: 'onDisconnect' in 'backend/spacetimedb/src/index.ts' deletes the session row whenever the connection drops — including on a page reload/reconnect using the same identity/token, which would wipe out the `

@@ -29,7 +29,7 @@ tables and calls reducers over a live connection.
 Publish the module, then regenerate the client bindings from it:
 
 ```bash
-<STDB_BIN> publish <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI>
+<STDB_BIN> publish <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI> --yes
 <STDB_BIN> generate --lang typescript --out-dir client/src/module_bindings --module-path backend/spacetimedb
 ```
 
@@ -38,7 +38,7 @@ watches the module and auto-rebuilds, auto-publishes and auto-regenerates the
 client bindings on every save — the equivalent of a watching dev server:
 
 ```bash
-<STDB_BIN> dev <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI>
+<STDB_BIN> dev <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI> --yes
 ```
 
 Leave it running in the background while you work. The manual commands below
@@ -52,8 +52,14 @@ change is rejected as incompatible, do not write migration logic; republish
 with `--delete-data` and move on:
 
 ```bash
-echo y | <STDB_BIN> publish <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI> --delete-data
+<STDB_BIN> publish <MODULE_NAME> --module-path backend/spacetimedb -s <STDB_URI> --delete-data --yes
 ```
+
+Always use `--yes` for local publish and development commands. It selects the
+CLI's non-interactive authentication flow for the target server as well as
+confirming destructive schema changes. Do not pipe `y` into the command and do
+not publish anonymously: the benchmark must retain one local identity so the
+harness can republish and reset the same named database later in the run.
 
 Then start the client:
 

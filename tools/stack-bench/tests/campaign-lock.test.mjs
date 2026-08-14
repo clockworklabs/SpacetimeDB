@@ -11,8 +11,10 @@ const campaign = { id: 'ecommerce-l1-example', contentSha256: 'a'.repeat(64) };
 test('a campaign lock admits one exact controller and only its token can release it', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-lock-'));
   try {
-    const lock = acquireCampaignLock(root, campaign, { uuid: () => 'owner-token' });
-    assert.throws(() => acquireCampaignLock(root, campaign), /already controlled/);
+    const lock = acquireCampaignLock(root, campaign, { ownerInstance: 'controller-a',
+      uuid: () => 'owner-token', alive: () => true });
+    assert.throws(() => acquireCampaignLock(root, campaign,
+      { ownerInstance: 'controller-a', alive: () => true }), /already controlled/);
     assert.throws(() => releaseCampaignLock({ ...lock, token: 'wrong-token' }), /no longer belongs/);
     assert.equal(releaseCampaignLock(lock), true);
     assert.equal(releaseCampaignLock(lock), false);
@@ -23,8 +25,9 @@ test('dead-owner reclamation moves only the exact stale lock and preserves campa
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-lock-stale-'));
   try {
     const first = acquireCampaignLock(root, campaign, { ownerPid: 1001,
-      uuid: () => 'first-token', alive: () => false });
+      ownerInstance: 'dead-controller', uuid: () => 'first-token', alive: () => false });
     const second = acquireCampaignLock(root, campaign, { ownerPid: 1002,
+      ownerInstance: 'new-controller',
       uuid: (() => { let index = 0; return () => `second-token-${++index}`; })(),
       alive: () => false });
     const record = JSON.parse(readFileSync(second.path, 'utf8'));
@@ -32,6 +35,35 @@ test('dead-owner reclamation moves only the exact stale lock and preserves campa
     assert.equal(record.campaignSha256, campaign.contentSha256);
     assert.throws(() => releaseCampaignLock(first), /no longer belongs/);
     assert.equal(releaseCampaignLock(second), true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a reused pid in a different dead controller does not keep a stale lock alive', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-lock-container-pid-'));
+  try {
+    const first = acquireCampaignLock(root, campaign, { ownerPid: 14,
+      ownerInstance: 'old-container', uuid: () => 'old-token', alive: () => false });
+    let inspected;
+    const second = acquireCampaignLock(root, campaign, { ownerPid: 14,
+      ownerInstance: 'new-container', uuid: () => 'new-token',
+      alive: (record, current) => { inspected = { record, current }; return false; } });
+    assert.equal(inspected.record.ownerInstance, 'old-container');
+    assert.equal(inspected.current, 'new-container');
+    assert.equal(second.record.ownerInstance, 'new-container');
+    assert.throws(() => releaseCampaignLock(first), /no longer belongs/);
+    assert.equal(releaseCampaignLock(second), true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a live controller in a different container retains its lock', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-lock-live-container-'));
+  try {
+    const first = acquireCampaignLock(root, campaign, { ownerPid: 14,
+      ownerInstance: 'running-container', uuid: () => 'running-token', alive: () => false });
+    assert.throws(() => acquireCampaignLock(root, campaign, { ownerPid: 14,
+      ownerInstance: 'replacement-container', alive: record => record.ownerInstance === 'running-container' }),
+    /already controlled by running-container pid 14/);
+    assert.equal(releaseCampaignLock(first), true);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
