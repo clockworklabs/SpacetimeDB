@@ -12,7 +12,7 @@ import { PACK_RUNTIME_METRIC } from './pack-runtime.mjs';
 import { sha256 } from './provenance.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
 import { missingRunnerObservation } from './runner-environment.mjs';
-import { listTracks, loadTrack } from './tracks.mjs';
+import { isDeclaredLevel, listTracks, loadTrack } from './tracks.mjs';
 
 export const PACK_BUDGET_POLICY = Object.freeze({
   id: 'max-observed-times-two-rounded-up-1s-v1',
@@ -235,7 +235,7 @@ function main() {
   const args = parsePackBudgetArgs(process.argv);
   if (!listTracks().includes(args.track)) throw new Error(`unknown track ${args.track}`);
   const track = loadTrack(args.track);
-  if (args.level > track.validatedThrough) throw new Error(`L${args.level} is not validated for ${args.track}`);
+  if (!isDeclaredLevel(track, args.level)) throw new Error(`L${args.level} is not declared for ${args.track}`);
   const binding = resolveLegacyRecipeRelease(track, args.level);
   if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
   const calibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir });

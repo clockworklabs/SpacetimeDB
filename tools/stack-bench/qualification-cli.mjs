@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
-import { listTracks, loadTrack } from './tracks.mjs';
+import { isDeclaredLevel, listTracks, loadTrack } from './tracks.mjs';
 import { PACK_BUDGET_POLICY } from './pack-budget.mjs';
 
 export function parseQualificationArgs(argv) {
@@ -47,7 +47,7 @@ function evidencePlan(calibration) {
 export function qualificationReadiness(trackName, level) {
   if (!listTracks().includes(trackName)) throw new Error(`unknown qualification track ${trackName}`);
   const track = loadTrack(trackName);
-  if (!Number.isInteger(level) || level < 1 || !track.suites[String(level)]) {
+  if (!isDeclaredLevel(track, level)) {
     throw new Error(`L${level} is not declared for ${trackName}`);
   }
   const binding = resolveLegacyRecipeRelease(track, level);

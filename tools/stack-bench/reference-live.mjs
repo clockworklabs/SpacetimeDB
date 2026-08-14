@@ -22,7 +22,7 @@ import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { recoverSupervisedRun, validateSupervisorState } from './recovery.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
-import { listTracks, loadTrack } from './tracks.mjs';
+import { isDeclaredLevel, listTracks, loadTrack } from './tracks.mjs';
 import { controllerRunner } from './runner-environment.mjs';
 
 export { controllerRunner as referenceQualificationRunner } from './runner-environment.mjs';
@@ -60,7 +60,7 @@ export function parseReferenceQualificationArgs(argv) {
   }
   if (!listTracks().includes(args.track)) throw new Error(`--track is unknown: ${args.track}`);
   const track = loadTrack(args.track);
-  if (!Number.isInteger(args.level) || args.level < 1 || !track.suites[String(args.level)]) {
+  if (!isDeclaredLevel(track, args.level)) {
     throw new Error(`--level must be declared for ${args.track}`);
   }
   if (!Number.isInteger(args.repetitions) || args.repetitions < 2) {

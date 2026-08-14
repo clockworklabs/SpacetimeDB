@@ -12,7 +12,7 @@ import { readArtifactPayload, writeRunJson } from './artifacts.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { analyseNullReports } from './null-control-analysis.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
-import { listTracks, loadTrack, suitesFor } from './tracks.mjs';
+import { isDeclaredLevel, listTracks, loadTrack, suitesFor } from './tracks.mjs';
 import { controllerRunner } from './runner-environment.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -50,11 +50,16 @@ function runGrade(argv, timeoutMs = 300_000) {
   });
 }
 
-function uniqueValidatedSuites(track, selectedLevel = null) {
+export function nullControlSuites(track, selectedLevel = null) {
+  if (selectedLevel !== null && !isDeclaredLevel(track, selectedLevel)) {
+    throw new Error(`L${selectedLevel} is not declared for ${track.name}`);
+  }
   const seen = new Set();
   const suites = [];
-  for (let level = 1; level <= track.validatedThrough; level++) {
-    if (selectedLevel !== null && level !== selectedLevel) continue;
+  const levels = selectedLevel === null
+    ? Array.from({ length: track.validatedThrough }, (_, index) => index + 1)
+    : [selectedLevel];
+  for (const level of levels) {
     for (const suite of suitesFor(track, level)) {
       if (seen.has(suite.spec)) continue;
       seen.add(suite.spec);
@@ -101,17 +106,16 @@ async function main() {
     const url = `http://127.0.0.1:${port}`;
     for (const trackName of args.tracks) {
       const track = loadTrack(trackName);
-      if (args.level !== null && args.level > track.validatedThrough) {
-        throw new Error(`L${args.level} is not validated for ${trackName}`);
-      }
+      const selectedSuites = nullControlSuites(track, args.level);
       if (args.level !== null) {
         const binding = resolveLegacyRecipeRelease(track, args.level);
-        const calibration = resolveCalibrationForRelease(binding?.release ?? null,
+        if (!binding) throw new Error(`${trackName} L${args.level} has no recipe release`);
+        const calibration = resolveCalibrationForRelease(binding.release,
           { trackRoot: track.dir, stackBenchRoot: ROOT });
         if (!calibration) throw new Error(`${trackName} L${args.level} has no calibration`);
         qualification = { binding, calibration, identity: calibrationQualificationIdentity(calibration) };
       }
-      for (const suite of uniqueValidatedSuites(track, args.level)) {
+      for (const suite of selectedSuites) {
         const reportPath = join(reportsDir, `${trackName}-l${suite.level}-${suite.id.replaceAll('@', '-')}.json`);
         process.stdout.write(`${trackName} L${suite.level} ${suite.id} (${basename(suite.spec)}) ... `);
         await runGrade(['--url', url, '--level', String(suite.level), '--spec', suite.spec,

@@ -69,6 +69,10 @@ export function loadTrack(name = DEFAULT_TRACK) {
   };
 }
 
+export function isDeclaredLevel(track, level) {
+  return Number.isInteger(level) && level >= 1 && Boolean(track?.suites?.[String(level)]);
+}
+
 // ─── Ports ───────────────────────────────────────────────────────────────────
 //
 // The single source of truth. These used to live separately in agent.mjs and

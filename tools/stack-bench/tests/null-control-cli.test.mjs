@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseNullControlArgs } from '../null-control.mjs';
+import { nullControlSuites, parseNullControlArgs } from '../null-control.mjs';
+import { loadTrack } from '../tracks.mjs';
 
 test('null qualification can select one exact track and level', () => {
   const args = parseNullControlArgs(['node', 'null-control.mjs',
@@ -12,4 +13,7 @@ test('null qualification can select one exact track and level', () => {
     '--track', 'ecommerce,chat', '--level', '1']), /exactly one/);
   assert.throws(() => parseNullControlArgs(['node', 'null-control.mjs',
     '--track', 'ecommerce', '--level', '0']), /positive integer/);
+  const track = loadTrack('ecommerce');
+  assert.deepEqual(nullControlSuites(track, 2).map(suite => suite.level), [2, 2, 2, 2, 2]);
+  assert.throws(() => nullControlSuites(track, 4), /not declared/);
 });
