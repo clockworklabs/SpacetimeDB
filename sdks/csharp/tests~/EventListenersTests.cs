@@ -1,39 +1,62 @@
 using System;
-using System.Collections.Generic;
 using SpacetimeDB.EventHandling;
 using Xunit;
 
 public class EventListenersTests
 {
     [Fact]
-    public void DelegateIndexHandlesHashCollisions()
+    public void BasicEventListenersDeduplicatesRemovesAndResubscribes()
     {
-        var index = new DelegateIndex<Action, string>(0, new ConstantHashComparer<Action>());
+        var eventListeners = new BasicEventListeners<Action>();
+        var callCount = 0;
         var listeners = new Action[12];
 
         for (var i = 0; i < listeners.Length; i++)
         {
-            var id = i;
-            listeners[i] = () => _ = id;
-            Assert.True(index.Add(listeners[i], $"listener-{i}"));
+            listeners[i] = new Listener(() => callCount++).Invoke;
+            eventListeners.Add(listeners[i]);
         }
 
-        Assert.False(index.Add(listeners[3], "duplicate"));
-        Assert.Equal(listeners.Length, index.Count);
+        eventListeners.Add(listeners[3]);
+        Assert.Equal(listeners.Length, eventListeners.Count);
 
-        Assert.True(index.Remove(listeners[3], out var removed));
-        Assert.Equal("listener-3", removed);
-        Assert.False(index.Remove(listeners[3], out _));
+        InvokeAll(eventListeners);
+        Assert.Equal(listeners.Length, callCount);
 
-        Assert.True(index.Remove(listeners[9], out removed));
-        Assert.Equal("listener-9", removed);
-        Assert.Equal(listeners.Length - 2, index.Count);
+        eventListeners.Remove(listeners[3]);
+        eventListeners.Remove(listeners[9]);
+        eventListeners.Remove(listeners[3]);
+        Assert.Equal(listeners.Length - 2, eventListeners.Count);
+
+        callCount = 0;
+        InvokeAll(eventListeners);
+        Assert.Equal(listeners.Length - 2, callCount);
+
+        eventListeners.Add(listeners[3]);
+        eventListeners.Add(listeners[9]);
+        Assert.Equal(listeners.Length, eventListeners.Count);
     }
 
-    private sealed class ConstantHashComparer<T> : IEqualityComparer<T>
+    private static void InvokeAll(BasicEventListeners<Action> listeners)
     {
-        public bool Equals(T? x, T? y) => EqualityComparer<T>.Default.Equals(x!, y!);
+        for (var i = listeners.Count - 1; i >= 0; i--)
+        {
+            listeners[i]();
+        }
+    }
 
-        public int GetHashCode(T obj) => 0;
+    private sealed class Listener
+    {
+        private readonly Action Callback;
+
+        public Listener(Action callback)
+        {
+            Callback = callback;
+        }
+
+        public void Invoke()
+        {
+            Callback();
+        }
     }
 }
