@@ -10,17 +10,6 @@ namespace SpacetimeDB.EventHandling
 
         void Add(T listener);
         void Remove(T listener);
-        
-        public static IEventListeners<T> operator +(IEventListeners<T> a, T b)
-        {
-            a.Add(b);
-            return a;
-        }
-        public static IEventListeners<T> operator -(IEventListeners<T> a, T b)
-        {
-            a.Remove(b);
-            return a;
-        }
     }
 
     public interface IEventListenersFactory
@@ -42,6 +31,8 @@ namespace SpacetimeDB.EventHandling
 
     public class BasicEventListeners<T> : IEventListeners<T> where T : Delegate
     {
+        private static Func<T, T, T> CreateValue { get; } = CreateValueFromListener;
+
         private DelegateIndex<T, T> Listeners { get; } = new(4);
 
         public int Count => Listeners.Count;
@@ -51,7 +42,7 @@ namespace SpacetimeDB.EventHandling
         public void Add(T listener)
         {
             if (listener == null) return;
-            Listeners.Add(listener, listener, static (_, listener) => listener);
+            Listeners.Add(listener, listener, CreateValue);
         }
 
         public void Remove(T listener)
@@ -59,6 +50,8 @@ namespace SpacetimeDB.EventHandling
             if (listener == null) return;
             Listeners.Remove(listener, out _);
         }
+
+        private static T CreateValueFromListener(T _, T listener) => listener;
     }
 
     public class DelegateIndex<TDelegate, TValue> where TDelegate : Delegate
