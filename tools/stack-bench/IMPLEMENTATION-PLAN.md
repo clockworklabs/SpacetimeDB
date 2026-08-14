@@ -663,6 +663,67 @@ and Linux appliance acceptance remain before closing the work package.
 E5 exit: deleting generated report output and regenerating it from immutable raw
 artifacts produces the same report identity.
 
+### SB-504: Versioned study-condition contract
+
+Replace the single guidance choice with a strict, content-identified condition
+that independently binds the requested recipe, backend guidance profile,
+unmentioned capability-probe profile, and repair policy. Compilation resolves
+the exact prompt bytes, disclosed material, withheld probes, repair eligibility,
+and content hashes into the campaign and result identities.
+
+Introduce one versioned capability definition with distinct requested-check and
+unmentioned-probe observation contracts where necessary. Selecting the
+requested form includes its requirement prose; selecting the probe form does
+not. This removes the current coupling between choosing grader behavior and
+inserting its requirement into the user prompt without duplicating the semantic
+definition across packs.
+
+Reject missing or mutable profiles, unsupported stack/profile combinations,
+prompt/probe overlap, unobservable hidden probes, contradictory repair policy,
+and any attempt to treat probe observations as requested-score evidence. New
+campaigns require the new schema; archived pre-v1 results remain inert rather
+than entering through a compatibility reader.
+
+### SB-505: Symmetric neutral backend guidance
+
+Create qualified neutral guidance profiles for SpacetimeDB, MongoDB, and
+PostgreSQL. They may disclose only the access facts required inside the isolated
+runner: database/module coordinates, ports, credentials, available SDK or CLI,
+and explicitly selected ordinary API material. They must not prescribe a web
+framework, ORM, live-update mechanism, persistence strategy, transaction or
+locking design, or project layout.
+
+Prompt snapshots and build-container inspection prove the boundary. A missing
+neutral profile fails compilation; it never falls back to prescribed guidance.
+Adding a fourth backend's neutral profile requires adapter/catalog data and
+qualification, not an engine branch.
+
+### SB-506: First-build capability probes
+
+Run selected unmentioned probes against the immutable first-build source before
+any repair. Write a separate typed artifact bound to that source hash. Probe
+observations have no recipe points, cannot change pass/fail, do not consume a
+retry or correction round, and never enter a bug report or repair prompt.
+
+Every probe must use the core task's public surface, a stack-neutral named
+action, or grader-owned database/runtime truth. Reject probes that rely on a
+withheld selector, test hook, or implementation detail. Qualify each probe with
+reference, null, exact-mutation, leak-isolation, and source-binding tests on
+every supported stack.
+
+### SB-507: Condition-aware campaigns and reports
+
+Allow an experiment plan to counterbalance prescribed, neutral, and defaults
+conditions while binding their complete identities. Campaign admission prevents
+accidental cohort merging when any recipe, guidance, probe, repair, fixture,
+adapter, model, or environment identity differs.
+
+Reports render requested correctness, untouched first-build capability
+observations, and correction outcomes as separate sections with separate
+denominators. They may compare study conditions explicitly, but cannot add or
+average diagnostic probe observations into the requested-feature score or label
+unrepaired default behavior as a successful correction.
+
 ## E6 - qualification and release
 
 1. Freeze source, recipe, fixtures, calibration, experiment, adapter, image, and
@@ -739,6 +800,10 @@ them. Live qualification does not run concurrently with executable harness edits
     reconciliation accepted on the host and the exact Linux appliance image).
 21. [x] SB-503 deterministic report (typed JSON/HTML generation accepted on
     the host and the exact Linux appliance image with byte-stable regeneration).
+22. [ ] SB-504 versioned study-condition contract.
+23. [ ] SB-505 symmetric neutral backend guidance.
+24. [ ] SB-506 first-build capability probes.
+25. [ ] SB-507 condition-aware campaigns and reports.
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.

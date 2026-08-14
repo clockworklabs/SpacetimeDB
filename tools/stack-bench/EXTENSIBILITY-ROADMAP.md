@@ -428,6 +428,123 @@ study is run: stacks, models, settings, repetitions, ordering, budgets, retries,
 exclusions, pricing snapshot, and analysis policy. Changing the model therefore
 creates a new experiment—not a new L1 recipe.
 
+### Prompt guidance and unmentioned capability probes
+
+The system must treat four choices as independent, versioned inputs instead of
+folding them into one prompt string:
+
+1. **Requested task** - the recipe and packs whose behavior the agent is asked
+   to build. These checks determine requested-correctness score and run outcome.
+2. **Backend guidance profile** - what setup material the agent receives beyond
+   the task: connection facts, official API reference, or architecture advice.
+3. **Capability probe profile** - extra behavior measured on the untouched first
+   build even though it was not requested, such as restart durability,
+   reconnect catch-up, external-write visibility, or concurrent-write safety.
+4. **Repair policy** - which failed requested checks may be returned to the
+   agent. Unmentioned probes are never repair inputs.
+
+This separation supports three ordinary study conditions without special cases:
+
+| condition | requested behavior | backend help | unmentioned probes |
+|---|---|---|---|
+| prescribed | visible | connection facts, API material, and named architecture | none by default |
+| neutral | visible | connection facts and ordinary API material only | none by default |
+| defaults | core task only | connection facts and ordinary API material only | selected unmentioned capabilities |
+
+`prescribed`, `neutral`, and `defaults` are catalog entries, not engine branches.
+A study condition binds exact recipe, guidance-profile, and probe-profile hashes.
+Adding another condition or probe profile must require data files and
+qualification, not edits to `bench.mjs` or campaign scheduling.
+
+The backend guidance contract distinguishes **access material** from **design
+advice**. Access material is the minimum needed to use the selected backend in
+the isolated runner: exact connection/module coordinates, required ports,
+available SDK/CLI locations, and selected official reference documents. Design
+advice names frameworks, ORMs, polling/subscription patterns, transaction or
+locking strategies, directory layout, or implementation recipes. Neutral and
+defaults profiles may include access material but must exclude design advice.
+SpacetimeDB, MongoDB, and PostgreSQL need symmetric neutral profiles; a stack
+that lacks one makes that study condition fail compilation rather than silently
+fall back to prescribed guidance.
+
+Requested checks and unmentioned probes remain different evidence classes:
+
+- requested checks retain recipe weights, affect pass/fail, and may produce a
+  sanitized repair report;
+- capability probes have no recipe points, never affect run outcome, and never
+  appear in repair prompts;
+- zero-point oracle controls are not capability probes and cannot be repurposed
+  as them;
+- probes run against the immutable first-build source before any repair and
+  record that source hash;
+- a later repaired app may be measured separately, but cannot replace the
+  first-build probe result;
+- reports render requested correctness and default-capability observations in
+  separate tables and never combine their denominators.
+
+A capability such as durability has one versioned semantic definition, with
+separate requested-check and unmentioned-probe observation contracts when their
+interfaces must differ. A recipe can select its requested form; a probe profile
+can select its unmentioned form. Only the requested form contributes requirement
+prose. This avoids copying a durability test into two packs while still
+preventing a hidden probe from assuming selectors that only the visible
+requirement asked the model to implement. A probe profile may publish its own
+diagnostic success count and denominator, but that summary remains outside the
+requested score.
+
+An unmentioned probe cannot depend on a testing hook whose requirement was
+withheld. It must observe behavior through the public surface already required
+by the core task, a stack-neutral named action, or database/runtime truth owned
+by the grader. A missing hidden hook is not evidence that a backend lacks a
+capability. The probe compiler rejects an observability contract that depends
+on prompt-only selectors or actions.
+
+The build container receives only the compiled requested prompt and selected
+access material. It must not contain unmentioned probe definitions, IDs,
+selectors, expected values, grader code, or future repair reports. The compiled
+condition records both what was disclosed and what was withheld, while public
+results reveal probe definitions only after the model session is complete.
+
+The campaign schema should evolve from one `guidance` string to content-bound
+condition identities, approximately:
+
+```json
+{
+  "condition": {
+    "recipe": "ecommerce.l1-standard@1.1.0",
+    "guidanceProfile": "neutral-backend-access@1.0.0",
+    "probeProfile": "backend-defaults-durability@1.0.0",
+    "repairPolicy": "requested-only@1.0.0"
+  }
+}
+```
+
+The compiler resolves this into exact prompt bytes, disclosed requirement IDs,
+selected access documents, withheld probe IDs, repair eligibility, and all
+content hashes. `run.json`, campaign plans, comparison admission, and reports
+bind those resolved identities. Results are comparable only when the complete
+condition identity matches; comparing prescribed with neutral is an explicit
+factor in an experiment, never an accidental cohort merge.
+
+Production acceptance for this model requires:
+
+- a fake stack can add a neutral guidance profile without engine edits;
+- a fake pack can add an unmentioned probe without runner/report edits;
+- all three measured stacks compile and run the same neutral/defaults condition;
+- prompt snapshots prove withheld prose, check IDs, selectors, and mechanics are
+  absent from the build container;
+- repair fixtures prove probe failures never enter bug reports or consume a
+  correction round;
+- first-build source hashes bind every probe artifact;
+- null, reference, and mutation controls qualify each probe's oracle on every
+  supported stack;
+- report tests prove requested scores and probe observations cannot be summed,
+  averaged together, or mislabeled as corrected behavior;
+- campaign validation rejects missing, mutable, unsupported, or contradictory
+  condition/profile identities;
+- active readers require the new schema for new campaigns; old result bytes stay
+  in the inert archive and are not upgraded through a compatibility layer.
+
 ## Target model
 
 Version these independently:
@@ -437,13 +554,16 @@ Version these independently:
 2. **Test packs** — reusable behavior checks and their evidence requirements.
 3. **Recipe** — exact pack versions, task instructions, scoring, and capability
    requirements.
-4. **Fixture set** — exact initial data and controlled external dependencies.
-5. **Calibration and promotion** — canonical references, null expectations,
+4. **Guidance and probe profiles** — disclosed backend access and design advice,
+   separately withheld capability observations, observability contracts, and
+   repair eligibility.
+5. **Fixture set** — exact initial data and controlled external dependencies.
+6. **Calibration and promotion** — canonical references, null expectations,
    mutation targets, equivalence decisions, qualification policy, lifecycle,
    and aliases such as L1/L2 for exact recipes.
-6. **Experiment plan** — stacks, models, repetitions, ordering, budgets, and
-   analysis policy.
-7. **Artifact schema** — one strict current result envelope; pre-v1 bytes remain
+7. **Experiment plan** — condition matrix, stacks, models, repetitions,
+   ordering, budgets, and analysis policy.
+8. **Artifact schema** — one strict current result envelope; pre-v1 bytes remain
    in a checksummed, non-executable archive.
 
 Every current result records these identities and hashes. A meaning change starts
