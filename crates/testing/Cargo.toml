@@ -15,13 +15,13 @@ spacetimedb-lib.workspace = true
 spacetimedb-standalone.workspace = true
 spacetimedb-client-api.workspace = true
 spacetimedb-client-api-messages.workspace = true
+spacetimedb-core.workspace = true
 spacetimedb-guard.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-schema.workspace = true
 
 anyhow.workspace = true
 bytes.workspace = true
-env_logger.workspace = true
 log.workspace = true
 clap.workspace = true
 serde_json.workspace = true
@@ -34,6 +34,7 @@ serde.workspace = true
 futures.workspace = true
 
 [dev-dependencies]
+env_logger.workspace = true
 serial_test.workspace = true
 
 [lints]

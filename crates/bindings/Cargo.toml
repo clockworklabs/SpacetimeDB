@@ -43,9 +43,6 @@ serde_json.workspace = true
 insta.workspace = true
 trybuild.workspace = true
 
-[package.metadata.cargo-machete]
-# See the `getrandom02` dependency comment above.
-ignored = ["getrandom02"]
 
 [lints]
 workspace = true

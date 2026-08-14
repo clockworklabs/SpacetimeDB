@@ -84,11 +84,9 @@ path-clean = "1.0.1"
 
 [dev-dependencies]
 pretty_assertions.workspace = true
-fs_extra.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }
-tikv-jemalloc-ctl = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }

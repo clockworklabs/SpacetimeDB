@@ -58,9 +58,6 @@ ron.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
 
-[package.metadata.cargo-machete]
-# Used through the `proptest` feature's `dep:proptest-derive` entry.
-ignored = ["proptest-derive"]
 
 [lints]
 workspace = true

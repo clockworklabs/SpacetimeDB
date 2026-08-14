@@ -107,7 +107,6 @@ faststr = "0.2.23"
 core_affinity = "0.8"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = {workspace = true}
 tikv-jemalloc-ctl = {workspace = true}
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -136,16 +135,11 @@ spacetimedb-commitlog = { path = "../commitlog", features = ["test"] }
 spacetimedb-datastore = { path = "../datastore/", features = ["test"] }
 spacetimedb-engine = { workspace = true, features = ["test"] }
 
-criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
-proptest-derive.workspace = true
-rand.workspace = true
-env_logger.workspace = true
 pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
-fs_extra.workspace = true
 
 [lints]
 workspace = true

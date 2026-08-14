@@ -1645,8 +1645,11 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - name: Install cargo-machete
-        run: cargo install cargo-machete --locked
+      - name: Install Rust 1.95 for cargo-shear
+        run: rustup toolchain install 1.95.0 --profile minimal
+
+      - name: Install cargo-shear
+        run: cargo +1.95.0 install cargo-shear --locked
 
       - name: Run dependency check
         run: cargo ci dep-check

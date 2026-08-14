@@ -7,6 +7,7 @@ license-file = "LICENSE"
 publish = false
 
 [dependencies]
+spacetimedb-core = { workspace = true, features = ["test"] }
 spacetimedb-lib.workspace = true
 spacetimedb-sats.workspace = true
 
