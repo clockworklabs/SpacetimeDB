@@ -77,6 +77,8 @@ pub struct Player {
     score: u32,
     #[default(true)]
     is_active: bool,
+    #[default("")]
+    bio: String,
 }
 ```
 
