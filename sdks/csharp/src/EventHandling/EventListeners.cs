@@ -51,7 +51,7 @@ namespace SpacetimeDB.EventHandling
         public void Add(T listener)
         {
             if (listener == null) return;
-            Listeners.Add(listener, listener);
+            Listeners.Add(listener, listener, static (_, listener) => listener);
         }
 
         public void Remove(T listener)
@@ -90,10 +90,57 @@ namespace SpacetimeDB.EventHandling
 
         public bool Add(TDelegate key, TValue value)
         {
-            if (key == null) return false;
-            if (Contains(key)) return false;
+            return Add(key, value, static (_, value) => value, out _);
+        }
 
-            AddUnchecked(key, value);
+        public bool Add<TState>(TDelegate key, TState state, Func<TDelegate, TState, TValue> createValue)
+        {
+            return Add(key, state, createValue, out _);
+        }
+
+        public bool Add<TState>(TDelegate key, TState state, Func<TDelegate, TState, TValue> createValue, out TValue value)
+        {
+            value = default!;
+            if (key == null) return false;
+
+            var hashCode = Comparer.GetHashCode(key);
+
+            if (Keys.Count <= SmallListenerThreshold)
+            {
+                if (FindLinear(key) >= 0) return false;
+
+                value = createValue(key, state);
+                AddUnchecked(key, value, hashCode);
+                return true;
+            }
+
+            var indices = Indices!;
+
+            if (!indices.TryGetValue(hashCode, out var index))
+            {
+                value = createValue(key, state);
+                AddUnchecked(key, value, hashCode);
+                return true;
+            }
+
+            if (index != CollisionBucket)
+            {
+                if (DelegateEquals(Keys[index], key)) return false;
+
+                value = createValue(key, state);
+                AddUnchecked(key, value, hashCode);
+                return true;
+            }
+
+            var bucket = Collisions![hashCode];
+
+            for (var i = 0; i < bucket.Count; i++)
+            {
+                if (DelegateEquals(Keys[bucket[i]], key)) return false;
+            }
+
+            value = createValue(key, state);
+            AddUnchecked(key, value, hashCode);
             return true;
         }
 
@@ -130,7 +177,11 @@ namespace SpacetimeDB.EventHandling
         public void AddUnchecked(TDelegate key, TValue value)
         {
             var hashCode = Comparer.GetHashCode(key);
+            AddUnchecked(key, value, hashCode);
+        }
 
+        private void AddUnchecked(TDelegate key, TValue value, int hashCode)
+        {
             if (Keys.Count <= SmallListenerThreshold)
             {
                 Keys.Add(key);
