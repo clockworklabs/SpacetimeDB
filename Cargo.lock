@@ -8853,7 +8853,6 @@ dependencies = [
  "reqwest 0.12.24",
  "serde_json",
  "socket2 0.5.10",
- "spacetimedb-core",
  "spacetimedb-guard",
  "tempfile",
  "tokio",
