@@ -65,7 +65,7 @@ const entity = table(
 );
 ```
 
-Options: `name` (snake_case, recommended), `public: true`, `event: true`, `scheduled: (): any => reducerRef`, `indexes: [...]`
+Options: `name` (snake_case, recommended), `public: true`, `event: true`, `indexes: [...]`
 
 `ctx.db` accessors are the keys passed to `schema({...})`, verbatim: `schema({ score_record })` → `ctx.db.score_record`. Use snake_case keys matching the table `name`. Client codegen converts case; server `ctx.db` does not.
 
@@ -190,16 +190,20 @@ import { ScheduleAt } from 'spacetimedb';   // ScheduleAt comes from the root pa
 
 const tick_timer = table({
   name: 'tick_timer',
-  scheduled: (): any => tick,   // (): any => breaks circular dep
 }, {
   scheduled_id: t.u64().primaryKey().autoInc(),
   scheduled_at: t.scheduleAt(),
 });
 
 export const tick = spacetimedb.reducer(
+  { onSchedule: tick_timer },
   { timer: tick_timer.rowType },
   (ctx, { timer }) => { /* timer row auto-deleted after this runs */ }
 );
+
+// `onSchedule` also works for scheduled procedures whose return type is `t.unit()`.
+// Legacy table-side scheduling, `scheduled: (): any => tick`, still works but is not
+// recommended for new code because it forces a forward reference.
 
 // One-time: ScheduleAt.time(ctx.timestamp.microsSinceUnixEpoch + delayMicros)
 // Repeating: ScheduleAt.interval(60_000_000n)
