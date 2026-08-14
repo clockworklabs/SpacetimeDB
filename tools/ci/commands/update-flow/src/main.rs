@@ -4,12 +4,17 @@ use clap::Parser;
 use duct::cmd;
 
 #[derive(Parser)]
-struct Args {
+#[command(
+    about = "Tests the update flow",
+    long_about = "Tests the update flow\n\nTests the self-update flow by building the spacetimedb-update binary for the specified target, by default the current target, and performing a self-install into a temporary directory."
+)]
+struct Cli {
     #[arg(
         long,
         long_help = "Target triple to build for, by default the current target. Used by github workflows to check the update flow on multiple platforms."
     )]
     target: Option<String>,
+
     #[arg(
         long,
         default_value = "false",
@@ -19,10 +24,10 @@ struct Args {
 }
 
 fn main() -> Result<()> {
-    let Args {
+    let Cli {
         target,
         github_token_auth,
-    } = Args::parse();
+    } = Cli::parse();
     let mut common_args = vec![];
     if let Some(target) = target.as_ref() {
         common_args.push("--target");

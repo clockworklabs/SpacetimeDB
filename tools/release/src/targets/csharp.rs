@@ -19,7 +19,7 @@ fn run_cargo_ci_dlls() -> Result<(), String> {
     println!("\n=== Running `cargo ci dlls` ===");
 
     let mut cmd = Command::new("cargo");
-    cmd.args(["ci", "dlls"]);
+    cmd.args(["regen", "csharp", "dlls"]);
     print_command(&cmd);
     let status = cmd
         .status()

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::env;
 
 use anyhow::{anyhow, bail, Context, Result};
-use clap::{ArgGroup, Args, Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser};
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::de::DeserializeOwned;
@@ -12,8 +12,9 @@ use serde::{Deserialize, Serialize};
 
 const CLA_CONTEXT: &str = "license/cla";
 
-#[derive(Subcommand)]
-enum ClaAssistantCmd {
+#[derive(Parser)]
+#[command(about = "Interacts with CLA Assistant.")]
+enum Cli {
     /// Retries CLA Assistant if `license/cla` is the only remaining PR blocker.
     Retry(RetryArgs),
 
@@ -53,16 +54,10 @@ struct StatusArgs {
     repo: Option<String>,
 }
 
-#[derive(Parser)]
-struct Cli {
-    #[command(subcommand)]
-    cmd: ClaAssistantCmd,
-}
-
 fn main() -> Result<()> {
-    match Cli::parse().cmd {
-        ClaAssistantCmd::Retry(args) => retry(args),
-        ClaAssistantCmd::Status(args) => status(args),
+    match Cli::parse() {
+        Cli::Retry(args) => retry(args),
+        Cli::Status(args) => status(args),
     }
 }
 

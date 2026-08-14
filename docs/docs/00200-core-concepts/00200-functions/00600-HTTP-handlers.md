@@ -7,7 +7,7 @@ import Tabs from '@theme/Tabs'
 import TabItem from '@theme/TabItem'
 
 HTTP handlers allow a SpacetimeDB database to expose an HTTP API.
-External clients can make HTTP requests to routes nested under [`/v1/database/:name_or_address/route`](../../00300-resources/00200-reference/00200-http-api/00300-database.md#any-v1databasename_or_identityroutepath); these requests are resolved to routes defined by the database and then passed to the corresponding HTTP handler.
+External clients can make HTTP requests to routes nested under [`/v1/database/:name_or_identity/route`](../../00300-resources/00200-reference/00200-http-api/00300-database.md#any-v1databasename_or_identityroutepath); these requests are resolved to routes defined by the database and then passed to the corresponding HTTP handler.
 
 :::warning
 ***HTTP handlers are currently in beta, and their API may change in upcoming SpacetimeDB releases.***
@@ -225,4 +225,4 @@ SpacetimeDB uses strict routing, meaning that a request must match a path exactl
 
 ## Sending Requests
 
-Routes defined by a SpacetimeDB database are exposed under the prefix `/v1/database/:name/route`. To access the `say-hello` route above, send a request to `$SPACETIMEDB_URI/v1/database/$DATABASE/route/say-hello`, where `$SPACETIMEDB_URI` is the SpacetimeDB host (usually `https://maincloud.spacetimedb.com`), and `$DATABASE` is the name of the database.
+Routes defined by a SpacetimeDB database are exposed under the prefix `/v1/database/:name_or_identity/route`. To access the `say-hello` route above, send a request to `$SPACETIMEDB_URI/v1/database/$DATABASE/route/say-hello`, where `$SPACETIMEDB_URI` is the SpacetimeDB host (usually `https://maincloud.spacetimedb.com`), and `$DATABASE` is the name or identity of the database.

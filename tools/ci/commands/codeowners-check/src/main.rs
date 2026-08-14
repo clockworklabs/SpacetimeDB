@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 const REPO: &str = "clockworklabs/SpacetimeDB";
 
 #[derive(Parser)]
-struct Args {
+#[command(about = "Checks that sensitive CODEOWNERS-controlled files have the required approvals.")]
+struct Cli {
     /// Git ref to compare against, usually origin/<pull request base branch>.
     #[arg(long)]
     base_ref: String,
@@ -19,23 +20,20 @@ struct Args {
     pr_number: u64,
 }
 
-fn run(base_ref: &str, pr_number: u64) -> Result<()> {
+fn main() -> Result<()> {
+    let args = Cli::parse();
+
     ensure_repo_root()?;
 
-    fetch_base_ref(base_ref)?;
-    let review = ReviewStatus::fetch(pr_number)?;
+    fetch_base_ref(&args.base_ref)?;
+    let review = ReviewStatus::fetch(args.pr_number)?;
 
-    for path in changed_files(base_ref)? {
-        file_review_requirements(base_ref, &path, &review)
+    for path in changed_files(&args.base_ref)? {
+        file_review_requirements(&args.base_ref, &path, &review)
             .with_context(|| format!("review requirements failed for {}", path.display()))?;
     }
 
     Ok(())
-}
-
-fn main() -> Result<()> {
-    let args = Args::parse();
-    run(&args.base_ref, args.pr_number)
 }
 
 fn file_review_requirements(base_ref: &str, path: &Path, review: &ReviewStatus) -> Result<()> {
@@ -241,6 +239,40 @@ diff --git a/LICENSE.txt b/LICENSE.txt
 +++ b/LICENSE.txt
 @@ -1,0 +2 @@
 +New license term
+";
+
+            assert!(!diff_only_changes_version_or_date(diff));
+        }
+
+        #[test]
+        fn rejects_entirely_added_license_file() {
+            let diff = "\
+diff --git a/licenses/new.txt b/licenses/new.txt
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/licenses/new.txt
+@@ -0,0 +1,3 @@
++Licensed Work:        SpacetimeDB 2.4.0
++Change Date:          2031-06-01
++New license term
+";
+
+            assert!(!diff_only_changes_version_or_date(diff));
+        }
+
+        #[test]
+        fn rejects_entirely_removed_license_file() {
+            let diff = "\
+diff --git a/licenses/old.txt b/licenses/old.txt
+deleted file mode 100644
+index 1111111..0000000
+--- a/licenses/old.txt
++++ /dev/null
+@@ -1,3 +0,0 @@
+-Licensed Work:        SpacetimeDB 2.3.0
+-Change Date:          2031-05-26
+-Old license term
 ";
 
             assert!(!diff_only_changes_version_or_date(diff));

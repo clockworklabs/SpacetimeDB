@@ -155,6 +155,9 @@ public sealed class HttpError(string message) : Exception(message)
 public sealed class HttpClient
 {
     private static readonly TimeSpan MaxTimeout = TimeSpan.FromMilliseconds(500);
+    private static byte[] responseWireBuffer = new byte[0x10_000];
+    private static byte[] responseBodyBuffer = new byte[0x10_000];
+    private static byte[] errorWireBuffer = new byte[0x10_000];
 
     /// <summary>
     /// Send a simple <c>GET</c> request to <paramref name="uri"/> with no headers.
@@ -331,9 +334,9 @@ public sealed class HttpClient
 
             var status = FFI.procedure_http_request(
                 requestBytes,
-                (uint)requestBytes.Length,
+                requestBytes.Length,
                 bodyBytes,
-                (uint)bodyBytes.Length,
+                bodyBytes.Length,
                 out var out_
             );
 
@@ -341,10 +344,11 @@ public sealed class HttpClient
             {
                 case Errno.OK:
                 {
-                    var responseWireBytes = out_.A.Consume();
-                    var responseWire = FromBytes(new HttpResponseWire.BSATN(), responseWireBytes);
+                    using var responseWireStream = out_.A.Consume(ref responseWireBuffer);
+                    var responseWire = FromBytes(new HttpResponseWire.BSATN(), responseWireStream);
 
-                    var body = new HttpBody(out_.B.Consume());
+                    using var responseBodyStream = out_.B.Consume(ref responseBodyBuffer);
+                    var body = new HttpBody(responseBodyStream.ToArray());
                     var (statusCode, version, headers) = FromWireResponse(responseWire);
 
                     return Result<HttpResponse, HttpError>.Ok(
@@ -353,8 +357,8 @@ public sealed class HttpClient
                 }
                 case Errno.HTTP_ERROR:
                 {
-                    var errorWireBytes = out_.A.Consume();
-                    var err = FromBytes(new SpacetimeDB.BSATN.String(), errorWireBytes);
+                    using var errorWireStream = out_.A.Consume(ref errorWireBuffer);
+                    var err = FromBytes(new SpacetimeDB.BSATN.String(), errorWireStream);
                     return Result<HttpResponse, HttpError>.Err(new HttpError(err));
                 }
                 case Errno.WOULD_BLOCK_TRANSACTION:
@@ -378,9 +382,8 @@ public sealed class HttpClient
         }
     }
 
-    private static T FromBytes<T>(IReadWrite<T> rw, byte[] bytes)
+    private static T FromBytes<T>(IReadWrite<T> rw, MemoryStream ms)
     {
-        using var ms = new MemoryStream(bytes);
         using var reader = new BinaryReader(ms);
         var value = rw.Read(reader);
         if (ms.Position != ms.Length)
