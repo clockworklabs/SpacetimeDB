@@ -31,38 +31,11 @@ namespace SpacetimeDB.EventHandling
 
     public class BasicEventListeners<T> : IEventListeners<T> where T : Delegate
     {
-        private static Func<T, T, T> CreateValue { get; } = CreateValueFromListener;
-
-        private DelegateIndex<T, T> Listeners { get; } = new(4);
-
-        public int Count => Listeners.Count;
-
-        public T this[int index] => Listeners[index];
-
-        public void Add(T listener)
-        {
-            if (listener == null) return;
-            Listeners.Add(listener, listener, CreateValue);
-        }
-
-        public void Remove(T listener)
-        {
-            if (listener == null) return;
-            Listeners.Remove(listener, out _);
-        }
-
-        private static T CreateValueFromListener(T _, T listener) => listener;
-    }
-
-    public class DelegateIndex<TDelegate, TValue> where TDelegate : Delegate
-    {
         private const int SmallListenerThreshold = 8;
         private const int CollisionBucket = -1;
 
-        private IEqualityComparer<TDelegate> Comparer { get; }
         private int[] Hashes;
-        private TDelegate?[] Keys;
-        private TValue?[] Values;
+        private T?[] Listeners;
         private int Capacity { get; set; }
         private int CountValue { get; set; }
         private Dictionary<int, int>? Indices { get; set; }
@@ -71,118 +44,28 @@ namespace SpacetimeDB.EventHandling
 
         public int Count => CountValue;
 
-        public TValue this[int index] => Values[index]!;
+        public T this[int index] => Listeners[index]!;
 
-        public DelegateIndex() : this(0) { }
+        public BasicEventListeners() : this(4) { }
 
-        public DelegateIndex(int initialSize) : this(initialSize, EqualityComparer<TDelegate>.Default) { }
-
-        public DelegateIndex(int initialSize, IEqualityComparer<TDelegate> comparer)
+        public BasicEventListeners(int initialSize)
         {
-            Comparer = comparer;
             Capacity = Math.Max(1, initialSize);
             Hashes = new int[Capacity];
-            Keys = new TDelegate[Capacity];
-            Values = new TValue[Capacity];
+            Listeners = new T[Capacity];
         }
 
-        public bool Add(TDelegate key, TValue value)
+        public void Add(T listener)
         {
-            return Add(key, value, static (_, value) => value, out _);
-        }
+            if (listener == null) return;
 
-        public bool Add<TState>(TDelegate key, TState state, Func<TDelegate, TState, TValue> createValue)
-        {
-            return Add(key, state, createValue, out _);
-        }
-
-        public bool Add<TState>(TDelegate key, TState state, Func<TDelegate, TState, TValue> createValue, out TValue value)
-        {
-            value = default!;
-            if (key == null) return false;
-
-            var hashCode = Comparer.GetHashCode(key);
+            var hashCode = listener.GetHashCode();
 
             if (CountValue <= SmallListenerThreshold)
             {
-                if (FindLinear(key) >= 0) return false;
+                if (FindLinear(listener) >= 0) return;
 
-                value = createValue(key, state);
-                AddUnchecked(key, value, hashCode);
-                return true;
-            }
-
-            var indices = Indices!;
-
-            if (!indices.TryGetValue(hashCode, out var index))
-            {
-                value = createValue(key, state);
-                AddUnchecked(key, value, hashCode);
-                return true;
-            }
-
-            if (index != CollisionBucket)
-            {
-                if (DelegateEquals(Keys[index]!, key)) return false;
-
-                value = createValue(key, state);
-                AddUnchecked(key, value, hashCode);
-                return true;
-            }
-
-            var bucket = Collisions![hashCode];
-
-            for (var i = 0; i < bucket.Count; i++)
-            {
-                if (DelegateEquals(Keys[bucket[i]]!, key)) return false;
-            }
-
-            value = createValue(key, state);
-            AddUnchecked(key, value, hashCode);
-            return true;
-        }
-
-        public bool Contains(TDelegate key)
-        {
-            if (key == null || CountValue <= 0) return false;
-
-            var hashCode = Comparer.GetHashCode(key);
-
-            if (CountValue <= SmallListenerThreshold)
-            {
-                return FindLinear(key) >= 0;
-            }
-
-            var indices = Indices!;
-
-            if (!indices.TryGetValue(hashCode, out var index)) return false;
-
-            if (index != CollisionBucket)
-            {
-                return DelegateEquals(Keys[index]!, key);
-            }
-
-            var bucket = Collisions![hashCode];
-
-            for (var i = 0; i < bucket.Count; i++)
-            {
-                if (DelegateEquals(Keys[bucket[i]]!, key)) return true;
-            }
-
-            return false;
-        }
-
-        public void AddUnchecked(TDelegate key, TValue value)
-        {
-            var hashCode = Comparer.GetHashCode(key);
-            AddUnchecked(key, value, hashCode);
-        }
-
-        private void AddUnchecked(TDelegate key, TValue value, int hashCode)
-        {
-            if (CountValue <= SmallListenerThreshold)
-            {
-                AddRaw(key, value, hashCode);
+                AddRaw(hashCode, listener);
 
                 if (CountValue > SmallListenerThreshold)
                 {
@@ -196,53 +79,58 @@ namespace SpacetimeDB.EventHandling
 
             if (!indices.TryGetValue(hashCode, out var index))
             {
-                indices.Add(hashCode, AddRaw(key, value, hashCode));
+                indices.Add(hashCode, AddRaw(hashCode, listener));
                 return;
             }
 
-            var newIndex = AddRaw(key, value, hashCode);
-
             if (index != CollisionBucket)
             {
+                if (DelegateEquals(Listeners[index]!, listener)) return;
+
+                var newIndex = AddRaw(hashCode, listener);
                 Collisions ??= new Dictionary<int, List<int>>();
                 Collisions[hashCode] = GetCollisionsListFromPool(index, newIndex);
                 indices[hashCode] = CollisionBucket;
                 return;
             }
 
-            Collisions![hashCode].Add(newIndex);
+            var bucket = Collisions![hashCode];
+
+            for (var i = 0; i < bucket.Count; i++)
+            {
+                if (DelegateEquals(Listeners[bucket[i]]!, listener)) return;
+            }
+
+            bucket.Add(AddRaw(hashCode, listener));
         }
 
-        public bool Remove(TDelegate key, out TValue value)
+        public void Remove(T listener)
         {
-            value = default!;
-            if (key == null || CountValue <= 0) return false;
+            if (listener == null || CountValue <= 0) return;
 
-            var hashCode = Comparer.GetHashCode(key);
+            var hashCode = listener.GetHashCode();
 
             if (CountValue <= SmallListenerThreshold)
             {
-                var index = FindLinear(key);
+                var index = FindLinear(listener);
                 if (index >= 0)
                 {
-                    value = Values[index]!;
                     RemoveAtSwapBackRaw(index);
                     ClearIndex();
-                    return true;
                 }
 
-                return false;
+                return;
             }
 
             var indices = Indices!;
 
-            if (!indices.TryGetValue(hashCode, out var mappedIndex)) return false;
+            if (!indices.TryGetValue(hashCode, out var mappedIndex)) return;
 
             var removeIndex = -1;
 
             if (mappedIndex != CollisionBucket)
             {
-                if (!DelegateEquals(Keys[mappedIndex]!, key)) return false;
+                if (!DelegateEquals(Listeners[mappedIndex]!, listener)) return;
 
                 removeIndex = mappedIndex;
                 indices.Remove(hashCode);
@@ -254,7 +142,7 @@ namespace SpacetimeDB.EventHandling
                 for (var i = 0; i < bucket.Count; i++)
                 {
                     var candidate = bucket[i];
-                    if (!DelegateEquals(Keys[candidate]!, key)) continue;
+                    if (!DelegateEquals(Listeners[candidate]!, listener)) continue;
 
                     removeIndex = candidate;
                     RemoveBucketSlot(bucket, i);
@@ -275,12 +163,11 @@ namespace SpacetimeDB.EventHandling
                     break;
                 }
 
-                if (removeIndex < 0) return false;
+                if (removeIndex < 0) return;
             }
 
             var movedFrom = CountValue - 1;
             var movedHashCode = Hashes[movedFrom];
-            value = Values[removeIndex]!;
 
             RemoveAtSwapBackRaw(removeIndex);
 
@@ -292,28 +179,25 @@ namespace SpacetimeDB.EventHandling
             {
                 UpdateMovedIndex(movedHashCode, movedFrom, removeIndex);
             }
-
-            return true;
         }
 
-        private int FindLinear(TDelegate key)
+        private int FindLinear(T listener)
         {
             for (var i = 0; i < CountValue; i++)
             {
-                if (DelegateEquals(Keys[i]!, key)) return i;
+                if (DelegateEquals(Listeners[i]!, listener)) return i;
             }
 
             return -1;
         }
 
-        private int AddRaw(TDelegate key, TValue value, int hashCode)
+        private int AddRaw(int hashCode, T listener)
         {
             EnsureCapacity();
 
             var index = CountValue;
             Hashes[index] = hashCode;
-            Keys[index] = key;
-            Values[index] = value;
+            Listeners[index] = listener;
             CountValue++;
             return index;
         }
@@ -325,13 +209,11 @@ namespace SpacetimeDB.EventHandling
             if (index != lastIndex)
             {
                 Hashes[index] = Hashes[lastIndex];
-                Keys[index] = Keys[lastIndex];
-                Values[index] = Values[lastIndex];
+                Listeners[index] = Listeners[lastIndex];
             }
 
             Hashes[lastIndex] = 0;
-            Keys[lastIndex] = null;
-            Values[lastIndex] = default;
+            Listeners[lastIndex] = null;
             CountValue = lastIndex;
         }
 
@@ -341,8 +223,7 @@ namespace SpacetimeDB.EventHandling
 
             Capacity *= 2;
             Array.Resize(ref Hashes, Capacity);
-            Array.Resize(ref Keys, Capacity);
-            Array.Resize(ref Values, Capacity);
+            Array.Resize(ref Listeners, Capacity);
         }
 
         private void RebuildIndex()
@@ -445,6 +326,6 @@ namespace SpacetimeDB.EventHandling
             CollisionsPool.Push(list);
         }
 
-        private bool DelegateEquals(TDelegate a, TDelegate b) => Comparer.Equals(a, b);
+        private static bool DelegateEquals(T a, T b) => EqualityComparer<T>.Default.Equals(a, b);
     }
 }
