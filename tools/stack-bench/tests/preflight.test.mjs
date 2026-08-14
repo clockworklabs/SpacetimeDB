@@ -23,12 +23,14 @@ function request(root, extra = []) {
 test('preflight validates exact scope and a model-free container/result-volume smoke', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-'));
   try {
+    let smokeArgs;
     const run = (_file, args) => {
       if (args[0] === 'info') return dockerInfo();
       if (args[0] === 'compose') return '2.40.0';
       if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
         ? 'linux/amd64' : `${IMAGE_ID}\n`;
       if (args[0] === 'run') {
+        smokeArgs = args;
         const mount = args[args.indexOf('-v') + 1].split(':/results')[0];
         const marker = args.at(-1);
         writeFileSync(join(mount, marker), 'container-write-ok');
@@ -52,6 +54,9 @@ test('preflight validates exact scope and a model-free container/result-volume s
       /0 database route\(s\); 0 agent executable\(s\)/);
     assert.equal(report.checks.find(check => check.id === 'storage.container').status, 'pass');
     assert.equal(report.checks.some(check => check.id === 'outbound.container'), false);
+    assert.equal(smokeArgs[smokeArgs.indexOf('--network') + 1], 'bridge');
+    assert.equal(smokeArgs[smokeArgs.indexOf('--add-host') + 1],
+      'host.docker.internal:host-gateway');
     const artifact = createArtifact({ kind: 'preflight', id: 'preflight-test', payload: report });
     assert.equal(validateArtifact(artifact).payload.ok, true);
   } finally { rmSync(root, { recursive: true, force: true }); }

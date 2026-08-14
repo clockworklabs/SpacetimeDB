@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { dockerHostServiceAddress } from './docker-network.mjs';
 import { containerReachableSpacetimeUri } from './spacetime-target.mjs';
 
 function validateHostedDatabase({ args, lease, track, helpers }) {
@@ -14,12 +15,12 @@ function validateHostedDatabase({ args, lease, track, helpers }) {
 }
 
 async function deployHostedReference(input, { databaseUrl, extraEnv = {}, prepare, pushSchema }) {
-  const { args, metadata, lease, track, container, ports, helpers } = input;
+  const { args, metadata, lease, track, container, ports, buildNetworkMode, helpers } = input;
   helpers.phase('preparing database');
   const database = validateHostedDatabase(input);
   prepare(database, helpers);
   const serverEnv = {
-    DATABASE_URL: databaseUrl({ ports, lease }),
+    DATABASE_URL: databaseUrl({ ports, lease, buildNetworkMode }),
     PORT: String(ports.express),
     ...extraEnv,
   };
@@ -45,8 +46,8 @@ async function deployHostedReference(input, { databaseUrl, extraEnv = {}, prepar
 
 export function deployPostgresReference(input) {
   return deployHostedReference(input, {
-    databaseUrl: ({ ports, lease }) =>
-      `postgresql://stackbench:stackbench@host.docker.internal:${ports.dbPort}/${lease.resources.database}`,
+    databaseUrl: ({ ports, lease, buildNetworkMode }) =>
+      `postgresql://stackbench:stackbench@${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}`,
     prepare: ({ expected, service }, helpers) => {
       try {
         helpers.runSync('creating PostgreSQL reference database', 'docker',
@@ -68,8 +69,8 @@ export function deployPostgresReference(input) {
 
 export function deployMongoDbReference(input) {
   return deployHostedReference(input, {
-    databaseUrl: ({ ports, lease }) =>
-      `mongodb://host.docker.internal:${ports.dbPort}/${lease.resources.database}`,
+    databaseUrl: ({ ports, lease, buildNetworkMode }) =>
+      `mongodb://${dockerHostServiceAddress(buildNetworkMode)}:${ports.dbPort}/${lease.resources.database}`,
     extraEnv: { JWT_SECRET: 'stack-bench-reference-only-secret-2026' },
     prepare: ({ expected, service }, helpers) => {
       helpers.runSync('resetting MongoDB reference database', 'docker',

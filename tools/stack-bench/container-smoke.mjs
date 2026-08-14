@@ -16,6 +16,7 @@ import { killTree, pidsOnPort } from './platform.mjs';
 import { createBackendLease, readBackendLease, writeBackendLease } from './backend-lease.mjs';
 import { fetchStatus } from './readiness.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
+import { containerReachableSpacetimeUri } from './spacetime-target.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(ROOT, '..', '..');
@@ -102,7 +103,7 @@ async function main() {
       `cd /app/spacetimedb && /deps/spacetimedb-cli dev ${module} `
       + '--no-config --project-path /app/spacetimedb --module-path . '
       + '--server-only --skip-generate '
-      + `-s http://host.docker.internal:${port} -y`],
+      + `-s ${containerReachableSpacetimeUri(lease, identity.networkMode)} -y`],
     { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     const collect = chunk => { output = (output + chunk.toString()).slice(-128 * 1024); };
     dev.stdout.on('data', collect);

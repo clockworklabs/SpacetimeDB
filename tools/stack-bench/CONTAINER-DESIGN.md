@@ -32,8 +32,8 @@ Checked on this machine before designing:
 |---|---|
 | Does a container see the repo by default? | No — `ls /d` fails; only mounts exist |
 | Do bind mounts work from Git Bash? | Yes, with `MSYS_NO_PATHCONV=1` (paths are otherwise mangled to `C:/Program Files/Git/...`) |
-| Can a container reach the host services? | Yes — SpacetimeDB answered 200 on `host.docker.internal:3210` |
-| …even a listener bound to 127.0.0.1? | Yes — Docker Desktop proxies through to the host's loopback, so the lint server keeps its loopback bind. The obvious guess is the opposite; it was measured. On plain Linux Docker (`--add-host=host.docker.internal:host-gateway`) it would not, and `lint-server.mjs --host` exists for that |
+| Can a local bridge container reach host services? | Yes — the measured Docker Desktop path uses `host.docker.internal` |
+| Can an appliance container reach loopback services? | Yes — it shares the dedicated Linux runner's host network and uses `127.0.0.1` |
 | Does the CLI work from outside the repo? | Yes — same commit reported (`4aa1fda3`) |
 | Does an app install the local bindings from a copy? | Yes — `spacetimedb@2.8.0` |
 
@@ -63,11 +63,12 @@ produced a retracted finding).
 
 ## Network
 
-Builds reach the databases and the SpacetimeDB host on `host.docker.internal`
-(3210, 6532, 6537). Dev servers start inside the container and must be reachable
-by the grader, which stays on the host: publish the track's port window
-(`-p 6473:6473 -p 6573:6573 …`, per backend and run index) so
-`portsFor()` keeps working unchanged.
+The supported Linux appliance uses the host network. Builds reach databases,
+SpacetimeDB, and the controller lint service on `127.0.0.1`; the grader reaches
+the build's dev servers through that same namespace. Local diagnostic bridge
+containers instead use `host.docker.internal` plus Docker's host-gateway mapping
+and publish the track's port window. Address selection follows the container's
+recorded network mode rather than assuming either topology.
 
 ## How the harness uses it
 
@@ -108,12 +109,10 @@ historical diagnostic evidence and are not comparable to hardened runs.
    CLI arguments and the prompt still on stdin. `<STDB_PACKAGE>` and `<STDB_BIN>`
    become `/deps/...`, and the app is named as `/app` — which also removes the
    repo-root disclosure the contaminated run followed.
-2. Host services are rewritten to `host.docker.internal`: the database URL, the
-   SpacetimeDB URI, and the lint shim. Dev-server ports are *not* rewritten —
-   those servers start inside and are published back out, so the grader on the
-   host still reaches them at `localhost`. Both directions verified: the host
-   read a container server on a published 6573, and the container got 200 from
-   `host.docker.internal:3210`.
+2. Host-service addresses are derived from the recorded container network mode:
+   `127.0.0.1` in the appliance host namespace and `host.docker.internal` in a
+   local bridge. Dev-server addresses remain loopback from the grader. The
+   preflight smoke uses the same namespace as the build it admits.
 3. Auth: `--api-key`/`ANTHROPIC_API_KEY` when supplied, otherwise the host
    credential is bind-mounted at `/root/.claude/.credentials.json` so runs bill
    to the plan. Only that one file is mounted, not `~/.claude`. A key is

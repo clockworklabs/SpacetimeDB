@@ -68,18 +68,17 @@ the release manifest.
 Host networking keeps the proven runtime paths:
 
 - the controller grader reaches app ports through `127.0.0.1`;
-- coding containers reach controller-hosted lint and SpacetimeDB ports through
-  `host.docker.internal` plus `host-gateway`;
-- coding containers reach the dedicated PostgreSQL/MongoDB published ports the
-  same way;
+- coding and reference containers share the appliance host network and reach
+  controller-hosted lint, SpacetimeDB, and the dedicated PostgreSQL/MongoDB
+  published ports through `127.0.0.1`;
 - only provider-declared HTTPS endpoints and package registries are required
   outbound from coding containers;
 - the controller needs registry access only during the explicit pull/verify
   step, not during a benchmark attempt.
 
-`preflight --smoke` must exercise these paths from the delivered build image
-before a model call. A release is unsupported if host networking, host-gateway,
-or the fixed state path is changed.
+`preflight --smoke` must exercise these paths from the delivered build image in
+the same host-network namespace used by benchmark builds before a model call. A
+release is unsupported if host networking or the fixed state path is changed.
 
 ## Secrets
 

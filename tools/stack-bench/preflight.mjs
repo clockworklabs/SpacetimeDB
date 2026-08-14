@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { AGENT_ADAPTER_REGISTRY } from './agent-adapters.mjs';
 import { parseImageId } from './container-image.mjs';
-import { dockerHostGatewayArguments, DOCKER_HOST_ALIAS } from './docker-network.mjs';
+import { dockerHostGatewayArguments, dockerHostServiceAddress } from './docker-network.mjs';
 import { dockerMountArguments } from './container-mount.mjs';
 import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
   PREFLIGHT_RESOURCE_FLOORS } from './product-config.mjs';
@@ -130,7 +130,8 @@ export function probeLoopbackPort(port, { spawn = spawnSync } = {}) {
 }
 
 function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requiredExecutables,
-  credentialStatusCommand, credentialMount, marker }) {
+  credentialStatusCommand, credentialMount, marker, networkMode }) {
+  const hostAddress = dockerHostServiceAddress(networkMode);
   const script = `const fs=require('node:fs'),net=require('node:net'),path=require('node:path');`
     + `const {spawnSync}=require('node:child_process');`
     + `(async()=>{const urls=JSON.parse(process.argv[1]);const ports=JSON.parse(process.argv[2]);`
@@ -141,9 +142,9 @@ function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requir
     + `throw new Error('required executable not found: '+name)});`
     + `if(statusCommand){const r=spawnSync(statusCommand[0],statusCommand.slice(1),{encoding:'utf8'});`
     + `credentialStatus=r.status===0?'ready':'not-ready'}`
-    + `const reach=port=>new Promise((ok,fail)=>{const s=net.createConnection({host:'${DOCKER_HOST_ALIAS}',port});`
+    + `const reach=port=>new Promise((ok,fail)=>{const s=net.createConnection({host:'${hostAddress}',port});`
     + `const t=setTimeout(()=>s.destroy(new Error('timeout')),5000);s.once('connect',()=>{clearTimeout(t);s.end();ok()});`
-    + `s.once('error',e=>{clearTimeout(t);fail(new Error('${DOCKER_HOST_ALIAS}:'+port+': '+e.message))})});`
+    + `s.once('error',e=>{clearTimeout(t);fail(new Error('${hostAddress}:'+port+': '+e.message))})});`
     + `const reached=[];for(const url of urls){try{const r=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(15000)});`
     + `reached.push({url,status:r.status})}catch(e){throw new Error(url+': '+e.message)}}`
     + `for(const port of ports){await reach(port);tcpReached.push(port)}`
@@ -152,7 +153,8 @@ function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requir
     + `tcpReached,executables:Object.fromEntries(required.map((name,index)=>[name,executablePaths[index]])),`
     + `credentialStatus,`
     + `diskFreeBytes:Number(s.bavail*s.bsize)}))})()`;
-  const output = command('docker', ['run', '--rm', ...dockerHostGatewayArguments(),
+  const output = command('docker', ['run', '--rm', '--network', networkMode,
+    ...dockerHostGatewayArguments(networkMode),
     ...(credentialMount ? dockerMountArguments(credentialMount) : []),
     '-v', `${resultsDir}:/results`, imageId, 'node', '-e', script,
     JSON.stringify(destinations), JSON.stringify(tcpPorts), JSON.stringify(requiredExecutables),
@@ -392,7 +394,8 @@ export function runPreflight(request, dependencies = {}) {
     try {
       const smoke = runSmoke({ command: run, imageId, resultsDir: request.resultsDir,
         destinations, tcpPorts, requiredExecutables: agent?.requiredExecutables ?? [],
-        credentialStatusCommand, credentialMount, marker });
+        credentialStatusCommand, credentialMount, marker,
+        networkMode: env.STACK_BENCH_APPLIANCE === '1' ? 'host' : 'bridge' });
       const persisted = exists(join(request.resultsDir, marker));
       rmSync(join(request.resultsDir, marker), { force: true });
       const smokeReady = smoke.platform === 'linux' && Number(smoke.node?.match(/^v(\d+)/)?.[1]) >= 22
