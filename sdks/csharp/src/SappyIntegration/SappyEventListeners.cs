@@ -7,6 +7,8 @@ namespace SpacetimeDB.SappyIntegration
 {
     public class SappyEventListeners<T> : IEventListeners<T> where T : Delegate
     {
+        private static Func<T, SappyEventListeners<T>, SapTarget<T>> CreateTarget { get; } = CreateTargetFromListener;
+
         private SapDelegate<T> Targets { get; } = new();
         private DelegateIndex<T, SapTarget<T>> Cache { get; } = new(4);
 
@@ -20,7 +22,7 @@ namespace SpacetimeDB.SappyIntegration
         public void Add(T listener)
         {
             if (listener == null) return;
-            if (Cache.Add(listener, this, static (listener, _) => new SapTarget<T>(listener), out var target))
+            if (Cache.Add(listener, this, CreateTarget, out var target))
             {
                 Add(target);
             }
@@ -35,26 +37,7 @@ namespace SpacetimeDB.SappyIntegration
             }
         }
 
-        public static SappyEventListeners<T> operator +(SappyEventListeners<T> a, SapTarget<T> b)
-        {
-            a.Add(b);
-            return a;
-        }
-        public static SappyEventListeners<T> operator -(SappyEventListeners<T> a, SapTarget<T> b)
-        {
-            a.Remove(b);
-            return a;
-        }
-        public static SappyEventListeners<T> operator +(SappyEventListeners<T> a, T b)
-        {
-            a.Add(b);
-            return a;
-        }
-        public static SappyEventListeners<T> operator -(SappyEventListeners<T> a, T b)
-        {
-            a.Remove(b);
-            return a;
-        }
+        private static SapTarget<T> CreateTargetFromListener(T listener, SappyEventListeners<T> _) => new(listener);
     }
 }
 #endif
