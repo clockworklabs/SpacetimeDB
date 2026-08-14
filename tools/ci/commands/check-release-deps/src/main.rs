@@ -16,7 +16,9 @@ struct PullRequestRef {
 }
 
 #[derive(Parser)]
-#[command(about = "Checks that every PR in the `Must be released` section has been released.")]
+#[command(
+    about = "Checks the `Rollback safety impact` section and verifies that every referenced PR has been released."
+)]
 struct Args {
     #[arg(long)]
     repo: String,
@@ -24,7 +26,7 @@ struct Args {
     pr_number: u64,
 }
 
-fn release_section(body: &str) -> Result<&str> {
+fn rollback_safety_section(body: &str) -> Result<&str> {
     let mut start = None;
     let mut level = 0;
     let mut offset = 0;
@@ -32,7 +34,11 @@ fn release_section(body: &str) -> Result<&str> {
         let trimmed = line.trim_end_matches(['\r', '\n']);
         let hashes = trimmed.bytes().take_while(|byte| *byte == b'#').count();
         let heading = hashes > 0 && trimmed.as_bytes().get(hashes) == Some(&b' ');
-        if heading && trimmed[hashes + 1..].trim().eq_ignore_ascii_case("Must be released") {
+        if heading
+            && trimmed[hashes + 1..]
+                .trim()
+                .eq_ignore_ascii_case("Rollback safety impact")
+        {
             start = Some(offset + line.len());
             level = hashes;
         } else if start.is_some() && heading && hashes <= level {
@@ -42,11 +48,11 @@ fn release_section(body: &str) -> Result<&str> {
     }
     start
         .map(|start| &body[start..])
-        .ok_or_else(|| anyhow!("PR description is missing the `Must be released` section"))
+        .ok_or_else(|| anyhow!("PR description is missing the `Rollback safety impact` section"))
 }
 
-fn normalized_release_section(body: &str) -> Result<String> {
-    Ok(release_section(body)?
+fn normalized_rollback_safety_section(body: &str) -> Result<String> {
+    Ok(rollback_safety_section(body)?
         .lines()
         .map(str::trim_end)
         .collect::<Vec<_>>()
@@ -55,14 +61,28 @@ fn normalized_release_section(body: &str) -> Result<String> {
         .to_owned())
 }
 
-fn validated_release_section<'a>(body: &'a str, template: &str) -> Result<&'a str> {
-    let section = release_section(body)?;
-    if normalized_release_section(body)? == normalized_release_section(template)? {
+fn validated_rollback_safety_section<'a>(body: &'a str, template: &str) -> Result<&'a str> {
+    let section = rollback_safety_section(body)?;
+    if normalized_rollback_safety_section(body)? == normalized_rollback_safety_section(template)? {
         bail!(
-            "the `Must be released` section is unchanged from the pull request template; remove the instructional comment if there are no dependencies"
+            "the `Rollback safety impact` section is unchanged from the pull request template; add `n/a` or list prerequisite PRs"
         );
     }
     Ok(section)
+}
+
+fn contains_na(section: &str) -> bool {
+    static NA: OnceLock<Regex> = OnceLock::new();
+    let regex = NA.get_or_init(|| Regex::new(r"(?i)(?:^|[^A-Za-z0-9_])n/a(?:$|[^A-Za-z0-9_])").unwrap());
+    regex.is_match(&strip_ignored_markdown(section))
+}
+
+fn validated_dependencies(section: &str, current_repo: &str) -> Result<BTreeSet<PullRequestRef>> {
+    let dependencies = references(section, current_repo)?;
+    if dependencies.is_empty() && !contains_na(section) {
+        bail!("the `Rollback safety impact` section must contain `n/a` or at least one prerequisite PR");
+    }
+    Ok(dependencies)
 }
 
 fn references(section: &str, current_repo: &str) -> Result<BTreeSet<PullRequestRef>> {
@@ -141,9 +161,9 @@ fn main() -> Result<()> {
     let body = pr.body.as_deref().unwrap_or_default();
     let template = fs::read_to_string(".github/pull_request_template.md")
         .context("failed to read .github/pull_request_template.md")?;
-    let section =
-        validated_release_section(body, &template).context("failed to validate the `Must be released` section")?;
-    let dependencies = references(section, &args.repo)?;
+    let section = validated_rollback_safety_section(body, &template)
+        .context("failed to validate the `Rollback safety impact` section")?;
+    let dependencies = validated_dependencies(section, &args.repo)?;
     if dependencies.is_empty() {
         println!("No PR mentions found, so trivially succeeding.");
         return Ok(());
@@ -186,29 +206,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn extracts_only_the_release_section() {
-        let body = "# Intro\n# Must be released\n#12 repo#13 owner/repo#14\n## Detail\n#15\n# Testing\n#16\n";
+    fn extracts_only_the_rollback_safety_section() {
+        let body = "# Intro\n# Rollback safety impact\n#12 repo#13 owner/repo#14\n## Detail\n#15\n# Testing\n#16\n";
         assert_eq!(
-            release_section(body).unwrap(),
+            rollback_safety_section(body).unwrap(),
             "#12 repo#13 owner/repo#14\n## Detail\n#15\n"
         );
     }
 
     #[test]
-    fn normalizes_release_section_whitespace() {
-        let body = "# Must be released\r\n\r\n<!-- default -->   \r\n\r\n# Next\r\n";
-        assert_eq!(normalized_release_section(body).unwrap(), "<!-- default -->");
+    fn normalizes_rollback_safety_section_whitespace() {
+        let body = "# Rollback safety impact\r\n\r\n<!-- default -->   \r\n\r\n# Next\r\n";
+        assert_eq!(normalized_rollback_safety_section(body).unwrap(), "<!-- default -->");
     }
 
     #[test]
-    fn rejects_unchanged_template_but_accepts_an_intentionally_empty_section() {
-        let template = "# Must be released\n\n<!-- default instructions -->\n";
-        let unchanged = "# Must be released\r\n\r\n<!-- default instructions -->   \r\n";
-        let empty = "# Must be released\n";
-        assert!(validated_release_section(unchanged, template).is_err());
-        let section = validated_release_section(empty, template).unwrap();
-        assert_eq!(section, "");
-        assert!(references(section, "clockworklabs/SpacetimeDB").unwrap().is_empty());
+    fn rejects_an_unchanged_template() {
+        let template = "# Rollback safety impact\n\n<!-- default instructions -->\n";
+        let unchanged = "# Rollback safety impact\r\n\r\n<!-- default instructions -->   \r\n";
+        assert!(validated_rollback_safety_section(unchanged, template).is_err());
+    }
+
+    #[test]
+    fn recognizes_standalone_na_case_insensitively_outside_ignored_markdown() {
+        assert!(contains_na("N/A"));
+        assert!(contains_na("Rollback-safe: n/a."));
+        assert!(!contains_na("<!-- n/a -->"));
+        assert!(!contains_na("```\nn/a\n```"));
+        assert!(!contains_na("notn/available"));
+    }
+
+    #[test]
+    fn rejects_sections_without_na_or_prerequisites() {
+        for section in ["", "<!-- n/a -->", "safe to deploy"] {
+            assert!(validated_dependencies(section, "clockworklabs/SpacetimeDB").is_err());
+        }
+    }
+
+    #[test]
+    fn accepts_na_or_prerequisites() {
+        assert!(validated_dependencies("N/A", "clockworklabs/SpacetimeDB")
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            validated_dependencies("#12", "clockworklabs/SpacetimeDB")
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]

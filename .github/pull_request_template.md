@@ -27,6 +27,14 @@ so that you're confident that all the changes work as expected! -->
 - [ ] <!-- maybe a test you want to do -->
 - [ ] <!-- maybe a test you want a reviewer to do, so they can check it off when they're satisfied. -->
 
-# Must be released
+# Rollback safety impact
 
-<!-- List PRs that must be included in a release before this PR can merge. Supported forms include #123, SpacetimeDB#123, clockworklabs/SpacetimeDB#123, and GitHub PR URLs. Leave this section empty if there are none. -->
+<!--
+If this PR is safe to roll back after deployment and has no impact on the rollback safety of any prior PRs, write `n/a` below.
+
+Otherwise, list every prerequisite PR that must be included in a release before this PR can merge. This PR must not be deployed until each prerequisite has been deployed and sufficiently observed or tested in the live deployment that we are confident it will not be rolled back. Supported forms include #123, SpacetimeDB#123, clockworklabs/SpacetimeDB#123, and GitHub PR URLs.
+
+Consider whether this PR:
+- newly writes to a previously introduced but unused ControlDB table or reducer, system table, or on-disk data format; or
+- clears, deletes, incompatibly changes, or renders unsupported a previously available ControlDB table or reducer, system table, or on-disk data format.
+-->
