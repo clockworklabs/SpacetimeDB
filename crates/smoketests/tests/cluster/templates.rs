@@ -510,7 +510,7 @@ fn pin_csharp_client_sdk_package_version(project_path: &Path) -> Result<()> {
 fn build_typescript_sdk() -> Result<()> {
     let sdk_path = workspace_root().join("crates/bindings-typescript");
     eprintln!("[TEMPLATES] Building TypeScript SDK at {:?}", sdk_path);
-    run_pnpm(&["install"], &sdk_path)?;
+    run_pnpm(&["--filter", "spacetimedb", "install"], &sdk_path)?;
     run_pnpm(&["build"], &sdk_path)?;
     Ok(())
 }

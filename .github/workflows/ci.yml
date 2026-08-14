@@ -413,15 +413,16 @@ jobs:
         with:
           global-json-file: global.json
 
-      # nodejs and pnpm are required for the typescript quickstart smoketest
+      # Node.js and pnpm are required for the TypeScript smoketests.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
+
+      - name: Install TypeScript SDK dependencies
+        run: pnpm --filter spacetimedb install
 
       # Install emscripten for C++ module compilation tests.
       - name: Install emscripten (Linux)
@@ -1090,19 +1091,6 @@ jobs:
         with:
           run_install: true
 
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - uses: actions/cache@v4
-        name: Setup pnpm cache
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1604,20 +1592,6 @@ jobs:
         with:
           run_install: true
 
-      - name: Get pnpm store directory
-        working-directory: sdks/typescript
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - uses: actions/cache@v4
-        name: Setup pnpm cache
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1653,20 +1627,6 @@ jobs:
       - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
-
-      - name: Get pnpm store directory
-        shell: bash
-        working-directory: crates/bindings-typescript
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - uses: actions/cache@v4
-        name: Setup pnpm cache
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
 
       # - name: Extract SpacetimeDB branch name from file
       #   id: extract-branch
