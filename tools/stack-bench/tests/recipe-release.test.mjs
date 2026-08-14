@@ -121,7 +121,7 @@ test('legacy runner binding fails closed on drift and emits only the suite check
   const track = loadTrack('ecommerce');
   const binding = resolveLegacyRecipeRelease(track, 2);
   assert.equal(binding.alias, 'L2');
-  assert.equal(binding.status, 'candidate');
+  assert.equal(binding.status, 'promoted');
   const reportRelease = gradeRecipeRelease(binding, 'features');
   assert(reportRelease.checks.length > 0);
   assert(reportRelease.checks.every(check => check.executionId === 'features'));

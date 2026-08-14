@@ -130,7 +130,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
   } })), /exact image digest/);
 });
 
-test('frozen campaigns require exact runtime images and reject candidate levels', () => {
+test('frozen campaigns require exact runtime images and accept qualified levels', () => {
   assert.throws(() => compile(definition({ state: 'frozen' })), /maxCostUsdPerAttempt.*required/);
   const runtime = { releaseManifestSha256: 'a'.repeat(64),
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
@@ -151,10 +151,11 @@ test('frozen campaigns require exact runtime images and reject candidate levels'
   }, agents: claudeAgent, pricing: claudePricing,
   budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
   assert.equal(internal.definition.runtime.releaseManifestSha256, null);
-  assert.throws(() => compile(definition({ state: 'frozen', levels: [2], runtime,
+  const l1l2 = compile(definition({ state: 'frozen', levels: [1, 2], runtime,
     agents: claudeAgent, pricing: claudePricing,
-    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } })),
-  /cannot freeze with unqualified L2/);
+    budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
+  assert.deepEqual(l1l2.bindings.map(binding => binding.level), [1, 2]);
+  assert(l1l2.bindings.every(binding => binding.promotion.status === 'promoted'));
 });
 
 test('frozen manifest validation does not hard-code an agent provider', () => {

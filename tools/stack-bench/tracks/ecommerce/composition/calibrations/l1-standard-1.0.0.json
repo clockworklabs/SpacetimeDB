@@ -127,7 +127,7 @@
   "equivalenceDecisions": [],
   "promotion": {
     "catalogPath": "composition/promotions.json",
-    "catalogSha256": "419e0d3dedf6034cbc0d8443268fa161a2ab6fdc38e56f3241d7fb0eb56f0ce6",
+    "catalogSha256": "1c813ed1b667e7111b4f1f4417e6cf0e7ed3f4d22b381f22c1f35d8c5a3d40cf",
     "alias": "L1",
     "status": "promoted"
   }

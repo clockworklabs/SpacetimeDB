@@ -75,7 +75,7 @@ test('ecommerce L1 and L2 recipes preserve current suite, feature, check, order,
   });
   assert.deepEqual(promotions.entries.map(entry => [entry.alias, entry.status, entry.recipe.id]), [
     ['L1', 'promoted', 'ecommerce.l1-standard'],
-    ['L2', 'candidate', 'ecommerce.l2-standard'],
+    ['L2', 'promoted', 'ecommerce.l2-standard'],
   ]);
 });
 
@@ -161,7 +161,7 @@ test('the recommendation criterion owns its purchase prerequisite', () => {
     && !step.absent);
   assert(purchase >= 0, '5c must establish the category purchase it observes');
   assert(assertion > purchase, '5c must purchase before observing recommendations');
-  assert.equal(l2.recipe.state, 'draft');
+  assert.equal(l2.recipe.state, 'qualified');
   assert.equal(operationalViews.packVersion, '1.1.0');
 });
 

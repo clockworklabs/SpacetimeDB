@@ -28,7 +28,7 @@ test('an undeclared level never falls back to L1 grading', () => {
 
 test('declared but unvalidated levels remain available as experimental work', () => {
   const ecommerce = loadTrack('ecommerce');
-  assert.equal(ecommerce.validatedThrough, 1);
+  assert.equal(ecommerce.validatedThrough, 2);
   assert.ok(suitesFor(ecommerce, 3).some(suite => suite.id === 'features'));
 });
 

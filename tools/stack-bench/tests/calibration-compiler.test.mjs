@@ -21,19 +21,19 @@ function current() {
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release }) };
 }
 
-test('runtime calibration resolution distinguishes the qualified L1 from the L2 candidate', () => {
+test('runtime calibration resolution binds the qualified L1 and L2 releases', () => {
   const l1 = resolveLegacyRecipeRelease(TRACK, 1).release;
   const resolved = resolveCalibrationForRelease(l1, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
   assert.equal(resolved.id, 'ecommerce.l1-standard-calibration');
   assert.match(resolved.contentSha256, /^[a-f0-9]{64}$/);
   const l2 = resolveLegacyRecipeRelease(TRACK, 2).release;
-  const candidate = resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
-  assert.equal(candidate.id, 'ecommerce.l2-standard-calibration');
-  assert.equal(candidate.state, 'draft');
-  assert.deepEqual(candidate.qualification.stacks.map(stack => stack.status),
-    ['candidate', 'candidate', 'candidate']);
-  assert.deepEqual(candidate.qualification.evidence, []);
-  assert.deepEqual(candidate.qualification.runner, {
+  const qualified = resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
+  assert.equal(qualified.id, 'ecommerce.l2-standard-calibration');
+  assert.equal(qualified.state, 'qualified');
+  assert.deepEqual(qualified.qualification.stacks.map(stack => stack.status),
+    ['qualified', 'qualified', 'qualified']);
+  assert.equal(qualified.qualification.evidence.length, 13);
+  assert.deepEqual(qualified.qualification.runner, {
     schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
   });
 });
@@ -130,7 +130,7 @@ test('qualification evidence is semantically bound and tampering fails closed', 
     /complete null policy/);
 });
 
-test('the L2 candidate keeps its score contract but carries no stale qualification evidence', () => {
+test('the qualified L2 release keeps its score contract and binds fresh qualification evidence', () => {
   const binding = resolveLegacyRecipeRelease(TRACK, 2);
   const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
     'l2-standard-1.1.0.json'), {
@@ -138,9 +138,16 @@ test('the L2 candidate keeps its score contract but carries no stale qualificati
   });
   assert.equal(binding.release.scoring.points, 75);
   assert.equal(binding.alias, 'L2');
-  assert.equal(binding.status, 'candidate');
-  assert.equal(plan.state, 'draft');
-  assert.deepEqual(plan.qualification.evidence, []);
+  assert.equal(binding.status, 'promoted');
+  assert.equal(plan.state, 'qualified');
+  assert.equal(plan.qualification.evidence.length, 13);
+  assert.equal(new Set(plan.qualification.evidence.map(entry => entry.path)).size, 7);
+  const entry = plan.qualification.evidence.find(evidence => evidence.kind === 'reference'
+    && evidence.stack === 'mongodb' && evidence.repetition === 1);
+  const artifact = readArtifact(join(ROOT, entry.path));
+  const context = { calibration: plan, qualificationIdentity: calibrationQualificationIdentity(plan),
+    release: binding.release, references: plan.references.entries };
+  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(artifact, entry, context));
 });
 
 test('qualification identity excludes governance transitions but binds executable controls', () => {

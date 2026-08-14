@@ -34,7 +34,8 @@ test('qualification status exposes the exact runner required by a recipe', () =>
     schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
   });
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
-    && item.state === 'candidate' && item.target === 'promoted'));
-  assert.equal(status.promotion.ready, false);
+    && item.state === 'promoted' && item.target === 'promoted'));
+  assert.equal(status.promotion.ready, true);
+  assert.deepEqual(status.promotion.blockers, []);
   assert.equal(status.launch.ok, true);
 });

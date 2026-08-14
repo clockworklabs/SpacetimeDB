@@ -613,10 +613,13 @@ refuses mismatched controller, build-sandbox, or platform identities instead of
 treating frozen runtime fields as descriptive labels. If a distribution release
 manifest is selected, its exact hash and image bindings are enforced as well;
 internal measurement does not require unfinished signing/SBOM packaging.
-Ecommerce L1 is qualified and promoted. The first measured L2 campaign exposed
-a cross-criterion state dependency in the operational-view checks, so L2 1.1 is
-now a candidate and must pass fresh reference, mutation, and null qualification
-before promotion. The campaign manifest implementation itself is complete.
+Ecommerce L1 and L2 are qualified and promoted. The first measured L2 campaign
+exposed a cross-criterion state dependency in the operational-view checks. L2
+1.1 isolates that prerequisite and has now passed fresh final-engine
+qualification: each backend's reference app passed twice, every declared mutant
+was caught twice, and the empty-app null control failed all scored and unscored
+checks without oracle gaps. The campaign manifest implementation itself is
+complete.
 
 ### SB-502: Idempotent scheduler
 
