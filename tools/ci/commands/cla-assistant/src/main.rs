@@ -1,8 +1,10 @@
+#![allow(clippy::disallowed_macros)]
+
 use std::collections::BTreeMap;
 use std::env;
 
 use anyhow::{anyhow, bail, Context, Result};
-use clap::{ArgGroup, Args, Subcommand};
+use clap::{ArgGroup, Args, Parser};
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::de::DeserializeOwned;
@@ -10,8 +12,9 @@ use serde::{Deserialize, Serialize};
 
 const CLA_CONTEXT: &str = "license/cla";
 
-#[derive(Subcommand)]
-pub(crate) enum ClaAssistantCmd {
+#[derive(Parser)]
+#[command(about = "Interacts with CLA Assistant.")]
+enum Cli {
     /// Retries CLA Assistant if `license/cla` is the only remaining PR blocker.
     Retry(RetryArgs),
 
@@ -20,14 +23,14 @@ pub(crate) enum ClaAssistantCmd {
 }
 
 #[derive(Args)]
-pub(crate) struct RetryArgs {
+struct RetryArgs {
     /// Pull request number to check.
     #[arg(long)]
-    pub(crate) pr_number: u64,
+    pr_number: u64,
 
     /// Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY.
     #[arg(long)]
-    pub(crate) repo: Option<String>,
+    repo: Option<String>,
 }
 
 #[derive(Args)]
@@ -37,24 +40,24 @@ pub(crate) struct RetryArgs {
         .multiple(false)
         .args(["pr", "sha"]),
 ))]
-pub(crate) struct StatusArgs {
+struct StatusArgs {
     /// Pull request number whose head commit should be checked.
     #[arg(long)]
-    pub(crate) pr: Option<u64>,
+    pr: Option<u64>,
 
     /// Commit SHA to check.
     #[arg(long)]
-    pub(crate) sha: Option<String>,
+    sha: Option<String>,
 
     /// Repository in `owner/name` form. Defaults to GITHUB_REPOSITORY.
     #[arg(long)]
-    pub(crate) repo: Option<String>,
+    repo: Option<String>,
 }
 
-pub(crate) fn run(cmd: ClaAssistantCmd) -> Result<()> {
-    match cmd {
-        ClaAssistantCmd::Retry(args) => retry(args),
-        ClaAssistantCmd::Status(args) => status(args),
+fn main() -> Result<()> {
+    match Cli::parse() {
+        Cli::Retry(args) => retry(args),
+        Cli::Status(args) => status(args),
     }
 }
 

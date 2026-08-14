@@ -1,3 +1,5 @@
+# `SPACETIMEDB_PRIVATE_TOKEN` needs Actions read/write, Contents read, and Pull
+# requests read access to clockworklabs/SpacetimeDBPrivate.
 name: Internal Tests
 
 on:
@@ -46,67 +48,36 @@ jobs:
               - '!docs/**'
 
       - id: dispatch
-        name: Trigger tests
+        name: Select or trigger tests
         if: steps.filter.outputs.non_docs == 'true'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
-          script: |
-            const workflowId = 'ci.yml';
-            const targetRef = 'master';
-            const targetOwner = process.env.TARGET_OWNER;
-            const targetRepo = process.env.TARGET_REPO;
-            // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
-            const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
-            const publicPrNumber = context.payload.pull_request?.number;
-            const inputs = { public_ref: publicRef };
-            if (publicPrNumber) {
-              inputs.public_pr_number = String(publicPrNumber);
-            }
-
-            // Dispatch the workflow in the target repository
-            const dispatchResp = await github.rest.actions.createWorkflowDispatch({
-              owner: targetOwner,
-              repo: targetRepo,
-              workflow_id: workflowId,
-              ref: targetRef,
-              inputs,
-              return_run_details: true,
-            });
-
-            const runId = dispatchResp.data.workflow_run_id;
-            const runUrl = dispatchResp.data.html_url;
-            if (!runId || !runUrl) {
-              core.setFailed(`Dispatch response did not include run details: ${JSON.stringify(dispatchResp.data)}`);
-              return;
-            }
-
-            core.info(`View run: ${runUrl}`);
-            core.setOutput('run_id', String(runId));
-            core.setOutput('run_url', runUrl);
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/internal-tests-cargo-target
+          GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          PUBLIC_PR_NUMBER: ${{ github.event.pull_request.number }}
+          PUBLIC_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          args=(--public-sha "$PUBLIC_SHA")
+          if [[ -n "$PUBLIC_PR_NUMBER" ]]; then
+            args+=(--public-pr-number "$PUBLIC_PR_NUMBER")
+          fi
+          cargo run --quiet \
+            --manifest-path tools/ci/Cargo.toml \
+            -- other-workflows coordinate-internal-tests "${args[@]}"
 
       - name: Wait for Internal Tests to complete
         if: steps.filter.outputs.non_docs == 'true'
         env:
           GH_TOKEN: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
           RUN_ID: ${{ steps.dispatch.outputs.run_id }}
-          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
         run: |
           set -euo pipefail
-          echo "Waiting for workflow result... ${RUN_URL}"
-          set +e
-          # Due to our limited-scope token permissions, `gh run watch` spams errors about not being able to get annotations. They look worrying but they're benign, so we filter them out.
-          gh run watch "$RUN_ID" \
+          cargo ci other-workflows watch \
             --repo "$TARGET_OWNER/$TARGET_REPO" \
-            --exit-status \
-            --interval 30 2>&1 \
-            | grep -Fv "requesting annotations returned 403 Forbidden as the token does not have sufficient permissions"
-          watch_status="${PIPESTATUS[0]}"
-          set -e
-          exit "$watch_status"
+            --run-id "$RUN_ID"
 
       - name: Cancel invoked run if workflow cancelled
-        if: ${{ cancelled() && steps.dispatch.outputs.run_id }}
+        if: ${{ cancelled() && steps.dispatch.outputs.run_id && steps.dispatch.outputs.did_start == 'true' }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
