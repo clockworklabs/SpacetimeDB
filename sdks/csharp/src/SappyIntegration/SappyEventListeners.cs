@@ -1,6 +1,7 @@
 #if SAPPY
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Sappy;
 using SpacetimeDB.EventHandling;
 
@@ -8,32 +9,25 @@ namespace SpacetimeDB.SappyIntegration
 {
     public class SappyEventListeners<T> : IEventListeners<T> where T : Delegate
     {
-        private SapDelegate<T> Targets { get; } = new();
-        private TargetCache Cache { get; } = new(4);
+        private readonly TargetCache _cache = new(4);
 
-        public void Add(SapTarget<T> listener) => Targets.Add(listener);
-        public void Remove(SapTarget<T> listener) => Targets.Remove(listener);
+        public void Add(SapTarget<T> listener) => _cache.Add(listener);
+        public void Remove(SapTarget<T> listener) => _cache.Remove(listener);
 
-        public int Count => Targets.Count;
+        public int Count => _cache.Count;
         
-        public T this[int index] => Targets[index];
+        public T this[int index] => _cache[index];
 
         public void Add(T listener)
         {
             if (listener == null) return;
-            if (Cache.Add(listener, out var target))
-            {
-                Add(target);
-            }
+            _cache.Add(listener);
         }
 
         public void Remove(T listener)
         {
             if (listener == null) return;
-            if (Cache.Remove(listener, out var target))
-            {
-                Remove(target);
-            }
+            _cache.Remove(listener);
         }
 
         private sealed class TargetCache
@@ -41,38 +35,42 @@ namespace SpacetimeDB.SappyIntegration
             private const int SmallListenerThreshold = 8;
             private const int CollisionBucket = -1;
 
-            private int[] Hashes;
-            private T?[] Callbacks;
-            private SapTarget<T>?[] Targets;
-            private int Capacity { get; set; }
-            private int Count { get; set; }
-            private Dictionary<int, int>? Indices { get; set; }
-            private Dictionary<int, List<int>>? Collisions { get; set; }
-            private Stack<List<int>>? CollisionsPool { get; set; }
+            private static readonly EqualityComparer<T> Comparer = EqualityComparer<T>.Default;
+
+            private int[] _hashes;
+            private T?[] _callbacks;
+            private SapTarget<T>?[] _targets;
+            private int _capacity;
+            private int _count;
+            private Dictionary<int, int>? _indices;
+            private Dictionary<int, List<int>>? _collisions;
+            private Stack<List<int>>? _collisionsPool;
+
+            public int Count => _count;
+
+            public T this[int index] => _callbacks[index]!;
 
             public TargetCache(int capacity)
             {
-                Capacity = Math.Max(1, capacity);
-                Hashes = new int[Capacity];
-                Callbacks = new T[Capacity];
-                Targets = new SapTarget<T>[Capacity];
+                _capacity = Math.Max(1, capacity);
+                _hashes = new int[_capacity];
+                _callbacks = new T[_capacity];
+                _targets = new SapTarget<T>[_capacity];
             }
 
-            public bool Add(T callback, out SapTarget<T> target)
+            public bool Add(T callback)
             {
-                target = null!;
                 if (callback == null) return false;
 
                 var hashCode = callback.GetHashCode();
 
-                if (Count <= SmallListenerThreshold)
+                if (_count <= SmallListenerThreshold)
                 {
                     if (FindLinear(callback) >= 0) return false;
 
-                    target = new SapTarget<T>(callback);
-                    AddRaw(hashCode, callback, target);
+                    AddRaw(hashCode, callback, new SapTarget<T>(callback));
 
-                    if (Count > SmallListenerThreshold)
+                    if (_count > SmallListenerThreshold)
                     {
                         RebuildIndex();
                     }
@@ -80,52 +78,108 @@ namespace SpacetimeDB.SappyIntegration
                     return true;
                 }
 
-                var indices = Indices!;
+                var indices = _indices!;
 
                 if (!indices.TryGetValue(hashCode, out var index))
                 {
-                    target = new SapTarget<T>(callback);
+                    indices.Add(hashCode, AddRaw(hashCode, callback, new SapTarget<T>(callback)));
+                    return true;
+                }
+
+                if (index != CollisionBucket)
+                {
+                    if (DelegateEquals(_callbacks[index]!, callback)) return false;
+
+                    var newIndex = AddRaw(hashCode, callback, new SapTarget<T>(callback));
+                    _collisions ??= new Dictionary<int, List<int>>();
+                    _collisions[hashCode] = GetCollisionsListFromPool(index, newIndex);
+                    indices[hashCode] = CollisionBucket;
+                    return true;
+                }
+
+                var bucket = _collisions![hashCode];
+
+                for (var i = 0; i < bucket.Count; i++)
+                {
+                    if (DelegateEquals(_callbacks[bucket[i]]!, callback)) return false;
+                }
+
+                bucket.Add(AddRaw(hashCode, callback, new SapTarget<T>(callback)));
+                return true;
+            }
+
+            public bool Add(SapTarget<T> target)
+            {
+                if (target == null || target.Callback == null) return false;
+
+                var hashCode = target.HashCode;
+                var callback = target.Callback;
+
+                if (_count <= SmallListenerThreshold)
+                {
+                    if (FindLinear(callback) >= 0) return false;
+
+                    AddRaw(hashCode, callback, target);
+
+                    if (_count > SmallListenerThreshold)
+                    {
+                        RebuildIndex();
+                    }
+
+                    return true;
+                }
+
+                var indices = _indices!;
+
+                if (!indices.TryGetValue(hashCode, out var index))
+                {
                     indices.Add(hashCode, AddRaw(hashCode, callback, target));
                     return true;
                 }
 
                 if (index != CollisionBucket)
                 {
-                    if (DelegateEquals(Callbacks[index]!, callback)) return false;
+                    if (DelegateEquals(_callbacks[index]!, callback)) return false;
 
-                    target = new SapTarget<T>(callback);
                     var newIndex = AddRaw(hashCode, callback, target);
-                    Collisions ??= new Dictionary<int, List<int>>();
-                    Collisions[hashCode] = GetCollisionsListFromPool(index, newIndex);
+                    _collisions ??= new Dictionary<int, List<int>>();
+                    _collisions[hashCode] = GetCollisionsListFromPool(index, newIndex);
                     indices[hashCode] = CollisionBucket;
                     return true;
                 }
 
-                var bucket = Collisions![hashCode];
+                var bucket = _collisions![hashCode];
 
                 for (var i = 0; i < bucket.Count; i++)
                 {
-                    if (DelegateEquals(Callbacks[bucket[i]]!, callback)) return false;
+                    if (DelegateEquals(_callbacks[bucket[i]]!, callback)) return false;
                 }
 
-                target = new SapTarget<T>(callback);
                 bucket.Add(AddRaw(hashCode, callback, target));
                 return true;
             }
 
-            public bool Remove(T callback, out SapTarget<T> target)
+            public bool Remove(T callback)
             {
-                target = null!;
-                if (callback == null || Count <= 0) return false;
+                if (callback == null || _count <= 0) return false;
 
                 var hashCode = callback.GetHashCode();
+                return Remove(hashCode, callback);
+            }
 
-                if (Count <= SmallListenerThreshold)
+            public bool Remove(SapTarget<T> target)
+            {
+                if (target == null || target.Callback == null || _count <= 0) return false;
+                return Remove(target.HashCode, target.Callback);
+            }
+
+            private bool Remove(int hashCode, T callback)
+            {
+                if (_count <= SmallListenerThreshold)
                 {
                     var index = FindLinear(callback);
                     if (index >= 0)
                     {
-                        target = Targets[index]!;
                         RemoveAtSwapBackRaw(index);
                         ClearIndex();
                         return true;
@@ -134,7 +188,7 @@ namespace SpacetimeDB.SappyIntegration
                     return false;
                 }
 
-                var indices = Indices!;
+                var indices = _indices!;
 
                 if (!indices.TryGetValue(hashCode, out var mappedIndex)) return false;
 
@@ -142,19 +196,19 @@ namespace SpacetimeDB.SappyIntegration
 
                 if (mappedIndex != CollisionBucket)
                 {
-                    if (!DelegateEquals(Callbacks[mappedIndex]!, callback)) return false;
+                    if (!DelegateEquals(_callbacks[mappedIndex]!, callback)) return false;
 
                     removeIndex = mappedIndex;
                     indices.Remove(hashCode);
                 }
                 else
                 {
-                    var bucket = Collisions![hashCode];
+                    var bucket = _collisions![hashCode];
 
                     for (var i = 0; i < bucket.Count; i++)
                     {
                         var candidate = bucket[i];
-                        if (!DelegateEquals(Callbacks[candidate]!, callback)) continue;
+                        if (!DelegateEquals(_callbacks[candidate]!, callback)) continue;
 
                         removeIndex = candidate;
                         RemoveBucketSlot(bucket, i);
@@ -162,13 +216,13 @@ namespace SpacetimeDB.SappyIntegration
                         if (bucket.Count == 1)
                         {
                             indices[hashCode] = bucket[0];
-                            Collisions.Remove(hashCode);
+                            _collisions.Remove(hashCode);
                             ReturnCollisionsListToPool(bucket);
                         }
                         else if (bucket.Count == 0)
                         {
                             indices.Remove(hashCode);
-                            Collisions.Remove(hashCode);
+                            _collisions.Remove(hashCode);
                             ReturnCollisionsListToPool(bucket);
                         }
 
@@ -178,13 +232,12 @@ namespace SpacetimeDB.SappyIntegration
                     if (removeIndex < 0) return false;
                 }
 
-                var movedFrom = Count - 1;
-                var movedHashCode = Hashes[movedFrom];
-                target = Targets[removeIndex]!;
+                var movedFrom = _count - 1;
+                var movedHashCode = _hashes[movedFrom];
 
                 RemoveAtSwapBackRaw(removeIndex);
 
-                if (Count <= SmallListenerThreshold)
+                if (_count <= SmallListenerThreshold)
                 {
                     ClearIndex();
                 }
@@ -196,101 +249,107 @@ namespace SpacetimeDB.SappyIntegration
                 return true;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private int FindLinear(T callback)
             {
-                for (var i = 0; i < Count; i++)
+                for (var i = 0; i < _count; i++)
                 {
-                    if (DelegateEquals(Callbacks[i]!, callback)) return i;
+                    if (DelegateEquals(_callbacks[i]!, callback)) return i;
                 }
 
                 return -1;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private int AddRaw(int hashCode, T callback, SapTarget<T> target)
             {
                 EnsureCapacity();
 
-                var index = Count;
-                Hashes[index] = hashCode;
-                Callbacks[index] = callback;
-                Targets[index] = target;
-                Count++;
+                var index = _count;
+                _hashes[index] = hashCode;
+                _callbacks[index] = callback;
+                _targets[index] = target;
+                _count++;
                 return index;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void RemoveAtSwapBackRaw(int index)
             {
-                var lastIndex = Count - 1;
+                var lastIndex = _count - 1;
 
                 if (index != lastIndex)
                 {
-                    Hashes[index] = Hashes[lastIndex];
-                    Callbacks[index] = Callbacks[lastIndex];
-                    Targets[index] = Targets[lastIndex];
+                    _hashes[index] = _hashes[lastIndex];
+                    _callbacks[index] = _callbacks[lastIndex];
+                    _targets[index] = _targets[lastIndex];
                 }
 
-                Hashes[lastIndex] = 0;
-                Callbacks[lastIndex] = null;
-                Targets[lastIndex] = null;
-                Count = lastIndex;
+                _hashes[lastIndex] = 0;
+                _callbacks[lastIndex] = null;
+                _targets[lastIndex] = null;
+                _count = lastIndex;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void EnsureCapacity()
             {
-                if (Count < Capacity) return;
+                if (_count < _capacity) return;
 
-                Capacity *= 2;
-                Array.Resize(ref Hashes, Capacity);
-                Array.Resize(ref Callbacks, Capacity);
-                Array.Resize(ref Targets, Capacity);
+                _capacity *= 2;
+                Array.Resize(ref _hashes, _capacity);
+                Array.Resize(ref _callbacks, _capacity);
+                Array.Resize(ref _targets, _capacity);
             }
 
             private void RebuildIndex()
             {
-                if (Indices == null)
+                if (_indices == null)
                 {
-                    Indices = new Dictionary<int, int>(Capacity);
+                    _indices = new Dictionary<int, int>(_capacity);
                 }
                 else
                 {
                     ClearIndex();
                 }
 
-                for (var i = 0; i < Count; i++)
+                var indices = _indices;
+                for (var i = 0; i < _count; i++)
                 {
-                    var hashCode = Hashes[i];
+                    var hashCode = _hashes[i];
 
-                    if (!Indices.TryGetValue(hashCode, out var existing))
+                    if (!indices.TryGetValue(hashCode, out var existing))
                     {
-                        Indices.Add(hashCode, i);
+                        indices.Add(hashCode, i);
                         continue;
                     }
 
-                    Collisions ??= new Dictionary<int, List<int>>();
+                    _collisions ??= new Dictionary<int, List<int>>();
 
                     if (existing != CollisionBucket)
                     {
-                        Collisions[hashCode] = GetCollisionsListFromPool(existing, i);
-                        Indices[hashCode] = CollisionBucket;
+                        _collisions[hashCode] = GetCollisionsListFromPool(existing, i);
+                        indices[hashCode] = CollisionBucket;
                     }
                     else
                     {
-                        Collisions[hashCode].Add(i);
+                        _collisions[hashCode].Add(i);
                     }
                 }
             }
 
             private void UpdateMovedIndex(int hashCode, int oldIndex, int newIndex)
             {
-                var mappedIndex = Indices![hashCode];
+                var indices = _indices!;
+                var mappedIndex = indices[hashCode];
 
                 if (mappedIndex != CollisionBucket)
                 {
-                    Indices[hashCode] = newIndex;
+                    indices[hashCode] = newIndex;
                     return;
                 }
 
-                var bucket = Collisions![hashCode];
+                var bucket = _collisions![hashCode];
 
                 for (var i = 0; i < bucket.Count; i++)
                 {
@@ -302,6 +361,7 @@ namespace SpacetimeDB.SappyIntegration
                 }
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private static void RemoveBucketSlot(List<int> bucket, int slot)
             {
                 var lastSlot = bucket.Count - 1;
@@ -316,23 +376,24 @@ namespace SpacetimeDB.SappyIntegration
 
             private void ClearIndex()
             {
-                Indices?.Clear();
+                _indices?.Clear();
 
-                if (Collisions == null) return;
+                if (_collisions == null) return;
 
-                foreach (var collisions in Collisions.Values)
+                foreach (var collisions in _collisions.Values)
                 {
                     ReturnCollisionsListToPool(collisions);
                 }
 
-                Collisions.Clear();
+                _collisions.Clear();
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private List<int> GetCollisionsListFromPool(int a, int b)
             {
-                if (CollisionsPool == null || CollisionsPool.Count <= 0) return new List<int>(2) { a, b };
+                if (_collisionsPool == null || _collisionsPool.Count <= 0) return new List<int>(2) { a, b };
 
-                var list = CollisionsPool.Pop();
+                var list = _collisionsPool.Pop();
                 list.Add(a);
                 list.Add(b);
                 return list;
@@ -341,11 +402,12 @@ namespace SpacetimeDB.SappyIntegration
             private void ReturnCollisionsListToPool(List<int> list)
             {
                 list.Clear();
-                CollisionsPool ??= new Stack<List<int>>();
-                CollisionsPool.Push(list);
+                _collisionsPool ??= new Stack<List<int>>();
+                _collisionsPool.Push(list);
             }
 
-            private static bool DelegateEquals(T a, T b) => EqualityComparer<T>.Default.Equals(a, b);
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private static bool DelegateEquals(T a, T b) => Comparer.Equals(a, b);
         }
     }
 }

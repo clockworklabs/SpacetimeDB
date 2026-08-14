@@ -573,9 +573,10 @@ namespace SpacetimeDB
 
             public void Invoke(EventContext ctx, Row row)
             {
-                for (var i = Listeners.Count - 1; i >= 0; i--)
+                var listeners = Listeners;
+                for (var i = listeners.Count - 1; i >= 0; i--)
                 {
-                    Listeners[i].Invoke(ctx, row);
+                    listeners[i].Invoke(ctx, row);
                 }
             }
         }
@@ -585,9 +586,10 @@ namespace SpacetimeDB
 
             public void Invoke(EventContext ctx, Row oldRow, Row newRow)
             {
-                for (var i = Listeners.Count - 1; i >= 0; i--)
+                var listeners = Listeners;
+                for (var i = listeners.Count - 1; i >= 0; i--)
                 {
-                    Listeners[i].Invoke(ctx, oldRow, newRow);
+                    listeners[i].Invoke(ctx, oldRow, newRow);
                 }
             }
         }
