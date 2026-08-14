@@ -715,14 +715,6 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ${{ github.workspace }}
-          shared-key: spacetimedb
-          save-if: false
-          prefix-key: v1
-
       - name: Install cargo-machete
         run: cargo install cargo-machete --locked
 
