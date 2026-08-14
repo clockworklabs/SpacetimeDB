@@ -186,7 +186,7 @@
       ]
     },
     "title": "Shop",
-    "validatedThrough": 2
+    "validatedThrough": 1
   },
   "scenarios": [
     {
@@ -4174,6 +4174,23 @@
                 "points": 2,
                 "statedBy": "the items from categories\nthey have bought from, most-purchased first, excluding items already in\ntheir cart",
                 "steps": [
+                  {
+                    "actor": "customer",
+                    "do": "fill",
+                    "enter": true,
+                    "settleMs": 1500,
+                    "testid": "search-input",
+                    "text": "Bluetooth Speaker"
+                  },
+                  {
+                    "actor": "customer",
+                    "do": "click",
+                    "in": {
+                      "contains": "Bluetooth Speaker",
+                      "testid": "item-card"
+                    },
+                    "testid": "buy-now"
+                  },
                   {
                     "actor": "customer",
                     "do": "pressKey",

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "title": "Shop",
   "slug": "ecom",
-  "validatedThrough": 2,
+  "validatedThrough": 1,
   "plannedThrough": 5,
   "portOffset": 300,
   "restartProbe": "/api/items",

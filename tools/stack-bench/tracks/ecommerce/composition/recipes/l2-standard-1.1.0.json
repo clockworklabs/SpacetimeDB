@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "kind": "benchmark-recipe",
   "id": "ecommerce.l2-standard",
-  "version": "1.0.0",
-  "state": "qualified",
+  "version": "1.1.0",
+  "state": "draft",
   "title": "Ecommerce L2 compatibility recipe",
   "track": "ecommerce",
   "compatibility": { "legacyLevel": 2 },
@@ -29,7 +29,7 @@
     { "path": "../packs/session-durability-1.0.0.json", "id": "ecommerce.session-durability", "version": "1.0.0", "includeRoles": ["guarantee"] },
     { "path": "../packs/reviews-1.0.0.json", "id": "ecommerce.reviews", "version": "1.0.0", "includeRoles": ["guarantee"] },
     { "path": "../packs/operations-access-1.0.0.json", "id": "ecommerce.operations-access", "version": "1.0.0", "includeRoles": ["feature", "guarantee"] },
-    { "path": "../packs/inventory-operations-1.0.0.json", "id": "ecommerce.inventory-operations", "version": "1.0.0", "includeRoles": ["feature", "guarantee"] },
+    { "path": "../packs/inventory-operations-1.1.0.json", "id": "ecommerce.inventory-operations", "version": "1.1.0", "includeRoles": ["feature", "guarantee"] },
     { "path": "../packs/returns-pricing-1.0.0.json", "id": "ecommerce.returns-pricing", "version": "1.0.0", "includeRoles": ["feature", "guarantee"] }
   ],
   "execution": [

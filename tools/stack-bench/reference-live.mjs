@@ -60,8 +60,8 @@ export function parseReferenceQualificationArgs(argv) {
   }
   if (!listTracks().includes(args.track)) throw new Error(`--track is unknown: ${args.track}`);
   const track = loadTrack(args.track);
-  if (!Number.isInteger(args.level) || args.level < 1 || args.level > track.validatedThrough) {
-    throw new Error(`--level must be validated for ${args.track} (1-${track.validatedThrough})`);
+  if (!Number.isInteger(args.level) || args.level < 1 || !track.suites[String(args.level)]) {
+    throw new Error(`--level must be declared for ${args.track}`);
   }
   if (!Number.isInteger(args.repetitions) || args.repetitions < 2) {
     throw new Error('--repetitions must be an integer of at least 2');

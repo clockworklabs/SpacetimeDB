@@ -19,10 +19,11 @@ test('qualification status lists exact evidence and launch readiness without wri
   assert.equal(status.promotion.blockers.some(item => item.code === 'source_not_promoted'), false);
 });
 
-test('qualification status rejects ambiguous or unvalidated scope', () => {
+test('qualification status rejects ambiguous or undeclared scope', () => {
   assert.deepEqual(parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
     '--track', 'ecommerce', '--level', '1']), { command: 'status', track: 'ecommerce', level: 1 });
-  assert.throws(() => qualificationReadiness('ecommerce', 3), /not validated/);
+  assert.throws(() => qualificationReadiness('ecommerce', 3), /no recipe release/);
+  assert.throws(() => qualificationReadiness('ecommerce', 4), /not declared/);
   assert.throws(() => parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
     '--track', 'ecommerce']), /usage/);
 });
@@ -32,4 +33,8 @@ test('qualification status exposes the exact runner required by a recipe', () =>
   assert.deepEqual(status.scope.runner, {
     schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
   });
+  assert(status.promotion.governance.some(item => item.path === 'promotion.status'
+    && item.state === 'candidate' && item.target === 'promoted'));
+  assert.equal(status.promotion.ready, false);
+  assert.equal(status.launch.ok, true);
 });

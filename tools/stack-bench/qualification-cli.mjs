@@ -47,8 +47,8 @@ function evidencePlan(calibration) {
 export function qualificationReadiness(trackName, level) {
   if (!listTracks().includes(trackName)) throw new Error(`unknown qualification track ${trackName}`);
   const track = loadTrack(trackName);
-  if (!Number.isInteger(level) || level < 1 || level > track.validatedThrough) {
-    throw new Error(`L${level} is not validated for ${trackName}`);
+  if (!Number.isInteger(level) || level < 1 || !track.suites[String(level)]) {
+    throw new Error(`L${level} is not declared for ${trackName}`);
   }
   const binding = resolveLegacyRecipeRelease(track, level);
   if (!binding) throw new Error(`${trackName} L${level} has no recipe release`);

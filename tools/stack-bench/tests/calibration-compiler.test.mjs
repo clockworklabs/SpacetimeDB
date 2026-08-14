@@ -21,16 +21,19 @@ function current() {
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release }) };
 }
 
-test('runtime calibration resolution is exact for both qualified recipes', () => {
+test('runtime calibration resolution distinguishes the qualified L1 from the L2 candidate', () => {
   const l1 = resolveLegacyRecipeRelease(TRACK, 1).release;
   const resolved = resolveCalibrationForRelease(l1, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
   assert.equal(resolved.id, 'ecommerce.l1-standard-calibration');
   assert.match(resolved.contentSha256, /^[a-f0-9]{64}$/);
   const l2 = resolveLegacyRecipeRelease(TRACK, 2).release;
-  const qualified = resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
-  assert.equal(qualified.id, 'ecommerce.l2-standard-calibration');
-  assert.equal(qualified.state, 'qualified');
-  assert.deepEqual(qualified.qualification.runner, {
+  const candidate = resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
+  assert.equal(candidate.id, 'ecommerce.l2-standard-calibration');
+  assert.equal(candidate.state, 'draft');
+  assert.deepEqual(candidate.qualification.stacks.map(stack => stack.status),
+    ['candidate', 'candidate', 'candidate']);
+  assert.deepEqual(candidate.qualification.evidence, []);
+  assert.deepEqual(candidate.qualification.runner, {
     schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
   });
 });
@@ -127,23 +130,17 @@ test('qualification evidence is semantically bound and tampering fails closed', 
     /complete null policy/);
 });
 
-test('multi-level evidence validates the current score and inherited guarantees separately', () => {
+test('the L2 candidate keeps its score contract but carries no stale qualification evidence', () => {
   const binding = resolveLegacyRecipeRelease(TRACK, 2);
   const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
-    'l2-standard-1.0.0.json'), {
+    'l2-standard-1.1.0.json'), {
     trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release,
   });
-  const entry = plan.qualification.evidence.find(candidate =>
-    candidate.kind === 'reference' && candidate.stack === 'mongodb' && candidate.repetition === 1);
-  const artifact = readArtifact(join(ROOT, entry.path));
   assert.equal(binding.release.scoring.points, 75);
-  assert.equal(artifact.payload.runs[0].score, '55/55');
-  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(artifact, entry, {
-    calibration: plan,
-    qualificationIdentity: calibrationQualificationIdentity(plan),
-    release: binding.release,
-    references: plan.references.entries,
-  }));
+  assert.equal(binding.alias, 'L2');
+  assert.equal(binding.status, 'candidate');
+  assert.equal(plan.state, 'draft');
+  assert.deepEqual(plan.qualification.evidence, []);
 });
 
 test('qualification identity excludes governance transitions but binds executable controls', () => {

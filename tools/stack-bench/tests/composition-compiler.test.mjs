@@ -65,7 +65,7 @@ function recipeProjection(plan) {
 
 test('ecommerce L1 and L2 recipes preserve current suite, feature, check, order, and score semantics', () => {
   const l1 = compileRecipeFile(recipePath('l1-standard-1.0.0.json'), { trackRoot: ECOMMERCE });
-  const l2 = compileRecipeFile(recipePath('l2-standard-1.0.0.json'), { trackRoot: ECOMMERCE });
+  const l2 = compileRecipeFile(recipePath('l2-standard-1.1.0.json'), { trackRoot: ECOMMERCE });
   assert.deepEqual(recipeProjection(l1), legacyProjection(1));
   assert.deepEqual(recipeProjection(l2), legacyProjection(2));
   assert.deepEqual({ checks: l1.checks.length, points: l1.scoring.points }, { checks: 48, points: 51 });
@@ -75,14 +75,14 @@ test('ecommerce L1 and L2 recipes preserve current suite, feature, check, order,
   });
   assert.deepEqual(promotions.entries.map(entry => [entry.alias, entry.status, entry.recipe.id]), [
     ['L1', 'promoted', 'ecommerce.l1-standard'],
-    ['L2', 'promoted', 'ecommerce.l2-standard'],
+    ['L2', 'candidate', 'ecommerce.l2-standard'],
   ]);
 });
 
 test('full ecommerce recipes compose the exact legacy builder task from pack-owned fragments', () => {
   for (const [recipe, prompt, contract] of [
     ['l1-standard-1.0.0.json', 'prompts/01-storefront.md', 'contracts/appendix-01.md'],
-    ['l2-standard-1.0.0.json', 'prompts/02-operations.md', 'contracts/appendix-02.md'],
+    ['l2-standard-1.1.0.json', 'prompts/02-operations.md', 'contracts/appendix-02.md'],
   ]) {
     const plan = compileRecipeFile(recipePath(recipe), { trackRoot: ECOMMERCE });
     assert.equal(plan.recipe.task.requirementText, readFileSync(join(ECOMMERCE, prompt), 'utf8'));
@@ -125,7 +125,7 @@ test('the smoke recipe reuses two behavior packs without duplicating their defin
 
 test('fixture versions make the L2 staff addition explicit', () => {
   const l1 = compileRecipeFile(recipePath('l1-standard-1.0.0.json'), { trackRoot: ECOMMERCE });
-  const l2 = compileRecipeFile(recipePath('l2-standard-1.0.0.json'), { trackRoot: ECOMMERCE });
+  const l2 = compileRecipeFile(recipePath('l2-standard-1.1.0.json'), { trackRoot: ECOMMERCE });
   assert.equal(l1.fixture.items.length, 12);
   assert.deepEqual(l1.fixture.accounts.map(account => account.username), ['admin']);
   assert.deepEqual(l2.fixture.accounts.map(account => account.username), ['admin', 'staff']);
@@ -142,6 +142,27 @@ test('fixture versions make the L2 staff addition explicit', () => {
   assert.match(prompt, /username `admin`, password `stackbench-admin-2026`/);
   assert.match(readFileSync(join(ECOMMERCE, 'prompts', '02-operations.md'), 'utf8'),
     /username `staff`, password `stackbench-staff-2026`/);
+});
+
+test('the recommendation criterion owns its purchase prerequisite', () => {
+  const l2 = compileRecipeFile(recipePath('l2-standard-1.1.0.json'), { trackRoot: ECOMMERCE });
+  const operationalViews = l2.execution
+    .flatMap(execution => execution.checkGroups)
+    .find(group => group.packId === 'ecommerce.inventory-operations'
+      && group.checkGroupId === 'operational-views');
+  const recommendation = operationalViews.feature.criteria.find(criterion => criterion.id === '5c');
+  const purchase = recommendation.steps.findIndex(step => step.do === 'click'
+    && step.testid === 'buy-now'
+    && step.in?.testid === 'item-card'
+    && step.in?.contains === 'Bluetooth Speaker');
+  const assertion = recommendation.steps.findIndex(step => step.do === 'expect'
+    && step.testid === 'recommended-item'
+    && step.contains === 'Headphones'
+    && !step.absent);
+  assert(purchase >= 0, '5c must establish the category purchase it observes');
+  assert(assertion > purchase, '5c must purchase before observing recommendations');
+  assert.equal(l2.recipe.state, 'draft');
+  assert.equal(operationalViews.packVersion, '1.1.0');
 });
 
 test('source contracts reject unknown fields, malformed versions, duplicate fixture data, and invalid aliases', () => {

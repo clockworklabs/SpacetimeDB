@@ -26,7 +26,8 @@ level/suite files remain compatibility inputs during that migration. Pack-owned
 requirements and hook fragments now compose the exact builder task alongside
 the checks, while check-only filters leave that task fixed. The first
 composition source slice now validates eight ecommerce packs, two
-fixture sets, L1/L2 parity recipes, a smaller smoke recipe, and promoted aliases;
+fixture sets, L1/L2 parity recipes, a smaller smoke recipe, a promoted L1 alias,
+and an L2 1.1 candidate awaiting renewed qualification;
 runtime still executes the compatibility scenarios, but every grade and bundle
 now binds the exact compiled recipe, pack, fixture, applicable calibration, and
 selected stable-check scope. Pack/check selection drives that executor, and the

@@ -60,7 +60,7 @@ test('recipe releases are deterministic, compact, and bind L2 to the exact L1 re
   assert(!JSON.stringify(l1a).includes('stackbench-admin-2026'));
 
   const l2 = buildRecipeRelease(
-    join(ECOMMERCE, 'composition', 'recipes', 'l2-standard-1.0.0.json'),
+    join(ECOMMERCE, 'composition', 'recipes', 'l2-standard-1.1.0.json'),
     { trackRoot: ECOMMERCE },
   );
   assert.equal(l2.checkCatalog.length, 53);
@@ -121,7 +121,7 @@ test('legacy runner binding fails closed on drift and emits only the suite check
   const track = loadTrack('ecommerce');
   const binding = resolveLegacyRecipeRelease(track, 2);
   assert.equal(binding.alias, 'L2');
-  assert.equal(binding.status, 'promoted');
+  assert.equal(binding.status, 'candidate');
   const reportRelease = gradeRecipeRelease(binding, 'features');
   assert(reportRelease.checks.length > 0);
   assert(reportRelease.checks.every(check => check.executionId === 'features'));

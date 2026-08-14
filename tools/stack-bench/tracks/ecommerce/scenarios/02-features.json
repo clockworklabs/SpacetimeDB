@@ -1116,6 +1116,23 @@
           "points": 2,
           "steps": [
             {
+              "do": "fill",
+              "actor": "customer",
+              "testid": "search-input",
+              "text": "Bluetooth Speaker",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "buy-now",
+              "in": {
+                "testid": "item-card",
+                "contains": "Bluetooth Speaker"
+              }
+            },
+            {
               "do": "pressKey",
               "actor": "customer",
               "key": "Escape"
