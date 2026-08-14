@@ -698,29 +698,6 @@ jobs:
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
-  dep_check:
-    needs: [merge_queue_noop]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: Dependency Check
-    runs-on: spacetimedb-new-runner-2
-    env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
-      RUST_BACKTRACE: full
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
-
-      - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-      - run: echo ::add-matcher::.github/workflows/rust_matcher.json
-
-      - name: Install cargo-machete
-        run: cargo install cargo-machete --locked
-
-      - name: Run dependency check
-        run: cargo ci dep-check
-
   codeowners_check:
     if: ${{ github.event_name == 'pull_request' }}
     name: CODEOWNERS check
@@ -1650,3 +1627,26 @@ jobs:
       # - name: Print rows in the user table
       #   if: always()
       #   run: spacetime sql quickstart-chat "SELECT * FROM user"
+
+  dep_check:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Dependency Check
+    runs-on: spacetimedb-new-runner-2
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - name: Set default rust toolchain
+        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Install cargo-machete
+        run: cargo install cargo-machete --locked
+
+      - name: Run dependency check
+        run: cargo ci dep-check
