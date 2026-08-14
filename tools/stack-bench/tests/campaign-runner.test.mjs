@@ -86,7 +86,30 @@ test('campaign validation retains a failed level prefix without accepting partia
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
   assert.throws(() => validateCampaignRun(plan, attempt,
     { ...run, outcome: { kind: 'app_failure' } }, { buildImage: 'test-build-image' }),
-  /does not match/);
+  /does not match.*levels/);
+});
+
+test('campaign validation accepts a zero-level interrupted run without invented cost totals', () => {
+  const compiled = compileCampaignFile(example);
+  const plan = { ...compiled, definition: { ...compiled.definition,
+    budgets: { ...compiled.definition.budgets, maxCostUsdPerAttempt: 100 } } };
+  const attempt = { ...plan.attempts[0], levels: [1, 2] };
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
+  const stack = plan.stacks.find(item => item.id === attempt.stack);
+  const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
+    identities: emptyArtifactIdentities({ engine: plan.identities.engine,
+      agentAdapter: agent.identity, stackAdapter: stack }) },
+  track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+  guidance: attempt.guidance, selectionRequest: plan.definition.selection, skills: attempt.skills,
+  runtime: { buildImage: 'test-build-image' }, levels: [],
+  outcome: { kind: 'ungraded', reason: 'coding session did not run' } };
+  assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  assert.throws(() => validateCampaignRun(plan, attempt,
+    { ...run, outcome: { kind: 'app_failure' } }, { buildImage: 'test-build-image' }),
+  /does not match.*levels.*totals\.costUsd/);
+  assert.throws(() => validateCampaignRun(plan, attempt,
+    { ...run, backend: 'wrong' }, { buildImage: 'test-build-image' }),
+  /does not match.*backend/);
 });
 
 test('draft campaigns cannot start unless an explicit test-only caller permits them', async () => {

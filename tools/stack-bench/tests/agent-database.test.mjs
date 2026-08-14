@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { ensureDatabase } from '../agent.mjs';
+import { codingSessionFailure, ensureDatabase } from '../agent.mjs';
 import { createBackendLease, writeBackendLease } from '../backend-lease.mjs';
 import { loadTrack } from '../tracks.mjs';
 
@@ -88,4 +88,15 @@ test('Spacetime cleanup ignores absence but rejects authorization and transport 
       { exec: () => { throw unauthorized; }, stdbBin: 'spacetime-test' }),
     /could not delete prior module/);
   });
+});
+
+test('coding session failures retain bounded stderr for nonzero exits', () => {
+  const detail = codingSessionFailure({ status: 1,
+    stdout: Buffer.from('provider stdout detail'),
+    stderr: Buffer.from(`provider rejected the session\n${'x'.repeat(5000)}`) });
+  assert.match(detail, /coding session failed \(exit 1\)/);
+  assert.match(detail, /inner stdout tail:\nprovider stdout detail/);
+  assert.match(detail, /inner stderr tail/);
+  assert.equal(detail.endsWith('x'.repeat(4000)), true);
+  assert.equal(detail.includes('provider rejected the session'), false);
 });

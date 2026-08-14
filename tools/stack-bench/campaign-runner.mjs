@@ -60,27 +60,38 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
   const interruptedPrefix = actualLevels.length < expectedLevels.length
     && actualLevels.every((level, index) => level === expectedLevels[index])
     && ['harness_failure', 'ungraded'].includes(run.outcome?.kind);
-  if (run.artifactEnvelope?.attempt?.parentId !== attempt.id
-    || run.track !== plan.definition.track
-    || run.backend !== attempt.stack
-    || run.model !== attempt.model
-    || run.guidance !== attempt.guidance
-    || canonicalDefinitionJson(run.selectionRequest) !== canonicalDefinitionJson(plan.definition.selection)
-    || canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills)
-    || (!exactLevels && !interruptedPrefix)
-    || run.artifactEnvelope?.identities?.agentAdapter?.sha256 !== agent?.identity.sha256
-    || run.artifactEnvelope?.identities?.engine?.sha256 !== plan.identities.engine.sha256
-    || run.artifactEnvelope?.identities?.stackAdapter?.id !== attempt.stack
-    || run.artifactEnvelope?.identities?.stackAdapter?.version
-      !== plan.stacks.find(item => item.id === attempt.stack)?.version
-    || (plan.definition.runtime.buildImage !== null
-      && run.runtime?.buildImage !== plan.definition.runtime.buildImage)
-    || (plan.definition.runtime.buildImage === null && buildImage !== null
-      && run.runtime?.buildImage !== buildImage)
-    || (plan.definition.budgets.maxCostUsdPerAttempt !== null
-      && (!Number.isFinite(run.totals?.costUsd)
-        || run.totals.costUsd > plan.definition.budgets.maxCostUsdPerAttempt))) {
-    throw new Error('run.json does not match its planned campaign attempt');
+  const mismatches = [];
+  const mismatch = (condition, field) => { if (condition) mismatches.push(field); };
+  mismatch(run.artifactEnvelope?.attempt?.parentId !== attempt.id, 'attempt.parentId');
+  mismatch(run.track !== plan.definition.track, 'track');
+  mismatch(run.backend !== attempt.stack, 'backend');
+  mismatch(run.model !== attempt.model, 'model');
+  mismatch(run.guidance !== attempt.guidance, 'guidance');
+  mismatch(canonicalDefinitionJson(run.selectionRequest)
+    !== canonicalDefinitionJson(plan.definition.selection), 'selectionRequest');
+  mismatch(canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills), 'skills');
+  mismatch(!exactLevels && !interruptedPrefix, 'levels');
+  mismatch(run.artifactEnvelope?.identities?.agentAdapter?.sha256 !== agent?.identity.sha256,
+    'identities.agentAdapter.sha256');
+  mismatch(run.artifactEnvelope?.identities?.engine?.sha256 !== plan.identities.engine.sha256,
+    'identities.engine.sha256');
+  mismatch(run.artifactEnvelope?.identities?.stackAdapter?.id !== attempt.stack,
+    'identities.stackAdapter.id');
+  mismatch(run.artifactEnvelope?.identities?.stackAdapter?.version
+    !== plan.stacks.find(item => item.id === attempt.stack)?.version,
+    'identities.stackAdapter.version');
+  mismatch(plan.definition.runtime.buildImage !== null
+    && run.runtime?.buildImage !== plan.definition.runtime.buildImage, 'runtime.buildImage');
+  mismatch(plan.definition.runtime.buildImage === null && buildImage !== null
+    && run.runtime?.buildImage !== buildImage, 'runtime.buildImage');
+  if (plan.definition.budgets.maxCostUsdPerAttempt !== null) {
+    const cost = run.totals?.costUsd;
+    const missingAllowed = interruptedPrefix && actualLevels.length === 0 && cost == null;
+    mismatch(!missingAllowed && (!Number.isFinite(cost)
+      || cost > plan.definition.budgets.maxCostUsdPerAttempt), 'totals.costUsd');
+  }
+  if (mismatches.length) {
+    throw new Error(`run.json does not match its planned campaign attempt: ${mismatches.join(', ')}`);
   }
   return run;
 }

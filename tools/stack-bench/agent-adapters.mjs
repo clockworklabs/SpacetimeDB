@@ -33,7 +33,7 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       // `loggedIn:false`; the adapter command must turn semantic logout into a
       // failed preflight without making a provider request.
       credentialStatusCommand: CLAUDE_SUBSCRIPTION_STATUS_COMMAND,
-      usesStackSkills: true, version: '1.2.0' }),
+      usesStackSkills: true, version: '1.3.0' }),
   adapter('deterministic', join('fixtures', 'stub-agent.mjs'), 'deterministic', { costLimit: 'non-billable' }),
   adapter('fault-injection', join('fixtures', 'fault-agent.mjs'), 'fault-injection', { costLimit: 'non-billable' }),
   adapter('reference-fixture', 'reference-agent.mjs', 'reference-fixture',

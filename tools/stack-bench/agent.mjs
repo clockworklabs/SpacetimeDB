@@ -36,6 +36,21 @@ const REPO = resolve(ROOT, '..', '..');
 const CONTROL_COMMAND_TIMEOUT_MS = 120_000;
 const BUILD_SESSION_TIMEOUT_MS = 58 * 60_000;
 
+export function codingSessionFailure(error) {
+  const status = Number.isInteger(error?.status) ? `exit ${error.status}` : null;
+  const code = typeof error?.code === 'string' && error.code ? error.code : null;
+  const reason = code ?? status ?? 'nonzero exit';
+  const stderr = Buffer.isBuffer(error?.stderr)
+    ? error.stderr.toString('utf8') : String(error?.stderr ?? '');
+  const stdout = Buffer.isBuffer(error?.stdout)
+    ? error.stdout.toString('utf8') : String(error?.stdout ?? '');
+  const stdoutTail = stdout.trim().slice(-2000);
+  const stderrTail = stderr.trim().slice(-4000);
+  return `coding session failed (${reason})`
+    + `${stdoutTail ? `\ninner stdout tail:\n${stdoutTail}` : ''}`
+    + `${stderrTail ? `\ninner stderr tail:\n${stderrTail}` : ''}`;
+}
+
 // The benchmark runs its own SpacetimeDB host so that measurements describe the
 // module under test rather than whatever else is published on a shared machine,
 // and so restarting it for durability tests cannot take somebody else down.
@@ -691,9 +706,7 @@ async function main() {
       timeout: BUILD_SESSION_TIMEOUT_MS });
   } catch (err) {
     raw = (err.stdout || '').toString();
-    spawnError = err.code
-      ? `could not run the coding session: ${err.code} (${err.message.split('\n')[0]})`
-      : null;
+    spawnError = codingSessionFailure(err);
   }
 
   // The session is over, so the lint endpoint has no reason to stay open — and
@@ -708,6 +721,8 @@ async function main() {
   // failure mode cost a run once already, silently.
   if (spawnError || (!result.session_id && !raw.trim())) {
     console.error(`\nAGENT DID NOT RUN — ${spawnError ?? 'the session produced no output'}`);
+    process.exitCode = 1;
+    return;
   }
   const usage = result.usage ?? {};
   const input = usage.input_tokens ?? 0;
