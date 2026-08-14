@@ -20,11 +20,10 @@ namespace SpacetimeDB.SappyIntegration
         public void Add(T listener)
         {
             if (listener == null) return;
-            if (Cache.Contains(listener)) return;
-
-            var target = new SapTarget<T>(listener);
-            Cache.AddUnchecked(listener, target);
-            Add(target);
+            if (Cache.Add(listener, this, static (listener, _) => new SapTarget<T>(listener), out var target))
+            {
+                Add(target);
+            }
         }
 
         public void Remove(T listener)
