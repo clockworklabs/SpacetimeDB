@@ -347,10 +347,16 @@ export function readBackendGuidanceDocument(document, fallbackRelativePath) {
       throw new Error('campaign guidance document identity is invalid');
     }
   }
-  const selectedPath = realpathSync(resolve(ROOT, document?.path ?? fallbackRelativePath));
-  const rel = relative(realpathSync(ROOT), selectedPath);
-  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+  const root = realpathSync(ROOT);
+  const candidate = resolve(root, document?.path ?? fallbackRelativePath);
+  const candidateRel = relative(root, candidate);
+  if (candidateRel === '..' || candidateRel.startsWith(`..${sep}`) || isAbsolute(candidateRel)) {
     throw new Error('campaign guidance document escapes the Stack Bench root');
+  }
+  const selectedPath = realpathSync(candidate);
+  const resolvedRel = relative(root, selectedPath);
+  if (resolvedRel === '..' || resolvedRel.startsWith(`..${sep}`) || isAbsolute(resolvedRel)) {
+    throw new Error('campaign guidance document resolves outside the Stack Bench root');
   }
   const bytes = readFileSync(selectedPath);
   if (document && (sha256(bytes) !== document.sha256 || bytes.length !== document.bytes)) {
