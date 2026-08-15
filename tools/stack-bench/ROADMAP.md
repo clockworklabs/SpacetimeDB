@@ -27,8 +27,9 @@ requirements and hook fragments now compose the exact builder task alongside
 the checks, while check-only filters leave that task fixed. The first
 composition source slice now validates eight ecommerce packs, two
 fixture sets, L1/L2 parity recipes, a smaller smoke recipe, and promoted L1 and
-L2 aliases. L2 1.1 has completed repeated reference, mutation, and null-control
-qualification on the exact appliance engine;
+L2 aliases. Framework-neutral L1 1.1 and L2 1.2 have completed repeated
+reference, mutation, and null-control qualification on the exact appliance
+engine and now own the promoted aliases; the earlier releases are retired.
 runtime still executes the compatibility scenarios, but every grade and bundle
 now binds the exact compiled recipe, pack, fixture, applicable calibration, and
 selected stable-check scope. Pack/check selection drives that executor, and the
@@ -238,11 +239,12 @@ Current execution order:
    per backend plus the null gate, bind all 13 evidence slots, and promote the
    qualified recipe, fixture, packs, stacks, references, and alias.
 6. **Completed 2026-08-15:** qualify the framework-neutral L1 1.1 and L2 1.2
-   candidates without moving the promoted aliases. Each candidate now has two
+   candidates before moving the promoted aliases. Each release now has two
    passing Docker reference and mutation repetitions per backend plus a passing
-   null control, all 13 evidence slots are hash-bound to its exact candidate
-   identity, and machine qualification reports zero blockers. Governance and
-   alias movement remain a separate deliberate decision.
+   null control, all 13 evidence slots are hash-bound to its exact identity, and
+   machine qualification reports zero blockers. Their recipes, packs,
+   calibrations, and stack support are qualified; L1/L2 now resolve to these
+   framework-neutral versions, while the earlier releases are retired.
 7. **Next:** execute a repeated frozen L1-to-L2 campaign and publish the exact
    scope and dispersion. Reconstruct other tracks only after this first product
    path is reproducible end to end.

@@ -262,8 +262,8 @@ export function compileCalibrationDefinition(input, { source = '<calibration>' }
   string(value.promotion.catalogPath, `${source}.promotion.catalogPath`);
   exactHash(value.promotion.catalogSha256, `${source}.promotion.catalogSha256`);
   if (!/^L[1-9]\d*$/.test(value.promotion.alias)) fail(`${source}.promotion.alias`, 'must be an L1-style alias');
-  if (!['candidate', 'promoted'].includes(value.promotion.status)) {
-    fail(`${source}.promotion.status`, 'must be candidate or promoted');
+  if (!['candidate', 'promoted', 'retired'].includes(value.promotion.status)) {
+    fail(`${source}.promotion.status`, 'must be candidate, promoted, or retired');
   }
   return value;
 }

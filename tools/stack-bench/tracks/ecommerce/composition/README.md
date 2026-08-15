@@ -74,8 +74,8 @@ the hashes are the proof:
 Saved releases include source digests and the compact check catalog. They do not
 copy fixture passwords, prompt contents, or the full executable grader plan.
 
-The promoted L1 and L2 calibrations are qualified. Each binds all three active
-reference apps and their exact mutation manifests to repeated Docker reference,
-mutation, and null evidence. The framework-neutral candidate calibrations are
-drafts with empty evidence slots. They must pass the same exact Docker gates
-before either alias can move.
+The framework-neutral L1 and L2 calibrations are qualified and promoted. Each
+binds all three active reference apps and their exact mutation manifests to
+repeated Docker reference, mutation, and null evidence. The earlier releases
+and promotion records are retired: their calibration evidence remains
+verifiable, but active resolution refuses to launch them for a new run.

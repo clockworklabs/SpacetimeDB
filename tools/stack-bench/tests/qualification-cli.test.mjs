@@ -40,7 +40,7 @@ test('qualification status exposes the exact runner required by a recipe', () =>
   assert.equal(status.launch.ok, true);
 });
 
-test('qualification can inspect an exact candidate without changing the L1 default', () => {
+test('qualification resolves the promoted framework-neutral L1 release exactly and by default', () => {
   const parsed = parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
     '--track', 'ecommerce', '--level', '1', '--recipe', 'ecommerce.l1-standard@1.1.0']);
   assert.equal(parsed.recipe, 'ecommerce.l1-standard@1.1.0');
@@ -52,12 +52,12 @@ test('qualification can inspect an exact candidate without changing the L1 defau
   assert.equal(status.promotion.ready, true);
   assert.deepEqual(status.promotion.blockers, []);
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
-    && item.state === 'candidate' && item.target === 'promoted'));
+    && item.state === 'promoted' && item.target === 'promoted'));
   assert(status.commands.every(command => command.includes('--recipe ecommerce.l1-standard@1.1.0')));
-  assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '1.0.0');
+  assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '1.1.0');
 });
 
-test('framework-neutral L2 candidate has complete qualification evidence without changing the default', () => {
+test('qualification resolves the promoted framework-neutral L2 release exactly and by default', () => {
   const status = qualificationReadiness('ecommerce', 2, 'ecommerce.l2-standard@1.2.0');
   assert.equal(status.scope.recipe.version, '1.2.0');
   assert.equal(status.scope.calibration.version, '1.2.0');
@@ -66,7 +66,7 @@ test('framework-neutral L2 candidate has complete qualification evidence without
   assert.equal(status.promotion.ready, true);
   assert.deepEqual(status.promotion.blockers, []);
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
-    && item.state === 'candidate' && item.target === 'promoted'));
+    && item.state === 'promoted' && item.target === 'promoted'));
   assert(status.commands.every(command => command.includes('--recipe ecommerce.l2-standard@1.2.0')));
-  assert.equal(qualificationReadiness('ecommerce', 2).scope.recipe.version, '1.1.0');
+  assert.equal(qualificationReadiness('ecommerce', 2).scope.recipe.version, '1.2.0');
 });

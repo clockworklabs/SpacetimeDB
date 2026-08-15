@@ -3,8 +3,8 @@
   "kind": "calibration-manifest",
   "id": "ecommerce.l2-standard-calibration",
   "version": "1.2.0",
-  "state": "draft",
-  "title": "Ecommerce L2 framework-neutral candidate calibration",
+  "state": "qualified",
+  "title": "Ecommerce L2 framework-neutral calibration",
   "track": "ecommerce",
   "recipe": {
     "path": "../recipes/l2-standard-1.2.0.json",
@@ -131,9 +131,9 @@
       "architecture": "x64"
     },
     "stacks": [
-      { "id": "mongodb", "status": "candidate" },
-      { "id": "postgres", "status": "candidate" },
-      { "id": "spacetime", "status": "candidate" }
+      { "id": "mongodb", "status": "qualified" },
+      { "id": "postgres", "status": "qualified" },
+      { "id": "spacetime", "status": "qualified" }
     ],
     "evidence": [
       {
@@ -231,8 +231,8 @@
   "equivalenceDecisions": [],
   "promotion": {
     "catalogPath": "composition/promotions.json",
-    "catalogSha256": "7292399795e7bfb4092bfbf1413011a6b948a3dec798bbd8319c456028e6b7e6",
+    "catalogSha256": "a76c790413f5c56efcbcaf26ad8b62724a211df86943d123454e3840b1d94aa2",
     "alias": "L2",
-    "status": "candidate"
+    "status": "promoted"
   }
 }

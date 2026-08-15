@@ -13,7 +13,7 @@ import { loadTrack } from '../tracks.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = loadTrack('ecommerce');
-const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'l1-standard-1.0.0.json');
+const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'l1-standard-1.1.0.json');
 
 function current() {
   const binding = resolveRecipeRelease(TRACK, 1);
@@ -42,7 +42,7 @@ function temporaryCalibration(change) {
   const directory = mkdtempSync(join(tmpdir(), 'stack-bench-calibration-'));
   const trackRoot = join(directory, 'ecommerce');
   cpSync(TRACK.dir, trackRoot, { recursive: true });
-  const path = join(trackRoot, 'composition', 'calibrations', 'l1-standard-1.0.0.json');
+  const path = join(trackRoot, 'composition', 'calibrations', 'l1-standard-1.1.0.json');
   const value = JSON.parse(readFileSync(CALIBRATION, 'utf8'));
   change(value);
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -76,9 +76,9 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   assert.deepEqual(checkCalibrations({ trackName: 'ecommerce' })
     .map(result => `${result.id}@${result.version}:${result.state}`), [
     'ecommerce.l1-standard-calibration@1.0.0:qualified',
-    'ecommerce.l1-standard-calibration@1.1.0:draft',
+    'ecommerce.l1-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.1.0:qualified',
-    'ecommerce.l2-standard-calibration@1.2.0:draft',
+    'ecommerce.l2-standard-calibration@1.2.0:qualified',
   ]);
 });
 
@@ -138,7 +138,7 @@ test('qualification evidence is semantically bound and tampering fails closed', 
 test('the qualified L2 release keeps its score contract and binds fresh qualification evidence', () => {
   const binding = resolveRecipeRelease(TRACK, 2);
   const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
-    'l2-standard-1.1.0.json'), {
+    'l2-standard-1.2.0.json'), {
     trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release,
   });
   assert.equal(binding.release.scoring.points, 75);
@@ -174,7 +174,7 @@ test('qualification identity excludes governance transitions but binds executabl
 
   const changedRunner = structuredClone(plan);
   changedRunner.qualification.runner = {
-    schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
+    schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'arm64',
   };
   assert.notEqual(calibrationQualificationIdentity(changedRunner).sha256, plan.qualificationSha256);
 });

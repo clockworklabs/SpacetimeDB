@@ -63,7 +63,7 @@ function main() {
   const summary = checkCompositions({ trackName });
   if (!summary.length) throw new Error('no composition sources found');
   for (const row of summary) {
-    console.log(`${row.track}: ${row.packs} packs, ${row.fixtures} fixtures, ${row.recipes} recipes, ${row.checks} selected checks, ${row.aliases} alias candidates`);
+    console.log(`${row.track}: ${row.packs} packs, ${row.fixtures} fixtures, ${row.recipes} recipes, ${row.checks} selected checks, ${row.aliases} promotion entries`);
   }
 }
 

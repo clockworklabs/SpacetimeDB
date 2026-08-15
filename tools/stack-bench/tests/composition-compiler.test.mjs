@@ -74,14 +74,14 @@ test('ecommerce L1 and L2 recipes preserve current suite, feature, check, order,
     trackRoot: ECOMMERCE,
   });
   assert.deepEqual(promotions.entries.map(entry => [entry.alias, entry.status, entry.recipe.id]), [
+    ['L1', 'retired', 'ecommerce.l1-standard'],
     ['L1', 'promoted', 'ecommerce.l1-standard'],
-    ['L1', 'candidate', 'ecommerce.l1-standard'],
+    ['L2', 'retired', 'ecommerce.l2-standard'],
     ['L2', 'promoted', 'ecommerce.l2-standard'],
-    ['L2', 'candidate', 'ecommerce.l2-standard'],
   ]);
 });
 
-test('framework-neutral candidates change task meaning without changing execution or scoring', () => {
+test('framework-neutral releases change task meaning without changing execution or scoring', () => {
   for (const [oldName, candidateName, level] of [
     ['l1-standard-1.0.0.json', 'l1-standard-1.1.0.json', 1],
     ['l2-standard-1.1.0.json', 'l2-standard-1.2.0.json', 2],

@@ -83,10 +83,10 @@ requirements by itself, and a check outside explicitly selected packs is
 rejected. With neither option, the complete promoted recipe is requested and
 graded.
 
-`--recipe <id>@<version>` selects one exact catalogued candidate for a
+`--recipe <id>@<version>` selects one exact non-retired catalogued release for a
 single-level run. It uses the same preflight, agent, grader, artifact, null, and
 qualification paths as the promoted default. Omitting it continues to resolve
-the promoted L1/L2 aliases, so testing a candidate never moves a public label.
+the promoted L1/L2 aliases; selecting an exact release never moves a public label.
 
 Give concurrent runs distinct `--run-index` values; ports and databases are
 allocated from it. Results land under a unique run id inside

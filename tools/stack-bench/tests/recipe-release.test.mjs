@@ -16,13 +16,14 @@ import {
 import { loadTrack } from '../tracks.mjs';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
-const L1_RECIPE = join(ECOMMERCE, 'composition', 'recipes', 'l1-standard-1.0.0.json');
+const L1_RECIPE = join(ECOMMERCE, 'composition', 'recipes', 'l1-standard-1.1.0.json');
+const RETIRED_L1_RECIPE = join(ECOMMERCE, 'composition', 'recipes', 'l1-standard-1.0.0.json');
 
 function copyTrack() {
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-release-'));
   const root = join(temp, 'ecommerce');
   cpSync(ECOMMERCE, root, { recursive: true });
-  return { temp, root, recipe: join(root, 'composition', 'recipes', 'l1-standard-1.0.0.json') };
+  return { temp, root, recipe: join(root, 'composition', 'recipes', 'l1-standard-1.1.0.json') };
 }
 
 function editJson(path, change) {
@@ -60,7 +61,7 @@ test('recipe releases are deterministic, compact, and bind L2 to the exact L1 re
   assert(!JSON.stringify(l1a).includes('stackbench-admin-2026'));
 
   const l2 = buildRecipeRelease(
-    join(ECOMMERCE, 'composition', 'recipes', 'l2-standard-1.1.0.json'),
+    join(ECOMMERCE, 'composition', 'recipes', 'l2-standard-1.2.0.json'),
     { trackRoot: ECOMMERCE },
   );
   assert.equal(l2.checkCatalog.length, 53);
@@ -151,33 +152,36 @@ test('legacy runner binding fails closed on drift and emits only the suite check
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
-test('an exact candidate uses the normal binding path without moving the promoted default', () => {
+test('the framework-neutral release is the promoted default and the retired release cannot launch', () => {
   const track = loadTrack('ecommerce');
   const promoted = resolveRecipeRelease(track, 1);
-  const candidate = resolveRecipeRelease(track, 1, 'ecommerce.l1-standard@1.1.0');
-  assert.equal(promoted.release.version, '1.0.0');
+  const exact = resolveRecipeRelease(track, 1, 'ecommerce.l1-standard@1.1.0');
+  const retired = buildRecipeRelease(RETIRED_L1_RECIPE, { trackRoot: ECOMMERCE });
+  assert.equal(promoted.release.version, '1.1.0');
   assert.equal(promoted.status, 'promoted');
-  assert.equal(candidate.release.version, '1.1.0');
-  assert.equal(candidate.status, 'candidate');
-  assert.equal(candidate.release.executionSha256, promoted.release.executionSha256);
-  assert.notEqual(candidate.release.meaningSha256, promoted.release.meaningSha256);
+  assert.equal(exact.release.version, '1.1.0');
+  assert.equal(exact.status, 'promoted');
+  assert.equal(retired.executionSha256, promoted.release.executionSha256);
+  assert.notEqual(retired.meaningSha256, promoted.release.meaningSha256);
   const stableChecks = release => release.checkCatalog.map(({ packVersion: _packVersion, ...check }) => check);
-  assert.deepEqual(stableChecks(candidate.release), stableChecks(promoted.release));
+  assert.deepEqual(stableChecks(retired), stableChecks(promoted.release));
   assert.equal(resolveRecipeRelease(track, 1, {
-    id: candidate.release.id,
-    version: candidate.release.version,
-    contentSha256: candidate.release.contentSha256,
-  }).release.contentSha256, candidate.release.contentSha256);
+    id: promoted.release.id,
+    version: promoted.release.version,
+    contentSha256: promoted.release.contentSha256,
+  }).release.contentSha256, promoted.release.contentSha256);
+  assert.throws(() => resolveRecipeRelease(track, 1, 'ecommerce.l1-standard@1.0.0'),
+    /exactly one catalogued/);
   assert.throws(() => resolveRecipeRelease(track, 1, 'ecommerce.l1-standard@9.9.9'),
     /exactly one catalogued/);
   assert.throws(() => resolveRecipeRelease(track, 1, {
-    id: candidate.release.id, version: candidate.release.version, contentSha256: '0'.repeat(64),
+    id: promoted.release.id, version: promoted.release.version, contentSha256: '0'.repeat(64),
   }), /content changed/);
   assert.throws(() => resolveRecipeRelease(track, 1, {
-    id: candidate.release.id, version: candidate.release.version, contentSha256: '',
+    id: promoted.release.id, version: promoted.release.version, contentSha256: '',
   }), /must be a SHA-256 digest/);
   assert.throws(() => resolveRecipeRelease(track, 1, {
-    id: candidate.release.id, version: candidate.release.version, unexpected: true,
+    id: promoted.release.id, version: promoted.release.version, unexpected: true,
   }), /unknown field/);
 });
 

@@ -37,13 +37,13 @@ test('reference qualification resolves the exact executable calibration identity
   assert.equal(context.identity.sha256, context.calibration.qualificationSha256);
 });
 
-test('reference qualification resolves the requested candidate calibration', () => {
+test('reference qualification resolves the requested promoted calibration', () => {
   const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-mongodb',
     imported: { sourceSha256: 'd746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a' } },
   'ecommerce.l1-standard@1.1.0');
   assert.equal(context.binding.release.version, '1.1.0');
   assert.equal(context.calibration.version, '1.1.0');
-  assert.equal(context.calibration.state, 'draft');
+  assert.equal(context.calibration.state, 'qualified');
 });
 
 test('reference qualification keeps underlying runs beside the requested artifact', () => {

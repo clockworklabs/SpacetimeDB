@@ -60,7 +60,7 @@ test('pack dependencies become requested task scope while checks only narrow mea
   assert.equal(checkOnly.task.requirementText, binding.plan.recipe.task.requirementText);
 });
 
-test('candidate pack prompts contain only their own framework-neutral testing calls', () => {
+test('selected pack prompts contain only their own framework-neutral testing calls', () => {
   const candidate = resolveRecipeRelease(loadTrack('ecommerce'), 1,
     'ecommerce.l1-standard@1.1.0');
   const neutral = resolveGuidanceProfile('neutral@1.0.0', ['postgres']);

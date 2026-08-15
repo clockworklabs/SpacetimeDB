@@ -242,13 +242,13 @@ First compatibility slice completed:
   content hashes plus exact source digests and a compact stable-key catalog.
   Ecommerce L1/L2 grades and bundles record the alias and exact resolved
   identity after proving the recipe matches the active execution plan.
-- Promoted L1 1.0 and L2 1.1 have qualified calibrations with repeated Docker
-  reference, mutation, and null evidence for all three stacks. Framework-neutral
-  L1 1.1 and L2 1.2 are separate draft candidates with unchanged execution and
-  scoring identities; each now has all 13 required evidence slots hash-bound
-  and zero machine qualification blockers. One exact `--recipe` selector runs
-  those candidates through the normal runtime and qualification paths without
-  moving an alias. Governance and alias movement remain deliberate decisions.
+- Framework-neutral L1 1.1 and L2 1.2 are qualified and promoted with repeated
+  Docker reference, mutation, and null evidence for all three stacks. Each has
+  all 13 required evidence slots hash-bound and zero machine qualification
+  blockers. The prior L1 1.0 and L2 1.1 releases are retired; their qualified
+  calibration records remain valid evidence but cannot be selected for a new
+  run. One exact `--recipe` selector runs any non-retired catalogued release
+  through the normal runtime and qualification paths without moving an alias.
 - Current run, grade, bundle, lint, action, mutation, null, reference,
   performance, bug-quality, and public lease-evidence producers use the common
   artifact writer. Runtime reporting and qualification readers accept only the
