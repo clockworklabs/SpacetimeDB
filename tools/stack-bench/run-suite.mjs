@@ -21,7 +21,7 @@ import { loadTrack, suitesFor, DEFAULT_TRACK } from './tracks.mjs';
 import { answers as hostAnswers } from './platform.mjs';
 import { controlBackend } from './backend-control.mjs';
 import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from './artifacts.mjs';
-import { bundleRecipeRelease, resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { bundleRecipeRelease, resolveRecipeRelease } from './recipe-release.mjs';
 import { resolveRecipeSelection } from './recipe-selection.mjs';
 import { resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
@@ -54,6 +54,7 @@ function parseArgs(argv) {
       case '--label': a.label = argv[++i]; break;
       case '--out': a.out = argv[++i]; break;
       case '--level': a.level = argv[++i]; break;
+      case '--recipe': a.recipe = argv[++i]; break;
       case '--no-media': a.media = false; break;
       case '--track': a.track = argv[++i]; break;
       case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
@@ -242,6 +243,7 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
   if (suite.spec) argv.push('--spec', suite.spec);
   argv.push('--backend', args.backend, '--track', args.track);
   if (recipeBinding) argv.push('--expected-recipe-sha256', recipeBinding.release.contentSha256);
+  if (args.recipe) argv.push('--recipe', args.recipe);
   for (const check of selectedChecks) argv.push('--selected-check', check.stableKey);
   if (args.selection?.sha256) argv.push('--selection-sha256', args.selection.sha256);
   argv.push('--parent-attempt-id', bundleArtifactId);
@@ -303,7 +305,7 @@ async function main() {
   const startedAt = new Date().toISOString();
   const args = parseArgs(process.argv);
   const track = loadTrack(args.track);
-  const recipeBinding = resolveLegacyRecipeRelease(track, args.level);
+  const recipeBinding = resolveRecipeRelease(track, args.level, args.recipe);
   if (!recipeBinding && (args.packIds.length || args.checkKeys.length)) {
     throw new Error('--pack and --check require a recipe-bound level');
   }

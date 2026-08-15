@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.cart-checkout",
+  "version": "1.1.0",
+  "state": "draft",
+  "title": "Cart, purchase, and checkout",
+  "description": "Buying, cart ownership, price authority, order attribution, accounting, privacy, and duplicate checkout.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "concurrent-actors"],
+  "evidence": ["browser-observation", "concurrent-outcome"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 130000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l1.buying", "path": "prompts/01-storefront.md", "order": 70, "from": "### Buying", "until": "### Cart", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.cart-orders", "path": "prompts/01-storefront.md", "order": 80, "from": "### Cart", "until": "### Reviews", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.cart-testing-calls", "path": "prompts/fragments/named-actions-cart-1.1.0.md", "order": 112, "modes": ["fresh"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l1.purchase-hooks-a", "path": "contracts/appendix-01.md", "order": 1040, "from": "| `buy-now`", "until": "| `search-results`", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.purchase-hooks-b", "path": "contracts/appendix-01.md", "order": 1060, "from": "| `cart-panel`", "until": "| `admin-panel`", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.buy-error-hook", "path": "contracts/appendix-01.md", "order": 1080, "from": "| `buy-error`", "until": "| `auth-error`", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.cart-end-hooks", "path": "contracts/appendix-01.md", "order": 1120, "from": "| `empty-cart`", "until": "| `admin-link`", "modes": ["fresh"] },
+      { "id": "ecommerce.l2.existing-hooks", "path": "contracts/appendix-02.md", "order": 2010, "from": "| `app-title`", "until": "| `staff-link`", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "buying", "source": "scenarios/01-features.json", "feature": 3, "role": "feature" },
+    { "id": "account-cart", "source": "scenarios/01-features.json", "feature": 4, "role": "feature" },
+    { "id": "purchase-attribution", "source": "scenarios/01-invariants.json", "feature": 102, "role": "guarantee" },
+    { "id": "store-controls-price", "source": "scenarios/01-invariants.json", "feature": 104, "role": "guarantee" },
+    { "id": "order-isolation", "source": "scenarios/01-invariants.json", "feature": 106, "role": "guarantee" },
+    { "id": "books-balance", "source": "scenarios/01-invariants.json", "feature": 107, "role": "guarantee" },
+    { "id": "cart-privacy", "source": "scenarios/01-invariants.json", "feature": 109, "role": "guarantee" },
+    { "id": "duplicate-checkout", "source": "scenarios/01-contention.json", "feature": 203, "role": "guarantee" }
+  ]
+}

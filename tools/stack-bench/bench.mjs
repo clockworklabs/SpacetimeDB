@@ -35,7 +35,7 @@ import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   acquireResourceLock, releaseResourceLocks, updateBackendLease, writeBackendLease } from './backend-lease.mjs';
 import { captureBackendDiagnostics } from './backend-control.mjs';
 import { releaseBackendLease } from './backend-teardown.mjs';
-import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { resolveRecipeRelease } from './recipe-release.mjs';
 import { createRecipeTaskRequest } from './recipe-selection.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
@@ -62,6 +62,7 @@ function parseArgs(argv) {
       case '--backend': a.backend = argv[++i]; break;
       case '--track': a.track = argv[++i]; break;
       case '--levels': a.levels = argv[++i]; break;
+      case '--recipe': a.recipe = argv[++i]; break;
       case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--check': a.checkKeys.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--model': a.model = argv[++i]; break;
@@ -102,6 +103,9 @@ function parseArgs(argv) {
   }
   const [from, to] = a.levels.split('-').map(Number);
   a.levelList = Array.from({ length: (to ?? from) - from + 1 }, (_, i) => from + i);
+  if (a.recipe && a.levelList.length !== 1) {
+    throw new Error('--recipe requires exactly one requested level');
+  }
   if (!Number.isInteger(a.fixRounds) || a.fixRounds < 0 || a.fixRounds > 20) {
     throw new Error('--fix-rounds must be an integer from 0 through 20');
   }
@@ -226,6 +230,7 @@ function grade(args, appDir, url, label, level, track, parentAttemptId) {
     '--reseed-probe', `http://localhost:${expressPort}${track.restartProbe}`,
     '--run-index', String(args.runIndex),
     '--parent-attempt-id', parentAttemptId,
+    ...(args.recipe ? ['--recipe', args.recipe] : []),
     ...args.packIds.flatMap(pack => ['--pack', pack]),
     ...args.checkKeys.flatMap(check => ['--check', check]),
     ...(args.media ? [] : ['--no-media']),
@@ -252,7 +257,8 @@ function runMutationControl(args, appDir, url, track) {
     '--url', url, '--mutations', args.mutations, '--backend', args.backend,
     '--track', args.track, '--run-index', String(args.runIndex), '--out', output,
     '--restart-spec', JSON.stringify(restartSpecFor(args, appDir, track)),
-    '--parent-attempt-id', args.parentAttemptId];
+    '--parent-attempt-id', args.parentAttemptId,
+    ...(args.recipe ? ['--recipe', args.recipe] : [])];
   let processError = null;
   try { sh(process.execPath, argv, { stdio: 'inherit' }); }
   catch (error) { processError = String(error.message).split('\n')[0]; }
@@ -301,7 +307,7 @@ async function main() {
   // but not L1 is not a late grading surprise; it is an invalid run request.
   args.recipeTasks = new Map();
   for (const level of args.levelList) {
-    const binding = resolveLegacyRecipeRelease(track, level);
+    const binding = resolveRecipeRelease(track, level, args.recipe);
     if (!binding && (args.packIds.length || args.checkKeys.length)) {
       throw new Error(`L${level} has no recipe release, so --pack/--check cannot be resolved`);
     }
@@ -331,6 +337,7 @@ async function main() {
   const preflight = args.backend === 'stub' ? null : runPreflight({
     backends: [args.backend], track: args.track, levels: args.levels,
     levelList: args.levelList, runIndex: args.runIndex, agentAdapter: args.agentAdapter,
+    recipe: args.recipe,
     agentSkills: args.skills ?? null,
     packIds: args.packIds, checkKeys: args.checkKeys, smoke: true,
     supervisorState: process.env.STACK_BENCH_SUPERVISOR_STATE ?? null,

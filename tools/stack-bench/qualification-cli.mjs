@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
-import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { resolveRecipeRelease } from './recipe-release.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from './tracks.mjs';
 import { PACK_BUDGET_POLICY } from './pack-budget.mjs';
 
@@ -13,11 +13,13 @@ export function parseQualificationArgs(argv) {
   for (let index = 3; index < argv.length; index += 1) {
     if (argv[index] === '--track') args.track = argv[++index];
     else if (argv[index] === '--level') args.level = Number(argv[++index]);
+    else if (argv[index] === '--recipe') args.recipe = argv[++index];
     else throw new Error(`unknown qualification option ${argv[index]}`);
   }
   if (args.command !== 'status' || typeof args.track !== 'string' || !args.track
     || !Number.isInteger(args.level) || args.level < 1) {
-    throw new Error('usage: qualification-cli.mjs status --track <name> --level <positive integer>');
+    throw new Error('usage: qualification-cli.mjs status --track <name> --level <positive integer> '
+      + '[--recipe <id>@<version>]');
   }
   return args;
 }
@@ -44,13 +46,13 @@ function evidencePlan(calibration) {
   return evidence;
 }
 
-export function qualificationReadiness(trackName, level) {
+export function qualificationReadiness(trackName, level, recipe = null) {
   if (!listTracks().includes(trackName)) throw new Error(`unknown qualification track ${trackName}`);
   const track = loadTrack(trackName);
   if (!isDeclaredLevel(track, level)) {
     throw new Error(`L${level} is not declared for ${trackName}`);
   }
-  const binding = resolveLegacyRecipeRelease(track, level);
+  const binding = resolveRecipeRelease(track, level, recipe);
   if (!binding) throw new Error(`${trackName} L${level} has no recipe release`);
   const calibration = resolveCalibrationForRelease(binding.release,
     { trackRoot: track.dir });
@@ -107,6 +109,8 @@ export function qualificationReadiness(trackName, level) {
     .filter(stack => stack.status !== 'unsupported').map(stack => stack.id).sort();
   const budgetEvidence = stacks.map(stack => `${output}/budget-input/${trackName}-l${level}-${stack}.json`);
   const budgetPreparationRequired = launchBlockers.some(item => item.code === 'pack_budget_unbounded');
+  const recipeOption = recipe
+    ? ` --recipe ${binding.release.id}@${binding.release.version}` : '';
   return {
     qualificationSchemaVersion: 1,
     scope: { track: trackName, level, recipe: { id: binding.release.id,
@@ -119,18 +123,18 @@ export function qualificationReadiness(trackName, level) {
       policy: PACK_BUDGET_POLICY,
       commands: budgetPreparationRequired ? [
         ...stacks.map((stack, index) =>
-          `qualify-reference --backend ${stack} --track ${trackName} --level ${level} --repetitions ${calibration.qualification.referenceRepetitions} --out ${budgetEvidence[index]}`),
-        `pack-budget recommend --track ${trackName} --level ${level} ${budgetEvidence
+          `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${budgetEvidence[index]}`),
+        `pack-budget recommend --track ${trackName} --level ${level}${recipeOption} ${budgetEvidence
           .map(path => `--evidence ${path}`).join(' ')} --out ${output}/${trackName}-l${level}-pack-budgets.json`,
       ] : [],
     },
     requiredEvidence,
     commands: [
       ...stacks.flatMap(stack => [
-        `qualify-reference --backend ${stack} --track ${trackName} --level ${level} --repetitions ${calibration.qualification.referenceRepetitions} --out ${output}/${trackName}-l${level}-${stack}-reference.json`,
-        `qualify-reference --backend ${stack} --track ${trackName} --level ${level} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --out ${output}/${trackName}-l${level}-${stack}-mutation.json`,
+        `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${output}/${trackName}-l${level}-${stack}-reference.json`,
+        `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption} --repetitions ${calibration.qualification.mutationRepetitions} --mutations --out ${output}/${trackName}-l${level}-${stack}-mutation.json`,
       ]),
-      `qualify-null --track ${trackName} --level ${level} --out ${output}/${trackName}-l${level}-null.json`,
+      `qualify-null --track ${trackName} --level ${level}${recipeOption} --out ${output}/${trackName}-l${level}-null.json`,
     ],
     promotion: { ready: promotionBlockers.length === 0, blockers: promotionBlockers,
       governance },
@@ -139,7 +143,7 @@ export function qualificationReadiness(trackName, level) {
 
 function main() {
   const args = parseQualificationArgs(process.argv);
-  console.log(JSON.stringify(qualificationReadiness(args.track, args.level), null, 2));
+  console.log(JSON.stringify(qualificationReadiness(args.track, args.level, args.recipe), null, 2));
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

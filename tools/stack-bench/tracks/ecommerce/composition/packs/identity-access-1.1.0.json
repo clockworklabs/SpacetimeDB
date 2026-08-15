@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.identity-access",
+  "version": "1.1.0",
+  "state": "draft",
+  "title": "Identity and account access",
+  "description": "Account creation, credentials, and account-required behavior.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 18000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l1.accounts-before-session", "path": "prompts/01-storefront.md", "order": 30, "from": "### Accounts", "until": "- A signed-in session", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.accounts-after-session", "path": "prompts/01-storefront.md", "order": 50, "from": "- Usernames are unique.", "until": "### Browsing", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.identity-testing-calls", "path": "prompts/fragments/named-actions-identity-1.1.0.md", "order": 111, "modes": ["fresh"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l1.identity-hooks", "path": "contracts/appendix-01.md", "order": 1030, "from": "| `signup-username`", "until": "| `buy-now`", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.auth-error-hook", "path": "contracts/appendix-01.md", "order": 1090, "from": "| `auth-error`", "until": "| `review-error`", "modes": ["fresh"] },
+      { "id": "ecommerce.l2.existing-hooks", "path": "contracts/appendix-02.md", "order": 2010, "from": "| `app-title`", "until": "| `staff-link`", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "accounts", "source": "scenarios/01-features.json", "feature": 1, "criteria": ["1a", "1b", "1c", "1d"], "role": "feature" },
+    { "id": "purchase-requires-account", "source": "scenarios/01-invariants.json", "feature": 101, "role": "guarantee" }
+  ]
+}

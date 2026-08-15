@@ -20,7 +20,7 @@ import { join, dirname, resolve, basename, relative, isAbsolute, sep } from 'nod
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor, DEFAULT_TRACK } from './tracks.mjs';
-import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { resolveRecipeRelease } from './recipe-release.mjs';
 import { createRecipeTaskRequest, resolveRecipeTaskRequest } from './recipe-selection.mjs';
 import { writeSandbox } from './sandbox.mjs';
 import { killTree } from './platform.mjs';
@@ -331,10 +331,9 @@ export function ensureDatabase(backend, runIndex, dbPort, track, wipe = false,
   });
 }
 
-// prescribed: the stack is chosen for them (Express, socket.io, an ORM, a layout).
-// minimal: only the database, the ports the harness needs, and branding — how to
-// build it is the model's call. Prescribing a stack means measuring the stack we
-// picked, not the database.
+// Prescribed guidance chooses an implementation stack. Neutral guidance gives
+// only the database access material and API reference selected by the study
+// condition. The older direct CLI calls still spell that neutral mode `minimal`.
 export function readBackendGuidanceDocument(document, fallbackRelativePath) {
   if (typeof fallbackRelativePath !== 'string' || !fallbackRelativePath) {
     throw new Error('backend guidance fallback path is required');
@@ -648,7 +647,7 @@ async function main() {
   const defaultSkills = executeStackCapability(adapter, 'agent', 'default-skills');
   const selectedSkills = selectAgentSkills(defaultSkills, args.skills ?? null);
   const skillsText = readAgentSkillDocuments(REPO, selectedSkills);
-  const recipeBinding = resolveLegacyRecipeRelease(track, args.level);
+  const recipeBinding = resolveRecipeRelease(track, args.level, args.recipeTask?.recipe ?? null);
   if (args.recipeTask && !recipeBinding) {
     throw new Error(`L${args.level} has no recipe release for the requested task`);
   }

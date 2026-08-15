@@ -9,11 +9,11 @@ import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '
 import { PACK_RUNTIME_METRIC } from '../pack-runtime.mjs';
 import { loadPackBudgetEvidence, PACK_BUDGET_POLICY, parsePackBudgetArgs,
   recommendPackBudgets } from '../pack-budget.mjs';
-import { resolveLegacyRecipeRelease } from '../recipe-release.mjs';
+import { resolveRecipeRelease } from '../recipe-release.mjs';
 import { loadTrack } from '../tracks.mjs';
 
 const track = loadTrack('ecommerce');
-const binding = resolveLegacyRecipeRelease(track, 1);
+const binding = resolveRecipeRelease(track, 1);
 const calibration = structuredClone(resolveCalibrationForRelease(binding.release, { trackRoot: track.dir }));
 calibration.qualification.runner = {
   schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
@@ -115,6 +115,10 @@ test('budget CLI parsing requires explicit unique evidence and output', () => {
     '--level', '1', '--evidence', 'mongo.json', '--out', 'budgets.json']);
   assert.equal(parsed.command, 'recommend');
   assert.equal(parsed.evidence.length, 1);
+  assert.equal(parsePackBudgetArgs(['node', 'pack-budget.mjs', 'recommend', '--track', 'ecommerce',
+    '--level', '1', '--recipe', 'ecommerce.l1-standard@1.1.0',
+    '--evidence', 'mongo.json', '--out', 'budgets.json']).recipe,
+  'ecommerce.l1-standard@1.1.0');
   assert.throws(() => parsePackBudgetArgs(['node', 'pack-budget.mjs', 'recommend',
     '--track', 'ecommerce', '--level', '1']), /usage/);
 });

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.catalog-inventory",
+  "version": "1.1.0",
+  "state": "draft",
+  "title": "Catalog and inventory",
+  "description": "Public catalog behavior, warehouse administration, stock authority, concurrency, and external writes.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "direct-database-write"],
+  "evidence": ["browser-observation", "database-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 145000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l1.browsing", "path": "prompts/01-storefront.md", "order": 60, "from": "### Browsing", "until": "### Buying", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.admin", "path": "prompts/01-storefront.md", "order": 100, "from": "### Admin", "until": "### Named actions", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.inventory-testing-call", "path": "prompts/fragments/named-actions-inventory-1.1.0.md", "order": 113, "modes": ["fresh"] },
+      { "id": "ecommerce.l1.external-data", "path": "prompts/01-storefront.md", "order": 120, "from": "### Data written from outside the app", "modes": ["fresh"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l1.catalog-hooks-a", "path": "contracts/appendix-01.md", "order": 1020, "from": "| `item-list`", "until": "| `signup-username`", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.catalog-hooks-b", "path": "contracts/appendix-01.md", "order": 1050, "from": "| `search-results`", "until": "| `review-rating`", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.admin-hooks", "path": "contracts/appendix-01.md", "order": 1070, "from": "| `admin-panel`", "until": "| `buy-error`", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.stock-state-hook", "path": "contracts/appendix-01.md", "order": 1110, "from": "| `out-of-stock`", "until": "| `empty-cart`", "modes": ["fresh"] },
+      { "id": "ecommerce.l1.admin-link-hook", "path": "contracts/appendix-01.md", "order": 1130, "from": "| `admin-link`", "until": "Before declaring", "modes": ["fresh"] },
+      { "id": "ecommerce.l2.existing-hooks", "path": "contracts/appendix-02.md", "order": 2010, "from": "| `app-title`", "until": "| `staff-link`", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "public-live-storefront", "source": "scenarios/01-features.json", "feature": 2, "role": "feature" },
+    { "id": "admin-and-warehouses", "source": "scenarios/01-features.json", "feature": 7, "role": "feature" },
+    { "id": "admin-controls-stock", "source": "scenarios/01-invariants.json", "feature": 103, "role": "guarantee" },
+    { "id": "last-unit-sold-once", "source": "scenarios/01-contention.json", "feature": 201, "role": "guarantee" },
+    { "id": "restock-during-rush", "source": "scenarios/01-contention.json", "feature": 202, "role": "guarantee" },
+    { "id": "external-write-visible", "source": "scenarios/01-systems.json", "feature": 901, "role": "guarantee" },
+    { "id": "list-open-during-change", "source": "scenarios/01-systems.json", "feature": 902, "role": "guarantee" }
+  ]
+}

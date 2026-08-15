@@ -25,6 +25,9 @@ test('reference qualification requires an explicit valid stack scope', () => {
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '3']).level, 3);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '4']), /declared/);
+  assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--track', 'ecommerce', '--level', '1',
+    '--recipe', 'ecommerce.l1-standard@1.1.0']).recipe, 'ecommerce.l1-standard@1.1.0');
 });
 
 test('reference qualification resolves the exact executable calibration identity', () => {
@@ -32,6 +35,15 @@ test('reference qualification resolves the exact executable calibration identity
     imported: { sourceSha256: 'd746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a' } });
   assert.equal(context.identity.id, 'ecommerce.l1-standard-calibration');
   assert.equal(context.identity.sha256, context.calibration.qualificationSha256);
+});
+
+test('reference qualification resolves the requested candidate calibration', () => {
+  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-mongodb',
+    imported: { sourceSha256: 'd746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a' } },
+  'ecommerce.l1-standard@1.1.0');
+  assert.equal(context.binding.release.version, '1.1.0');
+  assert.equal(context.calibration.version, '1.1.0');
+  assert.equal(context.calibration.state, 'draft');
 });
 
 test('reference qualification keeps underlying runs beside the requested artifact', () => {

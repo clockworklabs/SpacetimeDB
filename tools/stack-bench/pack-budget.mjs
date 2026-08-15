@@ -10,7 +10,7 @@ import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '
 import { canonicalDefinitionJson } from './definition-plan.mjs';
 import { PACK_RUNTIME_METRIC } from './pack-runtime.mjs';
 import { sha256 } from './provenance.mjs';
-import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { resolveRecipeRelease } from './recipe-release.mjs';
 import { missingRunnerObservation } from './runner-environment.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from './tracks.mjs';
 
@@ -40,6 +40,7 @@ export function parsePackBudgetArgs(argv) {
   for (let index = 3; index < argv.length; index += 1) {
     if (argv[index] === '--track') args.track = argv[++index];
     else if (argv[index] === '--level') args.level = Number(argv[++index]);
+    else if (argv[index] === '--recipe') args.recipe = argv[++index];
     else if (argv[index] === '--evidence') args.evidence.push(resolve(argv[++index]));
     else if (argv[index] === '--out') args.out = resolve(argv[++index]);
     else throw new Error(`unknown pack-budget option ${argv[index]}`);
@@ -47,7 +48,8 @@ export function parsePackBudgetArgs(argv) {
   if (args.command !== 'recommend' || typeof args.track !== 'string' || !args.track
     || !Number.isInteger(args.level) || args.level < 1 || !args.evidence.length || !args.out) {
     throw new Error('usage: pack-budget.mjs recommend --track <name> --level <n> '
-      + '--evidence <reference.json> [--evidence ...] --out <measurement.json>');
+      + '[--recipe <id>@<version>] --evidence <reference.json> [--evidence ...] '
+      + '--out <measurement.json>');
   }
   if (new Set(args.evidence).size !== args.evidence.length) throw new Error('--evidence paths must be unique');
   return args;
@@ -236,7 +238,7 @@ function main() {
   if (!listTracks().includes(args.track)) throw new Error(`unknown track ${args.track}`);
   const track = loadTrack(args.track);
   if (!isDeclaredLevel(track, args.level)) throw new Error(`L${args.level} is not declared for ${args.track}`);
-  const binding = resolveLegacyRecipeRelease(track, args.level);
+  const binding = resolveRecipeRelease(track, args.level, args.recipe);
   if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
   const calibration = resolveCalibrationForRelease(binding.release, { trackRoot: track.dir });
   if (!calibration) throw new Error(`${binding.release.id}@${binding.release.version} has no calibration`);

@@ -12,8 +12,9 @@ function unique(values, label) {
 }
 
 // Resolve a caller's pack/check request once, then pass this exact result to
-// every consumer. Packs and individual checks are a union: asking for a pack
-// plus one extra check means all checks in that pack plus the extra check.
+// every consumer. Packs define the requested task. Checks may narrow grading
+// inside that task, but cannot silently add behavior the agent was not asked
+// to build.
 export function resolveRecipeSelection(release, { packIds = [], checkKeys = [] } = {}) {
   if (!release?.contentSha256 || !Array.isArray(release.checkCatalog)
     || !Array.isArray(release.components?.packs)) {

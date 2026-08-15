@@ -237,9 +237,13 @@ Current execution order:
 5. **Completed 2026-08-13:** run the exact L2 reference and mutation gates twice
    per backend plus the null gate, bind all 13 evidence slots, and promote the
    qualified recipe, fixture, packs, stacks, references, and alias.
-6. **Next:** execute a repeated frozen L1-to-L2 campaign and publish the exact scope and
-   dispersion. Reconstruct other tracks only after this first product path is
-   reproducible end to end.
+6. **In progress:** qualify the framework-neutral L1 1.1 and L2 1.2 candidates
+   without moving the promoted aliases. Their execution and scoring are frozen;
+   the changed prompt meaning requires fresh reference, mutation, and null
+   evidence.
+7. **Next:** execute a repeated frozen L1-to-L2 campaign and publish the exact
+   scope and dispersion. Reconstruct other tracks only after this first product
+   path is reproducible end to end.
 
 - [ ] Require every point-bearing criterion to cite prompt text or declare a
   reviewed invariant rationale. Resolve the current `statedBy` warnings.

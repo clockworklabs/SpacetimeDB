@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readArtifactPayload, writeRunJson } from './artifacts.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { analyseNullReports } from './null-control-analysis.mjs';
-import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { resolveRecipeRelease } from './recipe-release.mjs';
 import { isDeclaredLevel, listTracks, loadTrack, suitesFor } from './tracks.mjs';
 import { controllerRunner } from './runner-environment.mjs';
 
@@ -23,6 +23,7 @@ export function parseNullControlArgs(argv) {
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--track') args.tracks = argv[++i].split(',').filter(Boolean);
     else if (argv[i] === '--level') args.level = Number(argv[++i]);
+    else if (argv[i] === '--recipe') args.recipe = argv[++i];
     else if (argv[i] === '--out') args.out = argv[++i];
     else if (argv[i] === '--audit') args.audit = true;
     else if (argv[i] === '--parent-attempt-id') args.parentAttemptId = argv[++i];
@@ -34,6 +35,7 @@ export function parseNullControlArgs(argv) {
   if (args.level !== null && args.tracks.length !== 1) {
     throw new Error('--level requires exactly one --track');
   }
+  if (args.recipe && args.level === null) throw new Error('--recipe requires --level');
   return args;
 }
 
@@ -108,7 +110,7 @@ async function main() {
       const track = loadTrack(trackName);
       const selectedSuites = nullControlSuites(track, args.level);
       if (args.level !== null) {
-        const binding = resolveLegacyRecipeRelease(track, args.level);
+        const binding = resolveRecipeRelease(track, args.level, args.recipe);
         if (!binding) throw new Error(`${trackName} L${args.level} has no recipe release`);
         const calibration = resolveCalibrationForRelease(binding.release,
           { trackRoot: track.dir, stackBenchRoot: ROOT });
@@ -120,7 +122,8 @@ async function main() {
         process.stdout.write(`${trackName} L${suite.level} ${suite.id} (${basename(suite.spec)}) ... `);
         await runGrade(['--url', url, '--level', String(suite.level), '--spec', suite.spec,
           '--backend', 'postgres', '--track', trackName, '--app', app, '--out', reportPath,
-          '--parent-attempt-id', nullAttemptId]);
+          '--parent-attempt-id', nullAttemptId,
+          ...(args.recipe ? ['--recipe', args.recipe] : [])]);
         const report = readArtifactPayload(reportPath, { expectedKind: 'grade' });
         suiteReports.push({ track: trackName, level: suite.level, id: suite.id,
           scenario: relative(track.dir, suite.spec).replaceAll('\\', '/'), report });

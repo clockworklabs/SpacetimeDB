@@ -15,7 +15,7 @@ import { dockerHostGatewayArguments, dockerHostServiceAddress } from './docker-n
 import { dockerMountArguments } from './container-mount.mjs';
 import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
   PREFLIGHT_RESOURCE_FLOORS } from './product-config.mjs';
-import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { resolveRecipeRelease } from './recipe-release.mjs';
 import { resolveRecipeSelection } from './recipe-selection.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
@@ -44,6 +44,7 @@ export function parsePreflightArgs(argv, { env = process.env } = {}) {
       case '--backend': request.backends.push(...splitList(argv[++i])); break;
       case '--track': request.track = argv[++i]; break;
       case '--levels': request.levels = argv[++i]; break;
+      case '--recipe': request.recipe = argv[++i]; break;
       case '--run-index': request.runIndex = Number(argv[++i]); break;
       case '--agent-adapter': request.agentAdapter = argv[++i]; break;
       case '--pack': request.packIds.push(...splitList(argv[++i])); break;
@@ -63,6 +64,9 @@ export function parsePreflightArgs(argv, { env = process.env } = {}) {
   if (!match || Number(match[2] ?? match[1]) < Number(match[1])) throw new Error('--levels must be N or N-M');
   request.levelList = Array.from({ length: Number(match[2] ?? match[1]) - Number(match[1]) + 1 },
     (_, index) => Number(match[1]) + index);
+  if (request.recipe && request.levelList.length !== 1) {
+    throw new Error('--recipe requires exactly one requested level');
+  }
   return request;
 }
 
@@ -185,7 +189,7 @@ export function runPreflight(request, dependencies = {}) {
     track = loadTrack(request.track);
     assertNoPortCollisions();
     for (const level of request.levelList) {
-      const binding = resolveLegacyRecipeRelease(track, level);
+      const binding = resolveRecipeRelease(track, level, request.recipe);
       if (!binding && (request.packIds.length || request.checkKeys.length)) {
         throw new Error(`L${level} has no recipe release for --pack/--check selection`);
       }
@@ -433,7 +437,8 @@ export function runPreflight(request, dependencies = {}) {
     generatedAt: new Date(now).toISOString(),
     request: { backends: request.backends, track: request.track, levels: request.levelList,
       runIndex: request.runIndex, agentAdapter: request.agentAdapter, packs: request.packIds,
-      checks: request.checkKeys, image: request.image, resultsDir: request.resultsDir,
+      checks: request.checkKeys, recipe: request.recipe ?? null,
+      image: request.image, resultsDir: request.resultsDir,
       agentSkills: request.agentSkills ?? null,
       smoke: request.smoke },
     ok: !checks.some(check => check.status === 'fail'),

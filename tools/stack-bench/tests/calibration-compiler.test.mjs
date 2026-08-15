@@ -8,7 +8,7 @@ import { calibrationQualificationIdentity, compileCalibrationDefinition, compile
   resolveCalibrationForRelease, validateQualificationEvidenceArtifact } from '../calibration-compiler.mjs';
 import { readArtifact } from '../artifacts.mjs';
 import { checkCalibrations } from '../check-calibration.mjs';
-import { resolveLegacyRecipeRelease } from '../recipe-release.mjs';
+import { resolveRecipeRelease } from '../recipe-release.mjs';
 import { loadTrack } from '../tracks.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -16,17 +16,17 @@ const TRACK = loadTrack('ecommerce');
 const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'l1-standard-1.0.0.json');
 
 function current() {
-  const binding = resolveLegacyRecipeRelease(TRACK, 1);
+  const binding = resolveRecipeRelease(TRACK, 1);
   return { binding, plan: compileCalibrationFile(CALIBRATION,
     { trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release }) };
 }
 
 test('runtime calibration resolution binds the qualified L1 and L2 releases', () => {
-  const l1 = resolveLegacyRecipeRelease(TRACK, 1).release;
+  const l1 = resolveRecipeRelease(TRACK, 1).release;
   const resolved = resolveCalibrationForRelease(l1, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
   assert.equal(resolved.id, 'ecommerce.l1-standard-calibration');
   assert.match(resolved.contentSha256, /^[a-f0-9]{64}$/);
-  const l2 = resolveLegacyRecipeRelease(TRACK, 2).release;
+  const l2 = resolveRecipeRelease(TRACK, 2).release;
   const qualified = resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
   assert.equal(qualified.id, 'ecommerce.l2-standard-calibration');
   assert.equal(qualified.state, 'qualified');
@@ -52,7 +52,7 @@ function temporaryCalibration(change) {
 function compileChanged(change) {
   const temporary = temporaryCalibration(change);
   try {
-    const release = resolveLegacyRecipeRelease({ ...TRACK, dir: temporary.trackRoot }, 1).release;
+    const release = resolveRecipeRelease({ ...TRACK, dir: temporary.trackRoot }, 1).release;
     return compileCalibrationFile(temporary.path,
       { trackRoot: temporary.trackRoot, stackBenchRoot: ROOT, release });
   } finally { rmSync(temporary.directory, { recursive: true, force: true }); }
@@ -73,8 +73,13 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   assert.match(first.contentSha256, /^[a-f0-9]{64}$/);
   assert.match(first.qualificationSha256, /^[a-f0-9]{64}$/);
   assert.equal(calibrationQualificationIdentity(first).sha256, first.qualificationSha256);
-  assert.deepEqual(checkCalibrations({ trackName: 'ecommerce' }).map(result => result.id),
-    ['ecommerce.l1-standard-calibration', 'ecommerce.l2-standard-calibration']);
+  assert.deepEqual(checkCalibrations({ trackName: 'ecommerce' })
+    .map(result => `${result.id}@${result.version}:${result.state}`), [
+    'ecommerce.l1-standard-calibration@1.0.0:qualified',
+    'ecommerce.l1-standard-calibration@1.1.0:draft',
+    'ecommerce.l2-standard-calibration@1.1.0:qualified',
+    'ecommerce.l2-standard-calibration@1.2.0:draft',
+  ]);
 });
 
 test('qualification evidence is semantically bound and tampering fails closed', () => {
@@ -131,7 +136,7 @@ test('qualification evidence is semantically bound and tampering fails closed', 
 });
 
 test('the qualified L2 release keeps its score contract and binds fresh qualification evidence', () => {
-  const binding = resolveLegacyRecipeRelease(TRACK, 2);
+  const binding = resolveRecipeRelease(TRACK, 2);
   const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
     'l2-standard-1.1.0.json'), {
     trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release,

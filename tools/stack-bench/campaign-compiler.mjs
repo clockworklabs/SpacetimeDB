@@ -7,7 +7,7 @@ import { resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
 import { currentEngineIdentity } from './artifacts.mjs';
 import { sha256 } from './provenance.mjs';
-import { recipeReleaseIdentity, resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { recipeReleaseIdentity, resolveRecipeRelease } from './recipe-release.mjs';
 import { createRecipeTaskRequest } from './recipe-selection.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { listTracks, loadTrack } from './tracks.mjs';
@@ -281,7 +281,7 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
   }
   const track = loadTrack(definition.track);
   const bindings = definition.levels.map(level => {
-    const binding = resolveLegacyRecipeRelease(track, level);
+    const binding = resolveRecipeRelease(track, level);
     if (!binding) fail('levels', `L${level} has no recipe release`);
     const selectedTask = createRecipeTaskRequest(binding, {
       packIds: definition.selection.packs, checkKeys: definition.selection.checks,

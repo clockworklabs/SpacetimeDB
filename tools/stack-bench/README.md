@@ -71,6 +71,8 @@ node bench.mjs --backend postgres  --levels 1-5 --run-index 1
 node bench.mjs --backend mongodb   --levels 1-5 --run-index 2
 node bench.mjs --backend postgres --track ecommerce --levels 1 \
   --pack ecommerce.identity-access --check <stable-check-key>
+node bench.mjs --backend postgres --track ecommerce --levels 1 \
+  --recipe ecommerce.l1-standard@1.1.0
 ```
 
 `--pack` changes requested scope: the agent receives only global recipe framing
@@ -80,6 +82,11 @@ dependencies are included automatically and recorded as resolved task packs.
 requirements by itself, and a check outside explicitly selected packs is
 rejected. With neither option, the complete promoted recipe is requested and
 graded.
+
+`--recipe <id>@<version>` selects one exact catalogued candidate for a
+single-level run. It uses the same preflight, agent, grader, artifact, null, and
+qualification paths as the promoted default. Omitting it continues to resolve
+the promoted L1/L2 aliases, so testing a candidate never moves a public label.
 
 Give concurrent runs distinct `--run-index` values; ports and databases are
 allocated from it. Results land under a unique run id inside

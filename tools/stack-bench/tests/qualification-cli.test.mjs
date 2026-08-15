@@ -39,3 +39,17 @@ test('qualification status exposes the exact runner required by a recipe', () =>
   assert.deepEqual(status.promotion.blockers, []);
   assert.equal(status.launch.ok, true);
 });
+
+test('qualification can inspect an exact candidate without changing the L1 default', () => {
+  const parsed = parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
+    '--track', 'ecommerce', '--level', '1', '--recipe', 'ecommerce.l1-standard@1.1.0']);
+  assert.equal(parsed.recipe, 'ecommerce.l1-standard@1.1.0');
+  const status = qualificationReadiness(parsed.track, parsed.level, parsed.recipe);
+  assert.equal(status.scope.recipe.version, '1.1.0');
+  assert.equal(status.scope.calibration.version, '1.1.0');
+  assert.equal(status.launch.ok, true);
+  assert.equal(status.promotion.ready, false);
+  assert.equal(status.promotion.blockers.filter(item => item.code === 'evidence_missing').length, 13);
+  assert(status.commands.every(command => command.includes('--recipe ecommerce.l1-standard@1.1.0')));
+  assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '1.0.0');
+});

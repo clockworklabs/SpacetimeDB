@@ -5,18 +5,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { resolveGuidanceProfile } from '../condition-compiler.mjs';
 import { createRecipeTaskRequest } from '../recipe-selection.mjs';
-import { resolveLegacyRecipeRelease } from '../recipe-release.mjs';
+import { resolveRecipeRelease } from '../recipe-release.mjs';
 import { loadTrack } from '../tracks.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const AGENT = join(ROOT, 'agent.mjs');
-const binding = resolveLegacyRecipeRelease(loadTrack('ecommerce'), 1);
+const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1);
 
-function printPrompt(app, request) {
+function printPrompt(app, request, extraArgs = []) {
   return execFileSync(process.execPath, [AGENT, '--mode', 'build', '--backend', 'postgres',
     '--track', 'ecommerce', '--level', '1', '--app', app,
-    '--recipe-task-json', JSON.stringify(request), '--print-prompt'], {
+    '--recipe-task-json', JSON.stringify(request), ...extraArgs, '--print-prompt'], {
     encoding: 'utf8', stdio: 'pipe',
     env: { ...process.env, STACK_BENCH_IMAGE: 'prompt-review-does-not-use-docker' },
   });
@@ -57,4 +58,29 @@ test('pack dependencies become requested task scope while checks only narrow mea
   assert.equal(checkOnly.selection.taskPacks.length, binding.release.components.packs.length);
   assert.equal(checkOnly.selection.checks.length, 1);
   assert.equal(checkOnly.task.requirementText, binding.plan.recipe.task.requirementText);
+});
+
+test('candidate pack prompts contain only their own framework-neutral testing calls', () => {
+  const candidate = resolveRecipeRelease(loadTrack('ecommerce'), 1,
+    'ecommerce.l1-standard@1.1.0');
+  const neutral = resolveGuidanceProfile('neutral@1.0.0', ['postgres']);
+  const app = mkdtempSync(join(tmpdir(), 'stack-bench-candidate-task-'));
+  try {
+    const identity = createRecipeTaskRequest(candidate,
+      { packIds: ['ecommerce.identity-access'] });
+    const prompt = printPrompt(app, identity.request, [
+      '--guidance', neutral.mode,
+      '--guidance-document-json', JSON.stringify(neutral.documents.postgres),
+      '--skills-json', JSON.stringify(neutral.skills.postgres.ids),
+    ]);
+    assert.match(prompt, /POST \/api\/auth\/signup/);
+    assert.doesNotMatch(prompt, /\bExpress\b|socket\.io|Drizzle|Prisma/i);
+    assert.doesNotMatch(identity.task.requirementText,
+      /POST \/api\/checkout|POST \/api\/admin\/restock/);
+
+    const cart = createRecipeTaskRequest(candidate,
+      { packIds: ['ecommerce.cart-checkout'] });
+    assert.match(cart.task.requirementText, /POST \/api\/checkout/);
+    assert.doesNotMatch(cart.task.requirementText, /POST \/api\/auth\/signin|POST \/api\/admin\/restock/);
+  } finally { rmSync(app, { recursive: true, force: true }); }
 });

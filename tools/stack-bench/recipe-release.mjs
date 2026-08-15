@@ -9,6 +9,7 @@ import { suitesFor } from './tracks.mjs';
 
 export const RECIPE_RELEASE_SCHEMA_VERSION = 1;
 
+const SHA256 = /^[a-f0-9]{64}$/;
 const EXECUTION_ONLY_STEP_FIELDS = new Set([
   'actor', 'actors', 'testid', 'in', 'within', 'settleMs', 'ms', 'intervalMs',
   'delayMs', 'readyTestid', 'samples', 'secondsAhead',
@@ -360,22 +361,60 @@ export function assertLegacyRecipeParity(plan, track, level) {
   }
 }
 
-export function resolveLegacyRecipeRelease(track, level) {
+function exactRecipeRequest(requested) {
+  if (requested === null || requested === undefined) return null;
+  if (typeof requested === 'string') {
+    const separator = requested.lastIndexOf('@');
+    if (separator < 1 || separator === requested.length - 1) {
+      throw new Error('--recipe must be an exact <id>@<version> reference');
+    }
+    return { id: requested.slice(0, separator), version: requested.slice(separator + 1) };
+  }
+  if (typeof requested !== 'object' || Array.isArray(requested)
+    || typeof requested.id !== 'string' || typeof requested.version !== 'string') {
+    throw new Error('exact recipe selection requires an id and version');
+  }
+  const fields = new Set(['id', 'version', 'contentSha256']);
+  if (Object.keys(requested).some(field => !fields.has(field))) {
+    throw new Error('exact recipe selection contains an unknown field');
+  }
+  if (Object.hasOwn(requested, 'contentSha256') && !SHA256.test(requested.contentSha256)) {
+    throw new Error('exact recipe selection contentSha256 must be a SHA-256 digest');
+  }
+  return { id: requested.id, version: requested.version,
+    ...(requested.contentSha256 !== undefined ? { contentSha256: requested.contentSha256 } : {}) };
+}
+
+// Normal runs resolve the promoted L<n> alias. Qualification may name one
+// catalogued candidate exactly, so it can be tested before that alias moves.
+// Both choices return the same binding and use the same runner path.
+export function resolveRecipeRelease(track, level, requested = null) {
   const catalogPath = join(track.dir, 'composition', 'promotions.json');
   if (!existsSync(catalogPath)) return null;
   const catalog = compilePromotionFile(catalogPath, { trackRoot: track.dir });
   const alias = `L${Number(level)}`;
   if (!catalog.entries.some(entry => entry.alias === alias)) return null;
+  const exact = exactRecipeRequest(requested);
   const promoted = catalog.entries.filter(entry => entry.alias === alias && entry.status === 'promoted');
   const candidates = catalog.entries.filter(entry => entry.alias === alias && entry.status === 'candidate');
-  const choices = promoted.length ? promoted : candidates;
+  const choices = exact
+    ? catalog.entries.filter(entry => entry.alias === alias && entry.recipe.id === exact.id
+      && entry.recipe.version === exact.version && entry.status !== 'retired')
+    : (promoted.length ? promoted : candidates);
   if (choices.length !== 1) {
-    throw new Error(`${alias} requires exactly one ${promoted.length ? 'promoted' : 'candidate'} recipe; found ${choices.length}`);
+    const kind = exact ? `catalogued ${exact.id}@${exact.version}`
+      : `${promoted.length ? 'promoted' : 'candidate'} recipe`;
+    throw new Error(`${alias} requires exactly one ${kind}; found ${choices.length}`);
   }
   const selection = choices[0];
   const recipePath = join(track.dir, 'composition', selection.recipe.path);
   const plan = compileRecipeFile(recipePath, { trackRoot: track.dir });
   assertLegacyRecipeParity(plan, track, level);
+  const release = buildRecipeRelease(recipePath, { trackRoot: track.dir });
+  if (exact?.contentSha256 && release.contentSha256 !== exact.contentSha256) {
+    throw new Error(`${exact.id}@${exact.version} content changed: expected ${exact.contentSha256}, `
+      + `resolved ${release.contentSha256}`);
+  }
   return {
     alias,
     status: selection.status,
@@ -383,7 +422,7 @@ export function resolveLegacyRecipeRelease(track, level) {
       sha256: sha256(readFileSync(catalogPath)) },
     recipePath,
     plan,
-    release: buildRecipeRelease(recipePath, { trackRoot: track.dir }),
+    release,
   };
 }
 
@@ -400,8 +439,9 @@ export function gradeRecipeRelease(binding, executionId, featureId = null) {
   });
 }
 
-export function resolveGradeRecipeArtifactBinding(track, level, specPath, featureId = null) {
-  const binding = resolveLegacyRecipeRelease(track, level);
+export function resolveGradeRecipeArtifactBinding(track, level, specPath, featureId = null,
+  requested = null) {
+  const binding = resolveRecipeRelease(track, level, requested);
   if (!binding) return null;
   const absoluteSpec = realpathSync(specPath);
   const execution = binding.plan.execution.find(candidate =>
@@ -415,8 +455,8 @@ export function resolveGradeRecipeArtifactBinding(track, level, specPath, featur
   };
 }
 
-export function resolveGradeRecipeRelease(track, level, specPath, featureId = null) {
-  return resolveGradeRecipeArtifactBinding(track, level, specPath, featureId)?.release ?? null;
+export function resolveGradeRecipeRelease(track, level, specPath, featureId = null, requested = null) {
+  return resolveGradeRecipeArtifactBinding(track, level, specPath, featureId, requested)?.release ?? null;
 }
 
 export function bundleRecipeRelease(binding) {

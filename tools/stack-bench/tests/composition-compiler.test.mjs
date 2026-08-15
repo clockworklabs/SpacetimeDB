@@ -22,7 +22,7 @@ const recipePath = name => join(ECOMMERCE, 'composition', 'recipes', name);
 
 test('the ecommerce composition tree validates as one source set', () => {
   assert.deepEqual(checkCompositions({ trackName: 'ecommerce' }), [{
-    track: 'ecommerce', packs: 8, fixtures: 2, recipes: 3, checks: 108, aliases: 2,
+    track: 'ecommerce', packs: 12, fixtures: 2, recipes: 5, checks: 209, aliases: 4,
   }]);
 });
 
@@ -75,8 +75,28 @@ test('ecommerce L1 and L2 recipes preserve current suite, feature, check, order,
   });
   assert.deepEqual(promotions.entries.map(entry => [entry.alias, entry.status, entry.recipe.id]), [
     ['L1', 'promoted', 'ecommerce.l1-standard'],
+    ['L1', 'candidate', 'ecommerce.l1-standard'],
     ['L2', 'promoted', 'ecommerce.l2-standard'],
+    ['L2', 'candidate', 'ecommerce.l2-standard'],
   ]);
+});
+
+test('framework-neutral candidates change task meaning without changing execution or scoring', () => {
+  for (const [oldName, candidateName, level] of [
+    ['l1-standard-1.0.0.json', 'l1-standard-1.1.0.json', 1],
+    ['l2-standard-1.1.0.json', 'l2-standard-1.2.0.json', 2],
+  ]) {
+    const oldPlan = compileRecipeFile(recipePath(oldName), { trackRoot: ECOMMERCE });
+    const candidate = compileRecipeFile(recipePath(candidateName), { trackRoot: ECOMMERCE });
+    assert.deepEqual(recipeProjection(candidate), legacyProjection(level));
+    assert.deepEqual(recipeProjection(candidate), recipeProjection(oldPlan));
+    assert.deepEqual(candidate.scoring, oldPlan.scoring);
+  }
+  const l1 = compileRecipeFile(recipePath('l1-standard-1.1.0.json'), { trackRoot: ECOMMERCE });
+  assert.doesNotMatch(l1.recipe.task.requirementText, /Express|similar/i);
+  assert.match(l1.recipe.task.requirementText, /POST \/api\/auth\/signin/);
+  assert.match(l1.recipe.task.requirementText, /POST \/api\/admin\/restock/);
+  assert.match(l1.recipe.task.requirementText, /POST \/api\/checkout/);
 });
 
 test('full ecommerce recipes compose the exact legacy builder task from pack-owned fragments', () => {

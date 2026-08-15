@@ -11,7 +11,7 @@ import {
   gradeRecipeRelease,
   resolveGradeRecipeArtifactBinding,
   resolveGradeRecipeRelease,
-  resolveLegacyRecipeRelease,
+  resolveRecipeRelease,
 } from '../recipe-release.mjs';
 import { loadTrack } from '../tracks.mjs';
 
@@ -119,7 +119,7 @@ test('requirement edits change meaning while selector and fixture edits only cha
 
 test('legacy runner binding fails closed on drift and emits only the suite check catalog', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveLegacyRecipeRelease(track, 2);
+  const binding = resolveRecipeRelease(track, 2);
   assert.equal(binding.alias, 'L2');
   assert.equal(binding.status, 'promoted');
   const reportRelease = gradeRecipeRelease(binding, 'features');
@@ -147,8 +147,38 @@ test('legacy runner binding fails closed on drift and emits only the suite check
     editJson(box.recipe, value => { value.execution.reverse(); });
     const copiedTrack = { ...track, dir: box.root,
       suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
-    assert.throws(() => resolveLegacyRecipeRelease(copiedTrack, 1), /does not exactly match/);
+    assert.throws(() => resolveRecipeRelease(copiedTrack, 1), /does not exactly match/);
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+test('an exact candidate uses the normal binding path without moving the promoted default', () => {
+  const track = loadTrack('ecommerce');
+  const promoted = resolveRecipeRelease(track, 1);
+  const candidate = resolveRecipeRelease(track, 1, 'ecommerce.l1-standard@1.1.0');
+  assert.equal(promoted.release.version, '1.0.0');
+  assert.equal(promoted.status, 'promoted');
+  assert.equal(candidate.release.version, '1.1.0');
+  assert.equal(candidate.status, 'candidate');
+  assert.equal(candidate.release.executionSha256, promoted.release.executionSha256);
+  assert.notEqual(candidate.release.meaningSha256, promoted.release.meaningSha256);
+  const stableChecks = release => release.checkCatalog.map(({ packVersion: _packVersion, ...check }) => check);
+  assert.deepEqual(stableChecks(candidate.release), stableChecks(promoted.release));
+  assert.equal(resolveRecipeRelease(track, 1, {
+    id: candidate.release.id,
+    version: candidate.release.version,
+    contentSha256: candidate.release.contentSha256,
+  }).release.contentSha256, candidate.release.contentSha256);
+  assert.throws(() => resolveRecipeRelease(track, 1, 'ecommerce.l1-standard@9.9.9'),
+    /exactly one catalogued/);
+  assert.throws(() => resolveRecipeRelease(track, 1, {
+    id: candidate.release.id, version: candidate.release.version, contentSha256: '0'.repeat(64),
+  }), /content changed/);
+  assert.throws(() => resolveRecipeRelease(track, 1, {
+    id: candidate.release.id, version: candidate.release.version, contentSha256: '',
+  }), /must be a SHA-256 digest/);
+  assert.throws(() => resolveRecipeRelease(track, 1, {
+    id: candidate.release.id, version: candidate.release.version, unexpected: true,
+  }), /unknown field/);
 });
 
 test('the grader rejects parent/child recipe drift before launching a browser', () => {

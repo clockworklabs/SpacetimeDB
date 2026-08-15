@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { readArtifactPayload } from '../artifacts.mjs';
-import { resolveLegacyRecipeRelease } from '../recipe-release.mjs';
+import { resolveRecipeRelease } from '../recipe-release.mjs';
 import { resolveRecipeSelection } from '../recipe-selection.mjs';
 import { loadTrack } from '../tracks.mjs';
 
@@ -56,7 +56,7 @@ test('the live grader executes and reports exactly one selected stable check', a
   try {
     const port = await server.port;
     const track = loadTrack('ecommerce');
-    const binding = resolveLegacyRecipeRelease(track, 1);
+    const binding = resolveRecipeRelease(track, 1);
     const check = binding.release.checkCatalog.find(candidate => candidate.executionId === 'features');
     const selection = resolveRecipeSelection(binding.release, { checkKeys: [check.stableKey] });
     await run(GRADER, [

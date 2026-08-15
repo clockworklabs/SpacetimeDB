@@ -22,7 +22,7 @@ import { killTree } from './platform.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { recoverSupervisedRun, validateSupervisorState } from './recovery.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
-import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { resolveRecipeRelease } from './recipe-release.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from './tracks.mjs';
 import { controllerRunner } from './runner-environment.mjs';
 
@@ -48,6 +48,7 @@ export function parseReferenceQualificationArgs(argv) {
     if (argv[i] === '--backend') args.backend = argv[++i];
     else if (argv[i] === '--track') args.track = argv[++i];
     else if (argv[i] === '--level') args.level = Number(argv[++i]);
+    else if (argv[i] === '--recipe') args.recipe = argv[++i];
     else if (argv[i] === '--repetitions') args.repetitions = Number(argv[++i]);
     else if (argv[i] === '--run-index') args.runIndex = Number(argv[++i]);
     else if (argv[i] === '--spacetime-port') args.spacetimePort = Number(argv[++i]);
@@ -248,9 +249,9 @@ export function auditReferenceRun(output, fixture, { requireMutationControl = fa
     mutations: mutationControl?.summary ?? null };
 }
 
-export function referenceQualificationContext(fixture) {
+export function referenceQualificationContext(fixture, recipe = null) {
   const track = loadTrack(fixture.track);
-  const binding = resolveLegacyRecipeRelease(track, fixture.level);
+  const binding = resolveRecipeRelease(track, fixture.level, recipe);
   if (!binding) throw new Error(`${fixture.track} L${fixture.level} has no recipe release`);
   const calibration = resolveCalibrationForRelease(binding.release,
     { trackRoot: track.dir, stackBenchRoot: ROOT });
@@ -294,6 +295,7 @@ async function runOnce(fixture, args, id, repetition) {
     const benchArgs = [BENCH, '--backend', fixture.backend, '--track', fixture.track,
       '--levels', String(fixture.level), '--run-index', String(args.runIndex), '--fix-rounds', '0',
       '--app', app, '--out', output, '--agent-adapter', 'reference-fixture', '--skip-probe', '--no-media'];
+    if (args.recipe) benchArgs.push('--recipe', args.recipe);
     benchArgs.push('--parent-attempt-id', id);
     if (args.mutations) {
       if (fixture.mutationManifests.length !== 1) {
@@ -350,7 +352,7 @@ async function main() {
   if (!fixture) throw new Error(`no imported ${args.track} L${args.level} fixture for ${args.backend}`);
   const inspection = inspectImportedReference(fixture);
   if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
-  const context = referenceQualificationContext(fixture);
+  const context = referenceQualificationContext(fixture, args.recipe);
 
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const id = `reference-live-${fixture.backend}-${stamp}-${process.pid}`;

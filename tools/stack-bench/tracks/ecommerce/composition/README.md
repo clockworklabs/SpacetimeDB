@@ -16,7 +16,7 @@ manifest while migration parity is proven.
   manifests, null expectations, repetition policy, stack status, and promotion
   state. Calibration applies to the whole combination, not to packs separately.
 
-The compatibility recipes explicitly use `legacy-source-points` so their current
+The parity recipes explicitly use `legacy-source-points` so their current
 scores can be compared byte-for-byte during migration. That scoring mode is
 rejected unless the recipe declares its legacy level. New recipes use explicit
 stable-key weights; the smoke recipe demonstrates that form.
@@ -40,8 +40,15 @@ Current status: these sources compile and prove exact L1/L2 membership, ordering
 check, and score parity. The live runner resolves the requested alias,
 rechecks that parity before launching a browser, and records the exact recipe
 identity in every grade and bundle. Scenario actions execute through the
-versioned, capability-scoped action registry. L1 is promoted; L2 remains a
-candidate and is not promotion evidence.
+versioned, capability-scoped action registry. L1 1.0 and L2 1.1 are promoted
+and qualified. Framework-neutral L1 1.1 and L2 1.2 are catalogued candidates:
+their task meaning changed, while their execution and scoring hashes remain
+identical to the promoted releases. They are not promotion evidence yet.
+
+Normal runs resolve the promoted alias. A single-level run may select a
+catalogued candidate exactly with `--recipe <id>@<version>`. Exact selection is
+also accepted by preflight and the reference, mutation, null, budget, and
+qualification commands, all of which use the normal runtime path.
 
 Task fragments are source slices identified by permanent IDs, a numeric order,
 an exact contained path, optional unique start/end markers, and the task modes
@@ -67,8 +74,8 @@ the hashes are the proof:
 Saved releases include source digests and the compact check catalog. They do not
 copy fixture passwords, prompt contents, or the full executable grader plan.
 
-The current L1 calibration is qualified. It binds all three active reference
-apps and their exact mutation manifests to repeated Docker reference, mutation,
-and null evidence. L2 has no calibration yet: its recipe, fixture, and three new
-packs remain draft until separate L2 references, controls, measured budgets, and
-repeated evidence exist.
+The promoted L1 and L2 calibrations are qualified. Each binds all three active
+reference apps and their exact mutation manifests to repeated Docker reference,
+mutation, and null evidence. The framework-neutral candidate calibrations are
+drafts with empty evidence slots. They must pass the same exact Docker gates
+before either alias can move.

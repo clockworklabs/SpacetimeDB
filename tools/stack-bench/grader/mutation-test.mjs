@@ -62,6 +62,7 @@ function parseArgs(argv) {
     else if (argv[i] === "--spec") a.spec = argv[++i];
     else if (argv[i] === "--backend") a.backend = argv[++i];
     else if (argv[i] === "--track") a.track = argv[++i];
+    else if (argv[i] === "--recipe") a.recipe = argv[++i];
     else if (argv[i] === "--db-name") a.dbName = argv[++i];
     else if (argv[i] === "--run-index") a.runIndex = argv[++i];
     else if (argv[i] === "--track-slug") a.slug = argv[++i];
@@ -152,6 +153,7 @@ async function grade(a, reportPath) {
   if (a.dbName) gradeArgs.push("--db-name", a.dbName);
   if (a.restartSpec) gradeArgs.push("--restart-spec", JSON.stringify(a.restartSpec));
   if (a.mutationAttemptId) gradeArgs.push("--parent-attempt-id", a.mutationAttemptId);
+  if (a.recipe) gradeArgs.push("--recipe", a.recipe);
   execFileSync(process.execPath, gradeArgs, {
     stdio: "pipe",
     encoding: "utf8",

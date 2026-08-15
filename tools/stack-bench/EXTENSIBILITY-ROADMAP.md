@@ -233,20 +233,20 @@ First compatibility slice completed:
 - Canonical, human-diffable golden plans now freeze the compiled semantics of
   every active track and a compatibility definition covering all 47 actions.
   Drift checking is read-only unless an author explicitly accepts an update.
-- The validated ecommerce L1/L2 workload is now also expressed as seven
-  behavior packs, two versioned fixture sets, exact compatibility recipes, and
-  a separately versioned candidate-alias catalog. Compilation proves the same
+- The validated ecommerce L1/L2 workload is now expressed as eight behavior
+  pack identities, two versioned fixture sets, exact parity recipes, and a
+  separately versioned promotion catalog. Compilation proves the same
   suite/feature/check order and 51-point L1/74-point L2 scoring. A smaller smoke
   recipe proves pack reuse with explicit recipe-owned weights.
 - Recipe releases now carry deterministic meaning, execution, and combined
   content hashes plus exact source digests and a compact stable-key catalog.
-  Ecommerce L1/L2 grades and bundles record the candidate alias and exact
-  resolved identity after proving the recipe is identical to the legacy plan.
-- The first calibration manifest binds the exact L1 recipe and fixture to all
-  three canonical reference source hashes, their exact mutation manifests,
-  null-control policy, repetition counts, typed zero-point policies, stack
-  states, evidence slots, and the candidate alias catalog. It remains draft;
-  the compiler prevents those inputs from being mislabeled as qualified.
+  Ecommerce L1/L2 grades and bundles record the alias and exact resolved
+  identity after proving the recipe matches the active execution plan.
+- Promoted L1 1.0 and L2 1.1 have qualified calibrations with repeated Docker
+  reference, mutation, and null evidence for all three stacks. Framework-neutral
+  L1 1.1 and L2 1.2 are separate draft candidates with unchanged execution and
+  scoring identities. One exact `--recipe` selector runs those candidates
+  through the normal runtime and qualification paths without moving an alias.
 - Current run, grade, bundle, lint, action, mutation, null, reference,
   performance, bug-quality, and public lease-evidence producers use the common
   artifact writer. Runtime reporting and qualification readers accept only the
@@ -294,8 +294,7 @@ Verified debt still to remove:
 - Active scenario sources still hold the executable check bodies while packs
   reference them through a strict compatibility boundary. The compatibility
   runner now binds those sources to exact recipe identities and selected scopes,
-  but a general non-legacy recipe executor remains before promotion. L1 now has
-  a draft calibration contract, but still needs current repeated Docker evidence.
+  but a general non-legacy recipe executor remains future work.
 - Pack-owned requirement and testing-hook fragments now compose the builder
   task from the same selection that owns checks. Full ecommerce L1/L2 task text
   remains byte-identical, and session durability is independently selectable.
@@ -308,8 +307,8 @@ Verified debt still to remove:
   stack-adapter identity is currently the stack id plus the encompassing engine
   hash until adapters become separately packaged releases.
 - Calibration lifecycle now gives every zero-point criterion a typed policy.
-  The L1 calibration is deliberately draft and still requires current repeated
-  Docker evidence before it can be promoted.
+  The promoted L1/L2 releases are qualified; each new exact recipe version must
+  collect fresh evidence before its alias can move.
 - Agent adapter schema v1 now gives the engine one strict build/upgrade/fix
   request and normalized completion, usage, duration, setup, and transcript
   boundary. The current Claude Code implementation, deterministic loop fixture,

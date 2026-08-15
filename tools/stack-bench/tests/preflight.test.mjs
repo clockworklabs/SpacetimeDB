@@ -209,6 +209,12 @@ test('preflight argument parsing rejects ambiguous ranges and missing backends',
     '--levels', '3-1']), /--levels/);
   assert.throws(() => parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'stub',
     '--mystery']), /unknown argument/);
+  assert.equal(parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'postgres',
+    '--track', 'ecommerce', '--levels', '1', '--recipe', 'ecommerce.l1-standard@1.1.0'])
+    .recipe, 'ecommerce.l1-standard@1.1.0');
+  assert.throws(() => parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'postgres',
+    '--track', 'ecommerce', '--levels', '1-2', '--recipe', 'ecommerce.l1-standard@1.1.0']),
+  /exactly one/);
 });
 
 test('appliance preflight defaults to its configured persistent result directory', () => {

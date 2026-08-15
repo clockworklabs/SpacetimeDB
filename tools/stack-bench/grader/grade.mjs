@@ -109,6 +109,7 @@ function parseArgs(argv) {
       // which track declares the action names.
       case '--backend': args.backend = argv[++i]; break;
       case '--track': args.track = argv[++i]; break;
+      case '--recipe': args.recipe = argv[++i]; break;
       case '--expected-recipe-sha256': args.expectedRecipeSha256 = argv[++i]; break;
       case '--selected-check': args.selectedCheckKeys.push(argv[++i]); break;
       case '--selection-sha256': args.selectionSha256 = argv[++i]; break;
@@ -801,7 +802,8 @@ async function main() {
   if (args.track) {
     const track = loadTrack(args.track);
     actions = track.actions;
-    const binding = resolveGradeRecipeArtifactBinding(track, args.level, specPath, args.feature ?? null);
+    const binding = resolveGradeRecipeArtifactBinding(track, args.level, specPath,
+      args.feature ?? null, args.recipe);
     recipeRelease = binding?.release ?? null;
     recipeIdentityRelease = binding?.sourceRelease ?? null;
   }
