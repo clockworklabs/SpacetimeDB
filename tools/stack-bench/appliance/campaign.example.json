@@ -20,8 +20,7 @@
     {
       "adapter": "deterministic",
       "adapterVersion": "1.0.0",
-      "model": "deterministic",
-      "skills": []
+      "model": "deterministic"
     }
   ],
   "conditions": [

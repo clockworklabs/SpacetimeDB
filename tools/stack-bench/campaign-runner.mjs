@@ -49,7 +49,7 @@ export function attemptArgv(plan, attempt, output) {
     '--no-media'];
   for (const pack of plan.definition.selection.packs) args.push('--pack', pack);
   for (const check of plan.definition.selection.checks) args.push('--check', check);
-  if (attempt.skills.length) args.push('--skills', attempt.skills.join(','));
+  args.push('--skills-json', JSON.stringify(attempt.skills));
   if (plan.definition.budgets.maxCostUsdPerAttempt !== null) {
     args.push('--max-budget-usd', String(plan.definition.budgets.maxCostUsdPerAttempt));
   }
@@ -58,8 +58,7 @@ export function attemptArgv(plan, attempt, output) {
 
 export function validateCampaignRun(plan, attempt, run, { buildImage = null } = {}) {
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
-    && item.model === attempt.model
-    && canonicalDefinitionJson(item.skills) === canonicalDefinitionJson(attempt.skills));
+    && item.model === attempt.model);
   const condition = plan.conditions.find(item => item.sha256 === attempt.condition?.sha256);
   const expectedLevels = [...attempt.levels].sort((a, b) => a - b);
   const actualLevels = (run.levels ?? []).map(level => level.level).sort((a, b) => a - b);
@@ -223,7 +222,7 @@ function validateCampaignAdmission(input, plan, directory) {
     throw new Error('campaign admission runtime does not match the compiled plan');
   }
   const expectedAgents = plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
-    skills: agent.skills, identity: agent.identity }));
+    identity: agent.identity }));
   if (canonicalDefinitionJson(input.agents) !== canonicalDefinitionJson(expectedAgents)) {
     throw new Error('campaign admission agents do not match the compiled plan');
   }
@@ -321,7 +320,7 @@ export function runCampaignAdmission(plan, directory,
     ok: reports.every(report => report.ok),
     runtime: plan.definition.runtime,
     agents: plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
-      skills: agent.skills, identity: agent.identity })),
+      identity: agent.identity })),
     conditions: plan.conditions,
     reports }, plan, directory);
   const path = contained(directory, join('admissions', `${id}.json`), 'campaign admission');

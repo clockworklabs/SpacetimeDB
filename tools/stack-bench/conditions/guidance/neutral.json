@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "kind": "backend-guidance-profile",
-  "id": "prescribed",
+  "id": "neutral",
   "version": "1.0.0",
-  "state": "qualified",
-  "mode": "prescribed",
+  "state": "draft",
+  "mode": "neutral",
   "material": {
     "accessFacts": true,
     "apiReference": true,
-    "designAdvice": true
+    "designAdvice": false
   },
   "documents": {
-    "mongodb": "backends/mongodb.md",
-    "postgres": "backends/postgres.md",
-    "spacetime": "backends/spacetime.md"
+    "mongodb": "backends/minimal/mongodb.md",
+    "postgres": "backends/minimal/postgres.md",
+    "spacetime": "backends/minimal/spacetime.md"
   },
   "skills": {
     "mongodb": [],

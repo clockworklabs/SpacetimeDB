@@ -1,8 +1,7 @@
 # Backend: PostgreSQL
 
-Use **PostgreSQL** as the database. Everything else — server framework, how the
-browser gets live updates, whether you use an ORM, project layout — is your
-choice. Build it the way you think it should be built.
+Use **PostgreSQL** as the database. Make the remaining implementation choices
+yourself.
 
 ## What the harness needs
 
@@ -10,7 +9,7 @@ choice. Build it the way you think it should be built.
 |---|---|
 | `DATABASE_URL` | `<DATABASE_URL>` |
 | Client dev server | must be reachable at `http://localhost:<VITE_PORT>` |
-| API server, if you run one | port `<EXPRESS_PORT>` |
+| Additional app service port | `<EXPRESS_PORT>` |
 
 Use this exact `DATABASE_URL`. Do not point at another PostgreSQL instance and do
 not create databases outside it. The client must be served on that port and left

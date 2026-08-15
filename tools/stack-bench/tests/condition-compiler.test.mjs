@@ -27,6 +27,10 @@ test('the prescribed condition binds independent guidance, probe, repair, and do
   assert.equal(condition.guidance.mode, 'prescribed');
   assert.equal(condition.guidance.material.designAdvice, true);
   assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);
+  assert.deepEqual(condition.guidance.skills.spacetime.ids,
+    ['typescript-server', 'typescript-client']);
+  assert.deepEqual(condition.guidance.skills.mongodb.ids, []);
+  assert.match(condition.guidance.skills.spacetime.sha256, /^[a-f0-9]{64}$/);
   assert.deepEqual(condition.probes.probes, []);
   assert.equal(condition.probes.scoreContribution, false);
   assert.equal(condition.probes.repairVisible, false);
@@ -38,6 +42,16 @@ test('the prescribed condition binds independent guidance, probe, repair, and do
       ...requested.levels[0].selection, sha256: 'e'.repeat(64),
     } }] } });
   assert.notEqual(changed.sha256, condition.sha256);
+});
+
+test('packaged neutral guidance exists symmetrically without architecture advice', () => {
+  const neutral = { id: 'neutral', version: '1.0.0', guidanceProfile: 'neutral@1.0.0',
+    probeProfile: 'none@1.0.0', repairPolicy: 'requested-only@1.0.0' };
+  const [condition] = resolveStudyConditions([neutral], ['mongodb', 'postgres', 'spacetime'],
+    { requested });
+  assert.equal(condition.guidance.mode, 'neutral');
+  assert.equal(condition.guidance.material.designAdvice, false);
+  assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);
 });
 
 test('condition references are strict and versioned', () => {
@@ -58,7 +72,7 @@ function customCondition({ guidance = {}, probes = {}, repair = {} } = {}) {
   writeJson(join(catalogRoot, 'guidance.json'), { schemaVersion: 1, kind: 'backend-guidance-profile',
     id: 'neutral', version: '1.0.0', state: 'qualified', mode: 'neutral',
     material: { accessFacts: true, apiReference: true, designAdvice: false },
-    documents: { fake: 'backend.md' }, ...guidance });
+    documents: { fake: 'backend.md' }, skills: { fake: [] }, ...guidance });
   writeJson(join(catalogRoot, 'probes.json'), { schemaVersion: 1, kind: 'capability-probe-profile',
     id: 'defaults', version: '1.0.0', state: 'qualified', firstBuildOnly: true,
     scoreContribution: false, repairVisible: false, probes: [], ...probes });

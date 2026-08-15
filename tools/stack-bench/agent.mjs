@@ -279,6 +279,7 @@ function parseArgs(argv) {
       // Comma-separated skill directories to inline, e.g.
       //   --skills typescript-server,typescript-client,cli
       case '--skills': a.skills = argv[++i].split(',').map(x => x.trim()).filter(Boolean); break;
+      case '--skills-json': a.skills = JSON.parse(argv[++i]); break;
       // Container or nothing. For sweeps whose claim is that no build could
       // reach the grader — there, a silent fallback would be a false claim.
       // An API key, when supplied, is used instead of the mounted plan

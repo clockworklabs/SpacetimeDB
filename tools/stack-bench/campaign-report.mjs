@@ -89,7 +89,7 @@ export function campaignRunMetrics(run) {
 
 function conditionKey(attempt) {
   return canonicalDefinitionJson({ stack: attempt.stack, agentAdapter: attempt.agentAdapter,
-    model: attempt.model, condition: attempt.condition?.sha256, skills: attempt.skills }).trim();
+    model: attempt.model, condition: attempt.condition?.sha256 }).trim();
 }
 
 function exactFields(value, fields, at) {
@@ -191,8 +191,7 @@ export function buildCampaignReport(plan, state, readRun) {
     return {
       key: sha256(key),
       stack: attempts[0].stack,
-      agent: { adapter: attempts[0].agentAdapter, model: attempts[0].model,
-        skills: attempts[0].skills },
+      agent: { adapter: attempts[0].agentAdapter, model: attempts[0].model },
       condition: attempts[0].condition,
       sample: { plannedAttempts: attempts.length, completedAttempts: completed.length,
         invalidAttempts: attempts.filter(attempt => attempt.status === 'invalid').length,

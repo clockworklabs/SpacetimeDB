@@ -71,6 +71,7 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
       plan.attempts[0].stack]),
     '--condition-json', JSON.stringify(plan.attempts[0].condition), '--fix-rounds', '3',
     '--parent-attempt-id', plan.attempts[0].id, '--no-media',
+    '--skills-json', JSON.stringify(plan.attempts[0].skills),
   ]);
   assert.throws(() => attemptArgv(plan, { ...plan.attempts[0], condition: {
     ...plan.attempts[0].condition, guidance: { ...plan.attempts[0].condition.guidance,

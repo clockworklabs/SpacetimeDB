@@ -23,7 +23,7 @@ function definition(overrides = {}) {
       { id: 'postgres', adapterVersion: '1.1.0' },
       { id: 'mongodb', adapterVersion: '1.1.0' },
     ],
-    agents: [{ adapter: 'deterministic', adapterVersion: '1.0.0', model: 'deterministic', skills: [] }],
+    agents: [{ adapter: 'deterministic', adapterVersion: '1.0.0', model: 'deterministic' }],
     conditions: [{ id: 'prescribed', version: '1.0.0',
       guidanceProfile: 'prescribed@1.0.0', probeProfile: 'none@1.0.0',
       repairPolicy: 'requested-only@1.0.0' }],
@@ -86,7 +86,7 @@ test('campaign identity ignores JSON formatting but changes with study semantics
     checks: ['ecommerce.identity-access.accounts.1a'] } }));
   assert.notEqual(partial.conditions[0].sha256, first.conditions[0].sha256);
   const multiAgent = definition({ agents: [definition().agents[0],
-    { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic', skills: [] }] });
+    { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic' }] });
   const multiAgentReordered = structuredClone(multiAgent);
   multiAgentReordered.agents.reverse();
   assert.equal(compile(multiAgent).contentSha256, compile(multiAgentReordered).contentSha256);
@@ -94,8 +94,8 @@ test('campaign identity ignores JSON formatting but changes with study semantics
 
 test('balanced rotation covers every stack-agent condition and rotates the global lead', () => {
   const agents = [
-    { adapter: 'deterministic', adapterVersion: '1.0.0', model: 'deterministic', skills: [] },
-    { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic', skills: [] },
+    { adapter: 'deterministic', adapterVersion: '1.0.0', model: 'deterministic' },
+    { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic' },
   ];
   const plan = compile(definition({ agents, repetitions: 6 }));
   for (let repetition = 1; repetition <= 6; repetition += 1) {
@@ -105,6 +105,20 @@ test('balanced rotation covers every stack-agent condition and rotates the globa
   }
   assert.equal(new Set(plan.attempts.filter(attempt => attempt.order === 1)
     .map(attempt => `${attempt.agentAdapter}:${attempt.stack}`)).size, 6);
+});
+
+test('guidance conditions are an independent campaign axis with stack-specific API material', () => {
+  const conditions = [...definition().conditions, { id: 'neutral', version: '1.0.0',
+    guidanceProfile: 'neutral@1.0.0', probeProfile: 'none@1.0.0',
+    repairPolicy: 'requested-only@1.0.0' }];
+  const plan = compile(definition({ conditions, repetitions: 1 }));
+  assert.equal(plan.summary.attempts, 6);
+  assert.equal(new Set(plan.attempts.map(attempt =>
+    `${attempt.stack}:${attempt.condition.id}`)).size, 6);
+  const spacetime = plan.attempts.filter(attempt => attempt.stack === 'spacetime');
+  assert(spacetime.every(attempt => attempt.skills.length === 2));
+  assert(plan.attempts.filter(attempt => attempt.stack !== 'spacetime')
+    .every(attempt => attempt.skills.length === 0));
 });
 
 test('a one-repetition pilot is allowed and reports its exact sample size', () => {
@@ -140,8 +154,8 @@ test('frozen campaigns require exact runtime images and accept qualified levels'
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.5.0',
-    model: 'claude-sonnet-5', skills: [] }];
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.6.0',
+    model: 'claude-sonnet-5' }];
   const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
     source: 'test snapshot', models: { 'claude-sonnet-5': {
       inputPerMillion: 1, outputPerMillion: 1, cacheWritePerMillion: 1, cacheReadPerMillion: 1,

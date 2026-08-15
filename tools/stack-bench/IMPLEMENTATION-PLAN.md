@@ -694,8 +694,7 @@ agent verify the exact document bytes before a model call. Non-empty probe
 profiles and repair policies that withhold requested evidence currently fail
 closed because their execution paths belong to SB-506. Full compiled-prompt
 disclosure identity, prompt/probe overlap analysis, and the shared capability
-definition remain
-before SB-504 can close.
+definition remain before SB-504 can close.
 
 ### SB-505: Symmetric neutral backend guidance
 
@@ -710,6 +709,16 @@ Prompt snapshots and build-container inspection prove the boundary. A missing
 neutral profile fails compilation; it never falls back to prescribed guidance.
 Adding a fourth backend's neutral profile requires adapter/catalog data and
 qualification, not an engine branch.
+
+In progress. The guidance profile now owns and content-identifies stack-specific
+API/skill material as well as the backend document; agent configurations no
+longer hide stack guidance. Campaigns pass an explicit skill list, including an
+explicit empty list, so adapter defaults cannot silently alter a study arm.
+Draft neutral documents and a symmetric profile exist for all three stacks.
+Compiler tests exercise prescribed and neutral as an independent campaign axis,
+and boundary tests reject named framework, ORM, transport, polling, transaction,
+locking, or layout prescriptions. Prompt-snapshot and live neutral qualification
+remain before the profile can advance from draft.
 
 ### SB-506: First-build capability probes
 

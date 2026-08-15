@@ -3,6 +3,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
+import { readAgentSkillDocuments } from './agent-materials.mjs';
 import { sha256 } from './provenance.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -78,7 +79,8 @@ function loadProfile(catalog, section, reference, kind, fields) {
 }
 
 function resolveGuidance(catalog, reference, stacks, stackBenchRoot) {
-  const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'mode', 'material', 'documents']);
+  const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'mode', 'material',
+    'documents', 'skills']);
   const { profile } = loadProfile(catalog, 'guidanceProfiles', reference,
     'backend-guidance-profile', fields);
   if (!['prescribed', 'neutral'].includes(profile.mode)) fail(`${reference}.mode`, 'must be prescribed or neutral');
@@ -90,7 +92,9 @@ function resolveGuidance(catalog, reference, stacks, stackBenchRoot) {
     fail(`${reference}.material.designAdvice`, 'must be false for neutral guidance');
   }
   if (!object(profile.documents)) fail(`${reference}.documents`, 'must be an object');
+  if (!object(profile.skills)) fail(`${reference}.skills`, 'must be an object');
   const documents = {};
+  const skills = {};
   for (const stack of stacks) {
     const rel = profile.documents[stack];
     if (typeof rel !== 'string' || !rel) fail(`${reference}.documents.${stack}`, 'is required');
@@ -98,8 +102,18 @@ function resolveGuidance(catalog, reference, stacks, stackBenchRoot) {
     const bytes = readFileSync(path);
     documents[stack] = { path: relative(stackBenchRoot, path).split(sep).join('/'),
       sha256: sha256(bytes), bytes: bytes.length };
+    const ids = profile.skills[stack];
+    if (!Array.isArray(ids) || new Set(ids).size !== ids.length
+      || ids.some(id => typeof id !== 'string' || !/^[a-z][a-z0-9-]*$/.test(id))) {
+      fail(`${reference}.skills.${stack}`, 'must contain unique skill ids');
+    }
+    let text;
+    try { text = readAgentSkillDocuments(resolve(stackBenchRoot, '..', '..'), ids); }
+    catch (error) { fail(`${reference}.skills.${stack}`, `cannot be read: ${error.message}`); }
+    skills[stack] = { ids: [...ids], sha256: sha256(text), bytes: Buffer.byteLength(text) };
   }
-  return { ...identity(profile, documents), mode: profile.mode, material: profile.material, documents };
+  return { ...identity(profile, { documents, skills }), mode: profile.mode,
+    material: profile.material, documents, skills };
 }
 
 function resolveProbes(catalog, reference) {

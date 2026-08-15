@@ -2,7 +2,8 @@
   "schemaVersion": 1,
   "kind": "study-condition-catalog",
   "guidanceProfiles": {
-    "prescribed@1.0.0": "guidance/prescribed.json"
+    "prescribed@1.0.0": "guidance/prescribed.json",
+    "neutral@1.0.0": "guidance/neutral.json"
   },
   "probeProfiles": {
     "none@1.0.0": "probes/none.json"

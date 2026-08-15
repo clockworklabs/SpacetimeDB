@@ -82,7 +82,8 @@ function parseArgs(argv) {
       case '--skip-probe': a.skipProbe = true; break;
       // Which reference documents to inline (spacetime only). The variable
       // under test in the cost work; passed straight through to agent.mjs.
-      case '--skills': a.skills = argv[++i]; break;
+      case '--skills': a.skills = argv[++i].split(',').filter(Boolean); break;
+      case '--skills-json': a.skills = JSON.parse(argv[++i]); break;
       case '--api-key': a.apiKey = argv[++i]; break;
       case '--api-key-file': a.apiKeyFile = resolve(argv[++i]); break;
       case '--mutations': a.mutations = resolve(argv[++i]); break;
@@ -315,7 +316,7 @@ async function main() {
   const preflight = args.backend === 'stub' ? null : runPreflight({
     backends: [args.backend], track: args.track, levels: args.levels,
     levelList: args.levelList, runIndex: args.runIndex, agentAdapter: args.agentAdapter,
-    agentSkills: args.skills?.split(',').filter(Boolean) ?? null,
+    agentSkills: args.skills ?? null,
     packIds: args.packIds, checkKeys: args.checkKeys, smoke: true,
     supervisorState: process.env.STACK_BENCH_SUPERVISOR_STATE ?? null,
     image: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE,
@@ -629,7 +630,7 @@ async function main() {
     track: args.track, backend: args.backend, model: args.model,
     guidance: args.guidance, condition: args.condition ?? null,
     stack: args.guidance === 'minimal' ? 'free' : args.guidance,
-    skills: args.skills?.split(',').filter(Boolean) ?? [],
+    skills: args.skills ?? [],
     runtime: { buildImage: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE },
     selectionRequest: { packs: [...args.packIds], checks: [...args.checkKeys] },
     backendLease: publicBackendLease(readBackendLease(leasePath,

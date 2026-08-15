@@ -24,7 +24,7 @@ const ROOT_FIELDS = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 
 ROOT_FIELDS.add('runtime');
 const SELECTION_FIELDS = new Set(['packs', 'checks']);
 const STACK_FIELDS = new Set(['id', 'adapterVersion']);
-const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model', 'skills']);
+const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model']);
 const ORDERING_FIELDS = new Set(['method', 'seed']);
 const BUDGET_FIELDS = new Set(['fixRounds', 'attemptTimeoutMinutes', 'maxCostUsdPerAttempt']);
 const ATTEMPT_POLICY_FIELDS = new Set(['retries', 'retryOn', 'excludeFromAnalysis']);
@@ -118,7 +118,6 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     identifier(agent.adapter, `${at}.adapter`);
     version(agent.adapterVersion, `${at}.adapterVersion`);
     string(agent.model, `${at}.model`);
-    agent.skills = exactArray(agent.skills, `${at}.skills`, string, { sort: true });
     return agent;
   }, { nonEmpty: true, sort: true });
   const agentKeys = value.agents.map(agent => canonicalDefinitionJson(agent));
@@ -247,8 +246,8 @@ function expandAttempts(definition, requestedLevels, stacks, agents, studyCondit
   const conditions = agents.flatMap((agent, agentIndex) => studyConditions.flatMap(
     (condition, conditionIndex) => stacks.map(stack => ({
       agent, agentIndex, condition, conditionIndex, stack,
-      key: canonicalDefinitionJson({ agent: { adapter: agent.adapter, model: agent.model,
-        skills: agent.skills }, condition: condition.sha256, stack: stack.id }),
+      key: canonicalDefinitionJson({ agent: { adapter: agent.adapter, model: agent.model },
+        condition: condition.sha256, stack: stack.id }),
     })))).sort((left, right) => {
     const leftHash = sha256(`${definition.ordering.seed}\0${left.key}`);
     const rightHash = sha256(`${definition.ordering.seed}\0${right.key}`);
@@ -268,7 +267,7 @@ function expandAttempts(definition, requestedLevels, stacks, agents, studyCondit
           requested: condition.requested, guidance: condition.guidance,
           probes: condition.probes, repair: condition.repair },
         guidance: condition.guidance.mode,
-        skills: agent.skills,
+        skills: condition.guidance.skills[stack.id].ids,
         levels: requestedLevels,
         parentAttemptId: definition.id,
       }));
