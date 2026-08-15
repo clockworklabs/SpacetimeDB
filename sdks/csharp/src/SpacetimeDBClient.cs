@@ -140,7 +140,7 @@ namespace SpacetimeDB
         /// We assume that the user will reset this if needed; Unity will give an error about this field not being reset.
         /// One way we can get around this in the future is using <see href="https://docs.unity3d.com/6000.5/Documentation/ScriptReference/Unity.Scripting.LifecycleManagement.AutoStaticsCleanupAttribute.html">AutoStaticsCleanup</see> 
         /// But that requires Unity 6.5
-        /// <remarks>
+        /// </remarks>
         internal static bool IsTesting { get; set; } = false;
 
         public static DbConnectionBuilder<DbConnection> Builder() => new();
