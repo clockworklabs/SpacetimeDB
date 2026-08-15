@@ -245,8 +245,10 @@ First compatibility slice completed:
 - Promoted L1 1.0 and L2 1.1 have qualified calibrations with repeated Docker
   reference, mutation, and null evidence for all three stacks. Framework-neutral
   L1 1.1 and L2 1.2 are separate draft candidates with unchanged execution and
-  scoring identities. One exact `--recipe` selector runs those candidates
-  through the normal runtime and qualification paths without moving an alias.
+  scoring identities; each now has all 13 required evidence slots hash-bound
+  and zero machine qualification blockers. One exact `--recipe` selector runs
+  those candidates through the normal runtime and qualification paths without
+  moving an alias. Governance and alias movement remain deliberate decisions.
 - Current run, grade, bundle, lint, action, mutation, null, reference,
   performance, bug-quality, and public lease-evidence producers use the common
   artifact writer. Runtime reporting and qualification readers accept only the

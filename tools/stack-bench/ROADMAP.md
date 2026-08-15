@@ -237,11 +237,12 @@ Current execution order:
 5. **Completed 2026-08-13:** run the exact L2 reference and mutation gates twice
    per backend plus the null gate, bind all 13 evidence slots, and promote the
    qualified recipe, fixture, packs, stacks, references, and alias.
-6. **In progress:** qualify the framework-neutral L1 1.1 and L2 1.2 candidates
-   without moving the promoted aliases. L1 now has two passing Docker reference
-   and mutation repetitions per backend plus a passing null control, all bound
-   to the candidate identity. L2 still needs the equivalent live evidence before
-   either candidate alias moves.
+6. **Completed 2026-08-15:** qualify the framework-neutral L1 1.1 and L2 1.2
+   candidates without moving the promoted aliases. Each candidate now has two
+   passing Docker reference and mutation repetitions per backend plus a passing
+   null control, all 13 evidence slots are hash-bound to its exact candidate
+   identity, and machine qualification reports zero blockers. Governance and
+   alias movement remain a separate deliberate decision.
 7. **Next:** execute a repeated frozen L1-to-L2 campaign and publish the exact
    scope and dispersion. Reconstruct other tracks only after this first product
    path is reproducible end to end.

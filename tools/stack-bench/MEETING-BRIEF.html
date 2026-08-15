@@ -279,9 +279,9 @@
     <p class="dek">Stack Bench is a controlled evaluation appliance for AI-generated application stacks. It asks an agent to build the same product on different backends, verifies real behavior in Docker, and preserves the exact inputs, evidence, time, cost, and failures behind every result.</p>
     <div class="status-row">
       <span class="pill">Docker-only build path</span>
-      <span class="pill">336 automated tests passing</span>
+      <span class="pill">337 automated tests passing</span>
       <span class="pill">Versioned recipes and evidence</span>
-      <span class="pill">L1 candidate evidence complete</span>
+      <span class="pill">L1 and L2 candidate evidence complete</span>
       <span class="pill warn">Production hardening in progress</span>
       <span class="pill warn">No current publishable comparison yet</span>
     </div>
@@ -325,7 +325,7 @@
       </div>
       <div class="callout warning" style="margin-top:16px">
         <strong>The honest current position</strong>
-        The harness is materially stronger and already useful for engineering and diagnostic runs. The framework-neutral L1 candidate now has complete repeated Docker reference, mutation, and null evidence on all three stacks. L2 qualification and the first frozen repeated model campaign are still incomplete, so historical model results explain what we learned; they are not a current backend comparison.
+        The harness is materially stronger and already useful for engineering and diagnostic runs. The framework-neutral L1 and L2 candidates now have complete repeated Docker reference, mutation, and null evidence on all three stacks. Their machine qualification checks report zero blockers, but governance states and public aliases have not moved. The first frozen repeated model campaign is still incomplete, so historical model results explain what we learned; they are not a current backend comparison.
       </div>
     </section>
 
@@ -489,7 +489,7 @@
           <h3>Ecommerce L2 compatibility recipe</h3>
           <div class="number">53 / 75</div>
           <div class="label">executable checks / aggregate available points</div>
-          <p>Adds operations access, inventory operations, and returns/pricing, while rerunning selected L1 guarantee and systems coverage. The displayed run score is 55/55 for the new L2 layer plus 20/20 inherited regression points. Twelve checks remain zero-point diagnostics. The null control and MongoDB's repeated pristine/mutation gates are complete; PostgreSQL and SpacetimeDB remain.</p>
+          <p>Adds operations access, inventory operations, and returns/pricing, while rerunning selected L1 guarantee and systems coverage. The displayed run score is 55/55 for the new L2 layer plus 20/20 inherited regression points. Twelve checks remain zero-point diagnostics. The framework-neutral 1.2 candidate now has all 13 required qualification evidence slots bound across MongoDB, PostgreSQL, and SpacetimeDB, but the default L2 alias has not moved.</p>
         </article>
       </div>
 
@@ -606,7 +606,7 @@
         <div class="event"><time>Aug 11</time><div class="body"><h3>References, mutations, null controls, and Docker qualification</h3><p>Preserved reference apps became byte-bound and buildable. Repeated live Docker gates exposed reset, timeout, mutation, and oracle defects. Candidate references passed, but later executable changes mean they must be qualified again before publication.</p></div></div>
         <div class="event"><time>Aug 12</time><div class="body"><h3>From scripts to versioned product contracts</h3><p>Packs, recipes, fixtures, calibration, exact selection, artifact envelopes, and the 47-action registry landed. All 47 actions now run through independent capability-scoped executors; the central compatibility dispatcher is gone.</p></div></div>
         <div class="event"><time>Aug 13</time><div class="body"><h3>The first qualified baseline</h3><p>Promoted ecommerce L1 1.0 and L2 1.1 gained repeated Docker reference, mutation, and null evidence for MongoDB, PostgreSQL, and SpacetimeDB. Campaign admission, checkpointing, failure retention, correction accounting, reporting, and the Linux appliance were hardened around those controls.</p></div></div>
-        <div class="event"><time>Aug 14-15</time><div class="body"><h3>Composable study conditions and framework-neutral candidates</h3><p>Requested behavior became independently selectable by pack, while prescribed versus neutral backend guidance became a separate versioned study axis. Framework-neutral L1 1.1 and L2 1.2 keep the same execution/scoring but remove shared framework advice. L1 has now completed all 13 fresh qualification evidence slots; L2 qualification is underway.</p></div></div>
+        <div class="event"><time>Aug 14-15</time><div class="body"><h3>Composable study conditions and framework-neutral candidates</h3><p>Requested behavior became independently selectable by pack, while prescribed versus neutral backend guidance became a separate versioned study axis. Framework-neutral L1 1.1 and L2 1.2 keep the same execution/scoring but remove shared framework advice. Both candidates have now completed all 13 fresh qualification evidence slots without silently changing the public aliases.</p></div></div>
       </div>
     </section>
 
@@ -737,16 +737,16 @@
             <li>Typed evidence drives scoring, null/mutation controls, comparison, repair selection, and reporting; diagnostic wording does not decide outcomes</li>
             <li>Versioned stack adapters for three measured backends plus a deterministic test stack; versioned agent adapters for coding, deterministic, fault, and reference paths</li>
             <li>Operator <code>preflight</code>, pinned Linux/amd64 controller appliance, immutable campaign plans, resumable execution, and reproducible HTML reporting</li>
-            <li>336/336 automated tests pass on the host and exact post-commit Linux controller, including two live Playwright grades</li>
+            <li>337/337 automated tests pass on the host, including two live Playwright grades; the exact post-commit Linux controller is rebuilt and rerun for each evidence commit</li>
             <li>Real Docker smoke publishes a TypeScript module, verifies SQL and watcher health, and requires authorized logs</li>
-            <li>Promoted L1/L2 baseline evidence remains valid; framework-neutral L1 1.1 now has fresh 13/13 qualification evidence without moving the default alias</li>
-            <li>Framework-neutral L2 1.2 null control passes, and MongoDB has two stable 55/55 + 20/20 pristine repetitions plus two mutation repetitions that each catch 3/3 defects</li>
+            <li>Promoted L1/L2 baseline evidence remains valid; framework-neutral L1 1.1 and L2 1.2 each have fresh 13/13 qualification evidence without moving either default alias</li>
+            <li>For every L2 stack, two stable pristine repetitions scored 55/55 plus 20/20 inherited; two mutation repetitions each caught all 3/3 declared defects, and the null control failed every scored criterion</li>
           </ul>
         </article>
         <article class="card">
           <h3>Still required for production quality</h3>
           <ul class="checklist open">
-            <li>Finish and bind framework-neutral L2 reference/mutation evidence on all three stacks, then move L1/L2 aliases only if every gate remains green</li>
+            <li>Review the now-complete framework-neutral qualification evidence and deliberately decide whether L1/L2 aliases and governance states should move</li>
             <li>Run a frozen repeated three-stack model campaign under declared prescribed and/or neutral conditions and publish dispersion, invalid-run rate, cost, and evidence limitations</li>
             <li>Resolve the remaining point-bearing <code>statedBy</code> warnings and add exact mutants before promoting currently diagnostic zero-point checks</li>
             <li>Implement non-empty first-build defaults probes for unmentioned durability/reconnect behavior without feeding those results into score or repairs</li>
@@ -761,10 +761,10 @@
     <section id="next" class="shell">
       <div class="section-head">
         <h2>Recommended path from here</h2>
-        <p>Finish the product boundary before buying more model runs. New comparative runs now would change identity again as the harness changes.</p>
+        <p>The model-free qualification boundary is complete. Freeze the candidate governance and experiment protocol before buying model runs so every measured attempt belongs to one declared comparison.</p>
       </div>
       <div class="grid three">
-        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Finish L2 qualification</h3><p>Complete repeated framework-neutral reference and mutation gates for MongoDB, PostgreSQL, and SpacetimeDB, bind the artifacts, and move aliases only after the machine readiness check has zero blockers.</p></article>
+        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Freeze the qualified candidate</h3><p>Review the complete L1/L2 evidence, decide whether to move aliases and governance states, and lock the exact recipe, packs, fixtures, calibration, images, adapters, and prompts used by the campaign.</p></article>
         <article class="card"><div class="number">2</div><h3 style="margin-top:12px">Run the real comparison</h3><p>Freeze the exact stacks, model/agent, prescribed or neutral condition, selected packs, repetitions, ordering, budgets, and retry rules. Run the full matrix and publish raw evidence plus variability and invalid-run rate.</p></article>
         <article class="card"><div class="number">3</div><h3 style="margin-top:12px">Finish the handoff</h3><p>Exercise the appliance from a second clean runner, close the remaining authoring/replay gaps, document the operator path, and only then extend qualified workloads beyond L2.</p></article>
       </div>
