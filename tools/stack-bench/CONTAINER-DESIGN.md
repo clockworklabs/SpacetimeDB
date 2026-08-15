@@ -113,12 +113,13 @@ historical diagnostic evidence and are not comparable to hardened runs.
    `127.0.0.1` in the appliance host namespace and `host.docker.internal` in a
    local bridge. Dev-server addresses remain loopback from the grader. The
    preflight smoke uses the same namespace as the build it admits.
-3. Auth: `--api-key`/`ANTHROPIC_API_KEY` when supplied, otherwise the host
-   credential is bind-mounted at `/root/.claude/.credentials.json` so runs bill
-   to the plan. Only that one file is mounted, not `~/.claude`. A key is
-   preferred when present because it keeps a rotating credential off the build's
-   filesystem; the plan credential is the default because plan usage is the
-   requirement.
+3. Auth has one explicit mode. The appliance defaults to a long-lived Claude
+   setup token stored in a mode-`0600` operator file. That file is mounted
+   read-only at `/run/secrets/claude-code-oauth-token` and read only by the shell
+   that execs Claude, so its value never appears in Docker command arguments.
+   API-key mode forwards only the declared environment name. The older rotating
+   login file remains an explicit recovery mode at
+   `/root/.claude/.credentials.json`; the rest of `~/.claude` is never mounted.
 4. Transcripts: the host folder `leak-audit --app` already looks in is mounted
    onto `/root/.claude/projects/-app`, so the audit trail survives `--rm` and
    `leak-audit.mjs`, `cost-ledger.mjs` and `thinkingVolume()` work with no

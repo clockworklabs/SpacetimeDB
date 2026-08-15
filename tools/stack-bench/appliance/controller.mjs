@@ -30,15 +30,24 @@ export function resolveControllerCommand(argv) {
 
 export function controllerChildEnvironment(source = process.env) {
   const mode = source.STACK_BENCH_AGENT_AUTH ?? 'credentials';
-  if (!['credentials', 'api-key'].includes(mode)) {
-    throw new Error('STACK_BENCH_AGENT_AUTH must be credentials or api-key');
+  if (!['credentials', 'subscription-token', 'api-key'].includes(mode)) {
+    throw new Error('STACK_BENCH_AGENT_AUTH must be credentials, subscription-token, or api-key');
   }
   const env = { ...source };
+  delete env.ANTHROPIC_API_KEY;
   delete env.ANTHROPIC_API_KEY_FILE;
+  delete env.CLAUDE_CODE_OAUTH_TOKEN;
+  delete env.CLAUDE_CODE_OAUTH_TOKEN_FILE;
   if (mode === 'api-key') {
     const path = source.STACK_BENCH_ANTHROPIC_API_KEY_FILE?.trim();
     if (!path) throw new Error('api-key auth requires STACK_BENCH_ANTHROPIC_API_KEY_FILE');
     env.ANTHROPIC_API_KEY_FILE = path;
+  } else if (mode === 'subscription-token') {
+    const path = source.STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE?.trim();
+    if (!path) {
+      throw new Error('subscription-token auth requires STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE');
+    }
+    env.CLAUDE_CODE_OAUTH_TOKEN_FILE = path;
   }
   return env;
 }

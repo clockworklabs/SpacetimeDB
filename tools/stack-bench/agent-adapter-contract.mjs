@@ -1,8 +1,9 @@
-export const AGENT_ADAPTER_SCHEMA_VERSION = 2;
+export const AGENT_ADAPTER_SCHEMA_VERSION = 3;
 
 const FIELDS = new Set(['schemaVersion', 'id', 'version', 'entrypoint', 'modes', 'deadlineMs',
-  'defaultModel', 'apiKeyEnvironmentVariable', 'credentialFiles', 'outboundDestinations',
-  'requiredExecutables', 'credentialStatusCommand', 'usesStackSkills', 'costLimit']);
+  'defaultModel', 'apiKeyEnvironmentVariable', 'credentialEnvironmentVariables',
+  'credentialFiles', 'outboundDestinations', 'requiredExecutables', 'credentialStatusCommand',
+  'usesStackSkills', 'costLimit']);
 const RESULT_FIELDS = new Set(['appDir', 'mode', 'level', 'track', 'backend', 'model', 'guidance',
   'stack', 'setup', 'costUsd', 'tokens', 'outputTokens', 'usage', 'provenance', 'turns',
   'promptBytes', 'tokensPerTurn', 'thinking', 'durationMs', 'sessionId', 'ok',
@@ -58,6 +59,8 @@ export function defineAgentAdapter(value) {
     try { return new URL(item).protocol === 'https:'; } catch { return false; }
   };
   for (const [field, validate] of [
+    ['credentialEnvironmentVariables', item => typeof item === 'string'
+      && /^[A-Z][A-Z0-9_]*$/.test(item)],
     ['credentialFiles', relativeCredential],
     ['outboundDestinations', secureDestination],
     ['requiredExecutables', item => typeof item === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._+-]*$/.test(item)],
@@ -68,6 +71,7 @@ export function defineAgentAdapter(value) {
     }
   }
   return Object.freeze({ ...value, modes: Object.freeze([...value.modes].sort()),
+    credentialEnvironmentVariables: Object.freeze([...value.credentialEnvironmentVariables].sort()),
     credentialFiles: Object.freeze([...value.credentialFiles].sort()),
     outboundDestinations: Object.freeze([...value.outboundDestinations].sort()),
     requiredExecutables: Object.freeze([...value.requiredExecutables].sort()),

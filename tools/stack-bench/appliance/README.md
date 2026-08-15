@@ -62,12 +62,16 @@ the downloaded bundle.
    controller CLI state and the CLI's live transcript cache; it is outside the
    read-only image. Completed runs archive transcripts and the generated
    SpacetimeDB friction log under `results/` for durable artifact collection.
-2. For subscription billing, copy the dedicated runner's Claude credentials to
-   `/var/lib/stack-bench/controller-home/.claude/.credentials.json`; set the file
-   and its parent directory to mode `0600` and `0700`. For API billing, write the
-   provider API key as the only line in a mode-`0600` file below
-   `/var/lib/stack-bench/secrets` and select `api-key` in the operator environment.
-   Never configure both modes for one run.
+2. For subscription billing, run `claude setup-token` once for the dedicated
+   runner, write only the returned token to
+   `/var/lib/stack-bench/secrets/claude_subscription_token`, and set the file to
+   mode `0600`. Select `subscription-token` in the operator environment. The
+   older rotating interactive-login file remains available as the explicit
+   `credentials` mode at
+   `/var/lib/stack-bench/controller-home/.claude/.credentials.json`. For API
+   billing, write the provider API key as the only line in a mode-`0600` file
+   below `/var/lib/stack-bench/secrets` and select `api-key`. Never configure
+   more than one mode for a run.
 3. Copy `operator.env.example` to `/var/lib/stack-bench/operator.env`, select the
    intended credential mode, replace the two
    example image values with exact `@sha256:` references from the release

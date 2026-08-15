@@ -85,6 +85,7 @@ defining the criteria it was failing and then ran the grader, using nothing but
 | flag | effect |
 |---|---|
 | *(default)* | container or refuse; model sessions have no host execution path |
+| `CLAUDE_CODE_OAUTH_TOKEN_FILE` | bill to the Claude subscription using a dedicated long-lived token file |
 | `--api-key <key>`, `ANTHROPIC_API_KEY` | bill to a key instead of the plan credential |
 | `STACK_BENCH_IMAGE` | image reference (default `stack-bench-build:2.1.226`) |
 
@@ -128,8 +129,8 @@ that ID—not the possibly movable tag—to `docker run`.
 
 `run.json` records `setup.isolation` (`mode`, readable `image`, immutable
 `imageId`, and `hostAlias`) and
-`setup.auth` (`api-key` or `credentials`). Two numbers are comparable only when
-the recorded image IDs and host-alias topology match.
+`setup.auth` (`subscription-token`, `api-key`, or `credentials`). Two numbers
+are comparable only when the recorded image IDs and host-alias topology match.
 
 **Isolation is pinned per run.** The first round writes `container` to
 `.stack-bench-isolation` beside the app; later rounds require it. An app with
@@ -140,11 +141,13 @@ If the image or Linux CLI is missing, the run refuses before model spend.
 `run.json` reports the Linux CLI's own version, since the Windows and Linux
 builds go stale independently. See `CONTAINER-DESIGN.md`.
 
-Auth defaults to the plan: without a key, only `~/.claude/.credentials.json` is
-bind-mounted — read-write, because the host rotates that token and a copy stops
-working when it does. A key is used in preference when supplied, which keeps a
-rotating credential off the build's filesystem entirely. A build can read
-anything mounted into it; that residual risk is accepted for now.
+The appliance defaults to subscription billing through a dedicated long-lived
+setup-token file. It is mounted read-only and its value is absent from Docker
+command arguments. The older `~/.claude/.credentials.json` path is still
+supported as an explicit recovery mode and remains read-write because the CLI
+rotates it. A build can read the selected subscription credential; that is an
+unavoidable property of allowing the coding CLI to authenticate, so the runner
+must contain no unrelated workloads or credentials.
 
 ## The environment
 

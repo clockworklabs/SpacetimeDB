@@ -44,7 +44,8 @@ services:
       STACK_BENCH_LINUX_CLI: /opt/stack-bench-release-deps/spacetimedb-cli
       STDB_PACKAGE: /opt/stack-bench-release-deps/bindings-typescript
       SPACETIME_BIN: /opt/stack-bench-release-deps/spacetimedb-cli
-      STACK_BENCH_AGENT_AUTH: ${STACK_BENCH_AGENT_AUTH:-credentials}
+      STACK_BENCH_AGENT_AUTH: ${STACK_BENCH_AGENT_AUTH:-subscription-token}
+      STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE: ${STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE:-/var/lib/stack-bench/secrets/claude_subscription_token}
       STACK_BENCH_ANTHROPIC_API_KEY_FILE: ${STACK_BENCH_ANTHROPIC_API_KEY_FILE:-}
       HOME: /var/lib/stack-bench/controller-home
     volumes:

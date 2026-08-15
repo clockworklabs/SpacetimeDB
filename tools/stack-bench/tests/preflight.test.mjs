@@ -77,7 +77,7 @@ test('preflight fails before a paid run when the selected agent executable is ab
       if (args[0] === 'run') {
         const mount = args[args.indexOf('-v') + 1].split(':/results')[0];
         writeFileSync(join(mount, args.at(-1)), 'container-write-ok');
-        requestedExecutables = JSON.parse(args.at(-3));
+        requestedExecutables = JSON.parse(args.at(-4));
         return JSON.stringify({ platform: 'linux', arch: 'x64', node: 'v22.0.0',
           reached: [], tcpReached: [], executables: {}, credentialStatus: 'not-checked',
           diskFreeBytes: 20 * 1024 ** 3 });
@@ -130,7 +130,7 @@ test('subscription credential status is checked inside the exact build image wit
       /did not ask the provider/);
     assert.match(dockerArgs[dockerArgs.indexOf('--mount') + 1],
       /dst=\/root\/\.claude\/\.credentials\.json,readonly$/);
-    assert.deepEqual(JSON.parse(dockerArgs.at(-2)),
+    assert.deepEqual(JSON.parse(dockerArgs.at(-3)),
       AGENT_ADAPTER_REGISTRY.get('claude-code').credentialStatusCommand);
     credentialStatus = 'not-ready';
     const loggedOut = runPreflight(selected, { run, now: Date.parse('2026-08-12T12:00:00.100Z'),
@@ -140,6 +140,45 @@ test('subscription credential status is checked inside the exact build image wit
     assert.equal(loggedOut.checks.find(check => check.id === 'agent.authentication').status, 'fail');
     assert.match(loggedOut.checks.find(check => check.id === 'agent.authentication').remediation,
       /Refresh/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('long-lived subscription token is mounted read-only and checked without exposing its value', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-subscription-token-'));
+  try {
+    const tokenFile = join(root, 'claude-token');
+    writeFileSync(tokenFile, 'must-not-appear-in-report\n');
+    const selected = parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'stub',
+      '--track', 'loop', '--levels', '1', '--agent-adapter', 'claude-code',
+      '--results-dir', root, '--smoke']);
+    let dockerArgs;
+    const run = (_file, args) => {
+      if (args[0] === 'info') return dockerInfo();
+      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
+        ? 'linux/amd64' : `${IMAGE_ID}\n`;
+      if (args[0] === 'run') {
+        dockerArgs = args;
+        const mount = args[args.indexOf('-v') + 1].split(':/results')[0];
+        writeFileSync(join(mount, args.at(-1)), 'container-write-ok');
+        return JSON.stringify({ platform: 'linux', arch: 'x64', node: 'v22.0.0', reached: [],
+          tcpReached: [], executables: { claude: '/usr/local/bin/claude' },
+          credentialStatus: 'ready', diskFreeBytes: 20 * 1024 ** 3 });
+      }
+      throw new Error(`unexpected docker command: ${args.join(' ')}`);
+    };
+    const report = runPreflight(selected, { run, now: Date.parse('2026-08-12T12:00:00.100Z'),
+      env: { CLAUDE_CODE_OAUTH_TOKEN_FILE: tokenFile }, home: root,
+      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }), pidsOnPort: () => [],
+      probePort: () => ({ free: true }) });
+    assert.equal(report.ok, true, JSON.stringify(report.checks, null, 2));
+    assert.equal(report.checks.find(check => check.id === 'agent.authentication').status, 'pass');
+    assert.match(dockerArgs[dockerArgs.indexOf('--mount') + 1],
+      /src=.*claude-token,dst=\/run\/secrets\/agent-credential,readonly$/);
+    assert.deepEqual(JSON.parse(dockerArgs.at(-2)), {
+      name: 'CLAUDE_CODE_OAUTH_TOKEN', file: '/run/secrets/agent-credential',
+    });
+    assert.doesNotMatch(JSON.stringify({ report, dockerArgs }), /must-not-appear-in-report/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

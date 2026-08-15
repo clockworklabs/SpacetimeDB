@@ -35,15 +35,26 @@ test('controller exposes a small explicit operator command surface', () => {
 });
 
 test('controller selects exactly one explicit agent credential mode', () => {
+  assert.equal(controllerChildEnvironment({}).CLAUDE_CODE_OAUTH_TOKEN_FILE, undefined);
   const credentials = controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'credentials',
-    ANTHROPIC_API_KEY_FILE: '/must/not/leak', KEEP: 'yes' });
+    ANTHROPIC_API_KEY: 'must-not-leak', ANTHROPIC_API_KEY_FILE: '/must/not/leak',
+    CLAUDE_CODE_OAUTH_TOKEN: 'must-not-leak', CLAUDE_CODE_OAUTH_TOKEN_FILE: '/must/not/leak',
+    KEEP: 'yes' });
   assert.equal(credentials.KEEP, 'yes');
+  assert.equal(credentials.ANTHROPIC_API_KEY, undefined);
   assert.equal(credentials.ANTHROPIC_API_KEY_FILE, undefined);
+  assert.equal(credentials.CLAUDE_CODE_OAUTH_TOKEN, undefined);
+  assert.equal(credentials.CLAUDE_CODE_OAUTH_TOKEN_FILE, undefined);
+  const subscription = controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'subscription-token',
+    STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE: '/private/subscription-token' });
+  assert.equal(subscription.CLAUDE_CODE_OAUTH_TOKEN_FILE, '/private/subscription-token');
+  assert.throws(() => controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'subscription-token' }),
+    /requires STACK_BENCH_CLAUDE_OAUTH_TOKEN_FILE/);
   const apiKey = controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'api-key',
     STACK_BENCH_ANTHROPIC_API_KEY_FILE: '/private/key' });
   assert.equal(apiKey.ANTHROPIC_API_KEY_FILE, '/private/key');
   assert.throws(() => controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'api-key' }),
     /requires STACK_BENCH_ANTHROPIC_API_KEY_FILE/);
   assert.throws(() => controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'ambient' }),
-    /must be credentials or api-key/);
+    /must be credentials, subscription-token, or api-key/);
 });

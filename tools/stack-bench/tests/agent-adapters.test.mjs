@@ -14,15 +14,17 @@ test('built-in agent adapters are statically registered and content identified',
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const identity = agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));
     assert.equal(identity.id, id);
-    assert.equal(identity.version, id === 'claude-code' ? '1.7.0' : '1.0.0');
+    assert.equal(identity.version, id === 'claude-code' ? '1.8.0' : '1.0.0');
     assert.match(identity.sha256, /^[a-f0-9]{64}$/);
   }
   assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').requiredExecutables, ['claude']);
   assert.equal(AGENT_ADAPTER_REGISTRY.get('claude-code').usesStackSkills, true);
+  assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').credentialEnvironmentVariables,
+    ['CLAUDE_CODE_OAUTH_TOKEN']);
   const statusCommand = AGENT_ADAPTER_REGISTRY.get('claude-code').credentialStatusCommand;
   assert.equal(statusCommand[0], 'node');
   assert.match(statusCommand.at(-1), /loggedIn===true/);
-  assert.match(statusCommand.at(-1), /authMethod==='claude\.ai'/);
+  assert.match(statusCommand.at(-1), /oauth_token/);
 });
 
 test('requests are normalized and unsupported modes fail before launch', () => {
@@ -77,7 +79,8 @@ test('malformed and duplicate agent adapters fail at registry construction', () 
   const source = { schemaVersion: AGENT_ADAPTER_SCHEMA_VERSION, id: 'fake', version: '1.0.0',
     entrypoint: 'fake.mjs', modes: ['build'], deadlineMs: 1000,
     defaultModel: 'fake-model', apiKeyEnvironmentVariable: null,
-    credentialFiles: [], outboundDestinations: [], requiredExecutables: [],
+    credentialEnvironmentVariables: [], credentialFiles: [], outboundDestinations: [],
+    requiredExecutables: [],
     credentialStatusCommand: null, usesStackSkills: false,
     costLimit: 'unsupported' };
   assert.equal(defineAgentAdapter(source).id, 'fake');
@@ -85,6 +88,8 @@ test('malformed and duplicate agent adapters fail at registry construction', () 
   assert.throws(() => defineAgentAdapter({ ...source, version: 'latest' }), /version/);
   assert.throws(() => defineAgentAdapter({ ...source, modes: ['unknown'] }), /modes/);
   assert.throws(() => defineAgentAdapter({ ...source, credentialFiles: ['..\\secret'] }), /credentialFiles/);
+  assert.throws(() => defineAgentAdapter({ ...source,
+    credentialEnvironmentVariables: ['not-valid'] }), /credentialEnvironmentVariables/);
   assert.throws(() => defineAgentAdapter({ ...source, outboundDestinations: ['http://insecure.example'] }),
     /outboundDestinations/);
   assert.throws(() => defineAgentAdapter({ ...source, requiredExecutables: ['../claude'] }),

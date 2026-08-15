@@ -833,7 +833,9 @@ async function main() {
         imageId: imageIdentity.id, hostAlias: HOST_ADDR },
       // Whether the run billed to a key or to the plan. Cost figures from the
       // two are not the same measurement.
-      auth: (args.apiKey ?? process.env.ANTHROPIC_API_KEY) ? 'api-key' : 'credentials',
+      auth: (args.apiKey ?? process.env.ANTHROPIC_API_KEY) ? 'api-key'
+        : (process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.CLAUDE_CODE_OAUTH_TOKEN_FILE)
+          ? 'subscription-token' : 'credentials',
       // What is actually being benchmarked, not just what drove it.
       ...executeStackCapability(adapter, 'agent', 'setup-metadata', {
         imageId: imageIdentity.id,

@@ -31,6 +31,7 @@ import { STACK_ADAPTER_REGISTRY } from '../stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../product-config.mjs';
 import { dockerMountArguments } from '../container-mount.mjs';
 import { dockerHostGatewayArguments } from '../docker-network.mjs';
+import { containerAuthCommand, resolveContainerAuth } from './container-auth.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d = null) => { const i = argv.indexOf(k); return i === -1 ? d : argv[i + 1]; };
@@ -76,20 +77,20 @@ if (!containerPlan || !Array.isArray(containerPlan.requiredPaths)
   process.exit(2);
 }
 
-// Auth. An API key is used when one is supplied, and otherwise the CLI
-// authenticates from the mounted credential so runs bill to the plan rather
-// than to a key. The credential is mounted read-write rather than copied
-// because the host rotates that token and a copy stops working when it does.
+// Auth. API keys and direct subscription tokens are forwarded by environment
+// name so their values never appear in Docker command arguments. Appliance
+// subscription tokens arrive as a read-only secret file and are read only by
+// the final shell that execs Claude. The older rotating credential remains
+// read-write because the CLI refreshes it in place.
 //
-// The key is preferred when present because it keeps a rotating credential
-// off the build's filesystem entirely — the build can read anything mounted
-// into it, and a token is worth more than a run.
+// Conflicting explicit modes fail closed. A stale interactive credential may
+// remain on disk, but it is ignored when a token or API key was selected.
 const apiKey = opt('--api-key', process.env.ANTHROPIC_API_KEY ?? '');
 const creds = join(homedir(), '.claude', '.credentials.json');
-if (!prepareOnly && !apiKey && !existsSync(creds)) {
-  console.error(`run-build.mjs: no --api-key/ANTHROPIC_API_KEY and no credentials at ${creds}`);
-  console.error('  the container has no way to authenticate');
-  process.exit(2);
+let auth = null;
+if (!prepareOnly) {
+  try { auth = resolveContainerAuth({ apiKey, env: process.env, credentialsPath: creds }); }
+  catch (error) { console.error(`run-build.mjs: ${error.message}`); process.exit(2); }
 }
 
 // The audit trail has to survive `--rm`.
@@ -206,7 +207,7 @@ if (!existing) {
   create.push('--network', expectedNetworkMode);
   create.push(...dockerHostGatewayArguments(expectedNetworkMode));
   if (projects) create.push('-v', `${projects}:/root/.claude/projects/-app`);
-  if (!prepareOnly && !apiKey) create.push('-v', `${creds}:/root/.claude/.credentials.json`);
+  if (auth?.mount) create.push(...dockerMountArguments(auth.mount));
   // The selected adapter owns every stack-specific mount. Giving a treatment
   // another stack's artifacts would violate the "only artifacts under test"
   // boundary.
@@ -308,7 +309,11 @@ if (prepareOnly) {
 const args = ['exec', '-i', '-w', '/app'];
 
 args.push('-e', 'DISABLE_AUTOUPDATER=1', '-e', 'FORCE_PROMPT_CACHING_5M=1');
-if (apiKey) args.push('-e', `ANTHROPIC_API_KEY=${apiKey}`);
+const dockerExecEnv = { ...process.env, MSYS_NO_PATHCONV: '1' };
+if (auth?.environment) {
+  dockerExecEnv[auth.environment.name] = auth.environment.value;
+  args.push('-e', auth.environment.name);
+}
 // A container does not inherit the caller's environment, so anything the run is
 // meant to be configured by has to be handed over explicitly. Only variables the
 // harness sets deliberately are forwarded — passing the whole environment would
@@ -317,9 +322,8 @@ if (process.env.MAX_THINKING_TOKENS) {
   args.push('-e', `MAX_THINKING_TOKENS=${process.env.MAX_THINKING_TOKENS}`);
 }
 
-args.push(
-  containerName,
-  'claude', '--print', '--output-format', 'json',
+const claudeArgs = [
+  '--print', '--output-format', 'json',
   '--permission-mode', 'acceptEdits',
   '--effort', effort,
   '--model', model,
@@ -328,10 +332,11 @@ args.push(
   // that is all there is, but the flag is kept so host and container runs are
   // configured identically.
   '--add-dir', '/app',
-);
+];
 // The sandbox settings file is written into the app directory by the caller,
 // so it arrives through the /app mount at a known container path.
-if (opt('--settings')) args.push('--settings', opt('--settings'));
+if (opt('--settings')) claudeArgs.push('--settings', opt('--settings'));
+args.push(containerName, ...containerAuthCommand(auth, claudeArgs));
 
 // MSYS_NO_PATHCONV: Git Bash rewrites container-side paths like /app into
 // Windows paths (C:/Program Files/Git/app) and every mount silently lands
@@ -340,7 +345,7 @@ const res = spawnSync('docker', args, {
   input: process.stdin.isTTY ? '' : readFileSync(0, 'utf8'),
   encoding: 'utf8',
   maxBuffer: 256 * 1024 * 1024,
-  env: { ...process.env, MSYS_NO_PATHCONV: '1' },
+  env: dockerExecEnv,
   timeout: BUILD_SESSION_TIMEOUT_MS,
 });
 

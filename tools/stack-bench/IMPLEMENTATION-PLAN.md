@@ -319,7 +319,9 @@ that requested scope. The controller passes a compact content-identified task
 request to the agent, which recompiles and verifies it before rendering a prompt
 or calling a model. Campaign conditions bind explicit packs, resolved task
 packs, exact requirement/contract fragment IDs, and their hashes. The Claude
-adapter contract is version 1.7.0 for this request.
+adapter contract is version 1.8.0 for this request; it declares the long-lived
+subscription-token environment separately from API-key billing and rotating
+interactive credentials.
 
 E1 exit: L1 resolves to a deterministic recipe release composed from exact pack
 and fixture versions, and the builder task is composed from the same selected

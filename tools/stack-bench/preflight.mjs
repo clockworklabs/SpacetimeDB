@@ -92,15 +92,42 @@ function checkResult(id, status, summary, remediation = null, evidence = null) {
 
 function credentialReady(adapter, env, home, exists) {
   const environment = adapter.apiKeyEnvironmentVariable;
-  if (environment && env[environment]) return { ok: true, source: `environment:${environment}` };
-  const keyFileVariable = environment ? `${environment}_FILE` : null;
-  if (keyFileVariable && env[keyFileVariable] && exists(resolve(env[keyFileVariable]))) {
-    return { ok: true, source: `secret-file:${keyFileVariable}` };
+  let apiKey = null;
+  if (environment && env[environment]) {
+    apiKey = { ok: true, kind: 'api-key', source: `environment:${environment}` };
   }
+  const keyFileVariable = environment ? `${environment}_FILE` : null;
+  if (!apiKey && keyFileVariable && env[keyFileVariable] && exists(resolve(env[keyFileVariable]))) {
+    apiKey = { ok: true, kind: 'api-key', source: `secret-file:${keyFileVariable}` };
+  }
+  let environmentCredential = null;
+  for (const variable of adapter.credentialEnvironmentVariables) {
+    const fileVariable = `${variable}_FILE`;
+    const candidate = env[variable]
+      ? { ok: true, kind: 'credential-environment', source: `environment:${variable}`, variable }
+      : env[fileVariable] && exists(resolve(env[fileVariable]))
+        ? { ok: true, kind: 'credential-secret-file', source: `secret-file:${fileVariable}`,
+          variable, path: resolve(env[fileVariable]) }
+        : null;
+    if (candidate && environmentCredential) {
+      return { ok: false, source: null, reason: 'Multiple non-API credential sources are selected' };
+    }
+    environmentCredential = candidate ?? environmentCredential;
+  }
+  if (apiKey && environmentCredential) {
+    return { ok: false, source: null, reason: 'API-key and subscription credentials are both selected' };
+  }
+  if (apiKey) return apiKey;
+  if (environmentCredential) return environmentCredential;
   const file = adapter.credentialFiles.find(relative => exists(join(home, relative)));
-  if (file) return { ok: true, source: `file:${file.replaceAll('\\', '/')}` };
-  if (!environment && adapter.credentialFiles.length === 0) return { ok: true, source: 'not-required' };
-  return { ok: false, source: null, environment, files: adapter.credentialFiles };
+  if (file) return { ok: true, kind: 'credential-file',
+    source: `file:${file.replaceAll('\\', '/')}`, path: join(home, file) };
+  if (!environment && adapter.credentialEnvironmentVariables.length === 0
+    && adapter.credentialFiles.length === 0) {
+    return { ok: true, kind: 'not-required', source: 'not-required' };
+  }
+  return { ok: false, source: null, environment, files: adapter.credentialFiles,
+    credentialEnvironments: adapter.credentialEnvironmentVariables };
 }
 
 function inspectLinuxCli(path = LINUX_CLI) {
@@ -134,16 +161,20 @@ export function probeLoopbackPort(port, { spawn = spawnSync } = {}) {
 }
 
 function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requiredExecutables,
-  credentialStatusCommand, credentialMount, marker, networkMode }) {
+  credentialStatusCommand, credentialMount, credentialEnvironment, marker, networkMode }) {
   const hostAddress = dockerHostServiceAddress(networkMode);
   const script = `const fs=require('node:fs'),net=require('node:net'),path=require('node:path');`
     + `const {spawnSync}=require('node:child_process');`
     + `(async()=>{const urls=JSON.parse(process.argv[1]);const ports=JSON.parse(process.argv[2]);`
     + `const required=JSON.parse(process.argv[3]);const statusCommand=JSON.parse(process.argv[4]);`
+    + `const credentialEnvironment=JSON.parse(process.argv[5]);`
     + `const tcpReached=[];let credentialStatus='not-checked';`
     + `const executablePaths=required.map(name=>{for(const dir of (process.env.PATH||'').split(':')){`
     + `const candidate=path.join(dir,name);try{fs.accessSync(candidate,fs.constants.X_OK);return candidate}catch{}}`
     + `throw new Error('required executable not found: '+name)});`
+    + `if(credentialEnvironment){const value=credentialEnvironment.file`
+    + `?fs.readFileSync(credentialEnvironment.file,'utf8').trim():process.env[credentialEnvironment.name];`
+    + `if(!value)throw new Error('selected credential is empty');process.env[credentialEnvironment.name]=value}`
     + `if(statusCommand){const r=spawnSync(statusCommand[0],statusCommand.slice(1),{encoding:'utf8'});`
     + `credentialStatus=r.status===0?'ready':'not-ready'}`
     + `const reach=port=>new Promise((ok,fail)=>{const s=net.createConnection({host:'${hostAddress}',port});`
@@ -152,17 +183,19 @@ function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requir
     + `const reached=[];for(const url of urls){try{const r=await fetch(url,{method:'HEAD',signal:AbortSignal.timeout(15000)});`
     + `reached.push({url,status:r.status})}catch(e){throw new Error(url+': '+e.message)}}`
     + `for(const port of ports){await reach(port);tcpReached.push(port)}`
-    + `fs.writeFileSync('/results/'+process.argv[5],'container-write-ok');const s=fs.statfsSync('/',{bigint:true});`
+    + `fs.writeFileSync('/results/'+process.argv[6],'container-write-ok');const s=fs.statfsSync('/',{bigint:true});`
     + `process.stdout.write(JSON.stringify({platform:process.platform,arch:process.arch,node:process.version,reached,`
     + `tcpReached,executables:Object.fromEntries(required.map((name,index)=>[name,executablePaths[index]])),`
     + `credentialStatus,`
     + `diskFreeBytes:Number(s.bavail*s.bsize)}))})()`;
   const output = command('docker', ['run', '--rm', '--network', networkMode,
     ...dockerHostGatewayArguments(networkMode),
+    ...(credentialEnvironment && !credentialEnvironment.file
+      ? ['-e', credentialEnvironment.name] : []),
     ...(credentialMount ? dockerMountArguments(credentialMount) : []),
     '-v', `${resultsDir}:/results`, imageId, 'node', '-e', script,
     JSON.stringify(destinations), JSON.stringify(tcpPorts), JSON.stringify(requiredExecutables),
-    JSON.stringify(credentialStatusCommand), marker]);
+    JSON.stringify(credentialStatusCommand), JSON.stringify(credentialEnvironment), marker]);
   return JSON.parse(output);
 }
 
@@ -231,8 +264,12 @@ export function runPreflight(request, dependencies = {}) {
 
   const auth = agent ? credentialReady(agent, env, home, exists) : { ok: false };
   add('agent.credentials', auth.ok ? 'pass' : 'fail', auth.ok
-    ? `Credential source available (${auth.source})` : 'No declared credential source is available',
-  auth.ok ? null : `Set ${auth.environment ?? 'the adapter API key'} or install one of: ${(auth.files ?? []).join(', ')}`);
+    ? `Credential source available (${auth.source})`
+    : auth.reason ?? 'No declared credential source is available',
+  auth.ok ? null : auth.reason
+    ? 'Select exactly one credential mode.'
+    : `Set ${[auth.environment, ...(auth.credentialEnvironments ?? [])].filter(Boolean).join(' or ')}`
+      + ` or install one of: ${(auth.files ?? []).join(', ')}`);
 
   mkdirSync(request.resultsDir, { recursive: true });
   const hostMarker = `.preflight-host-${process.pid}-${Math.random().toString(16).slice(2)}`;
@@ -390,15 +427,22 @@ export function runPreflight(request, dependencies = {}) {
       ...(agent?.outboundDestinations ?? [])])].sort();
     const tcpPorts = track ? request.backends.filter(backend => ['postgres', 'mongodb'].includes(backend))
       .map(backend => portsFor(track, backend, request.runIndex).dbPort).sort((a, b) => a - b) : [];
-    const fileCredential = auth.source?.startsWith('file:') ? auth.source.slice('file:'.length) : null;
-    const credentialStatusCommand = fileCredential ? agent?.credentialStatusCommand ?? null : null;
-    const credentialMount = credentialStatusCommand ? { kind: 'bind',
-      source: join(home, fileCredential), target: `/root/${fileCredential.replaceAll('\\', '/')}`,
-      readOnly: true } : null;
+    const credentialStatusCommand = ['credential-file', 'credential-environment',
+      'credential-secret-file'].includes(auth.kind) ? agent?.credentialStatusCommand ?? null : null;
+    const credentialMount = auth.kind === 'credential-file' && credentialStatusCommand
+      ? { kind: 'bind', source: auth.path,
+        target: `/root/${auth.source.slice('file:'.length)}`, readOnly: true }
+      : auth.kind === 'credential-secret-file' && credentialStatusCommand
+        ? { kind: 'bind', source: auth.path, target: '/run/secrets/agent-credential', readOnly: true }
+        : null;
+    const credentialEnvironment = ['credential-environment', 'credential-secret-file'].includes(auth.kind)
+      && credentialStatusCommand ? { name: auth.variable,
+        ...(auth.kind === 'credential-secret-file' ? { file: '/run/secrets/agent-credential' } : {}) }
+        : null;
     try {
       const smoke = runSmoke({ command: run, imageId, resultsDir: request.resultsDir,
         destinations, tcpPorts, requiredExecutables: agent?.requiredExecutables ?? [],
-        credentialStatusCommand, credentialMount, marker,
+        credentialStatusCommand, credentialMount, credentialEnvironment, marker,
         networkMode: env.STACK_BENCH_APPLIANCE === '1' ? 'host' : 'bridge' });
       const persisted = exists(join(request.resultsDir, marker));
       rmSync(join(request.resultsDir, marker), { force: true });
@@ -416,7 +460,7 @@ export function runPreflight(request, dependencies = {}) {
         `${bytes(smoke.diskFreeBytes)} free in Docker storage`,
         smoke.diskFreeBytes >= PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes ? null
           : `Provide at least ${bytes(PREFLIGHT_RESOURCE_FLOORS.resultDiskBytes)} free in Docker storage.`);
-      if (agent?.credentialStatusCommand) add('agent.authentication',
+      if (credentialStatusCommand) add('agent.authentication',
         smoke.credentialStatus === 'ready' ? 'pass' : 'fail',
         smoke.credentialStatus === 'ready' ? 'Local agent credential status is ready in the build image'
           : 'Agent credential is not logged in for the selected billing mode',
