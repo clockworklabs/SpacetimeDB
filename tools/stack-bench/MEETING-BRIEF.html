@@ -214,6 +214,18 @@
       letter-spacing: -.02em;
     }
     code { border-radius: 5px; background: #edf0f2; padding: 2px 5px; font-size: .9em; }
+    pre {
+      margin: 14px 0 0;
+      overflow-x: auto;
+      border: 1px solid #24384b;
+      border-radius: 12px;
+      background: #102a43;
+      padding: 16px;
+      color: #e9f2fb;
+      font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      tab-size: 2;
+    }
+    pre code { border: 0; background: transparent; padding: 0; color: inherit; font-size: inherit; }
     footer { border-top: 1px solid var(--line); padding: 28px 0 45px; color: var(--muted); font-size: 12px; }
 
     @media (max-width: 920px) {
@@ -262,13 +274,14 @@
   </div>
 
   <header class="shell">
-    <div class="eyebrow">Stakeholder briefing · 12 August 2026</div>
+    <div class="eyebrow">Stakeholder briefing · 15 August 2026</div>
     <h1>A benchmark you can rerun, inspect, and trust.</h1>
     <p class="dek">Stack Bench is a controlled evaluation appliance for AI-generated application stacks. It asks an agent to build the same product on different backends, verifies real behavior in Docker, and preserves the exact inputs, evidence, time, cost, and failures behind every result.</p>
     <div class="status-row">
       <span class="pill">Docker-only build path</span>
-      <span class="pill">167 automated tests passing</span>
+      <span class="pill">336 automated tests passing</span>
       <span class="pill">Versioned recipes and evidence</span>
+      <span class="pill">L1 candidate evidence complete</span>
       <span class="pill warn">Production hardening in progress</span>
       <span class="pill warn">No current publishable comparison yet</span>
     </div>
@@ -294,9 +307,25 @@
           <p>It measures more than feature completion: first-try quality, repair cost, regressions, durability, authorization, contention, deploy windows, and whether the measuring instrument itself behaved correctly.</p>
         </article>
       </div>
+
+      <h3 style="margin-top:30px">The concrete test families</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Family</th><th>What we actually test</th><th>Typical failure caught</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Visible workflows</strong></td><td>Signup/sign-in, browse/search, buy, cart/checkout, reviews, restock, fulfilment, transfers, returns, cancellation, pricing, and operational views.</td><td>The feature is missing, stale, scoped to one tab, or only cosmetically updates.</td></tr>
+            <tr><td><strong>Identity and authorization</strong></td><td>Anonymous writes, forged identity/price, cross-account reads, and customer replay of staff/admin actions.</td><td>The UI hides a control but the server accepts the forbidden request.</td></tr>
+            <tr><td><strong>Transactions and accounting</strong></td><td>Stock never goes negative, cart checkout is atomic/idempotent, receipts keep price paid, warehouse units are conserved, and orders/revenue/refunds balance exactly.</td><td>Lost updates, partial checkout, double charge, mutable history, or invented/lost inventory.</td></tr>
+            <tr><td><strong>Concurrency</strong></td><td>Six buyers race for three units, two tabs checkout one cart, restock overlaps purchases, transfer overlaps purchase, and live projections converge.</td><td>A design that passes sequential clicks but oversells or applies the same intent twice.</td></tr>
+            <tr><td><strong>Live behavior and reconnect</strong></td><td>Open clients see other actors, direct database writes, disconnect catch-up, reload continuity, and server restart reconciliation without manual refresh.</td><td>Updates exist only in local memory, an event is missed during downtime, or reconnect creates a new identity.</td></tr>
+            <tr><td><strong>Durability and lifecycle</strong></td><td>Write while the app server is down, restart the exact leased service, reconnect a clean client, and compare persisted state.</td><td>An in-process relay looks correct during a demo but cannot recover missed committed changes.</td></tr>
+            <tr><td><strong>Measurement controls</strong></td><td>Repeated known-good references, exact seeded defects, blank-app null control, stable image/harness fingerprints, complete teardown, and typed inconclusive outcomes.</td><td>A vacuous assertion, broken oracle, contaminated run, flaky resource, or mutation that fails for the wrong reason.</td></tr>
+          </tbody>
+        </table>
+      </div>
       <div class="callout warning" style="margin-top:16px">
         <strong>The honest current position</strong>
-        The harness is materially stronger and already useful for engineering and diagnostic runs. It is not yet a finished handoff appliance, and the hardened executable has not rerun a complete frozen three-stack campaign. Historical results explain what we learned; they are not the current comparison.
+        The harness is materially stronger and already useful for engineering and diagnostic runs. The framework-neutral L1 candidate now has complete repeated Docker reference, mutation, and null evidence on all three stacks. L2 qualification and the first frozen repeated model campaign are still incomplete, so historical model results explain what we learned; they are not a current backend comparison.
       </div>
     </section>
 
@@ -355,7 +384,7 @@
             <li><strong>Named write surface:</strong> required ordinary API route or reducer names for operations that the harness must replay concurrently or with hostile credentials.</li>
             <li><strong>Starting fixture:</strong> exact items, prices, categories, warehouse quantities, seeded roles, and intentionally empty collections. Fixture identity is versioned.</li>
             <li><strong>Backend build contract:</strong> assigned ports, database or module name, connection address, required app title, project layout, install/build/deploy commands, and disposable-data policy.</li>
-            <li><strong>Comparison stack:</strong> current prescribed PostgreSQL and MongoDB runs use Express, Socket.io, React, and the selected ORM; SpacetimeDB uses its TypeScript module and client SDK. This keeps the measured treatment named and repeatable.</li>
+            <li><strong>Comparison stack when prescribed:</strong> PostgreSQL and MongoDB can be assigned Express, Socket.io, React, and a selected ORM; SpacetimeDB can be assigned its TypeScript module and client SDK. The exact backend guidance is versioned separately from the requested product behavior.</li>
             <li><strong>API reference where training data is weak:</strong> selected SpacetimeDB server/client skill documents are inlined and recorded. They explain supported APIs; they do not contain benchmark answers.</li>
             <li><strong>Execution protocol:</strong> work in the isolated app directory, bind dev servers correctly, run the opaque contract-lint command, leave the service running, and emit a completion marker.</li>
           </ul>
@@ -385,6 +414,22 @@
         <article class="card">
           <h3>Left to the agent</h3>
           <p>Data modeling, code organization inside the contract, authorization mechanics, transaction boundaries, live-update design, error handling, and how to make every stated guarantee hold.</p>
+        </article>
+      </div>
+
+      <h3 style="margin-top:30px">Two independent choices: what to build and how much stack help to give</h3>
+      <div class="grid three" style="margin-top:12px">
+        <article class="card">
+          <h3>Requested behavior</h3>
+          <p>Select capability packs such as account access, session durability, cart/checkout, or inventory operations. Adding or removing a pack changes both the product request and its matching checks. A check-only filter narrows measurement without changing the request.</p>
+        </article>
+        <article class="card">
+          <h3>Backend guidance</h3>
+          <p><strong>Prescribed</strong> names the framework and implementation guidance. <strong>Neutral</strong> supplies only access facts and API reference, without framework or architecture advice. The prescribed profile is qualified; the symmetric neutral profile is implemented and prompt-snapshotted but remains draft.</p>
+        </article>
+        <article class="card">
+          <h3>Unmentioned defaults probes</h3>
+          <p>The design reserves a separate, first-build-only probe channel for behavior such as durability or reconnect handling that was not requested. Probe evidence will never affect requested-feature score or enter repairs. The separation is enforced now; non-empty probe execution is still future work.</p>
         </article>
       </div>
 
@@ -437,14 +482,14 @@
         <article class="card">
           <h3>Ecommerce L1 compatibility recipe</h3>
           <div class="number">48 / 51</div>
-          <div class="label">checks / available points in the current compiled draft</div>
-          <p>Four packs: identity/access, catalog/inventory, cart/checkout, and reviews. Execution includes feature, invariant, contention, and systems suites.</p>
+          <div class="label">executable checks / available points</div>
+          <p>Five packs: identity/access, session durability, catalog/inventory, cart/checkout, and reviews. Thirty-nine checks carry 51 points; nine are visible zero-point diagnostics. The framework-neutral 1.1 candidate has all 13 required qualification evidence slots bound, but the default L1 alias has not moved.</p>
         </article>
         <article class="card">
           <h3>Ecommerce L2 compatibility recipe</h3>
-          <div class="number">52 / 74</div>
-          <div class="label">checks / available points in the current compiled draft</div>
-          <p>Adds operations access, inventory operations, and returns/pricing, while rerunning selected L1 guarantee and systems coverage. These counts are compiler-tested, but both recipes remain candidates rather than released qualifications.</p>
+          <div class="number">53 / 75</div>
+          <div class="label">executable checks / aggregate available points</div>
+          <p>Adds operations access, inventory operations, and returns/pricing, while rerunning selected L1 guarantee and systems coverage. The displayed run score is 55/55 for the new L2 layer plus 20/20 inherited regression points. Twelve checks remain zero-point diagnostics. The null control and MongoDB's repeated pristine/mutation gates are complete; PostgreSQL and SpacetimeDB remain.</p>
         </article>
       </div>
 
@@ -483,6 +528,66 @@
         </table>
       </div>
 
+      <h3 style="margin-top:30px">Representative executable checks</h3>
+      <p class="muted">These are shortened excerpts from the versioned ecommerce scenario files. They are data interpreted by the typed 47-action runtime, not backend-specific test code.</p>
+      <div class="grid three" style="margin-top:12px">
+        <article class="card">
+          <h3>Race six buyers</h3>
+          <p>All six isolated sessions click at once; the harness then requires exact zero stock and agreement across every client.</p>
+<pre><code>{
+  "do": "clickConcurrently",
+  "testid": "buy-now",
+  "actors": ["a", "b", "c", "d", "e", "f"]
+},
+{
+  "do": "expectNumber",
+  "testid": "item-stock",
+  "equals": 0
+},
+{
+  "do": "expectAgreement",
+  "actors": ["a", "b", "c", "d", "e", "f"],
+  "numeric": true
+}</code></pre>
+        </article>
+        <article class="card">
+          <h3>Replay a staff write as a customer</h3>
+          <p>The grader captures a real ship action, retargets it to the customer's credentials, and requires a server rejection.</p>
+<pre><code>{
+  "do": "replayAs",
+  "actor": "customer",
+  "from": "staff",
+  "match": "ship",
+  "namedAction": {
+    "path": "/api/fulfilment/ship",
+    "reducer": "ship_order"
+  }
+},
+{
+  "do": "expectReplayRejected",
+  "actor": "customer"
+}</code></pre>
+        </article>
+        <article class="card">
+          <h3>Write while the app is down</h3>
+          <p>The test stops the leased app server, changes committed stock directly, restarts it, and requires the already-open page to reconcile.</p>
+<pre><code>{ "do": "stopAppServer" },
+{
+  "do": "dbSetStock",
+  "item": "Desk Lamp",
+  "warehouse": "West",
+  "quantity": 10
+},
+{ "do": "startAppServer" },
+{
+  "do": "expectNumber",
+  "testid": "item-stock",
+  "equals": 15,
+  "within": 20000
+}</code></pre>
+        </article>
+      </div>
+
       <p class="muted">Some systems and contention checks intentionally carry zero points while their oracle or mutation evidence is still being qualified. They remain visible diagnostics; they cannot quietly inflate or reduce a published score.</p>
     </section>
 
@@ -500,6 +605,8 @@
         <div class="event"><time>Aug 10-11</time><div class="body"><h3>The instrument found and helped verify real product defects</h3><p>Cost and failing guarantees led back to reconnect identity loss on the recommended client path. Separately, the Docker log-stream warning was proven to be a real <code>spacetime dev</code> authorization defect; the CLI identity handoff was fixed and the reproduction made mandatory.</p></div></div>
         <div class="event"><time>Aug 11</time><div class="body"><h3>References, mutations, null controls, and Docker qualification</h3><p>Preserved reference apps became byte-bound and buildable. Repeated live Docker gates exposed reset, timeout, mutation, and oracle defects. Candidate references passed, but later executable changes mean they must be qualified again before publication.</p></div></div>
         <div class="event"><time>Aug 12</time><div class="body"><h3>From scripts to versioned product contracts</h3><p>Packs, recipes, fixtures, calibration, exact selection, artifact envelopes, and the 47-action registry landed. All 47 actions now run through independent capability-scoped executors; the central compatibility dispatcher is gone.</p></div></div>
+        <div class="event"><time>Aug 13</time><div class="body"><h3>The first qualified baseline</h3><p>Promoted ecommerce L1 1.0 and L2 1.1 gained repeated Docker reference, mutation, and null evidence for MongoDB, PostgreSQL, and SpacetimeDB. Campaign admission, checkpointing, failure retention, correction accounting, reporting, and the Linux appliance were hardened around those controls.</p></div></div>
+        <div class="event"><time>Aug 14-15</time><div class="body"><h3>Composable study conditions and framework-neutral candidates</h3><p>Requested behavior became independently selectable by pack, while prescribed versus neutral backend guidance became a separate versioned study axis. Framework-neutral L1 1.1 and L2 1.2 keep the same execution/scoring but remove shared framework advice. L1 has now completed all 13 fresh qualification evidence slots; L2 qualification is underway.</p></div></div>
       </div>
     </section>
 
@@ -524,16 +631,16 @@
           <p class="muted">Also in <code>1f77a6985</code>; regression tests require the named type and enforce a readable error-length bound.</p>
         </article>
         <article class="card">
-          <div class="eyebrow">CLI · implemented, pending branch integration</div>
+          <div class="eyebrow">CLI · committed on this branch</div>
           <h3 style="margin-top:10px"><code>spacetime dev</code> keeps publish authorization for logs</h3>
           <p>On a clean config, programmatic publish logged in using a cloned <code>Config</code>. The long-running dev process remained tokenless, logged in again for its log stream as a different identity, and was correctly denied access to the database it had just published.</p>
           <p><strong>Change:</strong> the programmatic publish helper takes <code>&amp;mut Config</code>, and <code>dev</code> passes its live config through initial publish and rebuilds. The publisher's token is therefore retained for log authorization.</p>
-          <p class="muted">The current worktree contains this CLI diff in <code>dev.rs</code> and <code>publish.rs</code>; it is not committed on the current branch. The CLI library suite passed 169 tests, and the unchanged Docker reproduction requires <code>logStreamingAuthorized: true</code>.</p>
+          <p class="muted">Commit <code>00372a166</code> contains the branch's integrated change. The CLI library suite passed 169 tests, and the unchanged Docker reproduction requires <code>logStreamingAuthorized: true</code>.</p>
         </article>
       </div>
       <div class="callout" style="margin-top:18px">
         <strong>Why this distinction matters</strong>
-        Stack Bench did not merely generate a score. It produced a reproducible failure, narrowed the mechanism, drove a change in real SDK/CLI code, and converted the original reproductions into regression coverage. The CLI item should still be described as pending integration until its current worktree change is committed to the target branch.
+        Stack Bench did not merely generate a score. It produced reproducible failures, narrowed the mechanisms, drove changes in real SDK/CLI code, and converted the original reproductions into regression coverage. The benchmark results and the product-code changes remain separately versioned so neither can be mistaken for the other.
       </div>
     </section>
 
@@ -623,24 +730,29 @@
             <li>Docker-only coding sessions; no host-generation fallback</li>
             <li>Authenticated leases, dedicated resources, collision refusal, and tested teardown</li>
             <li>Strict artifact schema with run ancestry, timestamps, exact component identities, and secret rejection</li>
-            <li>Versioned ecommerce L1/L2 packs, pack-owned task fragments, recipes, fixtures, selection, and draft calibration</li>
+            <li>Versioned ecommerce L1/L2 packs, pack-owned task fragments, recipes, fixtures, exact selection, calibration, and promotion lifecycle</li>
             <li>Pack/check-scoped runs that record exactly what was requested, attempted, and not run</li>
             <li>47 registered actions with input schemas, capabilities, deadlines, evidence, and redaction metadata</li>
             <li>All 47 actions have independent capability-scoped executors; no central compatibility dispatcher remains</li>
-            <li>167/167 automated tests, two live Playwright grades, loop test, fault injection, and Docker smoke passing</li>
+            <li>Typed evidence drives scoring, null/mutation controls, comparison, repair selection, and reporting; diagnostic wording does not decide outcomes</li>
+            <li>Versioned stack adapters for three measured backends plus a deterministic test stack; versioned agent adapters for coding, deterministic, fault, and reference paths</li>
+            <li>Operator <code>preflight</code>, pinned Linux/amd64 controller appliance, immutable campaign plans, resumable execution, and reproducible HTML reporting</li>
+            <li>336/336 automated tests pass on the host and exact post-commit Linux controller, including two live Playwright grades</li>
             <li>Real Docker smoke publishes a TypeScript module, verifies SQL and watcher health, and requires authorized logs</li>
+            <li>Promoted L1/L2 baseline evidence remains valid; framework-neutral L1 1.1 now has fresh 13/13 qualification evidence without moving the default alias</li>
+            <li>Framework-neutral L2 1.2 null control passes, and MongoDB has two stable 55/55 + 20/20 pristine repetitions plus two mutation repetitions that each catch 3/3 defects</li>
           </ul>
         </article>
         <article class="card">
           <h3>Still required for production quality</h3>
           <ul class="checklist open">
-            <li>Replace remaining string-prefix classification with typed evidence end to end</li>
-            <li>Package backend and model/agent differences behind versioned adapters</li>
-            <li>Ship a friendly <code>preflight</code> command and pinned OCI/Compose appliance</li>
-            <li>Freeze experiment manifests, repetitions, ordering, budgets, retries, and report generation</li>
-            <li>Resolve point-bearing requirement citations and complete exact mutation qualification</li>
-            <li>Rerun the frozen L1/L2 matrix on all three stacks under the final executable hash</li>
-            <li>Only then promote recipes and extend validated coverage beyond L2</li>
+            <li>Finish and bind framework-neutral L2 reference/mutation evidence on all three stacks, then move L1/L2 aliases only if every gate remains green</li>
+            <li>Run a frozen repeated three-stack model campaign under declared prescribed and/or neutral conditions and publish dispersion, invalid-run rate, cost, and evidence limitations</li>
+            <li>Resolve the remaining point-bearing <code>statedBy</code> warnings and add exact mutants before promoting currently diagnostic zero-point checks</li>
+            <li>Implement non-empty first-build defaults probes for unmentioned durability/reconnect behavior without feeding those results into score or repairs</li>
+            <li>Move active scenario bodies from the strict compatibility executor into the general recipe executor; migrate chat into pack/recipe composition</li>
+            <li>Package adapters as separately identified releases, finish CI tiers/replay, and complete distributable registry/SBOM/signature material when an external release is actually needed</li>
+            <li>Only after the frozen L1/L2 campaign is reproducible should validated coverage expand beyond L2</li>
           </ul>
         </article>
       </div>
@@ -652,9 +764,9 @@
         <p>Finish the product boundary before buying more model runs. New comparative runs now would change identity again as the harness changes.</p>
       </div>
       <div class="grid three">
-        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Finish evidence and adapters</h3><p>Carry typed evidence end to end and package stack/model differences behind versioned adapters so adding another backend or model does not fork the harness.</p></article>
-        <article class="card"><div class="number">2</div><h3 style="margin-top:12px">Package and qualify</h3><p>Ship preflight plus pinned Docker/Compose, freeze an experiment, qualify exact references and mutants, then repeat the full L1/L2 matrix before publishing any comparison.</p></article>
-        <article class="card"><div class="number">3</div><h3 style="margin-top:12px">Extend measured coverage</h3><p>Only after the frozen L1/L2 baseline is qualified, promote proven L3 and higher workloads without changing the meaning of historical runs.</p></article>
+        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Finish L2 qualification</h3><p>Complete repeated framework-neutral reference and mutation gates for MongoDB, PostgreSQL, and SpacetimeDB, bind the artifacts, and move aliases only after the machine readiness check has zero blockers.</p></article>
+        <article class="card"><div class="number">2</div><h3 style="margin-top:12px">Run the real comparison</h3><p>Freeze the exact stacks, model/agent, prescribed or neutral condition, selected packs, repetitions, ordering, budgets, and retry rules. Run the full matrix and publish raw evidence plus variability and invalid-run rate.</p></article>
+        <article class="card"><div class="number">3</div><h3 style="margin-top:12px">Finish the handoff</h3><p>Exercise the appliance from a second clean runner, close the remaining authoring/replay gaps, document the operator path, and only then extend qualified workloads beyond L2.</p></article>
       </div>
 
       <div class="callout" style="margin-top:18px">
@@ -680,7 +792,7 @@
             <li>Any current backend winner on cost or quality</li>
             <li>Any percentage cost reduction from one historical run pair</li>
             <li>Calling L3-L5 validated because definitions exist</li>
-            <li>Calling candidate reference passes a current qualified campaign</li>
+            <li>Calling model-free reference qualification a current comparative model campaign</li>
           </ul>
         </article>
       </div>
@@ -688,7 +800,7 @@
   </main>
 
   <footer>
-    <div class="shell">Stack Bench meeting brief · generated from the repository's implementation plan, roadmap, findings, history, and engineering journal · current as of 12 August 2026</div>
+    <div class="shell">Stack Bench meeting brief · generated from the repository's implementation plan, roadmap, findings, history, qualification evidence, and engineering journal · current as of 15 August 2026</div>
   </footer>
 </body>
 </html>
