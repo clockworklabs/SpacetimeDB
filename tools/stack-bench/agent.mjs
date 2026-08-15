@@ -14,9 +14,9 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync,
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, realpathSync,
          openSync, readSync, closeSync } from 'node:fs';
-import { join, dirname, resolve, basename } from 'node:path';
+import { join, dirname, resolve, basename, relative, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor, DEFAULT_TRACK } from './tracks.mjs';
@@ -273,6 +273,7 @@ function parseArgs(argv) {
       // and recorded runs still resolve.
       case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
+      case '--guidance-document-json': a.guidanceDocument = JSON.parse(argv[++i]); break;
       case '--thinking': a.thinking = argv[++i]; break;
       case '--max-budget-usd': a.maxBudgetUsd = Number(argv[++i]); break;
       // Comma-separated skill directories to inline, e.g.
@@ -331,16 +332,43 @@ export function ensureDatabase(backend, runIndex, dbPort, track, wipe = false,
 // minimal: only the database, the ports the harness needs, and branding — how to
 // build it is the model's call. Prescribing a stack means measuring the stack we
 // picked, not the database.
+export function readBackendGuidanceDocument(document, fallbackRelativePath) {
+  if (typeof fallbackRelativePath !== 'string' || !fallbackRelativePath) {
+    throw new Error('backend guidance fallback path is required');
+  }
+  if (document !== undefined) {
+    const fields = new Set(['path', 'sha256', 'bytes']);
+    if (!document || typeof document !== 'object' || Array.isArray(document)
+      || Object.keys(document).some(field => !fields.has(field))
+      || typeof document.path !== 'string' || !document.path || isAbsolute(document.path)
+      || document.path.includes('\\')
+      || !/^[a-f0-9]{64}$/.test(document.sha256)
+      || !Number.isSafeInteger(document.bytes) || document.bytes < 0) {
+      throw new Error('campaign guidance document identity is invalid');
+    }
+  }
+  const selectedPath = realpathSync(resolve(ROOT, document?.path ?? fallbackRelativePath));
+  const rel = relative(realpathSync(ROOT), selectedPath);
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error('campaign guidance document escapes the Stack Bench root');
+  }
+  const bytes = readFileSync(selectedPath);
+  if (document && (sha256(bytes) !== document.sha256 || bytes.length !== document.bytes)) {
+    throw new Error(`campaign guidance document changed after compilation: ${document.path}`);
+  }
+  return bytes.toString('utf8');
+}
+
 function backendDoc(args, p, track) {
   if (args.guidance === 'minimal' && !executeStackCapability(
     STACK_ADAPTER_REGISTRY.get(args.backend), 'agent', 'minimal-guidance-supported')) {
     console.error(`--stack free does not apply to ${args.backend}; its adapter requires the prescribed stack`);
     process.exit(2);
   }
-  const rel = args.guidance === 'minimal'
+  const defaultPath = args.guidance === 'minimal'
     ? join('backends', 'minimal', `${args.backend}.md`)
     : join('backends', `${args.backend}.md`);
-  const raw = readFileSync(join(ROOT, rel), 'utf8');
+  const raw = readBackendGuidanceDocument(args.guidanceDocument, defaultPath);
   return raw
     .replaceAll('<VITE_PORT>', String(p.vite))
     .replaceAll('<EXPRESS_PORT>', String(p.express ?? ''))
@@ -759,7 +787,7 @@ async function main() {
     backend: args.backend,
     model: args.model,
     guidance: args.guidance,
-    stack: args.guidance === 'minimal' ? 'free' : 'prescribed',
+    stack: args.guidance === 'minimal' ? 'free' : args.guidance,
     // The setup that produced this number. A score whose reasoning budget,
     // permission mode or CLI version is unknown cannot be compared with a later
     // one — the run would look identical in the record and not be.

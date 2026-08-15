@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "campaign-manifest",
   "id": "ecommerce-l1-example",
   "version": "1.0.0",
@@ -21,8 +21,16 @@
       "adapter": "deterministic",
       "adapterVersion": "1.0.0",
       "model": "deterministic",
-      "guidance": "prescribed",
       "skills": []
+    }
+  ],
+  "conditions": [
+    {
+      "id": "prescribed",
+      "version": "1.0.0",
+      "guidanceProfile": "prescribed@1.0.0",
+      "probeProfile": "none@1.0.0",
+      "repairPolicy": "requested-only@1.0.0"
     }
   ],
   "repetitions": 3,
@@ -70,6 +78,6 @@
     "dispersion": "median-iqr",
     "invalidAttempts": "report-separately",
     "missingData": "no-imputation",
-    "comparisonUnit": "stack-agent-recipe"
+    "comparisonUnit": "stack-agent-condition-recipe"
   }
 }

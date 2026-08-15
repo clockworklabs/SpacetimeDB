@@ -9,23 +9,22 @@ import { currentEngineIdentity } from './artifacts.mjs';
 import { sha256 } from './provenance.mjs';
 import { recipeReleaseIdentity, resolveLegacyRecipeRelease } from './recipe-release.mjs';
 import { resolveRecipeSelection } from './recipe-selection.mjs';
-import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { listTracks, loadTrack } from './tracks.mjs';
+import { resolveStudyConditions, validateConditionReference } from './condition-compiler.mjs';
 
-export const CAMPAIGN_SCHEMA_VERSION = 1;
+export const CAMPAIGN_SCHEMA_VERSION = 2;
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
-const GUIDANCE = new Set(['prescribed', 'minimal']);
 const ROOT_FIELDS = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'title',
-  'track', 'levels', 'selection', 'stacks', 'agents', 'repetitions', 'ordering',
+  'track', 'levels', 'selection', 'stacks', 'agents', 'conditions', 'repetitions', 'ordering',
   'budgets', 'attemptPolicy', 'pricing', 'analysis']);
 ROOT_FIELDS.add('runtime');
 const SELECTION_FIELDS = new Set(['packs', 'checks']);
 const STACK_FIELDS = new Set(['id', 'adapterVersion']);
-const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model', 'guidance', 'skills']);
+const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model', 'skills']);
 const ORDERING_FIELDS = new Set(['method', 'seed']);
 const BUDGET_FIELDS = new Set(['fixRounds', 'attemptTimeoutMinutes', 'maxCostUsdPerAttempt']);
 const ATTEMPT_POLICY_FIELDS = new Set(['retries', 'retryOn', 'excludeFromAnalysis']);
@@ -119,12 +118,13 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     identifier(agent.adapter, `${at}.adapter`);
     version(agent.adapterVersion, `${at}.adapterVersion`);
     string(agent.model, `${at}.model`);
-    if (!GUIDANCE.has(agent.guidance)) fail(`${at}.guidance`, 'must be prescribed or minimal');
     agent.skills = exactArray(agent.skills, `${at}.skills`, string, { sort: true });
     return agent;
   }, { nonEmpty: true, sort: true });
   const agentKeys = value.agents.map(agent => canonicalDefinitionJson(agent));
   if (new Set(agentKeys).size !== agentKeys.length) fail(`${source}.agents`, 'contains a duplicate configuration');
+  value.conditions = exactArray(value.conditions, `${source}.conditions`, (condition, at) =>
+    validateConditionReference(condition, at), { nonEmpty: true, sort: true });
   integer(value.repetitions, `${source}.repetitions`, { min: 1, max: 100 });
 
   strict(value.ordering, `${source}.ordering`, ORDERING_FIELDS);
@@ -202,8 +202,8 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     fail(`${source}.analysis.invalidAttempts`, 'must be report-separately');
   }
   if (value.analysis.missingData !== 'no-imputation') fail(`${source}.analysis.missingData`, 'must be no-imputation');
-  if (value.analysis.comparisonUnit !== 'stack-agent-recipe') {
-    fail(`${source}.analysis.comparisonUnit`, 'must be stack-agent-recipe');
+  if (value.analysis.comparisonUnit !== 'stack-agent-condition-recipe') {
+    fail(`${source}.analysis.comparisonUnit`, 'must be stack-agent-condition-recipe');
   }
   if (value.state === 'frozen') {
     if (value.budgets.maxCostUsdPerAttempt === null) {
@@ -238,19 +238,18 @@ function calibrationIdentity(value) {
   return value ? { id: value.id, version: value.version, sha256: value.contentSha256, state: value.state } : null;
 }
 
-function campaignIdentityDocument(definition, engine, bindings, stacks, agents) {
+function campaignIdentityDocument(definition, engine, bindings, stacks, agents, conditions) {
   return canonicalizeDefinition({ campaignSchemaVersion: CAMPAIGN_SCHEMA_VERSION,
-    definition, engine, bindings, stacks, agents });
+    definition, engine, bindings, stacks, agents, conditions });
 }
 
-function expandAttempts(definition, requestedLevels, stacks, agents) {
-  const conditions = agents.flatMap((agent, agentIndex) => stacks.map(stack => ({
-    agent,
-    agentIndex,
-    stack,
-    key: canonicalDefinitionJson({ agent: { adapter: agent.adapter, model: agent.model,
-      guidance: agent.guidance, skills: agent.skills }, stack: stack.id }),
-  }))).sort((left, right) => {
+function expandAttempts(definition, requestedLevels, stacks, agents, studyConditions) {
+  const conditions = agents.flatMap((agent, agentIndex) => studyConditions.flatMap(
+    (condition, conditionIndex) => stacks.map(stack => ({
+      agent, agentIndex, condition, conditionIndex, stack,
+      key: canonicalDefinitionJson({ agent: { adapter: agent.adapter, model: agent.model,
+        skills: agent.skills }, condition: condition.sha256, stack: stack.id }),
+    })))).sort((left, right) => {
     const leftHash = sha256(`${definition.ordering.seed}\0${left.key}`);
     const rightHash = sha256(`${definition.ordering.seed}\0${right.key}`);
     return leftHash.localeCompare(rightHash) || left.key.localeCompare(right.key);
@@ -258,14 +257,16 @@ function expandAttempts(definition, requestedLevels, stacks, agents) {
   const attempts = [];
   for (let repetition = 1; repetition <= definition.repetitions; repetition += 1) {
     rotate(conditions, (repetition - 1) % conditions.length)
-      .forEach(({ agent, agentIndex, stack }, order) => attempts.push({
-        id: `${definition.id}-r${repetition}-a${agentIndex + 1}-${stack.id}`,
+      .forEach(({ agent, agentIndex, condition, conditionIndex, stack }, order) => attempts.push({
+        id: `${definition.id}-r${repetition}-c${conditionIndex + 1}-a${agentIndex + 1}-${stack.id}`,
         repetition,
         order: order + 1,
         stack: stack.id,
         agentAdapter: agent.adapter,
         model: agent.model,
-        guidance: agent.guidance,
+        condition: { id: condition.id, version: condition.version, sha256: condition.sha256,
+          guidance: condition.guidance, probes: condition.probes, repair: condition.repair },
+        guidance: condition.guidance.mode,
         skills: agent.skills,
         levels: requestedLevels,
         parentAttemptId: definition.id,
@@ -326,15 +327,10 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
   if (definition.state === 'frozen' && agents.some(agent => agent.costLimit === 'unsupported')) {
     fail('state', 'cannot freeze an agent adapter that does not enforce maxCostUsdPerAttempt');
   }
-  for (const agent of agents) {
-    for (const stack of stacks) {
-      if (agent.guidance === 'minimal' && !executeStackCapability(
-        STACK_ADAPTER_REGISTRY.get(stack.id), 'agent', 'minimal-guidance-supported')) {
-        fail('agents', `${agent.adapter}/${agent.model} requests minimal guidance unsupported by ${stack.id}`);
-      }
-    }
-  }
-  return { bindings, stacks, agents };
+  const conditions = resolveStudyConditions(definition.conditions, stacks.map(stack => stack.id), {
+    stackBenchRoot: resolve(stackBenchRoot), frozen: definition.state === 'frozen',
+  });
+  return { bindings, stacks, agents, conditions };
 }
 
 export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
@@ -343,13 +339,13 @@ export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
     source: relative(process.cwd(), absolute).replaceAll('\\', '/'),
   });
   const requestedLevels = definition.levels;
-  const { bindings, stacks, agents } = resolveCampaignInputs(definition, { stackBenchRoot });
+  const { bindings, stacks, agents, conditions } = resolveCampaignInputs(definition, { stackBenchRoot });
 
   const sourceSha256 = sha256(readFileSync(absolute));
   const engine = currentEngineIdentity();
-  const identityDocument = campaignIdentityDocument(definition, engine, bindings, stacks, agents);
+  const identityDocument = campaignIdentityDocument(definition, engine, bindings, stacks, agents, conditions);
   const contentSha256 = sha256(canonicalDefinitionJson(identityDocument));
-  const attempts = expandAttempts(definition, requestedLevels, stacks, agents);
+  const attempts = expandAttempts(definition, requestedLevels, stacks, agents, conditions);
   return canonicalizeDefinition({
     campaignSchemaVersion: CAMPAIGN_SCHEMA_VERSION,
     id: definition.id,
@@ -363,8 +359,10 @@ export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
     bindings,
     stacks,
     agents,
+    conditions,
     attempts,
     summary: { attempts: attempts.length, stacks: stacks.length, agents: agents.length,
+      conditions: conditions.length,
       repetitions: definition.repetitions },
   });
 }
@@ -373,7 +371,8 @@ export function validateCompiledCampaignPlan(input) {
   if (!object(input)) throw new Error('compiled campaign plan must be an object');
   const plan = canonicalizeDefinition(input);
   const fields = new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
-    'contentSha256', 'definition', 'identities', 'bindings', 'stacks', 'agents', 'attempts', 'summary']);
+    'contentSha256', 'definition', 'identities', 'bindings', 'stacks', 'agents', 'conditions',
+    'attempts', 'summary']);
   for (const key of Object.keys(plan)) if (!fields.has(key)) throw new Error(`compiled campaign plan.${key} is unknown`);
   if (plan.campaignSchemaVersion !== CAMPAIGN_SCHEMA_VERSION) throw new Error('compiled campaign schema is unsupported');
   const definition = validateCampaignDefinition(plan.definition, { source: 'compiled campaign definition' });
@@ -388,7 +387,8 @@ export function validateCompiledCampaignPlan(input) {
   }
   if (!Array.isArray(plan.bindings) || plan.bindings.length !== definition.levels.length
     || !Array.isArray(plan.stacks) || plan.stacks.length !== definition.stacks.length
-    || !Array.isArray(plan.agents) || plan.agents.length !== definition.agents.length) {
+    || !Array.isArray(plan.agents) || plan.agents.length !== definition.agents.length
+    || !Array.isArray(plan.conditions) || plan.conditions.length !== definition.conditions.length) {
     throw new Error('compiled campaign resolved inputs are incomplete');
   }
   const currentEngine = currentEngineIdentity();
@@ -396,20 +396,21 @@ export function validateCompiledCampaignPlan(input) {
     throw new Error('compiled campaign engine identity does not match this executable');
   }
   const resolved = resolveCampaignInputs(definition);
-  for (const field of ['bindings', 'stacks', 'agents']) {
+  for (const field of ['bindings', 'stacks', 'agents', 'conditions']) {
     if (canonicalDefinitionJson(plan[field]) !== canonicalDefinitionJson(resolved[field])) {
       throw new Error(`compiled campaign ${field} do not match current resolved inputs`);
     }
   }
   const expectedSha256 = sha256(canonicalDefinitionJson(campaignIdentityDocument(
-    definition, plan.identities.engine, plan.bindings, plan.stacks, plan.agents)));
+    definition, plan.identities.engine, plan.bindings, plan.stacks, plan.agents, plan.conditions)));
   if (plan.contentSha256 !== expectedSha256) throw new Error('compiled campaign content identity does not match its inputs');
-  const expectedAttempts = expandAttempts(definition, definition.levels, plan.stacks, plan.agents);
+  const expectedAttempts = expandAttempts(definition, definition.levels, plan.stacks, plan.agents,
+    plan.conditions);
   if (canonicalDefinitionJson(plan.attempts) !== canonicalDefinitionJson(expectedAttempts)) {
     throw new Error('compiled campaign attempt schedule does not match its inputs');
   }
   const expectedSummary = { attempts: expectedAttempts.length, stacks: plan.stacks.length,
-    agents: plan.agents.length, repetitions: definition.repetitions };
+    agents: plan.agents.length, conditions: plan.conditions.length, repetitions: definition.repetitions };
   if (canonicalDefinitionJson(plan.summary) !== canonicalDefinitionJson(expectedSummary)) {
     throw new Error('compiled campaign summary does not match its inputs');
   }

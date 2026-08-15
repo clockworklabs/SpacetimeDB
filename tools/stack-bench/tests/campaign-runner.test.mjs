@@ -66,9 +66,16 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
     '--backend', plan.attempts[0].stack,
     '--track', 'ecommerce', '--levels', '1-1', '--run-index', '0',
     '--out', '/campaign/attempt', '--agent-adapter', 'deterministic',
-    '--model', 'deterministic', '--guidance', 'prescribed', '--fix-rounds', '3',
+    '--model', 'deterministic', '--guidance', 'prescribed',
+    '--guidance-document-json', JSON.stringify(plan.attempts[0].condition.guidance.documents[
+      plan.attempts[0].stack]),
+    '--condition-json', JSON.stringify(plan.attempts[0].condition), '--fix-rounds', '3',
     '--parent-attempt-id', plan.attempts[0].id, '--no-media',
   ]);
+  assert.throws(() => attemptArgv(plan, { ...plan.attempts[0], condition: {
+    ...plan.attempts[0].condition, guidance: { ...plan.attempts[0].condition.guidance,
+      documents: {} },
+  } }, '/campaign/attempt'), /has no guidance document/);
 });
 
 test('campaign validation retains a failed level prefix without accepting partial application results', () => {
@@ -80,7 +87,8 @@ test('campaign validation retains a failed level prefix without accepting partia
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       agentAdapter: agent.identity, stackAdapter: stack }) },
   track: plan.definition.track, backend: attempt.stack, model: attempt.model,
-  guidance: attempt.guidance, selectionRequest: plan.definition.selection, skills: attempt.skills,
+  guidance: attempt.guidance, condition: attempt.condition,
+  selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 }, levels: [{ level: 1 }],
   outcome: { kind: 'harness_failure', reason: 'provider-session-error' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
@@ -100,7 +108,8 @@ test('campaign validation accepts a zero-level interrupted run without invented 
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       agentAdapter: agent.identity, stackAdapter: stack }) },
   track: plan.definition.track, backend: attempt.stack, model: attempt.model,
-  guidance: attempt.guidance, selectionRequest: plan.definition.selection, skills: attempt.skills,
+  guidance: attempt.guidance, condition: attempt.condition,
+  selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, levels: [],
   outcome: { kind: 'ungraded', reason: 'coding session did not run' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
@@ -121,7 +130,8 @@ test('campaign validation rejects an application result that stopped before its 
     identities: emptyArtifactIdentities({ engine: plan.identities.engine,
       agentAdapter: agent.identity, stackAdapter: stack }) },
   track: plan.definition.track, backend: attempt.stack, model: attempt.model,
-  guidance: attempt.guidance, selectionRequest: plan.definition.selection, skills: attempt.skills,
+  guidance: attempt.guidance, condition: attempt.condition,
+  selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
   levels: [{ level: 1, score: 0, max: 1, fixRounds: 1,
     repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 1, stopReason: null },
@@ -223,7 +233,8 @@ test('model-free campaign execution checkpoints a retry and every completed atte
           identities: emptyArtifactIdentities({ agentAdapter: agent.identity,
             stackAdapter: stack }),
           track: planned.definition.track, backend: attempt.stack, model: attempt.model,
-          guidance: attempt.guidance, selectionRequest: planned.definition.selection,
+          guidance: attempt.guidance, condition: attempt.condition,
+          selectionRequest: planned.definition.selection,
           skills: attempt.skills, runtime: { buildImage: options.env.STACK_BENCH_IMAGE },
           totals: { costUsd: 0 },
           levels: attempt.levels.map(level => ({ level, score: 1, max: 1, fixRounds: 0,

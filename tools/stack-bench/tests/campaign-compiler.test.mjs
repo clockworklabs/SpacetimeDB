@@ -9,7 +9,7 @@ import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
 
 function definition(overrides = {}) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: 'campaign-manifest',
     id: 'ecommerce-l1-comparison',
     version: '1.0.0',
@@ -23,8 +23,10 @@ function definition(overrides = {}) {
       { id: 'postgres', adapterVersion: '1.1.0' },
       { id: 'mongodb', adapterVersion: '1.1.0' },
     ],
-    agents: [{ adapter: 'deterministic', adapterVersion: '1.0.0', model: 'deterministic',
-      guidance: 'prescribed', skills: [] }],
+    agents: [{ adapter: 'deterministic', adapterVersion: '1.0.0', model: 'deterministic', skills: [] }],
+    conditions: [{ id: 'prescribed', version: '1.0.0',
+      guidanceProfile: 'prescribed@1.0.0', probeProfile: 'none@1.0.0',
+      repairPolicy: 'requested-only@1.0.0' }],
     repetitions: 3,
     ordering: { method: 'balanced-rotation', seed: 'published-seed-1' },
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: null },
@@ -40,7 +42,7 @@ function definition(overrides = {}) {
       secondaryMetrics: ['finalScoreRate', 'totalCostUsd', 'totalDurationMs', 'correctionSuccessRate',
         'correctionCostUsd', 'correctionSpendUsd', 'invalidAttemptRate'],
       dispersion: 'median-iqr', invalidAttempts: 'report-separately', missingData: 'no-imputation',
-      comparisonUnit: 'stack-agent-recipe' },
+      comparisonUnit: 'stack-agent-condition-recipe' },
     ...overrides,
   };
 }
@@ -81,8 +83,7 @@ test('campaign identity ignores JSON formatting but changes with study semantics
   const changed = compile(definition({ repetitions: 4 }));
   assert.notEqual(changed.contentSha256, first.contentSha256);
   const multiAgent = definition({ agents: [definition().agents[0],
-    { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic',
-      guidance: 'prescribed', skills: [] }] });
+    { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic', skills: [] }] });
   const multiAgentReordered = structuredClone(multiAgent);
   multiAgentReordered.agents.reverse();
   assert.equal(compile(multiAgent).contentSha256, compile(multiAgentReordered).contentSha256);
@@ -90,10 +91,8 @@ test('campaign identity ignores JSON formatting but changes with study semantics
 
 test('balanced rotation covers every stack-agent condition and rotates the global lead', () => {
   const agents = [
-    { adapter: 'deterministic', adapterVersion: '1.0.0', model: 'deterministic',
-      guidance: 'prescribed', skills: [] },
-    { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic',
-      guidance: 'prescribed', skills: [] },
+    { adapter: 'deterministic', adapterVersion: '1.0.0', model: 'deterministic', skills: [] },
+    { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic', skills: [] },
   ];
   const plan = compile(definition({ agents, repetitions: 6 }));
   for (let repetition = 1; repetition <= 6; repetition += 1) {
@@ -122,9 +121,10 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
   } })), /retryOn/);
   assert.throws(() => compile(definition({ selection: { packs: [], checks: ['missing.check'] } })),
     /recipe has no check/);
-  assert.throws(() => compile(definition({ agents: [{ adapter: 'deterministic',
-    adapterVersion: '1.0.0', model: 'deterministic', guidance: 'minimal', skills: [] }] })),
-  /minimal guidance unsupported by spacetime/);
+  assert.throws(() => compile(definition({ conditions: [{
+    id: 'bad', version: '1.0.0', guidanceProfile: 'missing@1.0.0',
+    probeProfile: 'none@1.0.0', repairPolicy: 'requested-only@1.0.0',
+  }] })), /missing@1.0.0|catalog/);
   assert.throws(() => validateCampaignDefinition(definition({ runtime: {
     releaseManifestSha256: null, controllerImage: 'stack-bench:latest', buildImage: null,
     platform: 'linux/amd64',
@@ -137,8 +137,8 @@ test('frozen campaigns require exact runtime images and accept qualified levels'
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.4.0',
-    model: 'claude-sonnet-5', guidance: 'prescribed', skills: [] }];
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.5.0',
+    model: 'claude-sonnet-5', skills: [] }];
   const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
     source: 'test snapshot', models: { 'claude-sonnet-5': {
       inputPerMillion: 1, outputPerMillion: 1, cacheWritePerMillion: 1, cacheReadPerMillion: 1,
@@ -173,7 +173,8 @@ test('frozen manifest validation does not hard-code an agent provider', () => {
 test('the packaged model-free campaign example compiles without starting work', () => {
   const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance', 'campaign.example.json'));
   assert.equal(plan.state, 'draft');
-  assert.deepEqual(plan.summary, { agents: 1, attempts: 9, repetitions: 3, stacks: 3 });
+  assert.deepEqual(plan.summary, { agents: 1, attempts: 9, conditions: 1,
+    repetitions: 3, stacks: 3 });
 });
 
 test('compiled campaign validation rejects a rewritten identity, schedule, or summary', () => {

@@ -77,6 +77,8 @@ function parseArgs(argv) {
       case '--behavioral-review': a.behavioralReview = true; break;
       case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
+      case '--guidance-document-json': a.guidanceDocument = JSON.parse(argv[++i]); break;
+      case '--condition-json': a.condition = JSON.parse(argv[++i]); break;
       case '--skip-probe': a.skipProbe = true; break;
       // Which reference documents to inline (spacetime only). The variable
       // under test in the cost work; passed straight through to agent.mjs.
@@ -172,6 +174,7 @@ function runAgent(args, adapter, mode, level, appDir) {
   }
   const request = { mode, level, app: appDir, backend: args.backend, track: args.track,
     runIndex: args.runIndex, model: args.model, guidance: args.guidance, skills: args.skills,
+    guidanceDocument: args.guidanceDocument,
     maxBudgetUsd: remainingBudget, adapterCostLimit: adapter.costLimit };
   const argv = agentRequestArgv(adapter, request);
   if (args.apiKey && !adapter.apiKeyEnvironmentVariable) {
@@ -624,7 +627,8 @@ async function main() {
       stackAdapter: { id: stackAdapter.id, version: stackAdapter.version },
     }),
     track: args.track, backend: args.backend, model: args.model,
-    guidance: args.guidance, stack: args.guidance === 'minimal' ? 'free' : 'prescribed',
+    guidance: args.guidance, condition: args.condition ?? null,
+    stack: args.guidance === 'minimal' ? 'free' : args.guidance,
     skills: args.skills?.split(',').filter(Boolean) ?? [],
     runtime: { buildImage: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE },
     selectionRequest: { packs: [...args.packIds], checks: [...args.checkKeys] },

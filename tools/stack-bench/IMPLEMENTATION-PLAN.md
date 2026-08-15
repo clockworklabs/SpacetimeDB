@@ -684,6 +684,17 @@ and any attempt to treat probe observations as requested-score evidence. New
 campaigns require the new schema; archived pre-v1 results remain inert rather
 than entering through a compatibility reader.
 
+In progress. Campaign schema v2 removes guidance from the agent identity and
+introduces a separate condition axis composed from versioned guidance, probe,
+and repair profiles. The first compiler slice content-identifies those profiles
+and each selected backend document, carries the resolved condition through
+attempts, run artifacts, admission, grouping, and reports, and makes the coding
+agent verify the exact document bytes before a model call. Non-empty probe
+profiles and repair policies that withhold requested evidence currently fail
+closed because their execution paths belong to SB-506. Requested-recipe binding,
+prompt/probe overlap analysis, and the shared capability definition remain
+before SB-504 can close.
+
 ### SB-505: Symmetric neutral backend guidance
 
 Create qualified neutral guidance profiles for SpacetimeDB, MongoDB, and

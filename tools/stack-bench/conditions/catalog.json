@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "kind": "study-condition-catalog",
+  "guidanceProfiles": {
+    "prescribed@1.0.0": "guidance/prescribed.json"
+  },
+  "probeProfiles": {
+    "none@1.0.0": "probes/none.json"
+  },
+  "repairPolicies": {
+    "requested-only@1.0.0": "repairs/requested-only.json"
+  }
+}

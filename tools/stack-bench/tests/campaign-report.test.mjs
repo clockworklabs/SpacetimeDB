@@ -107,6 +107,7 @@ test('report generation is byte-for-byte reproducible and links immutable raw ev
     writeRunJson(join(output, 'run.json'), { ...evidence, startedAt: timestamp, completedAt: timestamp,
       track: plan.definition.track, backend: claimed.claim.attempt.stack,
       model: claimed.claim.attempt.model, guidance: claimed.claim.attempt.guidance,
+      condition: claimed.claim.attempt.condition,
       skills: claimed.claim.attempt.skills, selectionRequest: plan.definition.selection,
       runtime: { buildImage: null }, identities: emptyArtifactIdentities({
         engine: plan.identities.engine, agentAdapter: agent.identity, stackAdapter: stack,
@@ -135,11 +136,16 @@ test('HTML escapes caller-controlled labels and reports exact scope', () => {
   const html = renderCampaignHtml(report);
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /Study condition/);
+  assert.match(html, /prescribed@1\.0\.0/);
   const malformedScope = structuredClone(report);
   malformedScope.scope.surprise = true;
   const { contentSha256: _old, ...body } = malformedScope;
   assert.throws(() => validateCampaignReport({ ...body, contentSha256: 'a'.repeat(64) }),
     /scope\.surprise is unknown/);
+  const malformedCondition = structuredClone(report);
+  malformedCondition.conditions[0].condition = null;
+  assert.throws(() => validateCampaignReport(malformedCondition), /conditions\[0\]\.condition is invalid/);
 });
 
 test('human reports format normalized usage and elapsed time for people', () => {

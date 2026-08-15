@@ -29,6 +29,10 @@ function contained(root, path, label) {
 
 export function attemptArgv(plan, attempt, output) {
   const levels = `${Math.min(...attempt.levels)}-${Math.max(...attempt.levels)}`;
+  const guidanceDocument = attempt.condition?.guidance?.documents?.[attempt.stack];
+  if (!guidanceDocument) {
+    throw new Error(`attempt ${attempt.id} has no guidance document for ${attempt.stack}`);
+  }
   const args = [BENCH,
     '--backend', attempt.stack,
     '--track', plan.definition.track,
@@ -38,6 +42,8 @@ export function attemptArgv(plan, attempt, output) {
     '--agent-adapter', attempt.agentAdapter,
     '--model', attempt.model,
     '--guidance', attempt.guidance,
+    '--guidance-document-json', JSON.stringify(guidanceDocument),
+    '--condition-json', JSON.stringify(attempt.condition),
     '--fix-rounds', String(plan.definition.budgets.fixRounds),
     '--parent-attempt-id', attempt.id,
     '--no-media'];
@@ -52,8 +58,9 @@ export function attemptArgv(plan, attempt, output) {
 
 export function validateCampaignRun(plan, attempt, run, { buildImage = null } = {}) {
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
-    && item.model === attempt.model && item.guidance === attempt.guidance
+    && item.model === attempt.model
     && canonicalDefinitionJson(item.skills) === canonicalDefinitionJson(attempt.skills));
+  const condition = plan.conditions.find(item => item.sha256 === attempt.condition?.sha256);
   const expectedLevels = [...attempt.levels].sort((a, b) => a - b);
   const actualLevels = (run.levels ?? []).map(level => level.level).sort((a, b) => a - b);
   const exactLevels = canonicalDefinitionJson(actualLevels) === canonicalDefinitionJson(expectedLevels);
@@ -67,6 +74,8 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
   mismatch(run.backend !== attempt.stack, 'backend');
   mismatch(run.model !== attempt.model, 'model');
   mismatch(run.guidance !== attempt.guidance, 'guidance');
+  mismatch(!condition || canonicalDefinitionJson(run.condition)
+    !== canonicalDefinitionJson(attempt.condition), 'condition');
   mismatch(canonicalDefinitionJson(run.selectionRequest)
     !== canonicalDefinitionJson(plan.definition.selection), 'selectionRequest');
   mismatch(canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills), 'skills');
@@ -204,7 +213,7 @@ function validateCampaignAdmission(input, plan, directory) {
     throw new Error('campaign admission payload must be an object');
   }
   const fields = new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
-    'ok', 'runtime', 'agents', 'reports']);
+    'ok', 'runtime', 'agents', 'conditions', 'reports']);
   for (const key of Object.keys(input)) if (!fields.has(key)) throw new Error(`campaign admission.${key} is unknown`);
   if (input.schemaVersion !== 1 || input.campaignId !== plan.id
     || input.campaignSha256 !== plan.contentSha256
@@ -214,9 +223,12 @@ function validateCampaignAdmission(input, plan, directory) {
     throw new Error('campaign admission runtime does not match the compiled plan');
   }
   const expectedAgents = plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
-    guidance: agent.guidance, skills: agent.skills, identity: agent.identity }));
+    skills: agent.skills, identity: agent.identity }));
   if (canonicalDefinitionJson(input.agents) !== canonicalDefinitionJson(expectedAgents)) {
     throw new Error('campaign admission agents do not match the compiled plan');
+  }
+  if (canonicalDefinitionJson(input.conditions) !== canonicalDefinitionJson(plan.conditions)) {
+    throw new Error('campaign admission conditions do not match the compiled plan');
   }
   if (!Array.isArray(input.reports)) throw new Error('campaign admission reports must be an array');
   const adapters = [...new Set(plan.agents.map(agent => agent.adapter))].sort();
@@ -309,7 +321,8 @@ export function runCampaignAdmission(plan, directory,
     ok: reports.every(report => report.ok),
     runtime: plan.definition.runtime,
     agents: plan.agents.map(agent => ({ adapter: agent.adapter, model: agent.model,
-      guidance: agent.guidance, skills: agent.skills, identity: agent.identity })),
+      skills: agent.skills, identity: agent.identity })),
+    conditions: plan.conditions,
     reports }, plan, directory);
   const path = contained(directory, join('admissions', `${id}.json`), 'campaign admission');
   writeArtifact(path, { kind: 'campaign_admission', id,

@@ -1,0 +1,165 @@
+import { readFileSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
+import { sha256 } from './provenance.mjs';
+
+const ROOT = dirname(fileURLToPath(import.meta.url));
+const CATALOG = resolve(ROOT, 'conditions', 'catalog.json');
+const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
+const VERSION = /^\d+\.\d+\.\d+$/;
+const REF = /^([a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*)@(\d+\.\d+\.\d+)$/;
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const fail = (at, message) => { throw new Error(`invalid study condition at ${at}: ${message}`); };
+
+function strict(value, at, fields) {
+  if (!object(value)) fail(at, 'must be an object');
+  for (const key of Object.keys(value)) if (!fields.has(key)) fail(`${at}.${key}`, 'is unknown');
+  for (const key of fields) if (!Object.hasOwn(value, key)) fail(`${at}.${key}`, 'is required');
+}
+
+function contained(root, path, at) {
+  const absoluteRoot = realpathSync(root);
+  const absolute = realpathSync(resolve(absoluteRoot, path));
+  const rel = relative(absoluteRoot, absolute);
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) fail(at, 'escapes the condition root');
+  return absolute;
+}
+
+function json(path, at) {
+  try { return JSON.parse(readFileSync(path, 'utf8')); }
+  catch (error) { fail(at, `cannot be read: ${error.message}`); }
+}
+
+function identity(profile, resolved) {
+  return { id: profile.id, version: profile.version,
+    sha256: sha256(canonicalDefinitionJson({ profile, resolved })), state: profile.state };
+}
+
+function validateIdentityFields(value, at, kind) {
+  if (value.schemaVersion !== 1) fail(`${at}.schemaVersion`, 'must be 1');
+  if (value.kind !== kind) fail(`${at}.kind`, `must be ${kind}`);
+  if (!ID.test(value.id)) fail(`${at}.id`, 'is invalid');
+  if (!VERSION.test(value.version)) fail(`${at}.version`, 'must be a semantic version');
+  if (!['draft', 'qualified'].includes(value.state)) fail(`${at}.state`, 'must be draft or qualified');
+}
+
+function loadCatalog(path = CATALOG) {
+  const value = json(path, 'catalog');
+  strict(value, 'catalog', new Set(['schemaVersion', 'kind', 'guidanceProfiles',
+    'probeProfiles', 'repairPolicies']));
+  if (value.schemaVersion !== 1 || value.kind !== 'study-condition-catalog') {
+    fail('catalog', 'has an unsupported schema or kind');
+  }
+  for (const field of ['guidanceProfiles', 'probeProfiles', 'repairPolicies']) {
+    if (!object(value[field])) fail(`catalog.${field}`, 'must be an object');
+    for (const [key, pathValue] of Object.entries(value[field])) {
+      if (!REF.test(key) || typeof pathValue !== 'string' || !pathValue) {
+        fail(`catalog.${field}.${key}`, 'must map an id@version to a path');
+      }
+    }
+  }
+  return { value, root: dirname(path) };
+}
+
+function loadProfile(catalog, section, reference, kind, fields) {
+  const match = REF.exec(reference ?? '');
+  if (!match) fail(reference ?? '<missing>', 'must use id@version');
+  const rel = catalog.value[section][reference];
+  if (!rel) fail(reference, `is not in catalog.${section}`);
+  const path = contained(catalog.root, rel, reference);
+  const profile = json(path, reference);
+  strict(profile, reference, fields);
+  validateIdentityFields(profile, reference, kind);
+  if (profile.id !== match[1] || profile.version !== match[2]) fail(reference, 'does not match the loaded profile identity');
+  return { profile, path };
+}
+
+function resolveGuidance(catalog, reference, stacks, stackBenchRoot) {
+  const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'mode', 'material', 'documents']);
+  const { profile } = loadProfile(catalog, 'guidanceProfiles', reference,
+    'backend-guidance-profile', fields);
+  if (!['prescribed', 'neutral'].includes(profile.mode)) fail(`${reference}.mode`, 'must be prescribed or neutral');
+  strict(profile.material, `${reference}.material`, new Set(['accessFacts', 'apiReference', 'designAdvice']));
+  for (const field of ['accessFacts', 'apiReference', 'designAdvice']) {
+    if (typeof profile.material[field] !== 'boolean') fail(`${reference}.material.${field}`, 'must be boolean');
+  }
+  if (profile.mode === 'neutral' && profile.material.designAdvice) {
+    fail(`${reference}.material.designAdvice`, 'must be false for neutral guidance');
+  }
+  if (!object(profile.documents)) fail(`${reference}.documents`, 'must be an object');
+  const documents = {};
+  for (const stack of stacks) {
+    const rel = profile.documents[stack];
+    if (typeof rel !== 'string' || !rel) fail(`${reference}.documents.${stack}`, 'is required');
+    const path = contained(stackBenchRoot, rel, `${reference}.documents.${stack}`);
+    const bytes = readFileSync(path);
+    documents[stack] = { path: relative(stackBenchRoot, path).split(sep).join('/'),
+      sha256: sha256(bytes), bytes: bytes.length };
+  }
+  return { ...identity(profile, documents), mode: profile.mode, material: profile.material, documents };
+}
+
+function resolveProbes(catalog, reference) {
+  const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'firstBuildOnly',
+    'scoreContribution', 'repairVisible', 'probes']);
+  const { profile } = loadProfile(catalog, 'probeProfiles', reference,
+    'capability-probe-profile', fields);
+  if (profile.firstBuildOnly !== true) fail(`${reference}.firstBuildOnly`, 'must be true');
+  if (profile.scoreContribution !== false) fail(`${reference}.scoreContribution`, 'must be false');
+  if (profile.repairVisible !== false) fail(`${reference}.repairVisible`, 'must be false');
+  if (!Array.isArray(profile.probes) || new Set(profile.probes).size !== profile.probes.length
+    || profile.probes.some(probe => typeof probe !== 'string' || !ID.test(probe))) {
+    fail(`${reference}.probes`, 'must contain unique capability ids');
+  }
+  if (profile.probes.length > 0) {
+    fail(`${reference}.probes`, 'names probes that this engine does not execute yet');
+  }
+  return { ...identity(profile, profile.probes), firstBuildOnly: true, scoreContribution: false,
+    repairVisible: false, probes: [...profile.probes].sort() };
+}
+
+function resolveRepair(catalog, reference) {
+  const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state',
+    'requestedEvidence', 'probeEvidence']);
+  const { profile } = loadProfile(catalog, 'repairPolicies', reference, 'repair-policy', fields);
+  if (typeof profile.requestedEvidence !== 'boolean' || typeof profile.probeEvidence !== 'boolean') {
+    fail(reference, 'repair evidence fields must be boolean');
+  }
+  if (!profile.requestedEvidence) {
+    fail(`${reference}.requestedEvidence`, 'must be true until no-evidence repair is implemented');
+  }
+  if (profile.probeEvidence) fail(`${reference}.probeEvidence`, 'must be false');
+  return { ...identity(profile, null), requestedEvidence: profile.requestedEvidence, probeEvidence: false };
+}
+
+export function validateConditionReference(input, at = 'condition') {
+  strict(input, at, new Set(['id', 'version', 'guidanceProfile', 'probeProfile', 'repairPolicy']));
+  if (!ID.test(input.id)) fail(`${at}.id`, 'is invalid');
+  if (!VERSION.test(input.version)) fail(`${at}.version`, 'must be a semantic version');
+  for (const field of ['guidanceProfile', 'probeProfile', 'repairPolicy']) {
+    if (!REF.test(input[field] ?? '')) fail(`${at}.${field}`, 'must use id@version');
+  }
+  return canonicalizeDefinition(input);
+}
+
+export function resolveStudyConditions(inputs, stacks,
+  { stackBenchRoot = ROOT, catalogPath = CATALOG, frozen = false } = {}) {
+  if (!Array.isArray(inputs) || inputs.length === 0) fail('conditions', 'must be a non-empty array');
+  const catalog = loadCatalog(catalogPath);
+  const resolved = inputs.map((input, index) => {
+    const ref = validateConditionReference(input, `conditions[${index}]`);
+    const guidance = resolveGuidance(catalog, ref.guidanceProfile, stacks, resolve(stackBenchRoot));
+    const probes = resolveProbes(catalog, ref.probeProfile);
+    const repair = resolveRepair(catalog, ref.repairPolicy);
+    if (frozen && [guidance, probes, repair].some(profile => profile.state !== 'qualified')) {
+      fail(`conditions[${index}]`, 'cannot freeze with a draft component');
+    }
+    const content = { id: ref.id, version: ref.version, guidance, probes, repair };
+    return { ...content, sha256: sha256(canonicalDefinitionJson(content)) };
+  });
+  const keys = resolved.map(condition => `${condition.id}@${condition.version}`);
+  if (new Set(keys).size !== keys.length) fail('conditions', 'must not duplicate id@version');
+  return resolved.sort((a, b) => `${a.id}@${a.version}`.localeCompare(`${b.id}@${b.version}`));
+}
