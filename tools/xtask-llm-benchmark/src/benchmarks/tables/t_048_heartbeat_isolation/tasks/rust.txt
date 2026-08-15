@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in Rust that separates stable profile data from frequently updated connection presence.
+
+TABLES
+- user_profile (public), struct UserProfile
+  - identity: Identity (primary key)
+  - display_name: String
+  - created_at: Timestamp
+- connection_presence (public), struct ConnectionPresence
+  - connection_id: ConnectionId (primary key)
+  - user_identity: Identity
+  - last_heartbeat: Timestamp
+  - online: bool
+  - index by_user: btree(user_identity)
+
+Do not put last_heartbeat or online on UserProfile. No reducers are required.

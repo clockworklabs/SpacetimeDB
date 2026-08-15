@@ -17,6 +17,8 @@ metadata:
 
 Reducers are static methods in a `static partial class`; tables are `public partial struct`s. This reference keeps everything in one `public static partial class Module`, which needs only `using SpacetimeDB;`:
 
+Methods exported through SpacetimeDB attributes, including reducers, procedures, views, HTTP handlers, and routers, must be `public static`; generated bindings invoke them from another class.
+
 ```csharp
 using SpacetimeDB;
 
@@ -51,8 +53,10 @@ public partial struct Entity
     [PrimaryKey]
     [AutoInc]
     public ulong Id;
+    [SpacetimeDB.Index.BTree]
     public Identity Owner;
     public string Name;
+    [SpacetimeDB.Index.BTree]
     public bool Active;
 }
 ```
@@ -90,7 +94,10 @@ The complete set of column attributes:
 [AutoInc]             // auto-increment (use 0 as placeholder on insert)
 [Unique]              // unique constraint; indexes the column, enables .Find()
 [SpacetimeDB.Index.BTree]  // btree index (enables .Filter() on this column)
+[Default(true)]       // migration-safe default for a newly appended field
 ```
+
+Defaults support compatible addition of a newly appended field. Do not apply `[Default(...)]` to primary-key, unique, or auto-increment fields.
 
 ## Indexes
 
@@ -155,6 +162,8 @@ public static void OnConnect(ReducerContext ctx) { ... }
 public static void OnDisconnect(ReducerContext ctx) { ... }
 ```
 
+`ctx.ConnectionId` is `ConnectionId?`, including in connection lifecycle reducers. Check or unwrap it before storing it in a non-nullable column or passing it to an index accessor.
+
 ## Views
 
 ```csharp
@@ -162,15 +171,42 @@ public static void OnDisconnect(ReducerContext ctx) { ... }
 [SpacetimeDB.View(Accessor = "ActiveUsers", Public = true)]
 public static List<Entity> ActiveUsers(AnonymousViewContext ctx)
 {
-    return ctx.Db.Entity.Iter().Where(e => e.Active).ToList();
+    return ctx.Db.Entity.Active.Filter(true).ToList();
 }
 
 // Per-user view:
-[SpacetimeDB.View(Accessor = "MyProfile", Public = true)]
-public static Entity? MyProfile(ViewContext ctx)
+[SpacetimeDB.View(Accessor = "MyEntities", Public = true)]
+public static List<Entity> MyEntities(ViewContext ctx)
 {
-    return ctx.Db.Entity.Identity.Find(ctx.Sender) as Entity?;
+    return ctx.Db.Entity.Owner.Filter(ctx.Sender).ToList();
 }
+```
+
+View contexts expose read-only table handles. These support `Count` plus `Find`/`Filter` on declared indexes, but not full-table `Iter()`. Start procedural view traversal from an indexed lookup or filter.
+
+Query-builder views use `ViewContext`, `ctx.From`, and return `IQuery<T>` directly. Use `Where` for predicates and `RightSemijoin` when the result should contain right-side rows that have a matching left-side row:
+
+```csharp
+ctx.From.Article().Where(article => article.Published.Eq(true));
+ctx.From.Subscription().RightSemijoin(
+    ctx.From.Account(),
+    (subscription, account) => subscription.AccountId.Eq(account.Id)
+);
+```
+
+Declare a procedural view primary key in its attribute: `[SpacetimeDB.View(Accessor = "CatalogEntry", Public = true, PrimaryKey = nameof(CatalogRow.Sku))]`.
+
+Procedural-view primary keys are explicit schema metadata. Add one only when the view itself is required to expose a primary key; a source table's primary key is not inherited by the view.
+
+Inclusive btree ranges use tuples, for example `ctx.Db.Shipment.DeliverBy.Filter((new Timestamp(1_000), new Timestamp(2_000)))`.
+
+## Client Visibility Filters
+
+```csharp
+[ClientVisibilityFilter]
+public static readonly Filter PrivateNoteFilter = new Filter.Sql(
+    "SELECT * FROM OwnedRow WHERE Owner = :sender"
+);
 ```
 
 ## Reducer Context API
@@ -228,6 +264,71 @@ var at = new ScheduleAt.Interval(TimeSpan.FromSeconds(5));
 
 ctx.Db.TickTimer.Insert(new TickTimer { ScheduledId = 0, ScheduledAt = at });
 ```
+
+Scheduled reducer callbacks use the ordinary `[SpacetimeDB.Reducer]` attribute. There is no `ReducerKind.Scheduled`; the table's `Scheduled` option associates the callback.
+
+To construct a `ConnectionId` from a 128-bit numeric representation, encode it as exactly 16 little-endian bytes and call `ConnectionId.From(bytes)`. The result is nullable and must be checked before use.
+
+## Procedures and HTTP
+
+Procedures are unstable APIs, so modules using them should include `#pragma warning disable STDB_UNSTABLE`. They receive `ProcedureContext` and may return `[SpacetimeDB.Type]` values:
+
+```csharp
+[SpacetimeDB.Type]
+public partial struct ResultValue { public string Value; }
+
+[SpacetimeDB.Procedure]
+public static ResultValue Inspect(ProcedureContext ctx, string input) =>
+    new() { Value = input };
+```
+
+Outbound HTTP is available through `ctx.Http`; handle its success/error result before using the response. Open short database transactions with `ctx.WithTx`. Perform network I/O before opening the transaction, and keep only database work inside its callback.
+
+```csharp
+var result = ctx.Http.Get(uri);
+var text = result.Match(
+    response => response.Body.ToStringUtf8Lossy(),
+    error => throw new Exception(error.Message)
+);
+
+ctx.WithTx(tx =>
+{
+    tx.Db.ScoreRecord.Insert(new ScoreRecord { Id = 0, Owner = ctx.Sender, Value = 1 });
+    return 0;
+});
+```
+
+`WithTx` is generic: its callback must return a value (use `return 0;` when no result is needed). The callback's generated `tx.Db` exposes module table accessors; `ProcedureContext` and `HandlerContext` do not expose tables directly.
+
+For non-GET requests, construct and send an `HttpRequest` directly:
+
+```csharp
+var result = ctx.Http.Send(new HttpRequest
+{
+    Uri = uri,
+    Method = SpacetimeDB.HttpMethod.Post,
+    Headers = new() { new HttpHeader("content-type", "text/plain") },
+    Body = HttpBody.FromString(payload),
+});
+```
+
+`HttpResponse.StatusCode` is `ushort`. HTTP headers are `HttpHeader` values, not tuples, and each header's `Value` is `byte[]`; decode text values with `System.Text.Encoding.UTF8.GetString(header.Value)`. Treat bodies as bytes: use `HttpBody.FromString(...)` to create text, `new HttpBody(bytes)` to supply raw bytes, `ToBytes()` to read raw bytes, and `ToStringUtf8Lossy()` to read text. There is no `HttpBody.FromBytes`, and `ToString()` does not return body contents. Qualify `SpacetimeDB.HttpMethod` when .NET's implicit `System.Net.Http` imports could make the name ambiguous.
+
+Scheduled procedures use the ordinary scheduled-table shape. Its `Scheduled` name refers to a `[SpacetimeDB.Procedure]` method taking `ProcedureContext` plus the scheduled row, and database access inside that procedure goes through `ctx.WithTx`.
+
+Inbound HTTP uses handler attributes and one router. Handler database access also goes through `ctx.WithTx`:
+
+```csharp
+[SpacetimeDB.HttpHandler]
+public static HttpResponse Health(HandlerContext ctx, HttpRequest request) => new(
+    200, HttpVersion.Http11, new(), HttpBody.FromString("ok")
+);
+
+[SpacetimeDB.HttpRouter]
+public static Router Routes() => SpacetimeDB.Router.New().Get("/health", Handlers.Health);
+```
+
+`Handlers` is generated from methods marked `[SpacetimeDB.HttpHandler]`; do not declare it yourself. Reference an attributed method in a router as `Handlers.MethodName`.
 
 ## Custom Types
 
