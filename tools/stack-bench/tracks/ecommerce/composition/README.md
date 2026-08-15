@@ -21,6 +21,14 @@ scores can be compared byte-for-byte during migration. That scoring mode is
 rejected unless the recipe declares its legacy level. New recipes use explicit
 stable-key weights; the smoke recipe demonstrates that form.
 
+At runtime, pack selection is requested-task selection. Its transitive declared
+dependencies are included in both prompt composition and grading. A check
+selection is only a measurement filter inside that task: without an explicit
+pack selection the full recipe prompt remains, and with one, an out-of-scope
+check is rejected rather than grading behavior the agent was never asked to
+build. Campaign identities retain explicit packs, resolved task packs, selected
+checks, and the exact composed-task hashes.
+
 Run the source checks without Docker:
 
 ```text

@@ -73,6 +73,14 @@ node bench.mjs --backend postgres --track ecommerce --levels 1 \
   --pack ecommerce.identity-access --check <stable-check-key>
 ```
 
+`--pack` changes requested scope: the agent receives only global recipe framing
+plus the selected packs' requirements and testing contracts. Declared pack
+dependencies are included automatically and recorded as resolved task packs.
+`--check` only narrows measurement inside that requested task; it never removes
+requirements by itself, and a check outside explicitly selected packs is
+rejected. With neither option, the complete promoted recipe is requested and
+graded.
+
 Give concurrent runs distinct `--run-index` values; ports and databases are
 allocated from it. Results land under a unique run id inside
 `results/<backend>-run<N>/`.

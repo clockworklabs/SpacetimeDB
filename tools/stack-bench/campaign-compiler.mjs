@@ -8,7 +8,7 @@ import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-pl
 import { currentEngineIdentity } from './artifacts.mjs';
 import { sha256 } from './provenance.mjs';
 import { recipeReleaseIdentity, resolveLegacyRecipeRelease } from './recipe-release.mjs';
-import { resolveRecipeSelection } from './recipe-selection.mjs';
+import { createRecipeTaskRequest } from './recipe-selection.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { listTracks, loadTrack } from './tracks.mjs';
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.mjs';
@@ -283,9 +283,10 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
   const bindings = definition.levels.map(level => {
     const binding = resolveLegacyRecipeRelease(track, level);
     if (!binding) fail('levels', `L${level} has no recipe release`);
-    const selection = resolveRecipeSelection(binding.release, {
+    const selectedTask = createRecipeTaskRequest(binding, {
       packIds: definition.selection.packs, checkKeys: definition.selection.checks,
     });
+    const selection = selectedTask.selection;
     const calibration = resolveCalibrationForRelease(binding.release, {
       trackRoot: track.dir, stackBenchRoot: resolve(stackBenchRoot),
     });
@@ -297,6 +298,13 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
       calibration: calibrationIdentity(calibration),
       qualifiedStacks: calibration?.qualification.stacks ?? [],
       selection,
+      task: {
+        sha256: selectedTask.task.sha256,
+        requirementSha256: selectedTask.task.requirementSha256,
+        contractSha256: selectedTask.task.contractSha256,
+        requirementIds: selectedTask.task.requirementIds,
+        contractIds: selectedTask.task.contractIds,
+      },
     };
   });
   if (definition.state === 'frozen') {
@@ -340,8 +348,10 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
       sha256: binding.selection.sha256,
       completeness: binding.selection.completeness,
       scoredPoints: binding.selection.scoredPoints,
+      taskPacks: binding.selection.taskPacks,
       requested: binding.selection.requested,
     },
+    task: binding.task,
   })) };
   const conditions = resolveStudyConditions(definition.conditions, stacks.map(stack => stack.id), {
     stackBenchRoot: resolve(stackBenchRoot), frozen: definition.state === 'frozen', requested,

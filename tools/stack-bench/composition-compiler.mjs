@@ -649,6 +649,7 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
       title: pack.title,
       path,
       includeRoles: selection.includeRoles,
+      requiresPacks: pack.requiresPacks,
       capabilities: pack.capabilities,
       evidence: pack.evidence,
       budget: pack.budget,

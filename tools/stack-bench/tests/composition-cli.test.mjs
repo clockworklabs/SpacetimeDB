@@ -45,6 +45,7 @@ test('recipe show gives pack/check selections their own stable scope identity', 
   assert.equal(selected.contentSha256, release.contentSha256);
   assert.equal(selected.selection.recipe.contentSha256, release.contentSha256);
   assert.equal(selected.selection.completeness, 'subset');
+  assert.deepEqual(selected.selection.taskPacks, ['ecommerce.identity-access']);
   assert.match(selected.selection.sha256, /^[a-f0-9]{64}$/);
   assert(selected.checkCatalog.every(check => check.packId === 'ecommerce.identity-access'));
   assert.equal(selectRecipeRelease(release, { packIds: ['ecommerce.identity-access'] })
@@ -53,15 +54,9 @@ test('recipe show gives pack/check selections their own stable scope identity', 
   const one = selectRecipeRelease(release, { checkKeys: [key] });
   assert.deepEqual(one.checkCatalog.map(check => check.stableKey), [key]);
   const outside = release.checkCatalog.find(check => check.packId !== 'ecommerce.identity-access');
-  const mixed = selectRecipeRelease(release, {
+  assert.throws(() => selectRecipeRelease(release, {
     packIds: ['ecommerce.identity-access'], checkKeys: [outside.stableKey],
-  });
-  assert.deepEqual(mixed.checkCatalog.map(check => check.stableKey),
-    release.checkCatalog.filter(check => check.packId === 'ecommerce.identity-access'
-      || check.stableKey === outside.stableKey).map(check => check.stableKey));
-  assert.equal(selectRecipeRelease(release, {
-    checkKeys: mixed.checkCatalog.map(check => check.stableKey),
-  }).selection.sha256, mixed.selection.sha256);
+  }), /unrequested pack/);
   assert.deepEqual(selectRecipeRelease(release).checkCatalog, release.checkCatalog);
   assert.equal(selectRecipeRelease(release).selection.completeness, 'full');
   assert.throws(() => selectRecipeRelease(release, { packIds: ['missing'] }), /no pack/);
@@ -69,9 +64,10 @@ test('recipe show gives pack/check selections their own stable scope identity', 
   const shown = showRecipeFile(join(SOURCE, 'composition', 'recipes', 'l1-standard-1.0.0.json'), {
     trackRoot: SOURCE, packIds: ['ecommerce.identity-access'],
   });
-  assert.equal(shown.builderTask.composedSha256, shown.task.composedSha256);
-  assert.match(shown.builderTask.requirementText, /### Reviews/);
-  assert.match(shown.builderTask.note, /does not change this builder task/);
+  assert.notEqual(shown.builderTask.sha256, shown.task.composedSha256);
+  assert.match(shown.builderTask.requirementText, /### Accounts/);
+  assert.doesNotMatch(shown.builderTask.requirementText, /### Reviews/);
+  assert.match(shown.builderTask.note, /Pack selection defines the requested task/);
 });
 
 test('recipe diff separates categories and names exact calibration work invalidated', () => {

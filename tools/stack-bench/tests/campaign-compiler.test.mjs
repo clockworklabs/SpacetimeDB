@@ -85,6 +85,17 @@ test('campaign identity ignores JSON formatting but changes with study semantics
   const partial = compile(definition({ selection: { packs: [],
     checks: ['ecommerce.identity-access.accounts.1a'] } }));
   assert.notEqual(partial.conditions[0].sha256, first.conditions[0].sha256);
+  assert.equal(partial.conditions[0].requested.levels[0].task.sha256,
+    partial.bindings[0].task.sha256);
+  assert.deepEqual(partial.conditions[0].requested.levels[0].selection.taskPacks,
+    partial.bindings[0].selection.taskPacks);
+  const identityOnly = compile(definition({ selection: {
+    packs: ['ecommerce.identity-access'], checks: [],
+  } }));
+  assert.deepEqual(identityOnly.bindings[0].selection.taskPacks,
+    ['ecommerce.identity-access']);
+  assert.notEqual(identityOnly.bindings[0].task.sha256, first.bindings[0].task.sha256);
+  assert.notEqual(identityOnly.conditions[0].sha256, first.conditions[0].sha256);
   const multiAgent = definition({ agents: [definition().agents[0],
     { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic' }] });
   const multiAgentReordered = structuredClone(multiAgent);
@@ -154,7 +165,7 @@ test('frozen campaigns require exact runtime images and accept qualified levels'
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.6.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.7.0',
     model: 'claude-sonnet-5' }];
   const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
     source: 'test snapshot', models: { 'claude-sonnet-5': {

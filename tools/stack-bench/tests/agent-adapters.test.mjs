@@ -14,7 +14,7 @@ test('built-in agent adapters are statically registered and content identified',
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const identity = agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));
     assert.equal(identity.id, id);
-    assert.equal(identity.version, id === 'claude-code' ? '1.6.0' : '1.0.0');
+    assert.equal(identity.version, id === 'claude-code' ? '1.7.0' : '1.0.0');
     assert.match(identity.sha256, /^[a-f0-9]{64}$/);
   }
   assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').requiredExecutables, ['claude']);
@@ -38,6 +38,10 @@ test('requests are normalized and unsupported modes fail before launch', () => {
     JSON.stringify(guidanceDocument));
   const withoutSkills = agentRequestArgv(deterministic, { ...request, skills: [] });
   assert.equal(withoutSkills[withoutSkills.indexOf('--skills-json') + 1], '[]');
+  const recipeTask = { schemaVersion: 1, recipe: {}, selection: {}, task: {} };
+  const withRecipeTask = agentRequestArgv(deterministic, { ...request, recipeTask });
+  assert.equal(withRecipeTask[withRecipeTask.indexOf('--recipe-task-json') + 1],
+    JSON.stringify(recipeTask));
   assert.equal(agentRequestArgv(deterministic, { ...request, maxBudgetUsd: 12.5 })
     .includes('--max-budget-usd'), false);
   const reference = AGENT_ADAPTER_REGISTRY.get('reference-fixture');

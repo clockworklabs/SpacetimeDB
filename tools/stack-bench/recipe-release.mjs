@@ -288,7 +288,8 @@ export function buildRecipeRelease(recipePath, { trackRoot } = {}) {
       fixture: { id: plan.fixture.id, version: plan.fixture.version, state: plan.fixture.state,
         path: trackRelative(root, fixturePath), sha256: sha256(readFileSync(fixturePath)) },
       packs: plan.packs.map(pack => ({ id: pack.id, version: pack.version, state: pack.state,
-        ...packSource(pack), includeRoles: [...pack.includeRoles].sort() }))
+        ...packSource(pack), includeRoles: [...pack.includeRoles].sort(),
+        requiresPacks: [...pack.requiresPacks].sort() }))
         .sort((a, b) => a.id.localeCompare(b.id)),
     },
     capabilities: plan.capabilities,

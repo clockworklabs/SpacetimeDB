@@ -21,6 +21,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor, DEFAULT_TRACK } from './tracks.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
+import { createRecipeTaskRequest, resolveRecipeTaskRequest } from './recipe-selection.mjs';
 import { writeSandbox } from './sandbox.mjs';
 import { killTree } from './platform.mjs';
 import { leaseFromEnv } from './backend-lease.mjs';
@@ -274,6 +275,7 @@ function parseArgs(argv) {
       case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
       case '--guidance-document-json': a.guidanceDocument = JSON.parse(argv[++i]); break;
+      case '--recipe-task-json': a.recipeTask = JSON.parse(argv[++i]); break;
       case '--thinking': a.thinking = argv[++i]; break;
       case '--max-budget-usd': a.maxBudgetUsd = Number(argv[++i]); break;
       // Comma-separated skill directories to inline, e.g.
@@ -647,8 +649,16 @@ async function main() {
   const selectedSkills = selectAgentSkills(defaultSkills, args.skills ?? null);
   const skillsText = readAgentSkillDocuments(REPO, selectedSkills);
   const recipeBinding = resolveLegacyRecipeRelease(track, args.level);
-  const requirementText = recipeBinding?.plan.recipe.task.requirementText ?? levelPrompt(track, args.level);
-  const contractText = recipeBinding?.plan.recipe.task.contractText ?? appendix(track, args.level);
+  if (args.recipeTask && !recipeBinding) {
+    throw new Error(`L${args.level} has no recipe release for the requested task`);
+  }
+  const selectedTask = recipeBinding
+    ? (args.recipeTask
+        ? resolveRecipeTaskRequest(recipeBinding, args.recipeTask)
+        : createRecipeTaskRequest(recipeBinding))
+    : null;
+  const requirementText = selectedTask?.task.requirementText ?? levelPrompt(track, args.level);
+  const contractText = selectedTask?.task.contractText ?? appendix(track, args.level);
 
   // Renders what the model would be given, without spending anything or
   // touching the app directory. The regression gate for harness changes is a

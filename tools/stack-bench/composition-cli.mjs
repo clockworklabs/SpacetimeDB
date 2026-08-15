@@ -8,7 +8,7 @@ import { compilePackDefinition, compileRecipeFile, resolveTaskFragment } from '.
 import { compileScenarioDefinition } from './definition-compiler.mjs';
 import { canonicalDefinitionJson } from './definition-plan.mjs';
 import { buildRecipeRelease } from './recipe-release.mjs';
-import { selectRecipeRelease } from './recipe-selection.mjs';
+import { composeSelectedRecipeTask, selectRecipeRelease } from './recipe-selection.mjs';
 import { TRACKS_DIR } from './tracks.mjs';
 
 export { selectRecipeRelease } from './recipe-selection.mjs';
@@ -109,13 +109,12 @@ export function validateRecipeFile(path, { trackRoot } = {}) {
 export function showRecipeFile(path, options = {}) {
   const compiled = validateRecipeFile(path, options);
   const selected = selectRecipeRelease(compiled.release, options);
+  const builderTask = composeSelectedRecipeTask(compiled.plan, selected.selection);
   return {
     ...selected,
     builderTask: {
-      requirementText: compiled.plan.recipe.task.requirementText,
-      contractText: compiled.plan.recipe.task.contractText,
-      composedSha256: compiled.release.task.composedSha256,
-      note: 'A check-only filter narrows measurement; it does not change this builder task.',
+      ...builderTask,
+      note: 'Pack selection defines the requested task; a check-only filter narrows measurement inside it.',
     },
   };
 }

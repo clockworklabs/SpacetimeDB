@@ -312,6 +312,15 @@ reading the whole level documents. The draft L1 calibration was rebound to the
 new exact recipe identity; no qualification or comparison claim was carried
 forward.
 
+The production runner now enforces that statement as well as the authoring
+compiler: `--pack` composes the actual agent prompt from selected packs plus
+their transitive dependencies, while `--check` only narrows measurement within
+that requested scope. The controller passes a compact content-identified task
+request to the agent, which recompiles and verifies it before rendering a prompt
+or calling a model. Campaign conditions bind explicit packs, resolved task
+packs, exact requirement/contract fragment IDs, and their hashes. The Claude
+adapter contract is version 1.7.0 for this request.
+
 E1 exit: L1 resolves to a deterministic recipe release composed from exact pack
 and fixture versions, and the builder task is composed from the same selected
 packs rather than independently maintained whole prompts. A second smoke recipe
@@ -688,13 +697,16 @@ In progress. Campaign schema v2 removes guidance from the agent identity and
 introduces a separate condition axis composed from versioned guidance, probe,
 and repair profiles. The first compiler slice content-identifies those profiles
 and each selected backend document, binds each selected recipe's meaning,
-execution, and exact check selection, carries the resolved condition through
+execution, resolved task packs, exact composed requirement/contract identities,
+and exact check selection, carries the resolved condition through
 attempts, run artifacts, admission, grouping, and reports, and makes the coding
 agent verify the exact document bytes before a model call. Non-empty probe
 profiles and repair policies that withhold requested evidence currently fail
-closed because their execution paths belong to SB-506. Full compiled-prompt
-disclosure identity, prompt/probe overlap analysis, and the shared capability
-definition remain before SB-504 can close.
+closed because their execution paths belong to SB-506. Shared harness wording
+is covered by reviewed prompt snapshots and every run records its actual prompt
+hash, but incorporating the common prompt-template identity directly into the
+pre-run condition contract, prompt/probe overlap analysis, and the shared
+capability definition remain before SB-504 can close.
 
 ### SB-505: Symmetric neutral backend guidance
 

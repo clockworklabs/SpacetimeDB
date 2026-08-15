@@ -188,6 +188,8 @@ export function agentRequestArgv(adapter, request) {
       ? ['--guidance-document-json', JSON.stringify(request.guidanceDocument)] : []),
     ...(Array.isArray(request.skills)
       ? ['--skills-json', JSON.stringify(request.skills)] : []),
+    ...(request.recipeTask
+      ? ['--recipe-task-json', JSON.stringify(request.recipeTask)] : []),
     ...(request.maxBudgetUsd != null && adapter.costLimit === 'native'
       ? ['--max-budget-usd', String(request.maxBudgetUsd)] : [])];
 }

@@ -13,7 +13,10 @@ const requested = { track: 'example', levels: [{ level: 1,
   recipe: { id: 'example.l1', version: '1.0.0', contentSha256: 'a'.repeat(64),
     meaningSha256: 'b'.repeat(64), executionSha256: 'c'.repeat(64), state: 'qualified' },
   selection: { sha256: 'd'.repeat(64), completeness: 'full', scoredPoints: 10,
-    requested: { packs: [], checks: [] } } }] };
+    taskPacks: ['example.core'], requested: { packs: [], checks: [] } },
+  task: { sha256: 'e'.repeat(64), requirementSha256: 'f'.repeat(64),
+    contractSha256: '1'.repeat(64), requirementIds: ['example.requirement'],
+    contractIds: ['example.contract'] } }] };
 
 const writeJson = (path, value) => {
   mkdirSync(dirname(path), { recursive: true });

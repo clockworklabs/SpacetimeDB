@@ -180,7 +180,7 @@ function validateRequestedScope(input) {
   }
   const levels = input.levels.map((entry, index) => {
     const at = `requested.levels[${index}]`;
-    strict(entry, at, new Set(['level', 'recipe', 'selection']));
+    strict(entry, at, new Set(['level', 'recipe', 'selection', 'task']));
     if (!Number.isSafeInteger(entry.level) || entry.level < 1) fail(`${at}.level`, 'must be positive');
     strict(entry.recipe, `${at}.recipe`, new Set(['id', 'version', 'contentSha256',
       'meaningSha256', 'executionSha256', 'state']));
@@ -191,18 +191,35 @@ function validateRequestedScope(input) {
       fail(`${at}.recipe`, 'has an invalid identity');
     }
     strict(entry.selection, `${at}.selection`, new Set(['sha256', 'completeness',
-      'scoredPoints', 'requested']));
+      'scoredPoints', 'requested', 'taskPacks']));
     if (!HASH.test(entry.selection.sha256)
       || !['full', 'subset'].includes(entry.selection.completeness)
       || !Number.isSafeInteger(entry.selection.scoredPoints) || entry.selection.scoredPoints < 0) {
       fail(`${at}.selection`, 'has an invalid identity');
     }
     strict(entry.selection.requested, `${at}.selection.requested`, new Set(['packs', 'checks']));
+    if (!Array.isArray(entry.selection.taskPacks)
+      || new Set(entry.selection.taskPacks).size !== entry.selection.taskPacks.length
+      || entry.selection.taskPacks.some(value => typeof value !== 'string' || !value)) {
+      fail(`${at}.selection.taskPacks`, 'must contain unique non-empty strings');
+    }
     for (const field of ['packs', 'checks']) {
       if (!Array.isArray(entry.selection.requested[field])
         || new Set(entry.selection.requested[field]).size !== entry.selection.requested[field].length
         || entry.selection.requested[field].some(value => typeof value !== 'string' || !value)) {
         fail(`${at}.selection.requested.${field}`, 'must contain unique non-empty strings');
+      }
+    }
+    strict(entry.task, `${at}.task`, new Set(['sha256', 'requirementSha256',
+      'contractSha256', 'requirementIds', 'contractIds']));
+    for (const field of ['sha256', 'requirementSha256', 'contractSha256']) {
+      if (!HASH.test(entry.task[field])) fail(`${at}.task.${field}`, 'must be a SHA-256 digest');
+    }
+    for (const field of ['requirementIds', 'contractIds']) {
+      if (!Array.isArray(entry.task[field])
+        || new Set(entry.task[field]).size !== entry.task[field].length
+        || entry.task[field].some(value => typeof value !== 'string' || !value)) {
+        fail(`${at}.task.${field}`, 'must contain unique non-empty strings');
       }
     }
     return entry;

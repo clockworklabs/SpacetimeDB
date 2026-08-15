@@ -36,7 +36,7 @@ import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
 import { captureBackendDiagnostics } from './backend-control.mjs';
 import { releaseBackendLease } from './backend-teardown.mjs';
 import { resolveLegacyRecipeRelease } from './recipe-release.mjs';
-import { resolveRecipeSelection } from './recipe-selection.mjs';
+import { createRecipeTaskRequest } from './recipe-selection.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
@@ -176,6 +176,7 @@ function runAgent(args, adapter, mode, level, appDir) {
   const request = { mode, level, app: appDir, backend: args.backend, track: args.track,
     runIndex: args.runIndex, model: args.model, guidance: args.guidance, skills: args.skills,
     guidanceDocument: args.guidanceDocument,
+    recipeTask: args.recipeTasks?.get(level)?.request ?? null,
     maxBudgetUsd: remainingBudget, adapterCostLimit: adapter.costLimit };
   const argv = agentRequestArgv(adapter, request);
   if (args.apiKey && !adapter.apiKeyEnvironmentVariable) {
@@ -298,12 +299,26 @@ async function main() {
   // Resolve the requested scope for every level before probing the sandbox,
   // acquiring a backend lease or paying for a build. A pack that exists at L2
   // but not L1 is not a late grading surprise; it is an invalid run request.
+  args.recipeTasks = new Map();
   for (const level of args.levelList) {
     const binding = resolveLegacyRecipeRelease(track, level);
     if (!binding && (args.packIds.length || args.checkKeys.length)) {
       throw new Error(`L${level} has no recipe release, so --pack/--check cannot be resolved`);
     }
-    if (binding) resolveRecipeSelection(binding.release, args);
+    if (binding) {
+      const resolved = createRecipeTaskRequest(binding, args);
+      const declared = args.condition?.requested?.levels?.find(entry => entry.level === level) ?? null;
+      if (args.condition && !declared) {
+        throw new Error(`study condition does not bind requested L${level}`);
+      }
+      if (declared && (declared.recipe.contentSha256 !== resolved.request.recipe.contentSha256
+        || declared.selection.sha256 !== resolved.request.selection.sha256
+        || JSON.stringify(declared.selection.taskPacks) !== JSON.stringify(resolved.request.selection.taskPacks)
+        || declared.task.sha256 !== resolved.request.task.sha256)) {
+        throw new Error(`study condition requested scope changed before L${level}`);
+      }
+      args.recipeTasks.set(level, resolved);
+    }
   }
   // Caller-owned mutation inputs are pure request data. Reject them before
   // checking credentials, Docker, ports, or any other ambient runner state so
