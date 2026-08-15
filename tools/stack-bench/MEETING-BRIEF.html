@@ -110,6 +110,7 @@
     .section-head p { margin: 0; }
 
     .grid { display: grid; gap: 16px; }
+    .grid > * { min-width: 0; }
     .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .card {
@@ -528,63 +529,122 @@
         </table>
       </div>
 
-      <h3 style="margin-top:30px">Representative executable checks</h3>
-      <p class="muted">These are shortened excerpts from the versioned ecommerce scenario files. They are data interpreted by the typed 47-action runtime, not backend-specific test code.</p>
+      <h3 style="margin-top:30px">What actually runs&mdash;not just what the JSON declares</h3>
+      <p>The JSON is only the versioned test plan. The executable is JavaScript backed by Playwright and stack adapters. It resets the real benchmark database, opens the generated application, performs actions as isolated users, disturbs the running system, observes the result, and only then creates a score.</p>
+      <div class="table-wrap" style="margin-top:12px">
+        <table>
+          <thead><tr><th>Stage</th><th>What the runner physically does</th><th>What prevents a false result</th></tr></thead>
+          <tbody>
+            <tr><td><strong>1. Prepare</strong></td><td>Verify that the app points at the benchmark-owned database, reset that database, restart when reseeding requires it, and wait for the app to answer.</td><td>The runner aborts instead of grading a foreign database, a failed reset, or source left mutated by an interrupted control run.</td></tr>
+            <tr><td><strong>2. Check the interface</strong></td><td>Open the app and verify the required <code>data-testid</code> hooks and named write actions. These are the controls the hidden tests will use.</td><td>Missing controls are reported explicitly. A test the harness cannot issue becomes inconclusive, not an application failure.</td></tr>
+            <tr><td><strong>3. Create users</strong></td><td>Launch Chromium and create a separate Playwright browser context for every actor in the feature. Each context has isolated cookies, local storage, network traffic, trace, and optional video.</td><td>One simulated user's identity cannot leak into another user's session. Every feature also uses run-scoped account and room names.</td></tr>
+            <tr><td><strong>4. Arrange state</strong></td><td>Run setup actions through the UI or the declared stack action. Setup creates users, signs them in, navigates views, and establishes the exact state needed by the check.</td><td>A failed setup makes the check untestable; it does not masquerade as a behavioral assertion failure.</td></tr>
+            <tr><td><strong>5. Apply pressure</strong></td><td>Click in several browsers at once, send authenticated writes at once, replay captured requests under another identity, change the database out of band, disconnect clients, or stop/restart the app or backend.</td><td>Concurrency first confirms that every target is ready, then dispatches with <code>Promise.all</code>. If fewer than two operations reach the server, the race is inconclusive.</td></tr>
+            <tr><td><strong>6. Observe</strong></td><td>Read exact DOM values from open clients, inspect HTTP and WebSocket traffic delivered to each actor, and when required open a fresh browser to verify committed state.</td><td>The grader never reloads during a live-update assertion. A separate retry after reload may identify refresh dependence, but cannot turn the original failure into a pass.</td></tr>
+            <tr><td><strong>7. Record and score</strong></td><td>Every action emits typed evidence with status, phase, timing, observation, and attachments. A criterion earns points only when that evidence says <code>passed</code>.</td><td>Application failure, harness failure, and inconclusive are different outcomes. Wording in an error message cannot award a point.</td></tr>
+            <tr><td><strong>8. Repeat cleanly</strong></td><td>Close every browser context, finalize traces/video, reset again before the next suite, and write a hash-bound result bundle.</td><td>Feature score and inherited-regression score stay separate, and the bundle records the exact recipe, selection, calibration, adapter, and parent attempt.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:30px">The executor code behind those stages</h3>
+      <p class="muted">These are shortened excerpts from the real runner, not scenario JSON or illustrative pseudocode.</p>
       <div class="grid three" style="margin-top:12px">
         <article class="card">
-          <h3>Race six buyers</h3>
-          <p>All six isolated sessions click at once; the harness then requires exact zero stock and agreement across every client.</p>
-<pre><code>{
-  "do": "clickConcurrently",
-  "testid": "buy-now",
-  "actors": ["a", "b", "c", "d", "e", "f"]
-},
-{
-  "do": "expectNumber",
-  "testid": "item-stock",
-  "equals": 0
-},
-{
-  "do": "expectAgreement",
-  "actors": ["a", "b", "c", "d", "e", "f"],
-  "numeric": true
+          <h3>One isolated browser per user</h3>
+          <p><code>grader/grade.mjs</code> creates fresh browser storage and a real page for every actor named by the selected feature.</p>
+<pre><code>for (const name of feature.actors) {
+  const context = await browser.newContext(
+    args.media ? { recordVideo: { dir: args.media,
+      size: { width: 1280, height: 800 } } } : {}
+  );
+  if (args.trace) await context.tracing.start({
+    screenshots: true, snapshots: true
+  });
+  const page = await context.newPage();
+  page.setDefaultTimeout(DEFAULT_WITHIN);
+  await page.goto(args.url, {
+    waitUntil: 'domcontentloaded', timeout: 20000
+  });
+  const actor = new Actor(name, page, context);
+  actor.annotate = Boolean(args.media);
+  actors.set(name, actor);
+  contexts.push({ context, name, page });
 }</code></pre>
         </article>
         <article class="card">
-          <h3>Replay a staff write as a customer</h3>
-          <p>The grader captures a real ship action, retargets it to the customer's credentials, and requires a server rejection.</p>
-<pre><code>{
-  "do": "replayAs",
-  "actor": "customer",
-  "from": "staff",
-  "match": "ship",
-  "namedAction": {
-    "path": "/api/fulfilment/ship",
-    "reducer": "ship_order"
-  }
-},
-{
-  "do": "expectReplayRejected",
-  "actor": "customer"
-}</code></pre>
+          <h3>Real overlapping clicks</h3>
+          <p><code>lifecycle-concurrency-action-executors.mjs</code> waits for every control, then starts every click without awaiting an earlier actor.</p>
+<pre><code>const notReady = (await Promise.all(
+  resolved.map(async ({ target, locator }) =&gt; {
+    try {
+      await locator.waitFor({ state: 'visible',
+        timeout: input.readyWithin ?? 15000 });
+      return await locator.isEnabled() ? null : target.actor;
+    } catch (error) {
+      if (harnessBrowserFailure(error)) throw error;
+      return target.actor;
+    }
+  })
+)).filter(Boolean);
+
+if (notReady.length) inconclusive(/* ... */);
+
+const outcomes = await Promise.all(resolved.map(
+  ({ target, locator }) =&gt; locator.click({
+    timeout: input.within ?? concurrency.defaultWithin,
+    force: true, noWaitAfter: true
+  }).then(() =&gt; null, error =&gt;
+    `${target.actor}: ${String(error.message).split('\n')[0]}`)
+));</code></pre>
         </article>
         <article class="card">
-          <h3>Write while the app is down</h3>
-          <p>The test stops the leased app server, changes committed stock directly, restarts it, and requires the already-open page to reconcile.</p>
-<pre><code>{ "do": "stopAppServer" },
-{
-  "do": "dbSetStock",
-  "item": "Desk Lamp",
-  "warehouse": "West",
-  "quantity": 10
-},
-{ "do": "startAppServer" },
-{
-  "do": "expectNumber",
-  "testid": "item-stock",
-  "equals": 15,
-  "within": 20000
+          <h3>Evidence decides the point</h3>
+          <p><code>grader/grade.mjs</code> executes every step through the registered action contract, builds typed criterion evidence, then scores that evidence.</p>
+<pre><code>for (const step of criterion.steps) {
+  activeActor = step.actor ?? activeActor;
+  await annotate(
+    actors.get(step.actor) ?? actors.values().next().value,
+    { feature: feature.name, criterion: criterion.id,
+      step: describeStep(step) }
+  );
+  await runStep(step, actors, ctx);
+}
+
+// Failure classification and media capture occur here.
+const evidence = buildCheckEvidence({
+  ctx, phase: 'assertion',
+  startedAtMs: criterionStartedAtMs,
+  failure, actor: activeActor, summary: detail,
+  attachments: criterionScreenshots
+});
+
+if (evidencePassed(evidence)) result.score += criterion.points;
+else if (!evidenceIsMeasured(evidence)) {
+  result.max -= criterion.points;
 }</code></pre>
+        </article>
+      </div>
+
+      <h3 style="margin-top:30px">A complete example: six customers race for three cameras</h3>
+      <div class="grid two" style="margin-top:12px">
+        <article class="card">
+          <h3>What happens on the machine</h3>
+          <ol>
+            <li>The ecommerce database is reset to its seed, where the Mirrorless Camera has three units.</li>
+            <li>Chromium opens six isolated sessions. The runner signs up six scoped customers and takes each to the camera.</li>
+            <li>The runner waits until all six Buy buttons are visible and enabled.</li>
+            <li>It dispatches all six clicks together, without waiting for one purchase to finish before starting the next.</li>
+            <li>After the contention settles, it reads the stock shown to actor A and requires exactly <code>0</code>.</li>
+            <li>It reads the same stock field in all six still-open browsers and requires numeric agreement without reloading them.</li>
+            <li>The action evidence, timings, observations, screenshots on failure, and final criterion evidence are written into the grade artifact.</li>
+          </ol>
+        </article>
+        <article class="card">
+          <h3>Exactly what that score proves</h3>
+          <p>The current point-bearing check proves that the six-way rush leaves stock at exactly zero and that all six open clients agree on that number. Its backend-specific mutants are used during qualification to verify that the oracle notices a broken reservation/concurrency implementation.</p>
+          <p>It does <strong>not yet</strong> claim, for points, that exactly three durable orders exist or that revenue records exactly three sales. The population-wide order-count check is currently a visible zero-point diagnostic awaiting its own clean mutation proof; the revenue check is also withheld. This distinction is intentional and is preserved in published results.</p>
+          <p class="muted">That is the level of precision the result bundle retains: which behavior ran, how it was exercised, what was observed, whether the instrument completed, and whether the observation contributed to the score.</p>
         </article>
       </div>
 
