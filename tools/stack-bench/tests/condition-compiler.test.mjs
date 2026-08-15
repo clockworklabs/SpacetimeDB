@@ -9,6 +9,11 @@ import { resolveStudyConditions, validateConditionReference } from '../condition
 const prescribed = { id: 'prescribed', version: '1.0.0',
   guidanceProfile: 'prescribed@1.0.0', probeProfile: 'none@1.0.0',
   repairPolicy: 'requested-only@1.0.0' };
+const requested = { track: 'example', levels: [{ level: 1,
+  recipe: { id: 'example.l1', version: '1.0.0', contentSha256: 'a'.repeat(64),
+    meaningSha256: 'b'.repeat(64), executionSha256: 'c'.repeat(64), state: 'qualified' },
+  selection: { sha256: 'd'.repeat(64), completeness: 'full', scoredPoints: 10,
+    requested: { packs: [], checks: [] } } }] };
 
 const writeJson = (path, value) => {
   mkdirSync(dirname(path), { recursive: true });
@@ -16,7 +21,8 @@ const writeJson = (path, value) => {
 };
 
 test('the prescribed condition binds independent guidance, probe, repair, and document identities', () => {
-  const [condition] = resolveStudyConditions([prescribed], ['mongodb', 'postgres', 'spacetime']);
+  const [condition] = resolveStudyConditions([prescribed], ['mongodb', 'postgres', 'spacetime'],
+    { requested });
   assert.match(condition.sha256, /^[a-f0-9]{64}$/);
   assert.equal(condition.guidance.mode, 'prescribed');
   assert.equal(condition.guidance.material.designAdvice, true);
@@ -26,12 +32,19 @@ test('the prescribed condition binds independent guidance, probe, repair, and do
   assert.equal(condition.probes.repairVisible, false);
   assert.equal(condition.repair.requestedEvidence, true);
   assert.equal(condition.repair.probeEvidence, false);
+  assert.deepEqual(condition.requested, requested);
+  const [changed] = resolveStudyConditions([prescribed], ['mongodb', 'postgres', 'spacetime'],
+    { requested: { ...requested, levels: [{ ...requested.levels[0], selection: {
+      ...requested.levels[0].selection, sha256: 'e'.repeat(64),
+    } }] } });
+  assert.notEqual(changed.sha256, condition.sha256);
 });
 
 test('condition references are strict and versioned', () => {
   assert.deepEqual(validateConditionReference(prescribed), prescribed);
   assert.throws(() => validateConditionReference({ ...prescribed, surprise: true }), /surprise.*unknown/);
   assert.throws(() => validateConditionReference({ ...prescribed, probeProfile: 'none' }), /id@version/);
+  assert.throws(() => resolveStudyConditions([prescribed], ['postgres']), /requested/);
 });
 
 function customCondition({ guidance = {}, probes = {}, repair = {} } = {}) {
@@ -63,14 +76,14 @@ test('neutral guidance cannot smuggle design advice or omit a selected stack doc
   } });
   try {
     assert.throws(() => resolveStudyConditions([advice.ref], ['fake'], {
-      stackBenchRoot: advice.root, catalogPath: advice.catalogPath,
+      stackBenchRoot: advice.root, catalogPath: advice.catalogPath, requested,
     }), /designAdvice.*false/);
   } finally { rmSync(advice.root, { recursive: true, force: true }); }
 
   const missing = customCondition();
   try {
     assert.throws(() => resolveStudyConditions([missing.ref], ['other'], {
-      stackBenchRoot: missing.root, catalogPath: missing.catalogPath,
+      stackBenchRoot: missing.root, catalogPath: missing.catalogPath, requested,
     }), /documents.other.*required/);
   } finally { rmSync(missing.root, { recursive: true, force: true }); }
 });
@@ -82,7 +95,7 @@ test('probe observations can never contribute score or enter repair evidence', (
     const fixture = customCondition(overrides);
     try {
       assert.throws(() => resolveStudyConditions([fixture.ref], ['fake'], {
-        stackBenchRoot: fixture.root, catalogPath: fixture.catalogPath,
+        stackBenchRoot: fixture.root, catalogPath: fixture.catalogPath, requested,
       }), /scoreContribution|repairVisible|probes|probeEvidence|requestedEvidence/);
     } finally { rmSync(fixture.root, { recursive: true, force: true }); }
   }

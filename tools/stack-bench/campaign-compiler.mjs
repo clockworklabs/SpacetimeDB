@@ -265,7 +265,8 @@ function expandAttempts(definition, requestedLevels, stacks, agents, studyCondit
         agentAdapter: agent.adapter,
         model: agent.model,
         condition: { id: condition.id, version: condition.version, sha256: condition.sha256,
-          guidance: condition.guidance, probes: condition.probes, repair: condition.repair },
+          requested: condition.requested, guidance: condition.guidance,
+          probes: condition.probes, repair: condition.repair },
         guidance: condition.guidance.mode,
         skills: agent.skills,
         levels: requestedLevels,
@@ -327,8 +328,24 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
   if (definition.state === 'frozen' && agents.some(agent => agent.costLimit === 'unsupported')) {
     fail('state', 'cannot freeze an agent adapter that does not enforce maxCostUsdPerAttempt');
   }
+  const requested = { track: definition.track, levels: bindings.map(binding => ({
+    level: binding.level,
+    recipe: {
+      id: binding.recipe.id, version: binding.recipe.version,
+      contentSha256: binding.recipe.contentSha256,
+      meaningSha256: binding.recipe.meaningSha256,
+      executionSha256: binding.recipe.executionSha256,
+      state: binding.recipe.state,
+    },
+    selection: {
+      sha256: binding.selection.sha256,
+      completeness: binding.selection.completeness,
+      scoredPoints: binding.selection.scoredPoints,
+      requested: binding.selection.requested,
+    },
+  })) };
   const conditions = resolveStudyConditions(definition.conditions, stacks.map(stack => stack.id), {
-    stackBenchRoot: resolve(stackBenchRoot), frozen: definition.state === 'frozen',
+    stackBenchRoot: resolve(stackBenchRoot), frozen: definition.state === 'frozen', requested,
   });
   return { bindings, stacks, agents, conditions };
 }

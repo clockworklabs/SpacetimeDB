@@ -82,6 +82,9 @@ test('campaign identity ignores JSON formatting but changes with study semantics
   assert.equal(same.contentSha256, first.contentSha256);
   const changed = compile(definition({ repetitions: 4 }));
   assert.notEqual(changed.contentSha256, first.contentSha256);
+  const partial = compile(definition({ selection: { packs: [],
+    checks: ['ecommerce.identity-access.accounts.1a'] } }));
+  assert.notEqual(partial.conditions[0].sha256, first.conditions[0].sha256);
   const multiAgent = definition({ agents: [definition().agents[0],
     { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic', skills: [] }] });
   const multiAgentReordered = structuredClone(multiAgent);

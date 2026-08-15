@@ -9,6 +9,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const CATALOG = resolve(ROOT, 'conditions', 'catalog.json');
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
+const HASH = /^[a-f0-9]{64}$/;
 const REF = /^([a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*)@(\d+\.\d+\.\d+)$/;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (at, message) => { throw new Error(`invalid study condition at ${at}: ${message}`); };
@@ -144,9 +145,51 @@ export function validateConditionReference(input, at = 'condition') {
   return canonicalizeDefinition(input);
 }
 
+function validateRequestedScope(input) {
+  strict(input, 'requested', new Set(['track', 'levels']));
+  if (!ID.test(input.track)) fail('requested.track', 'is invalid');
+  if (!Array.isArray(input.levels) || input.levels.length === 0) {
+    fail('requested.levels', 'must be a non-empty array');
+  }
+  const levels = input.levels.map((entry, index) => {
+    const at = `requested.levels[${index}]`;
+    strict(entry, at, new Set(['level', 'recipe', 'selection']));
+    if (!Number.isSafeInteger(entry.level) || entry.level < 1) fail(`${at}.level`, 'must be positive');
+    strict(entry.recipe, `${at}.recipe`, new Set(['id', 'version', 'contentSha256',
+      'meaningSha256', 'executionSha256', 'state']));
+    if (!ID.test(entry.recipe.id) || !VERSION.test(entry.recipe.version)
+      || !['draft', 'qualified'].includes(entry.recipe.state)
+      || ['contentSha256', 'meaningSha256', 'executionSha256']
+        .some(field => !HASH.test(entry.recipe[field]))) {
+      fail(`${at}.recipe`, 'has an invalid identity');
+    }
+    strict(entry.selection, `${at}.selection`, new Set(['sha256', 'completeness',
+      'scoredPoints', 'requested']));
+    if (!HASH.test(entry.selection.sha256)
+      || !['full', 'subset'].includes(entry.selection.completeness)
+      || !Number.isSafeInteger(entry.selection.scoredPoints) || entry.selection.scoredPoints < 0) {
+      fail(`${at}.selection`, 'has an invalid identity');
+    }
+    strict(entry.selection.requested, `${at}.selection.requested`, new Set(['packs', 'checks']));
+    for (const field of ['packs', 'checks']) {
+      if (!Array.isArray(entry.selection.requested[field])
+        || new Set(entry.selection.requested[field]).size !== entry.selection.requested[field].length
+        || entry.selection.requested[field].some(value => typeof value !== 'string' || !value)) {
+        fail(`${at}.selection.requested.${field}`, 'must contain unique non-empty strings');
+      }
+    }
+    return entry;
+  });
+  if (new Set(levels.map(entry => entry.level)).size !== levels.length) {
+    fail('requested.levels', 'must not repeat a level');
+  }
+  return canonicalizeDefinition(input);
+}
+
 export function resolveStudyConditions(inputs, stacks,
-  { stackBenchRoot = ROOT, catalogPath = CATALOG, frozen = false } = {}) {
+  { stackBenchRoot = ROOT, catalogPath = CATALOG, frozen = false, requested } = {}) {
   if (!Array.isArray(inputs) || inputs.length === 0) fail('conditions', 'must be a non-empty array');
+  const requestedScope = validateRequestedScope(requested);
   const catalog = loadCatalog(catalogPath);
   const resolved = inputs.map((input, index) => {
     const ref = validateConditionReference(input, `conditions[${index}]`);
@@ -156,7 +199,8 @@ export function resolveStudyConditions(inputs, stacks,
     if (frozen && [guidance, probes, repair].some(profile => profile.state !== 'qualified')) {
       fail(`conditions[${index}]`, 'cannot freeze with a draft component');
     }
-    const content = { id: ref.id, version: ref.version, guidance, probes, repair };
+    const content = { id: ref.id, version: ref.version, requested: requestedScope,
+      guidance, probes, repair };
     return { ...content, sha256: sha256(canonicalDefinitionJson(content)) };
   });
   const keys = resolved.map(condition => `${condition.id}@${condition.version}`);
