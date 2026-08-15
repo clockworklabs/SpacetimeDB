@@ -496,7 +496,7 @@ impl Handle {
 struct Executor {
     queue: Receiver,
     sender: Sender,
-    current_task: Mutex<Option<TaskMeta>>,
+    current_tasks: Mutex<Vec<TaskMeta>>,
     nodes: spin::Mutex<BTreeMap<NodeId, Arc<NodeRecord>>>,
     node_faults: NodeFaultOptions,
     next_node: AtomicU64,
@@ -529,7 +529,7 @@ impl Executor {
         Self {
             queue: queue.receiver(),
             sender: queue.sender(),
-            current_task: Mutex::new(None),
+            current_tasks: Mutex::new(Vec::new()),
             nodes: spin::Mutex::new(nodes),
             node_faults: config.node_faults,
             next_node: AtomicU64::new(1),
@@ -658,7 +658,7 @@ impl Executor {
         runnable.schedule();
 
         JoinHandle {
-            task: task.fallible(),
+            task: Some(task.fallible()),
             abort,
         }
     }
@@ -671,6 +671,8 @@ impl Executor {
     /// time only when no current-time source can make progress. If neither
     /// runnable work nor timers remain, the simulation is considered deadlocked.
     fn block_on_on<F: Future>(&self, node: NodeId, future: F) -> F::Output {
+        self.assert_main_or_node(node);
+
         let sender = self.sender.clone();
         let (runnable, mut task) = unsafe {
             async_task::Builder::new()
@@ -838,16 +840,22 @@ impl Executor {
     }
 
     fn task_meta(&self, node: NodeId) -> TaskMeta {
+        if let Some(current) = self.current_task()
+            && current.node == node
+        {
+            return current;
+        }
+
         let state = self.node_state(node);
         TaskMeta::new(node, state.generation())
     }
 
+    fn current_task(&self) -> Option<TaskMeta> {
+        self.current_tasks.lock().last().copied()
+    }
+
     fn current_node(&self) -> NodeId {
-        self.current_task
-            .lock()
-            .as_ref()
-            .map(|meta| meta.node)
-            .unwrap_or(NodeId::MAIN)
+        self.current_task().map(|meta| meta.node).unwrap_or(NodeId::MAIN)
     }
 
     fn assert_main_or_node(&self, node: NodeId) {
@@ -859,13 +867,11 @@ impl Executor {
     }
 
     fn enter_current_task(&self, meta: TaskMeta) -> CurrentTaskGuard<'_> {
-        let mut current = self.current_task.lock();
-        // The executor must not poll another runnable while one task's node
-        // context is installed; otherwise ambient spawn would inherit the
-        // wrong node/generation after reentrant scheduling.
-        assert!(current.is_none(), "nested simulated task polling");
-        *current = Some(meta);
-        CurrentTaskGuard { executor: self }
+        self.current_tasks.lock().push(meta);
+        CurrentTaskGuard {
+            executor: self,
+            meta,
+        }
     }
 
     fn node_state(&self, node: NodeId) -> Arc<NodeState> {
@@ -875,12 +881,17 @@ impl Executor {
 
 struct CurrentTaskGuard<'a> {
     executor: &'a Executor,
+    meta: TaskMeta,
 }
 
 impl Drop for CurrentTaskGuard<'_> {
     fn drop(&mut self) {
-        let current = self.executor.current_task.lock().take();
-        assert!(current.is_some(), "current simulated task guard dropped without task");
+        let current = self.executor.current_tasks.lock().pop();
+        assert_eq!(
+            current,
+            Some(self.meta),
+            "current simulated task stack corrupted"
+        );
     }
 }
 
@@ -1323,6 +1334,59 @@ mod tests {
             .block_on(child)
             .expect("child spawned from node-bound block_on should complete");
         assert!(child_ran.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn nested_block_on_restores_outer_node_context() {
+        let mut runtime = Runtime::new(15);
+        let main = runtime.handle();
+        let node = runtime.create_node().name("outer").build();
+        let node_handle = node.handle();
+        let child_ran = Arc::new(AtomicBool::new(false));
+
+        let outer = node.spawn({
+            let main = main.clone();
+            let node = node.clone();
+            let child_ran = Arc::clone(&child_ran);
+            async move {
+                node_handle.block_on(async {
+                    yield_now().await;
+                });
+
+                let child = main.spawn(async move {
+                    child_ran.store(true, Ordering::Release);
+                });
+                node.pause();
+                child
+            }
+        });
+        let child = runtime.block_on(outer).expect("outer task should complete");
+
+        runtime.block_on(async {
+            yield_now().await;
+        });
+        assert!(!child_ran.load(Ordering::Acquire));
+
+        node.resume();
+        runtime
+            .block_on(child)
+            .expect("ambient spawn should inherit restored outer node");
+        assert!(child_ran.load(Ordering::Acquire));
+    }
+
+    #[test]
+    #[should_panic(expected = "node 1 cannot spawn task on node 2")]
+    fn nested_block_on_rejects_cross_node_reentry() {
+        let mut runtime = Runtime::new(16);
+        let node_a = runtime.create_node().name("a").build();
+        let node_b = runtime.create_node().name("b").build();
+        let node_b_handle = node_b.handle();
+
+        let task = node_a.spawn(async move {
+            node_b_handle.block_on(async {});
+        });
+
+        let _ = runtime.block_on(task);
     }
 
     #[test]

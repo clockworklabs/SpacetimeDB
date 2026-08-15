@@ -3,4 +3,4 @@ pub mod schema;
 pub mod sim;
 pub mod traits;
 
-pub use traits::{Properties, TargetDriver, TestSuite, TestSuiteParts};
+pub use traits::{current_simulation_handle, InteractionGen, Properties, TargetDriver, TestSuite, TestSuiteParts};

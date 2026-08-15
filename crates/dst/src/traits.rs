@@ -16,6 +16,19 @@ pub trait Properties<I, O> {
     fn observe(&mut self, interaction: &I, observation: &O) -> Result<(), Error>;
 }
 
+/// Generates interactions, and can feed observations back to the generator so
+/// its internal state stays in sync with the target.
+pub trait InteractionGen<O>: std::fmt::Debug {
+    type Interaction: std::fmt::Debug;
+
+    fn next_interaction(&mut self) -> Self::Interaction;
+
+    /// Feed an observation back to the generator. Defaults to ignoring it.
+    fn observe(&mut self, _interaction: &Self::Interaction, _observation: &O) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
 pub type TestSuiteParts<S> = (
     <S as TestSuite>::Interactions,
     <S as TestSuite>::Target,
@@ -24,7 +37,10 @@ pub type TestSuiteParts<S> = (
 
 pub trait TestSuite {
     type Interaction: std::fmt::Debug;
-    type Interactions: Iterator<Item = Self::Interaction> + std::fmt::Debug;
+    type Interactions: InteractionGen<
+        <Self::Target as TargetDriver<Self::Interaction>>::Observation,
+        Interaction = Self::Interaction,
+    >;
     type Target: TargetDriver<Self::Interaction>;
     type Properties: Properties<Self::Interaction, <Self::Target as TargetDriver<Self::Interaction>>::Observation>;
 
@@ -39,19 +55,16 @@ pub trait TestSuite {
         async move {
             let (mut interactions, mut target, mut properties) = self.build(rng).await?;
 
-            let result = async {
-                for interaction in interactions.by_ref().take(max_interactions) {
-                    let observation = target.execute(&interaction).await?;
-                    properties.observe(&interaction, &observation)?;
-                }
-
-                Ok(())
+            for _ in 0..max_interactions {
+                let interaction = interactions.next_interaction();
+                let observation = target.execute(&interaction).await?;
+                interactions.observe(&interaction, &observation)?;
+                properties.observe(&interaction, &observation)?;
             }
-            .await;
 
             tracing::info!(interaction_counts = ?interactions, "final interaction counts");
 
-            result
+            Ok(())
         }
     }
 }

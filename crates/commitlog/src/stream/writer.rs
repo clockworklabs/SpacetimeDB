@@ -5,7 +5,7 @@ use std::{
 
 use futures::TryFutureExt;
 use log::{debug, error, info, trace, warn};
-use spacetimedb_runtime::spawn_blocking;
+use spacetimedb_runtime::{spawn, spawn_blocking};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt};
 
 use crate::{
@@ -375,7 +375,7 @@ where
     fn drop(&mut self) {
         if let Some(current_segment) = self.current_segment.take() {
             trace!("closing current segment on writer drop");
-            tokio::spawn(
+            spawn(
                 current_segment
                     .close()
                     .inspect_err(|e| warn!("error closing segment on drop: {e}")),
