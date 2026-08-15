@@ -868,10 +868,7 @@ impl Executor {
 
     fn enter_current_task(&self, meta: TaskMeta) -> CurrentTaskGuard<'_> {
         self.current_tasks.lock().push(meta);
-        CurrentTaskGuard {
-            executor: self,
-            meta,
-        }
+        CurrentTaskGuard { executor: self, meta }
     }
 
     fn node_state(&self, node: NodeId) -> Arc<NodeState> {
@@ -887,11 +884,7 @@ struct CurrentTaskGuard<'a> {
 impl Drop for CurrentTaskGuard<'_> {
     fn drop(&mut self) {
         let current = self.executor.current_tasks.lock().pop();
-        assert_eq!(
-            current,
-            Some(self.meta),
-            "current simulated task stack corrupted"
-        );
+        assert_eq!(current, Some(self.meta), "current simulated task stack corrupted");
     }
 }
 
@@ -1064,6 +1057,8 @@ mod tests {
 
     use super::*;
     use crate::sim::RuntimeConfig;
+
+    struct Spawned<T>(JoinHandle<T>);
 
     struct DropFlag(Arc<AtomicUsize>);
 
@@ -1311,18 +1306,20 @@ mod tests {
         let node_handle = node.handle();
         let child_ran = Arc::new(AtomicBool::new(false));
 
-        let child = node_handle.block_on({
-            let main = main.clone();
-            let node = node.clone();
-            let child_ran = Arc::clone(&child_ran);
-            async move {
-                let child = main.spawn(async move {
-                    child_ran.store(true, Ordering::Release);
-                });
-                node.pause();
-                child
-            }
-        });
+        let child = node_handle
+            .block_on({
+                let main = main.clone();
+                let node = node.clone();
+                let child_ran = Arc::clone(&child_ran);
+                async move {
+                    let child = main.spawn(async move {
+                        child_ran.store(true, Ordering::Release);
+                    });
+                    node.pause();
+                    Spawned(child)
+                }
+            })
+            .0;
 
         runtime.block_on(async {
             yield_now().await;
@@ -1357,10 +1354,10 @@ mod tests {
                     child_ran.store(true, Ordering::Release);
                 });
                 node.pause();
-                child
+                Spawned(child)
             }
         });
-        let child = runtime.block_on(outer).expect("outer task should complete");
+        let child = runtime.block_on(outer).expect("outer task should complete").0;
 
         runtime.block_on(async {
             yield_now().await;
