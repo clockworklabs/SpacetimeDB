@@ -15,6 +15,7 @@
     "check:scenarios": "node grader/check-scenarios.mjs",
     "check:definition-goldens": "node definition-goldens.mjs",
     "check:composition": "node check-composition.mjs",
+    "check:prompts": "node prompt-snapshot.mjs",
     "check:calibration": "node check-calibration.mjs",
     "check:references": "node reference-fixtures.mjs",
     "pack": "node composition-cli.mjs pack",

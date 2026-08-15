@@ -37,10 +37,18 @@ cd tools/stack-bench
 npm ci
 npm run bootstrap:browsers
 npm test
+npm run check:prompts
 npm run preflight -- --backend spacetime,postgres,mongodb --track ecommerce --levels 1-2 --smoke
 npm run test:null
 npm run test:container
 ```
+
+`check:prompts` is model-free and Docker-free. It renders the actual L1/L2
+build, upgrade, and fix prompts for every packaged stack under prescribed and
+neutral guidance, then compares their exact bytes with the reviewed appliance
+snapshot. If an intentional prompt change occurs, inspect the rendered prompts
+with `agent.mjs --print-prompt` before refreshing the snapshot with
+`node prompt-snapshot.mjs --write`.
 
 `preflight` says whether the exact requested run can start and gives a concrete
 fix for each failure. It checks Docker/Compose, resource floors, image and

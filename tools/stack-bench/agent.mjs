@@ -563,7 +563,7 @@ export function lintShimScript(host, port, token) {
     + `http://${host}:${port}/lint\n`;
 }
 
-function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
+export function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
   const lint = args.printPrompt ? './check-hooks.sh'
     : writeLintShim(args.app, lintEndpoint.port, lintEndpoint.token);
   const common = [
@@ -581,10 +581,12 @@ function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
       'Dev servers must listen on 0.0.0.0, not localhost, or nothing outside '
       + 'can reach them. For Vite set `server.host: true` in vite.config.ts.',
     '',
+    '## Backend access and API material',
+    '',
     backendDoc(args, p, track),
   ];
   const skills = materials.skillsText ?? readAgentSkillDocuments(REPO, args.skills ?? []);
-  if (skills) common.push('', '---', '', skills);
+  if (skills) common.push('', '## Selected API reference', '', skills);
 
   if (args.mode === 'fix') {
     return [
@@ -622,9 +624,12 @@ function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
     '',
     ...common,
     '',
-    '---',
+    '## Requested application',
     '',
     materials.requirementText ?? levelPrompt(track, args.level),
+    '',
+    '## Test interface contract',
+    '',
     materials.contractText ?? appendix(track, args.level),
   ].join('\n');
 }
@@ -637,12 +642,6 @@ async function main() {
   const args = parseArgs(process.argv);
   const track = loadTrack(args.track);
   const p = portsFor(track, args.backend, args.runIndex);
-  // Everything the prompt says about addresses and paths depends on where the
-  // build will run, so this is settled before any prompt is rendered — printed
-  // or sent. Resolving it after --print-prompt would make the regression gate
-  // compare a prompt nobody is ever given.
-  resolveIsolation(args);
-  const imageIdentity = resolveContainerImage(IMAGE);
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const defaultSkills = executeStackCapability(adapter, 'agent', 'default-skills');
   const selectedSkills = selectAgentSkills(defaultSkills, args.skills ?? null);
@@ -659,6 +658,12 @@ async function main() {
     process.stdout.write(buildPrompt(args, p, track, undefined, { skillsText, requirementText, contractText }));
     return;
   }
+  // Printed prompts describe the one supported coding topology but are a pure
+  // review operation: they must work on a release-review machine that does not
+  // have Docker or the build image. A paid session, by contrast, proves the
+  // image and Linux CLI boundary immediately before touching the app.
+  resolveIsolation(args);
+  const imageIdentity = resolveContainerImage(IMAGE);
   // Only a build wipes: an upgrade or a fix must find the data the previous
   // level left, which is the whole point of a cumulative ladder.
   // Called for every backend, not just those with a dbPort: spacetime has no

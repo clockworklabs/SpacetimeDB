@@ -116,6 +116,19 @@ function resolveGuidance(catalog, reference, stacks, stackBenchRoot) {
     material: profile.material, documents, skills };
 }
 
+// Public review surface for tooling that must inspect the exact guidance
+// selected by a profile without manufacturing an otherwise unrelated study
+// condition. Campaign compilation uses the same resolver below.
+export function resolveGuidanceProfile(reference, stacks,
+  { stackBenchRoot = ROOT, catalogPath = CATALOG } = {}) {
+  if (!Array.isArray(stacks) || stacks.length === 0
+    || new Set(stacks).size !== stacks.length
+    || stacks.some(stack => typeof stack !== 'string' || !ID.test(stack))) {
+    fail('stacks', 'must contain unique stack ids');
+  }
+  return resolveGuidance(loadCatalog(catalogPath), reference, stacks, resolve(stackBenchRoot));
+}
+
 function resolveProbes(catalog, reference) {
   const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'firstBuildOnly',
     'scoreContribution', 'repairVisible', 'probes']);

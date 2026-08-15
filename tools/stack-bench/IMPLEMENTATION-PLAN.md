@@ -717,8 +717,16 @@ explicit empty list, so adapter defaults cannot silently alter a study arm.
 Draft neutral documents and a symmetric profile exist for all three stacks.
 Compiler tests exercise prescribed and neutral as an independent campaign axis,
 and boundary tests reject named framework, ORM, transport, polling, transaction,
-locking, or layout prescriptions. Prompt-snapshot and live neutral qualification
-remain before the profile can advance from draft.
+locking, or layout prescriptions. A model-free command now renders the real
+build, upgrade, and fix prompts for L1/L2 under both guidance profiles, without
+requiring Docker or touching an app, and verifies all 18 exact prompt hashes
+against a reviewed Linux-appliance snapshot. Actual runs already retain their
+own rendered prompt hash in session provenance. Snapshot review also exposed a
+shared L1 testing-interface fragment that still names Express; because that text
+appears in both study arms, neutral remains draft until the interface is made
+framework-neutral through a new versioned recipe rather than by mutating the
+qualified L1 recipe in place. Build-container inspection and live neutral
+qualification also remain.
 
 ### SB-506: First-build capability probes
 

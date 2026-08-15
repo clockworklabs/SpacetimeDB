@@ -1,0 +1,518 @@
+{
+  "schemaVersion": 1,
+  "kind": "prompt-snapshot",
+  "id": "ecommerce-l1-l2-guidance",
+  "version": "1.0.0",
+  "topology": {
+    "platform": "linux/amd64",
+    "hostAlias": "127.0.0.1",
+    "runIndex": 0
+  },
+  "prompts": [
+    {
+      "profile": "neutral@1.0.0",
+      "mode": "neutral",
+      "stack": "mongodb",
+      "round": {
+        "mode": "build",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/minimal/mongodb.md",
+        "sha256": "a9eb0922896d91d346dc7351e6db66d55137f6acc1d6be506d8af5856d5f8c43",
+        "bytes": 1161
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "a6b244f303e50a672505108253390147a597d04928698a29d425c2b3d07c751c",
+        "bytes": 1167
+      },
+      "prompt": {
+        "sha256": "1fbce01c260223193a13f48fee2f9692c81d3bb063dc4e8a3d6de905452123de",
+        "bytes": 18252
+      }
+    },
+    {
+      "profile": "neutral@1.0.0",
+      "mode": "neutral",
+      "stack": "mongodb",
+      "round": {
+        "mode": "fix",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/minimal/mongodb.md",
+        "sha256": "a9eb0922896d91d346dc7351e6db66d55137f6acc1d6be506d8af5856d5f8c43",
+        "bytes": 1161
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "a6b244f303e50a672505108253390147a597d04928698a29d425c2b3d07c751c",
+        "bytes": 1167
+      },
+      "prompt": {
+        "sha256": "d0e6e4fc0387560847dda3cf0180c918a423cdbc32854f68a9b87bb688dc668d",
+        "bytes": 1827
+      }
+    },
+    {
+      "profile": "neutral@1.0.0",
+      "mode": "neutral",
+      "stack": "mongodb",
+      "round": {
+        "mode": "upgrade",
+        "level": 2
+      },
+      "document": {
+        "path": "backends/minimal/mongodb.md",
+        "sha256": "a9eb0922896d91d346dc7351e6db66d55137f6acc1d6be506d8af5856d5f8c43",
+        "bytes": 1161
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "a6b244f303e50a672505108253390147a597d04928698a29d425c2b3d07c751c",
+        "bytes": 1167
+      },
+      "prompt": {
+        "sha256": "94402e48f747a8d127494e6152870f7328b6b45e1efe23317a4cab32abbe61e4",
+        "bytes": 14381
+      }
+    },
+    {
+      "profile": "neutral@1.0.0",
+      "mode": "neutral",
+      "stack": "postgres",
+      "round": {
+        "mode": "build",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/minimal/postgres.md",
+        "sha256": "1dbe83b3312a234b5daae2bce61beb638c5263f9a13b5af4cc4883a797e9aabb",
+        "bytes": 1216
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "032acea9781bc5691ed337c060e5f2ae1979f4f4700402c2f3d1951ae6f2cdbe",
+        "bytes": 1247
+      },
+      "prompt": {
+        "sha256": "f162c6d3bfb45625da9609ae323abb8c72c7efbc8e8ebf691f0c67c3cc0777d4",
+        "bytes": 18332
+      }
+    },
+    {
+      "profile": "neutral@1.0.0",
+      "mode": "neutral",
+      "stack": "postgres",
+      "round": {
+        "mode": "fix",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/minimal/postgres.md",
+        "sha256": "1dbe83b3312a234b5daae2bce61beb638c5263f9a13b5af4cc4883a797e9aabb",
+        "bytes": 1216
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "032acea9781bc5691ed337c060e5f2ae1979f4f4700402c2f3d1951ae6f2cdbe",
+        "bytes": 1247
+      },
+      "prompt": {
+        "sha256": "882e34501fc678b888d20952e4b1b7b5b34a57ad59292c8d823f50cbbad8a07a",
+        "bytes": 1907
+      }
+    },
+    {
+      "profile": "neutral@1.0.0",
+      "mode": "neutral",
+      "stack": "postgres",
+      "round": {
+        "mode": "upgrade",
+        "level": 2
+      },
+      "document": {
+        "path": "backends/minimal/postgres.md",
+        "sha256": "1dbe83b3312a234b5daae2bce61beb638c5263f9a13b5af4cc4883a797e9aabb",
+        "bytes": 1216
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "032acea9781bc5691ed337c060e5f2ae1979f4f4700402c2f3d1951ae6f2cdbe",
+        "bytes": 1247
+      },
+      "prompt": {
+        "sha256": "721bc3bb7090a40ba98f48d3648bbeb200353a2ad588965207b5e811e180c66c",
+        "bytes": 14461
+      }
+    },
+    {
+      "profile": "neutral@1.0.0",
+      "mode": "neutral",
+      "stack": "spacetime",
+      "round": {
+        "mode": "build",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/minimal/spacetime.md",
+        "sha256": "f227320915138b58813490443bc0a22b303776cb3ebb9e454df731297737e4c2",
+        "bytes": 1183
+      },
+      "skills": {
+        "ids": [
+          "typescript-server",
+          "typescript-client"
+        ],
+        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
+        "bytes": 22506
+      },
+      "backendMaterial": {
+        "sha256": "9ff5e511d3632411afc47e1ad24c1c0c6ef5116da7e3fd76813f473e08bfb021",
+        "bytes": 1214
+      },
+      "prompt": {
+        "sha256": "6f854ac5d25be92d1585dd54c4e6ce3e647f45dc00620557da3fb6556e0aa1bf",
+        "bytes": 40833
+      }
+    },
+    {
+      "profile": "neutral@1.0.0",
+      "mode": "neutral",
+      "stack": "spacetime",
+      "round": {
+        "mode": "fix",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/minimal/spacetime.md",
+        "sha256": "f227320915138b58813490443bc0a22b303776cb3ebb9e454df731297737e4c2",
+        "bytes": 1183
+      },
+      "skills": {
+        "ids": [
+          "typescript-server",
+          "typescript-client"
+        ],
+        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
+        "bytes": 22506
+      },
+      "backendMaterial": {
+        "sha256": "9ff5e511d3632411afc47e1ad24c1c0c6ef5116da7e3fd76813f473e08bfb021",
+        "bytes": 1214
+      },
+      "prompt": {
+        "sha256": "06dc52c5eac92944a74b769b71adccec96743f4454bdba2f631c701354ef5a8c",
+        "bytes": 24408
+      }
+    },
+    {
+      "profile": "neutral@1.0.0",
+      "mode": "neutral",
+      "stack": "spacetime",
+      "round": {
+        "mode": "upgrade",
+        "level": 2
+      },
+      "document": {
+        "path": "backends/minimal/spacetime.md",
+        "sha256": "f227320915138b58813490443bc0a22b303776cb3ebb9e454df731297737e4c2",
+        "bytes": 1183
+      },
+      "skills": {
+        "ids": [
+          "typescript-server",
+          "typescript-client"
+        ],
+        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
+        "bytes": 22506
+      },
+      "backendMaterial": {
+        "sha256": "9ff5e511d3632411afc47e1ad24c1c0c6ef5116da7e3fd76813f473e08bfb021",
+        "bytes": 1214
+      },
+      "prompt": {
+        "sha256": "1a06aac58acae66f7b8ffbd3fb7130225e92290d6fc49e71182a9560ec3a31b2",
+        "bytes": 36962
+      }
+    },
+    {
+      "profile": "prescribed@1.0.0",
+      "mode": "prescribed",
+      "stack": "mongodb",
+      "round": {
+        "mode": "build",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/mongodb.md",
+        "sha256": "6258a190cb357f8e2dad5f4f5503291a164fbe0e92369442c5a77f9e5c859273",
+        "bytes": 2298
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "eca11afc57d42c02f1e87d13886e301696f417f66b5aab7cb58a552fc15ac5b7",
+        "bytes": 2270
+      },
+      "prompt": {
+        "sha256": "44ebd508e8180d9ad6590aa57360e553374de53a55c8ecf27595224293ec1e25",
+        "bytes": 19355
+      }
+    },
+    {
+      "profile": "prescribed@1.0.0",
+      "mode": "prescribed",
+      "stack": "mongodb",
+      "round": {
+        "mode": "fix",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/mongodb.md",
+        "sha256": "6258a190cb357f8e2dad5f4f5503291a164fbe0e92369442c5a77f9e5c859273",
+        "bytes": 2298
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "eca11afc57d42c02f1e87d13886e301696f417f66b5aab7cb58a552fc15ac5b7",
+        "bytes": 2270
+      },
+      "prompt": {
+        "sha256": "2f181baf539e9109ed952441adcd6d0cefcee906019629587002980dabe79e8b",
+        "bytes": 2930
+      }
+    },
+    {
+      "profile": "prescribed@1.0.0",
+      "mode": "prescribed",
+      "stack": "mongodb",
+      "round": {
+        "mode": "upgrade",
+        "level": 2
+      },
+      "document": {
+        "path": "backends/mongodb.md",
+        "sha256": "6258a190cb357f8e2dad5f4f5503291a164fbe0e92369442c5a77f9e5c859273",
+        "bytes": 2298
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "eca11afc57d42c02f1e87d13886e301696f417f66b5aab7cb58a552fc15ac5b7",
+        "bytes": 2270
+      },
+      "prompt": {
+        "sha256": "4285ea1e5290befb7568dc2f96caf6252bcf0d6a9d568f70e0cc4223ca0ed16b",
+        "bytes": 15484
+      }
+    },
+    {
+      "profile": "prescribed@1.0.0",
+      "mode": "prescribed",
+      "stack": "postgres",
+      "round": {
+        "mode": "build",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/postgres.md",
+        "sha256": "51296aac5c5041a716ca3dbed8a5b2d9a9f7882ce0d948e031dc3f7d123deea5",
+        "bytes": 2454
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "4ac560ab3e03ce841cd2566d917b6d6cf876d93c21be3b91ed17e3691a005a7f",
+        "bytes": 2451
+      },
+      "prompt": {
+        "sha256": "51b5db87c61a75b7c6b3e80af415e0a0c8c3217a3b6a8854e02f4acecb92f952",
+        "bytes": 19536
+      }
+    },
+    {
+      "profile": "prescribed@1.0.0",
+      "mode": "prescribed",
+      "stack": "postgres",
+      "round": {
+        "mode": "fix",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/postgres.md",
+        "sha256": "51296aac5c5041a716ca3dbed8a5b2d9a9f7882ce0d948e031dc3f7d123deea5",
+        "bytes": 2454
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "4ac560ab3e03ce841cd2566d917b6d6cf876d93c21be3b91ed17e3691a005a7f",
+        "bytes": 2451
+      },
+      "prompt": {
+        "sha256": "a4ec39ff6bd5a344abc889353b43d4b44b66c0cabda5d617e990aabb5a8778e7",
+        "bytes": 3111
+      }
+    },
+    {
+      "profile": "prescribed@1.0.0",
+      "mode": "prescribed",
+      "stack": "postgres",
+      "round": {
+        "mode": "upgrade",
+        "level": 2
+      },
+      "document": {
+        "path": "backends/postgres.md",
+        "sha256": "51296aac5c5041a716ca3dbed8a5b2d9a9f7882ce0d948e031dc3f7d123deea5",
+        "bytes": 2454
+      },
+      "skills": {
+        "ids": [],
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "backendMaterial": {
+        "sha256": "4ac560ab3e03ce841cd2566d917b6d6cf876d93c21be3b91ed17e3691a005a7f",
+        "bytes": 2451
+      },
+      "prompt": {
+        "sha256": "8843a1aae31a86609a18cc6e27e08953e65e6e64168ff314a1f63bda6d806e3d",
+        "bytes": 15665
+      }
+    },
+    {
+      "profile": "prescribed@1.0.0",
+      "mode": "prescribed",
+      "stack": "spacetime",
+      "round": {
+        "mode": "build",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/spacetime.md",
+        "sha256": "210eab379617b40c481676f4e83c5ae951f95d67edd7056f3851edd82b3d4fb9",
+        "bytes": 4049
+      },
+      "skills": {
+        "ids": [
+          "typescript-server",
+          "typescript-client"
+        ],
+        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
+        "bytes": 22506
+      },
+      "backendMaterial": {
+        "sha256": "6b1cf0dd8b592634c834f1821d8ad75263e413aa0b12737aa4a4edaddd7c0405",
+        "bytes": 4233
+      },
+      "prompt": {
+        "sha256": "4cf0af157b18fc201cbcd05079d37e7205db851db991443212fd0964ba444b19",
+        "bytes": 43853
+      }
+    },
+    {
+      "profile": "prescribed@1.0.0",
+      "mode": "prescribed",
+      "stack": "spacetime",
+      "round": {
+        "mode": "fix",
+        "level": 1
+      },
+      "document": {
+        "path": "backends/spacetime.md",
+        "sha256": "210eab379617b40c481676f4e83c5ae951f95d67edd7056f3851edd82b3d4fb9",
+        "bytes": 4049
+      },
+      "skills": {
+        "ids": [
+          "typescript-server",
+          "typescript-client"
+        ],
+        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
+        "bytes": 22506
+      },
+      "backendMaterial": {
+        "sha256": "6b1cf0dd8b592634c834f1821d8ad75263e413aa0b12737aa4a4edaddd7c0405",
+        "bytes": 4233
+      },
+      "prompt": {
+        "sha256": "4f17b975d849df2dc121d52695884b12df9e0d571d1abb0b96fc912937acb3a1",
+        "bytes": 27428
+      }
+    },
+    {
+      "profile": "prescribed@1.0.0",
+      "mode": "prescribed",
+      "stack": "spacetime",
+      "round": {
+        "mode": "upgrade",
+        "level": 2
+      },
+      "document": {
+        "path": "backends/spacetime.md",
+        "sha256": "210eab379617b40c481676f4e83c5ae951f95d67edd7056f3851edd82b3d4fb9",
+        "bytes": 4049
+      },
+      "skills": {
+        "ids": [
+          "typescript-server",
+          "typescript-client"
+        ],
+        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
+        "bytes": 22506
+      },
+      "backendMaterial": {
+        "sha256": "6b1cf0dd8b592634c834f1821d8ad75263e413aa0b12737aa4a4edaddd7c0405",
+        "bytes": 4233
+      },
+      "prompt": {
+        "sha256": "2fcc05b042e400c18803c8d624815802376fdf2785dbf11e405895f00dac9793",
+        "bytes": 39982
+      }
+    }
+  ],
+  "contentSha256": "b1d7acdb7054de5d03f06649f69b877d430212b0f17fb7f5915fd0c2e9edcc50"
+}
