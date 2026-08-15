@@ -236,8 +236,8 @@ First compatibility slice completed:
 - The validated ecommerce L1/L2 workload is now expressed as eight behavior
   pack identities, two versioned fixture sets, exact parity recipes, and a
   separately versioned promotion catalog. Compilation proves the same
-  suite/feature/check order and 51-point L1/74-point L2 scoring. A smaller smoke
-  recipe proves pack reuse with explicit recipe-owned weights.
+  suite/feature/check order and 51-point L1/75-point aggregate L2 scoring. A
+  smaller smoke recipe proves pack reuse with explicit recipe-owned weights.
 - Recipe releases now carry deterministic meaning, execution, and combined
   content hashes plus exact source digests and a compact stable-key catalog.
   Ecommerce L1/L2 grades and bundles record the alias and exact resolved

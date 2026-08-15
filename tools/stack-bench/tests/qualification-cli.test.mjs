@@ -48,8 +48,11 @@ test('qualification can inspect an exact candidate without changing the L1 defau
   assert.equal(status.scope.recipe.version, '1.1.0');
   assert.equal(status.scope.calibration.version, '1.1.0');
   assert.equal(status.launch.ok, true);
-  assert.equal(status.promotion.ready, false);
-  assert.equal(status.promotion.blockers.filter(item => item.code === 'evidence_missing').length, 13);
+  assert.equal(status.requiredEvidence.length, 13);
+  assert.equal(status.promotion.ready, true);
+  assert.deepEqual(status.promotion.blockers, []);
+  assert(status.promotion.governance.some(item => item.path === 'promotion.status'
+    && item.state === 'candidate' && item.target === 'promoted'));
   assert(status.commands.every(command => command.includes('--recipe ecommerce.l1-standard@1.1.0')));
   assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '1.0.0');
 });
