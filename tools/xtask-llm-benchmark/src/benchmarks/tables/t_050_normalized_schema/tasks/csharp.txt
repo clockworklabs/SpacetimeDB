@@ -1,0 +1,18 @@
+Write a SpacetimeDB backend module in C# that normalizes organization data into three related tables.
+
+TABLES
+- Organization (public, accessor Organization)
+  - Id: ulong (primary key, auto increment)
+  - Name: string
+- Department (public, accessor Department)
+  - Id: ulong (primary key, auto increment)
+  - OrganizationId: ulong
+  - Name: string
+  - index by_organization: btree(OrganizationId)
+- Employee (public, accessor Employee)
+  - Id: ulong (primary key, auto increment)
+  - DepartmentId: ulong
+  - Name: string
+  - index by_department: btree(DepartmentId)
+
+Do not use nested arrays. No reducers are required.

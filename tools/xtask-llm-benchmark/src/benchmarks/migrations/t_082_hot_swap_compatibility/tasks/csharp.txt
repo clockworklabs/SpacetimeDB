@@ -1,0 +1,17 @@
+Update the existing SpacetimeDB backend module in C# through a compatible republish.
+
+TABLES
+- Counter (public, accessor Counter)
+  - Preserve the existing table and its exact fields
+- Release (private, accessor Release)
+  - Fields:
+    - Version: uint (primary key)
+
+REDUCERS
+- Preserve Seed
+- Preserve Increment without renaming it or changing its signature
+- RecordRelease(version: uint)
+
+MIGRATION
+- Existing Counter data must remain usable after republish
+- The existing server API must remain usable after republish
