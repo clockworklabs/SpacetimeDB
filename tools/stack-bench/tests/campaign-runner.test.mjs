@@ -159,6 +159,59 @@ test('campaign validation rejects an application result that stopped before its 
     /outcome\.kind/);
 });
 
+test('campaign validation binds hidden probe evidence to its exact first-build selection', () => {
+  const compiled = compileCampaignFile(example);
+  const sourceSha256 = 'a'.repeat(64);
+  const selectionSha256 = 'b'.repeat(64);
+  const selectedProbeKeys = ['durability/session'];
+  const baseAttempt = compiled.attempts[0];
+  const condition = { ...baseAttempt.condition, requested: { levels: [{ level: 1,
+    selection: { sha256: selectionSha256, probeChecks: selectedProbeKeys } }] } };
+  const plan = { ...compiled, conditions: compiled.conditions.map(item =>
+    item.sha256 === condition.sha256 ? condition : item) };
+  const attempt = { ...baseAttempt, condition };
+  const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
+  const stack = plan.stacks.find(item => item.id === attempt.stack);
+  const run = { artifactEnvelope: { attempt: { parentId: attempt.id },
+    identities: emptyArtifactIdentities({ engine: plan.identities.engine,
+      agentAdapter: agent.identity, stackAdapter: stack }) },
+  track: plan.definition.track, backend: attempt.stack, model: attempt.model,
+  guidance: attempt.guidance, condition: attempt.condition,
+  selectionRequest: plan.definition.selection, skills: attempt.skills,
+  runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
+  levels: [{ level: 1, score: 0, max: 1, fixRounds: 3,
+    selection: { sha256: selectionSha256,
+      probeChecks: [{ stableKey: 'durability/session', points: 1 }] },
+    firstBuild: { source: { sha256: sourceSha256, files: 1 }, probes: {
+      sourceSha256, selectionSha256, selectedChecks: selectedProbeKeys,
+      reportedChecks: selectedProbeKeys, passedPoints: 1, observedPoints: 1,
+      scoreContribution: false, repairVisible: false,
+      artifact: 'first-build-l1-probe/bundle.json', outcome: { kind: 'passed' },
+    } },
+    repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3,
+      stopReason: null }, outcome: { kind: 'app_failure' } }],
+  outcome: { kind: 'app_failure' } };
+  assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  const visibleToRepair = structuredClone(run);
+  visibleToRepair.levels[0].firstBuild.probes.repairVisible = true;
+  assert.throws(() => validateCampaignRun(plan, attempt, visibleToRepair,
+    { buildImage: 'test-build-image' }), /firstBuild\.probes\.repairVisible/);
+  const wrongSource = structuredClone(run);
+  wrongSource.levels[0].firstBuild.probes.sourceSha256 = 'c'.repeat(64);
+  assert.throws(() => validateCampaignRun(plan, attempt, wrongSource,
+    { buildImage: 'test-build-image' }), /firstBuild\.probes\.sourceSha256/);
+  const wrongDenominator = structuredClone(run);
+  wrongDenominator.levels[0].firstBuild.probes.observedPoints = 2;
+  assert.throws(() => validateCampaignRun(plan, attempt, wrongDenominator,
+    { buildImage: 'test-build-image' }), /firstBuild\.probes\.observedPoints/);
+  const wrongPlannedSelection = structuredClone(run);
+  wrongPlannedSelection.levels[0].selection.probeChecks[0].stableKey = 'durability/cart';
+  wrongPlannedSelection.levels[0].firstBuild.probes.selectedChecks = ['durability/cart'];
+  wrongPlannedSelection.levels[0].firstBuild.probes.reportedChecks = ['durability/cart'];
+  assert.throws(() => validateCampaignRun(plan, attempt, wrongPlannedSelection,
+    { buildImage: 'test-build-image' }), /selection\.probeChecks/);
+});
+
 test('draft campaigns cannot start unless an explicit test-only caller permits them', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runner-draft-'));
   try {

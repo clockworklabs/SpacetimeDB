@@ -281,7 +281,7 @@
     <p class="dek">Stack Bench is a controlled evaluation appliance for AI-generated application stacks. It asks an agent to build the same product on different backends, verifies real behavior in Docker, and preserves the exact inputs, evidence, time, cost, and failures behind every result.</p>
     <div class="status-row">
       <span class="pill">Docker-only build path</span>
-      <span class="pill">365 automated tests passing</span>
+      <span class="pill">368 automated tests passing</span>
       <span class="pill">Versioned recipes and evidence</span>
       <span class="pill">Framework-neutral L1 and L2 promoted</span>
       <span class="pill warn">Production hardening in progress</span>
@@ -450,11 +450,15 @@
         </article>
       </div>
 
-      <h3 style="margin-top:30px">Two independent choices: what to build and how much stack help to give</h3>
+      <h3 style="margin-top:30px">Independent choices that can be mixed and matched</h3>
       <div class="grid three" style="margin-top:12px">
         <article class="card">
-          <h3>Requested behavior</h3>
-          <p>Select capability packs such as account access, session durability, cart/checkout, or inventory operations. Adding or removing a pack changes both the product request and its matching checks. A check-only filter narrows measurement without changing the request.</p>
+          <h3>Product features</h3>
+          <p>Select what the agent must build: accounts, catalog, purchasing, cart/checkout, reviews, and warehouse administration. Each versioned feature owns its prompt fragment, public interface, and checks.</p>
+        </article>
+        <article class="card">
+          <h3>Product specifications</h3>
+          <p>Independently select guarantees such as access control, durability, live state, concurrency safety, and transactional integrity. A specification can be disclosed as a requirement, withheld as a first-build observation, or omitted entirely.</p>
         </article>
         <article class="card">
           <h3>Backend guidance</h3>
@@ -462,7 +466,7 @@
         </article>
         <article class="card">
           <h3>Unmentioned defaults probes</h3>
-          <p>A draft condition can omit production constraints such as durability, reconnect recovery, and concurrency guarantees from the agent's prompt, then measure selected checks only against the untouched first build. The backend is still named; framework advice remains a separate choice. Probe evidence is source-bound, contributes zero requested score, and never enters repairs. Cross-stack oracle qualification is still required.</p>
+          <p>A draft condition can omit selected specifications from the agent's prompt, then measure them only against the untouched first build. The report places those observations in their own section and denominator. Probe evidence is source-bound, contributes zero requested score, and never enters repairs. Cross-stack oracle qualification is still required.</p>
         </article>
       </div>
 
@@ -829,12 +833,12 @@ else if (!evidenceIsMeasured(evidence)) {
             <li>Typed evidence drives scoring, null/mutation controls, comparison, repair selection, and reporting; diagnostic wording does not decide outcomes</li>
             <li>Versioned stack adapters for three measured backends plus a deterministic test stack; versioned agent adapters for coding, deterministic, fault, and reference paths</li>
             <li>Operator <code>preflight</code>, pinned Linux/amd64 controller appliance, immutable campaign plans, resumable execution, and reproducible HTML reporting</li>
-            <li>365/365 automated tests pass on the host, including two live Playwright grades; the exact post-commit Linux controller is rebuilt and rerun for each evidence commit</li>
+            <li>368/368 automated tests pass on the host, including two live Playwright grades; the exact post-commit Linux controller is rebuilt and rerun for each evidence commit</li>
             <li>Real Docker smoke publishes a TypeScript module, verifies SQL and watcher health, and requires authorized logs</li>
             <li>Framework-neutral L1 1.1 and L2 1.2 each have fresh 13/13 qualification evidence and now own the promoted default aliases; prior releases are retired from new execution</li>
             <li>For every L2 stack, two stable pristine repetitions scored 55/55 plus 20/20 inherited; two mutation repetitions each caught all 3/3 declared defects, and the null control failed every scored criterion</li>
             <li>A frozen prescribed L1/L2 pilot completed one attempt on each stack with zero invalid executions, immutable raw evidence, normalized cost/time, correction accounting, and a reproducible report</li>
-            <li>A draft modular L1 catalog separates six product features from six optional specifications, preserves all 48 existing criteria and 51 points, and is wired through immutable campaign conditions, preflight, model prompts, requested grading, source-bound first-build probes, and run records. Qualification is still required.</li>
+            <li>A draft modular L1 catalog separates six product features from six optional specifications, preserves all 48 existing criteria and 51 points, and is wired through immutable campaign conditions, preflight, model prompts, requested grading, source-bound first-build probes, run records, and a separate zero-score report section. Qualification is still required.</li>
             <li>A model-free Docker-backed SpacetimeDB reference run exercised the draft path end to end: requested features passed 14/14, the separate hidden durability observation passed 4/4 with zero score contribution, no repairs ran, source hashes matched, and owned resources were released. This is one-stack execution proof, not qualification.</li>
           </ul>
         </article>
@@ -855,11 +859,11 @@ else if (!evidenceIsMeasured(evidence)) {
     <section id="next" class="shell">
       <div class="section-head">
         <h2>Recommended path from here</h2>
-        <p>The model-free qualification boundary and the first frozen prescribed pilot are complete. The useful next work is to add the unprescribed condition, prove its isolation, then run enough repetitions to measure variability.</p>
+        <p>The modular unprescribed path now runs end to end and reports hidden observations separately. The useful next work is to qualify its selected probes across all three stacks, freeze the condition, then run enough repetitions to measure variability.</p>
       </div>
       <div class="grid three">
-        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Add the no-constraints condition</h3><p>Keep the requested app and named backend, omit production-quality guarantees from the prompt, and run hidden first-build-only probes that cannot affect score or repair.</p></article>
-        <article class="card"><div class="number">2</div><h3 style="margin-top:12px">Prove the new condition</h3><p>Snapshot the exact prompt, verify that omitted requirements do not leak through guidance, and use deterministic controls to prove probe evidence remains separate from requested-feature results.</p></article>
+        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Qualify the probes</h3><p>Run each selected hidden check against reference, null, and exact broken implementations on MongoDB, PostgreSQL, and SpacetimeDB.</p></article>
+        <article class="card"><div class="number">2</div><h3 style="margin-top:12px">Freeze the condition</h3><p>Bind the exact feature, specification, guidance, probe, repair, adapter, and image identities and prove the complete condition in the Linux appliance.</p></article>
         <article class="card"><div class="number">3</div><h3 style="margin-top:12px">Run repeated comparisons</h3><p>Freeze prescribed and unprescribed campaign plans, run multiple clean attempts per stack, and publish variability, invalid-run rate, raw evidence, cost, and limitations.</p></article>
       </div>
 
@@ -894,7 +898,7 @@ else if (!evidenceIsMeasured(evidence)) {
   </main>
 
   <footer>
-    <div class="shell">Stack Bench meeting brief · generated from the repository's implementation plan, roadmap, findings, history, qualification evidence, and engineering journal · current as of 15 August 2026</div>
+    <div class="shell">Stack Bench meeting brief · generated from the repository's implementation plan, roadmap, findings, history, qualification evidence, and engineering journal · current as of 16 August 2026</div>
   </footer>
 </body>
 </html>

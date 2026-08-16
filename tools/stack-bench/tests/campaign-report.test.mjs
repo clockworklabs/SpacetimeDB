@@ -7,7 +7,7 @@ import test from 'node:test';
 import { emptyArtifactIdentities, readArtifact, writeRunJson } from '../artifacts.mjs';
 import { compileCampaignFile } from '../campaign-compiler.mjs';
 import { buildCampaignReport, generateCampaignReport,
-  campaignRunMetrics, formatDurationMs, renderCampaignHtml,
+  campaignRunMetrics, campaignRunProbeObservations, formatDurationMs, renderCampaignHtml,
   validateCampaignReport } from '../campaign-report.mjs';
 import { canonicalDefinitionJson } from '../definition-plan.mjs';
 import { sha256 } from '../provenance.mjs';
@@ -104,6 +104,72 @@ test('score rates keep inconclusive points separate from measurement coverage', 
   }], totals: { score: 9, max: 9 } });
   assert.equal(unmapped.firstBuildCoverageRate, null);
   assert.equal(unmapped.finalCoverageRate, null);
+});
+
+test('hidden first-build probes remain separate from requested scores and repairs', () => {
+  const evidence = run('probe-run', { id: 'probe-attempt' },
+    { score: 14, max: 14, first: 14, cost: 0 });
+  evidence.levels[0].selection = {
+    specifications: { disclosed: [], probed: ['ecommerce.spec.state-durability@1.0.0'] },
+    probeChecks: [
+      { stableKey: 'durability/session', points: 1 },
+      { stableKey: 'durability/cart', points: 2 },
+    ],
+  };
+  evidence.levels[0].firstBuild.source = { sha256: 'a'.repeat(64), files: 3 };
+  evidence.levels[0].firstBuild.probes = {
+    sourceSha256: 'a'.repeat(64),
+    selectionSha256: 'b'.repeat(64),
+    selectedChecks: ['durability/session', 'durability/cart'],
+    reportedChecks: ['durability/session', 'durability/cart'],
+    passedPoints: 1,
+    observedPoints: 3,
+    scoreContribution: false,
+    repairVisible: false,
+    artifact: 'first-build-l1-probe/bundle.json',
+    outcome: { kind: 'app_failure' },
+  };
+
+  const requested = campaignRunMetrics(evidence);
+  const observed = campaignRunProbeObservations(evidence);
+  assert.equal(requested.firstBuildScoreRate, 1);
+  assert.equal(requested.finalScoreRate, 1);
+  assert.equal(requested.correctionSuccessRate, null);
+  assert.equal(observed.selectedPoints, 3);
+  assert.equal(observed.observedPoints, 3);
+  assert.equal(observed.passedPoints, 1);
+  assert.equal(observed.passRate, 0.333333);
+  assert.equal(observed.coverageRate, 1);
+  assert.equal(observed.scoreContribution, false);
+  assert.equal(observed.repairVisible, false);
+  assert.deepEqual(observed.levels[0].specifications,
+    ['ecommerce.spec.state-durability@1.0.0']);
+});
+
+test('campaign HTML labels hidden probes as zero-score first-build observations', () => {
+  const plan = compileCampaignFile(example);
+  let state = createCampaignState(plan, { now: created });
+  const claimed = claimNextAttempt(state, { now: created, admissionId: 'probe-admission' });
+  const evidence = run('probe-run', claimed.claim.attempt,
+    { score: 10, max: 10, first: 10, cost: 0 });
+  evidence.levels[0].selection = { specifications: { disclosed: [], probed: ['durability@1'] },
+    probeChecks: [{ stableKey: 'durability/session', points: 1 }] };
+  evidence.levels[0].firstBuild.probes = { sourceSha256: 'a'.repeat(64),
+    selectionSha256: 'b'.repeat(64), selectedChecks: ['durability/session'],
+    reportedChecks: ['durability/session'], passedPoints: 1, observedPoints: 1,
+    scoreContribution: false, repairVisible: false,
+    artifact: 'first-build-l1-probe/bundle.json', outcome: { kind: 'passed' } };
+  state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
+    { exitCode: 0, run: evidence }, { now: '2026-08-12T00:02:00.000Z' });
+  const report = buildCampaignReport(plan, state, () => evidence);
+  const html = renderCampaignHtml(report);
+  assert.equal(report.conditions[0].firstBuildProbe.sample.selectedAttempts, 1);
+  assert.equal(report.conditions[0].firstBuildProbe.sample.measuredAttempts, 1);
+  assert.equal(report.conditions[0].firstBuildProbe.metrics.passRate.center, 1);
+  assert.match(html, /Unmentioned first-build observations/);
+  assert.match(html, /contribute zero points/);
+  assert.match(html, /never provided to repair rounds/);
+  assert.match(html, /first-build-l1-probe\/bundle\.json/);
 });
 
 test('report generation is byte-for-byte reproducible and links immutable raw evidence', () => {

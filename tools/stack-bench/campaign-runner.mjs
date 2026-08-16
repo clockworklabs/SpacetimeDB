@@ -93,6 +93,54 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
     && run.runtime?.buildImage !== plan.definition.runtime.buildImage, 'runtime.buildImage');
   mismatch(plan.definition.runtime.buildImage === null && buildImage !== null
     && run.runtime?.buildImage !== buildImage, 'runtime.buildImage');
+  for (const level of run.levels ?? []) {
+    const selectedChecks = level.selection?.probeChecks;
+    if (!Array.isArray(selectedChecks) || selectedChecks.length === 0) {
+      mismatch(level.firstBuild?.probes !== undefined, `levels.L${level.level}.firstBuild.probes`);
+      continue;
+    }
+    const at = `levels.L${level.level}.firstBuild.probes`;
+    const probe = level.firstBuild?.probes;
+    const selectedKeys = selectedChecks.map(check => check?.stableKey);
+    const plannedLevel = condition?.requested?.levels?.find(item => item.level === level.level);
+    const plannedKeys = plannedLevel?.selection?.probeChecks;
+    const selectedPoints = selectedChecks.every(check => Number.isSafeInteger(check?.points)
+      && check.points >= 0)
+      ? selectedChecks.reduce((total, check) => total + check.points, 0) : null;
+    mismatch(!probe || typeof probe !== 'object' || Array.isArray(probe), at);
+    if (!probe || typeof probe !== 'object' || Array.isArray(probe)) continue;
+    mismatch(new Set(selectedKeys).size !== selectedKeys.length
+      || selectedKeys.some(key => typeof key !== 'string' || !key), `${at}.selectedChecks`);
+    mismatch(canonicalDefinitionJson(probe.selectedChecks)
+      !== canonicalDefinitionJson(selectedKeys), `${at}.selectedChecks`);
+    mismatch(!plannedLevel || plannedLevel.selection?.sha256 !== level.selection.sha256,
+      `levels.L${level.level}.selection.sha256`);
+    mismatch(!Array.isArray(plannedKeys)
+      || canonicalDefinitionJson(plannedKeys) !== canonicalDefinitionJson(selectedKeys),
+    `levels.L${level.level}.selection.probeChecks`);
+    mismatch(probe.selectionSha256 !== level.selection.sha256, `${at}.selectionSha256`);
+    mismatch(probe.scoreContribution !== false, `${at}.scoreContribution`);
+    mismatch(probe.repairVisible !== false, `${at}.repairVisible`);
+    mismatch(probe.sourceSha256 !== (level.firstBuild?.source?.sha256 ?? null),
+      `${at}.sourceSha256`);
+    mismatch(!Array.isArray(probe.reportedChecks)
+      || new Set(probe.reportedChecks).size !== probe.reportedChecks.length
+      || probe.reportedChecks.some(key => !selectedKeys.includes(key)), `${at}.reportedChecks`);
+    const reportedPoints = Array.isArray(probe.reportedChecks)
+      ? probe.reportedChecks.reduce((total, key) => total
+        + (selectedChecks.find(check => check.stableKey === key)?.points ?? 0), 0) : null;
+    const numericEvidence = Number.isSafeInteger(probe.observedPoints)
+      && probe.observedPoints >= 0 && Number.isSafeInteger(probe.passedPoints)
+      && probe.passedPoints >= 0 && probe.passedPoints <= probe.observedPoints;
+    mismatch(probe.observedPoints !== null && !numericEvidence, `${at}.observedPoints`);
+    mismatch(probe.passedPoints !== null && !numericEvidence, `${at}.passedPoints`);
+    mismatch(numericEvidence && (selectedPoints === null || probe.observedPoints > selectedPoints
+      || probe.observedPoints !== reportedPoints), `${at}.observedPoints`);
+    const exactArtifact = `first-build-l${level.level}-probe/bundle.json`;
+    mismatch(probe.artifact !== null && probe.artifact !== exactArtifact, `${at}.artifact`);
+    mismatch(probe.artifact === null && numericEvidence, `${at}.artifact`);
+    mismatch(probe.artifact !== null && !numericEvidence, `${at}.artifact`);
+  }
   if (exactLevels && ['passed', 'app_failure'].includes(run.outcome?.kind)) {
     const levelOutcomes = (run.levels ?? []).map(level => level.outcome?.kind);
     mismatch(run.outcome.kind === 'passed' && levelOutcomes.some(kind => kind !== 'passed'),

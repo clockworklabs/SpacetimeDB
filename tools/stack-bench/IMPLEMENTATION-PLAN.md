@@ -851,9 +851,9 @@ them. Live qualification does not run concurrently with executable harness edits
     zero-score isolation, repair exclusion, one-stack Docker execution, and exact
     controller-image tests are complete; cross-stack oracle qualification and a
     frozen appliance condition remain).
-25. [ ] SB-507 condition-aware campaigns and reports (exact modular condition compilation,
-    preflight, prompt/grading handoff, and run-scope recording are complete; separate probe
-    execution and report sections remain).
+25. [x] SB-507 condition-aware campaigns and reports (exact modular condition compilation,
+    preflight, prompt/grading handoff, run-scope recording, separate source-bound probe
+    execution, and zero-score report sections are complete).
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.
