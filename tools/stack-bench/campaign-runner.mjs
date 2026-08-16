@@ -118,7 +118,20 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
       } else if (level.outcome?.kind === 'app_failure') {
         mismatch(repair.status !== 'budget-exhausted', `${at}.status`);
         mismatch(repair.roundsUsed !== repair.budgetRounds, `${at}.roundsUsed`);
-        mismatch(validScore && level.score === level.max, `levels.L${level.level}.score`);
+        // The level score covers only the newly requested criteria. A level can
+        // earn every one of those points and still have a legitimate
+        // application failure because an inherited guarantee regressed or a
+        // deliberately zero-point diagnostic failed. classifyBundle records
+        // both cases in appFailures, so do not turn that evidence into a
+        // harness failure merely because the requested score is perfect.
+        const inheritedDeficit = Number.isInteger(level.regression?.score)
+          && Number.isInteger(level.regression?.max)
+          && level.regression.max > 0
+          && level.regression.score < level.regression.max;
+        const recordedFailure = Array.isArray(level.outcome?.appFailures)
+          && level.outcome.appFailures.length > 0;
+        mismatch(validScore && level.score === level.max
+          && !inheritedDeficit && !recordedFailure, `levels.L${level.level}.score`);
       } else {
         mismatch(true, `${at}.levelOutcome`);
       }
