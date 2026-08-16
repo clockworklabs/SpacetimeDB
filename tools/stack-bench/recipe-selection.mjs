@@ -68,8 +68,10 @@ export function resolveModularRecipeSelection(release, {
     for (const requiredRef of module.requiresPacks ?? []) {
       const required = moduleByRef.get(requiredRef);
       if (!required) throw new Error(`recipe module ${ref} requires missing ${requiredRef}`);
-      if (required.moduleType === 'feature') featureSet.add(required.id);
-      else if (target === 'feature') {
+      if (required.moduleType === 'feature' && target === 'feature') featureSet.add(required.id);
+      else if (required.moduleType === 'feature') {
+        throw new Error(`specification module ${ref} cannot add feature ${requiredRef}; use check applicability`);
+      } else if (target === 'feature') {
         throw new Error(`feature module ${ref} cannot depend on specification ${requiredRef}`);
       } else if (target === 'disclosed') disclosedSet.add(requiredRef);
       else probedSet.add(requiredRef);
@@ -87,10 +89,12 @@ export function resolveModularRecipeSelection(release, {
   const disclosedIds = new Set([...disclosedSet].map(ref => exactModuleRef(ref, 'specification').id));
   const probedIds = new Set([...probedSet].map(ref => exactModuleRef(ref, 'specification').id));
   const requestedModuleIds = new Set([...featureSet, ...disclosedIds]);
+  const applies = check => check.requiresFeatures === undefined
+    || check.requiresFeatures.every(featureId => featureSet.has(featureId));
   const requestedChecks = release.checkCatalog.filter(check => requestedModuleIds.has(check.packId)
-    && (check.observations === undefined || check.observations.includes('requested')));
+    && applies(check) && (check.observations === undefined || check.observations.includes('requested')));
   const probeChecks = release.checkCatalog.filter(check => probedIds.has(check.packId)
-    && check.observations?.includes('probe'));
+    && applies(check) && check.observations?.includes('probe'));
   for (const ref of disclosedSet) {
     const id = exactModuleRef(ref, 'disclosed specification').id;
     if (!requestedChecks.some(check => check.packId === id)) {

@@ -7,9 +7,10 @@ import { createModularRecipeTaskRequest, resolveModularRecipeSelection,
 const module = (id, moduleType, requiresPacks = []) => ({
   id, version: '1.0.0', moduleType, requiresPacks,
 });
-const check = (packId, suffix, observations) => ({
+const check = (packId, suffix, observations, requiresFeatures) => ({
   stableKey: `${packId}.${suffix}`, packId, points: 1,
   ...(observations ? { observations } : {}),
+  ...(requiresFeatures ? { requiresFeatures } : {}),
 });
 const release = {
   id: 'example.modular', version: '1.0.0',
@@ -17,14 +18,14 @@ const release = {
   components: { packs: [
     module('example.accounts', 'feature'),
     module('example.cart', 'feature', ['example.accounts@1.0.0']),
-    module('example.durability', 'specification', ['example.cart@1.0.0']),
-    module('example.concurrency', 'specification', ['example.cart@1.0.0']),
+    module('example.durability', 'specification'),
+    module('example.concurrency', 'specification'),
   ] },
   checkCatalog: [
     check('example.accounts', 'works'),
     check('example.cart', 'works'),
-    check('example.durability', 'survives', ['probe', 'requested']),
-    check('example.concurrency', 'safe', ['probe', 'requested']),
+    check('example.durability', 'survives', ['probe', 'requested'], ['example.cart']),
+    check('example.concurrency', 'safe', ['probe', 'requested'], ['example.cart']),
   ],
 };
 
@@ -81,6 +82,17 @@ test('modular selection rejects overlap, wrong module kinds, and probe-ineligibl
   assert.throws(() => resolveModularRecipeSelection(noRequested, {
     disclosedSpecifications: ['example.durability@1.0.0'],
   }), /has no requested observation/);
+  assert.throws(() => resolveModularRecipeSelection(release, {
+    featureIds: ['example.accounts'],
+    disclosedSpecifications: ['example.durability@1.0.0'],
+  }), /has no requested observation/);
+  const featureAddingSpec = structuredClone(release);
+  featureAddingSpec.components.packs.find(item => item.id === 'example.durability')
+    .requiresPacks = ['example.cart@1.0.0'];
+  assert.throws(() => resolveModularRecipeSelection(featureAddingSpec, {
+    featureIds: ['example.accounts'],
+    disclosedSpecifications: ['example.durability@1.0.0'],
+  }), /cannot add feature example.cart@1.0.0/);
 });
 
 test('requested check filters cannot reach hidden probe scope', () => {

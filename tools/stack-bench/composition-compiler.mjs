@@ -100,7 +100,9 @@ const PACK_FIELDS = new Set([
   'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'description',
   'moduleType', 'requiresPacks', 'conflictsWith', 'capabilities', 'evidence', 'budget', 'task', 'checks',
 ]);
-const CHECK_REF_FIELDS = new Set(['id', 'source', 'feature', 'criteria', 'role', 'observations']);
+const CHECK_REF_FIELDS = new Set([
+  'id', 'source', 'feature', 'criteria', 'role', 'observations', 'requiresFeatures',
+]);
 const BUDGET_FIELDS = new Set(['status', 'maxRuntimeMs']);
 const PACK_TASK_FIELDS = new Set(['requirements', 'contracts']);
 const TASK_FRAGMENT_FIELDS = new Set(['id', 'path', 'order', 'from', 'until', 'modes']);
@@ -245,6 +247,11 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
         }
       }
     }
+    if (check.requiresFeatures !== undefined) {
+      check.requiresFeatures = uniqueStrings(check.requiresFeatures, `${at}.requiresFeatures`).sort();
+      if (check.requiresFeatures.length === 0) fail(`${at}.requiresFeatures`, 'must not be empty');
+      for (const featureId of check.requiresFeatures) id(featureId, `${at}.requiresFeatures`);
+    }
     const ref = `${check.source}#${check.feature}`;
     if (featureRefs.has(ref)) fail(at, `duplicate feature reference ${ref}`);
     featureRefs.add(ref);
@@ -256,6 +263,9 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
     if (pack.checks.some(check => check.observations?.includes('probe'))) {
       fail(`${source}.checks`, 'feature modules cannot own hidden probe observations');
     }
+    if (pack.checks.some(check => check.requiresFeatures !== undefined)) {
+      fail(`${source}.checks`, 'feature modules cannot declare specification applicability');
+    }
   }
   if (pack.moduleType === 'specification') {
     if (pack.checks.some(check => check.role === 'feature')) {
@@ -263,6 +273,9 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
     }
     if (pack.checks.some(check => check.observations === undefined)) {
       fail(`${source}.checks`, 'specification modules must declare requested/probe observations');
+    }
+    if (pack.checks.some(check => check.requiresFeatures === undefined)) {
+      fail(`${source}.checks`, 'specification checks must declare applicable feature modules');
     }
   }
   return pack;
@@ -470,9 +483,29 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
   for (const { pack } of selectedPacks) {
     for (const required of pack.requiresPacks) {
       if (!selectedByRef.has(required)) fail(`${pack.id}.requiresPacks`, `missing ${required}`);
+      const dependency = selectedByRef.get(required);
+      if (pack.moduleType === 'feature' && dependency.moduleType !== 'feature') {
+        fail(`${pack.id}.requiresPacks`, `feature modules cannot depend on ${required}`);
+      }
+      if (pack.moduleType === 'specification' && dependency.moduleType === 'feature') {
+        fail(`${pack.id}.requiresPacks`,
+          `specification modules cannot add ${required}; use check applicability`);
+      }
     }
     for (const conflict of pack.conflictsWith) {
       if (selectedByRef.has(conflict)) fail(`${pack.id}.conflictsWith`, `conflicts with selected ${conflict}`);
+    }
+  }
+  const featureModuleIds = new Set(selectedPacks
+    .filter(({ pack }) => pack.moduleType === 'feature').map(({ pack }) => pack.id));
+  for (const { pack } of selectedPacks.filter(({ pack }) => pack.moduleType === 'specification')) {
+    for (const check of pack.checks) {
+      for (const featureId of check.requiresFeatures) {
+        if (!featureModuleIds.has(featureId)) {
+          fail(`${pack.id}.${check.id}.requiresFeatures`,
+            `references missing feature module ${featureId}`);
+        }
+      }
     }
   }
   if (recipe.state === 'qualified') {
@@ -584,6 +617,7 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
         checkGroupId: check.id,
         role: check.role,
         ...(check.observations === undefined ? {} : { observations: check.observations }),
+        ...(check.requiresFeatures === undefined ? {} : { requiresFeatures: check.requiresFeatures }),
         source: scenarioRef.relative,
         feature: selectedFeature,
         actions: [...new Set([
@@ -632,6 +666,7 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
           criterionId: criterion.id,
           role: group.role,
           ...(group.observations === undefined ? {} : { observations: group.observations }),
+          ...(group.requiresFeatures === undefined ? {} : { requiresFeatures: group.requiresFeatures }),
           source: group.source,
           featureId: group.feature.id,
           description: criterion.desc,

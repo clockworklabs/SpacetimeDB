@@ -208,9 +208,10 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
 
   const specification = compilePackDefinition({ ...pack, id: 'example.durability',
     moduleType: 'specification', checks: [{ ...pack.checks[0], role: 'guarantee',
-      observations: ['requested', 'probe'] }] });
+      observations: ['requested', 'probe'], requiresFeatures: ['example.feature'] }] });
   assert.equal(specification.moduleType, 'specification');
   assert.deepEqual(specification.checks[0].observations, ['probe', 'requested']);
+  assert.deepEqual(specification.checks[0].requiresFeatures, ['example.feature']);
 
   const fixture = {
     schemaVersion: 1, kind: 'fixture-set', id: 'example.fixture', version: '1.0.0', state: 'draft',
@@ -334,6 +335,17 @@ test('composition rejects missing dependencies, dependency cycles, conflicts, du
     path = box.writeRecipe(box.makeRecipe(['a']));
     assert.throws(() => compileRecipeFile(path, { trackRoot: box.root, availableCapabilities: [] }),
       /unsupported capabilities: browser/);
+
+    box.writePack('a', { moduleType: 'feature' });
+    box.writePack('b', { moduleType: 'specification', checks: [{
+      id: 'group', source: 'scenarios/01.json', feature: 1, role: 'guarantee',
+      observations: ['requested', 'probe'], requiresFeatures: ['example.missing'],
+    }] });
+    const modular = box.makeRecipe(['a', 'b']);
+    modular.packs[1].includeRoles = ['guarantee'];
+    path = box.writeRecipe(modular);
+    assert.throws(() => compileRecipeFile(path, { trackRoot: box.root }),
+      /references missing feature module example.missing/);
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
