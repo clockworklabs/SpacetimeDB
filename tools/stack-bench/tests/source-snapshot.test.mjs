@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { restoreAppSource, seedAppSource, snapshotAppSource } from '../source-snapshot.mjs';
+import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from '../source-snapshot.mjs';
 
 const put = (path, content) => {
   mkdirSync(join(path, '..'), { recursive: true });
@@ -64,4 +64,26 @@ test('source seeding copies arbitrary layouts without dependencies or harness ev
   assert.equal(readFileSync(join(target, 'unconventional', 'api', 'main.go'), 'utf8'), 'package main\n');
   assert.equal(existsSync(join(target, 'unconventional', 'node_modules')), false);
   assert.equal(existsSync(join(target, '.prompt-build-l1.md')), false);
+});
+
+test('source identity matches preserved bytes and ignores dependencies and harness evidence', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-identity-'));
+  const app = join(root, 'app');
+  const snapshot = join(root, 'snapshot');
+  try {
+    put(join(app, 'src', 'app.ts'), 'export const value = 1;\n');
+    put(join(app, 'node_modules', 'dep', 'index.js'), 'dependency v1\n');
+    put(join(app, 'stack-bench', 'bundle.json'), '{}\n');
+    put(join(app, 'BUG_REPORT.md'), 'private evidence\n');
+    const first = hashAppSource(app);
+    snapshotAppSource(app, snapshot);
+    assert.equal(hashAppSource(snapshot).sha256, first.sha256);
+    put(join(app, 'node_modules', 'dep', 'index.js'), 'dependency v2\n');
+    put(join(app, 'stack-bench', 'bundle.json'), '{"changed":true}\n');
+    assert.equal(hashAppSource(app).sha256, first.sha256);
+    put(join(app, 'src', 'app.ts'), 'export const value = 2;\n');
+    assert.notEqual(hashAppSource(app).sha256, first.sha256);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

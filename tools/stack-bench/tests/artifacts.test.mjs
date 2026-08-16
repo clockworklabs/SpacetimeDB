@@ -142,6 +142,17 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
   assert.throws(() => writeArtifact('unused.json', missingIdentitySlot), /identities\.experiment is required/);
   assert.throws(() => createArtifact({ kind: 'grade', id: 'x', identities: { engine: null } }),
     /identities\.engine is required/);
+  const probePayload = { observation: 'probe', source: { sha256: 'a'.repeat(64) },
+    suites: {}, totals: {}, selection: { observation: 'probe', scoredPoints: 0,
+      observedPoints: 1 } };
+  assert.doesNotThrow(() => createArtifact({ kind: 'grade_bundle', id: 'probe',
+    payload: probePayload }));
+  assert.throws(() => createArtifact({ kind: 'grade_bundle', id: 'unbound-probe', payload: {
+    ...probePayload, source: undefined,
+  } }), /first-build SHA-256/);
+  assert.throws(() => createArtifact({ kind: 'grade_bundle', id: 'scored-probe', payload: {
+    ...probePayload, selection: { ...probePayload.selection, scoredPoints: 1 },
+  } }), /contribute zero score/);
   assert.doesNotThrow(() => createArtifact({ kind: 'reference_qualification', id: 'legacy-reference' }));
   assert.throws(() => createArtifact({ kind: 'reference_qualification', id: 'bad-runner', payload: {
     runner: { schemaVersion: 1, mode: 'desktop', platform: 'win32', architecture: 'x64' },

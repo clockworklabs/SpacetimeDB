@@ -36,7 +36,7 @@ import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
 import { captureBackendDiagnostics } from './backend-control.mjs';
 import { releaseBackendLease } from './backend-teardown.mjs';
 import { resolveRecipeRelease } from './recipe-release.mjs';
-import { createBoundRecipeTaskRequest } from './recipe-selection.mjs';
+import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest } from './recipe-selection.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
@@ -47,7 +47,7 @@ import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
 import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from './recovery.mjs';
 import { resolveAgentCredential } from './agent-credentials.mjs';
 import { sandboxProbeMode } from './sandbox.mjs';
-import { restoreAppSource, seedAppSource, snapshotAppSource } from './source-snapshot.mjs';
+import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from './source-snapshot.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
@@ -185,7 +185,8 @@ function runAgent(args, adapter, mode, level, appDir) {
   const request = { mode, level, app: appDir, backend: args.backend, track: args.track,
     runIndex: args.runIndex, model: args.model, guidance: args.guidance, skills: args.skills,
     guidanceDocument: args.guidanceDocument,
-    recipeTask: args.recipeTasks?.get(level)?.request ?? null,
+    recipeTask: args.recipeTasks?.get(level)?.agentRequest
+      ?? args.recipeTasks?.get(level)?.request ?? null,
     maxBudgetUsd: remainingBudget, adapterCostLimit: adapter.costLimit };
   const argv = agentRequestArgv(adapter, request);
   if (args.apiKey && !adapter.apiKeyEnvironmentVariable) {
@@ -226,7 +227,8 @@ function runAgent(args, adapter, mode, level, appDir) {
   });
 }
 
-function grade(args, appDir, url, label, level, track, parentAttemptId) {
+function grade(args, appDir, url, label, level, track, parentAttemptId,
+  { observation = 'requested', out = null, sourceSha256 = null } = {}) {
   const restartSpec = restartSpecFor(args, appDir, track);
   const expressPort = restartSpec.port ?? '';
   const argv = [join(ROOT, 'run-suite.mjs'), '--app', appDir, '--url', url,
@@ -235,15 +237,18 @@ function grade(args, appDir, url, label, level, track, parentAttemptId) {
     '--reseed-probe', `http://localhost:${expressPort}${track.restartProbe}`,
     '--run-index', String(args.runIndex),
     '--parent-attempt-id', parentAttemptId,
+    '--observation', observation,
+    ...(out ? ['--out', out] : []),
+    ...(sourceSha256 ? ['--source-sha256', sourceSha256] : []),
     ...(args.recipe ? ['--recipe', args.recipe] : []),
     ...(args.recipeTasks?.get(level)
       ? ['--recipe-task-json', JSON.stringify(args.recipeTasks.get(level).request)] : []),
-    ...(args.media ? [] : ['--no-media']),
+    ...(args.media && observation === 'requested' ? [] : ['--no-media']),
     ...(!executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
       'run-policy', 'reset-enabled')
       ? ['--no-reset']
       : ['--restart-spec', JSON.stringify(restartSpec)])];
-  const bundle = join(appDir, 'stack-bench', 'bundle.json');
+  const bundle = join(out ?? join(appDir, 'stack-bench'), 'bundle.json');
   rmSync(bundle, { force: true });
   try { sh('node', argv, { stdio: 'inherit' }); } catch { /* a current bundle may still explain a scored failure */ }
   return existsSync(bundle) ? readArtifactPayload(bundle, { expectedKind: 'grade_bundle' }) : null;
@@ -349,7 +354,8 @@ async function main() {
         || declared.task.sha256 !== resolved.request.task.sha256)) {
         throw new Error(`study condition requested scope changed before L${level}`);
       }
-      args.recipeTasks.set(level, resolved);
+      args.recipeTasks.set(level, { ...resolved,
+        agentRequest: createAgentVisibleTaskRequest(binding, resolved) });
     }
   }
   if (!args.selectionRequest.levels && (JSON.stringify(args.selectionRequest.packs) !== JSON.stringify(args.packIds)
@@ -738,6 +744,20 @@ async function main() {
         costUsd: build.costUsd, durationMs: Date.now() - t0 });
       break;
     }
+    const firstBuildPath = join(args.out, `first-build-l${level}`);
+    let firstBuildSource = null;
+    try {
+      const liveSource = hashAppSource(appDir);
+      snapshotSource(appDir, firstBuildPath);
+      const preservedSource = hashDirectory(firstBuildPath);
+      if (liveSource.sha256 !== preservedSource.sha256) {
+        throw new Error('preserved first-build source differs from the live application source');
+      }
+      firstBuildSource = { sha256: liveSource.sha256, files: liveSource.files.length };
+      console.log(`  kept the unaided source at ${firstBuildPath}`);
+    } catch (error) {
+      console.log(`  !! could not bind the first-build source: ${String(error.message).split('\n')[0]}`);
+    }
     let bundle = grade(args, appDir, url, `${args.backend}-l${level}`, level, track, runId);
 
     // What the model built BEFORE being handed the answers. Every backend can
@@ -748,11 +768,42 @@ async function main() {
       max: bundle?.totals?.max ?? null,
       contractPass: bundle?.totals?.contractPass ?? null,
       outcome: classifyBundle(bundle),
+      source: firstBuildSource,
       missed: Object.values(bundle?.suites ?? {}).flatMap(s =>
         (s?.features ?? []).flatMap(f =>
           (f.criteria ?? []).filter(c => !evidencePassed(criterionEvidence(c)))
             .map(c => `${f.name}/${c.id}`))),
     };
+
+    const selectedProbeChecks = args.recipeTasks?.get(level)?.selection?.probeChecks ?? [];
+    if (selectedProbeChecks.length) {
+      const probeOut = join(args.out, `first-build-l${level}-probe`);
+      let probeBundle = null;
+      let probeOutcome;
+      if (!firstBuildSource) {
+        probeOutcome = { kind: 'harness_failure', phase: 'first-build-source',
+          reason: 'hidden probes require a source-bound first build' };
+      } else if (!ladderMayContinue(firstBuild.outcome)) {
+        probeOutcome = { kind: 'ungraded', phase: 'first-build-probe',
+          reason: 'requested first-build grading did not establish a usable environment' };
+      } else {
+        probeBundle = grade(args, appDir, url, `${args.backend}-l${level}-probe`, level, track,
+          runId, { observation: 'probe', out: probeOut, sourceSha256: firstBuildSource.sha256 });
+        probeOutcome = classifyBundle(probeBundle);
+      }
+      firstBuild.probes = {
+        sourceSha256: firstBuildSource?.sha256 ?? null,
+        selectionSha256: args.recipeTasks.get(level).selection.sha256,
+        selectedChecks: selectedProbeChecks.map(check => check.stableKey),
+        reportedChecks: probeBundle?.selection?.reportedChecks ?? [],
+        passedPoints: probeBundle?.totals?.score ?? null,
+        observedPoints: probeBundle?.totals?.max ?? null,
+        scoreContribution: false,
+        repairVisible: false,
+        artifact: probeBundle ? `first-build-l${level}-probe/bundle.json` : null,
+        outcome: probeOutcome,
+      };
+    }
 
     // Keep the first attempt before a fix round overwrites it.
     //
@@ -768,11 +819,10 @@ async function main() {
     // its token, and what the TS2344 errors looked like in context. Both answers
     // were in a `main.tsx` that no longer existed.
     //
-    // Source only, and grading without media — the same rules the end-of-run
-    // copies use, so this adds a few MB per level rather than a run's worth of
-    // traces and video.
+    // The source snapshot was captured before either requested or probe grading.
+    // Preserve the requested grading here without media; probe evidence already
+    // lives in its separate source-bound result directory.
     try {
-      snapshotSource(appDir, join(args.out, `first-build-l${level}`));
       const gradingFrom = join(appDir, 'stack-bench');
       if (existsSync(gradingFrom)) {
         cpSync(gradingFrom, join(args.out, `first-build-l${level}-grading`), {
@@ -780,7 +830,7 @@ async function main() {
           filter: src => !/[\\/]media([\\/]|$)/.test(src),
         });
       }
-      console.log(`  kept the unaided attempt at ${join(args.out, `first-build-l${level}`)}`);
+      console.log(`  kept the unaided grading at ${join(args.out, `first-build-l${level}-grading`)}`);
     } catch (e) {
       // Never worth losing a run over: the score is already recorded.
       console.log(`  !! could not keep the first build: ${String(e.message).split('\n')[0]}`);

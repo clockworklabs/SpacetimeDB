@@ -29,6 +29,7 @@ import { renderEvidenceConsoleLine } from './evidence-presentation.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { aggregatePackRuntime, exceededPackBudgets } from './pack-runtime.mjs';
+import { hashAppSource } from './source-snapshot.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RESET = join(ROOT, 'reset-backend.mjs');
@@ -45,7 +46,7 @@ export function childFailureDetail(failure = null, stdout = '', limit = 600) {
 
 function parseArgs(argv) {
   const a = { level: '1', reset: true, media: true, runIndex: 0, track: DEFAULT_TRACK,
-    packIds: [], checkKeys: [] };
+    packIds: [], checkKeys: [], observation: 'requested' };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--app': a.app = argv[++i]; break;
@@ -56,6 +57,8 @@ function parseArgs(argv) {
       case '--level': a.level = argv[++i]; break;
       case '--recipe': a.recipe = argv[++i]; break;
       case '--recipe-task-json': a.recipeTask = JSON.parse(argv[++i]); break;
+      case '--observation': a.observation = argv[++i]; break;
+      case '--source-sha256': a.sourceSha256 = argv[++i]; break;
       case '--no-media': a.media = false; break;
       case '--track': a.track = argv[++i]; break;
       case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
@@ -73,8 +76,34 @@ function parseArgs(argv) {
     console.error('Usage: node run-suite.mjs --app <dir> --url <url> --backend <b> --label <id> [--out <dir>] [--media] [--no-reset]');
     process.exit(2);
   }
+  if (!['requested', 'probe'].includes(a.observation)) {
+    throw new Error('--observation must be requested or probe');
+  }
+  if (a.observation === 'probe' && !/^[a-f0-9]{64}$/.test(a.sourceSha256 ?? '')) {
+    throw new Error('probe observation requires --source-sha256');
+  }
+  if (a.observation === 'requested' && a.sourceSha256 !== undefined) {
+    throw new Error('--source-sha256 is reserved for probe observations');
+  }
   a.out ??= join(a.app, 'stack-bench');
   return a;
+}
+
+export function selectObservationScope(selectedTask, observation = 'requested') {
+  const selection = selectedTask?.selection ?? null;
+  if (observation === 'requested') return selection;
+  if (observation !== 'probe') throw new Error(`unknown observation scope ${observation}`);
+  if (selectedTask?.request?.schemaVersion !== 2 || !selection) {
+    throw new Error('probe observations require a modular schema-2 task request');
+  }
+  if (!selection.probeChecks.length) throw new Error('probe observation scope is empty');
+  return {
+    ...selection,
+    observation: 'probe',
+    checks: selection.probeChecks,
+    scoredPoints: 0,
+    observedPoints: selection.probeChecks.reduce((total, check) => total + check.points, 0),
+  };
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -317,7 +346,13 @@ async function main() {
         ? resolveBoundRecipeTaskRequest(recipeBinding, args.recipeTask)
         : createBoundRecipeTaskRequest(recipeBinding, args))
     : null;
-  const selection = selectedTask?.selection ?? null;
+  const selection = selectObservationScope(selectedTask, args.observation);
+  if (args.observation === 'probe') {
+    const source = hashAppSource(args.app);
+    if (source.sha256 !== args.sourceSha256) {
+      throw new Error('live application source changed after the bound first-build snapshot');
+    }
+  }
   args.selection = selection;
   const declaredSuites = suitesFor(track, args.level);
   if (selection) {
@@ -332,7 +367,8 @@ async function main() {
     trackRoot: track.dir,
     stackBenchRoot: ROOT,
   });
-  const bundleArtifactId = `${args.parentAttemptId ?? args.label}-grade-bundle-l${args.level}`;
+  const observationSuffix = args.observation === 'probe' ? '-probe' : '';
+  const bundleArtifactId = `${args.parentAttemptId ?? args.label}-grade-bundle-l${args.level}${observationSuffix}`;
   args.bundleArtifactId = bundleArtifactId;
   mkdirSync(args.out, { recursive: true });
   rmSync(join(args.out, 'bundle.json'), { force: true });
@@ -343,7 +379,9 @@ async function main() {
   if (recipeBinding) {
     console.log(`  recipe: ${recipeBinding.alias} -> ${recipeBinding.release.id}@${recipeBinding.release.version} ` +
       `(${recipeBinding.status}, ${recipeBinding.release.contentSha256.slice(0, 12)})`);
-    console.log(`  scope: ${selection.checks.length} check(s), ${selection.scoredPoints} point(s)`);
+    console.log(args.observation === 'probe'
+      ? `  scope: ${selection.checks.length} hidden probe check(s), ${selection.observedPoints} observed point(s), 0 score contribution`
+      : `  scope: ${selection.checks.length} check(s), ${selection.scoredPoints} point(s)`);
     if (selection.requested.packs?.length) console.log(`    packs: ${selection.requested.packs.join(', ')}`);
     if (selection.requested.features?.length) {
       console.log(`    features: ${selection.requested.features.join(', ')}`);
@@ -357,7 +395,9 @@ async function main() {
     calibration: calibration ? { id: calibration.id, version: calibration.version,
       state: calibration.state, contentSha256: calibration.contentSha256 } : null,
     label: args.label, track: args.track, backend: args.backend, url: args.url, app: args.app,
-    level: Number(args.level), suites: {}, totals: {},
+    level: Number(args.level), observation: args.observation,
+    ...(args.observation === 'probe' ? { source: { sha256: args.sourceSha256 } } : {}),
+    suites: {}, totals: {},
     selection: selection ? { ...selection, attemptedChecks: [], reportedChecks: [], notRun: [] } : null,
   };
   const selectedPackIds = new Set(selection?.checks.map(check => check.packId) ?? []);
@@ -472,17 +512,18 @@ async function main() {
     process.exit(1);
   }
 
-  if (!(await freshen())) {
-    bundle.error = `database reset failed — scores would not be comparable${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
-    bundle.outcome = { kind: 'harness_failure', phase: 'database-reset', reason: bundle.error };
-    markRemainingNotRun('run aborted after database reset failed');
-    writeBundle();
-    console.log('\nABORTED: could not reset database.');
-    process.exit(1);
+  if (args.observation === 'requested') {
+    if (!(await freshen())) {
+      bundle.error = `database reset failed — scores would not be comparable${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
+      bundle.outcome = { kind: 'harness_failure', phase: 'database-reset', reason: bundle.error };
+      markRemainingNotRun('run aborted after database reset failed');
+      writeBundle();
+      console.log('\nABORTED: could not reset database.');
+      process.exit(1);
+    }
+    bundle.suites.lint = lint(args);
+    bundle.actions = checkActions(args);
   }
-
-  bundle.suites.lint = lint(args);
-  bundle.actions = checkActions(args);
 
   // Two numbers, kept apart on purpose. `score` is this level's own work.
   // `regression` is whether the guarantees earned at earlier levels still hold.

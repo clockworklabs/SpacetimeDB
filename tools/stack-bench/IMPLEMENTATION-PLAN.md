@@ -847,7 +847,9 @@ them. Live qualification does not run concurrently with executable harness edits
 22. [x] SB-504 versioned study-condition contract.
 23. [x] SB-505 symmetric neutral backend guidance (implemented and prompt-snapshotted;
     qualification remains part of the next campaign gate).
-24. [ ] SB-506 first-build capability probes.
+24. [ ] SB-506 first-build capability probes (single-execution, source binding,
+    zero-score isolation, and repair exclusion are implemented; cross-stack oracle
+    qualification and appliance proof remain).
 25. [ ] SB-507 condition-aware campaigns and reports (exact modular condition compilation,
     preflight, prompt/grading handoff, and run-scope recording are complete; separate probe
     execution and report sections remain).

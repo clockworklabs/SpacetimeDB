@@ -381,6 +381,27 @@ export function resolveBoundRecipeTaskRequest(binding, request) {
   return resolveRecipeTaskRequest(binding, request);
 }
 
+// The controller owns hidden experimental treatments. A coding process needs
+// only the task it must render, never the private probe selection. Re-resolve a
+// schema-2 request without probes so probe ids cannot leak through argv, logs,
+// process inspection, or adapter metadata. The composed task hashes must stay
+// identical because probes are forbidden from contributing prompt fragments.
+export function createAgentVisibleTaskRequest(binding, selected) {
+  const resolved = resolveBoundRecipeTaskRequest(binding, selected?.request ?? selected);
+  if (resolved.request.schemaVersion === 1) return resolved.request;
+  const requested = resolved.selection.requested;
+  const visible = createBoundRecipeTaskRequest(binding, {
+    featureIds: requested.features,
+    disclosedSpecifications: requested.specifications.disclosed,
+    probedSpecifications: [],
+    checkKeys: requested.checks,
+  });
+  if (visible.task.sha256 !== resolved.task.sha256) {
+    throw new Error('hidden probe removal changed the agent task');
+  }
+  return visible.request;
+}
+
 // Filter a compiled scenario by stable recipe keys. This validates the entire
 // mapping before a browser is launched, so a stale or cross-suite selection
 // cannot turn into a plausible-looking partial score.

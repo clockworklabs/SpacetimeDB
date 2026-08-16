@@ -1,6 +1,8 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
+import { hashDirectory } from './provenance.mjs';
+
 // Runtime state, dependencies, evidence, and harness-owned control files are
 // deliberately not part of the model-authored source snapshot.
 const PRESERVED_DIRS = new Set(['node_modules', '.git', 'stack-bench']);
@@ -94,6 +96,11 @@ function syncSourceTree(snapshot, appDir, rel = '') {
 export function snapshotAppSource(appDir, to) {
   rmSync(to, { recursive: true, force: true });
   copySourceTree(appDir, to);
+}
+
+export function hashAppSource(appDir) {
+  return hashDirectory(appDir, { exclude: (rel, entry) => entry.isDirectory()
+    ? directoryDisposition(rel) !== 'source' : rootHarnessFile(rel) });
 }
 
 export function restoreAppSource(from, appDir) {

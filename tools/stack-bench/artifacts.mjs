@@ -64,7 +64,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'total', 'max', 'features', 'environment', 'inconclusive', 'selection', 'packRuntime']),
   grade_bundle: new Set(['definitionSchemaVersion', 'recipeRelease', 'calibration', 'label', 'track',
     'backend', 'url', 'app', 'level', 'suites', 'totals', 'code', 'error', 'outcome', 'provenance',
-    'actions', 'selection', 'packRuntime']),
+    'actions', 'selection', 'packRuntime', 'observation', 'source']),
   mutation_control: new Set(['durationMs', 'app', 'mutations', 'manifestStatus', 'fixtureSha256',
     'spec', 'backend', 'track', 'ok', 'outcome', 'baseline', 'summary', 'results']),
   null_control: new Set(['durationMs', 'runner', 'tracks', 'ok', 'summary', 'criteria']),
@@ -258,6 +258,24 @@ function validatePayload(kind, payload) {
   }
   if (kind === 'grade_bundle') {
     objectWhenPresent('suites'); objectWhenPresent('totals');
+    const observation = payload.observation ?? 'requested';
+    if (!['requested', 'probe'].includes(observation)) {
+      fail('grade_bundle payload.observation must be requested or probe');
+    }
+    if (observation === 'probe') {
+      if (!isObject(payload.source) || Object.keys(payload.source).length !== 1
+        || !HASH.test(payload.source.sha256 ?? '')) {
+        fail('grade_bundle probe payload.source must contain its first-build SHA-256');
+      }
+      if (payload.selection?.observation !== 'probe'
+        || payload.selection?.scoredPoints !== 0
+        || !Number.isSafeInteger(payload.selection?.observedPoints)
+        || payload.selection.observedPoints < 0) {
+        fail('grade_bundle probe selection must be diagnostic and contribute zero score');
+      }
+    } else if (payload.source !== undefined) {
+      fail('grade_bundle requested observation cannot claim a probe source');
+    }
     for (const [suiteId, suite] of Object.entries(payload.suites ?? {})) {
       if (isObject(suite)) validateGradeFeatures(suite.features, `grade_bundle payload.suites.${suiteId}.features`);
     }

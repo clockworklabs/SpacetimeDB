@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { compileRecipeFile } from '../composition-compiler.mjs';
 import { buildRecipeRelease } from '../recipe-release.mjs';
-import { createBoundRecipeTaskRequest, createModularRecipeTaskRequest,
+import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest, createModularRecipeTaskRequest,
   resolveBoundRecipeTaskRequest, resolveModularRecipeSelection }
   from '../recipe-selection.mjs';
 
@@ -49,6 +49,18 @@ test('the generic task boundary dispatches and replays the modular schema', () =
   assert.deepEqual(resolveBoundRecipeTaskRequest(binding, task.request).request, task.request);
   assert.throws(() => resolveBoundRecipeTaskRequest(binding,
     { ...task.request, schemaVersion: 1 }), /requires a schema-2/);
+});
+
+test('the coding process receives no controller-owned hidden probe selection', () => {
+  const selected = createBoundRecipeTaskRequest(binding, {
+    featureIds: ['ecommerce.feature.accounts'],
+    probedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
+  });
+  const visible = createAgentVisibleTaskRequest(binding, selected);
+  assert.deepEqual(visible.selection.requested.specifications.probed, []);
+  assert.deepEqual(visible.selection.probeChecks, []);
+  assert.equal(visible.task.sha256, selected.request.task.sha256);
+  assert.doesNotMatch(JSON.stringify(visible), /state-durability/);
 });
 
 test('feature dependencies compose a smaller product without unrelated modules', () => {
