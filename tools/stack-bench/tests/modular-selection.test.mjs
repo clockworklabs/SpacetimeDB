@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { resolveModularRecipeSelection } from '../recipe-selection.mjs';
+import { createModularRecipeTaskRequest, resolveModularRecipeSelection,
+  resolveModularRecipeTaskRequest } from '../recipe-selection.mjs';
 
 const module = (id, moduleType, requiresPacks = []) => ({
   id, version: '1.0.0', moduleType, requiresPacks,
@@ -11,6 +12,7 @@ const check = (packId, suffix, observations) => ({
   ...(observations ? { observations } : {}),
 });
 const release = {
+  id: 'example.modular', version: '1.0.0',
   contentSha256: 'a'.repeat(64),
   components: { packs: [
     module('example.accounts', 'feature'),
@@ -25,6 +27,20 @@ const release = {
     check('example.concurrency', 'safe', ['probe', 'requested']),
   ],
 };
+
+const plan = { recipe: { task: {
+  requirements: [
+    { id: 'frame', owners: ['recipe'], text: 'Build this product.\n' },
+    { id: 'accounts', owners: ['example.accounts'], text: 'Support accounts.\n' },
+    { id: 'cart', owners: ['example.cart'], text: 'Support a cart.\n' },
+    { id: 'durability', owners: ['example.durability'], text: 'Survive restarts.\n' },
+    { id: 'concurrency', owners: ['example.concurrency'], text: 'Handle races.\n' },
+  ],
+  contracts: [
+    { id: 'cart-hook', owners: ['example.cart'], text: 'Expose a cart button.\n' },
+    { id: 'probe-hook', owners: ['example.concurrency'], text: 'DO NOT LEAK.\n' },
+  ],
+} } };
 
 test('feature, disclosed specification, and hidden probe selections stay independent', () => {
   const selection = resolveModularRecipeSelection(release, {
@@ -72,4 +88,30 @@ test('requested check filters cannot reach hidden probe scope', () => {
     probedSpecifications: ['example.concurrency@1.0.0'],
     checkKeys: ['example.concurrency.safe'],
   }), /outside the disclosed/);
+});
+
+test('modular task composition includes disclosed specs and excludes hidden probes', () => {
+  const binding = { release, plan };
+  const compiled = createModularRecipeTaskRequest(binding, {
+    featureIds: ['example.cart'],
+    disclosedSpecifications: ['example.durability@1.0.0'],
+    probedSpecifications: ['example.concurrency@1.0.0'],
+  });
+  assert.equal(compiled.task.requirementText,
+    'Build this product.\nSupport accounts.\nSupport a cart.\nSurvive restarts.\n');
+  assert.equal(compiled.task.contractText, 'Expose a cart button.\n');
+  assert.equal(compiled.task.requirementText.includes('Handle races'), false);
+  assert.equal(compiled.task.contractText.includes('DO NOT LEAK'), false);
+  assert.deepEqual(compiled.request.selection.probeChecks, ['example.concurrency.safe']);
+  assert.deepEqual(resolveModularRecipeTaskRequest(binding, compiled.request).request,
+    compiled.request);
+
+  const withoutProbe = createModularRecipeTaskRequest(binding, {
+    featureIds: ['example.cart'],
+    disclosedSpecifications: ['example.durability@1.0.0'],
+  });
+  assert.equal(withoutProbe.task.requirementSha256, compiled.task.requirementSha256);
+  assert.equal(withoutProbe.task.contractSha256, compiled.task.contractSha256);
+  assert.equal(withoutProbe.task.sha256, compiled.task.sha256);
+  assert.notEqual(withoutProbe.selection.sha256, compiled.selection.sha256);
 });

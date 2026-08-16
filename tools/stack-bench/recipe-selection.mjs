@@ -124,14 +124,27 @@ export function resolveModularRecipeSelection(release, {
     requestedChecks: narrowedRequested.map(check => check.stableKey).sort(),
     probeChecks: probeChecks.map(check => check.stableKey).sort(),
   };
+  const taskSelectionDocument = {
+    schemaVersion: 2,
+    recipeContentSha256: release.contentSha256,
+    taskPacks: [...requestedModuleIds].sort(),
+  };
+  const requested = {
+    features: [...requestedFeatures].sort(),
+    specifications: { disclosed: [...disclosedRefs].sort(), probed: [...probedRefs].sort() },
+    checks: [...requestedCheckKeys].sort(),
+  };
   return {
     schemaVersion: 2,
+    recipe: { id: release.id, version: release.version, contentSha256: release.contentSha256 },
+    requested,
     features: [...featureSet].sort(),
     specifications: { disclosed: [...disclosedSet].sort(), probed: [...probedSet].sort() },
     taskPacks: [...requestedModuleIds].sort(),
     requestedChecks: narrowedRequested,
     probeChecks,
     requestedPoints: narrowedRequested.reduce((total, check) => total + check.points, 0),
+    taskSelectionSha256: sha256(canonicalDefinitionJson(taskSelectionDocument)),
     sha256: sha256(canonicalDefinitionJson(identityDocument)),
   };
 }
@@ -237,7 +250,7 @@ export function composeSelectedRecipeTask(plan, selection) {
   const identity = {
     schemaVersion: 1,
     recipeContentSha256: selection.recipe.contentSha256,
-    selectionSha256: selection.sha256,
+    selectionSha256: selection.taskSelectionSha256 ?? selection.sha256,
     requirementIds: requirements.map(fragment => fragment.id),
     contractIds: contracts.map(fragment => fragment.id),
     requirementSha256: sha256(requirementText),
@@ -269,6 +282,30 @@ export function createRecipeTaskRequest(binding, options = {}) {
   return { request, selection, task };
 }
 
+export function createModularRecipeTaskRequest(binding, options = {}) {
+  if (!binding?.release || !binding?.plan) {
+    throw new Error('modular recipe task request requires a resolved recipe binding');
+  }
+  const selection = resolveModularRecipeSelection(binding.release, options);
+  const task = composeSelectedRecipeTask(binding.plan, selection);
+  const request = {
+    schemaVersion: 2,
+    recipe: { id: binding.release.id, version: binding.release.version,
+      contentSha256: binding.release.contentSha256 },
+    selection: {
+      sha256: selection.sha256,
+      requested: selection.requested,
+      resolved: { features: selection.features, specifications: selection.specifications,
+        taskPacks: selection.taskPacks, taskSelectionSha256: selection.taskSelectionSha256 },
+      requestedChecks: selection.requestedChecks.map(check => check.stableKey),
+      probeChecks: selection.probeChecks.map(check => check.stableKey),
+    },
+    task: { sha256: task.sha256, requirementSha256: task.requirementSha256,
+      contractSha256: task.contractSha256 },
+  };
+  return { request, selection, task };
+}
+
 export function resolveRecipeTaskRequest(binding, request) {
   if (!request || typeof request !== 'object' || Array.isArray(request)
     || request.schemaVersion !== 1 || !request.recipe || !request.selection || !request.task) {
@@ -280,6 +317,24 @@ export function resolveRecipeTaskRequest(binding, request) {
   });
   if (!same(resolved.request, request)) {
     throw new Error('recipe task changed after request resolution');
+  }
+  return resolved;
+}
+
+export function resolveModularRecipeTaskRequest(binding, request) {
+  if (!request || typeof request !== 'object' || Array.isArray(request)
+    || request.schemaVersion !== 2 || !request.recipe || !request.selection || !request.task) {
+    throw new Error('modular recipe task request is invalid');
+  }
+  const requested = request.selection.requested;
+  const resolved = createModularRecipeTaskRequest(binding, {
+    featureIds: requested?.features,
+    disclosedSpecifications: requested?.specifications?.disclosed,
+    probedSpecifications: requested?.specifications?.probed,
+    checkKeys: requested?.checks,
+  });
+  if (!same(resolved.request, request)) {
+    throw new Error('modular recipe task changed after request resolution');
   }
   return resolved;
 }
