@@ -38,7 +38,8 @@ const RETRY_CAUSES = new Set(['harness_failure']);
 const EXCLUSION_CAUSES = new Set(['harness_failure', 'ungraded', 'contaminated']);
 const OUTCOME_METRICS = new Set(['firstBuildScoreRate', 'finalScoreRate', 'totalCostUsd',
   'totalDurationMs', 'fixRounds', 'correctionSuccessRate', 'correctionCostUsd',
-  'correctionSpendUsd', 'invalidAttemptRate']);
+  'correctionSpendUsd', 'firstBuildCoverageRate', 'finalCoverageRate',
+  'invalidAttemptRate']);
 const DISPERSION = new Set(['median-iqr', 'mean-sd']);
 const IMAGE_DIGEST = /^[^\s@]+@sha256:[a-f0-9]{64}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;

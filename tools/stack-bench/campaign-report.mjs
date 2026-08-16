@@ -31,6 +31,39 @@ function formatUsd(value) {
   return Number.isFinite(value) ? `$${Number(value.toFixed(4))}` : '—';
 }
 
+function formatRate(value) {
+  return Number.isFinite(value) ? `${Number((value * 100).toFixed(2))}%` : '—';
+}
+
+function formatMetric(metric, value) {
+  if (metric.endsWith('Rate')) return formatRate(value);
+  if (metric.endsWith('CostUsd') || metric.endsWith('SpendUsd')) return formatUsd(value);
+  if (metric === 'totalDurationMs') return formatDurationMs(value);
+  return Number.isFinite(value) ? String(value) : '—';
+}
+
+function declaredMax(measurableMax, outcome, selection) {
+  if (!Number.isFinite(measurableMax) || measurableMax < 0) return null;
+  if (outcome?.inconclusive != null && !Array.isArray(outcome.inconclusive)) return null;
+  if (outcome?.harnessFailures != null && !Array.isArray(outcome.harnessFailures)) return null;
+  const unavailable = [...new Set([
+    ...(outcome?.inconclusive ?? []),
+    ...(outcome?.harnessFailures ?? []),
+  ])];
+  if (!unavailable.length) return measurableMax;
+  if (!Array.isArray(selection?.checks)) return null;
+  let unavailablePoints = 0;
+  for (const key of unavailable) {
+    const [executionId, featureId, criterionId, ...extra] = String(key).split('/');
+    if (extra.length || !executionId || !featureId || !criterionId) return null;
+    const check = selection.checks.find(item => item.executionId === executionId
+      && String(item.featureId) === featureId && String(item.criterionId) === criterionId);
+    if (!check || !Number.isFinite(check.points) || check.points < 0) return null;
+    unavailablePoints += check.points;
+  }
+  return measurableMax + unavailablePoints;
+}
+
 function quantile(sorted, p) {
   if (sorted.length === 1) return sorted[0];
   const index = (sorted.length - 1) * p;
@@ -75,9 +108,22 @@ export function campaignRunMetrics(run) {
   const correctionSuccessRate = correctionNeeded !== true ? null
     : run.outcome?.kind === 'passed' ? 1
       : run.outcome?.kind === 'app_failure' ? 0 : null;
+  const firstDeclaredMaxima = completeFirstBuild
+    ? levels.map(level => declaredMax(level.firstBuild.max, level.firstBuild.outcome,
+      level.selection)) : [];
+  const finalMeasuredMaxima = levels.map(level => number(level.max));
+  const finalDeclaredMaxima = levels.map(level => declaredMax(level.max, level.outcome,
+    level.selection));
   return {
     firstBuildScoreRate: ratio(firstScore, firstMax),
     finalScoreRate: ratio(number(run.totals?.score), number(run.totals?.max)),
+    firstBuildCoverageRate: firstDeclaredMaxima.length
+      && firstDeclaredMaxima.every(Number.isFinite)
+      ? ratio(firstMax, firstDeclaredMaxima.reduce((total, value) => total + value, 0)) : null,
+    finalCoverageRate: finalMeasuredMaxima.length
+      && finalMeasuredMaxima.every(Number.isFinite) && finalDeclaredMaxima.every(Number.isFinite)
+      ? ratio(finalMeasuredMaxima.reduce((total, value) => total + value, 0),
+        finalDeclaredMaxima.reduce((total, value) => total + value, 0)) : null,
     totalCostUsd: number(run.totals?.costUsd),
     totalDurationMs: number(run.totals?.durationSec) === null ? null : run.totals.durationSec * 1000,
     fixRounds: number(run.totals?.fixRounds),
@@ -176,8 +222,10 @@ export function buildCampaignReport(plan, state, readRun) {
     rows.push({ ...attempt.plan, status: attempt.status, executions,
       metrics: executions.at(-1)?.status === 'completed' ? executions.at(-1).metrics : null });
   }
-  const metricNames = [plan.definition.analysis.primaryMetric,
-    ...plan.definition.analysis.secondaryMetrics].filter(metric => metric !== 'invalidAttemptRate');
+  const metricNames = [...new Set([plan.definition.analysis.primaryMetric,
+    ...plan.definition.analysis.secondaryMetrics,
+    'firstBuildCoverageRate', 'finalCoverageRate'])]
+    .filter(metric => metric !== 'invalidAttemptRate');
   const groups = new Map();
   for (const row of rows) {
     const key = conditionKey(row);
@@ -233,6 +281,7 @@ export function buildCampaignReport(plan, state, readRun) {
         ? Number((invalidExecutions / executions.length).toFixed(6)) : 0 },
     limitations: [
       'Statistics describe only the exact scope and conditions recorded above.',
+      'Score rates use measurable points; read them with coverage and the typed execution outcome.',
       'Invalid executions are reported separately and are not imputed into outcome metrics.',
       'The report makes no causal claim beyond the declared campaign design.',
     ],
@@ -247,15 +296,24 @@ function escape(value) {
 
 export function renderCampaignHtml(report, { evidencePrefix = '..' } = {}) {
   report = validateCampaignReport(report);
+  const coverageMetric = report.policy.primaryMetric === 'finalScoreRate'
+    ? 'finalCoverageRate' : report.policy.primaryMetric === 'firstBuildScoreRate'
+      ? 'firstBuildCoverageRate' : null;
+  const primaryLabel = report.policy.primaryMetric === 'finalScoreRate'
+    ? 'Final score' : report.policy.primaryMetric === 'firstBuildScoreRate'
+      ? 'First-build score' : report.policy.primaryMetric;
   const rows = report.conditions.map(condition => `<tr><td>${escape(condition.stack)}</td>`
     + `<td>${escape(condition.agent.adapter)} / ${escape(condition.agent.model)}</td>`
     + `<td>${escape(condition.condition.id)}@${escape(condition.condition.version)}</td>`
     + `<td>${condition.sample.completedAttempts}/${condition.sample.plannedAttempts}</td>`
     + `<td>${condition.sample.invalidExecutions}/${condition.sample.executions}</td>`
-    + `<td>${escape(condition.metrics[report.policy.primaryMetric]?.center ?? '—')}`
-    + `<br><small>${escape(formatUsd(condition.metrics.totalCostUsd?.center))} normalized usage · `
+    + `<td>${escape(formatMetric(report.policy.primaryMetric,
+      condition.metrics[report.policy.primaryMetric]?.center))}`
+    + `<br><small>${coverageMetric
+      ? `${escape(formatRate(condition.metrics[coverageMetric]?.center))} coverage · ` : ''}`
+    + `${escape(formatUsd(condition.metrics.totalCostUsd?.center))} normalized usage · `
     + `${escape(formatDurationMs(condition.metrics.totalDurationMs?.center))}</small></td></tr>`).join('');
-  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p><p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Completed</th><th>Invalid executions</th><th>${escape(report.policy.primaryMetric)}</th></tr></thead><tbody>${rows}</tbody></table><h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
+  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p><p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Completed</th><th>Invalid executions</th><th>${escape(primaryLabel)}</th></tr></thead><tbody>${rows}</tbody></table><h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
 }
 
 export function generateCampaignReport(directory, { output = join(resolve(directory), 'report') } = {}) {

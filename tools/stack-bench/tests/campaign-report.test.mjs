@@ -9,6 +9,8 @@ import { compileCampaignFile } from '../campaign-compiler.mjs';
 import { buildCampaignReport, generateCampaignReport,
   campaignRunMetrics, formatDurationMs, renderCampaignHtml,
   validateCampaignReport } from '../campaign-report.mjs';
+import { canonicalDefinitionJson } from '../definition-plan.mjs';
+import { sha256 } from '../provenance.mjs';
 import { runCampaignAdmission } from '../campaign-runner.mjs';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution,
   initializeCampaignDirectory, writeCampaignState } from '../campaign-scheduler.mjs';
@@ -80,6 +82,28 @@ test('correction metrics separate successful cost from unresolved spend', () => 
   assert.equal(unaided.correctionSuccessRate, null);
   assert.equal(unaided.correctionCostUsd, null);
   assert.equal(unaided.correctionSpendUsd, null);
+});
+
+test('score rates keep inconclusive points separate from measurement coverage', () => {
+  const inconclusive = { kind: 'inconclusive', inconclusive: ['contention/203/203b'],
+    harnessFailures: [] };
+  const selection = { checks: [{ executionId: 'contention', featureId: 203,
+    criterionId: '203b', points: 1 }] };
+  const metrics = campaignRunMetrics({ outcome: inconclusive, levels: [{
+    firstBuild: { score: 8, max: 9, outcome: inconclusive },
+    score: 9, max: 9, selection, outcome: inconclusive, fixCostUsd: 1,
+  }], totals: { score: 9, max: 9 } });
+  assert.equal(metrics.firstBuildScoreRate, 0.888889);
+  assert.equal(metrics.finalScoreRate, 1);
+  assert.equal(metrics.firstBuildCoverageRate, 0.9);
+  assert.equal(metrics.finalCoverageRate, 0.9);
+
+  const unmapped = campaignRunMetrics({ outcome: inconclusive, levels: [{
+    firstBuild: { score: 8, max: 9, outcome: inconclusive },
+    score: 9, max: 9, selection: { checks: [] }, outcome: inconclusive,
+  }], totals: { score: 9, max: 9 } });
+  assert.equal(unmapped.firstBuildCoverageRate, null);
+  assert.equal(unmapped.finalCoverageRate, null);
 });
 
 test('report generation is byte-for-byte reproducible and links immutable raw evidence', () => {
@@ -162,5 +186,16 @@ test('human reports format normalized usage and elapsed time for people', () => 
   const html = renderCampaignHtml(buildCampaignReport(plan, state, () => evidence));
   assert.match(html, /\$19\.899 normalized usage/);
   assert.match(html, /1h 21m 33s/);
+  assert.match(html, /First-build score/);
+  assert.match(html, /100% coverage/);
   assert.doesNotMatch(html, />4893s</);
+
+  const { contentSha256: _identity, ...costBody } = buildCampaignReport(plan, state,
+    () => evidence);
+  costBody.policy.primaryMetric = 'totalCostUsd';
+  const costHtml = renderCampaignHtml({ ...costBody,
+    contentSha256: sha256(canonicalDefinitionJson(costBody)) });
+  assert.match(costHtml, /<th>totalCostUsd<\/th>/);
+  assert.match(costHtml, />\$19\.899<br><small>\$19\.899 normalized usage/);
+  assert.doesNotMatch(costHtml, /% coverage/);
 });
