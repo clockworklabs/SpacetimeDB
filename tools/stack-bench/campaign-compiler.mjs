@@ -8,7 +8,7 @@ import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-pl
 import { currentEngineIdentity } from './artifacts.mjs';
 import { sha256 } from './provenance.mjs';
 import { recipeReleaseIdentity, resolveRecipeRelease } from './recipe-release.mjs';
-import { createRecipeTaskRequest } from './recipe-selection.mjs';
+import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from './recipe-selection.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { listTracks, loadTrack } from './tracks.mjs';
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.mjs';
@@ -22,7 +22,9 @@ const ROOT_FIELDS = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 
   'track', 'levels', 'selection', 'stacks', 'agents', 'conditions', 'repetitions', 'ordering',
   'budgets', 'attemptPolicy', 'pricing', 'analysis']);
 ROOT_FIELDS.add('runtime');
-const SELECTION_FIELDS = new Set(['packs', 'checks']);
+const LEGACY_SELECTION_FIELDS = new Set(['packs', 'checks']);
+const MODULAR_SELECTION_FIELDS = new Set(['levels']);
+const MODULAR_LEVEL_FIELDS = new Set(['level', 'recipe', 'features', 'checks']);
 const STACK_FIELDS = new Set(['id', 'adapterVersion']);
 const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model']);
 const ORDERING_FIELDS = new Set(['method', 'seed']);
@@ -101,9 +103,34 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     if (value.levels[index] !== value.levels[index - 1] + 1) fail(`${source}.levels`, 'must be ascending and contiguous');
   }
 
-  strict(value.selection, `${source}.selection`, SELECTION_FIELDS);
-  value.selection.packs = exactArray(value.selection.packs, `${source}.selection.packs`, string, { sort: true });
-  value.selection.checks = exactArray(value.selection.checks, `${source}.selection.checks`, string, { sort: true });
+  const modularSelection = object(value.selection)
+    && Object.hasOwn(value.selection, 'levels');
+  strict(value.selection, `${source}.selection`,
+    modularSelection ? MODULAR_SELECTION_FIELDS : LEGACY_SELECTION_FIELDS);
+  if (modularSelection) {
+    value.selection.levels = exactArray(value.selection.levels, `${source}.selection.levels`,
+      (entry, at) => {
+        strict(entry, at, MODULAR_LEVEL_FIELDS);
+        integer(entry.level, `${at}.level`, { min: 1 });
+        if (typeof entry.recipe !== 'string'
+          || !/^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*@\d+\.\d+\.\d+$/.test(entry.recipe)) {
+          fail(`${at}.recipe`, 'must be an exact id@version reference');
+        }
+        entry.features = exactArray(entry.features, `${at}.features`, string,
+          { nonEmpty: true, sort: true });
+        entry.checks = exactArray(entry.checks, `${at}.checks`, string, { sort: true });
+        return entry;
+      }, { nonEmpty: true });
+    if (canonicalDefinitionJson(value.selection.levels.map(entry => entry.level))
+      !== canonicalDefinitionJson(value.levels)) {
+      fail(`${source}.selection.levels`, 'must bind every requested level once and in order');
+    }
+  } else {
+    value.selection.packs = exactArray(value.selection.packs, `${source}.selection.packs`, string,
+      { sort: true });
+    value.selection.checks = exactArray(value.selection.checks, `${source}.selection.checks`, string,
+      { sort: true });
+  }
 
   value.stacks = exactArray(value.stacks, `${source}.stacks`, (stack, at) => {
     strict(stack, at, STACK_FIELDS);
@@ -281,33 +308,36 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
     fail('track', `is unknown; available tracks: ${listTracks({ includeInternal: true }).join(', ')}`);
   }
   const track = loadTrack(definition.track);
-  const bindings = definition.levels.map(level => {
-    const binding = resolveRecipeRelease(track, level);
+  const modularLevels = new Map((definition.selection.levels ?? [])
+    .map(selection => [selection.level, selection]));
+  const bindingRecords = definition.levels.map(level => {
+    const modular = modularLevels.get(level) ?? null;
+    const binding = resolveRecipeRelease(track, level, modular?.recipe ?? null);
     if (!binding) fail('levels', `L${level} has no recipe release`);
-    const selectedTask = createRecipeTaskRequest(binding, {
-      packIds: definition.selection.packs, checkKeys: definition.selection.checks,
-    });
-    const selection = selectedTask.selection;
+    const selectedTask = modular ? null : createRecipeTaskRequest(binding, {
+      packIds: definition.selection.packs, checkKeys: definition.selection.checks });
     const calibration = resolveCalibrationForRelease(binding.release, {
       trackRoot: track.dir, stackBenchRoot: resolve(stackBenchRoot),
     });
-    return {
+    const publicBinding = {
       level,
       promotion: { alias: binding.alias, status: binding.status, catalog: binding.catalog },
       recipe: recipeReleaseIdentity(binding.release),
       fixture: binding.release.components.fixture,
       calibration: calibrationIdentity(calibration),
       qualifiedStacks: calibration?.qualification.stacks ?? [],
-      selection,
-      task: {
+      selection: selectedTask?.selection ?? null,
+      task: selectedTask ? {
         sha256: selectedTask.task.sha256,
         requirementSha256: selectedTask.task.requirementSha256,
         contractSha256: selectedTask.task.contractSha256,
         requirementIds: selectedTask.task.requirementIds,
         contractIds: selectedTask.task.contractIds,
-      },
+      } : null,
     };
+    return { level, modular, binding, publicBinding };
   });
+  const bindings = bindingRecords.map(record => record.publicBinding);
   if (definition.state === 'frozen') {
     for (const binding of bindings) {
       if (binding.recipe.state !== 'qualified' || binding.promotion.status !== 'promoted'
@@ -336,7 +366,7 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
   if (definition.state === 'frozen' && agents.some(agent => agent.costLimit === 'unsupported')) {
     fail('state', 'cannot freeze an agent adapter that does not enforce maxCostUsdPerAttempt');
   }
-  const requested = { track: definition.track, levels: bindings.map(binding => ({
+  const legacyRequested = modularLevels.size ? null : { track: definition.track, levels: bindings.map(binding => ({
     level: binding.level,
     recipe: {
       id: binding.recipe.id, version: binding.recipe.version,
@@ -354,8 +384,59 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
     },
     task: binding.task,
   })) };
+  const requestedForCondition = ref => {
+    if (!modularLevels.size) {
+      if (ref.specifications !== undefined) {
+        fail('conditions', 'legacy selection cannot declare modular specifications');
+      }
+      return legacyRequested;
+    }
+    if (!ref.specifications) fail('conditions', 'modular selection requires specifications by level');
+    const specifications = new Map(ref.specifications.levels.map(entry => [entry.level, entry]));
+    if (specifications.size !== bindingRecords.length
+      || bindingRecords.some(record => !specifications.has(record.level))) {
+      fail('conditions', 'specifications must bind every selected level exactly once');
+    }
+    return { track: definition.track, levels: bindingRecords.map(record => {
+      const selected = createBoundRecipeTaskRequest(record.binding, {
+        featureIds: record.modular.features,
+        checkKeys: record.modular.checks,
+        disclosedSpecifications: specifications.get(record.level).disclosed,
+        probedSpecifications: specifications.get(record.level).probed,
+      });
+      return {
+        level: record.level,
+        recipe: {
+          id: record.publicBinding.recipe.id, version: record.publicBinding.recipe.version,
+          contentSha256: record.publicBinding.recipe.contentSha256,
+          meaningSha256: record.publicBinding.recipe.meaningSha256,
+          executionSha256: record.publicBinding.recipe.executionSha256,
+          state: record.publicBinding.recipe.state,
+        },
+        selection: {
+          schemaVersion: 2,
+          sha256: selected.selection.sha256,
+          scoredPoints: selected.selection.scoredPoints,
+          requested: selected.selection.requested,
+          taskPacks: selected.selection.taskPacks,
+          features: selected.selection.features,
+          specifications: selected.selection.specifications,
+          requestedChecks: selected.selection.requestedChecks.map(check => check.stableKey),
+          probeChecks: selected.selection.probeChecks.map(check => check.stableKey),
+        },
+        task: {
+          sha256: selected.task.sha256,
+          requirementSha256: selected.task.requirementSha256,
+          contractSha256: selected.task.contractSha256,
+          requirementIds: selected.task.requirementIds,
+          contractIds: selected.task.contractIds,
+        },
+      };
+    }) };
+  };
   const conditions = resolveStudyConditions(definition.conditions, stacks.map(stack => stack.id), {
-    stackBenchRoot: resolve(stackBenchRoot), frozen: definition.state === 'frozen', requested,
+    stackBenchRoot: resolve(stackBenchRoot), frozen: definition.state === 'frozen',
+    requested: requestedForCondition,
   });
   return { bindings, stacks, agents, conditions };
 }

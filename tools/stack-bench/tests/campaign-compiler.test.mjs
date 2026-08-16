@@ -55,6 +55,25 @@ function compile(value) {
   finally { rmSync(root, { recursive: true, force: true }); }
 }
 
+const modularFeatures = [
+  'ecommerce.feature.accounts',
+  'ecommerce.feature.cart-checkout',
+  'ecommerce.feature.catalog',
+  'ecommerce.feature.purchasing',
+  'ecommerce.feature.reviews',
+  'ecommerce.feature.warehouse-admin',
+];
+
+function modularDefinition({ disclosed = [], probed = [] } = {}) {
+  return definition({
+    repetitions: 1,
+    selection: { levels: [{ level: 1, recipe: 'ecommerce.l1-modular@2.0.0',
+      features: modularFeatures, checks: [] }] },
+    conditions: [{ ...definition().conditions[0], specifications: { levels: [{ level: 1,
+      disclosed, probed }] } }],
+  });
+}
+
 test('campaign compilation binds exact inputs and expands a balanced immutable attempt plan', () => {
   const plan = compile(definition());
   assert.equal(plan.summary.attempts, 9);
@@ -130,6 +149,41 @@ test('guidance conditions are an independent campaign axis with stack-specific A
   assert(spacetime.every(attempt => attempt.skills.length === 2));
   assert(plan.attempts.filter(attempt => attempt.stack !== 'spacetime')
     .every(attempt => attempt.skills.length === 0));
+});
+
+test('modular campaigns bind features, disclosed specifications, and hidden probes independently', () => {
+  const disclosed = ['ecommerce.spec.access-control@1.0.0'];
+  const durability = compile(modularDefinition({ disclosed,
+    probed: ['ecommerce.spec.state-durability@1.0.0'] }));
+  const liveState = compile(modularDefinition({ disclosed,
+    probed: ['ecommerce.spec.live-state@1.0.0'] }));
+  const requested = durability.conditions[0].requested.levels[0];
+  assert.equal(durability.bindings[0].recipe.id, 'ecommerce.l1-modular');
+  assert.equal(durability.bindings[0].promotion.status, 'candidate');
+  assert.equal(durability.bindings[0].selection, null,
+    'condition-specific specification choices must not be flattened into a shared binding');
+  assert.equal(requested.selection.schemaVersion, 2);
+  assert.deepEqual(requested.selection.features, modularFeatures);
+  assert.deepEqual(requested.selection.specifications,
+    { disclosed, probed: ['ecommerce.spec.state-durability@1.0.0'] });
+  assert(requested.selection.requestedChecks.length > 0);
+  assert(requested.selection.probeChecks.length > 0);
+  assert.equal(durability.conditions[0].requested.levels[0].task.sha256,
+    liveState.conditions[0].requested.levels[0].task.sha256,
+    'changing only a hidden probe must not change the task shown to the agent');
+  assert.notEqual(durability.conditions[0].requested.levels[0].selection.sha256,
+    liveState.conditions[0].requested.levels[0].selection.sha256,
+    'changing a hidden probe must change the recorded experimental condition');
+  assert.notEqual(durability.conditions[0].sha256, liveState.conditions[0].sha256);
+});
+
+test('campaigns reject modular specifications that cannot be probed and legacy/specification mixing', () => {
+  assert.throws(() => compile(modularDefinition({
+    probed: ['ecommerce.spec.external-data-sync@1.0.0'],
+  })), /has no probe observation/);
+  assert.throws(() => compile(definition({ conditions: [{ ...definition().conditions[0],
+    specifications: { levels: [{ level: 1, disclosed: [], probed: [] }] },
+  }] })), /legacy selection cannot declare modular specifications/);
 });
 
 test('a one-repetition pilot is allowed and reports its exact sample size', () => {

@@ -81,6 +81,7 @@ function parseArgs(argv) {
       case '--guidance': a.guidance = argv[++i]; break;
       case '--guidance-document-json': a.guidanceDocument = JSON.parse(argv[++i]); break;
       case '--condition-json': a.condition = JSON.parse(argv[++i]); break;
+      case '--selection-json': a.selectionRequest = JSON.parse(argv[++i]); break;
       case '--feature-module': a.featureIds.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--disclose-spec': a.disclosedSpecifications.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--probe-spec': a.probedSpecifications.push(...argv[++i].split(',').filter(Boolean)); break;
@@ -310,13 +311,27 @@ async function main() {
   // acquiring a backend lease or paying for a build. A pack that exists at L2
   // but not L1 is not a late grading surprise; it is an invalid run request.
   args.recipeTasks = new Map();
+  args.selectionRequest ??= { packs: [...args.packIds], checks: [...args.checkKeys] };
   for (const level of args.levelList) {
-    const binding = resolveRecipeRelease(track, level, args.recipe);
+    const declared = args.condition?.requested?.levels?.find(entry => entry.level === level) ?? null;
+    const modularSelection = args.selectionRequest.levels?.find(entry => entry.level === level) ?? null;
+    if (declared?.selection?.schemaVersion === 2) {
+      const expected = { level, recipe: `${declared.recipe.id}@${declared.recipe.version}`,
+        features: declared.selection.requested.features,
+        checks: declared.selection.requested.checks };
+      if (JSON.stringify(modularSelection) !== JSON.stringify(expected)) {
+        throw new Error(`campaign selection changed before L${level}`);
+      }
+    } else if (modularSelection) {
+      throw new Error(`campaign selection declares modular L${level} without a modular condition`);
+    }
+    const declaredRecipe = declared
+      ? `${declared.recipe.id}@${declared.recipe.version}` : null;
+    const binding = resolveRecipeRelease(track, level, declaredRecipe ?? args.recipe);
     if (!binding && (args.packIds.length || args.checkKeys.length)) {
       throw new Error(`L${level} has no recipe release, so --pack/--check cannot be resolved`);
     }
     if (binding) {
-      const declared = args.condition?.requested?.levels?.find(entry => entry.level === level) ?? null;
       const requested = declared?.selection?.requested;
       const options = requested?.features
         ? { featureIds: requested.features,
@@ -337,6 +352,10 @@ async function main() {
       args.recipeTasks.set(level, resolved);
     }
   }
+  if (!args.selectionRequest.levels && (JSON.stringify(args.selectionRequest.packs) !== JSON.stringify(args.packIds)
+    || JSON.stringify(args.selectionRequest.checks) !== JSON.stringify(args.checkKeys))) {
+    throw new Error('campaign pack/check selection changed before execution');
+  }
   // Caller-owned mutation inputs are pure request data. Reject them before
   // checking credentials, Docker, ports, or any other ambient runner state so
   // an invalid experiment can never be masked by an unrelated preflight error.
@@ -349,6 +368,7 @@ async function main() {
     backends: [args.backend], track: args.track, levels: args.levels,
     levelList: args.levelList, runIndex: args.runIndex, agentAdapter: args.agentAdapter,
     recipe: args.recipe,
+    requestedScopes: args.condition?.requested ? [args.condition.requested] : null,
     agentSkills: args.skills ?? null,
     packIds: args.packIds, checkKeys: args.checkKeys, smoke: true,
     supervisorState: process.env.STACK_BENCH_SUPERVISOR_STATE ?? null,
@@ -665,7 +685,7 @@ async function main() {
     stack: args.guidance === 'minimal' ? 'free' : args.guidance,
     skills: args.skills ?? [],
     runtime: { buildImage: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE },
-    selectionRequest: { packs: [...args.packIds], checks: [...args.checkKeys] },
+    selectionRequest: args.selectionRequest,
     backendLease: publicBackendLease(readBackendLease(leasePath,
       { token: initialLease.ownershipToken, backend: args.backend, runId })),
     validation: { validatedThrough: track.validatedThrough, beyondValidatedLevels }, levels: [] };

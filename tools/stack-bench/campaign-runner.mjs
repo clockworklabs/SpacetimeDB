@@ -44,11 +44,12 @@ export function attemptArgv(plan, attempt, output) {
     '--guidance', attempt.guidance,
     '--guidance-document-json', JSON.stringify(guidanceDocument),
     '--condition-json', JSON.stringify(attempt.condition),
+    '--selection-json', JSON.stringify(plan.definition.selection),
     '--fix-rounds', String(plan.definition.budgets.fixRounds),
     '--parent-attempt-id', attempt.id,
     '--no-media'];
-  for (const pack of plan.definition.selection.packs) args.push('--pack', pack);
-  for (const check of plan.definition.selection.checks) args.push('--check', check);
+  for (const pack of plan.definition.selection.packs ?? []) args.push('--pack', pack);
+  for (const check of plan.definition.selection.checks ?? []) args.push('--check', check);
   args.push('--skills-json', JSON.stringify(attempt.skills));
   if (plan.definition.budgets.maxCostUsdPerAttempt !== null) {
     args.push('--max-budget-usd', String(plan.definition.budgets.maxCostUsdPerAttempt));
@@ -334,8 +335,9 @@ export function runCampaignAdmission(plan, directory,
       levelList: plan.definition.levels,
       runIndex: 0,
       agentAdapter: adapter,
-      packIds: plan.definition.selection.packs,
-      checkKeys: plan.definition.selection.checks,
+      packIds: plan.definition.selection.packs ?? [],
+      checkKeys: plan.definition.selection.checks ?? [],
+      requestedScopes: plan.conditions.map(condition => condition.requested),
       smoke: true,
       image: plan.definition.runtime.buildImage ?? executionEnv.STACK_BENCH_IMAGE,
       resultsDir: resolve(directory),

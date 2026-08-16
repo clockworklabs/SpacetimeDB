@@ -69,7 +69,8 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
     '--model', 'deterministic', '--guidance', 'prescribed',
     '--guidance-document-json', JSON.stringify(plan.attempts[0].condition.guidance.documents[
       plan.attempts[0].stack]),
-    '--condition-json', JSON.stringify(plan.attempts[0].condition), '--fix-rounds', '3',
+    '--condition-json', JSON.stringify(plan.attempts[0].condition),
+    '--selection-json', JSON.stringify(plan.definition.selection), '--fix-rounds', '3',
     '--parent-attempt-id', plan.attempts[0].id, '--no-media',
     '--skills-json', JSON.stringify(plan.attempts[0].skills),
   ]);

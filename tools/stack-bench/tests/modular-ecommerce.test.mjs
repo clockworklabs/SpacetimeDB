@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { resolve } from 'node:path';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileRecipeFile } from '../composition-compiler.mjs';
@@ -8,7 +8,8 @@ import { createBoundRecipeTaskRequest, createModularRecipeTaskRequest,
   resolveBoundRecipeTaskRequest, resolveModularRecipeSelection }
   from '../recipe-selection.mjs';
 
-const recipePath = resolve('tools/stack-bench/tracks/ecommerce/composition/recipes/l1-modular-2.0.0.json');
+const recipePath = join(import.meta.dirname, '..', 'tracks', 'ecommerce', 'composition',
+  'recipes', 'l1-modular-2.0.0.json');
 const plan = compileRecipeFile(recipePath);
 const release = buildRecipeRelease(recipePath);
 const binding = { plan, release };

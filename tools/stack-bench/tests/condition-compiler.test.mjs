@@ -64,6 +64,21 @@ test('condition references are strict and versioned', () => {
   assert.throws(() => resolveStudyConditions([prescribed], ['postgres']), /requested/);
 });
 
+test('modular condition references are canonical without mutating caller-owned input', () => {
+  const input = { ...prescribed, specifications: { levels: [
+    { level: 2, disclosed: ['example.spec.second@1.0.0'], probed: [] },
+    { level: 1, disclosed: [], probed: ['example.spec.first@1.0.0'] },
+  ] } };
+  const original = structuredClone(input);
+  const validated = validateConditionReference(input);
+  assert.deepEqual(input, original);
+  assert.deepEqual(validated.specifications.levels.map(entry => entry.level), [1, 2]);
+  assert.throws(() => validateConditionReference({ ...prescribed, specifications: { levels: [
+    { level: 1, disclosed: ['example.spec.same@1.0.0'],
+      probed: ['example.spec.same@1.0.0'] },
+  ] } }), /cannot disclose and probe/);
+});
+
 function customCondition({ guidance = {}, probes = {}, repair = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-condition-'));
   const catalogRoot = join(root, 'conditions');

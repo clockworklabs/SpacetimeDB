@@ -16,7 +16,7 @@ import { dockerMountArguments } from './container-mount.mjs';
 import { BUILD_OUTBOUND_DESTINATIONS, DEFAULT_BUILD_IMAGE,
   PREFLIGHT_RESOURCE_FLOORS } from './product-config.mjs';
 import { resolveRecipeRelease } from './recipe-release.mjs';
-import { resolveRecipeSelection } from './recipe-selection.mjs';
+import { createBoundRecipeTaskRequest, resolveRecipeSelection } from './recipe-selection.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { assertNoPortCollisions, listTracks, loadTrack, portsFor } from './tracks.mjs';
@@ -221,12 +221,41 @@ export function runPreflight(request, dependencies = {}) {
     }
     track = loadTrack(request.track);
     assertNoPortCollisions();
-    for (const level of request.levelList) {
-      const binding = resolveRecipeRelease(track, level, request.recipe);
-      if (!binding && (request.packIds.length || request.checkKeys.length)) {
-        throw new Error(`L${level} has no recipe release for --pack/--check selection`);
+    if (request.requestedScopes?.length) {
+      for (const scope of request.requestedScopes) {
+        if (scope?.track !== request.track || !Array.isArray(scope.levels)
+          || scope.levels.length === 0
+          || JSON.stringify(scope.levels.map(entry => entry.level).sort((a, b) => a - b))
+            !== JSON.stringify([...request.levelList].sort((a, b) => a - b))) {
+          throw new Error('requested scope does not match the preflight track and levels');
+        }
+        for (const requested of scope.levels) {
+          const recipe = `${requested.recipe.id}@${requested.recipe.version}`;
+          const binding = resolveRecipeRelease(track, requested.level, recipe);
+          if (!binding || binding.release.contentSha256 !== requested.recipe.contentSha256) {
+            throw new Error(`L${requested.level} requested recipe ${recipe} changed`);
+          }
+          const selection = requested.selection.requested;
+          const resolved = createBoundRecipeTaskRequest(binding, selection.features
+            ? { featureIds: selection.features,
+                disclosedSpecifications: selection.specifications?.disclosed,
+                probedSpecifications: selection.specifications?.probed,
+                checkKeys: selection.checks }
+            : { packIds: selection.packs, checkKeys: selection.checks });
+          if (resolved.request.selection.sha256 !== requested.selection.sha256
+            || resolved.request.task.sha256 !== requested.task.sha256) {
+            throw new Error(`L${requested.level} requested scope changed`);
+          }
+        }
       }
-      if (binding) resolveRecipeSelection(binding.release, request);
+    } else {
+      for (const level of request.levelList) {
+        const binding = resolveRecipeRelease(track, level, request.recipe);
+        if (!binding && ((request.packIds ?? []).length || (request.checkKeys ?? []).length)) {
+          throw new Error(`L${level} has no recipe release for --pack/--check selection`);
+        }
+        if (binding) resolveRecipeSelection(binding.release, request);
+      }
     }
     add('request.scope', 'pass', `${request.track} L${request.levelList.join(',L')} on ${request.backends.join(', ')}`);
   } catch (error) {
@@ -482,6 +511,7 @@ export function runPreflight(request, dependencies = {}) {
     request: { backends: request.backends, track: request.track, levels: request.levelList,
       runIndex: request.runIndex, agentAdapter: request.agentAdapter, packs: request.packIds,
       checks: request.checkKeys, recipe: request.recipe ?? null,
+      requestedScopeCount: request.requestedScopes?.length ?? 0,
       image: request.image, resultsDir: request.resultsDir,
       agentSkills: request.agentSkills ?? null,
       smoke: request.smoke },

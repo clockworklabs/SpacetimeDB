@@ -163,13 +163,45 @@ function resolveRepair(catalog, reference) {
 }
 
 export function validateConditionReference(input, at = 'condition') {
-  strict(input, at, new Set(['id', 'version', 'guidanceProfile', 'probeProfile', 'repairPolicy']));
-  if (!ID.test(input.id)) fail(`${at}.id`, 'is invalid');
-  if (!VERSION.test(input.version)) fail(`${at}.version`, 'must be a semantic version');
-  for (const field of ['guidanceProfile', 'probeProfile', 'repairPolicy']) {
-    if (!REF.test(input[field] ?? '')) fail(`${at}.${field}`, 'must use id@version');
+  if (!object(input)) fail(at, 'must be an object');
+  const value = structuredClone(input);
+  const fields = new Set(['id', 'version', 'guidanceProfile', 'probeProfile', 'repairPolicy',
+    'specifications']);
+  for (const key of Object.keys(value)) if (!fields.has(key)) fail(`${at}.${key}`, 'is unknown');
+  for (const key of ['id', 'version', 'guidanceProfile', 'probeProfile', 'repairPolicy']) {
+    if (!Object.hasOwn(value, key)) fail(`${at}.${key}`, 'is required');
   }
-  return canonicalizeDefinition(input);
+  if (!ID.test(value.id)) fail(`${at}.id`, 'is invalid');
+  if (!VERSION.test(value.version)) fail(`${at}.version`, 'must be a semantic version');
+  for (const field of ['guidanceProfile', 'probeProfile', 'repairPolicy']) {
+    if (!REF.test(value[field] ?? '')) fail(`${at}.${field}`, 'must use id@version');
+  }
+  if (value.specifications !== undefined) {
+    strict(value.specifications, `${at}.specifications`, new Set(['levels']));
+    if (!Array.isArray(value.specifications.levels) || value.specifications.levels.length === 0) {
+      fail(`${at}.specifications.levels`, 'must be a non-empty array');
+    }
+    const seen = new Set();
+    value.specifications.levels.forEach((entry, index) => {
+      const levelAt = `${at}.specifications.levels[${index}]`;
+      strict(entry, levelAt, new Set(['level', 'disclosed', 'probed']));
+      if (!Number.isSafeInteger(entry.level) || entry.level < 1 || seen.has(entry.level)) {
+        fail(`${levelAt}.level`, 'must be a unique positive integer');
+      }
+      seen.add(entry.level);
+      for (const field of ['disclosed', 'probed']) {
+        if (!Array.isArray(entry[field]) || new Set(entry[field]).size !== entry[field].length
+          || entry[field].some(reference => !REF.test(reference))) {
+          fail(`${levelAt}.${field}`, 'must contain unique exact id@version references');
+        }
+        entry[field] = [...entry[field]].sort();
+      }
+      const overlap = entry.disclosed.filter(reference => entry.probed.includes(reference));
+      if (overlap.length) fail(levelAt, `cannot disclose and probe ${overlap.join(', ')}`);
+    });
+    value.specifications.levels.sort((left, right) => left.level - right.level);
+  }
+  return canonicalizeDefinition(value);
 }
 
 function validateRequestedScope(input) {
@@ -190,24 +222,52 @@ function validateRequestedScope(input) {
         .some(field => !HASH.test(entry.recipe[field]))) {
       fail(`${at}.recipe`, 'has an invalid identity');
     }
-    strict(entry.selection, `${at}.selection`, new Set(['sha256', 'completeness',
-      'scoredPoints', 'requested', 'taskPacks']));
+    const modular = entry.selection?.schemaVersion === 2;
+    strict(entry.selection, `${at}.selection`, modular
+      ? new Set(['schemaVersion', 'sha256', 'scoredPoints', 'requested', 'taskPacks',
+        'features', 'specifications', 'requestedChecks', 'probeChecks'])
+      : new Set(['sha256', 'completeness', 'scoredPoints', 'requested', 'taskPacks']));
     if (!HASH.test(entry.selection.sha256)
-      || !['full', 'subset'].includes(entry.selection.completeness)
-      || !Number.isSafeInteger(entry.selection.scoredPoints) || entry.selection.scoredPoints < 0) {
+      || !Number.isSafeInteger(entry.selection.scoredPoints) || entry.selection.scoredPoints < 0
+      || (!modular && !['full', 'subset'].includes(entry.selection.completeness))) {
       fail(`${at}.selection`, 'has an invalid identity');
     }
-    strict(entry.selection.requested, `${at}.selection.requested`, new Set(['packs', 'checks']));
+    strict(entry.selection.requested, `${at}.selection.requested`, modular
+      ? new Set(['features', 'specifications', 'checks']) : new Set(['packs', 'checks']));
     if (!Array.isArray(entry.selection.taskPacks)
       || new Set(entry.selection.taskPacks).size !== entry.selection.taskPacks.length
       || entry.selection.taskPacks.some(value => typeof value !== 'string' || !value)) {
       fail(`${at}.selection.taskPacks`, 'must contain unique non-empty strings');
     }
-    for (const field of ['packs', 'checks']) {
+    for (const field of modular ? ['features', 'checks'] : ['packs', 'checks']) {
       if (!Array.isArray(entry.selection.requested[field])
         || new Set(entry.selection.requested[field]).size !== entry.selection.requested[field].length
         || entry.selection.requested[field].some(value => typeof value !== 'string' || !value)) {
         fail(`${at}.selection.requested.${field}`, 'must contain unique non-empty strings');
+      }
+    }
+    if (modular) {
+      strict(entry.selection.requested.specifications,
+        `${at}.selection.requested.specifications`, new Set(['disclosed', 'probed']));
+      strict(entry.selection.specifications, `${at}.selection.specifications`,
+        new Set(['disclosed', 'probed']));
+      for (const value of [entry.selection.features, entry.selection.requestedChecks,
+        entry.selection.probeChecks]) {
+        if (!Array.isArray(value) || new Set(value).size !== value.length
+          || value.some(item => typeof item !== 'string' || !item)) {
+          fail(`${at}.selection`, 'contains an invalid modular selection array');
+        }
+      }
+      for (const specifications of [entry.selection.requested.specifications,
+        entry.selection.specifications]) {
+        for (const field of ['disclosed', 'probed']) {
+          if (!Array.isArray(specifications[field])
+            || new Set(specifications[field]).size !== specifications[field].length
+            || specifications[field].some(reference => !REF.test(reference))) {
+            fail(`${at}.selection.specifications.${field}`,
+              'must contain unique exact id@version references');
+          }
+        }
       }
     }
     strict(entry.task, `${at}.task`, new Set(['sha256', 'requirementSha256',
@@ -233,10 +293,11 @@ function validateRequestedScope(input) {
 export function resolveStudyConditions(inputs, stacks,
   { stackBenchRoot = ROOT, catalogPath = CATALOG, frozen = false, requested } = {}) {
   if (!Array.isArray(inputs) || inputs.length === 0) fail('conditions', 'must be a non-empty array');
-  const requestedScope = validateRequestedScope(requested);
   const catalog = loadCatalog(catalogPath);
   const resolved = inputs.map((input, index) => {
     const ref = validateConditionReference(input, `conditions[${index}]`);
+    const requestedScope = validateRequestedScope(
+      typeof requested === 'function' ? requested(ref, index) : requested);
     const guidance = resolveGuidance(catalog, ref.guidanceProfile, stacks, resolve(stackBenchRoot));
     const probes = resolveProbes(catalog, ref.probeProfile);
     const repair = resolveRepair(catalog, ref.repairPolicy);

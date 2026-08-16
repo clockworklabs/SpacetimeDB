@@ -844,10 +844,13 @@ them. Live qualification does not run concurrently with executable harness edits
     reconciliation accepted on the host and the exact Linux appliance image).
 21. [x] SB-503 deterministic report (typed JSON/HTML generation accepted on
     the host and the exact Linux appliance image with byte-stable regeneration).
-22. [ ] SB-504 versioned study-condition contract.
-23. [ ] SB-505 symmetric neutral backend guidance.
+22. [x] SB-504 versioned study-condition contract.
+23. [x] SB-505 symmetric neutral backend guidance (implemented and prompt-snapshotted;
+    qualification remains part of the next campaign gate).
 24. [ ] SB-506 first-build capability probes.
-25. [ ] SB-507 condition-aware campaigns and reports.
+25. [ ] SB-507 condition-aware campaigns and reports (exact modular condition compilation,
+    preflight, prompt/grading handoff, and run-scope recording are complete; separate probe
+    execution and report sections remain).
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.
