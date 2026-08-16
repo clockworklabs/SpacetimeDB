@@ -262,6 +262,7 @@
       <div class="brand">Stack Bench / Meeting Brief</div>
       <nav aria-label="Document sections">
         <a href="#summary">Summary</a>
+        <a href="#pilot">Latest pilot</a>
         <a href="#flow">How it works</a>
         <a href="#agent-inputs">Agent inputs</a>
         <a href="#coverage">Coverage</a>
@@ -275,16 +276,17 @@
   </div>
 
   <header class="shell">
-    <div class="eyebrow">Stakeholder briefing · 15 August 2026</div>
+    <div class="eyebrow">Stakeholder briefing · 16 August 2026</div>
     <h1>A benchmark you can rerun, inspect, and trust.</h1>
     <p class="dek">Stack Bench is a controlled evaluation appliance for AI-generated application stacks. It asks an agent to build the same product on different backends, verifies real behavior in Docker, and preserves the exact inputs, evidence, time, cost, and failures behind every result.</p>
     <div class="status-row">
       <span class="pill">Docker-only build path</span>
-      <span class="pill">337 automated tests passing</span>
+      <span class="pill">346 automated tests passing</span>
       <span class="pill">Versioned recipes and evidence</span>
       <span class="pill">Framework-neutral L1 and L2 promoted</span>
       <span class="pill warn">Production hardening in progress</span>
-      <span class="pill warn">No current publishable comparison yet</span>
+      <span class="pill">First frozen three-stack pilot complete</span>
+      <span class="pill warn">Repeated comparison still pending</span>
     </div>
   </header>
 
@@ -326,7 +328,37 @@
       </div>
       <div class="callout warning" style="margin-top:16px">
         <strong>The honest current position</strong>
-        The harness is materially stronger and already useful for engineering and diagnostic runs. Framework-neutral L1 1.1 and L2 1.2 now have complete repeated Docker reference, mutation, and null evidence on all three stacks, zero machine qualification blockers, and the promoted public aliases. The earlier releases are retired. The first frozen repeated model campaign is still incomplete, so historical model results explain what we learned; they are not a current backend comparison.
+        The harness is materially stronger and already useful for engineering and diagnostic runs. Framework-neutral L1 1.1 and L2 1.2 have complete repeated Docker reference, mutation, and null evidence on all three stacks, zero machine qualification blockers, and the promoted public aliases. A frozen one-repetition prescribed pilot has now completed on all three stacks with no invalid executions. It is real current evidence, but one run per stack cannot establish variability or a backend winner.
+      </div>
+    </section>
+
+    <section id="pilot" class="shell">
+      <div class="section-head">
+        <h2>The first frozen three-stack pilot</h2>
+        <p>Exactly one Claude Sonnet 5 attempt ran per stack on Linux/amd64, using the same ecommerce L1 and L2 releases, prescribed guidance, budgets, pricing snapshot, and immutable controller/build images. This is a pipeline and signal pilot—not a statistically repeated comparison.</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Stack</th><th>Unaided first build</th><th>After repair</th><th>Declared coverage / outcome</th><th>Normalized usage</th><th>Correction spend</th><th>Elapsed</th></tr></thead>
+          <tbody>
+            <tr><td><strong>PostgreSQL</strong></td><td>L1 45/50; L2 22/54</td><td>L1 50/50; L2 54/54</td><td>104/106 (98.1%); <code>inconclusive</code></td><td>$22.1678</td><td>$12.5077</td><td>about 1h 34m</td></tr>
+            <tr><td><strong>MongoDB</strong></td><td>L1 45/50; L2 49/54</td><td>L1 50/50; L2 54/54</td><td>104/106 (98.1%); <code>inconclusive</code></td><td>$19.8511</td><td>$9.1803</td><td>about 1h 27m</td></tr>
+            <tr><td><strong>SpacetimeDB</strong></td><td>L1 51/51; L2 48/55</td><td>L1 51/51; L2 55/55</td><td>106/106 (100%); <code>passed</code></td><td>$23.1575</td><td>$10.1609</td><td>about 1h 49m</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="grid three" style="margin-top:18px">
+        <article class="card"><div class="number">3 / 3</div><div class="label">planned attempts completed; zero invalid attempts or executions</div></article>
+        <article class="card"><div class="number">$65.1764</div><div class="label">total normalized API-equivalent usage across the pilot</div></article>
+        <article class="card"><div class="number">about 4h 49m</div><div class="label">total execution time across the three attempts</div></article>
+      </div>
+      <div class="callout warning" style="margin-top:18px">
+        <strong>How to read this table</strong>
+        PostgreSQL and MongoDB earned every measurable point, but the same one-point two-tab observation was inconclusive at both levels, so neither is presented as a full 106/106 pass. Score and measurement coverage are separate. Repair spend is included in total normalized usage, not additional to it. Subscription use is normalized to the campaign's frozen API list-price equivalent; it is not an API invoice.
+      </div>
+      <div class="callout" style="margin-top:18px">
+        <strong>The hardening worked during a real run</strong>
+        SpacetimeDB's first L2 repair regressed already-working behavior. The controller rejected the candidate, restored the exact prior source, regraded the rollback successfully, and continued. The final campaign report then revalidated each raw result before reporting it.
       </div>
     </section>
 
@@ -430,7 +462,7 @@
         </article>
         <article class="card">
           <h3>Unmentioned defaults probes</h3>
-          <p>The design reserves a separate, first-build-only probe channel for behavior such as durability or reconnect handling that was not requested. Probe evidence will never affect requested-feature score or enter repairs. The separation is enforced now; non-empty probe execution is still future work.</p>
+          <p>The next condition will omit production constraints such as durability, reconnect recovery, and concurrency guarantees from the agent's prompt, then measure them only against the untouched first build. The backend is still named; framework advice remains a separate choice. Probe evidence will never affect requested-feature score or enter repairs. The separation is enforced now; non-empty probe execution is the next implementation step.</p>
         </article>
       </div>
 
@@ -797,17 +829,18 @@ else if (!evidenceIsMeasured(evidence)) {
             <li>Typed evidence drives scoring, null/mutation controls, comparison, repair selection, and reporting; diagnostic wording does not decide outcomes</li>
             <li>Versioned stack adapters for three measured backends plus a deterministic test stack; versioned agent adapters for coding, deterministic, fault, and reference paths</li>
             <li>Operator <code>preflight</code>, pinned Linux/amd64 controller appliance, immutable campaign plans, resumable execution, and reproducible HTML reporting</li>
-            <li>337/337 automated tests pass on the host, including two live Playwright grades; the exact post-commit Linux controller is rebuilt and rerun for each evidence commit</li>
+            <li>346/346 automated tests pass on the host, including two live Playwright grades; the exact post-commit Linux controller is rebuilt and rerun for each evidence commit</li>
             <li>Real Docker smoke publishes a TypeScript module, verifies SQL and watcher health, and requires authorized logs</li>
             <li>Framework-neutral L1 1.1 and L2 1.2 each have fresh 13/13 qualification evidence and now own the promoted default aliases; prior releases are retired from new execution</li>
             <li>For every L2 stack, two stable pristine repetitions scored 55/55 plus 20/20 inherited; two mutation repetitions each caught all 3/3 declared defects, and the null control failed every scored criterion</li>
+            <li>A frozen prescribed L1/L2 pilot completed one attempt on each stack with zero invalid executions, immutable raw evidence, normalized cost/time, correction accounting, and a reproducible report</li>
           </ul>
         </article>
         <article class="card">
           <h3>Still required for production quality</h3>
           <ul class="checklist open">
-            <li>Freeze the exact campaign protocol and immutable controller/build image digests against the newly promoted L1/L2 releases</li>
-            <li>Run a frozen repeated three-stack model campaign under declared prescribed and/or neutral conditions and publish dispersion, invalid-run rate, cost, and evidence limitations</li>
+            <li>Repeat the frozen three-stack campaign enough times to measure variability; the completed one-repetition pilot cannot establish a winner</li>
+            <li>Add and qualify the unprescribed defaults-probe condition, with production constraints absent from the prompt and results isolated from score and repair</li>
             <li>Resolve the remaining point-bearing <code>statedBy</code> warnings and add exact mutants before promoting currently diagnostic zero-point checks</li>
             <li>Implement non-empty first-build defaults probes for unmentioned durability/reconnect behavior without feeding those results into score or repairs</li>
             <li>Move active scenario bodies from the strict compatibility executor into the general recipe executor; migrate chat into pack/recipe composition</li>
@@ -821,17 +854,17 @@ else if (!evidenceIsMeasured(evidence)) {
     <section id="next" class="shell">
       <div class="section-head">
         <h2>Recommended path from here</h2>
-        <p>The model-free qualification and promotion boundary is complete. Freeze the experiment protocol before buying model runs so every measured attempt belongs to one declared comparison.</p>
+        <p>The model-free qualification boundary and the first frozen prescribed pilot are complete. The useful next work is to add the unprescribed condition, prove its isolation, then run enough repetitions to measure variability.</p>
       </div>
       <div class="grid three">
-        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Freeze the experiment protocol</h3><p>Lock the promoted recipe, packs, fixtures, calibration, controller/build images, agent/model, guidance conditions, repetitions, ordering, budgets, prompts, and retry rules used by the campaign.</p></article>
-        <article class="card"><div class="number">2</div><h3 style="margin-top:12px">Run the real comparison</h3><p>Freeze the exact stacks, model/agent, prescribed or neutral condition, selected packs, repetitions, ordering, budgets, and retry rules. Run the full matrix and publish raw evidence plus variability and invalid-run rate.</p></article>
-        <article class="card"><div class="number">3</div><h3 style="margin-top:12px">Finish the handoff</h3><p>Exercise the appliance from a second clean runner, close the remaining authoring/replay gaps, document the operator path, and only then extend qualified workloads beyond L2.</p></article>
+        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Add the no-constraints condition</h3><p>Keep the requested app and named backend, omit production-quality guarantees from the prompt, and run hidden first-build-only probes that cannot affect score or repair.</p></article>
+        <article class="card"><div class="number">2</div><h3 style="margin-top:12px">Prove the new condition</h3><p>Snapshot the exact prompt, verify that omitted requirements do not leak through guidance, and use deterministic controls to prove probe evidence remains separate from requested-feature results.</p></article>
+        <article class="card"><div class="number">3</div><h3 style="margin-top:12px">Run repeated comparisons</h3><p>Freeze prescribed and unprescribed campaign plans, run multiple clean attempts per stack, and publish variability, invalid-run rate, raw evidence, cost, and limitations.</p></article>
       </div>
 
       <div class="callout" style="margin-top:18px">
         <strong>The meeting decision</strong>
-        Agree that v1 is a reproducible evaluation appliance—not “all five levels.” The v1 finish line is: configurable requirements and checks, one Docker path, typed evidence, versioned stack/model adapters, operator preflight, and a frozen repeated L1/L2 campaign whose raw artifacts can be independently inspected.
+        Agree that v1 is a reproducible evaluation appliance—not “all five levels.” The v1 finish line is: configurable requirements and checks, prescribed and unprescribed conditions, one Docker path, typed evidence, versioned stack/model adapters, operator preflight, and repeated L1/L2 campaigns whose raw artifacts can be independently inspected.
       </div>
     </section>
 
