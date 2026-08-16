@@ -358,7 +358,7 @@ TypeScript outbound HTTP uses `ctx.http.fetch(url, options)`, including for non-
 
 Procedures and handlers open short database transactions with `ctx.withTx(tx => ...)`. Perform network I/O before opening the transaction; only database work belongs inside its callback.
 
-Scheduled procedures use the ordinary scheduled-table shape. Its `scheduled` option references an exported `spacetimedb.procedure(...)` value instead of a reducer, and the procedure accepts the scheduled row as its argument.
+Scheduled procedures use the same `onSchedule` binding as scheduled reducers. The procedure must be exported, return `t.unit()`, and accept the scheduled row as its argument.
 
 Inbound HTTP uses `httpHandler`, `httpRouter`, `Router`, and `SyncResponse`:
 
