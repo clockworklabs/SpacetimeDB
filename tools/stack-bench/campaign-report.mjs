@@ -9,7 +9,7 @@ import { inspectCampaign, validateCampaignRun } from './campaign-runner.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
 import { sha256 } from './provenance.mjs';
 
-export const CAMPAIGN_REPORT_SCHEMA_VERSION = 2;
+export const CAMPAIGN_REPORT_SCHEMA_VERSION = 3;
 
 const number = value => Number.isFinite(value) ? value : null;
 const ratio = (value, max) => Number.isFinite(value) && Number.isFinite(max) && max > 0
@@ -133,7 +133,7 @@ export function campaignRunMetrics(run) {
   };
 }
 
-export function campaignRunProbeObservations(run) {
+export function campaignRunFirstBuildObservations(run) {
   const actualByLevel = new Map((run.levels ?? []).map(level => [level.level, level]));
   const plannedByLevel = new Map((run.condition?.requested?.levels ?? [])
     .map(level => [level.level, level]));
@@ -142,30 +142,29 @@ export function campaignRunProbeObservations(run) {
   const levels = levelNumbers.flatMap(levelNumber => {
     const level = actualByLevel.get(levelNumber) ?? {};
     const planned = plannedByLevel.get(levelNumber);
-    const selected = Array.isArray(level.selection?.probeChecks)
-      ? level.selection.probeChecks : planned?.selection?.probeChecks;
+    const selected = Array.isArray(level.selection?.observedChecks)
+      ? level.selection.observedChecks : planned?.selection?.observedChecks;
     if (!Array.isArray(selected) || selected.length === 0) return [];
-    const probe = level.firstBuild?.probes ?? null;
+    const observation = level.firstBuild?.observations ?? null;
     const selectedPoints = selected.every(check => Number.isFinite(check?.points) && check.points >= 0)
       ? selected.reduce((total, check) => total + check.points, 0) : null;
-    const observedPoints = number(probe?.observedPoints);
-    const passedPoints = number(probe?.passedPoints);
     return [{
       level: levelNumber,
-      specifications: [...(level.selection?.specifications?.probed
-        ?? planned?.selection?.specifications?.probed ?? [])],
+      specifications: [...(level.selection?.specifications?.observed
+        ?? planned?.selection?.specifications?.observed ?? [])],
       selectedChecks: selected.length,
-      reportedChecks: Array.isArray(probe?.reportedChecks) ? probe.reportedChecks.length : null,
+      reportedChecks: Array.isArray(observation?.reportedChecks)
+        ? observation.reportedChecks.length : null,
       selectedPoints,
-      observedPoints,
-      passedPoints,
-      passRate: ratio(passedPoints, observedPoints),
-      coverageRate: ratio(observedPoints, selectedPoints),
+      observedPoints: number(observation?.observedPoints),
+      passedPoints: number(observation?.passedPoints),
+      passRate: ratio(number(observation?.passedPoints), number(observation?.observedPoints)),
+      coverageRate: ratio(number(observation?.observedPoints), selectedPoints),
       scoreContribution: false,
       repairVisible: false,
-      sourceSha256: probe?.sourceSha256 ?? null,
-      artifact: probe?.artifact ?? null,
-      outcome: probe?.outcome ?? null,
+      sourceSha256: observation?.sourceSha256 ?? null,
+      artifact: observation?.artifact ?? null,
+      outcome: observation?.outcome ?? null,
     }];
   });
   if (!levels.length) return null;
@@ -240,7 +239,7 @@ export function validateCampaignReport(input) {
   for (const [index, row] of input.conditions.entries()) {
     const at = `campaign report.conditions[${index}]`;
     exactFields(row, new Set(['key', 'stack', 'agent', 'condition', 'sample', 'metrics',
-      'firstBuildProbe']), at);
+      'firstBuildObservations']), at);
     if (typeof row.stack !== 'string' || !row.stack
       || !row.condition || typeof row.condition !== 'object' || Array.isArray(row.condition)
       || typeof row.condition.id !== 'string' || !row.condition.id
@@ -248,28 +247,29 @@ export function validateCampaignReport(input) {
       || !/^[a-f0-9]{64}$/.test(row.condition.sha256)) {
       throw new Error(`${at}.condition is invalid`);
     }
-    if (row.firstBuildProbe !== null) {
-      exactFields(row.firstBuildProbe, new Set(['sample', 'metrics']), `${at}.firstBuildProbe`);
-      exactFields(row.firstBuildProbe.sample, new Set(['selectedAttempts', 'measuredAttempts']),
-        `${at}.firstBuildProbe.sample`);
-      exactFields(row.firstBuildProbe.metrics, new Set(['passRate', 'coverageRate']),
-        `${at}.firstBuildProbe.metrics`);
-      if (!Number.isSafeInteger(row.firstBuildProbe.sample.selectedAttempts)
-        || row.firstBuildProbe.sample.selectedAttempts < 1
-        || !Number.isSafeInteger(row.firstBuildProbe.sample.measuredAttempts)
-        || row.firstBuildProbe.sample.measuredAttempts < 0
-        || row.firstBuildProbe.sample.measuredAttempts
-          > row.firstBuildProbe.sample.selectedAttempts) {
-        throw new Error(`${at}.firstBuildProbe.sample is invalid`);
+    if (row.firstBuildObservations !== null) {
+      exactFields(row.firstBuildObservations, new Set(['sample', 'metrics']),
+        `${at}.firstBuildObservations`);
+      exactFields(row.firstBuildObservations.sample,
+        new Set(['selectedAttempts', 'measuredAttempts']), `${at}.firstBuildObservations.sample`);
+      exactFields(row.firstBuildObservations.metrics, new Set(['passRate', 'coverageRate']),
+        `${at}.firstBuildObservations.metrics`);
+      if (!Number.isSafeInteger(row.firstBuildObservations.sample.selectedAttempts)
+        || row.firstBuildObservations.sample.selectedAttempts < 1
+        || !Number.isSafeInteger(row.firstBuildObservations.sample.measuredAttempts)
+        || row.firstBuildObservations.sample.measuredAttempts < 0
+        || row.firstBuildObservations.sample.measuredAttempts
+          > row.firstBuildObservations.sample.selectedAttempts) {
+        throw new Error(`${at}.firstBuildObservations.sample is invalid`);
       }
       for (const metric of ['passRate', 'coverageRate']) {
-        const summary = row.firstBuildProbe.metrics[metric];
+        const summary = row.firstBuildObservations.metrics[metric];
         exactFields(summary, new Set(['n', 'center', 'spread', 'min', 'max']),
-          `${at}.firstBuildProbe.metrics.${metric}`);
+          `${at}.firstBuildObservations.metrics.${metric}`);
         if (!Number.isSafeInteger(summary.n) || summary.n < 0
           || (summary.center !== null && (!Number.isFinite(summary.center)
             || summary.center < 0 || summary.center > 1))) {
-          throw new Error(`${at}.firstBuildProbe.metrics.${metric} is invalid`);
+          throw new Error(`${at}.firstBuildObservations.metrics.${metric} is invalid`);
         }
       }
     }
@@ -302,13 +302,13 @@ export function buildCampaignReport(plan, state, readRun) {
         admissionEvidence: `admissions/${execution.admissionId}.json`,
         evidence: execution.status === 'completed' ? `${execution.output}/run.json` : 'state.json',
         metrics: run ? campaignRunMetrics(run) : null,
-        firstBuildProbe: run ? campaignRunProbeObservations(run) : null,
+        firstBuildObservations: run ? campaignRunFirstBuildObservations(run) : null,
       };
     });
     rows.push({ ...attempt.plan, status: attempt.status, executions,
       metrics: executions.at(-1)?.status === 'completed' ? executions.at(-1).metrics : null,
-      firstBuildProbe: executions.at(-1)?.status === 'completed'
-        ? executions.at(-1).firstBuildProbe : null });
+      firstBuildObservations: executions.at(-1)?.status === 'completed'
+        ? executions.at(-1).firstBuildObservations : null });
   }
   const metricNames = [...new Set([plan.definition.analysis.primaryMetric,
     ...plan.definition.analysis.secondaryMetrics,
@@ -324,9 +324,9 @@ export function buildCampaignReport(plan, state, readRun) {
     const completed = attempts.filter(attempt => attempt.status === 'completed');
     const executions = attempts.flatMap(attempt => attempt.executions);
     const invalidExecutions = executions.filter(execution => execution.status === 'invalid').length;
-    const probeAttempts = completed.filter(attempt => attempt.firstBuildProbe !== null);
-    const measuredProbeAttempts = probeAttempts.filter(attempt =>
-      Number.isFinite(attempt.firstBuildProbe.passRate));
+    const observedAttempts = completed.filter(attempt => attempt.firstBuildObservations !== null);
+    const measuredObservedAttempts = observedAttempts.filter(attempt =>
+      Number.isFinite(attempt.firstBuildObservations.passRate));
     return {
       key: sha256(key),
       stack: attempts[0].stack,
@@ -344,14 +344,15 @@ export function buildCampaignReport(plan, state, readRun) {
       invalidAttemptRate: { n: attempts.length,
         center: Number((attempts.filter(attempt => attempt.status === 'invalid').length
           / attempts.length).toFixed(6)), spread: null, min: null, max: null } },
-      firstBuildProbe: probeAttempts.length ? {
-        sample: { selectedAttempts: probeAttempts.length,
-          measuredAttempts: measuredProbeAttempts.length },
+      firstBuildObservations: observedAttempts.length ? {
+        sample: { selectedAttempts: observedAttempts.length,
+          measuredAttempts: measuredObservedAttempts.length },
         metrics: {
-          passRate: summarize(probeAttempts.map(attempt => attempt.firstBuildProbe.passRate),
+          passRate: summarize(observedAttempts.map(attempt =>
+            attempt.firstBuildObservations.passRate),
             plan.definition.analysis.dispersion),
-          coverageRate: summarize(probeAttempts.map(attempt =>
-            attempt.firstBuildProbe.coverageRate), plan.definition.analysis.dispersion),
+          coverageRate: summarize(observedAttempts.map(attempt =>
+            attempt.firstBuildObservations.coverageRate), plan.definition.analysis.dispersion),
         },
       } : null,
     };
@@ -383,7 +384,7 @@ export function buildCampaignReport(plan, state, readRun) {
     limitations: [
       'Statistics describe only the exact scope and conditions recorded above.',
       'Score rates use measurable points; read them with coverage and the typed execution outcome.',
-      'First-build probe observations are diagnostic, contribute zero score, and are never shown to repairs.',
+      'Observed specifications are diagnostic, contribute zero score, and are never shown to repairs.',
       'Invalid executions are reported separately and are not imputed into outcome metrics.',
       'The report makes no causal claim beyond the declared campaign design.',
     ],
@@ -415,16 +416,31 @@ export function renderCampaignHtml(report, { evidencePrefix = '..' } = {}) {
       ? `${escape(formatRate(condition.metrics[coverageMetric]?.center))} coverage · ` : ''}`
     + `${escape(formatUsd(condition.metrics.totalCostUsd?.center))} normalized usage · `
     + `${escape(formatDurationMs(condition.metrics.totalDurationMs?.center))}</small></td></tr>`).join('');
-  const probeRows = report.conditions.filter(condition => condition.firstBuildProbe)
+  const treatmentRows = report.scope.conditions.flatMap(condition =>
+    (condition.requested?.levels ?? []).flatMap(level => {
+      const specifications = level.selection?.schemaVersion === 3
+        ? level.selection.specifications : null;
+      if (!specifications) return [];
+      const list = values => values.length ? values.join(', ') : 'none';
+      return [`<tr><td>${escape(`${condition.id}@${condition.version}`)}</td>`
+        + `<td>L${escape(level.level)}</td>`
+        + `<td>${escape(list(specifications.requested))}</td>`
+        + `<td>${escape(list(specifications.expected))}</td>`
+        + `<td>${escape(list(specifications.observed))}</td></tr>`];
+    })).join('');
+  const treatmentSection = treatmentRows
+    ? `<h2>Specification treatment</h2><p>Requested specifications appear in the initial prompt and score. Expected specifications are withheld from the initial prompt but still score and may be repaired. Observed specifications are measured separately and never affect score or repairs.</p><table><thead><tr><th>Study condition</th><th>Level</th><th>Requested</th><th>Expected</th><th>Observed only</th></tr></thead><tbody>${treatmentRows}</tbody></table>`
+    : '';
+  const observationRows = report.conditions.filter(condition => condition.firstBuildObservations)
     .map(condition => `<tr><td>${escape(condition.stack)}</td>`
       + `<td>${escape(condition.agent.adapter)} / ${escape(condition.agent.model)}</td>`
       + `<td>${escape(condition.condition.id)}@${escape(condition.condition.version)}</td>`
-      + `<td>${condition.firstBuildProbe.sample.measuredAttempts}/${condition.firstBuildProbe.sample.selectedAttempts}</td>`
-      + `<td>${escape(formatRate(condition.firstBuildProbe.metrics.passRate.center))}`
-      + `<br><small>${escape(formatRate(condition.firstBuildProbe.metrics.coverageRate.center))} coverage</small></td></tr>`)
+      + `<td>${condition.firstBuildObservations.sample.measuredAttempts}/${condition.firstBuildObservations.sample.selectedAttempts}</td>`
+      + `<td>${escape(formatRate(condition.firstBuildObservations.metrics.passRate.center))}`
+      + `<br><small>${escape(formatRate(condition.firstBuildObservations.metrics.coverageRate.center))} coverage</small></td></tr>`)
     .join('');
-  const probeSection = probeRows ? `<h2>Unmentioned first-build observations</h2><p>These diagnostics measure selected behavior in the unaided first build. They contribute zero points to the requested score and are never provided to repair rounds.</p><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Measured</th><th>Observed pass rate</th></tr></thead><tbody>${probeRows}</tbody></table>` : '';
-  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p><p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Completed</th><th>Invalid executions</th><th>${escape(primaryLabel)}</th></tr></thead><tbody>${rows}</tbody></table>${probeSection}<h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>${(execution.firstBuildProbe?.levels ?? []).filter(level => level.artifact).map(level => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence.slice(0, -'run.json'.length)}${level.artifact}`)}">L${escape(level.level)} observations</a>`).join('')}`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
+  const observationSection = observationRows ? `<h2>Observed-only first-build behavior</h2><p>These diagnostics measure selected behavior in the unaided first build. They contribute zero points to the scored result and are never provided to repair rounds.</p><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Measured</th><th>Observed pass rate</th></tr></thead><tbody>${observationRows}</tbody></table>` : '';
+  return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(report.campaign.title)}</title><style>body{font:16px system-ui;max-width:1100px;margin:40px auto;padding:0 20px;color:#17202a}code{font-size:.85em}table{border-collapse:collapse;width:100%}th,td{padding:.65rem;border-bottom:1px solid #ccd;text-align:left}.meta{color:#566} .warn{background:#fff4cf;padding:1rem}</style></head><body><h1>${escape(report.campaign.title)}</h1><p class="meta">Campaign <code>${escape(report.campaign.id)}</code> · ${escape(report.campaign.sha256)} · status ${escape(report.summary.campaignStatus)}</p><p>This report shows exactly what ran: ${report.summary.completedAttempts} completed of ${report.summary.plannedAttempts} planned attempts, with ${report.summary.invalidExecutions} invalid execution(s) retained.</p><h2>Conditions</h2><table><thead><tr><th>Stack</th><th>Agent / model</th><th>Study condition</th><th>Completed</th><th>Invalid executions</th><th>${escape(primaryLabel)}</th></tr></thead><tbody>${rows}</tbody></table>${treatmentSection}${observationSection}<h2>Scope</h2><pre>${escape(JSON.stringify(report.scope, null, 2))}</pre><h2>Attempts and raw evidence</h2><ul>${report.attempts.map(attempt => `<li><strong>${escape(attempt.id)}</strong> — ${escape(attempt.status)}${attempt.executions.map(execution => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence}`)}">${escape(execution.id)}</a> (${escape(execution.outcome ?? execution.status)}) · <a href="${escape(`${evidencePrefix}/${execution.admissionEvidence}`)}">admission</a>${(execution.firstBuildObservations?.levels ?? []).filter(level => level.artifact).map(level => ` · <a href="${escape(`${evidencePrefix}/${execution.evidence.slice(0, -'run.json'.length)}${level.artifact}`)}">L${escape(level.level)} observations</a>`).join('')}`).join('')}</li>`).join('')}</ul><div class="warn"><strong>Limitations</strong><ul>${report.limitations.map(item => `<li>${escape(item)}</li>`).join('')}</ul></div><p class="meta">Report identity: <code>${escape(report.contentSha256)}</code></p></body></html>\n`;
 }
 
 export function generateCampaignReport(directory, { output = join(resolve(directory), 'report') } = {}) {

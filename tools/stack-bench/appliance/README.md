@@ -111,13 +111,14 @@ case, the running Compose controller must match the campaign. This runtime bindi
 does not replace separate release-bundle signature/integrity verification.
 `campaign.example.json` is a zero-cost deterministic draft showing the complete
 shape; copy it outside the image and replace its study inputs before use.
-`campaign.probe-reference.json` is a model-free draft gate for the modular L1
-condition. It runs the exact registered reference fixture twice on each stack,
-requests all six product features, withholds the state-durability specification,
-and records its four checks only as first-build observations. It is an input to
-reference qualification, not comparative model data and not proof that the
-probe oracle is qualified. Null and exact-mutation controls must pass separately
-before this condition can be frozen.
+`campaign.treatment-reference.json` is a model-free draft gate for the modular
+L1 condition. It runs the exact registered reference fixture twice per stack
+under two treatments: durability expected but unmentioned (its four checks count
+toward score and repair eligibility), and durability observed only (the same
+public-surface checks are separate zero-score first-build evidence). That is 12
+planned attempts. It is qualification input, not comparative model data and not
+proof that the oracle is qualified. Null and exact-mutation controls must pass
+separately before either condition can be frozen.
 
 Prepare durable state without launching an attempt, then run that exact frozen
 plan (or resume its remaining attempts) from the same persistent directory:
@@ -156,9 +157,11 @@ report states the exact scope and campaign status, keeps invalid executions and
 retries visible, links raw run and admission artifacts, includes exact recipe,
 fixture, calibration, runtime-image, release, and pricing identities, applies
 the declared dispersion, and does not impute missing metrics. When a condition
-selects unmentioned first-build probes, the report gives them a separate
-diagnostic section, denominator, coverage value, and raw-evidence link. Probe
-observations never alter the requested score or correction metrics. Deleting
+selects observed-only first-build checks, the report gives them a separate
+diagnostic section, denominator, coverage value, and raw-evidence link. Those
+observations never alter the scored result or correction metrics. Expected
+specifications are different: they are absent from the initial prompt but do
+count toward first-build/final scores and may enter repair rounds. Deleting
 only the `report` directory and running the command again produces the same
 report identity and bytes.
 

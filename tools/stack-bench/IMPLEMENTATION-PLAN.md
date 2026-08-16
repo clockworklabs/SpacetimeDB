@@ -678,37 +678,40 @@ artifacts produces the same report identity.
 
 Replace the single guidance choice with a strict, content-identified condition
 that independently binds the requested recipe, backend guidance profile,
-unmentioned capability-probe profile, and repair policy. Compilation resolves
-the exact prompt bytes, disclosed material, withheld probes, repair eligibility,
-and content hashes into the campaign and result identities.
+per-specification grading treatment, and repair policy. Compilation resolves
+the exact prompt bytes, requested material, expected requirements, observed-only
+checks, repair eligibility, and content hashes into campaign and result identities.
 
-Introduce one versioned capability definition with distinct requested-check and
-unmentioned-probe observation contracts where necessary. Selecting the
-requested form includes its requirement prose; selecting the probe form does
-not. This removes the current coupling between choosing grader behavior and
-inserting its requirement into the user prompt without duplicating the semantic
-definition across packs.
+Introduce one versioned capability definition with requested and unmentioned
+observation contracts where necessary. Every selected specification has one
+closed treatment: requested (prompt, score, repair), expected (score and repair
+without initial disclosure), or observed (separate first-build diagnostic).
+Omission means excluded. This removes the coupling between prompt disclosure,
+scoring, and repair without duplicating the semantic definition across packs.
 
 Reject missing or mutable profiles, unsupported stack/profile combinations,
-prompt/probe overlap, unobservable hidden probes, contradictory repair policy,
-and any attempt to treat probe observations as requested-score evidence. New
+overlapping treatments, unobservable expected/observed specifications,
+contradictory repair policy, and any attempt to treat observed-only evidence as
+scored evidence. New
 campaigns require the new schema; archived pre-v1 results remain inert rather
 than entering through a compatibility reader.
 
-In progress. Campaign schema v2 removes guidance from the agent identity and
-introduces a separate condition axis composed from versioned guidance, probe,
-and repair profiles. The first compiler slice content-identifies those profiles
+Implemented for the draft modular L1 path. Campaign conditions compose
+versioned guidance, per-specification treatments, and repair policy. The compiler
+content-identifies those inputs
 and each selected backend document, binds each selected recipe's meaning,
 execution, resolved task packs, exact composed requirement/contract identities,
-and exact check selection, carries the resolved condition through
+and exact scored/observed check selection, carries the resolved condition through
 attempts, run artifacts, admission, grouping, and reports, and makes the coding
-agent verify the exact document bytes before a model call. Non-empty probe
-profiles and repair policies that withhold requested evidence currently fail
-closed because their execution paths belong to SB-506. Shared harness wording
+agent verify the exact document bytes before a model call. Expected and observed
+specification identities are removed from the agent-visible request while the
+controller retains their exact selection. Expected checks remain in scored
+grading and repair evidence; observed checks remain source-bound and separate.
+Shared harness wording
 is covered by reviewed prompt snapshots and every run records its actual prompt
 hash, but incorporating the common prompt-template identity directly into the
-pre-run condition contract, prompt/probe overlap analysis, and the shared
-capability definition remain before SB-504 can close.
+pre-run condition contract and the shared capability definition remain before
+the modular recipe can be qualified and promoted.
 
 ### SB-505: Symmetric neutral backend guidance
 
@@ -742,42 +745,42 @@ framework-neutral through a new versioned recipe rather than by mutating the
 qualified L1 recipe in place. Build-container inspection and live neutral
 qualification also remain.
 
-### SB-506: First-build capability probes
+### SB-506: Observed-only first-build measurements
 
-Run selected unmentioned probes against the immutable first-build source before
-any repair. Write a separate typed artifact bound to that source hash. Probe
+Run selected observed-only checks against the immutable first-build source before
+any repair. Write a separate typed artifact bound to that source hash. These
 observations have no recipe points, cannot change pass/fail, do not consume a
 retry or correction round, and never enter a bug report or repair prompt.
 
-Every probe must use the core task's public surface, a stack-neutral named
-action, or grader-owned database/runtime truth. Reject probes that rely on a
-withheld selector, test hook, or implementation detail. Qualify each probe with
+Every unmentioned observation must use the core task's public surface, a
+stack-neutral named action, or grader-owned database/runtime truth. Reject checks
+that rely on a withheld selector, test hook, or implementation detail. Qualify
+each unmentioned check with
 reference, null, exact-mutation, leak-isolation, and source-binding tests on
 every supported stack.
 
-Implemented foundation: schema-2 conditions use the generic
-`selected-specifications@1.0.0` policy, which derives hidden checks from the
-condition's selected specification modules. A condition with hidden checks
-cannot claim the `none` policy, and the generic policy cannot be selected when
-there are no hidden checks. The reference adapter can seed an empty campaign app
+Implemented foundation: treatment is owned directly by the selected
+specification, so there is no redundant probe-profile axis. The reference adapter
+can seed an empty campaign app
 from the exact active fixture in the content-validated registry and rejects any
-different pre-existing source. `campaign.probe-reference.json` fixes a
-model-free, two-repetition, three-stack reference gate for the current draft L1
-durability probe. This prepares reproducible reference input; it does not replace
-the required live reference, null, and exact-mutation evidence.
+different pre-existing source. `campaign.treatment-reference.json` fixes
+model-free expected and observed durability conditions, each with two
+repetitions on all three stacks (12 attempts). This prepares reproducible
+reference input; it does not replace required live reference, null, and
+exact-mutation evidence.
 
 ### SB-507: Condition-aware campaigns and reports
 
 Allow an experiment plan to counterbalance prescribed, neutral, and defaults
 conditions while binding their complete identities. Campaign admission prevents
-accidental cohort merging when any recipe, guidance, probe, repair, fixture,
+accidental cohort merging when any recipe, guidance, treatment, repair, fixture,
 adapter, model, or environment identity differs.
 
-Reports render requested correctness, untouched first-build capability
-observations, and correction outcomes as separate sections with separate
-denominators. They may compare study conditions explicitly, but cannot add or
-average diagnostic probe observations into the requested-feature score or label
-unrepaired default behavior as a successful correction.
+Reports render the exact requested/expected/observed treatment table, scored
+correctness, untouched observed-only behavior, and correction outcomes. Expected
+checks are part of first-build/final score and repair cost; observed-only results
+have a separate denominator and cannot be averaged into score or labeled as a
+successful correction.
 
 ## E6 - qualification and release
 
@@ -859,14 +862,15 @@ them. Live qualification does not run concurrently with executable harness edits
 23. [x] SB-505 symmetric neutral backend guidance (implemented and prompt-snapshotted;
     qualification remains part of the next campaign gate).
 24. [ ] SB-506 first-build capability probes (single-execution, source binding,
-    zero-score isolation, repair exclusion, generic specification-selected policy,
-    exact-fixture reference seeding, a draft three-stack reference-gate campaign,
+    zero-score isolation, repair exclusion, per-specification observed treatment,
+    exact-fixture reference seeding, a draft three-stack treatment-gate campaign,
     one-stack Docker execution, and exact controller-image tests are complete;
     live cross-stack reference/null/mutation qualification and a frozen appliance
     condition remain).
 25. [x] SB-507 condition-aware campaigns and reports (exact modular condition compilation,
-    preflight, prompt/grading handoff, run-scope recording, separate source-bound probe
-    execution, and zero-score report sections are complete).
+    preflight, prompt/grading handoff, requested/expected/observed scope recording,
+    expected scoring/repair, separate source-bound observed execution, and explicit
+    treatment/report sections are complete).
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.

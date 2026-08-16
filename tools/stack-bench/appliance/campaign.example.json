@@ -28,8 +28,7 @@
       "id": "prescribed",
       "version": "1.0.0",
       "guidanceProfile": "prescribed@1.0.0",
-      "probeProfile": "none@1.0.0",
-      "repairPolicy": "requested-only@1.0.0"
+      "repairPolicy": "scored-only@1.0.0"
     }
   ],
   "repetitions": 3,

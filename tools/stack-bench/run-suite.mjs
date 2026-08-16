@@ -46,7 +46,7 @@ export function childFailureDetail(failure = null, stdout = '', limit = 600) {
 
 function parseArgs(argv) {
   const a = { level: '1', reset: true, media: true, runIndex: 0, track: DEFAULT_TRACK,
-    packIds: [], checkKeys: [], observation: 'requested' };
+    packIds: [], checkKeys: [], observation: 'scored' };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
       case '--app': a.app = argv[++i]; break;
@@ -76,33 +76,33 @@ function parseArgs(argv) {
     console.error('Usage: node run-suite.mjs --app <dir> --url <url> --backend <b> --label <id> [--out <dir>] [--media] [--no-reset]');
     process.exit(2);
   }
-  if (!['requested', 'probe'].includes(a.observation)) {
-    throw new Error('--observation must be requested or probe');
+  if (!['scored', 'observed'].includes(a.observation)) {
+    throw new Error('--observation must be scored or observed');
   }
-  if (a.observation === 'probe' && !/^[a-f0-9]{64}$/.test(a.sourceSha256 ?? '')) {
-    throw new Error('probe observation requires --source-sha256');
+  if (a.observation === 'observed' && !/^[a-f0-9]{64}$/.test(a.sourceSha256 ?? '')) {
+    throw new Error('observed specifications require --source-sha256');
   }
-  if (a.observation === 'requested' && a.sourceSha256 !== undefined) {
-    throw new Error('--source-sha256 is reserved for probe observations');
+  if (a.observation === 'scored' && a.sourceSha256 !== undefined) {
+    throw new Error('--source-sha256 is reserved for observed specifications');
   }
   a.out ??= join(a.app, 'stack-bench');
   return a;
 }
 
-export function selectObservationScope(selectedTask, observation = 'requested') {
+export function selectObservationScope(selectedTask, observation = 'scored') {
   const selection = selectedTask?.selection ?? null;
-  if (observation === 'requested') return selection;
-  if (observation !== 'probe') throw new Error(`unknown observation scope ${observation}`);
-  if (selectedTask?.request?.schemaVersion !== 2 || !selection) {
-    throw new Error('probe observations require a modular schema-2 task request');
+  if (observation === 'scored') return selection;
+  if (observation !== 'observed') throw new Error(`unknown observation scope ${observation}`);
+  if (selectedTask?.request?.schemaVersion !== 3 || !selection) {
+    throw new Error('observed specifications require a modular schema-3 task request');
   }
-  if (!selection.probeChecks.length) throw new Error('probe observation scope is empty');
+  if (!selection.observedChecks.length) throw new Error('observed specification scope is empty');
   return {
     ...selection,
-    observation: 'probe',
-    checks: selection.probeChecks,
+    observation: 'observed',
+    checks: selection.observedChecks,
     scoredPoints: 0,
-    observedPoints: selection.probeChecks.reduce((total, check) => total + check.points, 0),
+    observedPoints: selection.observedChecks.reduce((total, check) => total + check.points, 0),
   };
 }
 
@@ -347,7 +347,7 @@ async function main() {
         : createBoundRecipeTaskRequest(recipeBinding, args))
     : null;
   const selection = selectObservationScope(selectedTask, args.observation);
-  if (args.observation === 'probe') {
+  if (args.observation === 'observed') {
     const source = hashAppSource(args.app);
     if (source.sha256 !== args.sourceSha256) {
       throw new Error('live application source changed after the bound first-build snapshot');
@@ -367,7 +367,7 @@ async function main() {
     trackRoot: track.dir,
     stackBenchRoot: ROOT,
   });
-  const observationSuffix = args.observation === 'probe' ? '-probe' : '';
+  const observationSuffix = args.observation === 'observed' ? '-observed' : '';
   const bundleArtifactId = `${args.parentAttemptId ?? args.label}-grade-bundle-l${args.level}${observationSuffix}`;
   args.bundleArtifactId = bundleArtifactId;
   mkdirSync(args.out, { recursive: true });
@@ -379,8 +379,8 @@ async function main() {
   if (recipeBinding) {
     console.log(`  recipe: ${recipeBinding.alias} -> ${recipeBinding.release.id}@${recipeBinding.release.version} ` +
       `(${recipeBinding.status}, ${recipeBinding.release.contentSha256.slice(0, 12)})`);
-    console.log(args.observation === 'probe'
-      ? `  scope: ${selection.checks.length} hidden probe check(s), ${selection.observedPoints} observed point(s), 0 score contribution`
+    console.log(args.observation === 'observed'
+      ? `  scope: ${selection.checks.length} observed check(s), ${selection.observedPoints} observed point(s), 0 score contribution`
       : `  scope: ${selection.checks.length} check(s), ${selection.scoredPoints} point(s)`);
     if (selection.requested.packs?.length) console.log(`    packs: ${selection.requested.packs.join(', ')}`);
     if (selection.requested.features?.length) {
@@ -396,7 +396,7 @@ async function main() {
       state: calibration.state, contentSha256: calibration.contentSha256 } : null,
     label: args.label, track: args.track, backend: args.backend, url: args.url, app: args.app,
     level: Number(args.level), observation: args.observation,
-    ...(args.observation === 'probe' ? { source: { sha256: args.sourceSha256 } } : {}),
+    ...(args.observation === 'observed' ? { source: { sha256: args.sourceSha256 } } : {}),
     suites: {}, totals: {},
     selection: selection ? { ...selection, attemptedChecks: [], reportedChecks: [], notRun: [] } : null,
   };
@@ -512,7 +512,7 @@ async function main() {
     process.exit(1);
   }
 
-  if (args.observation === 'requested') {
+  if (args.observation === 'scored') {
     if (!(await freshen())) {
       bundle.error = `database reset failed — scores would not be comparable${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
       bundle.outcome = { kind: 'harness_failure', phase: 'database-reset', reason: bundle.error };

@@ -214,9 +214,9 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
     moduleType: 'specification', task: { ...pack.task, requirements: [
       { ...pack.task.requirements[0], requiresFeatures: ['example.feature'] },
     ] }, checks: [{ ...pack.checks[0], role: 'guarantee',
-      observations: ['requested', 'probe'], requiresFeatures: ['example.feature'] }] });
+      observations: ['requested', 'unmentioned'], requiresFeatures: ['example.feature'] }] });
   assert.equal(specification.moduleType, 'specification');
-  assert.deepEqual(specification.checks[0].observations, ['probe', 'requested']);
+  assert.deepEqual(specification.checks[0].observations, ['requested', 'unmentioned']);
   assert.deepEqual(specification.checks[0].requiresFeatures, ['example.feature']);
   assert.deepEqual(specification.task.requirements[0].requiresFeatures, ['example.feature']);
 
@@ -349,7 +349,7 @@ test('composition rejects missing dependencies, dependency cycles, conflicts, du
       requiresFeatures: ['example.missing'],
     }], contracts: [] }, checks: [{
       id: 'group', source: 'scenarios/01.json', feature: 1, role: 'guarantee',
-      observations: ['requested', 'probe'], requiresFeatures: ['example.missing'],
+      observations: ['requested', 'unmentioned'], requiresFeatures: ['example.missing'],
     }] });
     const modular = box.makeRecipe(['a', 'b']);
     modular.packs[1].includeRoles = ['guarantee'];

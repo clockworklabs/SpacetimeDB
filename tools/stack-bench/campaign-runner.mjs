@@ -94,52 +94,74 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
   mismatch(plan.definition.runtime.buildImage === null && buildImage !== null
     && run.runtime?.buildImage !== buildImage, 'runtime.buildImage');
   for (const level of run.levels ?? []) {
-    const selectedChecks = level.selection?.probeChecks;
+    const plannedLevel = condition?.requested?.levels?.find(item => item.level === level.level);
+    if (plannedLevel?.selection?.schemaVersion === 3) {
+      const selectionAt = `levels.L${level.level}.selection`;
+      const projectChecks = checks => checks?.map(check => ({
+        stableKey: check?.stableKey, points: check?.points, treatment: check?.treatment,
+      }));
+      mismatch(level.selection?.schemaVersion !== 3, `${selectionAt}.schemaVersion`);
+      mismatch(level.selection?.sha256 !== plannedLevel.selection.sha256,
+        `${selectionAt}.sha256`);
+      mismatch(canonicalDefinitionJson(level.selection?.specifications)
+        !== canonicalDefinitionJson(plannedLevel.selection.specifications),
+      `${selectionAt}.specifications`);
+      mismatch(canonicalDefinitionJson(projectChecks(level.selection?.scoredChecks))
+        !== canonicalDefinitionJson(plannedLevel.selection.scoredChecks),
+      `${selectionAt}.scoredChecks`);
+      mismatch(canonicalDefinitionJson(projectChecks(level.selection?.observedChecks))
+        !== canonicalDefinitionJson(plannedLevel.selection.observedChecks),
+      `${selectionAt}.observedChecks`);
+      mismatch(level.selection?.scoredPoints !== plannedLevel.selection.scoredPoints,
+        `${selectionAt}.scoredPoints`);
+    }
+    const selectedChecks = level.selection?.observedChecks;
     if (!Array.isArray(selectedChecks) || selectedChecks.length === 0) {
-      mismatch(level.firstBuild?.probes !== undefined, `levels.L${level.level}.firstBuild.probes`);
+      mismatch(level.firstBuild?.observations !== undefined,
+        `levels.L${level.level}.firstBuild.observations`);
       continue;
     }
-    const at = `levels.L${level.level}.firstBuild.probes`;
-    const probe = level.firstBuild?.probes;
+    const at = `levels.L${level.level}.firstBuild.observations`;
+    const observation = level.firstBuild?.observations;
     const selectedKeys = selectedChecks.map(check => check?.stableKey);
-    const plannedLevel = condition?.requested?.levels?.find(item => item.level === level.level);
-    const plannedKeys = plannedLevel?.selection?.probeChecks;
+    const plannedKeys = plannedLevel?.selection?.observedChecks?.map(check => check.stableKey);
     const selectedPoints = selectedChecks.every(check => Number.isSafeInteger(check?.points)
       && check.points >= 0)
       ? selectedChecks.reduce((total, check) => total + check.points, 0) : null;
-    mismatch(!probe || typeof probe !== 'object' || Array.isArray(probe), at);
-    if (!probe || typeof probe !== 'object' || Array.isArray(probe)) continue;
+    mismatch(!observation || typeof observation !== 'object' || Array.isArray(observation), at);
+    if (!observation || typeof observation !== 'object' || Array.isArray(observation)) continue;
     mismatch(new Set(selectedKeys).size !== selectedKeys.length
       || selectedKeys.some(key => typeof key !== 'string' || !key), `${at}.selectedChecks`);
-    mismatch(canonicalDefinitionJson(probe.selectedChecks)
+    mismatch(canonicalDefinitionJson(observation.selectedChecks)
       !== canonicalDefinitionJson(selectedKeys), `${at}.selectedChecks`);
     mismatch(!plannedLevel || plannedLevel.selection?.sha256 !== level.selection.sha256,
       `levels.L${level.level}.selection.sha256`);
     mismatch(!Array.isArray(plannedKeys)
       || canonicalDefinitionJson(plannedKeys) !== canonicalDefinitionJson(selectedKeys),
-    `levels.L${level.level}.selection.probeChecks`);
-    mismatch(probe.selectionSha256 !== level.selection.sha256, `${at}.selectionSha256`);
-    mismatch(probe.scoreContribution !== false, `${at}.scoreContribution`);
-    mismatch(probe.repairVisible !== false, `${at}.repairVisible`);
-    mismatch(probe.sourceSha256 !== (level.firstBuild?.source?.sha256 ?? null),
+    `levels.L${level.level}.selection.observedChecks`);
+    mismatch(observation.selectionSha256 !== level.selection.sha256, `${at}.selectionSha256`);
+    mismatch(observation.scoreContribution !== false, `${at}.scoreContribution`);
+    mismatch(observation.repairVisible !== false, `${at}.repairVisible`);
+    mismatch(observation.sourceSha256 !== (level.firstBuild?.source?.sha256 ?? null),
       `${at}.sourceSha256`);
-    mismatch(!Array.isArray(probe.reportedChecks)
-      || new Set(probe.reportedChecks).size !== probe.reportedChecks.length
-      || probe.reportedChecks.some(key => !selectedKeys.includes(key)), `${at}.reportedChecks`);
-    const reportedPoints = Array.isArray(probe.reportedChecks)
-      ? probe.reportedChecks.reduce((total, key) => total
+    mismatch(!Array.isArray(observation.reportedChecks)
+      || new Set(observation.reportedChecks).size !== observation.reportedChecks.length
+      || observation.reportedChecks.some(key => !selectedKeys.includes(key)), `${at}.reportedChecks`);
+    const reportedPoints = Array.isArray(observation.reportedChecks)
+      ? observation.reportedChecks.reduce((total, key) => total
         + (selectedChecks.find(check => check.stableKey === key)?.points ?? 0), 0) : null;
-    const numericEvidence = Number.isSafeInteger(probe.observedPoints)
-      && probe.observedPoints >= 0 && Number.isSafeInteger(probe.passedPoints)
-      && probe.passedPoints >= 0 && probe.passedPoints <= probe.observedPoints;
-    mismatch(probe.observedPoints !== null && !numericEvidence, `${at}.observedPoints`);
-    mismatch(probe.passedPoints !== null && !numericEvidence, `${at}.passedPoints`);
-    mismatch(numericEvidence && (selectedPoints === null || probe.observedPoints > selectedPoints
-      || probe.observedPoints !== reportedPoints), `${at}.observedPoints`);
-    const exactArtifact = `first-build-l${level.level}-probe/bundle.json`;
-    mismatch(probe.artifact !== null && probe.artifact !== exactArtifact, `${at}.artifact`);
-    mismatch(probe.artifact === null && numericEvidence, `${at}.artifact`);
-    mismatch(probe.artifact !== null && !numericEvidence, `${at}.artifact`);
+    const numericEvidence = Number.isSafeInteger(observation.observedPoints)
+      && observation.observedPoints >= 0 && Number.isSafeInteger(observation.passedPoints)
+      && observation.passedPoints >= 0 && observation.passedPoints <= observation.observedPoints;
+    mismatch(observation.observedPoints !== null && !numericEvidence, `${at}.observedPoints`);
+    mismatch(observation.passedPoints !== null && !numericEvidence, `${at}.passedPoints`);
+    mismatch(numericEvidence && (selectedPoints === null
+      || observation.observedPoints > selectedPoints
+      || observation.observedPoints !== reportedPoints), `${at}.observedPoints`);
+    const exactArtifact = `first-build-l${level.level}-observed/bundle.json`;
+    mismatch(observation.artifact !== null && observation.artifact !== exactArtifact, `${at}.artifact`);
+    mismatch(observation.artifact === null && numericEvidence, `${at}.artifact`);
+    mismatch(observation.artifact !== null && !numericEvidence, `${at}.artifact`);
   }
   if (exactLevels && ['passed', 'app_failure'].includes(run.outcome?.kind)) {
     const levelOutcomes = (run.levels ?? []).map(level => level.outcome?.kind);
@@ -148,6 +170,7 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
     mismatch(run.outcome.kind === 'app_failure'
       && !levelOutcomes.some(kind => kind === 'app_failure'), 'outcome.kind');
     for (const level of run.levels ?? []) {
+      const plannedLevel = condition?.requested?.levels?.find(item => item.level === level.level);
       const repair = level.repair;
       const at = `levels.L${level.level}.repair`;
       const validObject = repair && typeof repair === 'object' && !Array.isArray(repair);
@@ -160,6 +183,10 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
       const validScore = Number.isInteger(level.score) && Number.isInteger(level.max)
         && level.max > 0 && level.score >= 0 && level.score <= level.max;
       mismatch(!validScore, `levels.L${level.level}.score`);
+      if (plannedLevel?.selection?.schemaVersion === 3) {
+        mismatch(validScore && level.max !== plannedLevel.selection.scoredPoints,
+          `levels.L${level.level}.max`);
+      }
       if (level.outcome?.kind === 'passed') {
         const expected = level.fixRounds > 0 ? 'corrected' : 'not-needed';
         mismatch(repair.status !== expected, `${at}.status`);

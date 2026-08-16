@@ -56,7 +56,8 @@ function parseArgs(argv) {
   const a = { model: null, agentAdapter: 'claude-code',
     fixRounds: 3, runIndex: 0, levels: '1', media: true,
     guidance: 'prescribed', track: DEFAULT_TRACK, packIds: [], checkKeys: [],
-    featureIds: [], disclosedSpecifications: [], probedSpecifications: [],
+    featureIds: [], requestedSpecifications: [], expectedSpecifications: [],
+    observedSpecifications: [],
     behavioralReview: false };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
@@ -83,8 +84,9 @@ function parseArgs(argv) {
       case '--condition-json': a.condition = JSON.parse(argv[++i]); break;
       case '--selection-json': a.selectionRequest = JSON.parse(argv[++i]); break;
       case '--feature-module': a.featureIds.push(...argv[++i].split(',').filter(Boolean)); break;
-      case '--disclose-spec': a.disclosedSpecifications.push(...argv[++i].split(',').filter(Boolean)); break;
-      case '--probe-spec': a.probedSpecifications.push(...argv[++i].split(',').filter(Boolean)); break;
+      case '--request-spec': a.requestedSpecifications.push(...argv[++i].split(',').filter(Boolean)); break;
+      case '--expect-spec': a.expectedSpecifications.push(...argv[++i].split(',').filter(Boolean)); break;
+      case '--observe-spec': a.observedSpecifications.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--skip-probe': a.skipProbe = true; break;
       // Which reference documents to inline (spacetime only). The variable
       // under test in the cost work; passed straight through to agent.mjs.
@@ -228,7 +230,7 @@ function runAgent(args, adapter, mode, level, appDir) {
 }
 
 function grade(args, appDir, url, label, level, track, parentAttemptId,
-  { observation = 'requested', out = null, sourceSha256 = null } = {}) {
+  { observation = 'scored', out = null, sourceSha256 = null } = {}) {
   const restartSpec = restartSpecFor(args, appDir, track);
   const expressPort = restartSpec.port ?? '';
   const argv = [join(ROOT, 'run-suite.mjs'), '--app', appDir, '--url', url,
@@ -243,7 +245,7 @@ function grade(args, appDir, url, label, level, track, parentAttemptId,
     ...(args.recipe ? ['--recipe', args.recipe] : []),
     ...(args.recipeTasks?.get(level)
       ? ['--recipe-task-json', JSON.stringify(args.recipeTasks.get(level).request)] : []),
-    ...(args.media && observation === 'requested' ? [] : ['--no-media']),
+    ...(args.media && observation === 'scored' ? [] : ['--no-media']),
     ...(!executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
       'run-policy', 'reset-enabled')
       ? ['--no-reset']
@@ -320,7 +322,7 @@ async function main() {
   for (const level of args.levelList) {
     const declared = args.condition?.requested?.levels?.find(entry => entry.level === level) ?? null;
     const modularSelection = args.selectionRequest.levels?.find(entry => entry.level === level) ?? null;
-    if (declared?.selection?.schemaVersion === 2) {
+    if (declared?.selection?.schemaVersion === 3) {
       const expected = { level, recipe: `${declared.recipe.id}@${declared.recipe.version}`,
         features: declared.selection.requested.features,
         checks: declared.selection.requested.checks };
@@ -340,8 +342,9 @@ async function main() {
       const requested = declared?.selection?.requested;
       const options = requested?.features
         ? { featureIds: requested.features,
-            disclosedSpecifications: requested.specifications?.disclosed,
-            probedSpecifications: requested.specifications?.probed,
+            requestedSpecifications: requested.specifications?.requested,
+            expectedSpecifications: requested.specifications?.expected,
+            observedSpecifications: requested.specifications?.observed,
             checkKeys: requested.checks }
         : args;
       const resolved = createBoundRecipeTaskRequest(binding, options);
@@ -775,33 +778,34 @@ async function main() {
             .map(c => `${f.name}/${c.id}`))),
     };
 
-    const selectedProbeChecks = args.recipeTasks?.get(level)?.selection?.probeChecks ?? [];
-    if (selectedProbeChecks.length) {
-      const probeOut = join(args.out, `first-build-l${level}-probe`);
-      let probeBundle = null;
-      let probeOutcome;
+    const selectedObservedChecks = args.recipeTasks?.get(level)?.selection?.observedChecks ?? [];
+    if (selectedObservedChecks.length) {
+      const observationOut = join(args.out, `first-build-l${level}-observed`);
+      let observationBundle = null;
+      let observationOutcome;
       if (!firstBuildSource) {
-        probeOutcome = { kind: 'harness_failure', phase: 'first-build-source',
-          reason: 'hidden probes require a source-bound first build' };
+        observationOutcome = { kind: 'harness_failure', phase: 'first-build-source',
+          reason: 'observed specifications require a source-bound first build' };
       } else if (!ladderMayContinue(firstBuild.outcome)) {
-        probeOutcome = { kind: 'ungraded', phase: 'first-build-probe',
-          reason: 'requested first-build grading did not establish a usable environment' };
+        observationOutcome = { kind: 'ungraded', phase: 'first-build-observation',
+          reason: 'scored first-build grading did not establish a usable environment' };
       } else {
-        probeBundle = grade(args, appDir, url, `${args.backend}-l${level}-probe`, level, track,
-          runId, { observation: 'probe', out: probeOut, sourceSha256: firstBuildSource.sha256 });
-        probeOutcome = classifyBundle(probeBundle);
+        observationBundle = grade(args, appDir, url, `${args.backend}-l${level}-observed`, level,
+          track, runId, { observation: 'observed', out: observationOut,
+            sourceSha256: firstBuildSource.sha256 });
+        observationOutcome = classifyBundle(observationBundle);
       }
-      firstBuild.probes = {
+      firstBuild.observations = {
         sourceSha256: firstBuildSource?.sha256 ?? null,
         selectionSha256: args.recipeTasks.get(level).selection.sha256,
-        selectedChecks: selectedProbeChecks.map(check => check.stableKey),
-        reportedChecks: probeBundle?.selection?.reportedChecks ?? [],
-        passedPoints: probeBundle?.totals?.score ?? null,
-        observedPoints: probeBundle?.totals?.max ?? null,
+        selectedChecks: selectedObservedChecks.map(check => check.stableKey),
+        reportedChecks: observationBundle?.selection?.reportedChecks ?? [],
+        passedPoints: observationBundle?.totals?.score ?? null,
+        observedPoints: observationBundle?.totals?.max ?? null,
         scoreContribution: false,
         repairVisible: false,
-        artifact: probeBundle ? `first-build-l${level}-probe/bundle.json` : null,
-        outcome: probeOutcome,
+        artifact: observationBundle ? `first-build-l${level}-observed/bundle.json` : null,
+        outcome: observationOutcome,
       };
     }
 
@@ -819,8 +823,8 @@ async function main() {
     // its token, and what the TS2344 errors looked like in context. Both answers
     // were in a `main.tsx` that no longer existed.
     //
-    // The source snapshot was captured before either requested or probe grading.
-    // Preserve the requested grading here without media; probe evidence already
+    // The source snapshot was captured before either scored or observed grading.
+    // Preserve the scored grading here without media; observed evidence already
     // lives in its separate source-bound result directory.
     try {
       const gradingFrom = join(appDir, 'stack-bench');

@@ -293,7 +293,7 @@ function expandAttempts(definition, requestedLevels, stacks, agents, studyCondit
         model: agent.model,
         condition: { id: condition.id, version: condition.version, sha256: condition.sha256,
           requested: condition.requested, guidance: condition.guidance,
-          probes: condition.probes, repair: condition.repair },
+          repair: condition.repair },
         guidance: condition.guidance.mode,
         skills: condition.guidance.skills[stack.id].ids,
         levels: requestedLevels,
@@ -401,8 +401,9 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
       const selected = createBoundRecipeTaskRequest(record.binding, {
         featureIds: record.modular.features,
         checkKeys: record.modular.checks,
-        disclosedSpecifications: specifications.get(record.level).disclosed,
-        probedSpecifications: specifications.get(record.level).probed,
+        requestedSpecifications: specifications.get(record.level).requested,
+        expectedSpecifications: specifications.get(record.level).expected,
+        observedSpecifications: specifications.get(record.level).observed,
       });
       return {
         level: record.level,
@@ -414,15 +415,19 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
           state: record.publicBinding.recipe.state,
         },
         selection: {
-          schemaVersion: 2,
+          schemaVersion: 3,
           sha256: selected.selection.sha256,
           scoredPoints: selected.selection.scoredPoints,
           requested: selected.selection.requested,
-          taskPacks: selected.selection.taskPacks,
+          promptPacks: selected.selection.promptPacks,
           features: selected.selection.features,
           specifications: selected.selection.specifications,
-          requestedChecks: selected.selection.requestedChecks.map(check => check.stableKey),
-          probeChecks: selected.selection.probeChecks.map(check => check.stableKey),
+          scoredChecks: selected.selection.scoredChecks.map(check => ({
+            stableKey: check.stableKey, points: check.points, treatment: check.treatment,
+          })),
+          observedChecks: selected.selection.observedChecks.map(check => ({
+            stableKey: check.stableKey, points: check.points, treatment: check.treatment,
+          })),
         },
         task: {
           sha256: selected.task.sha256,

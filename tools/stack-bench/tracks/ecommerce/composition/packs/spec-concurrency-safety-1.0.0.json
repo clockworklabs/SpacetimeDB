@@ -21,9 +21,9 @@
     "contracts": []
   },
   "checks": [
-    { "id": "stock-limit", "source": "scenarios/01-features.json", "feature": 3, "criteria": ["3d"], "role": "guarantee", "observations": ["requested", "probe"], "requiresFeatures": ["ecommerce.feature.cart-checkout", "ecommerce.feature.purchasing"] },
-    { "id": "last-unit", "source": "scenarios/01-contention.json", "feature": 201, "role": "guarantee", "observations": ["requested", "probe"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.purchasing"] },
-    { "id": "restock-race", "source": "scenarios/01-contention.json", "feature": 202, "role": "guarantee", "observations": ["requested", "probe"], "requiresFeatures": ["ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] },
-    { "id": "duplicate-checkout", "source": "scenarios/01-contention.json", "feature": 203, "role": "guarantee", "observations": ["requested", "probe"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] }
+    { "id": "stock-limit", "source": "scenarios/01-features.json", "feature": 3, "criteria": ["3d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.cart-checkout", "ecommerce.feature.purchasing"] },
+    { "id": "last-unit", "source": "scenarios/01-contention.json", "feature": 201, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.purchasing"] },
+    { "id": "restock-race", "source": "scenarios/01-contention.json", "feature": 202, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] },
+    { "id": "duplicate-checkout", "source": "scenarios/01-contention.json", "feature": 203, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] }
   ]
 }

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "kind": "campaign-manifest",
-  "id": "ecommerce-l1-defaults-reference",
+  "id": "ecommerce-l1-treatment-reference",
   "version": "1.0.0",
   "state": "draft",
-  "title": "Ecommerce L1 unmentioned-defaults reference gate",
+  "title": "Ecommerce L1 expected and observed treatment reference gate",
   "track": "ecommerce",
   "levels": [1],
   "selection": {
@@ -38,17 +38,33 @@
   ],
   "conditions": [
     {
-      "id": "unmentioned-state-durability",
+      "id": "expected-state-durability",
       "version": "1.0.0",
       "guidanceProfile": "neutral@1.0.0",
-      "probeProfile": "selected-specifications@1.0.0",
-      "repairPolicy": "requested-only@1.0.0",
+      "repairPolicy": "scored-only@1.0.0",
       "specifications": {
         "levels": [
           {
             "level": 1,
-            "disclosed": [],
-            "probed": ["ecommerce.spec.state-durability@1.0.0"]
+            "requested": [],
+            "expected": ["ecommerce.spec.state-durability@1.0.0"],
+            "observed": []
+          }
+        ]
+      }
+    },
+    {
+      "id": "observed-state-durability",
+      "version": "1.0.0",
+      "guidanceProfile": "neutral@1.0.0",
+      "repairPolicy": "scored-only@1.0.0",
+      "specifications": {
+        "levels": [
+          {
+            "level": 1,
+            "requested": [],
+            "expected": [],
+            "observed": ["ecommerce.spec.state-durability@1.0.0"]
           }
         ]
       }

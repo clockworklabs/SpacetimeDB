@@ -25,8 +25,7 @@ function definition(overrides = {}) {
     ],
     agents: [{ adapter: 'deterministic', adapterVersion: '1.0.0', model: 'deterministic' }],
     conditions: [{ id: 'prescribed', version: '1.0.0',
-      guidanceProfile: 'prescribed@1.0.0', probeProfile: 'none@1.0.0',
-      repairPolicy: 'requested-only@1.0.0' }],
+      guidanceProfile: 'prescribed@1.0.0', repairPolicy: 'scored-only@1.0.0' }],
     repetitions: 3,
     ordering: { method: 'balanced-rotation', seed: 'published-seed-1' },
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: null },
@@ -64,15 +63,13 @@ const modularFeatures = [
   'ecommerce.feature.warehouse-admin',
 ];
 
-function modularDefinition({ disclosed = [], probed = [] } = {}) {
+function modularDefinition({ requested = [], expected = [], observed = [] } = {}) {
   return definition({
     repetitions: 1,
     selection: { levels: [{ level: 1, recipe: 'ecommerce.l1-modular@2.0.0',
       features: modularFeatures, checks: [] }] },
-    conditions: [{ ...definition().conditions[0],
-      probeProfile: probed.length ? 'selected-specifications@1.0.0' : 'none@1.0.0',
-      specifications: { levels: [{ level: 1,
-      disclosed, probed }] } }],
+    conditions: [{ ...definition().conditions[0], specifications: { levels: [{ level: 1,
+      requested, expected, observed }] } }],
   });
 }
 
@@ -141,8 +138,7 @@ test('balanced rotation covers every stack-agent condition and rotates the globa
 
 test('guidance conditions are an independent campaign axis with stack-specific API material', () => {
   const conditions = [...definition().conditions, { id: 'neutral', version: '1.0.0',
-    guidanceProfile: 'neutral@1.0.0', probeProfile: 'none@1.0.0',
-    repairPolicy: 'requested-only@1.0.0' }];
+    guidanceProfile: 'neutral@1.0.0', repairPolicy: 'scored-only@1.0.0' }];
   const plan = compile(definition({ conditions, repetitions: 1 }));
   assert.equal(plan.summary.attempts, 6);
   assert.equal(new Set(plan.attempts.map(attempt =>
@@ -153,38 +149,41 @@ test('guidance conditions are an independent campaign axis with stack-specific A
     .every(attempt => attempt.skills.length === 0));
 });
 
-test('modular campaigns bind features, disclosed specifications, and hidden probes independently', () => {
-  const disclosed = ['ecommerce.spec.access-control@1.0.0'];
-  const durability = compile(modularDefinition({ disclosed,
-    probed: ['ecommerce.spec.state-durability@1.0.0'] }));
-  const liveState = compile(modularDefinition({ disclosed,
-    probed: ['ecommerce.spec.live-state@1.0.0'] }));
-  const requested = durability.conditions[0].requested.levels[0];
-  assert.equal(durability.bindings[0].recipe.id, 'ecommerce.l1-modular');
-  assert.equal(durability.bindings[0].promotion.status, 'candidate');
-  assert.equal(durability.bindings[0].selection, null,
+test('modular campaigns bind requested, expected, and observed specifications independently', () => {
+  const requestedSpecifications = ['ecommerce.spec.access-control@1.0.0'];
+  const expected = compile(modularDefinition({ requested: requestedSpecifications,
+    expected: ['ecommerce.spec.state-durability@1.0.0'] }));
+  const observed = compile(modularDefinition({ requested: requestedSpecifications,
+    observed: ['ecommerce.spec.state-durability@1.0.0'] }));
+  const selected = expected.conditions[0].requested.levels[0];
+  assert.equal(expected.bindings[0].recipe.id, 'ecommerce.l1-modular');
+  assert.equal(expected.bindings[0].promotion.status, 'candidate');
+  assert.equal(expected.bindings[0].selection, null,
     'condition-specific specification choices must not be flattened into a shared binding');
-  assert.equal(requested.selection.schemaVersion, 2);
-  assert.deepEqual(requested.selection.features, modularFeatures);
-  assert.deepEqual(requested.selection.specifications,
-    { disclosed, probed: ['ecommerce.spec.state-durability@1.0.0'] });
-  assert(requested.selection.requestedChecks.length > 0);
-  assert(requested.selection.probeChecks.length > 0);
-  assert.equal(durability.conditions[0].requested.levels[0].task.sha256,
-    liveState.conditions[0].requested.levels[0].task.sha256,
-    'changing only a hidden probe must not change the task shown to the agent');
-  assert.notEqual(durability.conditions[0].requested.levels[0].selection.sha256,
-    liveState.conditions[0].requested.levels[0].selection.sha256,
-    'changing a hidden probe must change the recorded experimental condition');
-  assert.notEqual(durability.conditions[0].sha256, liveState.conditions[0].sha256);
+  assert.equal(selected.selection.schemaVersion, 3);
+  assert.deepEqual(selected.selection.features, modularFeatures);
+  assert.deepEqual(selected.selection.specifications, { requested: requestedSpecifications,
+    expected: ['ecommerce.spec.state-durability@1.0.0'], observed: [] });
+  assert(selected.selection.scoredChecks.length > 0);
+  assert.equal(selected.selection.observedChecks.length, 0);
+  assert.equal(observed.conditions[0].requested.levels[0].selection.observedChecks.length, 4);
+  assert.equal(expected.conditions[0].requested.levels[0].task.sha256,
+    observed.conditions[0].requested.levels[0].task.sha256,
+    'changing an undisclosed treatment must not change the task shown to the agent');
+  assert(expected.conditions[0].requested.levels[0].selection.scoredPoints
+    > observed.conditions[0].requested.levels[0].selection.scoredPoints,
+  'expected specifications must contribute to the score');
+  assert.notEqual(expected.conditions[0].requested.levels[0].selection.sha256,
+    observed.conditions[0].requested.levels[0].selection.sha256);
+  assert.notEqual(expected.conditions[0].sha256, observed.conditions[0].sha256);
 });
 
-test('campaigns reject modular specifications that cannot be probed and legacy/specification mixing', () => {
+test('campaigns reject unmentioned specifications without a public observation and legacy mixing', () => {
   assert.throws(() => compile(modularDefinition({
-    probed: ['ecommerce.spec.external-data-sync@1.0.0'],
-  })), /has no probe observation/);
+    expected: ['ecommerce.spec.external-data-sync@1.0.0'],
+  })), /has no unmentioned observation/);
   assert.throws(() => compile(definition({ conditions: [{ ...definition().conditions[0],
-    specifications: { levels: [{ level: 1, disclosed: [], probed: [] }] },
+    specifications: { levels: [{ level: 1, requested: [], expected: [], observed: [] }] },
   }] })), /legacy selection cannot declare modular specifications/);
 });
 
@@ -207,7 +206,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
     /recipe has no check/);
   assert.throws(() => compile(definition({ conditions: [{
     id: 'bad', version: '1.0.0', guidanceProfile: 'missing@1.0.0',
-    probeProfile: 'none@1.0.0', repairPolicy: 'requested-only@1.0.0',
+    repairPolicy: 'scored-only@1.0.0',
   }] })), /missing@1.0.0|catalog/);
   assert.throws(() => validateCampaignDefinition(definition({ runtime: {
     releaseManifestSha256: null, controllerImage: 'stack-bench:latest', buildImage: null,
@@ -261,18 +260,24 @@ test('the packaged model-free campaign example compiles without starting work', 
     repetitions: 3, stacks: 3 });
 });
 
-test('the packaged modular reference gate fixes the exact hidden observation scope', () => {
+test('the packaged modular reference gate fixes expected and observed treatments', () => {
   const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance',
-    'campaign.probe-reference.json'));
+    'campaign.treatment-reference.json'));
   assert.equal(plan.state, 'draft');
-  assert.deepEqual(plan.summary, { agents: 1, attempts: 6, conditions: 1,
+  assert.deepEqual(plan.summary, { agents: 1, attempts: 12, conditions: 2,
     repetitions: 2, stacks: 3 });
   assert.equal(plan.agents[0].adapter, 'reference-fixture');
-  assert.equal(plan.conditions[0].probes.selectionMode, 'condition-specifications');
-  assert.deepEqual(plan.conditions[0].requested.levels[0].selection.specifications,
-    { disclosed: [], probed: ['ecommerce.spec.state-durability@1.0.0'] });
-  assert.equal(plan.conditions[0].requested.levels[0].selection.probeChecks.length, 4);
-  assert.equal(plan.conditions[0].requested.levels[0].selection.scoredPoints, 14);
+  const expected = plan.conditions.find(condition => condition.id === 'expected-state-durability');
+  const observed = plan.conditions.find(condition => condition.id === 'observed-state-durability');
+  assert.deepEqual(expected.requested.levels[0].selection.specifications,
+    { requested: [], expected: ['ecommerce.spec.state-durability@1.0.0'], observed: [] });
+  assert.equal(expected.requested.levels[0].selection.observedChecks.length, 0);
+  assert.equal(expected.requested.levels[0].selection.scoredPoints, 18);
+  assert.deepEqual(observed.requested.levels[0].selection.specifications,
+    { requested: [], expected: [],
+      observed: ['ecommerce.spec.state-durability@1.0.0'] });
+  assert.equal(observed.requested.levels[0].selection.observedChecks.length, 4);
+  assert.equal(observed.requested.levels[0].selection.scoredPoints, 14);
 });
 
 test('compiled campaign validation rejects a rewritten identity, schedule, or summary', () => {

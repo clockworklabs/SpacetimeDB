@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "kind": "repair-policy",
-  "id": "requested-only",
+  "id": "scored-only",
   "version": "1.0.0",
   "state": "qualified",
-  "requestedEvidence": true,
-  "probeEvidence": false
+  "scoredEvidence": true,
+  "observedEvidence": false
 }

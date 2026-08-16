@@ -238,8 +238,9 @@ export function runPreflight(request, dependencies = {}) {
           const selection = requested.selection.requested;
           const resolved = createBoundRecipeTaskRequest(binding, selection.features
             ? { featureIds: selection.features,
-                disclosedSpecifications: selection.specifications?.disclosed,
-                probedSpecifications: selection.specifications?.probed,
+                requestedSpecifications: selection.specifications?.requested,
+                expectedSpecifications: selection.specifications?.expected,
+                observedSpecifications: selection.specifications?.observed,
                 checkKeys: selection.checks }
             : { packIds: selection.packs, checkKeys: selection.checks });
           if (resolved.request.selection.sha256 !== requested.selection.sha256

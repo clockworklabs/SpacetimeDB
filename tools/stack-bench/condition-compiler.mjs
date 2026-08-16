@@ -52,11 +52,11 @@ function validateIdentityFields(value, at, kind, schemaVersions = [1]) {
 function loadCatalog(path = CATALOG) {
   const value = json(path, 'catalog');
   strict(value, 'catalog', new Set(['schemaVersion', 'kind', 'guidanceProfiles',
-    'probeProfiles', 'repairPolicies']));
+    'repairPolicies']));
   if (value.schemaVersion !== 1 || value.kind !== 'study-condition-catalog') {
     fail('catalog', 'has an unsupported schema or kind');
   }
-  for (const field of ['guidanceProfiles', 'probeProfiles', 'repairPolicies']) {
+  for (const field of ['guidanceProfiles', 'repairPolicies']) {
     if (!object(value[field])) fail(`catalog.${field}`, 'must be an object');
     for (const [key, pathValue] of Object.entries(value[field])) {
       if (!REF.test(key) || typeof pathValue !== 'string' || !pathValue) {
@@ -136,62 +136,32 @@ export function resolveGuidanceProfile(reference, stacks,
   return resolveGuidance(loadCatalog(catalogPath), reference, stacks, resolve(stackBenchRoot));
 }
 
-function resolveProbes(catalog, reference) {
-  const { match, profile } = readProfile(catalog, 'probeProfiles', reference);
-  const fields = profile.schemaVersion === 2
-    ? new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'firstBuildOnly',
-      'scoreContribution', 'repairVisible', 'selectionMode'])
-    : new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'firstBuildOnly',
-      'scoreContribution', 'repairVisible', 'probes']);
-  strict(profile, reference, fields);
-  validateIdentityFields(profile, reference, 'capability-probe-profile', [1, 2]);
-  if (profile.id !== match[1] || profile.version !== match[2]) {
-    fail(reference, 'does not match the loaded profile identity');
-  }
-  if (profile.firstBuildOnly !== true) fail(`${reference}.firstBuildOnly`, 'must be true');
-  if (profile.scoreContribution !== false) fail(`${reference}.scoreContribution`, 'must be false');
-  if (profile.repairVisible !== false) fail(`${reference}.repairVisible`, 'must be false');
-  if (profile.schemaVersion === 1) {
-    if (!Array.isArray(profile.probes) || profile.probes.length > 0) {
-      fail(`${reference}.probes`, 'schema 1 supports only an empty probe selection');
-    }
-    return { ...identity(profile, profile.probes), firstBuildOnly: true,
-      scoreContribution: false, repairVisible: false, probes: [] };
-  }
-  if (profile.selectionMode !== 'condition-specifications') {
-    fail(`${reference}.selectionMode`, 'must be condition-specifications');
-  }
-  return { ...identity(profile, profile.selectionMode), firstBuildOnly: true,
-    scoreContribution: false, repairVisible: false,
-    selectionMode: profile.selectionMode };
-}
-
 function resolveRepair(catalog, reference) {
   const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state',
-    'requestedEvidence', 'probeEvidence']);
+    'scoredEvidence', 'observedEvidence']);
   const { profile } = loadProfile(catalog, 'repairPolicies', reference, 'repair-policy', fields);
-  if (typeof profile.requestedEvidence !== 'boolean' || typeof profile.probeEvidence !== 'boolean') {
+  if (typeof profile.scoredEvidence !== 'boolean' || typeof profile.observedEvidence !== 'boolean') {
     fail(reference, 'repair evidence fields must be boolean');
   }
-  if (!profile.requestedEvidence) {
-    fail(`${reference}.requestedEvidence`, 'must be true until no-evidence repair is implemented');
+  if (!profile.scoredEvidence) {
+    fail(`${reference}.scoredEvidence`, 'must be true until no-evidence repair is implemented');
   }
-  if (profile.probeEvidence) fail(`${reference}.probeEvidence`, 'must be false');
-  return { ...identity(profile, null), requestedEvidence: profile.requestedEvidence, probeEvidence: false };
+  if (profile.observedEvidence) fail(`${reference}.observedEvidence`, 'must be false');
+  return { ...identity(profile, null), scoredEvidence: true, observedEvidence: false };
 }
 
 export function validateConditionReference(input, at = 'condition') {
   if (!object(input)) fail(at, 'must be an object');
   const value = structuredClone(input);
-  const fields = new Set(['id', 'version', 'guidanceProfile', 'probeProfile', 'repairPolicy',
+  const fields = new Set(['id', 'version', 'guidanceProfile', 'repairPolicy',
     'specifications']);
   for (const key of Object.keys(value)) if (!fields.has(key)) fail(`${at}.${key}`, 'is unknown');
-  for (const key of ['id', 'version', 'guidanceProfile', 'probeProfile', 'repairPolicy']) {
+  for (const key of ['id', 'version', 'guidanceProfile', 'repairPolicy']) {
     if (!Object.hasOwn(value, key)) fail(`${at}.${key}`, 'is required');
   }
   if (!ID.test(value.id)) fail(`${at}.id`, 'is invalid');
   if (!VERSION.test(value.version)) fail(`${at}.version`, 'must be a semantic version');
-  for (const field of ['guidanceProfile', 'probeProfile', 'repairPolicy']) {
+  for (const field of ['guidanceProfile', 'repairPolicy']) {
     if (!REF.test(value[field] ?? '')) fail(`${at}.${field}`, 'must use id@version');
   }
   if (value.specifications !== undefined) {
@@ -202,20 +172,27 @@ export function validateConditionReference(input, at = 'condition') {
     const seen = new Set();
     value.specifications.levels.forEach((entry, index) => {
       const levelAt = `${at}.specifications.levels[${index}]`;
-      strict(entry, levelAt, new Set(['level', 'disclosed', 'probed']));
+      strict(entry, levelAt, new Set(['level', 'requested', 'expected', 'observed']));
       if (!Number.isSafeInteger(entry.level) || entry.level < 1 || seen.has(entry.level)) {
         fail(`${levelAt}.level`, 'must be a unique positive integer');
       }
       seen.add(entry.level);
-      for (const field of ['disclosed', 'probed']) {
+      for (const field of ['requested', 'expected', 'observed']) {
         if (!Array.isArray(entry[field]) || new Set(entry[field]).size !== entry[field].length
           || entry[field].some(reference => !REF.test(reference))) {
           fail(`${levelAt}.${field}`, 'must contain unique exact id@version references');
         }
         entry[field] = [...entry[field]].sort();
       }
-      const overlap = entry.disclosed.filter(reference => entry.probed.includes(reference));
-      if (overlap.length) fail(levelAt, `cannot disclose and probe ${overlap.join(', ')}`);
+      const treatments = new Map();
+      for (const field of ['requested', 'expected', 'observed']) {
+        for (const reference of entry[field]) {
+          if (treatments.has(reference)) {
+            fail(levelAt, `cannot treat ${reference} as both ${treatments.get(reference)} and ${field}`);
+          }
+          treatments.set(reference, field);
+        }
+      }
     });
     value.specifications.levels.sort((left, right) => left.level - right.level);
   }
@@ -240,10 +217,10 @@ function validateRequestedScope(input) {
         .some(field => !HASH.test(entry.recipe[field]))) {
       fail(`${at}.recipe`, 'has an invalid identity');
     }
-    const modular = entry.selection?.schemaVersion === 2;
+    const modular = entry.selection?.schemaVersion === 3;
     strict(entry.selection, `${at}.selection`, modular
-      ? new Set(['schemaVersion', 'sha256', 'scoredPoints', 'requested', 'taskPacks',
-        'features', 'specifications', 'requestedChecks', 'probeChecks'])
+      ? new Set(['schemaVersion', 'sha256', 'scoredPoints', 'requested',
+        'features', 'specifications', 'promptPacks', 'scoredChecks', 'observedChecks'])
       : new Set(['sha256', 'completeness', 'scoredPoints', 'requested', 'taskPacks']));
     if (!HASH.test(entry.selection.sha256)
       || !Number.isSafeInteger(entry.selection.scoredPoints) || entry.selection.scoredPoints < 0
@@ -252,10 +229,11 @@ function validateRequestedScope(input) {
     }
     strict(entry.selection.requested, `${at}.selection.requested`, modular
       ? new Set(['features', 'specifications', 'checks']) : new Set(['packs', 'checks']));
-    if (!Array.isArray(entry.selection.taskPacks)
-      || new Set(entry.selection.taskPacks).size !== entry.selection.taskPacks.length
-      || entry.selection.taskPacks.some(value => typeof value !== 'string' || !value)) {
-      fail(`${at}.selection.taskPacks`, 'must contain unique non-empty strings');
+    const packs = modular ? entry.selection.promptPacks : entry.selection.taskPacks;
+    if (!Array.isArray(packs)
+      || new Set(packs).size !== packs.length
+      || packs.some(value => typeof value !== 'string' || !value)) {
+      fail(`${at}.selection.${modular ? 'promptPacks' : 'taskPacks'}`, 'must contain unique non-empty strings');
     }
     for (const field of modular ? ['features', 'checks'] : ['packs', 'checks']) {
       if (!Array.isArray(entry.selection.requested[field])
@@ -266,19 +244,39 @@ function validateRequestedScope(input) {
     }
     if (modular) {
       strict(entry.selection.requested.specifications,
-        `${at}.selection.requested.specifications`, new Set(['disclosed', 'probed']));
+        `${at}.selection.requested.specifications`, new Set(['requested', 'expected', 'observed']));
       strict(entry.selection.specifications, `${at}.selection.specifications`,
-        new Set(['disclosed', 'probed']));
-      for (const value of [entry.selection.features, entry.selection.requestedChecks,
-        entry.selection.probeChecks]) {
-        if (!Array.isArray(value) || new Set(value).size !== value.length
-          || value.some(item => typeof item !== 'string' || !item)) {
-          fail(`${at}.selection`, 'contains an invalid modular selection array');
+        new Set(['requested', 'expected', 'observed']));
+      if (!Array.isArray(entry.selection.features)
+        || new Set(entry.selection.features).size !== entry.selection.features.length
+        || entry.selection.features.some(item => typeof item !== 'string' || !item)) {
+        fail(`${at}.selection.features`, 'must contain unique non-empty strings');
+      }
+      for (const [field, treatments] of [
+        ['scoredChecks', new Set(['requested', 'expected'])],
+        ['observedChecks', new Set(['observed'])],
+      ]) {
+        const checks = entry.selection[field];
+        if (!Array.isArray(checks)) fail(`${at}.selection.${field}`, 'must be an array');
+        const keys = new Set();
+        for (const [index, check] of checks.entries()) {
+          const checkAt = `${at}.selection.${field}[${index}]`;
+          strict(check, checkAt, new Set(['stableKey', 'points', 'treatment']));
+          if (typeof check.stableKey !== 'string' || !check.stableKey || keys.has(check.stableKey)) {
+            fail(`${checkAt}.stableKey`, 'must be a unique non-empty string');
+          }
+          keys.add(check.stableKey);
+          if (!Number.isSafeInteger(check.points) || check.points < 0) {
+            fail(`${checkAt}.points`, 'must be a non-negative integer');
+          }
+          if (!treatments.has(check.treatment)) {
+            fail(`${checkAt}.treatment`, `must be ${[...treatments].join(' or ')}`);
+          }
         }
       }
       for (const specifications of [entry.selection.requested.specifications,
         entry.selection.specifications]) {
-        for (const field of ['disclosed', 'probed']) {
+        for (const field of ['requested', 'expected', 'observed']) {
           if (!Array.isArray(specifications[field])
             || new Set(specifications[field]).size !== specifications[field].length
             || specifications[field].some(reference => !REF.test(reference))) {
@@ -317,24 +315,12 @@ export function resolveStudyConditions(inputs, stacks,
     const requestedScope = validateRequestedScope(
       typeof requested === 'function' ? requested(ref, index) : requested);
     const guidance = resolveGuidance(catalog, ref.guidanceProfile, stacks, resolve(stackBenchRoot));
-    const probes = resolveProbes(catalog, ref.probeProfile);
     const repair = resolveRepair(catalog, ref.repairPolicy);
-    const selectedProbeChecks = requestedScope.levels.reduce((total, level) => total
-      + (level.selection.schemaVersion === 2 ? level.selection.probeChecks.length : 0), 0);
-    const probeSelectionMode = probes.selectionMode ?? 'none';
-    if (selectedProbeChecks > 0 && probeSelectionMode !== 'condition-specifications') {
-      fail(`conditions[${index}].probeProfile`,
-        'must select condition-specifications when modular probe checks are selected');
-    }
-    if (selectedProbeChecks === 0 && probeSelectionMode !== 'none') {
-      fail(`conditions[${index}].probeProfile`,
-        'selects condition-specifications but the requested scope contains no probe checks');
-    }
-    if (frozen && [guidance, probes, repair].some(profile => profile.state !== 'qualified')) {
+    if (frozen && [guidance, repair].some(profile => profile.state !== 'qualified')) {
       fail(`conditions[${index}]`, 'cannot freeze with a draft component');
     }
     const content = { id: ref.id, version: ref.version, requested: requestedScope,
-      guidance, probes, repair };
+      guidance, repair };
     return { ...content, sha256: sha256(canonicalDefinitionJson(content)) };
   });
   const keys = resolved.map(condition => `${condition.id}@${condition.version}`);

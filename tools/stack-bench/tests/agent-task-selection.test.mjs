@@ -86,12 +86,17 @@ test('selected pack prompts contain only their own framework-neutral testing cal
   } finally { rmSync(app, { recursive: true, force: true }); }
 });
 
-test('the real agent prints a modular prompt without hidden specification text', () => {
+test('the real agent prints a modular prompt without expected or observed specification text', () => {
   const modular = resolveRecipeRelease(loadTrack('ecommerce'), 1,
     'ecommerce.l1-modular@2.0.0');
+  const expectedCheck = modular.release.checkCatalog.find(check =>
+    check.packId === 'ecommerce.spec.state-durability'
+      && check.observations?.includes('unmentioned')
+      && check.requiresFeatures?.includes('ecommerce.feature.accounts'));
   const task = createBoundRecipeTaskRequest(modular, {
     featureIds: ['ecommerce.feature.accounts'],
-    probedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
+    expectedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
+    checkKeys: [expectedCheck.stableKey],
   });
   const app = mkdtempSync(join(tmpdir(), 'stack-bench-modular-task-'));
   try {
@@ -99,7 +104,8 @@ test('the real agent prints a modular prompt without hidden specification text',
     const prompt = printPrompt(app, visible);
     assert.match(prompt, /## Accounts/);
     assert.doesNotMatch(prompt, /## State durability|## Cart|## Reviews|Warehouse administration/);
-    assert.doesNotMatch(prompt, /probe|ecommerce\.spec|state-durability/);
+    assert.doesNotMatch(prompt, /ecommerce\.spec|state-durability/);
     assert.doesNotMatch(JSON.stringify(visible), /state-durability/);
+    assert.deepEqual(visible.selection.requested.checks, []);
   } finally { rmSync(app, { recursive: true, force: true }); }
 });

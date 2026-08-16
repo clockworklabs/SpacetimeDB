@@ -19,12 +19,14 @@ function exactModuleRef(value, label) {
   return { id: value.slice(0, split), version: value.slice(split + 1), ref: value };
 }
 
-// New modular recipes keep product features and production specifications as
-// independently selectable modules. The compiler returns three disjoint
-// surfaces: what appears in the task, what affects requested score/repair, and
-// what may be observed only as a hidden first-build probe.
+// Modular recipes keep product features and production specifications
+// independently selectable. A specification has exactly one treatment:
+// requested (prompt + score + repair), expected (score + repair, no initial
+// disclosure), observed (separate first-build measurement), or excluded by
+// omission. The closed treatment set prevents contradictory boolean policies.
 export function resolveModularRecipeSelection(release, {
-  featureIds = [], disclosedSpecifications = [], probedSpecifications = [], checkKeys = [],
+  featureIds = [], requestedSpecifications = [], expectedSpecifications = [],
+  observedSpecifications = [], checkKeys = [],
 } = {}) {
   if (!release?.contentSha256 || !Array.isArray(release.checkCatalog)
     || !Array.isArray(release.components?.packs)) {
@@ -39,28 +41,36 @@ export function resolveModularRecipeSelection(release, {
   const specifications = new Map(modules.filter(module => module.moduleType === 'specification')
     .map(module => [`${module.id}@${module.version}`, module]));
   const requestedFeatures = unique(featureIds, 'features');
-  const disclosedRefs = unique(disclosedSpecifications, 'disclosed specifications');
-  const probedRefs = unique(probedSpecifications, 'probed specifications');
-  const requestedCheckKeys = unique(checkKeys, 'requested checks');
-  const overlap = disclosedRefs.filter(ref => probedRefs.includes(ref));
-  if (overlap.length) {
-    throw new Error(`specifications cannot be both disclosed and probed: ${overlap.join(', ')}`);
+  const inputTreatments = {
+    requested: unique(requestedSpecifications, 'requested specifications'),
+    expected: unique(expectedSpecifications, 'expected specifications'),
+    observed: unique(observedSpecifications, 'observed specifications'),
+  };
+  const selectedCheckKeys = unique(checkKeys, 'selected scored checks');
+  const assigned = new Map();
+  for (const [treatment, refs] of Object.entries(inputTreatments)) {
+    for (const ref of refs) {
+      if (assigned.has(ref)) {
+        throw new Error(`specification ${ref} cannot be both ${assigned.get(ref)} and ${treatment}`);
+      }
+      assigned.set(ref, treatment);
+    }
   }
   for (const id of requestedFeatures) {
     if (!features.has(id)) throw new Error(`recipe has no feature module ${id}`);
   }
-  for (const [label, refs] of [['disclosed', disclosedRefs], ['probed', probedRefs]]) {
+  for (const [treatment, refs] of Object.entries(inputTreatments)) {
     for (const value of refs) {
-      const parsed = exactModuleRef(value, `${label} specification`);
+      const parsed = exactModuleRef(value, `${treatment} specification`);
       if (!specifications.has(parsed.ref)) {
-        throw new Error(`recipe has no ${label} specification ${parsed.ref}`);
+        throw new Error(`recipe has no ${treatment} specification ${parsed.ref}`);
       }
     }
   }
 
   const featureSet = new Set(requestedFeatures.length ? requestedFeatures : features.keys());
-  const disclosedSet = new Set(disclosedRefs);
-  const probedSet = new Set(probedRefs);
+  const treatmentSets = Object.fromEntries(Object.entries(inputTreatments)
+    .map(([treatment, refs]) => [treatment, new Set(refs)]));
   const moduleByRef = new Map(modules.map(module => [`${module.id}@${module.version}`, module]));
   const visit = (module, target, chain = []) => {
     const ref = `${module.id}@${module.version}`;
@@ -73,83 +83,97 @@ export function resolveModularRecipeSelection(release, {
         throw new Error(`specification module ${ref} cannot add feature ${requiredRef}; use check applicability`);
       } else if (target === 'feature') {
         throw new Error(`feature module ${ref} cannot depend on specification ${requiredRef}`);
-      } else if (target === 'disclosed') disclosedSet.add(requiredRef);
-      else probedSet.add(requiredRef);
+      } else treatmentSets[target].add(requiredRef);
       visit(required, required.moduleType === 'feature' ? 'feature' : target, [...chain, ref]);
     }
   };
   for (const id of [...featureSet]) visit(features.get(id), 'feature');
-  for (const ref of [...disclosedSet]) visit(specifications.get(ref), 'disclosed');
-  for (const ref of [...probedSet]) visit(specifications.get(ref), 'probed');
-  const resolvedOverlap = [...disclosedSet].filter(ref => probedSet.has(ref));
-  if (resolvedOverlap.length) {
-    throw new Error(`specification dependencies are both disclosed and probed: ${resolvedOverlap.join(', ')}`);
+  for (const [treatment, refs] of Object.entries(treatmentSets)) {
+    for (const ref of [...refs]) visit(specifications.get(ref), treatment);
+  }
+  const resolvedAssignments = new Map();
+  for (const [treatment, refs] of Object.entries(treatmentSets)) {
+    for (const ref of refs) {
+      if (resolvedAssignments.has(ref)) {
+        throw new Error(`specification dependency ${ref} cannot be both ${resolvedAssignments.get(ref)} and ${treatment}`);
+      }
+      resolvedAssignments.set(ref, treatment);
+    }
   }
 
-  const disclosedIds = new Set([...disclosedSet].map(ref => exactModuleRef(ref, 'specification').id));
-  const probedIds = new Set([...probedSet].map(ref => exactModuleRef(ref, 'specification').id));
-  const requestedModuleIds = new Set([...featureSet, ...disclosedIds]);
+  const idsFor = treatment => new Set([...treatmentSets[treatment]]
+    .map(ref => exactModuleRef(ref, `${treatment} specification`).id));
+  const requestedIds = idsFor('requested');
+  const expectedIds = idsFor('expected');
+  const observedIds = idsFor('observed');
+  const promptPacks = new Set([...featureSet, ...requestedIds]);
   const applies = check => check.requiresFeatures === undefined
     || check.requiresFeatures.every(featureId => featureSet.has(featureId));
-  const requestedChecks = release.checkCatalog.filter(check => requestedModuleIds.has(check.packId)
-    && applies(check) && (check.observations === undefined || check.observations.includes('requested')));
-  const probeChecks = release.checkCatalog.filter(check => probedIds.has(check.packId)
-    && applies(check) && check.observations?.includes('probe'));
-  for (const ref of disclosedSet) {
-    const id = exactModuleRef(ref, 'disclosed specification').id;
-    if (!requestedChecks.some(check => check.packId === id)) {
-      throw new Error(`disclosed specification ${ref} has no requested observation`);
+  const selectChecks = (ids, observation, treatment) => release.checkCatalog
+    .filter(check => ids.has(check.packId) && applies(check)
+      && (check.observations === undefined
+        ? observation === 'requested' : check.observations.includes(observation)))
+    .map(check => ({ ...check, treatment }));
+  const featureChecks = selectChecks(featureSet, 'requested', 'requested');
+  const requestedSpecChecks = selectChecks(requestedIds, 'requested', 'requested');
+  const expectedChecks = selectChecks(expectedIds, 'unmentioned', 'expected');
+  const observedChecks = selectChecks(observedIds, 'unmentioned', 'observed');
+  const checksByTreatment = { requested: requestedSpecChecks, expected: expectedChecks,
+    observed: observedChecks };
+  for (const [treatment, refs] of Object.entries(treatmentSets)) {
+    for (const ref of refs) {
+      const id = exactModuleRef(ref, `${treatment} specification`).id;
+      if (!checksByTreatment[treatment].some(check => check.packId === id)) {
+        const observation = treatment === 'requested' ? 'requested' : 'unmentioned';
+        throw new Error(`${treatment} specification ${ref} has no ${observation} observation`);
+      }
     }
   }
-  for (const ref of probedSet) {
-    const id = exactModuleRef(ref, 'probed specification').id;
-    if (!probeChecks.some(check => check.packId === id)) {
-      throw new Error(`probed specification ${ref} has no probe observation`);
+  const allScoredChecks = [...featureChecks, ...requestedSpecChecks, ...expectedChecks];
+  const availableScoredChecks = new Set(allScoredChecks.map(check => check.stableKey));
+  for (const key of selectedCheckKeys) {
+    if (!availableScoredChecks.has(key)) {
+      throw new Error(`scored check ${key} is outside the requested/expected feature and specification scope`);
     }
   }
-  const availableRequestedChecks = new Set(requestedChecks.map(check => check.stableKey));
-  for (const key of requestedCheckKeys) {
-    if (!availableRequestedChecks.has(key)) {
-      throw new Error(`requested check ${key} is outside the disclosed feature/specification scope`);
-    }
-  }
-  const narrowedRequested = requestedCheckKeys.length
-    ? requestedChecks.filter(check => requestedCheckKeys.includes(check.stableKey)) : requestedChecks;
-  if (!narrowedRequested.length) throw new Error('modular selection contains no requested checks');
-  const probeKeys = new Set(probeChecks.map(check => check.stableKey));
-  const checkOverlap = narrowedRequested.filter(check => probeKeys.has(check.stableKey));
-  if (checkOverlap.length) throw new Error('requested and hidden-probe checks must be disjoint');
+  const scoredChecks = selectedCheckKeys.length
+    ? allScoredChecks.filter(check => selectedCheckKeys.includes(check.stableKey)) : allScoredChecks;
+  if (!scoredChecks.length) throw new Error('modular selection contains no scored checks');
+  const observedKeys = new Set(observedChecks.map(check => check.stableKey));
+  const checkOverlap = scoredChecks.filter(check => observedKeys.has(check.stableKey));
+  if (checkOverlap.length) throw new Error('scored and observed checks must be disjoint');
 
   const identityDocument = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     recipeContentSha256: release.contentSha256,
     features: [...featureSet].sort(),
-    specifications: { disclosed: [...disclosedSet].sort(), probed: [...probedSet].sort() },
-    requestedChecks: narrowedRequested.map(check => check.stableKey).sort(),
-    probeChecks: probeChecks.map(check => check.stableKey).sort(),
+    specifications: Object.fromEntries(Object.entries(treatmentSets)
+      .map(([treatment, refs]) => [treatment, [...refs].sort()])),
+    scoredChecks: scoredChecks.map(check => check.stableKey).sort(),
+    observedChecks: observedChecks.map(check => check.stableKey).sort(),
   };
   const taskSelectionDocument = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     recipeContentSha256: release.contentSha256,
-    taskPacks: [...requestedModuleIds].sort(),
+    promptPacks: [...promptPacks].sort(),
   };
   const requested = {
     features: [...requestedFeatures].sort(),
-    specifications: { disclosed: [...disclosedRefs].sort(), probed: [...probedRefs].sort() },
-    checks: [...requestedCheckKeys].sort(),
+    specifications: Object.fromEntries(Object.entries(inputTreatments)
+      .map(([treatment, refs]) => [treatment, [...refs].sort()])),
+    checks: [...selectedCheckKeys].sort(),
   };
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     recipe: { id: release.id, version: release.version, contentSha256: release.contentSha256 },
     requested,
     features: [...featureSet].sort(),
-    specifications: { disclosed: [...disclosedSet].sort(), probed: [...probedSet].sort() },
-    taskPacks: [...requestedModuleIds].sort(),
-    requestedChecks: narrowedRequested,
-    checks: narrowedRequested,
-    probeChecks,
-    requestedPoints: narrowedRequested.reduce((total, check) => total + check.points, 0),
-    scoredPoints: narrowedRequested.reduce((total, check) => total + check.points, 0),
+    specifications: identityDocument.specifications,
+    promptPacks: [...promptPacks].sort(),
+    scoredChecks,
+    checks: scoredChecks,
+    observedChecks,
+    scoredPoints: scoredChecks.reduce((total, check) => total + check.points, 0),
     taskSelectionSha256: sha256(canonicalDefinitionJson(taskSelectionDocument)),
     sha256: sha256(canonicalDefinitionJson(identityDocument)),
   };
@@ -242,11 +266,12 @@ export function selectRecipeRelease(release, options = {}) {
 }
 
 export function composeSelectedRecipeTask(plan, selection) {
-  if (!plan?.recipe?.task || !Array.isArray(selection?.taskPacks)
+  const taskPacks = selection?.schemaVersion === 3 ? selection.promptPacks : selection?.taskPacks;
+  if (!plan?.recipe?.task || !Array.isArray(taskPacks)
     || typeof selection.sha256 !== 'string') {
     throw new Error('selected task requires a compiled recipe plan and selection');
   }
-  const owners = new Set(['recipe', ...selection.taskPacks]);
+  const owners = new Set(['recipe', ...taskPacks]);
   const features = new Set(selection.features ?? []);
   const select = fragments => fragments.filter(fragment =>
     fragment.owners.some(owner => owners.has(owner))
@@ -254,7 +279,7 @@ export function composeSelectedRecipeTask(plan, selection) {
       || fragment.requiresFeatures.every(featureId => features.has(featureId))));
   const requirements = select(plan.recipe.task.requirements);
   const contracts = select(plan.recipe.task.contracts);
-  const compose = fragments => selection.schemaVersion === 2
+  const compose = fragments => selection.schemaVersion === 3
     ? `${fragments.map(fragment => fragment.text.trimEnd()).join('\n\n')}\n`
     : fragments.map(fragment => fragment.text).join('');
   const requirementText = compose(requirements);
@@ -301,17 +326,17 @@ export function createModularRecipeTaskRequest(binding, options = {}) {
   const selection = resolveModularRecipeSelection(binding.release, options);
   const task = composeSelectedRecipeTask(binding.plan, selection);
   const request = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     recipe: { id: binding.release.id, version: binding.release.version,
       contentSha256: binding.release.contentSha256 },
     selection: {
       sha256: selection.sha256,
       requested: selection.requested,
-      taskPacks: selection.taskPacks,
+      promptPacks: selection.promptPacks,
       resolved: { features: selection.features, specifications: selection.specifications,
-        taskPacks: selection.taskPacks, taskSelectionSha256: selection.taskSelectionSha256 },
-      requestedChecks: selection.requestedChecks.map(check => check.stableKey),
-      probeChecks: selection.probeChecks.map(check => check.stableKey),
+        promptPacks: selection.promptPacks, taskSelectionSha256: selection.taskSelectionSha256 },
+      scoredChecks: selection.scoredChecks.map(check => check.stableKey),
+      observedChecks: selection.observedChecks.map(check => check.stableKey),
     },
     task: { sha256: task.sha256, requirementSha256: task.requirementSha256,
       contractSha256: task.contractSha256 },
@@ -336,14 +361,15 @@ export function resolveRecipeTaskRequest(binding, request) {
 
 export function resolveModularRecipeTaskRequest(binding, request) {
   if (!request || typeof request !== 'object' || Array.isArray(request)
-    || request.schemaVersion !== 2 || !request.recipe || !request.selection || !request.task) {
+    || request.schemaVersion !== 3 || !request.recipe || !request.selection || !request.task) {
     throw new Error('modular recipe task request is invalid');
   }
   const requested = request.selection.requested;
   const resolved = createModularRecipeTaskRequest(binding, {
     featureIds: requested?.features,
-    disclosedSpecifications: requested?.specifications?.disclosed,
-    probedSpecifications: requested?.specifications?.probed,
+    requestedSpecifications: requested?.specifications?.requested,
+    expectedSpecifications: requested?.specifications?.expected,
+    observedSpecifications: requested?.specifications?.observed,
     checkKeys: requested?.checks,
   });
   if (!same(resolved.request, request)) {
@@ -364,8 +390,9 @@ export function createBoundRecipeTaskRequest(binding, options = {}) {
     if ((options.packIds ?? []).length) throw new Error('modular recipes use feature modules, not packs');
     return createModularRecipeTaskRequest(binding, options);
   }
-  if ((options.featureIds ?? []).length || (options.disclosedSpecifications ?? []).length
-    || (options.probedSpecifications ?? []).length) {
+  if ((options.featureIds ?? []).length || (options.requestedSpecifications ?? []).length
+    || (options.expectedSpecifications ?? []).length
+    || (options.observedSpecifications ?? []).length) {
     throw new Error('legacy recipes do not support modular feature/specification selection');
   }
   return createRecipeTaskRequest(binding, options);
@@ -374,30 +401,33 @@ export function createBoundRecipeTaskRequest(binding, options = {}) {
 export function resolveBoundRecipeTaskRequest(binding, request) {
   if (!binding?.release) throw new Error('bound recipe task requires a recipe release');
   if (isModularRecipeRelease(binding.release)) {
-    if (request?.schemaVersion !== 2) throw new Error('modular recipe requires a schema-2 task request');
+    if (request?.schemaVersion !== 3) throw new Error('modular recipe requires a schema-3 task request');
     return resolveModularRecipeTaskRequest(binding, request);
   }
   if (request?.schemaVersion !== 1) throw new Error('legacy recipe requires a schema-1 task request');
   return resolveRecipeTaskRequest(binding, request);
 }
 
-// The controller owns hidden experimental treatments. A coding process needs
-// only the task it must render, never the private probe selection. Re-resolve a
-// schema-2 request without probes so probe ids cannot leak through argv, logs,
-// process inspection, or adapter metadata. The composed task hashes must stay
-// identical because probes are forbidden from contributing prompt fragments.
+// The controller owns undisclosed treatments. A coding process receives only
+// requested specifications: expected and observed ids must not leak through
+// argv, logs, process inspection, or adapter metadata. Removing them must not
+// change the composed task because neither contributes prompt fragments.
 export function createAgentVisibleTaskRequest(binding, selected) {
   const resolved = resolveBoundRecipeTaskRequest(binding, selected?.request ?? selected);
   if (resolved.request.schemaVersion === 1) return resolved.request;
   const requested = resolved.selection.requested;
   const visible = createBoundRecipeTaskRequest(binding, {
     featureIds: requested.features,
-    disclosedSpecifications: requested.specifications.disclosed,
-    probedSpecifications: [],
-    checkKeys: requested.checks,
+    requestedSpecifications: requested.specifications.requested,
+    expectedSpecifications: [],
+    observedSpecifications: [],
+    // Check filters control grading, never prompt composition. Keeping them in
+    // the coding-process request could disclose an expected check name after
+    // its owning specification has been deliberately removed.
+    checkKeys: [],
   });
   if (visible.task.sha256 !== resolved.task.sha256) {
-    throw new Error('hidden probe removal changed the agent task');
+    throw new Error('undisclosed treatment removal changed the agent task');
   }
   return visible.request;
 }

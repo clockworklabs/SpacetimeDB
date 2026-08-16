@@ -31,36 +31,37 @@ test('the modular L1 catalog owns every existing criterion exactly once', () => 
     .find(fragment => fragment.id === 'ecommerce.spec.state-durability.account-data')
     .requiresFeatures, ['ecommerce.feature.accounts', 'ecommerce.feature.cart-checkout']);
 
-  const fullyDisclosed = resolveModularRecipeSelection(release, {
-    disclosedSpecifications: specifications,
+  const fullyRequested = resolveModularRecipeSelection(release, {
+    requestedSpecifications: specifications,
   });
-  assert.equal(fullyDisclosed.requestedChecks.length, 48);
-  assert.equal(fullyDisclosed.requestedPoints, 51);
-  assert.equal(fullyDisclosed.probeChecks.length, 0);
+  assert.equal(fullyRequested.scoredChecks.length, 48);
+  assert.equal(fullyRequested.scoredPoints, 51);
+  assert.equal(fullyRequested.observedChecks.length, 0);
 });
 
 test('the generic task boundary dispatches and replays the modular schema', () => {
   const options = {
     featureIds: ['ecommerce.feature.accounts'],
-    probedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
+    observedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
   };
   const task = createBoundRecipeTaskRequest(binding, options);
-  assert.equal(task.request.schemaVersion, 2);
+  assert.equal(task.request.schemaVersion, 3);
   assert.deepEqual(resolveBoundRecipeTaskRequest(binding, task.request).request, task.request);
   assert.throws(() => resolveBoundRecipeTaskRequest(binding,
-    { ...task.request, schemaVersion: 1 }), /requires a schema-2/);
+    { ...task.request, schemaVersion: 1 }), /requires a schema-3/);
 });
 
-test('the coding process receives no controller-owned hidden probe selection', () => {
+test('the coding process receives no controller-owned expected or observed selection', () => {
   const selected = createBoundRecipeTaskRequest(binding, {
-    featureIds: ['ecommerce.feature.accounts'],
-    probedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
+    expectedSpecifications: ['ecommerce.spec.access-control@1.0.0'],
+    observedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
   });
   const visible = createAgentVisibleTaskRequest(binding, selected);
-  assert.deepEqual(visible.selection.requested.specifications.probed, []);
-  assert.deepEqual(visible.selection.probeChecks, []);
+  assert.deepEqual(visible.selection.requested.specifications,
+    { requested: [], expected: [], observed: [] });
+  assert.deepEqual(visible.selection.observedChecks, []);
   assert.equal(visible.task.sha256, selected.request.task.sha256);
-  assert.doesNotMatch(JSON.stringify(visible), /state-durability/);
+  assert.doesNotMatch(JSON.stringify(visible), /state-durability|access-control/);
 });
 
 test('feature dependencies compose a smaller product without unrelated modules', () => {
@@ -73,42 +74,43 @@ test('feature dependencies compose a smaller product without unrelated modules',
     'ecommerce.feature.purchasing',
     'ecommerce.feature.reviews',
   ]);
-  assert.equal(reviews.selection.requestedPoints, 10);
+  assert.equal(reviews.selection.scoredPoints, 10);
   assert.match(reviews.task.requirementText, /## Reviews/);
   assert.doesNotMatch(reviews.task.requirementText, /## Cart and checkout/);
   assert.doesNotMatch(reviews.task.requirementText, /## Warehouse administration/);
 });
 
-test('unmentioned specifications change probe scope without changing prompt bytes', () => {
-  const probes = specifications.slice(0, -1);
-  const defaultsProbe = createModularRecipeTaskRequest(binding, {
-    probedSpecifications: probes,
+test('expected specifications change the score without changing prompt bytes', () => {
+  const expected = specifications.slice(0, -1);
+  const productionExpectation = createModularRecipeTaskRequest(binding, {
+    expectedSpecifications: expected,
   });
   const featureOnly = createModularRecipeTaskRequest(binding);
 
-  assert.equal(defaultsProbe.selection.requestedPoints, 14);
-  assert.equal(defaultsProbe.task.requirementText, featureOnly.task.requirementText);
-  assert.equal(defaultsProbe.task.contractText, featureOnly.task.contractText);
-  assert.equal(defaultsProbe.task.sha256, featureOnly.task.sha256);
-  assert.notEqual(defaultsProbe.selection.sha256, featureOnly.selection.sha256);
-  assert.equal(defaultsProbe.selection.probeChecks.length > 0, true);
+  assert.equal(productionExpectation.selection.scoredPoints > featureOnly.selection.scoredPoints, true);
+  assert.equal(productionExpectation.task.requirementText, featureOnly.task.requirementText);
+  assert.equal(productionExpectation.task.contractText, featureOnly.task.contractText);
+  assert.equal(productionExpectation.task.sha256, featureOnly.task.sha256);
+  assert.notEqual(productionExpectation.selection.sha256, featureOnly.selection.sha256);
+  assert.equal(productionExpectation.selection.scoredChecks
+    .some(check => check.treatment === 'expected'), true);
   for (const heading of ['Access control', 'State durability', 'Live state',
     'Concurrency safety', 'Transactional integrity']) {
-    assert.equal(defaultsProbe.task.requirementText.includes(`## ${heading}`), false);
+    assert.equal(productionExpectation.task.requirementText.includes(`## ${heading}`), false);
   }
-  assert.doesNotMatch(defaultsProbe.task.contractText,
+  assert.doesNotMatch(productionExpectation.task.contractText,
     /server-enforced|without a reload|survives|negative|source of truth/i);
-  assert.doesNotMatch(defaultsProbe.task.requirementText, /\|\n##/);
+  assert.doesNotMatch(productionExpectation.task.requirementText, /\|\n##/);
 });
 
-test('a disclosed specification applies only to the selected feature surface', () => {
+test('a requested specification applies only to the selected feature surface', () => {
   const accounts = createModularRecipeTaskRequest(binding, {
     featureIds: ['ecommerce.feature.accounts'],
-    disclosedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
+    requestedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
   });
   assert.deepEqual(accounts.selection.features, ['ecommerce.feature.accounts']);
-  assert.equal(accounts.selection.requestedPoints, 5);
-  assert.deepEqual(accounts.selection.requestedChecks
+  assert.equal(accounts.selection.scoredPoints, 5);
+  assert.deepEqual(accounts.selection.scoredChecks
     .filter(check => check.packId === 'ecommerce.spec.state-durability')
     .map(check => check.criterionId), ['1e']);
   assert.match(accounts.task.requirementText, /## State durability/);
@@ -116,10 +118,10 @@ test('a disclosed specification applies only to the selected feature surface', (
   assert.doesNotMatch(accounts.task.requirementText, /cart|orders|reviews|administrator/i);
 });
 
-test('a probe that needs a disclosed interoperability schema fails closed', () => {
+test('an unmentioned expectation that needs a prescribed schema fails closed', () => {
   assert.throws(() => resolveModularRecipeSelection(release, {
-    probedSpecifications: ['ecommerce.spec.external-data-sync@1.0.0'],
-  }), /has no probe observation/);
+    expectedSpecifications: ['ecommerce.spec.external-data-sync@1.0.0'],
+  }), /has no unmentioned observation/);
 });
 
 test('criteria with ordered state dependencies are not exposed as isolated probes', () => {

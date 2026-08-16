@@ -159,14 +159,24 @@ test('campaign validation rejects an application result that stopped before its 
     /outcome\.kind/);
 });
 
-test('campaign validation binds hidden probe evidence to its exact first-build selection', () => {
+test('campaign validation binds observed-only evidence to its exact first-build selection', () => {
   const compiled = compileCampaignFile(example);
   const sourceSha256 = 'a'.repeat(64);
   const selectionSha256 = 'b'.repeat(64);
-  const selectedProbeKeys = ['durability/session'];
+  const scoredChecks = [
+    { stableKey: 'feature/accounts', points: 1, treatment: 'requested' },
+    { stableKey: 'authorization/session', points: 1, treatment: 'expected' },
+  ];
+  const observedChecks = [
+    { stableKey: 'durability/session', points: 1, treatment: 'observed' },
+  ];
+  const selectedObservedKeys = observedChecks.map(check => check.stableKey);
+  const specifications = { requested: [], expected: ['authorization@1.0.0'],
+    observed: ['durability@1.0.0'] };
   const baseAttempt = compiled.attempts[0];
   const condition = { ...baseAttempt.condition, requested: { levels: [{ level: 1,
-    selection: { sha256: selectionSha256, probeChecks: selectedProbeKeys } }] } };
+    selection: { schemaVersion: 3, sha256: selectionSha256, scoredPoints: 2,
+      specifications, scoredChecks, observedChecks } }] } };
   const plan = { ...compiled, conditions: compiled.conditions.map(item =>
     item.sha256 === condition.sha256 ? condition : item) };
   const attempt = { ...baseAttempt, condition };
@@ -179,37 +189,50 @@ test('campaign validation binds hidden probe evidence to its exact first-build s
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
-  levels: [{ level: 1, score: 0, max: 1, fixRounds: 3,
-    selection: { sha256: selectionSha256,
-      probeChecks: [{ stableKey: 'durability/session', points: 1 }] },
-    firstBuild: { source: { sha256: sourceSha256, files: 1 }, probes: {
-      sourceSha256, selectionSha256, selectedChecks: selectedProbeKeys,
-      reportedChecks: selectedProbeKeys, passedPoints: 1, observedPoints: 1,
+  levels: [{ level: 1, score: 0, max: 2, fixRounds: 3,
+    selection: { schemaVersion: 3, sha256: selectionSha256, scoredPoints: 2,
+      specifications,
+      scoredChecks, observedChecks },
+    firstBuild: { source: { sha256: sourceSha256, files: 1 }, observations: {
+      sourceSha256, selectionSha256, selectedChecks: selectedObservedKeys,
+      reportedChecks: selectedObservedKeys, passedPoints: 1, observedPoints: 1,
       scoreContribution: false, repairVisible: false,
-      artifact: 'first-build-l1-probe/bundle.json', outcome: { kind: 'passed' },
+      artifact: 'first-build-l1-observed/bundle.json', outcome: { kind: 'passed' },
     } },
     repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3,
       stopReason: null }, outcome: { kind: 'app_failure' } }],
   outcome: { kind: 'app_failure' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
+  const wrongExpected = structuredClone(run);
+  wrongExpected.levels[0].selection.specifications.expected = [];
+  assert.throws(() => validateCampaignRun(plan, attempt, wrongExpected,
+    { buildImage: 'test-build-image' }), /selection\.specifications/);
   const visibleToRepair = structuredClone(run);
-  visibleToRepair.levels[0].firstBuild.probes.repairVisible = true;
+  visibleToRepair.levels[0].firstBuild.observations.repairVisible = true;
   assert.throws(() => validateCampaignRun(plan, attempt, visibleToRepair,
-    { buildImage: 'test-build-image' }), /firstBuild\.probes\.repairVisible/);
+    { buildImage: 'test-build-image' }), /firstBuild\.observations\.repairVisible/);
   const wrongSource = structuredClone(run);
-  wrongSource.levels[0].firstBuild.probes.sourceSha256 = 'c'.repeat(64);
+  wrongSource.levels[0].firstBuild.observations.sourceSha256 = 'c'.repeat(64);
   assert.throws(() => validateCampaignRun(plan, attempt, wrongSource,
-    { buildImage: 'test-build-image' }), /firstBuild\.probes\.sourceSha256/);
+    { buildImage: 'test-build-image' }), /firstBuild\.observations\.sourceSha256/);
   const wrongDenominator = structuredClone(run);
-  wrongDenominator.levels[0].firstBuild.probes.observedPoints = 2;
+  wrongDenominator.levels[0].firstBuild.observations.observedPoints = 2;
   assert.throws(() => validateCampaignRun(plan, attempt, wrongDenominator,
-    { buildImage: 'test-build-image' }), /firstBuild\.probes\.observedPoints/);
+    { buildImage: 'test-build-image' }), /firstBuild\.observations\.observedPoints/);
+  const wrongWeight = structuredClone(run);
+  wrongWeight.levels[0].selection.observedChecks[0].points = 2;
+  assert.throws(() => validateCampaignRun(plan, attempt, wrongWeight,
+    { buildImage: 'test-build-image' }), /selection\.observedChecks/);
+  const wrongScoreDenominator = structuredClone(run);
+  wrongScoreDenominator.levels[0].max = 1;
+  assert.throws(() => validateCampaignRun(plan, attempt, wrongScoreDenominator,
+    { buildImage: 'test-build-image' }), /levels\.L1\.max/);
   const wrongPlannedSelection = structuredClone(run);
-  wrongPlannedSelection.levels[0].selection.probeChecks[0].stableKey = 'durability/cart';
-  wrongPlannedSelection.levels[0].firstBuild.probes.selectedChecks = ['durability/cart'];
-  wrongPlannedSelection.levels[0].firstBuild.probes.reportedChecks = ['durability/cart'];
+  wrongPlannedSelection.levels[0].selection.observedChecks[0].stableKey = 'durability/cart';
+  wrongPlannedSelection.levels[0].firstBuild.observations.selectedChecks = ['durability/cart'];
+  wrongPlannedSelection.levels[0].firstBuild.observations.reportedChecks = ['durability/cart'];
   assert.throws(() => validateCampaignRun(plan, attempt, wrongPlannedSelection,
-    { buildImage: 'test-build-image' }), /selection\.probeChecks/);
+    { buildImage: 'test-build-image' }), /selection\.observedChecks/);
 });
 
 test('draft campaigns cannot start unless an explicit test-only caller permits them', async () => {

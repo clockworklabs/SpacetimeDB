@@ -85,19 +85,21 @@ verifiable, but active resolution refuses to launch them for a new run.
 `ecommerce.l1-modular@2.0.0` is a draft recipe, not a promoted run target. It
 splits L1 into six feature modules and six specification modules while owning
 all 48 existing criteria exactly once at the existing 51-point total. Feature
-selection, disclosed specifications, and privately probed specifications now
-compose and hash independently at the library boundary. Five specifications
-currently support requested and unmentioned observation; external data
+selection and each specification's requested, expected, or observed treatment
+compose and hash independently at the library boundary. Requested specifications
+appear in the prompt and score; expected specifications are withheld initially
+but still score and enter repairs; observed specifications stay in a separate
+zero-score first-build result. Five specifications support the unmentioned
+observation used by expected and observed treatments. External data
 synchronization is requested-only because its current oracle needs the exact
 interoperability table contract in the prompt. Campaign compilation, preflight,
-agent isolation, requested grading, source-bound first-build observation, run
-provenance, and separate zero-score reporting are wired. Cross-stack reference,
-null, and exact-mutation qualification remains unfinished.
+agent isolation, scored grading/repair, source-bound observation, run provenance,
+and treatment-aware reporting are wired. Cross-stack reference, null, and
+exact-mutation qualification remains unfinished.
 
 Draft recipes are listed in `candidates.json`, separate from
 `promotions.json`. Exact candidate selection therefore cannot change the
 promotion-catalog hash bound into qualified calibration evidence. The generic
-task-request boundary can replay schema-1 and schema-2 requests through the
-real agent and grading entrypoints. Schema-2 campaign conditions resolve the
-same content-bound request and require an explicit generic probe policy whenever
-privately observed specifications select checks.
+task-request boundary replays legacy schema-1 and modular schema-3 requests
+through the real agent and grading entrypoints. Campaign conditions resolve the
+same content-bound selection without a redundant probe-policy layer.

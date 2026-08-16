@@ -10,7 +10,7 @@ const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/
 const STATES = new Set(['draft', 'qualified', 'retired']);
 const ROLES = new Set(['feature', 'guarantee', 'control']);
 const MODULE_TYPES = new Set(['feature', 'specification']);
-const OBSERVATIONS = new Set(['requested', 'probe']);
+const OBSERVATIONS = new Set(['requested', 'unmentioned']);
 
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (at, message) => { throw new Error(`invalid benchmark composition at ${at}: ${message}`); };
@@ -274,8 +274,8 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
     if (pack.checks.some(check => check.role === 'guarantee')) {
       fail(`${source}.checks`, 'feature modules cannot own guarantee checks');
     }
-    if (pack.checks.some(check => check.observations?.includes('probe'))) {
-      fail(`${source}.checks`, 'feature modules cannot own hidden probe observations');
+    if (pack.checks.some(check => check.observations?.includes('unmentioned'))) {
+      fail(`${source}.checks`, 'feature modules cannot own unmentioned observations');
     }
     if (pack.checks.some(check => check.requiresFeatures !== undefined)) {
       fail(`${source}.checks`, 'feature modules cannot declare specification applicability');
@@ -286,7 +286,7 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
       fail(`${source}.checks`, 'specification modules cannot own feature checks');
     }
     if (pack.checks.some(check => check.observations === undefined)) {
-      fail(`${source}.checks`, 'specification modules must declare requested/probe observations');
+      fail(`${source}.checks`, 'specification modules must declare requested/unmentioned observations');
     }
     if (pack.checks.some(check => check.requiresFeatures === undefined)) {
       fail(`${source}.checks`, 'specification checks must declare applicable feature modules');

@@ -281,7 +281,7 @@
     <p class="dek">Stack Bench is a controlled evaluation appliance for AI-generated application stacks. It asks an agent to build the same product on different backends, verifies real behavior in Docker, and preserves the exact inputs, evidence, time, cost, and failures behind every result.</p>
     <div class="status-row">
       <span class="pill">Docker-only build path</span>
-      <span class="pill">371 automated tests passing</span>
+      <span class="pill">373 automated tests passing</span>
       <span class="pill">Versioned recipes and evidence</span>
       <span class="pill">Framework-neutral L1 and L2 promoted</span>
       <span class="pill warn">Production hardening in progress</span>
@@ -458,15 +458,15 @@
         </article>
         <article class="card">
           <h3>Product specifications</h3>
-          <p>Independently select guarantees such as access control, durability, live state, concurrency safety, and transactional integrity. A specification can be disclosed as a requirement, withheld as a first-build observation, or omitted entirely.</p>
+          <p>Independently select guarantees such as access control, durability, live state, concurrency safety, and transactional integrity. Each can be requested, expected without initial disclosure, observed without scoring, or excluded.</p>
         </article>
         <article class="card">
           <h3>Backend guidance</h3>
           <p><strong>Prescribed</strong> names the framework and implementation guidance. <strong>Neutral</strong> supplies only access facts and API reference, without framework or architecture advice. The prescribed profile is qualified; the symmetric neutral profile is implemented and prompt-snapshotted but remains draft.</p>
         </article>
         <article class="card">
-          <h3>Unmentioned defaults probes</h3>
-          <p>A draft condition can omit selected specifications from the agent's prompt, then measure them only against the untouched first build. The report places those observations in their own section and denominator. Probe evidence is source-bound, contributes zero requested score, and never enters repairs. Cross-stack oracle qualification is still required.</p>
+          <h3>Grading treatment</h3>
+          <p><strong>Requested</strong> appears in the initial prompt, scores, and may be repaired. <strong>Expected</strong> is absent from the initial prompt but still scores and may be repaired. <strong>Observed</strong> is a source-bound first-build diagnostic with a separate denominator and no repair visibility. Cross-stack qualification of the shared unmentioned oracles is still required.</p>
         </article>
       </div>
 
@@ -833,21 +833,21 @@ else if (!evidenceIsMeasured(evidence)) {
             <li>Typed evidence drives scoring, null/mutation controls, comparison, repair selection, and reporting; diagnostic wording does not decide outcomes</li>
             <li>Versioned stack adapters for three measured backends plus a deterministic test stack; versioned agent adapters for coding, deterministic, fault, and reference paths</li>
             <li>Operator <code>preflight</code>, pinned Linux/amd64 controller appliance, immutable campaign plans, resumable execution, and reproducible HTML reporting</li>
-            <li>371/371 automated tests pass on the host, including two live Playwright grades; the exact post-commit Linux controller is rebuilt and rerun for each evidence commit</li>
+            <li>373/373 automated tests pass on the host, including two live Playwright grades; the exact post-commit Linux controller is rebuilt and rerun for each evidence commit</li>
             <li>Real Docker smoke publishes a TypeScript module, verifies SQL and watcher health, and requires authorized logs</li>
             <li>Framework-neutral L1 1.1 and L2 1.2 each have fresh 13/13 qualification evidence and now own the promoted default aliases; prior releases are retired from new execution</li>
             <li>For every L2 stack, two stable pristine repetitions scored 55/55 plus 20/20 inherited; two mutation repetitions each caught all 3/3 declared defects, and the null control failed every scored criterion</li>
             <li>A frozen prescribed L1/L2 pilot completed one attempt on each stack with zero invalid executions, immutable raw evidence, normalized cost/time, correction accounting, and a reproducible report</li>
-            <li>A draft modular L1 catalog separates six product features from six optional specifications, preserves all 48 existing criteria and 51 points, and is wired through immutable campaign conditions, preflight, model prompts, requested grading, source-bound first-build probes, run records, and a separate zero-score report section. Qualification is still required.</li>
+            <li>A draft modular L1 catalog separates six product features from six optional specifications, preserves all 48 existing criteria and 51 points, and gives every specification one explicit treatment: requested, expected, observed, or excluded. Expected requirements stay out of the initial prompt but count in scoring and repairs; observed-only behavior remains source-bound and separate. Qualification is still required.</li>
             <li>A model-free Docker-backed SpacetimeDB reference run exercised the draft path end to end: requested features passed 14/14, the separate hidden durability observation passed 4/4 with zero score contribution, no repairs ran, source hashes matched, and owned resources were released. This is one-stack execution proof, not qualification.</li>
-            <li>A generic probe policy now derives hidden checks from whichever specification modules the condition selects; it cannot be mislabeled as “none.” A draft model-free gate fixes two exact reference repetitions on each of the three stacks, and the reference adapter seeds only the content-validated registered fixture. That gate is prepared but has not yet supplied cross-stack qualification evidence.</li>
+            <li>The redundant probe-profile switch has been removed. A draft model-free gate now fixes expected and observed durability conditions with two exact reference repetitions on each of the three stacks—12 attempts total—and the reference adapter seeds only the content-validated registered fixture. That gate is prepared but has not yet supplied cross-stack qualification evidence.</li>
           </ul>
         </article>
         <article class="card">
           <h3>Still required for production quality</h3>
           <ul class="checklist open">
             <li>Repeat the frozen three-stack campaign enough times to measure variability; the completed one-repetition pilot cannot establish a winner</li>
-            <li>Qualify the selected hidden checks against reference, null, and exact-mutation controls on every supported stack, then prove the full condition in the Linux appliance</li>
+            <li>Qualify each unmentioned observation used by expected or observed treatment against reference, null, and exact-mutation controls on every supported stack, then prove the full condition in the Linux appliance</li>
             <li>Resolve the remaining point-bearing <code>statedBy</code> warnings and add exact mutants before promoting currently diagnostic zero-point checks</li>
             <li>Move active scenario bodies from the strict compatibility executor into the general recipe executor; migrate chat into pack/recipe composition</li>
             <li>Package adapters as separately identified releases, finish CI tiers/replay, and complete distributable registry/SBOM/signature material when an external release is actually needed</li>
@@ -860,11 +860,11 @@ else if (!evidenceIsMeasured(evidence)) {
     <section id="next" class="shell">
       <div class="section-head">
         <h2>Recommended path from here</h2>
-        <p>The modular unprescribed path now runs end to end and reports hidden observations separately. The useful next work is to qualify its selected probes across all three stacks, freeze the condition, then run enough repetitions to measure variability.</p>
+        <p>The modular path now separates prompt disclosure from scoring and repair behavior. The useful next work is to qualify each unmentioned oracle across all three stacks, freeze the treatment conditions, then run enough repetitions to measure variability.</p>
       </div>
       <div class="grid three">
-        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Qualify the probes</h3><p>Run each selected hidden check against reference, null, and exact broken implementations on MongoDB, PostgreSQL, and SpacetimeDB.</p></article>
-        <article class="card"><div class="number">2</div><h3 style="margin-top:12px">Freeze the condition</h3><p>Bind the exact feature, specification, guidance, probe, repair, adapter, and image identities and prove the complete condition in the Linux appliance.</p></article>
+        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Qualify unmentioned checks</h3><p>Run each public-surface check used by expected or observed treatment against reference, null, and exact broken implementations on MongoDB, PostgreSQL, and SpacetimeDB.</p></article>
+        <article class="card"><div class="number">2</div><h3 style="margin-top:12px">Freeze the conditions</h3><p>Bind the exact feature, specification treatment, guidance, repair, adapter, and image identities and prove the complete conditions in the Linux appliance.</p></article>
         <article class="card"><div class="number">3</div><h3 style="margin-top:12px">Run repeated comparisons</h3><p>Freeze prescribed and unprescribed campaign plans, run multiple clean attempts per stack, and publish variability, invalid-run rate, raw evidence, cost, and limitations.</p></article>
       </div>
 

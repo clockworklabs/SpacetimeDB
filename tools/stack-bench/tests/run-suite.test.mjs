@@ -22,20 +22,20 @@ test('grader child diagnostics retain the cause instead of only trailing stack f
   assert.doesNotMatch(detail, /validateCheckEvidence/);
 });
 
-test('probe observation scope is modular, disjoint, and contributes no requested score', () => {
+test('observed-only scope is modular, disjoint, and contributes no score', () => {
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
     'ecommerce.l1-modular@2.0.0');
   const selected = createBoundRecipeTaskRequest(binding, {
     featureIds: ['ecommerce.feature.accounts'],
-    probedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
+    observedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
   });
-  const requested = selectObservationScope(selected, 'requested');
-  const probe = selectObservationScope(selected, 'probe');
-  assert.deepEqual(probe.checks, selected.selection.probeChecks);
-  assert.equal(probe.scoredPoints, 0);
-  assert(probe.observedPoints > 0);
-  assert.equal(probe.checks.some(check => requested.checks.includes(check)), false);
+  const scored = selectObservationScope(selected, 'scored');
+  const observed = selectObservationScope(selected, 'observed');
+  assert.deepEqual(observed.checks, selected.selection.observedChecks);
+  assert.equal(observed.scoredPoints, 0);
+  assert(observed.observedPoints > 0);
+  assert.equal(observed.checks.some(check => scored.checks.includes(check)), false);
   assert.throws(() => selectObservationScope(
     createBoundRecipeTaskRequest(binding, { featureIds: ['ecommerce.feature.accounts'] }),
-    'probe'), /scope is empty/);
+    'observed'), /scope is empty/);
 });
