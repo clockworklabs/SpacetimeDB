@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileCampaignFile } from '../campaign-compiler.mjs';
-import { emptyArtifactIdentities, readArtifact } from '../artifacts.mjs';
+import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../artifacts.mjs';
 import { attemptArgv, campaignExecutionEnvironment, executeCampaign,
   reconcileCampaign, runCampaignAdmission, validateCampaignRun } from '../campaign-runner.mjs';
 import { sha256 } from '../provenance.mjs';
@@ -281,7 +281,8 @@ test('interrupted work advances only after exact supervisor cleanup is proven', 
     const running = claimNextAttempt(initialized.state, { now: '2026-08-12T00:01:00.000Z',
       admissionId: admission.id }).state;
     writeCampaignState(initialized.paths.state, plan, running);
-    assert.throws(() => reconcileCampaign(example, root, { rescue: () => {} }), /no private supervisor/);
+    assert.throws(() => reconcileCampaign(example, root, { rescue: () => {} }),
+      /neither private supervisor authority nor public clean recovery proof/);
     const execution = running.attempts[0].executions[0];
     const privateDir = join(root, '.private');
     mkdirSync(privateDir);
@@ -289,6 +290,45 @@ test('interrupted work advances only after exact supervisor cleanup is proven', 
     let rescued = false;
     const state = reconcileCampaign(example, root, { rescue: () => { rescued = true; } });
     assert.equal(rescued, true);
+    assert.equal(state.attempts[0].status, 'invalid');
+    assert.equal(state.attempts[0].executions[0].outcome, 'scheduler_interrupted');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reconciliation accepts the clean public proof left by authenticated recovery', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-recovered-'));
+  try {
+    const plan = compileCampaignFile(example);
+    const initialized = initializeCampaignDirectory(plan, root,
+      { now: '2026-08-12T00:00:00.000Z' });
+    const admission = runCampaignAdmission(plan, root, {
+      env: {}, now: '2026-08-12T00:00:30.000Z', uuid: () => 'recovered',
+      preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
+        request: { backends: request.backends, track: request.track, levels: request.levelList,
+          runIndex: request.runIndex, agentAdapter: request.agentAdapter,
+          packs: request.packIds, checks: request.checkKeys, image: request.image,
+          resultsDir: request.resultsDir, smoke: request.smoke },
+        ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] }),
+    });
+    const running = claimNextAttempt(initialized.state, { now: '2026-08-12T00:01:00.000Z',
+      admissionId: admission.id }).state;
+    writeCampaignState(initialized.paths.state, plan, running);
+    const execution = running.attempts[0].executions[0];
+    const output = join(root, execution.output);
+    mkdirSync(output, { recursive: true });
+    writeArtifact(join(output, 'recovery.json'), { kind: 'recovery', id: 'recovered-run-recovery',
+      attempt: { id: 'recovered-run-recovery', parentId: 'recovered-run' },
+      identities: emptyArtifactIdentities({ stackAdapter: { id: running.attempts[0].plan.stack } }),
+      payload: { schemaVersion: 1, status: 'clean', runId: 'recovered-run',
+        backend: running.attempts[0].plan.stack, reason: null,
+        cleanup: { succeeded: true, retained: false },
+        resources: { backendState: 'released', buildContainer: { id: 'container-id',
+          name: 'container-name', running: false }, listenerPids: [],
+        locks: [{ key: 'slot:test', released: true }] },
+        instructions: ['No recovery action is required.'] } });
+    const state = reconcileCampaign(example, root, {
+      rescue: () => { throw new Error('private recovery must not run without private authority'); },
+    });
     assert.equal(state.attempts[0].status, 'invalid');
     assert.equal(state.attempts[0].executions[0].outcome, 'scheduler_interrupted');
   } finally { rmSync(root, { recursive: true, force: true }); }

@@ -307,6 +307,20 @@ export function inspectCampaign(directory) {
     state: assertAdmissionReferences(current.plan, current.paths.root, current.state) };
 }
 
+function publicRecoveryProvesCleanup(output, backend) {
+  const path = join(output, 'recovery.json');
+  if (!existsSync(path)) return false;
+  const recovery = readArtifactPayload(path, { expectedKind: 'recovery' });
+  return recovery.status === 'clean'
+    && recovery.backend === backend
+    && recovery.cleanup?.succeeded === true
+    && recovery.cleanup?.retained === false
+    && recovery.resources?.backendState === 'released'
+    && recovery.resources?.buildContainer?.running !== true
+    && Array.isArray(recovery.resources?.locks)
+    && recovery.resources.locks.every(resource => resource.released === true);
+}
+
 export function runCampaignAdmission(plan, directory,
   { env = process.env, preflight = runPreflight, now = new Date().toISOString(),
     uuid = randomUUID } = {}) {
@@ -364,10 +378,11 @@ export function reconcileCampaign(campaignFile, directory,
     const output = contained(initialized.paths.root, execution.output, 'attempt output');
     const supervisorState = contained(initialized.paths.root,
       join('.private', `${execution.id}.supervisor.json`), 'supervisor state');
-    if (!existsSync(supervisorState)) {
-      throw new Error('running attempt has no private supervisor evidence; refusing to infer cleanup');
+    if (existsSync(supervisorState)) {
+      rescue(supervisorState, output);
+    } else if (!publicRecoveryProvesCleanup(output, attempt.plan.stack)) {
+      throw new Error('running attempt has neither private supervisor authority nor public clean recovery proof');
     }
-    rescue(supervisorState, output);
     const reconciled = markInterruptedExecution(state, execution.id, {
       reason: 'controller ended before recording completion; exact-owned cleanup was proven',
     });
