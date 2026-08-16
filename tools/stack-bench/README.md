@@ -12,6 +12,12 @@ or make the score worse. Results record whether correction was unnecessary,
 succeeded, or exhausted its budget. Successful correction cost and unresolved
 correction spend are reported separately.
 
+The accepted source at the end of every level is also preserved and hash-bound
+to the run. This is the prerequisite for safely granting more correction rounds
+later without rebuilding the app or rewriting the original result. The
+post-run grant command is planned but is not implemented yet; campaign `retry`
+still means a fresh execution, not extra correction rounds.
+
 Backends are interchangeable, so the model can be held fixed while the backend
 varies.
 
@@ -286,6 +292,8 @@ Evidence emitted into the result directory and `<app>/stack-bench/` includes:
 | `.session-<mode>-l<N>.json` | the agent session: cost, tokens, duration, final message |
 | `.prompt-<mode>-l<N>.md` | the exact prompt the agent received |
 | `run.json` | exact stack, model, recipe, test-pack, prompt, image, repair budget, outcome, usage, and timing for the run |
+| `level-l<N>-checkpoint.json` | strict parent-linked identity for the source accepted at the end of a level |
+| `level-l<N>-source/` | source-only level checkpoint; dependencies, build output, prompts, sessions, and grading evidence are excluded |
 
 Recording is on by default; `--no-media` turns it off for a quick check. Watching
 the failing actor's video is the fastest way to confirm a verdict is real before

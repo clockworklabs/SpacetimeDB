@@ -48,6 +48,7 @@ import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from './recovery.mjs'
 import { resolveAgentCredential } from './agent-credentials.mjs';
 import { sandboxProbeMode } from './sandbox.mjs';
 import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from './source-snapshot.mjs';
+import { preserveLevelCheckpoint } from './source-checkpoint.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
@@ -980,6 +981,24 @@ async function main() {
       roundsUsed: fixRounds,
       stopReason,
     };
+    let checkpoint = null;
+    try {
+      checkpoint = preserveLevelCheckpoint({
+        appDir,
+        outputDir: args.out,
+        runId,
+        identities: run.identities,
+        track: args.track,
+        backend: args.backend,
+        level,
+        repair,
+        outcome: finalBundleOutcome,
+        selectionSha256: bundle?.selection?.sha256 ?? null,
+      });
+      console.log(`  kept the L${level} source checkpoint at ${join(args.out, checkpoint.directory)}`);
+    } catch (error) {
+      console.log(`  !! could not keep the L${level} source checkpoint: ${String(error.message).split('\n')[0]}`);
+    }
     if (!graded) {
       console.log(`  L${level}: GRADING DID NOT COMPLETE — no usable bundle. ` +
         `Score is unknown, not zero; re-grade this level before using the run.`);
@@ -1025,6 +1044,7 @@ async function main() {
       thinking: sessionTotals.thinking,
       fixRounds,
       repair,
+      checkpoint,
       // Keep the summary flag derived from the typed status so the two cannot drift.
       stalled: repairStatus === 'budget-exhausted',
       regressed,

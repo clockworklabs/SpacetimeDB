@@ -245,7 +245,13 @@ Current execution order:
    machine qualification reports zero blockers. Their recipes, packs,
    calibrations, and stack support are qualified; L1/L2 now resolve to these
    framework-neutral versions, while the earlier releases are retired.
-7. **Next:** execute a repeated frozen L1-to-L2 campaign and publish the exact
+7. **In progress:** preserve a verified source checkpoint after every level and
+   add finite post-run repair grants before spending on the next agent campaign.
+   An operator must be able to start with three rounds, inspect the result, and
+   later grant four more without rebuilding from scratch or changing the
+   original three-round result. The source-checkpoint foundation is implemented;
+   continuation execution and reporting remain.
+8. **Next:** execute a repeated frozen L1-to-L2 campaign and publish the exact
    scope and dispersion. Reconstruct other tracks only after this first product
    path is reproducible end to end.
 

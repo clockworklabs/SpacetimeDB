@@ -77,6 +77,8 @@ const lintArtifact = readArtifact(join(evidenceDir, 'contract-lint.json'), { exp
 const actionArtifact = readArtifact(join(evidenceDir, 'actions.json'), { expectedKind: 'action_check' });
 const gradeArtifact = readArtifact(join(evidenceDir, 'grading-features.json'), { expectedKind: 'grade' });
 const leaseArtifact = readArtifact(join(WORK, 'backend-lease.json'), { expectedKind: 'backend_lease_evidence' });
+const checkpointArtifact = readArtifact(join(WORK, 'level-l1-checkpoint.json'),
+  { expectedKind: 'source_checkpoint' });
 
 check('recorded exactly one level', run.levels?.length === 1);
 check('run and level carry structured outcomes',
@@ -91,6 +93,13 @@ check('bundle is a child of the run', bundleArtifact.attempt.parentId === run.id
   JSON.stringify(bundleArtifact.attempt));
 check('public lease evidence is a child of the run', leaseArtifact.attempt.parentId === run.id,
   JSON.stringify(leaseArtifact.attempt));
+check('level source checkpoint is hash-bound and linked to the run',
+  checkpointArtifact.attempt.parentId === run.id
+    && level?.checkpoint?.artifact === 'level-l1-checkpoint.json'
+    && level.checkpoint.sha256 === checkpointArtifact.payload.source.sha256
+    && /^[a-f0-9]{64}$/.test(level.checkpoint.sha256)
+    && existsSync(join(WORK, level.checkpoint.directory)),
+  JSON.stringify(level?.checkpoint));
 check('lint, action, and grade evidence are children of the bundle',
   [lintArtifact, actionArtifact, gradeArtifact]
     .every(artifact => artifact.attempt.parentId === bundleArtifact.attempt.id));

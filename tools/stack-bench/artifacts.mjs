@@ -30,6 +30,7 @@ export const ARTIFACT_KINDS = Object.freeze([
   'reference_build',
   'reference_qualification',
   'recovery',
+  'source_checkpoint',
 ]);
 
 const KIND_SET = new Set(ARTIFACT_KINDS);
@@ -79,6 +80,8 @@ const PAYLOAD_FIELDS = Object.freeze({
     'runner', 'mutationControl', 'runs', 'stable', 'sameImage', 'sameHarness', 'harnessSha256', 'ok']),
   recovery: new Set(['schemaVersion', 'status', 'runId', 'backend', 'reason', 'cleanup',
     'resources', 'instructions']),
+  source_checkpoint: new Set(['schemaVersion', 'track', 'backend', 'level', 'source',
+    'repair', 'outcome', 'selectionSha256']),
 });
 const HASH = /^[a-f0-9]{64}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -293,6 +296,57 @@ function validatePayload(kind, payload) {
   }
   if (kind === 'recovery') { objectWhenPresent('cleanup'); objectWhenPresent('resources');
     arrayWhenPresent('instructions'); }
+  if (kind === 'source_checkpoint') {
+    if (payload.schemaVersion !== 1) fail('source_checkpoint payload.schemaVersion must be 1');
+    for (const field of ['track', 'backend']) {
+      if (typeof payload[field] !== 'string' || !payload[field]) {
+        fail(`source_checkpoint payload.${field} must be a non-empty string`);
+      }
+    }
+    if (!Number.isSafeInteger(payload.level) || payload.level < 1) {
+      fail('source_checkpoint payload.level must be a positive integer');
+    }
+    objectWhenPresent('source');
+    if (!isObject(payload.source)) fail('source_checkpoint payload.source is required');
+    const sourceFields = new Set(['directory', 'sha256', 'files']);
+    for (const key of Object.keys(payload.source)) {
+      if (!sourceFields.has(key)) fail(`source_checkpoint payload.source.${key} is unknown`);
+    }
+    if (payload.source.directory !== `level-l${payload.level}-source`) {
+      fail('source_checkpoint payload.source.directory does not match its level');
+    }
+    if (!HASH.test(payload.source.sha256 ?? '')) {
+      fail('source_checkpoint payload.source.sha256 is invalid');
+    }
+    if (!Number.isSafeInteger(payload.source.files) || payload.source.files < 0) {
+      fail('source_checkpoint payload.source.files must be a non-negative integer');
+    }
+    objectWhenPresent('repair');
+    if (!isObject(payload.repair)) fail('source_checkpoint payload.repair is required');
+    const repairFields = new Set(['status', 'budgetRounds', 'roundsUsed', 'stopReason']);
+    for (const key of Object.keys(payload.repair)) {
+      if (!repairFields.has(key)) fail(`source_checkpoint payload.repair.${key} is unknown`);
+    }
+    if (!['ungraded', 'not-needed', 'corrected', 'budget-exhausted', 'incomplete']
+      .includes(payload.repair.status)) fail('source_checkpoint payload.repair.status is invalid');
+    for (const field of ['budgetRounds', 'roundsUsed']) {
+      if (!Number.isSafeInteger(payload.repair[field]) || payload.repair[field] < 0) {
+        fail(`source_checkpoint payload.repair.${field} must be a non-negative integer`);
+      }
+    }
+    if (payload.repair.roundsUsed > payload.repair.budgetRounds) {
+      fail('source_checkpoint payload.repair.roundsUsed exceeds its budget');
+    }
+    if (payload.repair.stopReason !== null && typeof payload.repair.stopReason !== 'string') {
+      fail('source_checkpoint payload.repair.stopReason must be a string or null');
+    }
+    objectWhenPresent('outcome');
+    if (!isObject(payload.outcome) || typeof payload.outcome.kind !== 'string'
+      || !payload.outcome.kind) fail('source_checkpoint payload.outcome.kind is required');
+    if (payload.selectionSha256 !== null && !HASH.test(payload.selectionSha256 ?? '')) {
+      fail('source_checkpoint payload.selectionSha256 is invalid');
+    }
+  }
   if (kind === 'contract_lint') { arrayWhenPresent('results'); objectWhenPresent('counts'); }
   if (kind === 'action_check') { arrayWhenPresent('results'); arrayWhenPresent('missing'); }
   return payload;

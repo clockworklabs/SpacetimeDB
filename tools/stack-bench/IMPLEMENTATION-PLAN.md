@@ -795,6 +795,53 @@ checks are part of first-build/final score and repair cost; observed-only result
 have a separate denominator and cannot be averaged into score or labeled as a
 successful correction.
 
+### SB-508: Finite post-run repair grants
+
+Allow an operator to add a bounded number of repair rounds after a conclusive
+run exhausts its original budget. This is a continuation, not a campaign retry:
+it starts from the exact accepted source for one level, uses the same stack,
+model, condition, selection, repair policy, images, and generated repair report,
+and does not pay for another initial build.
+
+The original run and its declared budget remain immutable. Each grant creates a
+new child artifact with its own requested rounds, cost/time limits, sessions,
+grades, rollback decisions, source hashes, and outcome. The cumulative path to
+correctness may be reported separately as "correct after 7 total rounds" while
+the original result remains "failed after the planned 3 rounds." A standardized
+grant using only ordinary scored findings is distinct from an operator-written
+prompt; custom instructions create an explicitly labeled investigation branch
+and never enter the primary comparison.
+
+Eligibility fails closed. The parent must have conclusive application failures,
+an exhausted repair budget, complete selected-check measurement, a verified
+level checkpoint, and matching executable/runtime identities. A continuation
+first re-grades the restored source on fresh backend state. If the score,
+selection, denominator, or evidence availability cannot be reproduced, it stops
+as a harness failure before a model call. Inconclusive or interrupted attempts
+use campaign retry/recovery instead; they are not repairable model failures.
+
+Implementation stages:
+
+1. **Checkpoint foundation - complete.** Every completed level now writes a
+   source-only `level-l<N>-source/` tree plus a strict, parent-linked
+   `source_checkpoint` artifact. The hash is checked against the live accepted
+   source, and dependencies, build output, prompts, sessions, bug reports, and
+   grading evidence are excluded. The offline orchestration loop passes, and
+   the full 378-test suite passes on both the host and the exact Linux/amd64
+   controller image.
+2. **Continuation engine.** Add `repair grant <run-dir> --level <N> --rounds <N>`
+   with explicit per-grant cost and wall-time caps. Rehydrate a clean work area,
+   re-grade the checkpoint, run the existing repair/rollback loop, and write an
+   append-only `repair_continuation` artifact and a new verified checkpoint.
+3. **Status and reporting.** Show planned rounds, granted rounds, current score,
+   remaining typed failures, per-round movement, spend, elapsed time, pause or
+   failure reason, and total effort to correctness without rewriting campaign
+   metrics.
+4. **Operator actions.** Expose bounded re-grade, selected-test, diagnostic,
+   cancellation, and custom-prompt branch commands through the same controller.
+   Every action records its parent checkpoint, exact input, actor/time, output,
+   and source effect.
+
 ## E6 - qualification and release
 
 1. Freeze source, recipe, fixtures, calibration, experiment, adapter, image, and
@@ -816,6 +863,24 @@ Run the predeclared campaign without changing its recipe, fixtures, calibration,
 agent settings, scoring, or exclusion rules. Corrections require a new experiment
 identity. Deliver raw attempts, checksum manifest, report-producing code, static
 report, and reproduction instructions together.
+
+## E8 - operator dashboard
+
+Build the web interface only after SB-508's command and artifact contracts are
+stable. The browser is a view and control surface over the controller; it does
+not contain grading, scheduling, Docker, or repair logic of its own. A first
+release shows plans, active and completed attempts, score/coverage, remaining
+failures, round-by-round source movement, usage/cost/time, logs, checkpoints,
+and cleanup state. It can submit only the same bounded actions available from
+the command line: start, cancel, grant repairs, re-grade, run selected tests or
+diagnostics, and create a clearly labeled custom-prompt branch.
+
+Use an append-only operation/event feed so a CLI process and the web view read
+the same truth. Keep Docker access in the existing controller rather than the
+web process, allow only one leased mutation per checkpoint, redact credentials
+and private transcripts, and begin as a local-only appliance UI. Authentication,
+remote multi-user coordination, and hosted operation are later capabilities,
+not prerequisites for the local v1.
 
 ## Parallel-safe ownership lanes
 
@@ -884,6 +949,11 @@ them. Live qualification does not run concurrently with executable harness edits
     preflight, prompt/grading handoff, requested/expected/observed scope recording,
     expected scoring/repair, separate source-bound observed execution, and explicit
     treatment/report sections are complete).
+26. [ ] SB-508 finite post-run repair grants (strict per-level source checkpoints
+    pass the host and exact Linux controller suites; continuation execution,
+    artifacts, reporting, and controller commands remain).
+27. [ ] E8 local operator dashboard, after SB-508 freezes the command and event
+    contracts; no harness behavior is implemented in the web layer.
 
 This sequence makes the interfaces needed by parallel lanes concrete before the
 large grader extraction or new production recipe authoring begins.
