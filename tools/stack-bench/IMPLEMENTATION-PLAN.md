@@ -848,8 +848,9 @@ them. Live qualification does not run concurrently with executable harness edits
 23. [x] SB-505 symmetric neutral backend guidance (implemented and prompt-snapshotted;
     qualification remains part of the next campaign gate).
 24. [ ] SB-506 first-build capability probes (single-execution, source binding,
-    zero-score isolation, and repair exclusion are implemented; cross-stack oracle
-    qualification and appliance proof remain).
+    zero-score isolation, repair exclusion, one-stack Docker execution, and exact
+    controller-image tests are complete; cross-stack oracle qualification and a
+    frozen appliance condition remain).
 25. [ ] SB-507 condition-aware campaigns and reports (exact modular condition compilation,
     preflight, prompt/grading handoff, and run-scope recording are complete; separate probe
     execution and report sections remain).
