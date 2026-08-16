@@ -89,12 +89,15 @@ selection, disclosed specifications, and privately probed specifications now
 compose and hash independently at the library boundary. Five specifications
 currently support requested and unmentioned observation; external data
 synchronization is requested-only because its current oracle needs the exact
-interoperability table contract in the prompt. Campaign/runtime wiring and
-separate first-build probe execution remain unfinished.
+interoperability table contract in the prompt. Campaign compilation, preflight,
+agent isolation, requested grading, source-bound first-build observation, run
+provenance, and separate zero-score reporting are wired. Cross-stack reference,
+null, and exact-mutation qualification remains unfinished.
 
 Draft recipes are listed in `candidates.json`, separate from
 `promotions.json`. Exact candidate selection therefore cannot change the
 promotion-catalog hash bound into qualified calibration evidence. The generic
 task-request boundary can replay schema-1 and schema-2 requests through the
-real agent and grading entrypoints; campaign schema-2 condition compilation is
-still pending.
+real agent and grading entrypoints. Schema-2 campaign conditions resolve the
+same content-bound request and require an explicit generic probe policy whenever
+privately observed specifications select checks.

@@ -111,6 +111,13 @@ case, the running Compose controller must match the campaign. This runtime bindi
 does not replace separate release-bundle signature/integrity verification.
 `campaign.example.json` is a zero-cost deterministic draft showing the complete
 shape; copy it outside the image and replace its study inputs before use.
+`campaign.probe-reference.json` is a model-free draft gate for the modular L1
+condition. It runs the exact registered reference fixture twice on each stack,
+requests all six product features, withholds the state-durability specification,
+and records its four checks only as first-build observations. It is an input to
+reference qualification, not comparative model data and not proof that the
+probe oracle is qualified. Null and exact-mutation controls must pass separately
+before this condition can be frozen.
 
 Prepare durable state without launching an attempt, then run that exact frozen
 plan (or resume its remaining attempts) from the same persistent directory:

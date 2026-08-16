@@ -39,8 +39,10 @@ function identity(profile, resolved) {
     sha256: sha256(canonicalDefinitionJson({ profile, resolved })), state: profile.state };
 }
 
-function validateIdentityFields(value, at, kind) {
-  if (value.schemaVersion !== 1) fail(`${at}.schemaVersion`, 'must be 1');
+function validateIdentityFields(value, at, kind, schemaVersions = [1]) {
+  if (!schemaVersions.includes(value.schemaVersion)) {
+    fail(`${at}.schemaVersion`, `must be ${schemaVersions.join(' or ')}`);
+  }
   if (value.kind !== kind) fail(`${at}.kind`, `must be ${kind}`);
   if (!ID.test(value.id)) fail(`${at}.id`, 'is invalid');
   if (!VERSION.test(value.version)) fail(`${at}.version`, 'must be a semantic version');
@@ -65,13 +67,18 @@ function loadCatalog(path = CATALOG) {
   return { value, root: dirname(path) };
 }
 
-function loadProfile(catalog, section, reference, kind, fields) {
+function readProfile(catalog, section, reference) {
   const match = REF.exec(reference ?? '');
   if (!match) fail(reference ?? '<missing>', 'must use id@version');
   const rel = catalog.value[section][reference];
   if (!rel) fail(reference, `is not in catalog.${section}`);
   const path = contained(catalog.root, rel, reference);
   const profile = json(path, reference);
+  return { match, path, profile };
+}
+
+function loadProfile(catalog, section, reference, kind, fields) {
+  const { match, path, profile } = readProfile(catalog, section, reference);
   strict(profile, reference, fields);
   validateIdentityFields(profile, reference, kind);
   if (profile.id !== match[1] || profile.version !== match[2]) fail(reference, 'does not match the loaded profile identity');
@@ -130,22 +137,33 @@ export function resolveGuidanceProfile(reference, stacks,
 }
 
 function resolveProbes(catalog, reference) {
-  const fields = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'firstBuildOnly',
-    'scoreContribution', 'repairVisible', 'probes']);
-  const { profile } = loadProfile(catalog, 'probeProfiles', reference,
-    'capability-probe-profile', fields);
+  const { match, profile } = readProfile(catalog, 'probeProfiles', reference);
+  const fields = profile.schemaVersion === 2
+    ? new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'firstBuildOnly',
+      'scoreContribution', 'repairVisible', 'selectionMode'])
+    : new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'firstBuildOnly',
+      'scoreContribution', 'repairVisible', 'probes']);
+  strict(profile, reference, fields);
+  validateIdentityFields(profile, reference, 'capability-probe-profile', [1, 2]);
+  if (profile.id !== match[1] || profile.version !== match[2]) {
+    fail(reference, 'does not match the loaded profile identity');
+  }
   if (profile.firstBuildOnly !== true) fail(`${reference}.firstBuildOnly`, 'must be true');
   if (profile.scoreContribution !== false) fail(`${reference}.scoreContribution`, 'must be false');
   if (profile.repairVisible !== false) fail(`${reference}.repairVisible`, 'must be false');
-  if (!Array.isArray(profile.probes) || new Set(profile.probes).size !== profile.probes.length
-    || profile.probes.some(probe => typeof probe !== 'string' || !ID.test(probe))) {
-    fail(`${reference}.probes`, 'must contain unique capability ids');
+  if (profile.schemaVersion === 1) {
+    if (!Array.isArray(profile.probes) || profile.probes.length > 0) {
+      fail(`${reference}.probes`, 'schema 1 supports only an empty probe selection');
+    }
+    return { ...identity(profile, profile.probes), firstBuildOnly: true,
+      scoreContribution: false, repairVisible: false, probes: [] };
   }
-  if (profile.probes.length > 0) {
-    fail(`${reference}.probes`, 'names probes that this engine does not execute yet');
+  if (profile.selectionMode !== 'condition-specifications') {
+    fail(`${reference}.selectionMode`, 'must be condition-specifications');
   }
-  return { ...identity(profile, profile.probes), firstBuildOnly: true, scoreContribution: false,
-    repairVisible: false, probes: [...profile.probes].sort() };
+  return { ...identity(profile, profile.selectionMode), firstBuildOnly: true,
+    scoreContribution: false, repairVisible: false,
+    selectionMode: profile.selectionMode };
 }
 
 function resolveRepair(catalog, reference) {
@@ -301,6 +319,17 @@ export function resolveStudyConditions(inputs, stacks,
     const guidance = resolveGuidance(catalog, ref.guidanceProfile, stacks, resolve(stackBenchRoot));
     const probes = resolveProbes(catalog, ref.probeProfile);
     const repair = resolveRepair(catalog, ref.repairPolicy);
+    const selectedProbeChecks = requestedScope.levels.reduce((total, level) => total
+      + (level.selection.schemaVersion === 2 ? level.selection.probeChecks.length : 0), 0);
+    const probeSelectionMode = probes.selectionMode ?? 'none';
+    if (selectedProbeChecks > 0 && probeSelectionMode !== 'condition-specifications') {
+      fail(`conditions[${index}].probeProfile`,
+        'must select condition-specifications when modular probe checks are selected');
+    }
+    if (selectedProbeChecks === 0 && probeSelectionMode !== 'none') {
+      fail(`conditions[${index}].probeProfile`,
+        'selects condition-specifications but the requested scope contains no probe checks');
+    }
     if (frozen && [guidance, probes, repair].some(profile => profile.state !== 'qualified')) {
       fail(`conditions[${index}]`, 'cannot freeze with a draft component');
     }

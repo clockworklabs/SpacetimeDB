@@ -18,6 +18,16 @@ const requested = { track: 'example', levels: [{ level: 1,
     contractSha256: '1'.repeat(64), requirementIds: ['example.requirement'],
     contractIds: ['example.contract'] } }] };
 
+const modularRequested = { track: 'example', levels: [{ ...requested.levels[0],
+  selection: { schemaVersion: 2, sha256: 'd'.repeat(64), scoredPoints: 1,
+    requested: { features: ['example.feature'], specifications: {
+      disclosed: [], probed: ['example.spec@1.0.0'],
+    }, checks: [] },
+    taskPacks: ['example.feature'], features: ['example.feature'],
+    specifications: { disclosed: [], probed: ['example.spec@1.0.0'] },
+    requestedChecks: ['example.feature.check'], probeChecks: ['example.spec.check'] },
+}] };
+
 const writeJson = (path, value) => {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -55,6 +65,20 @@ test('packaged neutral guidance exists symmetrically without architecture advice
   assert.equal(condition.guidance.mode, 'neutral');
   assert.equal(condition.guidance.material.designAdvice, false);
   assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);
+});
+
+test('selected modular probes require the explicit generic probe policy', () => {
+  const selected = { id: 'defaults', version: '1.0.0', guidanceProfile: 'neutral@1.0.0',
+    probeProfile: 'selected-specifications@1.0.0', repairPolicy: 'requested-only@1.0.0' };
+  const [condition] = resolveStudyConditions([selected], ['mongodb', 'postgres', 'spacetime'],
+    { requested: modularRequested });
+  assert.equal(condition.probes.selectionMode, 'condition-specifications');
+  assert.equal(condition.probes.scoreContribution, false);
+  assert.equal(condition.probes.repairVisible, false);
+  assert.throws(() => resolveStudyConditions([{ ...selected, probeProfile: 'none@1.0.0' }],
+    ['mongodb'], { requested: modularRequested }), /must select condition-specifications/);
+  assert.throws(() => resolveStudyConditions([selected], ['mongodb'], { requested }),
+    /contains no probe checks/);
 });
 
 test('condition references are strict and versioned', () => {

@@ -6,7 +6,7 @@
 // deploys the already-selected fixture in the leased build container.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { leaseFromEnv } from './backend-lease.mjs';
@@ -15,6 +15,9 @@ import { fetchStatus } from './readiness.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
+import { inspectImportedReference, loadReferenceRegistry,
+  validateReferenceRegistry } from './reference-fixtures.mjs';
+import { hashAppSource, seedAppSource } from './source-snapshot.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RUN_BUILD = join(ROOT, 'container', 'run-build.mjs');
@@ -76,6 +79,37 @@ export function referenceDevCommand(logName, { networkVisible = false } = {}) {
   return `exec npm run dev${networkArgs} > /tmp/${logName}.log 2>&1`;
 }
 
+export function prepareReferenceSource(args) {
+  const registry = loadReferenceRegistry();
+  const validation = validateReferenceRegistry(registry);
+  if (!validation.ok) {
+    throw new Error(`reference registry is invalid: ${validation.issues.join('; ')}`);
+  }
+  const matches = registry.fixtures.filter(fixture => fixture.backend === args.backend
+    && fixture.track === args.track && fixture.level === args.level && fixture.status === 'active');
+  if (matches.length !== 1) {
+    throw new Error(`reference source requires exactly one active ${args.track} L${args.level} ${args.backend} fixture`);
+  }
+  const fixture = matches[0];
+  const inspection = inspectImportedReference(fixture);
+  if (!inspection.ok) {
+    throw new Error(`${fixture.id} is invalid: ${inspection.failures.join('; ')}`);
+  }
+  mkdirSync(args.app, { recursive: true });
+  const before = hashAppSource(args.app);
+  if (before.files.length === 0) {
+    seedAppSource(join(ROOT, fixture.targetPath), args.app);
+  } else if (before.sha256 !== fixture.imported.sourceSha256) {
+    throw new Error(`reference app contains source other than ${fixture.id}`);
+  }
+  const prepared = hashAppSource(args.app);
+  if (prepared.sha256 !== fixture.imported.sourceSha256) {
+    throw new Error(`prepared reference source does not match ${fixture.id}`);
+  }
+  return { fixture, seeded: before.files.length === 0, sourceSha256: prepared.sha256,
+    sourceFiles: prepared.files.length };
+}
+
 function startDetached(container, cwd, logName, env = {}, options = {}) {
   const args = ['exec', '-d', '-w', cwd];
   for (const [name, value] of Object.entries(env)) args.push('-e', `${name}=${value}`);
@@ -104,6 +138,8 @@ async function main() {
   const started = Date.now();
   phase('starting');
   const args = parseReferenceAgentArgs(process.argv);
+  const source = prepareReferenceSource(args);
+  phase(`${source.seeded ? 'seeded' : 'verified'} ${source.fixture.id} (${source.sourceSha256.slice(0, 12)})`);
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const track = loadTrack(args.track);
   const ports = portsFor(track, args.backend, args.runIndex);

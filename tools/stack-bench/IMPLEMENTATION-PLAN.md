@@ -755,6 +755,17 @@ withheld selector, test hook, or implementation detail. Qualify each probe with
 reference, null, exact-mutation, leak-isolation, and source-binding tests on
 every supported stack.
 
+Implemented foundation: schema-2 conditions use the generic
+`selected-specifications@1.0.0` policy, which derives hidden checks from the
+condition's selected specification modules. A condition with hidden checks
+cannot claim the `none` policy, and the generic policy cannot be selected when
+there are no hidden checks. The reference adapter can seed an empty campaign app
+from the exact active fixture in the content-validated registry and rejects any
+different pre-existing source. `campaign.probe-reference.json` fixes a
+model-free, two-repetition, three-stack reference gate for the current draft L1
+durability probe. This prepares reproducible reference input; it does not replace
+the required live reference, null, and exact-mutation evidence.
+
 ### SB-507: Condition-aware campaigns and reports
 
 Allow an experiment plan to counterbalance prescribed, neutral, and defaults
@@ -848,9 +859,11 @@ them. Live qualification does not run concurrently with executable harness edits
 23. [x] SB-505 symmetric neutral backend guidance (implemented and prompt-snapshotted;
     qualification remains part of the next campaign gate).
 24. [ ] SB-506 first-build capability probes (single-execution, source binding,
-    zero-score isolation, repair exclusion, one-stack Docker execution, and exact
-    controller-image tests are complete; cross-stack oracle qualification and a
-    frozen appliance condition remain).
+    zero-score isolation, repair exclusion, generic specification-selected policy,
+    exact-fixture reference seeding, a draft three-stack reference-gate campaign,
+    one-stack Docker execution, and exact controller-image tests are complete;
+    live cross-stack reference/null/mutation qualification and a frozen appliance
+    condition remain).
 25. [x] SB-507 condition-aware campaigns and reports (exact modular condition compilation,
     preflight, prompt/grading handoff, run-scope recording, separate source-bound probe
     execution, and zero-score report sections are complete).

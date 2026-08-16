@@ -69,7 +69,9 @@ function modularDefinition({ disclosed = [], probed = [] } = {}) {
     repetitions: 1,
     selection: { levels: [{ level: 1, recipe: 'ecommerce.l1-modular@2.0.0',
       features: modularFeatures, checks: [] }] },
-    conditions: [{ ...definition().conditions[0], specifications: { levels: [{ level: 1,
+    conditions: [{ ...definition().conditions[0],
+      probeProfile: probed.length ? 'selected-specifications@1.0.0' : 'none@1.0.0',
+      specifications: { levels: [{ level: 1,
       disclosed, probed }] } }],
   });
 }
@@ -257,6 +259,20 @@ test('the packaged model-free campaign example compiles without starting work', 
   assert.equal(plan.state, 'draft');
   assert.deepEqual(plan.summary, { agents: 1, attempts: 9, conditions: 1,
     repetitions: 3, stacks: 3 });
+});
+
+test('the packaged modular reference gate fixes the exact hidden observation scope', () => {
+  const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance',
+    'campaign.probe-reference.json'));
+  assert.equal(plan.state, 'draft');
+  assert.deepEqual(plan.summary, { agents: 1, attempts: 6, conditions: 1,
+    repetitions: 2, stacks: 3 });
+  assert.equal(plan.agents[0].adapter, 'reference-fixture');
+  assert.equal(plan.conditions[0].probes.selectionMode, 'condition-specifications');
+  assert.deepEqual(plan.conditions[0].requested.levels[0].selection.specifications,
+    { disclosed: [], probed: ['ecommerce.spec.state-durability@1.0.0'] });
+  assert.equal(plan.conditions[0].requested.levels[0].selection.probeChecks.length, 4);
+  assert.equal(plan.conditions[0].requested.levels[0].selection.scoredPoints, 14);
 });
 
 test('compiled campaign validation rejects a rewritten identity, schedule, or summary', () => {

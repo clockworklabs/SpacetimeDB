@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 2,
+  "kind": "capability-probe-profile",
+  "id": "selected-specifications",
+  "version": "1.0.0",
+  "state": "draft",
+  "firstBuildOnly": true,
+  "scoreContribution": false,
+  "repairVisible": false,
+  "selectionMode": "condition-specifications"
+}

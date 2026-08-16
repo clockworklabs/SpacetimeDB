@@ -6,7 +6,8 @@
     "neutral@1.0.0": "guidance/neutral.json"
   },
   "probeProfiles": {
-    "none@1.0.0": "probes/none.json"
+    "none@1.0.0": "probes/none.json",
+    "selected-specifications@1.0.0": "probes/selected-specifications.json"
   },
   "repairPolicies": {
     "requested-only@1.0.0": "repairs/requested-only.json"
