@@ -198,6 +198,19 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
   assert.throws(() => compilePackDefinition({ ...pack, requiresPacks: ['example.other'] }), /id@version/);
   assert.throws(() => compilePackDefinition({ ...pack, state: 'qualified' }),
     /qualified packs require a bounded runtime budget/);
+  assert.throws(() => compilePackDefinition({ ...pack, moduleType: 'mode' }),
+    /moduleType.*feature or specification/);
+  assert.throws(() => compilePackDefinition({ ...pack, moduleType: 'feature', checks: [
+    { ...pack.checks[0], role: 'guarantee' },
+  ] }), /feature modules cannot own guarantee/);
+  assert.throws(() => compilePackDefinition({ ...pack, moduleType: 'specification' }),
+    /specification modules cannot own feature/);
+
+  const specification = compilePackDefinition({ ...pack, id: 'example.durability',
+    moduleType: 'specification', checks: [{ ...pack.checks[0], role: 'guarantee',
+      observations: ['requested', 'probe'] }] });
+  assert.equal(specification.moduleType, 'specification');
+  assert.deepEqual(specification.checks[0].observations, ['probe', 'requested']);
 
   const fixture = {
     schemaVersion: 1, kind: 'fixture-set', id: 'example.fixture', version: '1.0.0', state: 'draft',

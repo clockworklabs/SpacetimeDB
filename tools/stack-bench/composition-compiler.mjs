@@ -9,6 +9,8 @@ const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
 const STATES = new Set(['draft', 'qualified', 'retired']);
 const ROLES = new Set(['feature', 'guarantee', 'control']);
+const MODULE_TYPES = new Set(['feature', 'specification']);
+const OBSERVATIONS = new Set(['requested', 'probe']);
 
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const fail = (at, message) => { throw new Error(`invalid benchmark composition at ${at}: ${message}`); };
@@ -96,9 +98,9 @@ function contained(root, from, path, at) {
 
 const PACK_FIELDS = new Set([
   'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'description',
-  'requiresPacks', 'conflictsWith', 'capabilities', 'evidence', 'budget', 'task', 'checks',
+  'moduleType', 'requiresPacks', 'conflictsWith', 'capabilities', 'evidence', 'budget', 'task', 'checks',
 ]);
-const CHECK_REF_FIELDS = new Set(['id', 'source', 'feature', 'criteria', 'role']);
+const CHECK_REF_FIELDS = new Set(['id', 'source', 'feature', 'criteria', 'role', 'observations']);
 const BUDGET_FIELDS = new Set(['status', 'maxRuntimeMs']);
 const PACK_TASK_FIELDS = new Set(['requirements', 'contracts']);
 const TASK_FRAGMENT_FIELDS = new Set(['id', 'path', 'order', 'from', 'until', 'modes']);
@@ -183,6 +185,9 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
   const pack = structuredClone(input);
   strictObject(pack, source, PACK_FIELDS);
   identityFields(pack, source, 'test-pack');
+  if (pack.moduleType !== undefined && !MODULE_TYPES.has(pack.moduleType)) {
+    fail(`${source}.moduleType`, 'must be feature or specification');
+  }
   if (pack.description !== undefined) string(pack.description, `${source}.description`);
   pack.requiresPacks = uniqueStrings(pack.requiresPacks ?? [], `${source}.requiresPacks`);
   pack.conflictsWith = uniqueStrings(pack.conflictsWith ?? [], `${source}.conflictsWith`);
@@ -231,10 +236,35 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
       for (const criterion of check.criteria) id(criterion, `${at}.criteria`);
     }
     if (!ROLES.has(check.role)) fail(`${at}.role`, 'must be feature, guarantee, or control');
+    if (check.observations !== undefined) {
+      check.observations = uniqueStrings(check.observations, `${at}.observations`).sort();
+      if (check.observations.length === 0) fail(`${at}.observations`, 'must not be empty');
+      for (const observation of check.observations) {
+        if (!OBSERVATIONS.has(observation)) {
+          fail(`${at}.observations`, `unknown observation class ${observation}`);
+        }
+      }
+    }
     const ref = `${check.source}#${check.feature}`;
     if (featureRefs.has(ref)) fail(at, `duplicate feature reference ${ref}`);
     featureRefs.add(ref);
   });
+  if (pack.moduleType === 'feature') {
+    if (pack.checks.some(check => check.role === 'guarantee')) {
+      fail(`${source}.checks`, 'feature modules cannot own guarantee checks');
+    }
+    if (pack.checks.some(check => check.observations?.includes('probe'))) {
+      fail(`${source}.checks`, 'feature modules cannot own hidden probe observations');
+    }
+  }
+  if (pack.moduleType === 'specification') {
+    if (pack.checks.some(check => check.role === 'feature')) {
+      fail(`${source}.checks`, 'specification modules cannot own feature checks');
+    }
+    if (pack.checks.some(check => check.observations === undefined)) {
+      fail(`${source}.checks`, 'specification modules must declare requested/probe observations');
+    }
+  }
   return pack;
 }
 
@@ -550,8 +580,10 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
       selectedFeatures.push({
         packId: pack.id,
         packVersion: pack.version,
+        ...(pack.moduleType === undefined ? {} : { moduleType: pack.moduleType }),
         checkGroupId: check.id,
         role: check.role,
+        ...(check.observations === undefined ? {} : { observations: check.observations }),
         source: scenarioRef.relative,
         feature: selectedFeature,
         actions: [...new Set([
@@ -599,6 +631,7 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
           checkGroupId: group.checkGroupId,
           criterionId: criterion.id,
           role: group.role,
+          ...(group.observations === undefined ? {} : { observations: group.observations }),
           source: group.source,
           featureId: group.feature.id,
           description: criterion.desc,
@@ -647,6 +680,7 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
       version: pack.version,
       state: pack.state,
       title: pack.title,
+      ...(pack.moduleType === undefined ? {} : { moduleType: pack.moduleType }),
       path,
       includeRoles: selection.includeRoles,
       requiresPacks: pack.requiresPacks,

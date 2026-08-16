@@ -78,6 +78,7 @@ function checkDetails(plan) {
           packVersion: group.packVersion,
           checkGroupId: group.checkGroupId,
           role: group.role,
+          ...(group.observations === undefined ? {} : { observations: group.observations }),
           source: group.source,
           featureId: group.feature.id,
           featureName: group.feature.name,
@@ -167,6 +168,7 @@ export function buildRecipeRelease(recipePath, { trackRoot } = {}) {
       packId: detail.packId,
       checkGroupId: detail.checkGroupId,
       role: detail.role,
+      ...(detail.observations === undefined ? {} : { observations: detail.observations }),
       source: detail.source,
       featureId: detail.featureId,
       featureName: detail.featureName,
@@ -204,6 +206,7 @@ export function buildRecipeRelease(recipePath, { trackRoot } = {}) {
     },
     packs: plan.packs.map(pack => ({
       id: pack.id,
+      ...(pack.moduleType === undefined ? {} : { moduleType: pack.moduleType }),
       includeRoles: [...pack.includeRoles].sort(),
       capabilities: [...pack.capabilities].sort(),
       evidence: [...pack.evidence].sort(),
@@ -225,6 +228,7 @@ export function buildRecipeRelease(recipePath, { trackRoot } = {}) {
         packId: group.packId,
         checkGroupId: group.checkGroupId,
         role: group.role,
+        ...(group.observations === undefined ? {} : { observations: group.observations }),
         source: group.source,
         feature: {
           id: group.feature.id,
@@ -290,6 +294,7 @@ export function buildRecipeRelease(recipePath, { trackRoot } = {}) {
         path: trackRelative(root, fixturePath), sha256: sha256(readFileSync(fixturePath)) },
       packs: plan.packs.map(pack => ({ id: pack.id, version: pack.version, state: pack.state,
         ...packSource(pack), includeRoles: [...pack.includeRoles].sort(),
+        ...(pack.moduleType === undefined ? {} : { moduleType: pack.moduleType }),
         requiresPacks: [...pack.requiresPacks].sort() }))
         .sort((a, b) => a.id.localeCompare(b.id)),
     },
@@ -307,6 +312,7 @@ export function buildRecipeRelease(recipePath, { trackRoot } = {}) {
       packVersion: detail.packVersion,
       checkGroupId: detail.checkGroupId,
       role: detail.role,
+      ...(detail.observations === undefined ? {} : { observations: detail.observations }),
       source: detail.source,
       featureId: detail.featureId,
       criterionId: detail.criterionId,

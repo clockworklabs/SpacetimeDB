@@ -11,6 +11,131 @@ function unique(values, label) {
   return normalized;
 }
 
+function exactModuleRef(value, label) {
+  const split = value.lastIndexOf('@');
+  if (split < 1 || split === value.length - 1) {
+    throw new Error(`${label} must use an exact id@version reference`);
+  }
+  return { id: value.slice(0, split), version: value.slice(split + 1), ref: value };
+}
+
+// New modular recipes keep product features and production specifications as
+// independently selectable modules. The compiler returns three disjoint
+// surfaces: what appears in the task, what affects requested score/repair, and
+// what may be observed only as a hidden first-build probe.
+export function resolveModularRecipeSelection(release, {
+  featureIds = [], disclosedSpecifications = [], probedSpecifications = [], checkKeys = [],
+} = {}) {
+  if (!release?.contentSha256 || !Array.isArray(release.checkCatalog)
+    || !Array.isArray(release.components?.packs)) {
+    throw new Error('modular selection requires a compiled recipe release');
+  }
+  const modules = release.components.packs;
+  if (!modules.length || modules.some(module => !['feature', 'specification'].includes(module.moduleType))) {
+    throw new Error('modular selection requires every recipe module to declare feature or specification');
+  }
+  const features = new Map(modules.filter(module => module.moduleType === 'feature')
+    .map(module => [module.id, module]));
+  const specifications = new Map(modules.filter(module => module.moduleType === 'specification')
+    .map(module => [`${module.id}@${module.version}`, module]));
+  const requestedFeatures = unique(featureIds, 'features');
+  const disclosedRefs = unique(disclosedSpecifications, 'disclosed specifications');
+  const probedRefs = unique(probedSpecifications, 'probed specifications');
+  const requestedCheckKeys = unique(checkKeys, 'requested checks');
+  const overlap = disclosedRefs.filter(ref => probedRefs.includes(ref));
+  if (overlap.length) {
+    throw new Error(`specifications cannot be both disclosed and probed: ${overlap.join(', ')}`);
+  }
+  for (const id of requestedFeatures) {
+    if (!features.has(id)) throw new Error(`recipe has no feature module ${id}`);
+  }
+  for (const [label, refs] of [['disclosed', disclosedRefs], ['probed', probedRefs]]) {
+    for (const value of refs) {
+      const parsed = exactModuleRef(value, `${label} specification`);
+      if (!specifications.has(parsed.ref)) {
+        throw new Error(`recipe has no ${label} specification ${parsed.ref}`);
+      }
+    }
+  }
+
+  const featureSet = new Set(requestedFeatures.length ? requestedFeatures : features.keys());
+  const disclosedSet = new Set(disclosedRefs);
+  const probedSet = new Set(probedRefs);
+  const moduleByRef = new Map(modules.map(module => [`${module.id}@${module.version}`, module]));
+  const visit = (module, target, chain = []) => {
+    const ref = `${module.id}@${module.version}`;
+    if (chain.includes(ref)) throw new Error(`recipe module dependency cycle: ${[...chain, ref].join(' -> ')}`);
+    for (const requiredRef of module.requiresPacks ?? []) {
+      const required = moduleByRef.get(requiredRef);
+      if (!required) throw new Error(`recipe module ${ref} requires missing ${requiredRef}`);
+      if (required.moduleType === 'feature') featureSet.add(required.id);
+      else if (target === 'feature') {
+        throw new Error(`feature module ${ref} cannot depend on specification ${requiredRef}`);
+      } else if (target === 'disclosed') disclosedSet.add(requiredRef);
+      else probedSet.add(requiredRef);
+      visit(required, required.moduleType === 'feature' ? 'feature' : target, [...chain, ref]);
+    }
+  };
+  for (const id of [...featureSet]) visit(features.get(id), 'feature');
+  for (const ref of [...disclosedSet]) visit(specifications.get(ref), 'disclosed');
+  for (const ref of [...probedSet]) visit(specifications.get(ref), 'probed');
+  const resolvedOverlap = [...disclosedSet].filter(ref => probedSet.has(ref));
+  if (resolvedOverlap.length) {
+    throw new Error(`specification dependencies are both disclosed and probed: ${resolvedOverlap.join(', ')}`);
+  }
+
+  const disclosedIds = new Set([...disclosedSet].map(ref => exactModuleRef(ref, 'specification').id));
+  const probedIds = new Set([...probedSet].map(ref => exactModuleRef(ref, 'specification').id));
+  const requestedModuleIds = new Set([...featureSet, ...disclosedIds]);
+  const requestedChecks = release.checkCatalog.filter(check => requestedModuleIds.has(check.packId)
+    && (check.observations === undefined || check.observations.includes('requested')));
+  const probeChecks = release.checkCatalog.filter(check => probedIds.has(check.packId)
+    && check.observations?.includes('probe'));
+  for (const ref of disclosedSet) {
+    const id = exactModuleRef(ref, 'disclosed specification').id;
+    if (!requestedChecks.some(check => check.packId === id)) {
+      throw new Error(`disclosed specification ${ref} has no requested observation`);
+    }
+  }
+  for (const ref of probedSet) {
+    const id = exactModuleRef(ref, 'probed specification').id;
+    if (!probeChecks.some(check => check.packId === id)) {
+      throw new Error(`probed specification ${ref} has no probe observation`);
+    }
+  }
+  const availableRequestedChecks = new Set(requestedChecks.map(check => check.stableKey));
+  for (const key of requestedCheckKeys) {
+    if (!availableRequestedChecks.has(key)) {
+      throw new Error(`requested check ${key} is outside the disclosed feature/specification scope`);
+    }
+  }
+  const narrowedRequested = requestedCheckKeys.length
+    ? requestedChecks.filter(check => requestedCheckKeys.includes(check.stableKey)) : requestedChecks;
+  if (!narrowedRequested.length) throw new Error('modular selection contains no requested checks');
+  const probeKeys = new Set(probeChecks.map(check => check.stableKey));
+  const checkOverlap = narrowedRequested.filter(check => probeKeys.has(check.stableKey));
+  if (checkOverlap.length) throw new Error('requested and hidden-probe checks must be disjoint');
+
+  const identityDocument = {
+    schemaVersion: 2,
+    recipeContentSha256: release.contentSha256,
+    features: [...featureSet].sort(),
+    specifications: { disclosed: [...disclosedSet].sort(), probed: [...probedSet].sort() },
+    requestedChecks: narrowedRequested.map(check => check.stableKey).sort(),
+    probeChecks: probeChecks.map(check => check.stableKey).sort(),
+  };
+  return {
+    schemaVersion: 2,
+    features: [...featureSet].sort(),
+    specifications: { disclosed: [...disclosedSet].sort(), probed: [...probedSet].sort() },
+    taskPacks: [...requestedModuleIds].sort(),
+    requestedChecks: narrowedRequested,
+    probeChecks,
+    requestedPoints: narrowedRequested.reduce((total, check) => total + check.points, 0),
+    sha256: sha256(canonicalDefinitionJson(identityDocument)),
+  };
+}
+
 // Resolve a caller's pack/check request once, then pass this exact result to
 // every consumer. Packs define the requested task. Checks may narrow grading
 // inside that task, but cannot silently add behavior the agent was not asked
