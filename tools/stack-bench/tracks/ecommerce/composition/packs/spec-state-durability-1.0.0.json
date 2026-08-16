@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.state-durability",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "State durability",
+  "moduleType": "specification",
+  "description": "Session and account-state continuity across reload and reconnect.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "backend-lifecycle"],
+  "evidence": ["browser-observation", "fresh-client-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 48000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.spec.state-durability.accounts", "path": "prompts/modular/l1-specifications.md", "order": 1100, "from": "## State durability: accounts", "until": "## State durability: account data", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.accounts"] },
+      { "id": "ecommerce.spec.state-durability.account-data", "path": "prompts/modular/l1-specifications.md", "order": 1110, "from": "## State durability: account data", "until": "## Live state: catalog and purchasing", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.accounts", "ecommerce.feature.cart-checkout"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "session-reload", "source": "scenarios/01-features.json", "feature": 1, "criteria": ["1e"], "role": "guarantee", "observations": ["requested", "probe"], "requiresFeatures": ["ecommerce.feature.accounts"] },
+    { "id": "cart-reload", "source": "scenarios/01-features.json", "feature": 4, "criteria": ["4b"], "role": "guarantee", "observations": ["requested", "probe"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] },
+    { "id": "account-state-recovery", "source": "scenarios/01-invariants.json", "feature": 105, "role": "guarantee", "observations": ["requested", "probe"], "requiresFeatures": ["ecommerce.feature.accounts", "ecommerce.feature.cart-checkout"] }
+  ]
+}

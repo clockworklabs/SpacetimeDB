@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.reviews",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Reviews",
+  "moduleType": "feature",
+  "description": "Item ratings and comments.",
+  "requiresPacks": ["ecommerce.feature.accounts@1.0.0", "ecommerce.feature.catalog@1.0.0", "ecommerce.feature.purchasing@1.0.0"],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 22000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.feature.reviews.requirement", "path": "prompts/modular/l1-features.md", "order": 500, "from": "## Reviews", "until": "## Warehouse administration", "modes": ["fresh"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.feature.reviews.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2400, "from": "## Review hooks", "until": "## Warehouse administration hooks", "modes": ["fresh"] }
+    ]
+  },
+  "checks": [
+    { "id": "reviews", "source": "scenarios/01-features.json", "feature": 6, "criteria": ["6a"], "role": "feature" }
+  ]
+}

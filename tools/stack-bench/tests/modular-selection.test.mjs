@@ -110,7 +110,7 @@ test('modular task composition includes disclosed specs and excludes hidden prob
     probedSpecifications: ['example.concurrency@1.0.0'],
   });
   assert.equal(compiled.task.requirementText,
-    'Build this product.\nSupport accounts.\nSupport a cart.\nSurvive restarts.\n');
+    'Build this product.\n\nSupport accounts.\n\nSupport a cart.\n\nSurvive restarts.\n');
   assert.equal(compiled.task.contractText, 'Expose a cart button.\n');
   assert.equal(compiled.task.requirementText.includes('Handle races'), false);
   assert.equal(compiled.task.contractText.includes('DO NOT LEAK'), false);

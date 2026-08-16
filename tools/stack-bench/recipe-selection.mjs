@@ -245,12 +245,18 @@ export function composeSelectedRecipeTask(plan, selection) {
     throw new Error('selected task requires a compiled recipe plan and selection');
   }
   const owners = new Set(['recipe', ...selection.taskPacks]);
+  const features = new Set(selection.features ?? []);
   const select = fragments => fragments.filter(fragment =>
-    fragment.owners.some(owner => owners.has(owner)));
+    fragment.owners.some(owner => owners.has(owner))
+    && (fragment.requiresFeatures === undefined
+      || fragment.requiresFeatures.every(featureId => features.has(featureId))));
   const requirements = select(plan.recipe.task.requirements);
   const contracts = select(plan.recipe.task.contracts);
-  const requirementText = requirements.map(fragment => fragment.text).join('');
-  const contractText = contracts.map(fragment => fragment.text).join('');
+  const compose = fragments => selection.schemaVersion === 2
+    ? `${fragments.map(fragment => fragment.text.trimEnd()).join('\n\n')}\n`
+    : fragments.map(fragment => fragment.text).join('');
+  const requirementText = compose(requirements);
+  const contractText = compose(contracts);
   const identity = {
     schemaVersion: 1,
     recipeContentSha256: selection.recipe.contentSha256,

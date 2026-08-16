@@ -105,7 +105,9 @@ const CHECK_REF_FIELDS = new Set([
 ]);
 const BUDGET_FIELDS = new Set(['status', 'maxRuntimeMs']);
 const PACK_TASK_FIELDS = new Set(['requirements', 'contracts']);
-const TASK_FRAGMENT_FIELDS = new Set(['id', 'path', 'order', 'from', 'until', 'modes']);
+const TASK_FRAGMENT_FIELDS = new Set([
+  'id', 'path', 'order', 'from', 'until', 'modes', 'requiresFeatures',
+]);
 const TASK_MODES = new Set(['fresh', 'upgrade']);
 
 function taskFragmentDefinition(fragment, at) {
@@ -121,6 +123,11 @@ function taskFragmentDefinition(fragment, at) {
   if (fragment.modes.length === 0) fail(`${at}.modes`, 'must not be empty');
   for (const mode of fragment.modes) {
     if (!TASK_MODES.has(mode)) fail(`${at}.modes`, `unknown task mode ${mode}`);
+  }
+  if (fragment.requiresFeatures !== undefined) {
+    fragment.requiresFeatures = uniqueStrings(fragment.requiresFeatures, `${at}.requiresFeatures`).sort();
+    if (fragment.requiresFeatures.length === 0) fail(`${at}.requiresFeatures`, 'must not be empty');
+    for (const featureId of fragment.requiresFeatures) id(featureId, `${at}.requiresFeatures`);
   }
   return fragment;
 }
@@ -179,6 +186,7 @@ export function resolveTaskFragment(fragmentInput, { trackRoot, source = '<task-
     from: fragment.from ?? null,
     until: fragment.until ?? null,
     modes: [...fragment.modes].sort(),
+    ...(fragment.requiresFeatures === undefined ? {} : { requiresFeatures: fragment.requiresFeatures }),
     text: sourceText.slice(start, end),
   };
 }
@@ -220,8 +228,17 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
   if (!Array.isArray(pack.checks) || pack.checks.length === 0) {
     fail(`${source}.checks`, 'must be a non-empty array');
   }
+  const taskFragments = [...pack.task.requirements, ...pack.task.contracts];
+  if (pack.moduleType === 'feature'
+    && taskFragments.some(fragment => fragment.requiresFeatures !== undefined)) {
+    fail(`${source}.task`, 'feature module fragments cannot declare specification applicability');
+  }
+  if (pack.moduleType === 'specification'
+    && pack.task.requirements.some(fragment => fragment.requiresFeatures === undefined)) {
+    fail(`${source}.task.requirements`,
+      'specification requirement fragments must declare applicable feature modules');
+  }
   const checkIds = new Set();
-  const featureRefs = new Set();
   pack.checks.forEach((check, index) => {
     const at = `${source}.checks[${index}]`;
     strictObject(check, at, CHECK_REF_FIELDS);
@@ -252,9 +269,6 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
       if (check.requiresFeatures.length === 0) fail(`${at}.requiresFeatures`, 'must not be empty');
       for (const featureId of check.requiresFeatures) id(featureId, `${at}.requiresFeatures`);
     }
-    const ref = `${check.source}#${check.feature}`;
-    if (featureRefs.has(ref)) fail(at, `duplicate feature reference ${ref}`);
-    featureRefs.add(ref);
   });
   if (pack.moduleType === 'feature') {
     if (pack.checks.some(check => check.role === 'guarantee')) {
@@ -499,6 +513,14 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
   const featureModuleIds = new Set(selectedPacks
     .filter(({ pack }) => pack.moduleType === 'feature').map(({ pack }) => pack.id));
   for (const { pack } of selectedPacks.filter(({ pack }) => pack.moduleType === 'specification')) {
+    for (const fragment of [...pack.task.requirements, ...pack.task.contracts]) {
+      for (const featureId of fragment.requiresFeatures ?? []) {
+        if (!featureModuleIds.has(featureId)) {
+          fail(`${pack.id}.${fragment.id}.requiresFeatures`,
+            `references missing feature module ${featureId}`);
+        }
+      }
+    }
     for (const check of pack.checks) {
       for (const featureId of check.requiresFeatures) {
         if (!featureModuleIds.has(featureId)) {

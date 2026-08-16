@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.external-data-sync",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "External data synchronization",
+  "moduleType": "specification",
+  "description": "Direct database writes and lifecycle recovery through a prescribed interoperability schema.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "direct-database-write", "backend-lifecycle"],
+  "evidence": ["database-observation", "fresh-client-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 85000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.spec.external-data-sync.requirement", "path": "prompts/modular/l1-specifications.md", "order": 1500, "from": "## External data synchronization", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.warehouse-admin"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "external-stock", "source": "scenarios/01-systems.json", "feature": 901, "role": "guarantee", "observations": ["requested"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.warehouse-admin"] }
+  ]
+}

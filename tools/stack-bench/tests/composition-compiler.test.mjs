@@ -22,7 +22,7 @@ const recipePath = name => join(ECOMMERCE, 'composition', 'recipes', name);
 
 test('the ecommerce composition tree validates as one source set', () => {
   assert.deepEqual(checkCompositions({ trackName: 'ecommerce' }), [{
-    track: 'ecommerce', packs: 12, fixtures: 2, recipes: 5, checks: 209, aliases: 4,
+    track: 'ecommerce', packs: 24, fixtures: 2, recipes: 6, checks: 257, aliases: 4,
   }]);
 });
 
@@ -203,15 +203,22 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
   assert.throws(() => compilePackDefinition({ ...pack, moduleType: 'feature', checks: [
     { ...pack.checks[0], role: 'guarantee' },
   ] }), /feature modules cannot own guarantee/);
-  assert.throws(() => compilePackDefinition({ ...pack, moduleType: 'specification' }),
+  assert.throws(() => compilePackDefinition({ ...pack, moduleType: 'specification', task: {
+    ...pack.task, requirements: [
+      { ...pack.task.requirements[0], requiresFeatures: ['example.feature'] },
+    ],
+  } }),
     /specification modules cannot own feature/);
 
   const specification = compilePackDefinition({ ...pack, id: 'example.durability',
-    moduleType: 'specification', checks: [{ ...pack.checks[0], role: 'guarantee',
+    moduleType: 'specification', task: { ...pack.task, requirements: [
+      { ...pack.task.requirements[0], requiresFeatures: ['example.feature'] },
+    ] }, checks: [{ ...pack.checks[0], role: 'guarantee',
       observations: ['requested', 'probe'], requiresFeatures: ['example.feature'] }] });
   assert.equal(specification.moduleType, 'specification');
   assert.deepEqual(specification.checks[0].observations, ['probe', 'requested']);
   assert.deepEqual(specification.checks[0].requiresFeatures, ['example.feature']);
+  assert.deepEqual(specification.task.requirements[0].requiresFeatures, ['example.feature']);
 
   const fixture = {
     schemaVersion: 1, kind: 'fixture-set', id: 'example.fixture', version: '1.0.0', state: 'draft',
@@ -337,7 +344,10 @@ test('composition rejects missing dependencies, dependency cycles, conflicts, du
       /unsupported capabilities: browser/);
 
     box.writePack('a', { moduleType: 'feature' });
-    box.writePack('b', { moduleType: 'specification', checks: [{
+    box.writePack('b', { moduleType: 'specification', task: { requirements: [{
+      id: 'example.b.requirement', path: 'prompts/task.md', order: 12,
+      requiresFeatures: ['example.missing'],
+    }], contracts: [] }, checks: [{
       id: 'group', source: 'scenarios/01.json', feature: 1, role: 'guarantee',
       observations: ['requested', 'probe'], requiresFeatures: ['example.missing'],
     }] });

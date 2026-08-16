@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.catalog",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Catalog",
+  "moduleType": "feature",
+  "description": "Storefront listing, ranking, search, and item details.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.feature.catalog.requirement", "path": "prompts/modular/l1-features.md", "order": 200, "from": "## Catalog", "until": "## Purchasing and orders", "modes": ["fresh"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.feature.catalog.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2000, "from": "## Catalog hooks", "until": "## Account hooks", "modes": ["fresh"] }
+    ]
+  },
+  "checks": [
+    { "id": "catalog", "source": "scenarios/01-features.json", "feature": 2, "criteria": ["2a", "2b", "2d"], "role": "feature" }
+  ]
+}

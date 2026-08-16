@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.accounts",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Accounts",
+  "moduleType": "feature",
+  "description": "Account creation, sign-in, and sign-out.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 18000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.feature.accounts.requirement", "path": "prompts/modular/l1-features.md", "order": 100, "from": "## Accounts", "until": "## Catalog", "modes": ["fresh"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.feature.accounts.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2100, "from": "## Account hooks", "until": "## Purchasing hooks", "modes": ["fresh"] }
+    ]
+  },
+  "checks": [
+    { "id": "accounts", "source": "scenarios/01-features.json", "feature": 1, "criteria": ["1a", "1b", "1c", "1d"], "role": "feature" }
+  ]
+}

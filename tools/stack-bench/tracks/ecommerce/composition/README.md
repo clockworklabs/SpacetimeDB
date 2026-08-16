@@ -4,9 +4,11 @@ This directory is the versioned, mix-and-match source model for the ecommerce
 benchmark. It is deliberately separate from the current `track.json` level/suite
 manifest while migration parity is proven.
 
-- `packs/` groups related behavior. Pack files own ordered public requirement
-  and testing-hook fragments alongside stable check-group IDs, capabilities,
-  dependencies, conflicts, and feature/guarantee/control roles.
+- `packs/` contains both legacy behavior packs and the modular catalog. Modular
+  packs explicitly identify either a visible product feature or an optional
+  specification. Feature dependencies may add prerequisite features;
+  specifications never add features and instead declare which selected feature
+  surface makes each check applicable.
 - `fixtures/` records exact starting products, stock, accounts, and empty state.
 - `recipes/` selects exact pack and fixture versions, supplies only global task
   framing, and defines execution order and scoring.
@@ -79,3 +81,13 @@ binds all three active reference apps and their exact mutation manifests to
 repeated Docker reference, mutation, and null evidence. The earlier releases
 and promotion records are retired: their calibration evidence remains
 verifiable, but active resolution refuses to launch them for a new run.
+
+`ecommerce.l1-modular@2.0.0` is a draft recipe, not a promoted run target. It
+splits L1 into six feature modules and six specification modules while owning
+all 48 existing criteria exactly once at the existing 51-point total. Feature
+selection, disclosed specifications, and privately probed specifications now
+compose and hash independently at the library boundary. Five specifications
+currently support requested and unmentioned observation; external data
+synchronization is requested-only because its current oracle needs the exact
+interoperability table contract in the prompt. Campaign/runtime wiring and
+separate first-build probe execution remain unfinished.
