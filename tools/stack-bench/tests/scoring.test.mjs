@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { compareCriterionEvidence } from '../scoring.mjs';
+import { compareCriterionEvidence, formatRepairProgress } from '../scoring.mjs';
 import { createCheckEvidence } from '../check-evidence.mjs';
 
 const criterion = (id, passed, options = {}) => ({
@@ -32,6 +32,19 @@ test('a newly measurable failure does not make unchanged shared criteria regress
   assert.equal(result.after, 1);
   assert.deepEqual(result.newlyConclusive, ['features/1/new']);
   assert.deepEqual(result.lostEvidence, []);
+  assert.equal(formatRepairProgress(result,
+    { before: 1, beforeMax: 1, after: 1, afterMax: 2 }),
+  'no change among 1 criterion measured in both rounds (1/1 points); 1 previously unavailable criterion became measurable; overall 1/1 -> 1/2');
+});
+
+test('unchanged repair evidence is reported without hiding the overall scores', () => {
+  const result = compareCriterionEvidence(
+    bundle([criterion('a', true)]),
+    bundle([criterion('a', true)]),
+  );
+  assert.equal(formatRepairProgress(result,
+    { before: 1, beforeMax: 1, after: 1, afterMax: 1 }),
+  'no improvement among 1 criterion measured in both rounds (1/1 points); overall 1/1 -> 1/1');
 });
 
 test('pass to inconclusive is reported as lost evidence', () => {

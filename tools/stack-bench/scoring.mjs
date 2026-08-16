@@ -71,3 +71,15 @@ export function compareCriterionEvidence(before, after) {
     newlyConclusive,
   };
 }
+
+export function formatRepairProgress(comparison, { before, beforeMax, after, afterMax }) {
+  const shared = `${comparison.count} ${comparison.count === 1 ? 'criterion' : 'criteria'} measured in both rounds `
+    + `(${comparison.before}/${comparison.points} points)`;
+  const overall = `overall ${before}/${beforeMax} -> ${after}/${afterMax}`;
+  if (comparison.newlyConclusive.length) {
+    const count = comparison.newlyConclusive.length;
+    return `no change among ${shared}; ${count} previously unavailable `
+      + `${count === 1 ? 'criterion became' : 'criteria became'} measurable; ${overall}`;
+  }
+  return `no improvement among ${shared}; ${overall}`;
+}

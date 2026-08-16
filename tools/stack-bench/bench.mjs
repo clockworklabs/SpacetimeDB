@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
   moduleName, dbName, DEFAULT_TRACK } from './tracks.mjs';
 import { killTree } from './platform.mjs';
-import { compareCriterionEvidence } from './scoring.mjs';
+import { compareCriterionEvidence, formatRepairProgress } from './scoring.mjs';
 import { emptyArtifactIdentities, readArtifactPayload, writeArtifact, writeRunJson } from './artifacts.mjs';
 import { aggregateRunOutcome, classifyBundle, ladderMayContinue, mutationControlEligible,
   runExitCode } from './outcomes.mjs';
@@ -822,9 +822,6 @@ async function main() {
       if (fixLeak) abortContaminated(`fix round ${fixRounds}`, fixLeak);
       bundle = grade(args, appDir, url, `${args.backend}-l${level}-fix${fixRounds}`, level, track, runId);
 
-      // A round that moves nothing usually means the finding is not actionable —
-      // often the harness is wrong, not the app. Stop rather than pay again for
-      // the same result.
       const after = bundle?.totals?.score ?? 0;
       const afterMax = bundle?.totals?.max ?? 0;
       // Compare the SAME criteria in both rounds, not the totals.
@@ -873,7 +870,7 @@ async function main() {
       }
       if (shared.after === shared.before) {
         const remaining = args.fixRounds - fixRounds;
-        console.log(`    no improvement (${shared.before} on shared criteria); `
+        console.log(`    ${formatRepairProgress(shared, { before, beforeMax, after, afterMax })}; `
           + (remaining > 0 ? `${remaining} correction round(s) remain` : 'correction budget exhausted'));
       }
     }
