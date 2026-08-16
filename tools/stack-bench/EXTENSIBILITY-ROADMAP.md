@@ -429,33 +429,53 @@ study is run: stacks, models, settings, repetitions, ordering, budgets, retries,
 exclusions, pricing snapshot, and analysis policy. Changing the model therefore
 creates a new experiment—not a new L1 recipe.
 
-### Prompt guidance and unmentioned capability probes
+### Modular prompt builder and unmentioned capability probes
 
-The system must treat four choices as independent, versioned inputs instead of
-folding them into one prompt string:
+The product needs a real prompt builder, not a collection of hard-coded prompt
+modes. It treats six choices as independent, versioned inputs:
 
-1. **Requested task** - the recipe and packs whose behavior the agent is asked
-   to build. These checks determine requested-correctness score and run outcome.
-2. **Backend guidance profile** - what setup material the agent receives beyond
-   the task: connection facts, official API reference, or architecture advice.
-3. **Capability probe profile** - extra behavior measured on the untouched first
-   build even though it was not requested, such as restart durability,
-   reconnect catch-up, external-write visibility, or concurrent-write safety.
-4. **Repair policy** - which failed requested checks may be returned to the
-   agent. Unmentioned probes are never repair inputs.
+1. **Feature modules** - visible product capabilities such as accounts, catalog,
+   cart, checkout, reviews, fulfilment, or returns.
+2. **Specification modules** - guarantees such as authorization, durability,
+   reconnect recovery, atomicity, accounting integrity, concurrency safety, or
+   lifecycle recovery. Each can be disclosed, probed without disclosure, or
+   omitted from a run.
+3. **Backend** - the required data platform, independently of implementation
+   libraries or architecture.
+4. **Backend-guidance profile** - access facts, API reference, and optionally
+   framework, ORM, transport, layout, or architecture advice.
+5. **Hidden-probe selection** - specification modules measured on the untouched
+   first build without appearing in the prompt or requested-feature score.
+6. **Repair policy** - which requested evidence may be returned to the agent.
+   Hidden probe evidence is never repair input.
+
+The compiler assembles the exact prompt from selected feature fragments,
+disclosed specification fragments, the selected stack material, and only the
+minimum public testing interface required to observe those modules. The run
+records every selected module ID/version, every rendered fragment ID/hash, and
+the final prompt hash. Adding a module changes data and qualification evidence;
+it does not add a branch to the runner.
+
+Feature and specification modules are deliberately different. A feature module
+owns product-facing request text and its ordinary functional checks. A
+specification module owns guarantee text plus both its requested-check mapping
+and, where possible, a hook-independent hidden-probe mapping. A condition can
+therefore request `cart + checkout`, disclose `authorization`, privately probe
+`durability + concurrency`, select `postgres`, and choose neutral backend
+guidance without editing code or manufacturing a new monolithic prompt file.
 
 This separation supports three ordinary study conditions without special cases:
 
-| condition | requested behavior | backend help | unmentioned probes |
-|---|---|---|---|
-| prescribed | visible | connection facts, API material, and named architecture | none by default |
-| neutral | visible | connection facts and ordinary API material only | none by default |
-| defaults | core task only | connection facts and ordinary API material only | selected unmentioned capabilities |
+| condition | feature modules | disclosed specifications | backend help | hidden probes |
+|---|---|---|---|---|
+| prescribed | selected | selected | connection facts, API material, and named architecture | none by default |
+| neutral | same selection | same selection | connection facts and ordinary API material only | none by default |
+| defaults | same selection | selected or none | independently selected access/API material | independently selected specifications |
 
-`prescribed`, `neutral`, and `defaults` are catalog entries, not engine branches.
-A study condition binds exact recipe, guidance-profile, and probe-profile hashes.
-Adding another condition or probe profile must require data files and
-qualification, not edits to `bench.mjs` or campaign scheduling.
+`prescribed`, `neutral`, and `defaults` are saved combinations, not engine
+branches. A study condition binds exact feature, specification, backend-guidance,
+probe, and repair identities. Operators may also create a new combination from
+registered modules without changing `bench.mjs` or campaign scheduling.
 
 The backend guidance contract distinguishes **access material** from **design
 advice**. Access material is the minimum needed to use the selected backend in
@@ -483,11 +503,12 @@ Requested checks and unmentioned probes remain different evidence classes:
 - reports render requested correctness and default-capability observations in
   separate tables and never combine their denominators.
 
-A capability such as durability has one versioned semantic definition, with
+A specification such as durability has one versioned semantic definition, with
 separate requested-check and unmentioned-probe observation contracts when their
-interfaces must differ. A recipe can select its requested form; a probe profile
-can select its unmentioned form. Only the requested form contributes requirement
-prose. This avoids copying a durability test into two packs while still
+interfaces must differ. A condition can disclose its requested form, select its
+unmentioned form, or omit it. Only the disclosed form contributes requirement
+prose or requested-score points. This avoids copying a durability test into two
+modules while still
 preventing a hidden probe from assuming selectors that only the visible
 requirement asked the model to implement. A probe profile may publish its own
 diagnostic success count and denominator, but that summary remains outside the
@@ -512,16 +533,21 @@ condition identities, approximately:
 ```json
 {
   "condition": {
-    "recipe": "ecommerce.l1-standard@1.1.0",
+    "recipe": "ecommerce.l1-standard@2.0.0",
+    "features": ["accounts", "catalog", "cart", "checkout", "reviews"],
+    "specifications": {
+      "disclosed": ["authorization@1.0.0"],
+      "probed": ["durability@1.0.0", "concurrency@1.0.0"]
+    },
     "guidanceProfile": "neutral-backend-access@1.0.0",
-    "probeProfile": "backend-defaults-durability@1.0.0",
     "repairPolicy": "requested-only@1.0.0"
   }
 }
 ```
 
-The compiler resolves this into exact prompt bytes, disclosed requirement IDs,
-selected access documents, withheld probe IDs, repair eligibility, and all
+The compiler resolves this into exact prompt bytes, disclosed feature and
+specification fragments, requested-score checks, isolated probe checks, selected
+access documents, repair eligibility, and all
 content hashes. `run.json`, campaign plans, comparison admission, and reports
 bind those resolved identities. Results are comparable only when the complete
 condition identity matches; comparing prescribed with neutral is an explicit
@@ -530,10 +556,14 @@ factor in an experiment, never an accidental cohort merge.
 Production acceptance for this model requires:
 
 - a fake stack can add a neutral guidance profile without engine edits;
-- a fake pack can add an unmentioned probe without runner/report edits;
+- a fake feature or specification module can be registered without runner/report edits;
+- changing the disclosed/probed specification lists changes prompt and evidence
+  scope without changing feature selection;
 - all three measured stacks compile and run the same neutral/defaults condition;
 - prompt snapshots prove withheld prose, check IDs, selectors, and mechanics are
   absent from the build container;
+- public test-interface fragments are neutral descriptions of observable
+  controls; they cannot restate a withheld guarantee;
 - repair fixtures prove probe failures never enter bug reports or consume a
   correction round;
 - first-build source hashes bind every probe artifact;
