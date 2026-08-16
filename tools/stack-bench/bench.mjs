@@ -36,7 +36,7 @@ import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
 import { captureBackendDiagnostics } from './backend-control.mjs';
 import { releaseBackendLease } from './backend-teardown.mjs';
 import { resolveRecipeRelease } from './recipe-release.mjs';
-import { createRecipeTaskRequest } from './recipe-selection.mjs';
+import { createBoundRecipeTaskRequest } from './recipe-selection.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
@@ -56,6 +56,7 @@ function parseArgs(argv) {
   const a = { model: null, agentAdapter: 'claude-code',
     fixRounds: 3, runIndex: 0, levels: '1', media: true,
     guidance: 'prescribed', track: DEFAULT_TRACK, packIds: [], checkKeys: [],
+    featureIds: [], disclosedSpecifications: [], probedSpecifications: [],
     behavioralReview: false };
   for (let i = 2; i < argv.length; i++) {
     switch (argv[i]) {
@@ -80,6 +81,9 @@ function parseArgs(argv) {
       case '--guidance': a.guidance = argv[++i]; break;
       case '--guidance-document-json': a.guidanceDocument = JSON.parse(argv[++i]); break;
       case '--condition-json': a.condition = JSON.parse(argv[++i]); break;
+      case '--feature-module': a.featureIds.push(...argv[++i].split(',').filter(Boolean)); break;
+      case '--disclose-spec': a.disclosedSpecifications.push(...argv[++i].split(',').filter(Boolean)); break;
+      case '--probe-spec': a.probedSpecifications.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--skip-probe': a.skipProbe = true; break;
       // Which reference documents to inline (spacetime only). The variable
       // under test in the cost work; passed straight through to agent.mjs.
@@ -231,8 +235,8 @@ function grade(args, appDir, url, label, level, track, parentAttemptId) {
     '--run-index', String(args.runIndex),
     '--parent-attempt-id', parentAttemptId,
     ...(args.recipe ? ['--recipe', args.recipe] : []),
-    ...args.packIds.flatMap(pack => ['--pack', pack]),
-    ...args.checkKeys.flatMap(check => ['--check', check]),
+    ...(args.recipeTasks?.get(level)
+      ? ['--recipe-task-json', JSON.stringify(args.recipeTasks.get(level).request)] : []),
     ...(args.media ? [] : ['--no-media']),
     ...(!executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
       'run-policy', 'reset-enabled')
@@ -312,8 +316,15 @@ async function main() {
       throw new Error(`L${level} has no recipe release, so --pack/--check cannot be resolved`);
     }
     if (binding) {
-      const resolved = createRecipeTaskRequest(binding, args);
       const declared = args.condition?.requested?.levels?.find(entry => entry.level === level) ?? null;
+      const requested = declared?.selection?.requested;
+      const options = requested?.features
+        ? { featureIds: requested.features,
+            disclosedSpecifications: requested.specifications?.disclosed,
+            probedSpecifications: requested.specifications?.probed,
+            checkKeys: requested.checks }
+        : args;
+      const resolved = createBoundRecipeTaskRequest(binding, options);
       if (args.condition && !declared) {
         throw new Error(`study condition does not bind requested L${level}`);
       }

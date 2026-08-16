@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { resolveGuidanceProfile } from '../condition-compiler.mjs';
-import { createRecipeTaskRequest } from '../recipe-selection.mjs';
+import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../recipe-selection.mjs';
 import { resolveRecipeRelease } from '../recipe-release.mjs';
 import { loadTrack } from '../tracks.mjs';
 
@@ -82,5 +82,21 @@ test('selected pack prompts contain only their own framework-neutral testing cal
       { packIds: ['ecommerce.cart-checkout'] });
     assert.match(cart.task.requirementText, /POST \/api\/checkout/);
     assert.doesNotMatch(cart.task.requirementText, /POST \/api\/auth\/signin|POST \/api\/admin\/restock/);
+  } finally { rmSync(app, { recursive: true, force: true }); }
+});
+
+test('the real agent prints a modular prompt without hidden specification text', () => {
+  const modular = resolveRecipeRelease(loadTrack('ecommerce'), 1,
+    'ecommerce.l1-modular@2.0.0');
+  const task = createBoundRecipeTaskRequest(modular, {
+    featureIds: ['ecommerce.feature.accounts'],
+    probedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
+  });
+  const app = mkdtempSync(join(tmpdir(), 'stack-bench-modular-task-'));
+  try {
+    const prompt = printPrompt(app, task.request);
+    assert.match(prompt, /## Accounts/);
+    assert.doesNotMatch(prompt, /## State durability|## Cart|## Reviews|Warehouse administration/);
+    assert.doesNotMatch(prompt, /probe|ecommerce\.spec|state-durability/);
   } finally { rmSync(app, { recursive: true, force: true }); }
 });

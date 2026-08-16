@@ -4,7 +4,8 @@ import test from 'node:test';
 
 import { compileRecipeFile } from '../composition-compiler.mjs';
 import { buildRecipeRelease } from '../recipe-release.mjs';
-import { createModularRecipeTaskRequest, resolveModularRecipeSelection }
+import { createBoundRecipeTaskRequest, createModularRecipeTaskRequest,
+  resolveBoundRecipeTaskRequest, resolveModularRecipeSelection }
   from '../recipe-selection.mjs';
 
 const recipePath = resolve('tools/stack-bench/tracks/ecommerce/composition/recipes/l1-modular-2.0.0.json');
@@ -35,6 +36,18 @@ test('the modular L1 catalog owns every existing criterion exactly once', () => 
   assert.equal(fullyDisclosed.requestedChecks.length, 48);
   assert.equal(fullyDisclosed.requestedPoints, 51);
   assert.equal(fullyDisclosed.probeChecks.length, 0);
+});
+
+test('the generic task boundary dispatches and replays the modular schema', () => {
+  const options = {
+    featureIds: ['ecommerce.feature.accounts'],
+    probedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
+  };
+  const task = createBoundRecipeTaskRequest(binding, options);
+  assert.equal(task.request.schemaVersion, 2);
+  assert.deepEqual(resolveBoundRecipeTaskRequest(binding, task.request).request, task.request);
+  assert.throws(() => resolveBoundRecipeTaskRequest(binding,
+    { ...task.request, schemaVersion: 1 }), /requires a schema-2/);
 });
 
 test('feature dependencies compose a smaller product without unrelated modules', () => {

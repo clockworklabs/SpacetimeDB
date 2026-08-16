@@ -407,16 +407,28 @@ function exactRecipeRequest(requested) {
 export function resolveRecipeRelease(track, level, requested = null) {
   const catalogPath = join(track.dir, 'composition', 'promotions.json');
   if (!existsSync(catalogPath)) return null;
-  const catalog = compilePromotionFile(catalogPath, { trackRoot: track.dir });
+  let selectedCatalogPath = catalogPath;
+  let catalog = compilePromotionFile(catalogPath, { trackRoot: track.dir });
   const alias = `L${Number(level)}`;
-  if (!catalog.entries.some(entry => entry.alias === alias)) return null;
   const exact = exactRecipeRequest(requested);
+  if (!exact && !catalog.entries.some(entry => entry.alias === alias)) return null;
   const promoted = catalog.entries.filter(entry => entry.alias === alias && entry.status === 'promoted');
   const candidates = catalog.entries.filter(entry => entry.alias === alias && entry.status === 'candidate');
-  const choices = exact
+  let choices = exact
     ? catalog.entries.filter(entry => entry.alias === alias && entry.recipe.id === exact.id
       && entry.recipe.version === exact.version && entry.status !== 'retired')
     : (promoted.length ? promoted : candidates);
+  const candidateCatalogPath = join(track.dir, 'composition', 'candidates.json');
+  if (exact && choices.length === 0 && existsSync(candidateCatalogPath)) {
+    const candidateCatalog = compilePromotionFile(candidateCatalogPath, { trackRoot: track.dir });
+    choices = candidateCatalog.entries.filter(entry => entry.alias === alias
+      && entry.recipe.id === exact.id && entry.recipe.version === exact.version
+      && entry.status === 'candidate');
+    if (choices.length) {
+      catalog = candidateCatalog;
+      selectedCatalogPath = candidateCatalogPath;
+    }
+  }
   if (choices.length !== 1) {
     const kind = exact ? `catalogued ${exact.id}@${exact.version}`
       : `${promoted.length ? 'promoted' : 'candidate'} recipe`;
@@ -425,7 +437,11 @@ export function resolveRecipeRelease(track, level, requested = null) {
   const selection = choices[0];
   const recipePath = join(track.dir, 'composition', selection.recipe.path);
   const plan = compileRecipeFile(recipePath, { trackRoot: track.dir });
-  assertLegacyRecipeParity(plan, track, level);
+  if (plan.recipe.compatibility !== null) assertLegacyRecipeParity(plan, track, level);
+  else if (!plan.packs.length
+    || plan.packs.some(pack => !['feature', 'specification'].includes(pack.moduleType))) {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} is neither a compatibility recipe nor modular`);
+  }
   const release = buildRecipeRelease(recipePath, { trackRoot: track.dir });
   if (exact?.contentSha256 && release.contentSha256 !== exact.contentSha256) {
     throw new Error(`${exact.id}@${exact.version} content changed: expected ${exact.contentSha256}, `
@@ -434,8 +450,8 @@ export function resolveRecipeRelease(track, level, requested = null) {
   return {
     alias,
     status: selection.status,
-    catalog: { ...catalog.catalog, path: trackRelative(track.dir, catalogPath),
-      sha256: sha256(readFileSync(catalogPath)) },
+    catalog: { ...catalog.catalog, path: trackRelative(track.dir, selectedCatalogPath),
+      sha256: sha256(readFileSync(selectedCatalogPath)) },
     recipePath,
     plan,
     release,

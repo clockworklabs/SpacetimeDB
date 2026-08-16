@@ -22,7 +22,7 @@ import { answers as hostAnswers } from './platform.mjs';
 import { controlBackend } from './backend-control.mjs';
 import { readArtifactPayload, recipeArtifactIdentities, writeArtifact } from './artifacts.mjs';
 import { bundleRecipeRelease, resolveRecipeRelease } from './recipe-release.mjs';
-import { resolveRecipeSelection } from './recipe-selection.mjs';
+import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from './recipe-selection.mjs';
 import { resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { renderEvidenceConsoleLine } from './evidence-presentation.mjs';
@@ -55,6 +55,7 @@ function parseArgs(argv) {
       case '--out': a.out = argv[++i]; break;
       case '--level': a.level = argv[++i]; break;
       case '--recipe': a.recipe = argv[++i]; break;
+      case '--recipe-task-json': a.recipeTask = JSON.parse(argv[++i]); break;
       case '--no-media': a.media = false; break;
       case '--track': a.track = argv[++i]; break;
       case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
@@ -243,7 +244,9 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
   if (suite.spec) argv.push('--spec', suite.spec);
   argv.push('--backend', args.backend, '--track', args.track);
   if (recipeBinding) argv.push('--expected-recipe-sha256', recipeBinding.release.contentSha256);
-  if (args.recipe) argv.push('--recipe', args.recipe);
+  const requestedRecipe = args.recipe ?? (args.recipeTask
+    ? `${args.recipeTask.recipe.id}@${args.recipeTask.recipe.version}` : null);
+  if (requestedRecipe) argv.push('--recipe', requestedRecipe);
   for (const check of selectedChecks) argv.push('--selected-check', check.stableKey);
   if (args.selection?.sha256) argv.push('--selection-sha256', args.selection.sha256);
   argv.push('--parent-attempt-id', bundleArtifactId);
@@ -305,13 +308,16 @@ async function main() {
   const startedAt = new Date().toISOString();
   const args = parseArgs(process.argv);
   const track = loadTrack(args.track);
-  const recipeBinding = resolveRecipeRelease(track, args.level, args.recipe);
+  const recipeBinding = resolveRecipeRelease(track, args.level, args.recipeTask?.recipe ?? args.recipe);
   if (!recipeBinding && (args.packIds.length || args.checkKeys.length)) {
     throw new Error('--pack and --check require a recipe-bound level');
   }
-  const selection = recipeBinding
-    ? resolveRecipeSelection(recipeBinding.release, args)
+  const selectedTask = recipeBinding
+    ? (args.recipeTask
+        ? resolveBoundRecipeTaskRequest(recipeBinding, args.recipeTask)
+        : createBoundRecipeTaskRequest(recipeBinding, args))
     : null;
+  const selection = selectedTask?.selection ?? null;
   args.selection = selection;
   const declaredSuites = suitesFor(track, args.level);
   if (selection) {
@@ -338,7 +344,10 @@ async function main() {
     console.log(`  recipe: ${recipeBinding.alias} -> ${recipeBinding.release.id}@${recipeBinding.release.version} ` +
       `(${recipeBinding.status}, ${recipeBinding.release.contentSha256.slice(0, 12)})`);
     console.log(`  scope: ${selection.checks.length} check(s), ${selection.scoredPoints} point(s)`);
-    if (selection.requested.packs.length) console.log(`    packs: ${selection.requested.packs.join(', ')}`);
+    if (selection.requested.packs?.length) console.log(`    packs: ${selection.requested.packs.join(', ')}`);
+    if (selection.requested.features?.length) {
+      console.log(`    features: ${selection.requested.features.join(', ')}`);
+    }
     if (selection.requested.checks.length) console.log(`    extra checks: ${selection.requested.checks.join(', ')}`);
   }
 

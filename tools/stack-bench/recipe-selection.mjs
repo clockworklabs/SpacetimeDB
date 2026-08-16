@@ -146,8 +146,10 @@ export function resolveModularRecipeSelection(release, {
     specifications: { disclosed: [...disclosedSet].sort(), probed: [...probedSet].sort() },
     taskPacks: [...requestedModuleIds].sort(),
     requestedChecks: narrowedRequested,
+    checks: narrowedRequested,
     probeChecks,
     requestedPoints: narrowedRequested.reduce((total, check) => total + check.points, 0),
+    scoredPoints: narrowedRequested.reduce((total, check) => total + check.points, 0),
     taskSelectionSha256: sha256(canonicalDefinitionJson(taskSelectionDocument)),
     sha256: sha256(canonicalDefinitionJson(identityDocument)),
   };
@@ -305,6 +307,7 @@ export function createModularRecipeTaskRequest(binding, options = {}) {
     selection: {
       sha256: selection.sha256,
       requested: selection.requested,
+      taskPacks: selection.taskPacks,
       resolved: { features: selection.features, specifications: selection.specifications,
         taskPacks: selection.taskPacks, taskSelectionSha256: selection.taskSelectionSha256 },
       requestedChecks: selection.requestedChecks.map(check => check.stableKey),
@@ -347,6 +350,35 @@ export function resolveModularRecipeTaskRequest(binding, request) {
     throw new Error('modular recipe task changed after request resolution');
   }
   return resolved;
+}
+
+export function isModularRecipeRelease(release) {
+  const modules = release?.components?.packs;
+  return Array.isArray(modules) && modules.length > 0
+    && modules.every(module => ['feature', 'specification'].includes(module.moduleType));
+}
+
+export function createBoundRecipeTaskRequest(binding, options = {}) {
+  if (!binding?.release) throw new Error('bound recipe task requires a recipe release');
+  if (isModularRecipeRelease(binding.release)) {
+    if ((options.packIds ?? []).length) throw new Error('modular recipes use feature modules, not packs');
+    return createModularRecipeTaskRequest(binding, options);
+  }
+  if ((options.featureIds ?? []).length || (options.disclosedSpecifications ?? []).length
+    || (options.probedSpecifications ?? []).length) {
+    throw new Error('legacy recipes do not support modular feature/specification selection');
+  }
+  return createRecipeTaskRequest(binding, options);
+}
+
+export function resolveBoundRecipeTaskRequest(binding, request) {
+  if (!binding?.release) throw new Error('bound recipe task requires a recipe release');
+  if (isModularRecipeRelease(binding.release)) {
+    if (request?.schemaVersion !== 2) throw new Error('modular recipe requires a schema-2 task request');
+    return resolveModularRecipeTaskRequest(binding, request);
+  }
+  if (request?.schemaVersion !== 1) throw new Error('legacy recipe requires a schema-1 task request');
+  return resolveRecipeTaskRequest(binding, request);
 }
 
 // Filter a compiled scenario by stable recipe keys. This validates the entire

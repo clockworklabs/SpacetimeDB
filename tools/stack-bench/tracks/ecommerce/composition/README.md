@@ -91,3 +91,10 @@ currently support requested and unmentioned observation; external data
 synchronization is requested-only because its current oracle needs the exact
 interoperability table contract in the prompt. Campaign/runtime wiring and
 separate first-build probe execution remain unfinished.
+
+Draft recipes are listed in `candidates.json`, separate from
+`promotions.json`. Exact candidate selection therefore cannot change the
+promotion-catalog hash bound into qualified calibration evidence. The generic
+task-request boundary can replay schema-1 and schema-2 requests through the
+real agent and grading entrypoints; campaign schema-2 condition compilation is
+still pending.

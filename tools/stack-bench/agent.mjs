@@ -21,7 +21,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { loadTrack, levelPrompt, appendix, suitesFor, dbName, moduleName, portsFor, DEFAULT_TRACK } from './tracks.mjs';
 import { resolveRecipeRelease } from './recipe-release.mjs';
-import { createRecipeTaskRequest, resolveRecipeTaskRequest } from './recipe-selection.mjs';
+import { createBoundRecipeTaskRequest, resolveBoundRecipeTaskRequest } from './recipe-selection.mjs';
 import { writeSandbox } from './sandbox.mjs';
 import { killTree } from './platform.mjs';
 import { leaseFromEnv } from './backend-lease.mjs';
@@ -653,8 +653,8 @@ async function main() {
   }
   const selectedTask = recipeBinding
     ? (args.recipeTask
-        ? resolveRecipeTaskRequest(recipeBinding, args.recipeTask)
-        : createRecipeTaskRequest(recipeBinding))
+        ? resolveBoundRecipeTaskRequest(recipeBinding, args.recipeTask)
+        : createBoundRecipeTaskRequest(recipeBinding))
     : null;
   const requirementText = selectedTask?.task.requirementText ?? levelPrompt(track, args.level);
   const contractText = selectedTask?.task.contractText ?? appendix(track, args.level);

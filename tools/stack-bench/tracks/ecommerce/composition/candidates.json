@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "kind": "promotion-catalog",
+  "id": "ecommerce.candidates",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Ecommerce candidate recipes",
+  "entries": [
+    {
+      "alias": "L1",
+      "status": "candidate",
+      "recipe": { "path": "recipes/l1-modular-2.0.0.json", "id": "ecommerce.l1-modular", "version": "2.0.0" }
+    }
+  ]
+}
