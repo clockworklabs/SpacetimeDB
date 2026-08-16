@@ -8,10 +8,9 @@ LICENSE.txt @cloutiertyler @jdetter
 
 /crates/client-api-messages/src/websocket.rs @centril @gefjon
 
-/crates/cli/src/ @bfops @cloutiertyler @jdetter
 /tools/ci/ @bfops @cloutiertyler @jdetter
-/tools/ci/src/keynote_bench.rs @joshua-spacetime @cloutiertyler @jdetter
-/tools/ci/src/codeowners_check.rs @cloutiertyler
+/tools/ci/commands/keynote-bench/ @joshua-spacetime @cloutiertyler @jdetter
+/tools/ci/commands/codeowners-check/ @cloutiertyler
 /tools/upgrade-version/ @bfops @jdetter @cloutiertyler @rekhoff
 /tools/release/ @bfops @jdetter @cloutiertyler @rekhoff
 /tools/license-check/ @bfops @jdetter @cloutiertyler

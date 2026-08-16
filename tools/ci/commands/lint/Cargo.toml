@@ -1,0 +1,11 @@
+[package]
+name = "ci-lint"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+duct.workspace = true
+serde_json.workspace = true
+ci-common = { path = "../../common" }
