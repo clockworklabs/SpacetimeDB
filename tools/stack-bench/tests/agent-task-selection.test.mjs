@@ -86,26 +86,31 @@ test('selected pack prompts contain only their own framework-neutral testing cal
   } finally { rmSync(app, { recursive: true, force: true }); }
 });
 
-test('the real agent prints a modular prompt without expected or observed specification text', () => {
+test('the real unprescribed prompt withholds every expected quality specification', () => {
   const modular = resolveRecipeRelease(loadTrack('ecommerce'), 1,
     'ecommerce.l1-modular@2.0.0');
-  const expectedCheck = modular.release.checkCatalog.find(check =>
-    check.packId === 'ecommerce.spec.state-durability'
-      && check.observations?.includes('unmentioned')
-      && check.requiresFeatures?.includes('ecommerce.feature.accounts'));
+  const features = modular.release.components.packs
+    .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
+  const expectedSpecifications = modular.release.components.packs
+    .filter(pack => pack.moduleType === 'specification'
+      && pack.id !== 'ecommerce.spec.external-data-sync')
+    .map(pack => `${pack.id}@${pack.version}`);
   const task = createBoundRecipeTaskRequest(modular, {
-    featureIds: ['ecommerce.feature.accounts'],
-    expectedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
-    checkKeys: [expectedCheck.stableKey],
+    featureIds: features,
+    expectedSpecifications,
   });
   const app = mkdtempSync(join(tmpdir(), 'stack-bench-modular-task-'));
   try {
     const visible = createAgentVisibleTaskRequest(modular, task);
     const prompt = printPrompt(app, visible);
     assert.match(prompt, /## Accounts/);
-    assert.doesNotMatch(prompt, /## State durability|## Cart|## Reviews|Warehouse administration/);
-    assert.doesNotMatch(prompt, /ecommerce\.spec|state-durability/);
-    assert.doesNotMatch(JSON.stringify(visible), /state-durability/);
+    assert.match(prompt, /## Cart and checkout/);
+    assert.match(prompt, /## Warehouse administration/);
+    assert.doesNotMatch(prompt, /## Access control:|## State durability:|## Live state:|## Concurrency safety:|## Transactional integrity:/);
+    assert.doesNotMatch(prompt, /server-enforced authority|survives a page reload|only one customer can receive the last unit|historical order prices do not change/);
+    assert.doesNotMatch(JSON.stringify(visible), /ecommerce\.spec/);
+    assert.equal(task.selection.scoredPoints, 44);
+    assert(task.selection.scoredChecks.some(check => check.treatment === 'expected'));
     assert.deepEqual(visible.selection.requested.checks, []);
   } finally { rmSync(app, { recursive: true, force: true }); }
 });

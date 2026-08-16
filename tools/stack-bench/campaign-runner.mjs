@@ -183,9 +183,26 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
       const validScore = Number.isInteger(level.score) && Number.isInteger(level.max)
         && level.max > 0 && level.score >= 0 && level.score <= level.max;
       mismatch(!validScore, `levels.L${level.level}.score`);
-      if (plannedLevel?.selection?.schemaVersion === 3) {
-        mismatch(validScore && level.max !== plannedLevel.selection.scoredPoints,
-          `levels.L${level.level}.max`);
+      const declaredPoints = plannedLevel?.selection?.scoredPoints;
+      mismatch(!Number.isSafeInteger(declaredPoints) || declaredPoints <= 0,
+        `levels.L${level.level}.plannedSelection.scoredPoints`);
+      mismatch(validScore && level.max !== declaredPoints, `levels.L${level.level}.max`);
+      const firstBuildScore = level.firstBuild?.score;
+      const firstBuildMax = level.firstBuild?.max;
+      const validFirstBuildScore = Number.isInteger(firstBuildScore)
+        && Number.isInteger(firstBuildMax) && firstBuildMax > 0
+        && firstBuildScore >= 0 && firstBuildScore <= firstBuildMax;
+      mismatch(!validFirstBuildScore, `levels.L${level.level}.firstBuild.score`);
+      mismatch(validFirstBuildScore && firstBuildMax !== declaredPoints,
+        `levels.L${level.level}.firstBuild.max`);
+      for (const [phase, outcome] of [['firstBuild', level.firstBuild?.outcome],
+        ['final', level.outcome]]) {
+        const atOutcome = `levels.L${level.level}.${phase}.outcome`;
+        mismatch(!outcome || !['passed', 'app_failure'].includes(outcome.kind), `${atOutcome}.kind`);
+        mismatch(Array.isArray(outcome?.inconclusive) && outcome.inconclusive.length > 0,
+          `${atOutcome}.inconclusive`);
+        mismatch(Array.isArray(outcome?.harnessFailures) && outcome.harnessFailures.length > 0,
+          `${atOutcome}.harnessFailures`);
       }
       if (level.outcome?.kind === 'passed') {
         const expected = level.fixRounds > 0 ? 'corrected' : 'not-needed';

@@ -36,8 +36,8 @@ const PRICE_MODEL_FIELDS = new Set(['inputPerMillion', 'outputPerMillion',
 const ANALYSIS_FIELDS = new Set(['primaryMetric', 'secondaryMetrics', 'dispersion',
   'invalidAttempts', 'missingData', 'comparisonUnit']);
 const RUNTIME_FIELDS = new Set(['releaseManifestSha256', 'controllerImage', 'buildImage', 'platform']);
-const RETRY_CAUSES = new Set(['harness_failure']);
-const EXCLUSION_CAUSES = new Set(['harness_failure', 'ungraded', 'contaminated']);
+const RETRY_CAUSES = new Set(['harness_failure', 'inconclusive']);
+const EXCLUSION_CAUSES = new Set(['harness_failure', 'inconclusive', 'ungraded', 'contaminated']);
 const OUTCOME_METRICS = new Set(['firstBuildScoreRate', 'finalScoreRate', 'totalCostUsd',
   'totalDurationMs', 'fixRounds', 'correctionSuccessRate', 'correctionCostUsd',
   'correctionSpendUsd', 'firstBuildCoverageRate', 'finalCoverageRate',

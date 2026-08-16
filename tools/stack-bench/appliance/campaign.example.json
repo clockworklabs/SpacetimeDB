@@ -43,8 +43,8 @@
   },
   "attemptPolicy": {
     "retries": 1,
-    "retryOn": ["harness_failure"],
-    "excludeFromAnalysis": ["contaminated", "harness_failure", "ungraded"]
+    "retryOn": ["harness_failure", "inconclusive"],
+    "excludeFromAnalysis": ["contaminated", "harness_failure", "inconclusive", "ungraded"]
   },
   "runtime": {
     "releaseManifestSha256": null,

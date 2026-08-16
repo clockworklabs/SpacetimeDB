@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "kind": "campaign-manifest",
-  "id": "ecommerce-l1-treatment-reference",
+  "id": "ecommerce-l1-unprescribed-reference",
   "version": "1.0.0",
   "state": "draft",
-  "title": "Ecommerce L1 expected and observed treatment reference gate",
+  "title": "Ecommerce L1 unprescribed quality reference gate",
   "track": "ecommerce",
   "levels": [1],
   "selection": {
@@ -38,7 +38,7 @@
   ],
   "conditions": [
     {
-      "id": "expected-state-durability",
+      "id": "unprescribed-quality",
       "version": "1.0.0",
       "guidanceProfile": "neutral@1.0.0",
       "repairPolicy": "scored-only@1.0.0",
@@ -47,24 +47,14 @@
           {
             "level": 1,
             "requested": [],
-            "expected": ["ecommerce.spec.state-durability@1.0.0"],
+            "expected": [
+              "ecommerce.spec.access-control@1.0.0",
+              "ecommerce.spec.concurrency-safety@1.0.0",
+              "ecommerce.spec.live-state@1.0.0",
+              "ecommerce.spec.state-durability@1.0.0",
+              "ecommerce.spec.transactional-integrity@1.0.0"
+            ],
             "observed": []
-          }
-        ]
-      }
-    },
-    {
-      "id": "observed-state-durability",
-      "version": "1.0.0",
-      "guidanceProfile": "neutral@1.0.0",
-      "repairPolicy": "scored-only@1.0.0",
-      "specifications": {
-        "levels": [
-          {
-            "level": 1,
-            "requested": [],
-            "expected": [],
-            "observed": ["ecommerce.spec.state-durability@1.0.0"]
           }
         ]
       }
@@ -73,7 +63,7 @@
   "repetitions": 2,
   "ordering": {
     "method": "balanced-rotation",
-    "seed": "defaults-reference-gate-1"
+    "seed": "unprescribed-quality-reference-1"
   },
   "budgets": {
     "fixRounds": 0,
@@ -82,8 +72,8 @@
   },
   "attemptPolicy": {
     "retries": 1,
-    "retryOn": ["harness_failure"],
-    "excludeFromAnalysis": ["contaminated", "harness_failure", "ungraded"]
+    "retryOn": ["harness_failure", "inconclusive"],
+    "excludeFromAnalysis": ["contaminated", "harness_failure", "inconclusive", "ungraded"]
   },
   "runtime": {
     "releaseManifestSha256": null,

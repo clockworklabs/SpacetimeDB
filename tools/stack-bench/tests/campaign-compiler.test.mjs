@@ -29,8 +29,8 @@ function definition(overrides = {}) {
     repetitions: 3,
     ordering: { method: 'balanced-rotation', seed: 'published-seed-1' },
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: null },
-    attemptPolicy: { retries: 1, retryOn: ['harness_failure'],
-      excludeFromAnalysis: ['contaminated', 'harness_failure', 'ungraded'] },
+    attemptPolicy: { retries: 1, retryOn: ['harness_failure', 'inconclusive'],
+      excludeFromAnalysis: ['contaminated', 'harness_failure', 'inconclusive', 'ungraded'] },
     runtime: { releaseManifestSha256: null, controllerImage: null, buildImage: null,
       platform: 'linux/amd64' },
     pricing: { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
@@ -260,24 +260,26 @@ test('the packaged model-free campaign example compiles without starting work', 
     repetitions: 3, stacks: 3 });
 });
 
-test('the packaged modular reference gate fixes expected and observed treatments', () => {
+test('the packaged modular reference gate scores quality specifications without prompting them', () => {
   const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance',
-    'campaign.treatment-reference.json'));
+    'campaign.unprescribed-reference.json'));
   assert.equal(plan.state, 'draft');
-  assert.deepEqual(plan.summary, { agents: 1, attempts: 12, conditions: 2,
+  assert.deepEqual(plan.summary, { agents: 1, attempts: 6, conditions: 1,
     repetitions: 2, stacks: 3 });
   assert.equal(plan.agents[0].adapter, 'reference-fixture');
-  const expected = plan.conditions.find(condition => condition.id === 'expected-state-durability');
-  const observed = plan.conditions.find(condition => condition.id === 'observed-state-durability');
+  const expected = plan.conditions.find(condition => condition.id === 'unprescribed-quality');
   assert.deepEqual(expected.requested.levels[0].selection.specifications,
-    { requested: [], expected: ['ecommerce.spec.state-durability@1.0.0'], observed: [] });
+    { requested: [], expected: [
+      'ecommerce.spec.access-control@1.0.0',
+      'ecommerce.spec.concurrency-safety@1.0.0',
+      'ecommerce.spec.live-state@1.0.0',
+      'ecommerce.spec.state-durability@1.0.0',
+      'ecommerce.spec.transactional-integrity@1.0.0',
+    ], observed: [] });
   assert.equal(expected.requested.levels[0].selection.observedChecks.length, 0);
-  assert.equal(expected.requested.levels[0].selection.scoredPoints, 18);
-  assert.deepEqual(observed.requested.levels[0].selection.specifications,
-    { requested: [], expected: [],
-      observed: ['ecommerce.spec.state-durability@1.0.0'] });
-  assert.equal(observed.requested.levels[0].selection.observedChecks.length, 4);
-  assert.equal(observed.requested.levels[0].selection.scoredPoints, 14);
+  assert.equal(expected.requested.levels[0].selection.scoredPoints, 44);
+  assert(expected.requested.levels[0].selection.scoredChecks
+    .some(check => check.treatment === 'expected'));
 });
 
 test('compiled campaign validation rejects a rewritten identity, schedule, or summary', () => {

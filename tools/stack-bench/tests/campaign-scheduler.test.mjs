@@ -49,6 +49,18 @@ test('invalid executions remain visible and retries append rather than overwrite
   assert.equal(complete.summary.executions, 2);
 });
 
+test('an inconclusive measurement is retried and never becomes comparison data', () => {
+  const active = claimed();
+  const state = finishCampaignExecution(active.state, active.claim.executionId, {
+    exitCode: 0, run: { outcome: { kind: 'inconclusive',
+      inconclusive: ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b'] } },
+  }, { retries: 1, retryOn: ['inconclusive'], now: '2026-08-12T00:04:00.000Z' });
+  assert.equal(state.attempts[0].status, 'pending');
+  assert.equal(state.attempts[0].executions[0].status, 'invalid');
+  assert.equal(state.attempts[0].executions[0].outcome, 'inconclusive');
+  assert.match(state.attempts[0].executions[0].reason, /pass-or-fail/);
+});
+
 test('a plausible run artifact cannot hide a failed attempt process', () => {
   const active = claimed();
   const state = finishCampaignExecution(active.state, active.claim.executionId, {

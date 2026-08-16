@@ -2,8 +2,8 @@
 
 import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { hashFiles } from './provenance.mjs';
 
@@ -18,6 +18,10 @@ const RELEASE_SOURCE_PATHS = Object.freeze([
   '.dockerignore',
   '.gitattributes',
 ]);
+
+export function releaseSourceRoot() {
+  return realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'));
+}
 
 function defaultGit(root, args) {
   return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', windowsHide: true,
@@ -44,7 +48,7 @@ function main() {
     console.error('Usage: node release-source.mjs [--json]');
     process.exit(2);
   }
-  const identity = releaseSourceIdentity();
+  const identity = releaseSourceIdentity(releaseSourceRoot());
   if (process.argv[2] === '--json') console.log(JSON.stringify(identity, null, 2));
   else {
     process.stdout.write(`SOURCE_REVISION=${identity.revision}\n`);

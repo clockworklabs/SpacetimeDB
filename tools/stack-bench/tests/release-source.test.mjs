@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { releaseSourceIdentity } from '../release-source.mjs';
+import { releaseSourceIdentity, releaseSourceRoot } from '../release-source.mjs';
+
+test('the release-source CLI anchors itself to the repository instead of the caller cwd', () => {
+  assert.equal(releaseSourceRoot(), realpathSync(join(import.meta.dirname, '..', '..', '..')));
+});
 
 function repository() {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-'));

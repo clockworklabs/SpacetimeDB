@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Stack Bench - Meeting Brief</title>
+  <title>Stack Bench - Engineering History</title>
   <style>
     :root {
       color-scheme: light;
@@ -191,6 +191,21 @@
       content: "";
     }
     .event p { margin: 4px 0 0; color: var(--muted); }
+    .event .tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+    .event .tag {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--card);
+      padding: 3px 8px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .event .tag.invalid { border-color: #efb4ae; background: var(--red-soft); color: var(--red); }
+    .event .tag.verified { border-color: #9cd6c1; background: var(--green-soft); color: var(--green); }
+    .event .tag.current { border-color: #abc0f4; background: var(--blue-soft); color: var(--blue); }
 
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { border-bottom: 1px solid var(--line); padding: 12px 10px; text-align: left; vertical-align: top; }
@@ -259,42 +274,60 @@
 <body>
   <div class="topbar">
     <div class="shell">
-      <div class="brand">Stack Bench / Meeting Brief</div>
+      <div class="brand">Stack Bench / Engineering History</div>
       <nav aria-label="Document sections">
-        <a href="#summary">Summary</a>
-        <a href="#pilot">Latest pilot</a>
+        <a href="#history">Timeline</a>
+        <a href="#summary">Current state</a>
+        <a href="#coverage">Coverage</a>
         <a href="#flow">How it works</a>
         <a href="#agent-inputs">Agent inputs</a>
-        <a href="#coverage">Coverage</a>
-        <a href="#history">History</a>
-        <a href="#product-changes">Product changes</a>
-        <a href="#cost">Cost analysis</a>
-        <a href="#status">Status</a>
+        <a href="#pilot">Pilot evidence</a>
+        <a href="#cost">Cost history</a>
+        <a href="#product-changes">Product outcomes</a>
         <a href="#next">Next</a>
       </nav>
     </div>
   </div>
 
   <header class="shell">
-    <div class="eyebrow">Stakeholder briefing · 16 August 2026</div>
-    <h1>A benchmark you can rerun, inspect, and trust.</h1>
-    <p class="dek">Stack Bench is a controlled evaluation appliance for AI-generated application stacks. It asks an agent to build the same product on different backends, verifies real behavior in Docker, and preserves the exact inputs, evidence, time, cost, and failures behind every result.</p>
+    <div class="eyebrow">Visual engineering record · through 16 August 2026</div>
+    <h1>How Stack Bench became an instrument we can trust.</h1>
+    <p class="dek">This is the useful history: what we tried, which results were invalid, what the failures taught us, what changed in the harness and product, and what evidence is ready to use today.</p>
     <div class="status-row">
       <span class="pill">Docker-only build path</span>
-      <span class="pill">373 automated tests passing</span>
+      <span class="pill">376 automated tests passing</span>
       <span class="pill">Versioned recipes and evidence</span>
       <span class="pill">Framework-neutral L1 and L2 promoted</span>
       <span class="pill warn">Production hardening in progress</span>
-      <span class="pill">First frozen three-stack pilot complete</span>
+      <span class="pill warn">Historical pilot exposed incomplete measurement</span>
       <span class="pill warn">Repeated comparison still pending</span>
     </div>
   </header>
 
   <main>
+    <section id="history" class="shell">
+      <div class="section-head">
+        <h2>The engineering timeline</h2>
+        <p>Each milestone records both the result and whether that result remains usable. The project advanced mostly by finding reasons not to trust an apparently clean score.</p>
+      </div>
+      <div class="timeline">
+        <div class="event"><time>Jun-Jul</time><div class="body"><h3>Sequential upgrades proved the basic idea</h3><p>An agent could carry an application through multiple levels, and the experiment expanded to three backends. The runs were useful exploration, but their exact inputs and evidence cannot be reconstructed.</p><div class="tags"><span class="tag invalid">Historical only</span><span class="tag">Idea validated</span></div></div></div>
+        <div class="event"><time>Aug 4</time><div class="body"><h3>Stack Bench became an executable harness</h3><p>Browser grading, mutation testing, separate feature and guarantee axes, per-run databases, and a model-free fixture replaced manual interpretation. The first lesson was immediate: happy-path feature scores saturated on a strong model.</p><div class="tags"><span class="tag">Harness v0</span><span class="tag">Features saturated</span></div></div></div>
+        <div class="event"><time>Aug 6</time><div class="body"><h3>We voided every earlier score</h3><p>Transcript audits showed generated apps reading scenarios, grader code, contracts, and notes. The agent had access to the answer key. The response was Docker-only generation with hidden grading inputs and explicit contamination evidence.</p><div class="tags"><span class="tag invalid">Scores invalidated</span><span class="tag verified">Isolation added</span></div></div></div>
+        <div class="event"><time>Aug 7-9</time><div class="body"><h3>The cost story changed</h3><p>Code volume did not explain spend. Repeated context reads, compiler failures, source-diving, and repair turns did. Cost became evidence about developer friction, and the immutable unaided first build became a primary result rather than something repairs could overwrite.</p><div class="tags"><span class="tag invalid">Simple thesis rejected</span><span class="tag">First-build metric</span></div></div></div>
+        <div class="event"><time>Aug 10</time><div class="body"><h3>Isolation and scoring bugs consumed real runs</h3><p>Container starts failed, changing denominators looked like regressions, ports collided, and cleanup could not be assumed. Authenticated backend leases, bounded Docker builds, exact ownership, source rollback, and retained invalid attempts came directly from those failures.</p><div class="tags"><span class="tag invalid">Runs lost</span><span class="tag verified">Fail-closed lifecycle</span></div></div></div>
+        <div class="event"><time>Aug 10-11</time><div class="body"><h3>The benchmark found real SDK and CLI defects</h3><p>Reconnect evidence isolated identity loss on the recommended TypeScript client path. A separate Docker reproduction proved a real <code>spacetime dev</code> log-stream authorization defect. Both fixes landed in product code with regressions, not as benchmark prompt workarounds.</p><div class="tags"><span class="tag verified">Product fixes</span><span class="tag">SDK + CLI</span></div></div></div>
+        <div class="event"><time>Aug 11-13</time><div class="body"><h3>The grader itself became qualified</h3><p>Known-good references, blank-app null controls, and exact seeded defects were repeated in Docker. Packs, recipes, fixtures, calibration, typed artifacts, a 47-action executor registry, campaign admission, and reproducible reports turned a script collection into versioned product contracts.</p><div class="tags"><span class="tag verified">Reference + null + mutation</span><span class="tag">Versioned contracts</span></div></div></div>
+        <div class="event"><time>Aug 14-15</time><div class="body"><h3>L1 and L2 reached a qualified framework-neutral baseline</h3><p>Ecommerce L1 1.1 and L2 1.2 retained their behavior and scoring while shared framework advice was removed. Each gained all 13 required qualification evidence slots across MongoDB, PostgreSQL, and SpacetimeDB before the promoted aliases moved.</p><div class="tags"><span class="tag verified">Qualified in Docker</span><span class="tag verified">Promoted</span></div></div></div>
+        <div class="event"><time>Aug 16</time><div class="body"><h3>The first frozen pilot exposed another acceptance gap</h3><p>SpacetimeDB produced 106/106 conclusive points. PostgreSQL and MongoDB earned every measurable point after repair but the same two-tab duplicate-checkout check was inconclusive at L1 and L2, leaving 104/106 declared coverage. The old scheduler called all three attempts completed; the production rule now invalidates and retries incomplete measurement instead of comparing it.</p><div class="tags"><span class="tag invalid">2 rows diagnostic only</span><span class="tag verified">No reduced denominators</span></div></div></div>
+        <div class="event"><time>Now</time><div class="body"><h3>Prompts, scoring, and repairs are modular and independent</h3><p>The primary L1 condition asks only for six product features with neutral backend guidance. Access control, state continuity, live updates, concurrency safety, and transactional integrity stay out of the initial prompt but still count in the 44-point score and can enter repair. The exact six-attempt three-stack reference gate is defined; cross-stack controls and repeated live comparisons are next.</p><div class="tags"><span class="tag current">Current work</span><span class="tag">Unprescribed but scored</span></div></div></div>
+      </div>
+    </section>
+
     <section id="summary" class="shell">
       <div class="section-head">
-        <h2>The 60-second version</h2>
-        <p>The product is no longer a one-off scoreboard. It is becoming a repeatable way to measure how well a model can build, repair, and preserve guarantees on a chosen stack.</p>
+        <h2>Where the project stands now</h2>
+        <p>This is the current snapshot after the timeline above—not a claim that every historical result survived the hardening process.</p>
       </div>
       <div class="grid three">
         <article class="card">
@@ -322,20 +355,20 @@
             <tr><td><strong>Concurrency</strong></td><td>Six buyers race for three units, two tabs checkout one cart, restock overlaps purchases, transfer overlaps purchase, and live projections converge.</td><td>A design that passes sequential clicks but oversells or applies the same intent twice.</td></tr>
             <tr><td><strong>Live behavior and reconnect</strong></td><td>Open clients see other actors, direct database writes, disconnect catch-up, reload continuity, and server restart reconciliation without manual refresh.</td><td>Updates exist only in local memory, an event is missed during downtime, or reconnect creates a new identity.</td></tr>
             <tr><td><strong>Durability and lifecycle</strong></td><td>Write while the app server is down, restart the exact leased service, reconnect a clean client, and compare persisted state.</td><td>An in-process relay looks correct during a demo but cannot recover missed committed changes.</td></tr>
-            <tr><td><strong>Measurement controls</strong></td><td>Repeated known-good references, exact seeded defects, blank-app null control, stable image/harness fingerprints, complete teardown, and typed inconclusive outcomes.</td><td>A vacuous assertion, broken oracle, contaminated run, flaky resource, or mutation that fails for the wrong reason.</td></tr>
+            <tr><td><strong>Measurement controls</strong></td><td>Repeated known-good references, exact seeded defects, blank-app null control, stable image/harness fingerprints, complete teardown, and typed inconclusive outcomes that invalidate comparison attempts.</td><td>A vacuous assertion, broken oracle, contaminated run, flaky resource, or mutation that fails for the wrong reason.</td></tr>
           </tbody>
         </table>
       </div>
       <div class="callout warning" style="margin-top:16px">
         <strong>The honest current position</strong>
-        The harness is materially stronger and already useful for engineering and diagnostic runs. Framework-neutral L1 1.1 and L2 1.2 have complete repeated Docker reference, mutation, and null evidence on all three stacks, zero machine qualification blockers, and the promoted public aliases. A frozen one-repetition prescribed pilot has now completed on all three stacks with no invalid executions. It is real current evidence, but one run per stack cannot establish variability or a backend winner.
+        The harness is materially stronger and already useful for engineering and diagnostic runs. Framework-neutral L1 1.1 and L2 1.2 have complete repeated Docker reference, mutation, and null evidence on all three stacks, zero machine qualification blockers, and the promoted public aliases. A frozen one-repetition prescribed pilot ran on all three stacks. It exposed a production-policy gap: PostgreSQL and MongoDB had incomplete measurement coverage, so the current admission rule would retain those executions as invalid diagnostics rather than comparison rows. One run per stack also cannot establish variability or a backend winner.
       </div>
     </section>
 
     <section id="pilot" class="shell">
       <div class="section-head">
-        <h2>The first frozen three-stack pilot</h2>
-        <p>Exactly one Claude Sonnet 5 attempt ran per stack on Linux/amd64, using the same ecommerce L1 and L2 releases, prescribed guidance, budgets, pricing snapshot, and immutable controller/build images. This is a pipeline and signal pilot—not a statistically repeated comparison.</p>
+        <h2>A historical pilot, and what it exposed</h2>
+        <p>Exactly one Claude Sonnet 5 attempt ran per stack on Linux/amd64 under the same frozen inputs. The table is retained because it changed the harness. It is diagnostic history—not a statistically repeated comparison and not a current three-row benchmark result.</p>
       </div>
       <div class="table-wrap">
         <table>
@@ -348,13 +381,13 @@
         </table>
       </div>
       <div class="grid three" style="margin-top:18px">
-        <article class="card"><div class="number">3 / 3</div><div class="label">planned attempts completed; zero invalid attempts or executions</div></article>
+        <article class="card"><div class="number">3 / 3</div><div class="label">planned attempts ran; only 1 / 3 meets the current complete-measurement rule</div></article>
         <article class="card"><div class="number">$65.1764</div><div class="label">total normalized API-equivalent usage across the pilot</div></article>
         <article class="card"><div class="number">about 4h 49m</div><div class="label">total execution time across the three attempts</div></article>
       </div>
       <div class="callout warning" style="margin-top:18px">
         <strong>How to read this table</strong>
-        PostgreSQL and MongoDB earned every measurable point, but the same one-point two-tab observation was inconclusive at both levels, so neither is presented as a full 106/106 pass. Score and measurement coverage are separate. Repair spend is included in total normalized usage, not additional to it. Subscription use is normalized to the campaign's frozen API list-price equivalent; it is not an API invoice.
+        PostgreSQL and MongoDB earned every measurable point, but the same one-point two-tab observation was inconclusive at both levels. The historical scheduler accepted those rows because it kept score and coverage separate. The production rule is now stricter: both attempts would be invalid measurement, retried once, and excluded from comparison metrics unless all 106 declared points became measurable. This does not turn missing evidence into a failed app check. Repair spend is included in total normalized usage, not additional to it. Subscription use is normalized to the campaign's frozen API list-price equivalent; it is not an API invoice.
       </div>
       <div class="callout" style="margin-top:18px">
         <strong>The hardening worked during a real run</strong>
@@ -687,28 +720,9 @@ else if (!evidenceIsMeasured(evidence)) {
       <p class="muted">Some systems and contention checks intentionally carry zero points while their oracle or mutation evidence is still being qualified. They remain visible diagnostics; they cannot quietly inflate or reduce a published score.</p>
     </section>
 
-    <section id="history" class="shell">
-      <div class="section-head">
-        <h2>How we got here</h2>
-        <p>The history matters because most of the current product shape came from invalid runs and false conclusions, not from a clean greenfield design.</p>
-      </div>
-      <div class="timeline">
-        <div class="event"><time>Jun-Jul</time><div class="body"><h3>The predecessor: sequential upgrades</h3><p>We learned that an agent could carry applications through a ladder of levels and added a third backend. The runs were useful exploration, but their exact inputs and evidence cannot be reconstructed today.</p></div></div>
-        <div class="event"><time>Aug 4</time><div class="body"><h3>Stack Bench begins as a real harness</h3><p>Functional browser grading, mutation testing, separate feature/guarantee axes, per-run databases, a model-free loop fixture, and levels organized by verifiable properties appeared together.</p></div></div>
-        <div class="event"><time>Aug 6</time><div class="body"><h3>Every earlier score was voided</h3><p>Transcript audits showed generated apps reading scenarios, grader code, contracts, and notes. The lesson was foundational: the agent will optimize against anything it can see, and contamination can be asymmetric.</p></div></div>
-        <div class="event"><time>Aug 7-9</time><div class="body"><h3>The cost thesis changed</h3><p>Feature scores saturated. Cost analysis showed that code volume was not the driver; repeated context reads, compiler failures, source-diving, and repair turns were. The benchmark shifted from scoreboard to product-friction instrument.</p></div></div>
-        <div class="event"><time>Aug 10</time><div class="body"><h3>Isolation and measurement failures ate real runs</h3><p>Container attempts initially failed, fix-round comparison treated a changed denominator as regression, and the first build was being overwritten. The harness moved to Docker-only builds, preserved unaided attempts, and gained authenticated leases and cleanup controls.</p></div></div>
-        <div class="event"><time>Aug 10-11</time><div class="body"><h3>The instrument found and helped verify real product defects</h3><p>Cost and failing guarantees led back to reconnect identity loss on the recommended client path. Separately, the Docker log-stream warning was proven to be a real <code>spacetime dev</code> authorization defect; the CLI identity handoff was fixed and the reproduction made mandatory.</p></div></div>
-        <div class="event"><time>Aug 11</time><div class="body"><h3>References, mutations, null controls, and Docker qualification</h3><p>Preserved reference apps became byte-bound and buildable. Repeated live Docker gates exposed reset, timeout, mutation, and oracle defects. Candidate references passed, but later executable changes mean they must be qualified again before publication.</p></div></div>
-        <div class="event"><time>Aug 12</time><div class="body"><h3>From scripts to versioned product contracts</h3><p>Packs, recipes, fixtures, calibration, exact selection, artifact envelopes, and the 47-action registry landed. All 47 actions now run through independent capability-scoped executors; the central compatibility dispatcher is gone.</p></div></div>
-        <div class="event"><time>Aug 13</time><div class="body"><h3>The first qualified baseline</h3><p>Promoted ecommerce L1 1.0 and L2 1.1 gained repeated Docker reference, mutation, and null evidence for MongoDB, PostgreSQL, and SpacetimeDB. Campaign admission, checkpointing, failure retention, correction accounting, reporting, and the Linux appliance were hardened around those controls.</p></div></div>
-        <div class="event"><time>Aug 14-15</time><div class="body"><h3>Composable study conditions and framework-neutral defaults</h3><p>Requested behavior became independently selectable by pack, while prescribed versus neutral backend guidance became a separate versioned study axis. Framework-neutral L1 1.1 and L2 1.2 keep the same execution/scoring but remove shared framework advice. Both completed all 13 fresh qualification evidence slots before their governance states and public aliases moved; the earlier releases are retired.</p></div></div>
-      </div>
-    </section>
-
     <section id="product-changes" class="shell">
       <div class="section-head">
-        <h2>Changes to the actual SDK and CLI</h2>
+        <h2>Product changes that came out of the work</h2>
         <p>These are product-code outcomes prompted by the benchmark. They are separate from changes that only hardened Stack Bench.</p>
       </div>
       <div class="grid three">
@@ -742,7 +756,7 @@ else if (!evidenceIsMeasured(evidence)) {
 
     <section id="cost" class="shell">
       <div class="section-head">
-        <h2>The original cost analysis</h2>
+        <h2>How the cost analysis evolved</h2>
         <p>This analysis is historically valuable because it explains the product direction. It is not a current publishable backend ranking.</p>
       </div>
 
@@ -816,7 +830,7 @@ else if (!evidenceIsMeasured(evidence)) {
 
     <section id="status" class="shell">
       <div class="section-head">
-        <h2>What exists today</h2>
+        <h2>Current production-readiness ledger</h2>
         <p>The distinction below is intentional: working engineering infrastructure is not the same thing as a frozen, qualified benchmark release.</p>
       </div>
       <div class="grid two">
@@ -837,10 +851,10 @@ else if (!evidenceIsMeasured(evidence)) {
             <li>Real Docker smoke publishes a TypeScript module, verifies SQL and watcher health, and requires authorized logs</li>
             <li>Framework-neutral L1 1.1 and L2 1.2 each have fresh 13/13 qualification evidence and now own the promoted default aliases; prior releases are retired from new execution</li>
             <li>For every L2 stack, two stable pristine repetitions scored 55/55 plus 20/20 inherited; two mutation repetitions each caught all 3/3 declared defects, and the null control failed every scored criterion</li>
-            <li>A frozen prescribed L1/L2 pilot completed one attempt on each stack with zero invalid executions, immutable raw evidence, normalized cost/time, correction accounting, and a reproducible report</li>
+            <li>A frozen prescribed L1/L2 pilot ran one attempt on each stack with immutable evidence, normalized cost/time, correction accounting, and a reproducible report. It exposed incomplete measurement on PostgreSQL and MongoDB; current campaigns invalidate and retry such attempts instead of comparing reduced denominators.</li>
             <li>A draft modular L1 catalog separates six product features from six optional specifications, preserves all 48 existing criteria and 51 points, and gives every specification one explicit treatment: requested, expected, observed, or excluded. Expected requirements stay out of the initial prompt but count in scoring and repairs; observed-only behavior remains source-bound and separate. Qualification is still required.</li>
             <li>A model-free Docker-backed SpacetimeDB reference run exercised the draft path end to end: requested features passed 14/14, the separate hidden durability observation passed 4/4 with zero score contribution, no repairs ran, source hashes matched, and owned resources were released. This is one-stack execution proof, not qualification.</li>
-            <li>The redundant probe-profile switch has been removed. A draft model-free gate now fixes expected and observed durability conditions with two exact reference repetitions on each of the three stacks—12 attempts total—and the reference adapter seeds only the content-validated registered fixture. That gate is prepared but has not yet supplied cross-stack qualification evidence.</li>
+            <li>The primary draft unprescribed condition now asks only for the six product features under neutral backend guidance. Access control, state continuity, live updates, concurrency safety, and transactional integrity are absent from the initial prompt but still contribute to its 44-point score and remain repairable. A model-free reference gate fixes two exact repetitions on each of the three stacks—six attempts total. External data synchronization is excluded because its current oracle requires a disclosed table contract. The gate is prepared but has not yet supplied cross-stack qualification evidence.</li>
           </ul>
         </article>
         <article class="card">
@@ -899,7 +913,7 @@ else if (!evidenceIsMeasured(evidence)) {
   </main>
 
   <footer>
-    <div class="shell">Stack Bench meeting brief · generated from the repository's implementation plan, roadmap, findings, history, qualification evidence, and engineering journal · current as of 16 August 2026</div>
+    <div class="shell">Stack Bench visual engineering history · assembled from the implementation plan, findings, immutable qualification evidence, retained pilot facts, and engineering journal · current as of 16 August 2026</div>
   </footer>
 </body>
 </html>

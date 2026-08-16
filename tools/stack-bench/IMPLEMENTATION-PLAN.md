@@ -658,6 +658,16 @@ round was used and the result says the budget was exhausted. Reports count cost
 to correct only when correction succeeds; spend on unresolved attempts remains
 visible as correction spend instead of being mislabeled as success.
 
+Campaign admission now also requires complete measurement. Every selected
+check must produce pass-or-fail evidence on the immutable first build and the
+final build, and both measured denominators must equal the exact points declared
+by the campaign plan. Any inconclusive selected check makes the execution
+invalid measurement: its evidence is retained for harness diagnosis, it may use
+the one declared clean retry, and it contributes no comparison metrics. A real
+application failure after the correction budget remains admissible data because
+it is conclusive; missing measurement is not converted into an application
+failure or a smaller denominator.
+
 ### SB-503: Deterministic report
 
 Generate JSON tables and self-contained static HTML from the artifact read model.
@@ -763,11 +773,14 @@ Implemented foundation: treatment is owned directly by the selected
 specification, so there is no redundant probe-profile axis. The reference adapter
 can seed an empty campaign app
 from the exact active fixture in the content-validated registry and rejects any
-different pre-existing source. `campaign.treatment-reference.json` fixes
-model-free expected and observed durability conditions, each with two
-repetitions on all three stacks (12 attempts). This prepares reproducible
-reference input; it does not replace required live reference, null, and
-exact-mutation evidence.
+different pre-existing source. `campaign.unprescribed-reference.json` fixes the
+primary expected-quality condition: six requested product features, neutral
+backend guidance, and five unmentioned but scored/repairable specifications.
+It runs two model-free reference repetitions on all three stacks (six attempts)
+with an exact 44-point denominator. External data synchronization remains
+excluded because its current oracle requires a disclosed table contract. This
+prepares reproducible reference input; it does not replace required live
+reference, null, and exact-mutation evidence.
 
 ### SB-507: Condition-aware campaigns and reports
 
@@ -863,7 +876,7 @@ them. Live qualification does not run concurrently with executable harness edits
     qualification remains part of the next campaign gate).
 24. [ ] SB-506 first-build capability probes (single-execution, source binding,
     zero-score isolation, repair exclusion, per-specification observed treatment,
-    exact-fixture reference seeding, a draft three-stack treatment-gate campaign,
+    exact-fixture reference seeding, a draft three-stack unprescribed-quality campaign,
     one-stack Docker execution, and exact controller-image tests are complete;
     live cross-stack reference/null/mutation qualification and a frozen appliance
     condition remain).

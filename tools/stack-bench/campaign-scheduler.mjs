@@ -9,8 +9,8 @@ export const CAMPAIGN_STATE_SCHEMA_VERSION = 1;
 const ATTEMPT_STATUSES = new Set(['pending', 'running', 'completed', 'invalid']);
 const EXECUTION_STATUSES = new Set(['running', 'completed', 'invalid']);
 const CAMPAIGN_STATUSES = new Set(['prepared', 'running', 'completed', 'attention-required']);
-const TERMINAL_OUTCOMES = new Set(['passed', 'app_failure', 'inconclusive']);
-const INVALID_OUTCOMES = new Set(['harness_failure', 'ungraded', 'contaminated',
+const TERMINAL_OUTCOMES = new Set(['passed', 'app_failure']);
+const INVALID_OUTCOMES = new Set(['harness_failure', 'inconclusive', 'ungraded', 'contaminated',
   'timed_out', 'missing_artifact', 'scheduler_interrupted']);
 const SAFE_ID = /^[a-z0-9][a-z0-9.-]*$/;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -188,7 +188,9 @@ export function classifyCampaignExecution({ exitCode = null, timedOut = false, r
     reason: run.outcome?.reason ?? 'scheduler was interrupted' };
   if (TERMINAL_OUTCOMES.has(outcome)) return { status: 'completed', outcome, reason: null };
   if (INVALID_OUTCOMES.has(outcome)) return { status: 'invalid', outcome,
-    reason: run.outcome?.reason ?? `run outcome was ${outcome}` };
+    reason: run.outcome?.reason ?? (outcome === 'inconclusive'
+      ? 'one or more selected checks did not produce a pass-or-fail result'
+      : `run outcome was ${outcome}`) };
   return { status: 'invalid', outcome: 'ungraded',
     reason: `unknown run outcome ${outcome}; exit code ${exitCode ?? 'missing'}` };
 }

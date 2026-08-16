@@ -24,7 +24,7 @@ function run(id, attempt, { score = 8, max = 10, first = 5, cost = 2, durationSe
   const status = passed ? (fixRounds ? 'corrected' : 'not-needed') : 'budget-exhausted';
   const outcome = { kind: passed ? 'passed' : 'app_failure' };
   return { id, parentAttemptId: attempt.id, outcome,
-    levels: [{ level: 1, firstBuild: { score: first, max }, score, max,
+    levels: [{ level: 1, firstBuild: { score: first, max, outcome }, score, max,
       fixCostUsd: fixRounds ? cost / 2 : 0, fixRounds,
       repair: { status, budgetRounds: 3, roundsUsed: fixRounds, stopReason: null }, outcome }],
     totals: { score, max, costUsd: cost, durationSec, fixRounds } };
@@ -176,7 +176,7 @@ test('campaign HTML labels observed-only behavior as zero-score first-build obse
 
 test('campaign HTML states each modular specification treatment in plain language', () => {
   const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance',
-    'campaign.treatment-reference.json'));
+    'campaign.unprescribed-reference.json'));
   const state = createCampaignState(plan, { now: created });
   const report = buildCampaignReport(plan, state, () => {
     throw new Error('a pending campaign must not read run evidence');
@@ -184,8 +184,9 @@ test('campaign HTML states each modular specification treatment in plain languag
   const html = renderCampaignHtml(report);
   assert.match(html, /Specification treatment/);
   assert.match(html, /Expected specifications are withheld from the initial prompt but still score and may be repaired/);
-  assert.match(html, /expected-state-durability/);
-  assert.match(html, /observed-state-durability/);
+  assert.match(html, /unprescribed-quality/);
+  assert.match(html, /ecommerce\.spec\.access-control@1\.0\.0/);
+  assert.match(html, /ecommerce\.spec\.transactional-integrity@1\.0\.0/);
 });
 
 test('report generation is byte-for-byte reproducible and links immutable raw evidence', () => {
@@ -206,7 +207,8 @@ test('report generation is byte-for-byte reproducible and links immutable raw ev
       { now: '2026-08-12T00:01:00.000Z', admissionId: admission.id });
     const output = join(root, claimed.claim.output);
     mkdirSync(output, { recursive: true });
-    const evidence = run('run-1', claimed.claim.attempt);
+    const evidence = run('run-1', claimed.claim.attempt,
+      { score: 51, max: 51, first: 51, cost: 2, durationSec: 30 });
     const timestamp = '2026-08-12T00:01:30.000Z';
     const agent = plan.agents.find(item => item.adapter === claimed.claim.attempt.agentAdapter);
     const stack = plan.stacks.find(item => item.id === claimed.claim.attempt.stack);
