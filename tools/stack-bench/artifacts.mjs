@@ -307,6 +307,10 @@ export function currentEngineIdentity() {
     if (parts[0].startsWith('.') || excludedRoots.has(parts[0])
       || parts.some(part => part.startsWith('.spacetime-data'))) return true;
     if (entry.isDirectory()) return false;
+    // Generated while assembling the controller image. It describes the packaged
+    // dependency volume; it is not executable harness source and does not exist
+    // in a source checkout.
+    if (name === 'dependency-manifest.json') return true;
     return !(/\.(?:mjs|js|json|ya?ml|sh)$/.test(name) || /(?:^|\/)Dockerfile$/.test(name));
   } });
   cachedEngineIdentity = { id: 'stack-bench', version: null, sha256: executable.sha256, state: null };

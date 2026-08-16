@@ -223,3 +223,13 @@ test('engine identity excludes the inert historical archive', () => {
     assert.deepEqual(freshEngineIdentity(copy.root), before);
   } finally { rmSync(copy.temp, { recursive: true, force: true }); }
 });
+
+test('engine identity excludes the generated controller dependency manifest', () => {
+  const copy = writableEngineRoot();
+  const before = freshEngineIdentity(copy.root);
+  try {
+    writeFileSync(join(copy.root, 'dependency-manifest.json'),
+      JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString() }));
+    assert.deepEqual(freshEngineIdentity(copy.root), before);
+  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
+});
