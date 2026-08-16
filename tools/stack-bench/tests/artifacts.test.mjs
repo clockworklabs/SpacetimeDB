@@ -233,3 +233,15 @@ test('engine identity excludes the generated controller dependency manifest', ()
     assert.deepEqual(freshEngineIdentity(copy.root), before);
   } finally { rmSync(copy.temp, { recursive: true, force: true }); }
 });
+
+test('engine identity excludes installed dependencies at any directory depth', () => {
+  const copy = writableEngineRoot();
+  const before = freshEngineIdentity(copy.root);
+  try {
+    const nestedDependencies = join(copy.root, 'grader', 'node_modules', 'generated-package');
+    mkdirSync(nestedDependencies, { recursive: true });
+    writeFileSync(join(nestedDependencies, 'index.js'), 'installed dependency, not harness source\n');
+    writeFileSync(join(nestedDependencies, 'package.json'), '{"name":"generated-package"}\n');
+    assert.deepEqual(freshEngineIdentity(copy.root), before);
+  } finally { rmSync(copy.temp, { recursive: true, force: true }); }
+});
