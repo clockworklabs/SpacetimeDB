@@ -325,7 +325,8 @@ function describeStep(step) {
     case 'ensureRegistered': return 'sign back in if needed';
     case 'scheduleMessage': return `schedule "${step.text}" for ${step.secondsAhead}s ahead`;
     case 'wait': return `wait ${step.ms}ms`;
-    case 'expect': return `expect ${step.absent ? 'no ' : ''}${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`;
+    case 'expect': return `expect ${step.absent ? 'no ' : ''}${step.nonEmpty ? 'non-empty ' : ''}`
+      + `${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`;
     case 'recordNumber': return `note the current ${step.testid}`;
     case 'expectNumber': {
       const want = [

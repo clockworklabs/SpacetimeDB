@@ -121,6 +121,26 @@ test('an observation mismatch is application evidence, not a harness crash', asy
   assert.match(result.summary, /unexpectedly contains/);
 });
 
+test('a visible but blank field does not satisfy a non-empty assertion', async () => {
+  let rendered = '   ';
+  const locator = {
+    waitFor: async () => {},
+    evaluate: async () => 'DIV',
+    innerText: async () => rendered,
+  };
+  const actor = { loc: () => locator };
+  const blank = await run({ do: 'expect', actor: 'a', testid: 'warehouse', nonEmpty: true },
+    services(actor));
+  assert.equal(blank.status, 'failed');
+  assert.equal(blank.code, 'application_failure');
+  assert.match(blank.summary, /visible but empty/);
+
+  rendered = 'East';
+  const populated = await run({ do: 'expect', actor: 'a', testid: 'warehouse', nonEmpty: true },
+    services(actor));
+  assert.equal(populated.status, 'passed');
+});
+
 test('browser timeouts are application evidence while crashes and code bugs remain harness failures', async () => {
   const timeout = Object.assign(new Error('locator.click: element was never actionable'),
     { name: 'TimeoutError' });

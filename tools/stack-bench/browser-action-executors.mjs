@@ -174,6 +174,10 @@ async function expect({ input, capabilities, signal }) {
         + `(text: "${text.trim().slice(0, 80)}")`);
     }
   }
+  if (input.nonEmpty) {
+    const text = (await readValue(loc)).trim();
+    if (!text) fail(`${browser.testId(input.testid)} is visible but empty`);
+  }
   return { visible: true };
 }
 
