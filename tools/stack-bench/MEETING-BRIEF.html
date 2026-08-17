@@ -6,22 +6,22 @@
   <title>Stack Bench - Engineering History</title>
   <style>
     :root {
-      color-scheme: light;
-      --ink: #17222d;
-      --muted: #5d6974;
-      --paper: #f5f3ed;
-      --card: #fffef9;
-      --line: #d7d5cd;
-      --blue: #155eef;
-      --blue-soft: #eaf0ff;
-      --green: #087a55;
-      --green-soft: #e4f5ee;
-      --amber: #a44f00;
-      --amber-soft: #fff0d5;
-      --red: #b42318;
-      --red-soft: #fdecea;
-      --navy: #102a43;
-      --shadow: 0 18px 45px rgba(23, 34, 45, .08);
+      color-scheme: dark;
+      --ink: #e6e9f0;
+      --muted: #b6c0cf;
+      --paper: #050505;
+      --card: #0b1114;
+      --line: #162d38;
+      --blue: #02befa;
+      --blue-soft: rgba(2, 190, 250, .10);
+      --green: #4cf490;
+      --green-soft: rgba(76, 244, 144, .10);
+      --amber: #fbdc8e;
+      --amber-soft: rgba(251, 220, 142, .10);
+      --red: #fc6897;
+      --red-soft: rgba(252, 104, 151, .10);
+      --navy: #e6e9f0;
+      --shadow: 0 24px 64px rgba(0, 0, 0, .34);
     }
 
     * { box-sizing: border-box; }
@@ -29,8 +29,12 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at 85% 0%, rgba(21, 94, 239, .10), transparent 30rem),
+        linear-gradient(rgba(18, 30, 36, .22) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(18, 30, 36, .22) 1px, transparent 1px),
+        radial-gradient(circle at 84% -8%, rgba(2, 190, 250, .16), transparent 34rem),
+        radial-gradient(circle at 12% 18%, rgba(76, 244, 144, .08), transparent 30rem),
         var(--paper);
+      background-size: 48px 48px, 48px 48px, auto, auto, auto;
       color: var(--ink);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.55;
@@ -42,8 +46,8 @@
       position: sticky;
       top: 0;
       z-index: 20;
-      border-bottom: 1px solid rgba(215, 213, 205, .85);
-      background: rgba(245, 243, 237, .92);
+      border-bottom: 1px solid rgba(22, 45, 56, .90);
+      background: rgba(5, 5, 5, .88);
       backdrop-filter: blur(14px);
     }
     .topbar .shell {
@@ -53,7 +57,24 @@
       align-items: center;
       min-height: 58px;
     }
-    .brand { font-weight: 800; letter-spacing: -.02em; }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      font-family: "Source Code Pro", ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .brand::before {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 18px rgba(76, 244, 144, .75);
+      content: "";
+    }
     nav { display: flex; gap: 18px; flex-wrap: wrap; }
     nav a { color: var(--muted); font-size: 13px; font-weight: 700; text-decoration: none; }
     nav a:hover { color: var(--blue); }
@@ -76,7 +97,7 @@
     .dek {
       max-width: 850px;
       margin: 0;
-      color: #344454;
+      color: var(--muted);
       font-size: clamp(19px, 2.3vw, 27px);
       line-height: 1.35;
     }
@@ -115,7 +136,7 @@
     .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .card {
       border: 1px solid var(--line);
-      border-radius: 18px;
+      border-radius: 12px;
       background: var(--card);
       padding: 24px;
       box-shadow: var(--shadow);
@@ -125,7 +146,7 @@
     .label { margin-top: 7px; color: var(--muted); font-size: 13px; font-weight: 700; }
     .callout {
       border-left: 5px solid var(--blue);
-      border-radius: 10px;
+      border-radius: 8px;
       background: var(--blue-soft);
       padding: 18px 20px;
     }
@@ -143,7 +164,7 @@
       position: relative;
       min-height: 174px;
       border: 1px solid var(--line);
-      border-radius: 15px;
+      border-radius: 10px;
       background: var(--card);
       padding: 44px 15px 17px;
     }
@@ -156,8 +177,8 @@
       width: 23px;
       height: 23px;
       border-radius: 50%;
-      background: var(--navy);
-      color: white;
+      background: var(--green);
+      color: var(--paper);
       counter-increment: flow;
       content: counter(flow);
       font-size: 11px;
@@ -166,30 +187,46 @@
     .flow h3 { font-size: 15px; }
     .flow p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 
-    .timeline { position: relative; display: grid; gap: 0; }
+    .timeline { --timeline-axis: 118px; position: relative; display: grid; gap: 0; }
     .timeline::before {
       position: absolute;
       top: 15px;
       bottom: 15px;
-      left: 108px;
+      left: var(--timeline-axis);
       width: 2px;
       background: var(--line);
       content: "";
     }
-    .event { display: grid; grid-template-columns: 88px 1fr; gap: 42px; padding: 14px 0; }
-    .event time { color: var(--blue); font-size: 13px; font-weight: 850; text-align: right; }
-    .event .body { position: relative; }
-    .event .body::before {
+    .event {
+      position: relative;
+      display: grid;
+      grid-template-columns: 96px minmax(0, 1fr);
+      gap: 48px;
+      padding: 16px 0 22px;
+    }
+    .event::before {
       position: absolute;
-      top: 5px;
-      left: -48px;
+      top: 20px;
+      left: calc(var(--timeline-axis) - 8px);
       width: 12px;
       height: 12px;
-      border: 3px solid var(--paper);
+      border: 2px solid var(--paper);
       border-radius: 50%;
-      background: var(--blue);
+      background: var(--green);
+      box-shadow: 0 0 16px rgba(76, 244, 144, .42);
       content: "";
     }
+    .event time {
+      color: var(--blue);
+      font-family: "Source Code Pro", ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .02em;
+      line-height: 20px;
+      text-align: right;
+      white-space: nowrap;
+    }
+    .event .body { position: relative; }
     .event p { margin: 4px 0 0; color: var(--muted); }
     .event .tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
     .event .tag {
@@ -203,15 +240,15 @@
       letter-spacing: .04em;
       text-transform: uppercase;
     }
-    .event .tag.invalid { border-color: #efb4ae; background: var(--red-soft); color: var(--red); }
-    .event .tag.verified { border-color: #9cd6c1; background: var(--green-soft); color: var(--green); }
-    .event .tag.current { border-color: #abc0f4; background: var(--blue-soft); color: var(--blue); }
+    .event .tag.invalid { border-color: rgba(252, 104, 151, .42); background: var(--red-soft); color: var(--red); }
+    .event .tag.verified { border-color: rgba(76, 244, 144, .42); background: var(--green-soft); color: var(--green); }
+    .event .tag.current { border-color: rgba(2, 190, 250, .42); background: var(--blue-soft); color: var(--blue); }
 
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { border-bottom: 1px solid var(--line); padding: 12px 10px; text-align: left; vertical-align: top; }
     th { color: var(--muted); font-size: 11px; letter-spacing: .07em; text-transform: uppercase; }
     td strong { color: var(--navy); }
-    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 4px 14px; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 4px 14px; }
 
     ul { padding-left: 20px; }
     li + li { margin-top: 6px; }
@@ -229,15 +266,15 @@
       line-height: 1.35;
       letter-spacing: -.02em;
     }
-    code { border-radius: 5px; background: #edf0f2; padding: 2px 5px; font-size: .9em; }
+    code { border: 1px solid var(--line); border-radius: 5px; background: #0e161a; padding: 2px 5px; color: var(--green); font-size: .9em; }
     pre {
       margin: 14px 0 0;
       overflow-x: auto;
-      border: 1px solid #24384b;
+      border: 1px solid var(--line);
       border-radius: 12px;
-      background: #102a43;
+      background: #0b0e12;
       padding: 16px;
-      color: #e9f2fb;
+      color: var(--ink);
       font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
       tab-size: 2;
     }
@@ -253,9 +290,10 @@
       .shell { width: min(100% - 24px, 1180px); }
       header { padding-top: 52px; }
       .flow { grid-template-columns: 1fr; }
-      .event { grid-template-columns: 70px 1fr; gap: 28px; }
-      .timeline::before { left: 82px; }
-      .event .body::before { left: -34px; }
+      .timeline { --timeline-axis: 7px; }
+      .event { grid-template-columns: minmax(0, 1fr); gap: 5px; padding: 18px 0 26px 32px; }
+      .event::before { top: 21px; }
+      .event time { text-align: left; }
     }
     @media print {
       @page { margin: 14mm; }
@@ -295,12 +333,12 @@
     <p class="dek">This is the useful history: what we tried, which results were invalid, what the failures taught us, what changed in the harness and product, and what evidence is ready to use today.</p>
     <div class="status-row">
       <span class="pill">Docker-only build path</span>
-      <span class="pill">376 automated tests passing</span>
+      <span class="pill">384 automated tests passing</span>
       <span class="pill">Versioned recipes and evidence</span>
       <span class="pill">Framework-neutral L1 and L2 promoted</span>
-      <span class="pill warn">Production hardening in progress</span>
-      <span class="pill warn">Historical pilot exposed incomplete measurement</span>
-      <span class="pill warn">Repeated comparison still pending</span>
+      <span class="pill warn">Production hardening active</span>
+      <span class="pill warn">Pilot strengthened complete-measurement rules</span>
+      <span class="pill warn">Repeated comparison is next</span>
     </div>
   </header>
 
