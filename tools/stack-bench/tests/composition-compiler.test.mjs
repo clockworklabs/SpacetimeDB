@@ -22,7 +22,7 @@ const recipePath = name => join(ECOMMERCE, 'composition', 'recipes', name);
 
 test('the ecommerce composition tree validates as one source set', () => {
   assert.deepEqual(checkCompositions({ trackName: 'ecommerce' }), [{
-      track: 'ecommerce', packs: 29, fixtures: 2, recipes: 9, checks: 406, aliases: 4,
+      track: 'ecommerce', packs: 29, fixtures: 2, recipes: 9, checks: 429, aliases: 4,
   }]);
 });
 
@@ -99,19 +99,35 @@ test('framework-neutral releases change task meaning without changing execution 
   assert.match(l1.recipe.task.requirementText, /POST \/api\/checkout/);
 });
 
-test('the L2 hardening candidate promotes only the three focused checks and keeps every score key', () => {
+test('the L2 hardening candidate re-proves exact modular L1 checks and adds every L2 check', () => {
+  const l1 = compileRecipeFile(recipePath('l1-modular-2.2.0.json'), { trackRoot: ECOMMERCE });
   const oldPlan = compileRecipeFile(recipePath('l2-standard-1.2.0.json'), { trackRoot: ECOMMERCE });
   const candidate = compileRecipeFile(recipePath('l2-standard-1.3.0.json'), { trackRoot: ECOMMERCE });
+  const l2Packs = new Set([
+    'ecommerce.operations-access',
+    'ecommerce.inventory-operations',
+    'ecommerce.returns-pricing',
+  ]);
   const promoted = new Set([
     'ecommerce.operations-access.operator-authorization.201c',
     'ecommerce.inventory-operations.stock-conservation.202d',
     'ecommerce.operations-access.order-owner.204a',
   ]);
   assert.equal(candidate.recipe.state, 'draft');
-  assert.equal(candidate.checks.length, oldPlan.checks.length);
-  assert.deepEqual(candidate.checks.map(check => check.stableKey).sort(),
-    oldPlan.checks.map(check => check.stableKey).sort());
-  for (const check of candidate.checks) {
+  assert.deepEqual(candidate.recipe.task.baseRecipe, {
+    id: 'ecommerce.l1-modular', version: '2.2.0', path: 'recipes/l1-modular-2.2.0.json',
+  });
+  const carried = candidate.checks.filter(check =>
+    l1.checks.some(base => base.stableKey === check.stableKey));
+  assert.deepEqual(carried, l1.checks,
+    'L2 must carry every L1 check with the same stable identity and semantics');
+  const l2Checks = candidate.checks.filter(check => l2Packs.has(check.packId));
+  const previousL2Checks = oldPlan.checks.filter(check => l2Packs.has(check.packId));
+  assert.equal(carried.length, 48);
+  assert.equal(l2Checks.length, 28);
+  assert.deepEqual(l2Checks.map(check => check.stableKey).sort(),
+    previousL2Checks.map(check => check.stableKey).sort());
+  for (const check of l2Checks) {
     const previous = oldPlan.checks.find(item => item.stableKey === check.stableKey);
     if (promoted.has(check.stableKey)) {
       assert.equal(previous.points, 0);
@@ -122,7 +138,10 @@ test('the L2 hardening candidate promotes only the three focused checks and keep
         { points: previous.points, source: previous.source });
     }
   }
-  assert.equal(candidate.scoring.points, oldPlan.scoring.points + 6);
+  assert.deepEqual({ checks: candidate.checks.length, points: candidate.scoring.points,
+    packs: candidate.packs.length }, { checks: 76, points: 111, packs: 15 });
+  assert.equal(candidate.scoring.points, l1.scoring.points
+    + l2Checks.reduce((sum, check) => sum + check.points, 0));
   assert.match(candidate.recipe.task.contractText, /data-ship-input/);
   assert.match(candidate.recipe.task.contractText, /data-cancel-input/);
   assert.match(candidate.recipe.task.contractText, /data-transfer-input/);
@@ -274,6 +293,9 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
     scoring: { mode: 'legacy-source-points' },
   };
   assert.throws(() => compileRecipeDefinition(recipe), /allowed only for a declared compatibility recipe/);
+  assert.throws(() => compileRecipeDefinition({ ...recipe, compatibility: {
+    legacyLevel: 1, mode: 'cumulative',
+  } }), /cumulative compatibility requires an upgrade recipe/);
   const catalog = {
     schemaVersion: 1, kind: 'promotion-catalog', id: 'example.recipes', version: '1.0.0',
     state: 'draft', title: 'Promotions', entries: [{ alias: 'latest', status: 'candidate',

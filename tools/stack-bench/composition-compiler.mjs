@@ -357,7 +357,7 @@ const TASK_FIELDS = new Set(['mode', 'baseRecipe', 'framing']);
 const PACK_SELECTION_FIELDS = new Set(['path', 'id', 'version', 'includeRoles']);
 const EXECUTION_FIELDS = new Set(['id', 'source']);
 const SCORING_FIELDS = new Set(['mode', 'weights']);
-const COMPATIBILITY_FIELDS = new Set(['legacyLevel']);
+const COMPATIBILITY_FIELDS = new Set(['legacyLevel', 'mode']);
 
 function validateFileRef(ref, at) {
   strictObject(ref, at, FILE_REF_FIELDS);
@@ -433,6 +433,13 @@ export function compileRecipeDefinition(input, { source = '<recipe>' } = {}) {
     strictObject(recipe.compatibility, `${source}.compatibility`, COMPATIBILITY_FIELDS);
     if (!Number.isInteger(recipe.compatibility.legacyLevel) || recipe.compatibility.legacyLevel < 1) {
       fail(`${source}.compatibility.legacyLevel`, 'must be a positive integer');
+    }
+    if (recipe.compatibility.mode !== undefined
+        && !['legacy-parity', 'cumulative'].includes(recipe.compatibility.mode)) {
+      fail(`${source}.compatibility.mode`, 'must be legacy-parity or cumulative');
+    }
+    if (recipe.compatibility.mode === 'cumulative' && recipe.task.mode !== 'upgrade') {
+      fail(`${source}.compatibility.mode`, 'cumulative compatibility requires an upgrade recipe');
     }
   }
   if (recipe.scoring.mode === 'legacy-source-points' && recipe.compatibility === undefined) {

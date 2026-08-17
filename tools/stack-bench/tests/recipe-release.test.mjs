@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -185,14 +185,99 @@ test('the framework-neutral release is the promoted default and the retired rele
   }), /unknown field/);
 });
 
-test('a catalogued compatibility candidate may harden zero-point checks without losing stable checks', () => {
+test('the catalogued L2 candidate binds modular L1 exactly and keeps all L2-only checks', () => {
   const track = loadTrack('ecommerce');
   const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.3.0');
-  const promoted = resolveRecipeRelease(track, 2);
+  const l1 = buildRecipeRelease(
+    join(ECOMMERCE, 'composition', 'recipes', 'l1-modular-2.2.0.json'),
+    { trackRoot: ECOMMERCE },
+  );
+  const previous = resolveRecipeRelease(track, 2).release;
+  const l2Packs = new Set([
+    'ecommerce.operations-access',
+    'ecommerce.inventory-operations',
+    'ecommerce.returns-pricing',
+  ]);
   assert.equal(binding.status, 'candidate');
-  assert.equal(binding.release.scoring.points, 81);
-  assert.deepEqual(binding.release.checkCatalog.map(check => check.stableKey).sort(),
-    promoted.release.checkCatalog.map(check => check.stableKey).sort());
+  assert.equal(binding.release.task.baseRecipe.contentSha256, l1.contentSha256);
+  assert.equal(binding.release.task.baseRecipe.meaningSha256, l1.meaningSha256);
+  assert.equal(binding.release.task.baseRecipe.executionSha256, l1.executionSha256);
+  assert.deepEqual({ checks: binding.release.checkCatalog.length, points: binding.release.scoring.points },
+    { checks: 76, points: 111 });
+  assert.deepEqual(binding.release.checkCatalog
+    .filter(check => l1.checkCatalog.some(base => base.stableKey === check.stableKey))
+    .map(check => check.stableKey).sort(),
+  l1.checkCatalog.map(check => check.stableKey).sort());
+  assert.deepEqual(binding.release.checkCatalog.filter(check => l2Packs.has(check.packId))
+    .map(check => check.stableKey).sort(),
+  previous.checkCatalog.filter(check => l2Packs.has(check.packId))
+    .map(check => check.stableKey).sort());
+});
+
+test('cumulative candidate resolution rejects dropped L2 coverage', () => {
+  const box = copyTrack();
+  try {
+    const candidate = join(box.root, 'composition', 'recipes', 'l2-standard-1.3.0.json');
+    editJson(candidate, value => {
+      value.packs = value.packs.filter(pack => pack.id !== 'ecommerce.returns-pricing');
+    });
+    const track = loadTrack('ecommerce');
+    const copiedTrack = { ...track, dir: box.root,
+      suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
+    assert.throws(() => resolveRecipeRelease(copiedTrack, 2, 'ecommerce.l2-standard@1.3.0'),
+      /changes the cumulative L2 check set/);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+test('cumulative continuity does not trust mutable scenario level labels', () => {
+  const box = copyTrack();
+  try {
+    for (const name of ['02-features.json', '02-invariants.json', '02-server-actions-1.0.0.json']) {
+      editJson(join(box.root, 'scenarios', name), value => { value.level = 1; });
+    }
+    const candidate = join(box.root, 'composition', 'recipes', 'l2-standard-1.3.0.json');
+    editJson(candidate, value => {
+      value.packs = value.packs.filter(pack => ![
+        'ecommerce.operations-access',
+        'ecommerce.inventory-operations',
+        'ecommerce.returns-pricing',
+      ].includes(pack.id));
+      value.execution = value.execution.filter(execution => execution.id.endsWith('@L1'));
+    });
+    const track = loadTrack('ecommerce');
+    const copiedTrack = { ...track, dir: box.root,
+      suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
+    assert.throws(() => resolveRecipeRelease(copiedTrack, 2, 'ecommerce.l2-standard@1.3.0'),
+      /changes the cumulative L2 check set/);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+test('promoting a cumulative recipe cannot drop checks retained from earlier releases', () => {
+  const box = copyTrack();
+  try {
+    const packs = join(box.root, 'composition', 'packs');
+    for (const name of readdirSync(packs).filter(name => name.endsWith('.json'))) {
+      editJson(join(packs, name), value => { value.state = 'qualified'; });
+    }
+    editJson(join(box.root, 'composition', 'recipes', 'l1-modular-2.2.0.json'),
+      value => { value.state = 'qualified'; });
+    const candidate = join(box.root, 'composition', 'recipes', 'l2-standard-1.3.0.json');
+    editJson(candidate, value => {
+      value.state = 'qualified';
+      value.packs = value.packs.filter(pack => pack.id !== 'ecommerce.returns-pricing');
+    });
+    editJson(join(box.root, 'composition', 'promotions.json'), value => {
+      value.entries.find(entry => entry.alias === 'L2' && entry.status === 'promoted').status = 'retired';
+      value.entries.push({ alias: 'L2', status: 'promoted', recipe: {
+        path: 'recipes/l2-standard-1.3.0.json', id: 'ecommerce.l2-standard', version: '1.3.0',
+      } });
+    });
+    const track = loadTrack('ecommerce');
+    const copiedTrack = { ...track, dir: box.root,
+      suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
+    assert.throws(() => resolveRecipeRelease(copiedTrack, 2),
+      /changes the cumulative L2 check set/);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
 test('the grader rejects parent/child recipe drift before launching a browser', () => {

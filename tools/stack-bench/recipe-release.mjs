@@ -400,6 +400,68 @@ function assertCompatibilityCandidateContinuity(plan, promotedPlan, track, level
   }
 }
 
+function cumulativeBasePlan(plan, track, level) {
+  if (plan.recipe.compatibility?.legacyLevel !== Number(level)
+      || plan.recipe.compatibility?.mode !== 'cumulative') {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} does not declare cumulative L${level} compatibility`);
+  }
+  const base = plan.recipe.task.baseRecipe;
+  if (!base) throw new Error(`${plan.recipe.id}@${plan.recipe.version} has no cumulative base recipe`);
+  const basePlan = compileRecipeFile(join(track.dir, 'composition', base.path), {
+    trackRoot: track.dir,
+  });
+  const candidateByKey = new Map(plan.checks.map(check => [check.stableKey, check]));
+  for (const check of basePlan.checks) {
+    const carried = candidateByKey.get(check.stableKey);
+    if (!carried || canonicalDefinitionJson(carried) !== canonicalDefinitionJson(check)) {
+      throw new Error(`${plan.recipe.id}@${plan.recipe.version} does not carry base check ${check.stableKey} exactly`);
+    }
+  }
+  return basePlan;
+}
+
+function assertCumulativeContinuity(plan, previousPlans, track, level) {
+  if (previousPlans.length === 0) {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} has no cumulative L${level} baseline`);
+  }
+  for (const previousPlan of previousPlans) {
+    if (previousPlan.recipe.compatibility?.mode === 'cumulative') {
+      cumulativeBasePlan(previousPlan, track, level);
+    } else {
+      assertLegacyRecipeParity(previousPlan, track, level);
+    }
+  }
+  const basePlan = cumulativeBasePlan(plan, track, level);
+  const retainedLevelChecks = previousPlans.flatMap(previousPlan => {
+    const previousBase = previousPlan.recipe.task.baseRecipe;
+    if (!previousBase) {
+      throw new Error(`${previousPlan.recipe.id}@${previousPlan.recipe.version} has no L${level} base recipe`);
+    }
+    const previousBasePlan = compileRecipeFile(join(track.dir, 'composition', previousBase.path), {
+      trackRoot: track.dir,
+    });
+    const previousBaseKeys = new Set(previousBasePlan.checks.map(check => check.stableKey));
+    return previousPlan.checks.filter(check => !previousBaseKeys.has(check.stableKey));
+  });
+  const required = new Set([
+    ...basePlan.checks.map(check => check.stableKey),
+    ...retainedLevelChecks.map(check => check.stableKey),
+  ]);
+  const actual = new Set(plan.checks.map(check => check.stableKey));
+  const missing = [...required].filter(stableKey => !actual.has(stableKey));
+  const added = [...actual].filter(stableKey => !required.has(stableKey));
+  if (missing.length || added.length) {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} changes the cumulative L${level} check set`);
+  }
+  const candidate = new Map(plan.checks.map(check => [check.stableKey, check]));
+  for (const previous of retainedLevelChecks) {
+    const next = candidate.get(previous.stableKey);
+    if (next.points < previous.points || (previous.points > 0 && next.points !== previous.points)) {
+      throw new Error(`${plan.recipe.id}@${plan.recipe.version} changes the established score for ${previous.stableKey}`);
+    }
+  }
+}
+
 function exactRecipeRequest(requested) {
   if (requested === null || requested === undefined) return null;
   if (typeof requested === 'string') {
@@ -460,14 +522,26 @@ export function resolveRecipeRelease(track, level, requested = null) {
   const selection = choices[0];
   const recipePath = join(track.dir, 'composition', selection.recipe.path);
   const plan = compileRecipeFile(recipePath, { trackRoot: track.dir });
+  const compatibilityMode = plan.recipe.compatibility?.mode ?? 'legacy-parity';
   if (plan.recipe.compatibility !== null && selection.status === 'candidate') {
     if (promoted.length !== 1) {
       throw new Error(`${alias} compatibility candidate requires exactly one promoted baseline; found ${promoted.length}`);
     }
     const promotedPlan = compileRecipeFile(join(track.dir, 'composition', promoted[0].recipe.path),
       { trackRoot: track.dir });
-    assertCompatibilityCandidateContinuity(plan, promotedPlan, track, level);
-  } else if (plan.recipe.compatibility !== null) assertLegacyRecipeParity(plan, track, level);
+    if (compatibilityMode === 'cumulative') {
+      assertCumulativeContinuity(plan, [promotedPlan], track, level);
+    } else assertCompatibilityCandidateContinuity(plan, promotedPlan, track, level);
+  } else if (plan.recipe.compatibility !== null) {
+    if (compatibilityMode === 'cumulative') {
+      const previousPlans = catalog.entries
+        .filter(entry => entry.alias === alias && entry.status === 'retired')
+        .map(entry => compileRecipeFile(join(track.dir, 'composition', entry.recipe.path),
+          { trackRoot: track.dir }));
+      assertCumulativeContinuity(plan, previousPlans, track, level);
+    }
+    else assertLegacyRecipeParity(plan, track, level);
+  }
   else if (!plan.packs.length
     || plan.packs.some(pack => !['feature', 'specification'].includes(pack.moduleType))) {
     throw new Error(`${plan.recipe.id}@${plan.recipe.version} is neither a compatibility recipe nor modular`);
