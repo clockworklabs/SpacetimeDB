@@ -14,6 +14,7 @@
           "desc": "Compiles one representative of every registered action",
           "points": 0,
           "steps": [
+            { "do": "callAction", "actor": "a", "action": "buy", "input": { "testid": "item-card", "contains": "item", "attribute": "data-action-input" }, "authentication": "none", "settleMs": 1 },
             { "do": "callConcurrently", "actors": ["a", "b"], "action": "buy", "settleMs": 1 },
             { "do": "clearInput", "actor": "a" },
             { "do": "click", "actor": "a", "testid": "button" },
@@ -25,6 +26,7 @@
             { "do": "ensureSignedIn", "actor": "a", "name": "alice" },
             { "do": "enterRoom", "actor": "a", "room": "room" },
             { "do": "expect", "actor": "a", "testid": "status" },
+            { "do": "expectActionOutcome", "actor": "a", "outcome": "refused" },
             { "do": "expectActorsWith", "actors": ["a", "b"], "testid": "status", "contains": "ok", "equals": 2, "maxEach": 1 },
             { "do": "expectAgreement", "actors": ["a", "b"], "testid": "status" },
             { "do": "expectAllPresent", "actor": "a", "prefix": "message", "count": 1, "within": 1 },

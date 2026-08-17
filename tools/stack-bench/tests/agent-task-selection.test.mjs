@@ -102,7 +102,7 @@ test('selected pack prompts contain only their own framework-neutral testing cal
 
 test('the real unprescribed prompt withholds every expected quality specification', () => {
   const modular = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.l1-modular@2.0.0');
+    'ecommerce.l1-modular@2.1.0');
   const features = modular.release.components.packs
     .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
   const expectedSpecifications = modular.release.components.packs

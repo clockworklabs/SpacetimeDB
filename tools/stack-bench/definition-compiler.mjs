@@ -39,6 +39,8 @@ const within = { within: number };
 const locator = { in: object };
 
 export const ACTION_DEFINITIONS = Object.freeze({
+  callAction: fields({ ...actor, action: nonEmptyString, input: object },
+    { from: nonEmptyString, authentication: nonEmptyString, namedAction: object, ...settle }),
   callConcurrently: fields({ ...actors, action: nonEmptyString, settleMs: number },
     { args: anyArray, body: object }),
   clearInput: fields(actor),
@@ -59,6 +61,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
     { contains: string, notContains: string, count: integer, absent: boolean, ...locator, ...within }),
   expectActorsWith: fields({ ...actors, testid: nonEmptyString, contains: string,
     equals: integer, maxEach: integer }),
+  expectActionOutcome: fields({ ...actor, outcome: nonEmptyString }),
   expectAgreement: fields({ ...actors, testid: nonEmptyString },
     { numeric: boolean, ...locator, ...within }),
   expectAllPresent: fields({ ...actor, prefix: string, count: integer, within: number }),
@@ -139,13 +142,46 @@ function validateNamedTarget(value, at) {
   }
 }
 
+function validateActionInput(value, at) {
+  strictObject(value, at, new Set(['testid', 'contains', 'attribute']));
+  if (!nonEmptyString(value.testid)) fail(`${at}.testid`, 'must be a non-empty string');
+  if (value.contains !== undefined && !string(value.contains)) fail(`${at}.contains`, 'must be a string');
+  if (!nonEmptyString(value.attribute)) fail(`${at}.attribute`, 'must be a non-empty string');
+}
+
+function validateNamedActionParams(value, at) {
+  if (!array(value)) fail(at, 'must be an array');
+  const names = new Set();
+  value.forEach((param, index) => {
+    const where = `${at}[${index}]`;
+    strictObject(param, where, new Set(['name', 'in', 'placeholder']));
+    if (!nonEmptyString(param.name)) fail(`${where}.name`, 'must be a non-empty string');
+    if (names.has(param.name)) fail(`${where}.name`, `duplicates ${JSON.stringify(param.name)}`);
+    names.add(param.name);
+    if (!['path', 'body'].includes(param.in)) fail(`${where}.in`, 'must be "path" or "body"');
+    if (param.in === 'path') {
+      if (!nonEmptyString(param.placeholder)) fail(`${where}.placeholder`, 'is required for a path parameter');
+    } else if (param.placeholder !== undefined) {
+      fail(`${where}.placeholder`, 'is allowed only for a path parameter');
+    }
+  });
+}
+
 function validateInlineNamedAction(value, at) {
-  strictObject(value, at, new Set(['id', 'path', 'reducer', 'args']));
+  strictObject(value, at, new Set(['id', 'path', 'reducer', 'args', 'params']));
   for (const key of ['id', 'path', 'reducer']) {
     if (!nonEmptyString(value[key])) fail(`${at}.${key}`, 'must be a non-empty string');
   }
   if (!value.path.startsWith('/')) fail(`${at}.path`, 'must be an absolute HTTP path');
   if (!anyArray(value.args)) fail(`${at}.args`, 'must be an array');
+  if (value.params !== undefined) {
+    validateNamedActionParams(value.params, `${at}.params`);
+    value.params.filter(param => param.in === 'path').forEach((param, index) => {
+      if (!value.path.includes(param.placeholder)) {
+        fail(`${at}.params[${index}].placeholder`, `does not appear in path ${JSON.stringify(value.path)}`);
+      }
+    });
+  }
 }
 
 function validateSenders(value, at) {
@@ -191,6 +227,25 @@ function validateStep(step, at) {
   if (step.swap) validateSwap(step.swap, `${at}.swap`);
   if (step.namedAction) validateInlineNamedAction(step.namedAction, `${at}.namedAction`);
   if (step.namedTarget) validateNamedTarget(step.namedTarget, `${at}.namedTarget`);
+  if (step.do === 'callAction') {
+    validateActionInput(step.input, `${at}.input`);
+    if (step.namedAction) {
+      validateInlineNamedAction(step.namedAction, `${at}.namedAction`);
+      if (step.namedAction.id !== step.action) {
+        fail(`${at}.namedAction.id`, 'must match action');
+      }
+      if (!step.namedAction.params?.length) {
+        fail(`${at}.namedAction.params`, 'must be a non-empty array');
+      }
+    }
+    if (step.authentication !== undefined && !['actor', 'none'].includes(step.authentication)) {
+      fail(`${at}.authentication`, 'must be "actor" or "none"');
+    }
+  }
+  if (step.do === 'expectActionOutcome'
+      && !['accepted', 'refused'].includes(step.outcome)) {
+    fail(`${at}.outcome`, 'must be "accepted" or "refused"');
+  }
   if (step.do === 'replayAs' && Boolean(step.namedAction) !== Boolean(step.namedTarget)) {
     fail(at, 'replayAs namedAction and namedTarget must be supplied together');
   }
@@ -308,7 +363,7 @@ const TRACK_FIELDS = new Set([
   'restartProbe', 'slug', 'suites', 'title', 'validatedThrough',
 ]);
 const SUITE_FIELDS = new Set(['id', 'inherit', 'spec']);
-const NAMED_ACTION_FIELDS = new Set(['args', 'id', 'path', 'reducer']);
+const NAMED_ACTION_FIELDS = new Set(['args', 'id', 'params', 'path', 'reducer']);
 // Legacy v0 inferred persistence from these suite names. Keep that inference
 // in exactly one compatibility boundary; schema-v1 manifests must say what
 // persists so a new suite name cannot silently change level semantics.
@@ -367,6 +422,15 @@ export function compileTrackManifest(input, { source = '<track>' } = {}) {
       }
       if (!action.path.startsWith('/')) fail(`${at}.path`, 'must be an absolute HTTP path');
       if (!array(action.args)) fail(`${at}.args`, 'must be an array');
+      if (action.params !== undefined) {
+        validateNamedActionParams(action.params, `${at}.params`);
+        action.params.filter(param => param.in === 'path').forEach((param, paramIndex) => {
+          if (!action.path.includes(param.placeholder)) {
+            fail(`${at}.params[${paramIndex}].placeholder`,
+              `does not appear in path ${JSON.stringify(action.path)}`);
+          }
+        });
+      }
       if (ids.has(action.id)) fail(`${at}.id`, `duplicate named action ${action.id}`);
       ids.add(action.id);
     });

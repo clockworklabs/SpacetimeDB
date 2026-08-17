@@ -13,6 +13,18 @@
           "steps": [
             {
               "action": "buy",
+              "actor": "a",
+              "authentication": "none",
+              "do": "callAction",
+              "input": {
+                "attribute": "data-action-input",
+                "contains": "item",
+                "testid": "item-card"
+              },
+              "settleMs": 1
+            },
+            {
+              "action": "buy",
               "actors": [
                 "a",
                 "b"
@@ -73,6 +85,11 @@
               "actor": "a",
               "do": "expect",
               "testid": "status"
+            },
+            {
+              "actor": "a",
+              "do": "expectActionOutcome",
+              "outcome": "refused"
             },
             {
               "actors": [

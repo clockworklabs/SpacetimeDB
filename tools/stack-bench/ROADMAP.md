@@ -13,7 +13,7 @@ mapped separately in [EXTENSIBILITY-ROADMAP.md](EXTENSIBILITY-ROADMAP.md). Its
 ticket-sized execution order is in
 [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md). Its
 compatibility foundation is now implemented: all current track/scenario files
-compile deterministically into definition schema v1, the 47-action legacy
+compile deterministically into definition schema v1, the 49-action scenario
 language has an explicit schema-v1 plugin contract and startup-validated
 registry with deadlines, capabilities, evidence, redaction, and renderer
 metadata; malformed content fails before browser startup, and public result
@@ -33,7 +33,7 @@ engine and now own the promoted aliases; the earlier releases are retired.
 runtime still executes the compatibility scenarios, but every grade and bundle
 now binds the exact compiled recipe, pack, fixture, applicable calibration, and
 selected stable-check scope. Pack/check selection drives that executor, and the
-comparison tool refuses mismatched scope identities. All 47 actions now have
+comparison tool refuses mismatched scope identities. All 49 actions now have
 independent capability-scoped executors, and the compatibility action dispatcher
 has been deleted.
 

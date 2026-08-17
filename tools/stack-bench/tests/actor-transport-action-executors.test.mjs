@@ -77,6 +77,72 @@ test('the actor/transport executor registry is exact and capability-scoped', () 
   }
 });
 
+test('one named server action maps DOM input symmetrically and verifies its outcome', async () => {
+  const requests = [];
+  const source = {
+    name: 'source',
+    loc: (testid, options) => {
+      assert.equal(testid, 'item-card');
+      assert.deepEqual(options, { contains: 'Desk Lamp' });
+      return {
+        waitFor: async value => assert.deepEqual(value, { state: 'visible', timeout: 5000 }),
+        getAttribute: async attribute => {
+          assert.equal(attribute, 'data-action-input');
+          return JSON.stringify({ itemId: 'item-42' });
+        },
+      };
+    },
+  };
+  const guest = { name: 'guest' };
+  const provided = services(new Map([['source', source], ['guest', guest]]), {
+    actions: [{ id: 'buy', path: '/api/items/:item/buy', reducer: 'buy_now', args: [0],
+      params: [{ name: 'itemId', in: 'path', placeholder: ':item' }] }],
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return { status: 401, ok: false };
+    },
+  });
+
+  const called = await run({ do: 'callAction', actor: 'guest', from: 'source', action: 'buy',
+    input: { testid: 'item-card', contains: 'Desk Lamp', attribute: 'data-action-input' },
+    authentication: 'none', settleMs: 0 }, provided);
+  assert.equal(called.status, 'passed');
+  assert.deepEqual(called.observation, { action: 'buy', accepted: false, status: 401 });
+  assert.equal(requests[0].url, 'http://app.test/api/items/item-42/buy');
+  assert.deepEqual(JSON.parse(requests[0].options.body), {});
+  assert.equal(Object.hasOwn(requests[0].options.headers, 'Authorization'), false);
+
+  const checked = await run({ do: 'expectActionOutcome', actor: 'guest', outcome: 'refused' }, provided);
+  assert.equal(checked.status, 'passed');
+  assert.equal(checked.observation.classification, 'verified');
+  assert.deepEqual(provided.verification.map(([kind]) => kind), ['verified']);
+});
+
+test('named action input is exact and a missing route is not mistaken for a refusal', async () => {
+  const actor = input => ({
+    name: 'customer',
+    loc: () => ({ waitFor: async () => {}, getAttribute: async () => JSON.stringify(input) }),
+  });
+  const action = { id: 'restock', path: '/api/admin/restock', reducer: 'admin_restock', args: [0, 0, 1],
+    params: [{ name: 'itemId', in: 'body' }, { name: 'warehouseId', in: 'body' },
+      { name: 'quantity', in: 'body' }] };
+  const malformed = services(new Map([['customer', actor({ itemId: 1, warehouseId: 2 })]]),
+    { actions: [action] });
+  const rejectedInput = await run({ do: 'callAction', actor: 'customer', action: 'restock',
+    input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, malformed);
+  assert.equal(rejectedInput.status, 'failed');
+  assert.match(rejectedInput.summary, /must contain exactly/);
+
+  const missing = services(new Map([['customer', actor({ itemId: 1, warehouseId: 2, quantity: 3 })]]), {
+    actions: [action], fetchImpl: async () => ({ status: 404, ok: false }),
+  });
+  await run({ do: 'callAction', actor: 'customer', action: 'restock',
+    input: { testid: 'row', attribute: 'data-action-input' }, authentication: 'none' }, missing);
+  const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused' }, missing);
+  assert.equal(checked.status, 'failed');
+  assert.match(checked.summary, /does not prove/);
+});
+
 test('account setup preserves scoped credentials and classifies browser failures', async () => {
   const calls = [];
   const locator = purpose => ({

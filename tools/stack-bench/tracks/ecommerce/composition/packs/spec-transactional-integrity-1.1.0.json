@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.transactional-integrity",
+  "version": "1.1.0",
+  "state": "draft",
+  "title": "Transactional integrity",
+  "moduleType": "specification",
+  "description": "Server authority, accounting, valid quantities, and unique reviews.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "database-observation", "direct-server-call"],
+  "evidence": ["browser-observation", "database-observation", "server-response"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 75000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.spec.transactional-integrity.reviews", "path": "prompts/modular/l1-specifications.md", "order": 1400, "from": "## Transactional integrity: reviews", "until": "## Transactional integrity: purchasing", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.reviews"] },
+      { "id": "ecommerce.spec.transactional-integrity.purchasing", "path": "prompts/modular/l1-specifications.md", "order": 1410, "from": "## Transactional integrity: purchasing", "until": "## Transactional integrity: warehouse accounting", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+      { "id": "ecommerce.spec.transactional-integrity.warehouse-accounting", "path": "prompts/modular/l1-specifications.md", "order": 1420, "from": "## Transactional integrity: warehouse accounting", "until": "## External data synchronization", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "unique-review", "source": "scenarios/01-features.json", "feature": 6, "criteria": ["6b"], "role": "guarantee", "observations": ["requested"], "requiresFeatures": ["ecommerce.feature.reviews"] },
+    { "id": "server-price", "source": "scenarios/01-server-actions-2.1.0.json", "feature": 104, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+    { "id": "books-balance", "source": "scenarios/01-invariants.json", "feature": 107, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] }
+  ]
+}

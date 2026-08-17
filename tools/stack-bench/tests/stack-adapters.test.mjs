@@ -91,6 +91,31 @@ test('a new stack registers without changing engine code', () => {
     { trackOffset: 3, runIndex: 1 }), { vite: 7004, express: null, dbPort: null });
 });
 
+test('named action parameters map to HTTP paths/bodies and reducer argument order', () => {
+  const buy = { id: 'buy', path: '/api/items/:item/buy', reducer: 'buy_now', args: [0],
+    params: [{ name: 'itemId', in: 'path', placeholder: ':item' }] };
+  const restock = { id: 'restock', path: '/api/admin/restock', reducer: 'admin_restock', args: [0, 0, 1],
+    params: [{ name: 'itemId', in: 'body' }, { name: 'warehouseId', in: 'body' },
+      { name: 'quantity', in: 'body' }] };
+  const http = executeStackCapability(STACK_ADAPTER_REGISTRY.get('postgres'),
+    'named-action', 'request', { action: buy, input: { values: { itemId: 42 } },
+      url: 'http://app.test/' });
+  assert.equal(http.url, 'http://app.test/api/items/42/buy');
+  assert.deepEqual(JSON.parse(http.body), {});
+  const httpBody = executeStackCapability(STACK_ADAPTER_REGISTRY.get('mongodb'),
+    'named-action', 'request', { action: restock,
+      input: { values: { itemId: 'item', warehouseId: 'warehouse', quantity: 3 } },
+      url: 'http://app.test' });
+  assert.deepEqual(JSON.parse(httpBody.body),
+    { itemId: 'item', warehouseId: 'warehouse', quantity: 3 });
+  const spacetime = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
+    'named-action', 'request', { action: restock,
+      input: { values: { itemId: 7, warehouseId: 9, quantity: 3 } },
+      spacetime: { uri: 'http://stdb.test', mod: 'shop' } });
+  assert.equal(spacetime.url, 'http://stdb.test/v1/database/shop/call/admin_restock');
+  assert.deepEqual(JSON.parse(spacetime.body), [7, 9, 3]);
+});
+
 test('unknown stacks, capabilities, operations, and malformed plugins fail closed', () => {
   assert.throws(() => STACK_ADAPTER_REGISTRY.get('new-db'), /unknown stack adapter/);
   const adapter = STACK_ADAPTER_REGISTRY.get('stub');

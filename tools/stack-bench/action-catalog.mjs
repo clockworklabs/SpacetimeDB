@@ -7,7 +7,7 @@ import {
 import { ACTION_IDS, compileActionInput } from './definition-compiler.mjs';
 
 const OBSERVATIONS = new Set([
-  'expect', 'expectActorsWith', 'expectAgreement', 'expectAllPresent', 'expectCallOutcomes',
+  'expect', 'expectActionOutcome', 'expectActorsWith', 'expectAgreement', 'expectAllPresent', 'expectCallOutcomes',
   'expectElementCount', 'expectForgeryRejected', 'expectNotReceived', 'expectNumber',
   'expectOrderMatches', 'expectReceived', 'expectReplayRejected', 'expectStable', 'recordNumber',
 ]);
@@ -16,8 +16,8 @@ const CONCURRENCY = new Set([
   'sendConcurrently',
 ]);
 const TRANSPORT = new Set([
-  'forgeWrite', 'replayAs', 'expectForgeryRejected', 'expectNotReceived', 'expectReceived',
-  'expectReplayRejected',
+  'callAction', 'expectActionOutcome', 'forgeWrite', 'replayAs', 'expectForgeryRejected',
+  'expectNotReceived', 'expectReceived', 'expectReplayRejected',
 ]);
 const LIFECYCLE = new Set(['restartBackend', 'startAppServer', 'stopAppServer']);
 const CREDENTIALS = new Set(['ensureRegistered', 'ensureSignedIn', 'signIn', 'signUp']);
@@ -40,6 +40,8 @@ function capabilities(id, actionCategory) {
   if (id === 'startAppServer' || id === 'stopAppServer') return ['application-lifecycle'];
   if (id === 'wait') return ['actors', 'clock'];
   if (id === 'callConcurrently' || id === 'expectCallOutcomes') return ['actors', 'named-actions'];
+  if (id === 'callAction') return ['actors', 'named-actions', 'transport-observation'];
+  if (id === 'expectActionOutcome') return ['actors', 'transport-observation'];
   if (id === 'replayAs') return ['actors', 'named-actions', 'transport-observation'];
   if (actionCategory === 'transport') return ['actors', 'transport-observation'];
   if (actionCategory === 'concurrency') return ['actors', 'concurrency'];

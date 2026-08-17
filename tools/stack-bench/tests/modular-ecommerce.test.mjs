@@ -14,6 +14,11 @@ const recipePath = join(import.meta.dirname, '..', 'tracks', 'ecommerce', 'compo
 const plan = compileRecipeFile(recipePath);
 const release = buildRecipeRelease(recipePath);
 const binding = { plan, release };
+const hardenedRecipePath = join(import.meta.dirname, '..', 'tracks', 'ecommerce', 'composition',
+  'recipes', 'l1-modular-2.1.0.json');
+const hardenedPlan = compileRecipeFile(hardenedRecipePath);
+const hardenedRelease = buildRecipeRelease(hardenedRecipePath);
+const hardenedBinding = { plan: hardenedPlan, release: hardenedRelease };
 const contentionPath = join(import.meta.dirname, '..', 'tracks', 'ecommerce', 'scenarios',
   '01-duplicate-checkout-2.0.0.json');
 const specifications = [
@@ -154,4 +159,22 @@ test('the scored duplicate-checkout check owns all state needed when selected al
   assert.deepEqual(selected.features[0].setup.slice(-2).map(step => step.do),
     ['clickConcurrently', 'click']);
   assert.equal(selected.features[0].setup.at(-1).testid, 'cart-toggle');
+});
+
+test('the hardened modular recipe gives selected features direct-call inputs and focused checks', () => {
+  const selected = createModularRecipeTaskRequest(hardenedBinding, {
+    featureIds: ['ecommerce.feature.purchasing', 'ecommerce.feature.warehouse-admin'],
+    expectedSpecifications: [
+      'ecommerce.spec.access-control@1.1.0',
+      'ecommerce.spec.transactional-integrity@1.1.0',
+    ],
+  });
+  assert.match(selected.task.contractText, /data-buy-input/);
+  assert.match(selected.task.contractText, /data-restock-input/);
+  assert.doesNotMatch(selected.task.requirementText, /server-enforced authority/);
+  assert.equal(selected.selection.scoredChecks
+    .filter(check => ['101a', '102a', '103a', '104a'].includes(String(check.criterionId)))
+    .every(check => check.executionId === 'server-actions'), true);
+  assert.equal(hardenedRelease.checkCatalog.length, release.checkCatalog.length);
+  assert.equal(hardenedPlan.scoring.points, plan.scoring.points);
 });

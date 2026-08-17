@@ -139,7 +139,7 @@ the repair agent.
 The scenario action language is also startup-validated. All 47 compatibility
 actions declare a versioned input compiler, required capabilities, hard
 deadline, evidence type, redaction tags, renderer metadata, and a narrow
-executor boundary. All 47 actions now run only through independent registered
+executor boundary. All 49 actions now run only through independent registered
 executors with capability-scoped access. The central compatibility dispatcher
 is gone; concurrency, browser lifecycle, backend/app control, and direct database
 writes use the same typed action contract as ordinary browser observations.

@@ -216,7 +216,7 @@ First compatibility slice completed:
 - The definition compiler now normalizes current track/scenario inputs into
   definition schema v1 and validates the full action field shape before browser
   or backend work begins.
-- The 47-action runtime vocabulary is explicit. The checker consumes that
+- The 49-action runtime vocabulary is explicit. The checker consumes that
   registry, and a compatibility test separately proves it remains equal to the
   legacy grader dispatcher while extraction is underway.
 - Tracks and named actions now pass through one fail-closed manifest compiler;
@@ -231,7 +231,7 @@ First compatibility slice completed:
   preserves name-based legacy-v0 behavior only at its compatibility boundary;
   runtime suite selection no longer guesses semantics from suite names.
 - Canonical, human-diffable golden plans now freeze the compiled semantics of
-  every active track and a compatibility definition covering all 47 actions.
+  every active track and a compatibility definition covering all 49 actions.
   Drift checking is read-only unless an author explicitly accepts an update.
 - The validated ecommerce L1/L2 workload is now expressed as eight behavior
   pack identities, two versioned fixture sets, exact parity recipes, and a
@@ -280,12 +280,12 @@ First compatibility slice completed:
   durable evidence. Subsets are legitimate scopes, while direct comparison is
   refused unless recipe and selection hashes match.
 - The schema-v1 registered-action contract and compatibility catalog now cover
-  all 47 current actions. Production startup validates unique registrations,
+  all 49 current actions. Production startup validates unique registrations,
   exact input compilers, capability declarations, hard deadlines, evidence
   types, redaction tags, renderer metadata, and narrow executor inputs. A fake
   runtime proves pass, application failure, inconclusive, cancellation,
   deadline, malformed evidence, and unclassified-exception behavior. The
-  all 47 actions now execute through independent registered implementations and
+  all 49 actions now execute through independent registered implementations and
   narrow capabilities. Duplicate grader branches and the central compatibility
   switch are gone. Concurrency recursively uses the same registered dispatch;
   database and lifecycle differences are capability providers outside browser

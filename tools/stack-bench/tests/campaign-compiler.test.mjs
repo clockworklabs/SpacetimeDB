@@ -66,7 +66,7 @@ const modularFeatures = [
 function modularDefinition({ requested = [], expected = [], observed = [] } = {}) {
   return definition({
     repetitions: 1,
-    selection: { levels: [{ level: 1, recipe: 'ecommerce.l1-modular@2.0.0',
+    selection: { levels: [{ level: 1, recipe: 'ecommerce.l1-modular@2.1.0',
       features: modularFeatures, checks: [] }] },
     conditions: [{ ...definition().conditions[0], specifications: { levels: [{ level: 1,
       requested, expected, observed }] } }],
@@ -150,7 +150,7 @@ test('guidance conditions are an independent campaign axis with stack-specific A
 });
 
 test('modular campaigns bind requested, expected, and observed specifications independently', () => {
-  const requestedSpecifications = ['ecommerce.spec.access-control@1.0.0'];
+  const requestedSpecifications = ['ecommerce.spec.access-control@1.1.0'];
   const expected = compile(modularDefinition({ requested: requestedSpecifications,
     expected: ['ecommerce.spec.state-durability@1.0.0'] }));
   const observed = compile(modularDefinition({ requested: requestedSpecifications,
@@ -270,11 +270,11 @@ test('the packaged modular reference gate scores quality specifications without 
   const expected = plan.conditions.find(condition => condition.id === 'product-brief-quality');
   assert.deepEqual(expected.requested.levels[0].selection.specifications,
     { requested: [], expected: [
-      'ecommerce.spec.access-control@1.0.0',
+      'ecommerce.spec.access-control@1.1.0',
       'ecommerce.spec.concurrency-safety@1.0.0',
       'ecommerce.spec.live-state@1.0.0',
       'ecommerce.spec.state-durability@1.0.0',
-      'ecommerce.spec.transactional-integrity@1.0.0',
+      'ecommerce.spec.transactional-integrity@1.1.0',
     ], observed: [] });
   assert.equal(expected.requested.levels[0].selection.observedChecks.length, 0);
   assert.equal(expected.requested.levels[0].selection.scoredPoints, 44);

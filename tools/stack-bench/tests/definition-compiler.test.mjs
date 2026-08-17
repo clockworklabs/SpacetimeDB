@@ -60,8 +60,8 @@ test('legacy suite inheritance is normalized once while schema v1 requires an ex
     /inherit: is required in schema v1/);
 });
 
-test('the legacy action language is an explicit 47-action registry', () => {
-  assert.equal(ACTION_IDS.length, 47);
+test('the scenario language is an explicit 49-action registry', () => {
+  assert.equal(ACTION_IDS.length, 49);
   assert.deepEqual(ACTION_REGISTRY.ids, ACTION_IDS);
   assert(ACTION_IDS.includes('clickConcurrently'));
   assert(ACTION_IDS.includes('restartBackend'));
@@ -115,6 +115,12 @@ test('extracted action inputs expose their runtime options without allowing scri
     actors: ['a', 'b'], action: 'checkout', settleMs: 1, args: [], body: {} })));
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'signUp', actor: 'a',
     name: 'seeded', exact: true })));
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'callAction', actor: 'a',
+    action: 'buy', input: { testid: 'item-card', contains: 'Desk Lamp',
+      attribute: 'data-buy-input' }, authentication: 'none' })));
+  assert.throws(() => compileScenarioDefinition(scenario({ do: 'callAction', actor: 'a',
+    action: 'buy', input: { testid: 'item-card', attribute: 'data-buy-input' },
+    authentication: 'guest' })), /authentication: must be "actor" or "none"/);
   const namedReplay = { do: 'replayAs', actor: 'a', from: 'staff', match: 'ship',
     namedAction: { id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0] },
     namedTarget: { testid: 'order-item', contains: 'Webcam',
@@ -157,6 +163,9 @@ test('track manifests reject unknown fields and malformed named actions', () => 
     /unknowable: unknown field/);
   assert.throws(() => compileTrackManifest({ ...base, actions: [{ id: 'buy', path: 'api/buy',
     reducer: 'buy', args: [] }] }), /path: must be an absolute HTTP path/);
+  assert.throws(() => compileTrackManifest({ ...base, actions: [{ id: 'buy', path: '/api/buy',
+    reducer: 'buy', args: [0], params: [{ name: 'itemId', in: 'path', placeholder: ':id' }] }] }),
+  /placeholder: does not appear in path/);
 });
 
 test('the live grader rejects malformed definitions before launching a browser', () => {

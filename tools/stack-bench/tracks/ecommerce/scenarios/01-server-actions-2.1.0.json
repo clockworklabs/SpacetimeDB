@@ -1,0 +1,103 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — direct server actions",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "These focused checks call the same declared server operations as the visible interface. Each call uses an opaque identifier exposed by the application, so the scenario stays identical across database stacks.",
+  "features": [
+    {
+      "id": 101,
+      "name": "Purchase requires an account",
+      "actors": ["buyer", "guest"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "kim" }
+      ],
+      "criteria": [
+        {
+          "id": "101a",
+          "desc": "a direct purchase without a session is refused and changes no stock",
+          "points": 2,
+          "steps": [
+            { "do": "recordNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" }, "as": "speaker-before-guest" },
+            { "do": "callAction", "actor": "guest", "from": "buyer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id" }] }, "input": { "testid": "item-card", "contains": "Bluetooth Speaker", "attribute": "data-buy-input" }, "authentication": "none", "settleMs": 2000 },
+            { "do": "expectActionOutcome", "actor": "guest", "outcome": "refused" },
+            { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" }, "relativeTo": "speaker-before-guest", "plus": 0 }
+          ],
+          "statedBy": "the server must refuse a purchase request that arrives without a valid session"
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "name": "Purchases are attributed to whoever made them",
+      "actors": ["victim", "attacker"],
+      "setup": [
+        { "do": "signUp", "actor": "victim", "name": "lee" },
+        { "do": "signUp", "actor": "attacker", "name": "mel" }
+      ],
+      "criteria": [
+        {
+          "id": "102a",
+          "desc": "a direct purchase is attributed to the authenticated caller, not another account",
+          "points": 2,
+          "steps": [
+            { "do": "callAction", "actor": "attacker", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id" }] }, "input": { "testid": "item-card", "contains": "Desk Lamp", "attribute": "data-buy-input" }, "settleMs": 2000 },
+            { "do": "expectActionOutcome", "actor": "attacker", "outcome": "accepted" },
+            { "do": "click", "actor": "victim", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "victim", "testid": "order-item", "contains": "Desk Lamp", "absent": true },
+            { "do": "click", "actor": "attacker", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "attacker", "testid": "order-item", "contains": "Desk Lamp", "count": 1 }
+          ],
+          "statedBy": "the account comes from the authenticated session, never from the browser's request body"
+        }
+      ]
+    },
+    {
+      "id": 103,
+      "name": "Only an administrator can restock",
+      "actors": ["admin", "customer"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signUp", "actor": "customer", "name": "ned" }
+      ],
+      "criteria": [
+        {
+          "id": "103a",
+          "desc": "a direct restock from a customer is refused and changes no stock",
+          "points": 2,
+          "steps": [
+            { "do": "click", "actor": "admin", "testid": "admin-link" },
+            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "purifier-before-customer" },
+            { "do": "callAction", "actor": "customer", "from": "admin", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1], "params": [{ "name": "itemId", "in": "body" }, { "name": "warehouseId", "in": "body" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 2000 },
+            { "do": "expectActionOutcome", "actor": "customer", "outcome": "refused" },
+            { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "purifier-before-customer", "plus": 0 }
+          ],
+          "statedBy": "the server must refuse admin actions from a non-admin account"
+        }
+      ]
+    },
+    {
+      "id": 104,
+      "name": "The price is the store's to set",
+      "actors": ["buyer"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "oli" }
+      ],
+      "criteria": [
+        {
+          "id": "104a",
+          "desc": "the direct purchase operation creates an order at the store's current price",
+          "points": 2,
+          "steps": [
+            { "do": "callAction", "actor": "buyer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id" }] }, "input": { "testid": "item-card", "contains": "Espresso Machine", "attribute": "data-buy-input" }, "settleMs": 2000 },
+            { "do": "expectActionOutcome", "actor": "buyer", "outcome": "accepted" },
+            { "do": "click", "actor": "buyer", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "buyer", "testid": "order-item", "contains": "Espresso Machine", "count": 1 },
+            { "do": "expectNumber", "actor": "buyer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Espresso Machine" }, "atLeast": 449 }
+          ],
+          "statedBy": "the price at the time of purchase"
+        }
+      ]
+    }
+  ]
+}

@@ -68,7 +68,7 @@ these packages land, but cannot be promoted or used in a measured campaign.
 
 - [x] Docker-only build sessions, exact resource leases, bounded operations,
   fail-closed reset/teardown, and structured top-level run outcomes.
-- [x] Explicit 47-action vocabulary and strict field validation; current
+- [x] Explicit 49-action vocabulary and strict field validation; current
   scenarios exercise 44 actions.
 - [x] Current definitions compile deterministically into definition schema v1.
 - [x] Run-like artifacts declare artifact schema v2. Unversioned, older, and
@@ -100,7 +100,7 @@ semantic changes from serialization-only changes.
 
 Acceptance:
 
-- deterministic golden fixtures cover all 47 registered actions;
+- deterministic golden fixtures cover all 49 registered actions;
 - changing action fields, points, suite membership, or inheritance produces a
   focused diff;
 - source ordering that has no semantics does not change the normalized identity.
@@ -345,7 +345,7 @@ Acceptance:
   inconclusive evidence, timeout, cancellation, and unclassified exception.
 
 Implemented as a strict schema-v1 plugin/registry contract plus a compatibility
-catalog for all 47 current actions. Every registration now supplies an exact
+catalog for all 49 current actions. Every registration now supplies an exact
 input compiler, semantic capability requirements, a hard deadline, typed
 evidence validation, redaction tags, renderer metadata, and an executor that
 receives only its declared capabilities and exact implementation function. The
@@ -387,7 +387,7 @@ capabilities declared by their plugins; none receives the grader context.
 Backend-specific named-call target/body resolution is isolated behind a
 capability provider. The migrated grader branches, replay/auth helpers, and an
 unreachable duplicate restart branch are deleted. Static coverage now counts
-implementations and rejects both gaps and duplicates across all 47 actions.
+implementations and rejects both gaps and duplicates across all 49 actions.
 
 The extraction also closed two result-integrity holes found by parity testing:
 implicit one-point criteria are materialized before scoring (preventing NaN in
@@ -411,7 +411,7 @@ Nested actions recurse through registered dispatch and preserve typed failure
 classification. Backend/application/database behavior is supplied by narrow
 capability providers; browser grading no longer contains stack-specific SQL,
 process-control branches, or an action switch. Startup and static tests require
-all 47 catalog actions to have exactly one implementation.
+all 49 catalog actions to have exactly one implementation.
 
 Hardening includes cleanup ownership before fresh-client navigation, browser-
 crash preservation during barriers, abort propagation into lifecycle readiness
