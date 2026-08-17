@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "fixtureSha256": "d90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40",
+  "backend": "mongodb",
+  "track": "ecommerce",
+  "level": 1,
+  "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.0.0.json",
+  "note": "Deterministic candidate for the shared-cart quantity oracle. The edit preserves the atomic existing-line match but makes its increment a no-op, so two concurrent adds converge to one line with quantity one instead of two.",
+  "mutations": [
+    {
+      "id": "existing-cart-line-does-not-increment",
+      "targets": [{ "feature": 203, "criterion": "203a" }],
+      "desc": "An add to an existing cart line reports success without increasing its quantity.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "{ $inc: { \"items.$.quantity\": qty } }",
+          "replace": "{ $inc: { \"items.$.quantity\": 0 } }"
+        }
+      ]
+    }
+  ]
+}

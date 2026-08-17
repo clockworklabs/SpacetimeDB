@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "edits": [
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"item-card\"\n      onClick={onOpen}",
+      "replace": "data-testid=\"item-card\"\n      data-buy-input={JSON.stringify({ itemId: item.id })}\n      onClick={onOpen}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"order-item\" data-entity-id={String(o.id)} key={o.id}",
+      "replace": "data-testid=\"order-item\" data-entity-id={String(o.id)} data-ship-input={JSON.stringify({ orderId: o.id })} data-cancel-input={JSON.stringify({ orderId: o.id })} key={o.id}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"admin-item-row\" key={it.id}",
+      "replace": "data-testid=\"admin-item-row\" data-transfer-input={it.name === \"Headphones\" ? JSON.stringify({ itemId: it.id, fromWarehouseId: warehouses.find((w) => w.name === \"East\")!.id, toWarehouseId: warehouses.find((w) => w.name === \"West\")!.id, quantity: 25 }) : undefined} key={it.id}"
+    }
+  ]
+}

@@ -199,6 +199,72 @@
       "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2/."
     },
     {
+      "id": "ecommerce-l2-server-actions-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "candidate",
+      "recipes": ["ecommerce.l2-standard@1.3.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/mongodb",
+        "baseSha256": "6aafa2ec888b4049a87f488469f16118cd480517bfa876e57538f751744d1c7b",
+        "patchPath": "reference-apps/patches/ecommerce-l2-server-actions/mongodb.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified L2 reference plus the exact action-input test handles required by the 1.3 candidate recipe."
+      },
+      "imported": {
+        "sourceSha256": "b145b0ac453f7d51d1fe86463b2393bdda92f82d38d97b950ab347bf8587980d"
+      },
+      "mutationManifests": [],
+      "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
+    },
+    {
+      "id": "ecommerce-l2-server-actions-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "candidate",
+      "recipes": ["ecommerce.l2-standard@1.3.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/postgres",
+        "baseSha256": "70e2c03771fe8eb35defb8669bfca465e86714b849534241bcd1ab83a23792b0",
+        "patchPath": "reference-apps/patches/ecommerce-l2-server-actions/postgres.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified L2 reference plus the exact action-input test handles required by the 1.3 candidate recipe."
+      },
+      "imported": {
+        "sourceSha256": "574bea4e918b7ec15eb3a182e68b45bfe2630a07fee4ac4cf06b57268dd6add1"
+      },
+      "mutationManifests": [],
+      "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
+    },
+    {
+      "id": "ecommerce-l2-server-actions-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "candidate",
+      "recipes": ["ecommerce.l2-standard@1.3.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/spacetime",
+        "baseSha256": "cd562347bede7943167f776bf48dde1fc8e06a963ad1a2cd111bb020c9d7a375",
+        "patchPath": "reference-apps/patches/ecommerce-l2-server-actions/spacetime.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified L2 reference plus the exact action-input test handles required by the 1.3 candidate recipe."
+      },
+      "imported": {
+        "sourceSha256": "9acf6f1223daef25dc855e29211b5db0116fd0d431f5185d264a0c48db5152f1"
+      },
+      "mutationManifests": [],
+      "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
+    },
+    {
       "id": "chat-l1-mongodb",
       "backend": "mongodb",
       "track": "chat",

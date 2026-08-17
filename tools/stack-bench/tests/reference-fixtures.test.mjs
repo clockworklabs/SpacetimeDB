@@ -13,7 +13,7 @@ test('the reference registry binds active, blocked, and historical provenance li
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 6);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 3);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 6);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
   escaped.fixtures[0].archivedEvidence = ['results/unbound-grade.json'];
@@ -35,6 +35,20 @@ test('reference selection uses an exact recipe candidate and otherwise keeps the
   blocked.fixtures.find(fixture => fixture.id === 'ecommerce-l1-direct-actions-mongodb').status = 'blocked';
   assert.throws(() => selectReferenceFixture(blocked, { backend: 'mongodb', track: 'ecommerce', level: 1,
     recipe: 'ecommerce.l1-modular@2.1.0' }), /exactly one/);
+});
+
+test('the L2 hardening recipe selects one derived fixture per backend without replacing defaults', () => {
+  const registry = loadReferenceRegistry();
+  for (const backend of ['mongodb', 'postgres', 'spacetime']) {
+    assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2 }).id,
+      `ecommerce-l2-${backend}`);
+    assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
+      recipe: 'ecommerce.l2-standard@1.3.0' }).id,
+    `ecommerce-l2-server-actions-${backend}`);
+    assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
+      recipe: 'ecommerce.l2-standard@1.2.0' }).id,
+    `ecommerce-l2-${backend}`);
+  }
 });
 
 test('reference inspection rejects a symlink that the regular-file hash does not bind', t => {
