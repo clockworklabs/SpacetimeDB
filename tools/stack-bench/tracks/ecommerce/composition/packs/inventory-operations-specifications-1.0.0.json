@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.inventory-operations-specifications",
+  "stableId": "ecommerce.inventory-operations",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "specification",
+  "title": "Inventory conservation",
+  "description": "Stock remains exact across transfers, cancellations, clients, and overlapping writes.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "concurrency", "direct-server-call"],
+  "evidence": ["browser-observation", "server-response"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 52000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l2.inventory-invariants", "path": "prompts/02-operations.md", "order": 60, "from": "### What must stay true", "until": "- Revenue always", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.inventory-operations-features"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "stock-conservation-directional", "stableId": "stock-conservation", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 202, "criteria": ["202a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.inventory-operations-features"] },
+    { "id": "stock-conservation-cancel", "stableId": "stock-conservation", "source": "scenarios/02-invariants.json", "feature": 202, "criteria": ["202b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.inventory-operations-features", "ecommerce.returns-pricing-features"] },
+    { "id": "stock-conservation-fresh-client", "stableId": "stock-conservation", "source": "scenarios/02-self-contained-1.4.0.json", "feature": 202, "criteria": ["202c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.inventory-operations-features", "ecommerce.returns-pricing-features"] },
+    { "id": "stock-conservation-contention", "stableId": "stock-conservation", "source": "scenarios/02-server-actions-1.1.0.json", "feature": 202, "criteria": ["202d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.inventory-operations-features"] }
+  ]
+}

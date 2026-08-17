@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.returns-pricing-features",
+  "stableId": "ecommerce.returns-pricing",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Returns and pricing",
+  "description": "Cancellation, returns, live catalog prices, and immutable receipts.",
+  "requiresPacks": ["ecommerce.operations-access-features@1.0.0"],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 94000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l2.returns-pricing", "path": "prompts/02-operations.md", "order": 40, "from": "### Cancelling and returning", "until": "### Live operational views", "modes": ["upgrade"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l2.price-hooks", "path": "contracts/appendix-02.md", "order": 2040, "from": "| `price-input`", "until": "| `low-stock-list`", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.return-hooks", "path": "contracts/l2-order-hooks-1.4.md", "order": 2060, "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.price-action-input", "path": "prompts/l2-action-inputs.md", "order": 2085, "from": "## Price action input", "until": "## Inventory contention action inputs", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "cancellation-core", "stableId": "cancellation-and-return", "source": "scenarios/02-features.json", "feature": 3, "criteria": ["3a"], "role": "feature" },
+    { "id": "cancellation-history", "stableId": "cancellation-and-return", "source": "scenarios/02-self-contained-1.4.0.json", "feature": 3, "criteria": ["3b"], "role": "feature" },
+    { "id": "return-complete", "stableId": "cancellation-and-return", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 3, "criteria": ["3c"], "role": "feature" },
+    { "id": "price-history-exact", "stableId": "price-history", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 4, "criteria": ["4a"], "role": "feature" },
+    { "id": "price-live-independent", "stableId": "price-history", "source": "scenarios/02-self-contained-1.4.0.json", "feature": 4, "criteria": ["4b"], "role": "feature" },
+    { "id": "price-cart-checkout", "stableId": "price-history", "source": "scenarios/02-features.json", "feature": 4, "criteria": ["4c"], "role": "feature" }
+  ]
+}

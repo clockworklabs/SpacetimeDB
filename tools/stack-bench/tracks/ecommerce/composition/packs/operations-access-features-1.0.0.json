@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.operations-access-features",
+  "stableId": "ecommerce.operations-access",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Fulfilment operations",
+  "description": "Customer, staff, and administrator fulfilment workflows.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "direct-server-call"],
+  "evidence": ["browser-observation", "server-refusal"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 76000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l2.staff-fulfilment", "path": "prompts/02-operations.md", "order": 20, "from": "## New: warehouse staff", "until": "- Staff cannot change prices", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.fulfilment-feature", "path": "prompts/02-operations.md", "order": 22, "from": "## Features", "until": "The\nsame authentication and staff-only authorization", "modes": ["upgrade"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l2.fulfilment-hooks", "path": "contracts/appendix-02.md", "order": 2020, "from": "| `staff-link`", "until": "| `transfer-from`", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.operator-action-inputs", "path": "prompts/l2-action-inputs.md", "order": 2080, "until": "## Price action input", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "fulfilment-core", "stableId": "fulfilment-queue", "source": "scenarios/02-features.json", "feature": 1, "criteria": ["1a", "1d"], "role": "feature" },
+    { "id": "fulfilment-independent", "stableId": "fulfilment-queue", "source": "scenarios/02-self-contained-1.4.0.json", "feature": 1, "criteria": ["1b", "1c", "1e"], "role": "feature" }
+  ]
+}

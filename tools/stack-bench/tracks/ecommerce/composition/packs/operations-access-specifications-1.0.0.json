@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.operations-access-specifications",
+  "stableId": "ecommerce.operations-access",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "specification",
+  "title": "Operator authorization",
+  "description": "Server-enforced operator permissions and customer order ownership.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "direct-server-call", "request-replay"],
+  "evidence": ["browser-observation", "server-refusal", "server-response"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 44000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l2.operator-authorization", "path": "prompts/02-operations.md", "order": 21, "from": "- Staff cannot change prices", "until": "## Features", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.operations-access-features"] },
+      { "id": "ecommerce.l2.shipping-authorization", "path": "prompts/02-operations.md", "order": 23, "from": "The\nsame authentication and staff-only authorization", "until": "### Moving stock", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.operations-access-features"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "operator-transfer-authorization", "stableId": "operator-authorization", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 201, "criteria": ["201a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.inventory-operations-features"] },
+    { "id": "operator-price-authorization", "stableId": "operator-authorization", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 201, "criteria": ["201b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.returns-pricing-features"] },
+    { "id": "operator-authorization-direct", "stableId": "operator-authorization", "source": "scenarios/02-server-actions-1.1.0.json", "feature": 201, "criteria": ["201c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.operations-access-features"] },
+    { "id": "order-owner-direct", "stableId": "order-owner", "source": "scenarios/02-server-actions-1.1.0.json", "feature": 204, "criteria": ["204a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.operations-access-features"] }
+  ]
+}

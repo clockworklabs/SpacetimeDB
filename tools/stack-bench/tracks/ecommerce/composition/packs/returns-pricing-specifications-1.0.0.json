@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.returns-pricing-specifications",
+  "stableId": "ecommerce.returns-pricing",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "specification",
+  "title": "Refund accounting",
+  "description": "Revenue remains exact through cancellations, returns, and later price changes.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 36000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l2.refund-invariants", "path": "prompts/02-operations.md", "order": 61, "from": "- Revenue always", "until": "## Starting data", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.returns-pricing-features"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "refund-accounting", "stableId": "refund-accounting", "source": "scenarios/02-invariants.json", "feature": 203, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.returns-pricing-features"] }
+  ]
+}
