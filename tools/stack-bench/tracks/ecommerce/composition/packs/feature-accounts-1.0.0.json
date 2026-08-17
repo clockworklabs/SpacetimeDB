@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.feature.accounts",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Accounts",
   "moduleType": "feature",
   "description": "Account creation, sign-in, and sign-out.",

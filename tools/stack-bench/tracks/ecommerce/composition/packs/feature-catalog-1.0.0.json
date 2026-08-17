@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.feature.catalog",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Catalog",
   "moduleType": "feature",
   "description": "Storefront listing, ranking, search, and item details.",

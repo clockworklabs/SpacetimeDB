@@ -7,13 +7,14 @@ import { hashDirectory } from '../provenance.mjs';
 import { inspectReferenceCandidate, loadReferenceRegistry,
   inspectImportedReference, selectReferenceFixture,
   validateReferenceRegistry } from '../reference-fixtures.mjs';
+import { resolveReferenceSelection } from '../reference-selection.mjs';
 
 test('the reference registry binds active, blocked, and historical provenance lifecycles', () => {
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 6);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 6);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 9);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 3);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
   escaped.fixtures[0].archivedEvidence = ['results/unbound-grade.json'];
@@ -26,15 +27,28 @@ test('reference selection uses an exact recipe candidate and otherwise keeps the
   assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1 }).id,
     'ecommerce-l1-mongodb');
   assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
-    recipe: 'ecommerce.l1-modular@2.1.0' }).id, 'ecommerce-l1-direct-actions-mongodb');
-  assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
-    recipe: 'ecommerce.l1-modular@2.2.0' }).id, 'ecommerce-l1-direct-actions-mongodb');
+    recipe: 'ecommerce.l1-modular@2.3.0' }).id, 'ecommerce-l1-direct-actions-mongodb');
   assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
     recipe: 'ecommerce.l1-standard@1.1.0' }).id, 'ecommerce-l1-mongodb');
   const blocked = structuredClone(registry);
   blocked.fixtures.find(fixture => fixture.id === 'ecommerce-l1-direct-actions-mongodb').status = 'blocked';
   assert.throws(() => selectReferenceFixture(blocked, { backend: 'mongodb', track: 'ecommerce', level: 1,
-    recipe: 'ecommerce.l1-modular@2.1.0' }), /exactly one/);
+    recipe: 'ecommerce.l1-modular@2.3.0' }), /exactly one/);
+});
+
+test('default reference tooling follows the promoted recipe instead of an unscoped legacy fixture', () => {
+  const registry = loadReferenceRegistry();
+  const promoted = resolveReferenceSelection(registry, {
+    backend: 'mongodb', track: 'ecommerce', level: 1,
+  });
+  assert.equal(promoted.recipe, 'ecommerce.l1-modular@2.3.0');
+  assert.equal(promoted.binding.status, 'promoted');
+  assert.equal(promoted.fixture.id, 'ecommerce-l1-direct-actions-mongodb');
+
+  assert.throws(() => resolveReferenceSelection(registry, {
+    backend: 'mongodb', track: 'ecommerce', level: 1,
+    recipe: 'ecommerce.l1-standard@1.1.0',
+  }), /no recipe release|retired|requires exactly one catalogued/);
 });
 
 test('the L2 hardening recipe selects one derived fixture per backend without replacing defaults', () => {

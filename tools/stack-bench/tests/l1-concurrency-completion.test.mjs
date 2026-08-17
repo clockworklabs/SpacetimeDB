@@ -168,7 +168,7 @@ for (const entry of cases) {
       });
       assert.equal(prepared.sourceSha256, entry.sourceSha256);
 
-      const manifest = JSON.parse(readFileSync(join(ROOT, 'grader', 'mutations', 'candidates',
+      const manifest = JSON.parse(readFileSync(join(ROOT, 'grader', 'mutations',
         entry.manifest), 'utf8'));
       assert.equal(manifest.fixtureSha256, prepared.sourceSha256);
       assert.deepEqual(validateMutationDefinitions(manifest.mutations, {

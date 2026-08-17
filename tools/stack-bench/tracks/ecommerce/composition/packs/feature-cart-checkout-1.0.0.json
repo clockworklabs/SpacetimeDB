@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.feature.cart-checkout",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Cart and checkout",
   "moduleType": "feature",
   "description": "Account cart operations and checkout.",

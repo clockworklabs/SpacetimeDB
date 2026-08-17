@@ -137,8 +137,8 @@ test('campaign validation rejects an application result that stopped before its 
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
-  levels: [{ level: 1, score: 0, max: 51, fixRounds: 1,
-    firstBuild: { score: 0, max: 51, outcome: { kind: 'app_failure' } },
+  levels: [{ level: 1, score: 0, max: 58, fixRounds: 1,
+    firstBuild: { score: 0, max: 58, outcome: { kind: 'app_failure' } },
     repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 1, stopReason: null },
     outcome: { kind: 'app_failure' } }], outcome: { kind: 'app_failure' } };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
@@ -146,7 +146,7 @@ test('campaign validation rejects an application result that stopped before its 
   run.levels[0] = { ...run.levels[0], fixRounds: 3,
     repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3, stopReason: null } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
-  run.levels[0] = { ...run.levels[0], score: 51 };
+  run.levels[0] = { ...run.levels[0], score: 58 };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
     /levels\.L1\.score/);
   run.levels[0] = { ...run.levels[0], regression: { score: 0, max: 1 } };
@@ -176,21 +176,21 @@ test('campaign validation requires complete first-build and final measurement co
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
-  levels: [{ level: 1, score: 51, max: 51, fixRounds: 0,
-    firstBuild: { score: 51, max: 51, outcome },
+  levels: [{ level: 1, score: 58, max: 58, fixRounds: 0,
+    firstBuild: { score: 58, max: 58, outcome },
     repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
     outcome }], outcome: { kind: 'passed' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
 
   const missingFirstBuildPoint = structuredClone(run);
-  missingFirstBuildPoint.levels[0].firstBuild.score = 50;
-  missingFirstBuildPoint.levels[0].firstBuild.max = 50;
+  missingFirstBuildPoint.levels[0].firstBuild.score = 57;
+  missingFirstBuildPoint.levels[0].firstBuild.max = 57;
   assert.throws(() => validateCampaignRun(plan, attempt, missingFirstBuildPoint,
     { buildImage: 'test-build-image' }), /firstBuild\.max/);
 
   const missingFinalPoint = structuredClone(run);
-  missingFinalPoint.levels[0].max = 50;
-  missingFinalPoint.levels[0].score = 50;
+  missingFinalPoint.levels[0].max = 57;
+  missingFinalPoint.levels[0].score = 57;
   assert.throws(() => validateCampaignRun(plan, attempt, missingFinalPoint,
     { buildImage: 'test-build-image' }), /levels\.L1\.max/);
 
@@ -206,7 +206,7 @@ test('campaign validation requires complete first-build and final measurement co
     appFailures: ['feature/accounts'],
     inconclusive: ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b'] };
   inconclusiveFinal.outcome = { kind: 'app_failure' };
-  inconclusiveFinal.levels[0].score = 50;
+  inconclusiveFinal.levels[0].score = 57;
   inconclusiveFinal.levels[0].fixRounds = 3;
   inconclusiveFinal.levels[0].repair = { status: 'budget-exhausted', budgetRounds: 3,
     roundsUsed: 3, stopReason: null };

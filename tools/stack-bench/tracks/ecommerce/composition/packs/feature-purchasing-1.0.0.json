@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.feature.purchasing",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Purchasing and orders",
   "moduleType": "feature",
   "description": "Immediate purchase and customer order history.",

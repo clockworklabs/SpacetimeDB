@@ -83,8 +83,8 @@
       "backend": "mongodb",
       "track": "ecommerce",
       "level": 1,
-      "status": "candidate",
-      "recipes": ["ecommerce.l1-modular@2.1.0", "ecommerce.l1-modular@2.2.0", "ecommerce.l1-modular@2.3.0"],
+      "status": "active",
+      "recipes": ["ecommerce.l1-modular@2.3.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/mongodb",
         "baseSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a",
@@ -98,17 +98,17 @@
         "sourceSha256": "d90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/mongodb-ecom-l1-modular-2.3.0.json"
+        "grader/mutations/mongodb-ecom-l1-modular-2.3.0.json"
       ],
-      "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.3.0/."
     },
     {
       "id": "ecommerce-l1-direct-actions-postgres",
       "backend": "postgres",
       "track": "ecommerce",
       "level": 1,
-      "status": "candidate",
-      "recipes": ["ecommerce.l1-modular@2.1.0", "ecommerce.l1-modular@2.2.0", "ecommerce.l1-modular@2.3.0"],
+      "status": "active",
+      "recipes": ["ecommerce.l1-modular@2.3.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/postgres",
         "baseSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc",
@@ -122,17 +122,17 @@
         "sourceSha256": "ffc2192ee7bce1a5f5e60bd4158118f44dd0d5cc1fcf0bcf21bc38fbfb20d6f1"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/postgres-ecom-l1-modular-2.3.0.json"
+        "grader/mutations/postgres-ecom-l1-modular-2.3.0.json"
       ],
-      "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.3.0/."
     },
     {
       "id": "ecommerce-l1-direct-actions-spacetime",
       "backend": "spacetime",
       "track": "ecommerce",
       "level": 1,
-      "status": "candidate",
-      "recipes": ["ecommerce.l1-modular@2.1.0", "ecommerce.l1-modular@2.2.0", "ecommerce.l1-modular@2.3.0"],
+      "status": "active",
+      "recipes": ["ecommerce.l1-modular@2.3.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/spacetime",
         "baseSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1",
@@ -146,9 +146,9 @@
         "sourceSha256": "7deedf0dc4c17064b9a6a9bb76bc0c488cd04f21472ce7412539ac98368fd3e6"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/spacetime-ecom-l1-modular-2.3.0.json"
+        "grader/mutations/spacetime-ecom-l1-modular-2.3.0.json"
       ],
-      "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.3.0/."
     },
     {
       "id": "ecommerce-l2-mongodb",

@@ -14,7 +14,7 @@ import { loadTrack } from '../tracks.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = loadTrack('ecommerce');
-const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'l1-standard-1.1.0.json');
+const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'l1-modular-2.3.0.json');
 
 function current() {
   const binding = resolveRecipeRelease(TRACK, 1);
@@ -25,7 +25,7 @@ function current() {
 test('runtime calibration resolution binds the qualified L1 and L2 releases', () => {
   const l1 = resolveRecipeRelease(TRACK, 1).release;
   const resolved = resolveCalibrationForRelease(l1, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
-  assert.equal(resolved.id, 'ecommerce.l1-standard-calibration');
+  assert.equal(resolved.id, 'ecommerce.l1-modular-calibration');
   assert.match(resolved.contentSha256, /^[a-f0-9]{64}$/);
   const l2 = resolveRecipeRelease(TRACK, 2).release;
   const qualified = resolveCalibrationForRelease(l2, { trackRoot: TRACK.dir, stackBenchRoot: ROOT });
@@ -43,7 +43,7 @@ function temporaryCalibration(change) {
   const directory = mkdtempSync(join(tmpdir(), 'stack-bench-calibration-'));
   const trackRoot = join(directory, 'ecommerce');
   cpSync(TRACK.dir, trackRoot, { recursive: true });
-  const path = join(trackRoot, 'composition', 'calibrations', 'l1-standard-1.1.0.json');
+  const path = join(trackRoot, 'composition', 'calibrations', 'l1-modular-2.3.0.json');
   const value = JSON.parse(readFileSync(CALIBRATION, 'utf8'));
   change(value);
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -68,15 +68,15 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   assert.equal(first.fixture.sourceSha256, current().binding.release.components.fixture.sha256);
   assert.equal(first.references.entries.length, 3);
   assert.equal(first.mutations.length, 3);
-  assert.equal(first.controls.length, 9);
-  assert.equal(first.controls.filter(control => control.role === 'promotion-gate').length, 2);
-  assert.equal(new Set(first.controls.map(control => control.stableKey)).size, 9);
+  assert.equal(first.controls.length, 2);
+  assert.equal(first.controls.every(control => control.role === 'precondition'), true);
+  assert.equal(new Set(first.controls.map(control => control.stableKey)).size, 2);
   assert.match(first.contentSha256, /^[a-f0-9]{64}$/);
   assert.match(first.qualificationSha256, /^[a-f0-9]{64}$/);
   assert.equal(calibrationQualificationIdentity(first).sha256, first.qualificationSha256);
   assert.deepEqual(checkCalibrations({ trackName: 'ecommerce' })
     .map(result => `${result.id}@${result.version}:${result.state}`), [
-    'ecommerce.l1-modular-calibration@2.3.0:draft',
+    'ecommerce.l1-modular-calibration@2.3.0:qualified',
     'ecommerce.l1-standard-calibration@1.0.0:qualified',
     'ecommerce.l1-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.1.0:qualified',
@@ -233,10 +233,10 @@ test('every zero-point check requires one typed policy with valid mutation targe
   assert.throws(() => compileChanged(value => { value.controls.pop(); }), /missing zero-point checks/);
   assert.throws(() => compileChanged(value => {
     value.controls[0].mutationTargets = ['postgres:not-a-mutant'];
-  }), /unknown mutation/);
+  }), /allowed only for promotion-gate|must not declare mutationTargets|unknown mutation/);
   assert.throws(() => compileChanged(value => {
     value.controls[0].promotionPolicy = 'record-only-until-calibrated';
-  }), /must be must-pass-reference-and-kill-declared-mutant/);
+  }), /must be must-pass-reference/);
   assert.throws(() => compileChanged(value => {
     value.controls[0].stableKey = value.controls[1].stableKey;
   }), /duplicates|not an unassigned/);

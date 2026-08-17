@@ -34,18 +34,18 @@ test('reference qualification requires an explicit valid stack scope', () => {
 });
 
 test('reference qualification resolves the exact executable calibration identity', () => {
-  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-mongodb',
-    imported: { sourceSha256: 'd746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a' } });
-  assert.equal(context.identity.id, 'ecommerce.l1-standard-calibration');
+  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-direct-actions-mongodb',
+    imported: { sourceSha256: 'd90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40' } });
+  assert.equal(context.identity.id, 'ecommerce.l1-modular-calibration');
   assert.equal(context.identity.sha256, context.calibration.qualificationSha256);
 });
 
 test('reference qualification resolves the requested promoted calibration', () => {
-  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-mongodb',
-    imported: { sourceSha256: 'd746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a' } },
-  'ecommerce.l1-standard@1.1.0');
-  assert.equal(context.binding.release.version, '1.1.0');
-  assert.equal(context.calibration.version, '1.1.0');
+  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-direct-actions-mongodb',
+    imported: { sourceSha256: 'd90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40' } },
+  'ecommerce.l1-modular@2.3.0');
+  assert.equal(context.binding.release.version, '2.3.0');
+  assert.equal(context.calibration.version, '2.3.0');
   assert.equal(context.calibration.state, 'qualified');
 });
 

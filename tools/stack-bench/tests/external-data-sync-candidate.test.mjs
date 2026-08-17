@@ -19,7 +19,7 @@ const RELOAD_SCENARIO = 'tracks/ecommerce/scenarios/01-external-reload-sync-1.1.
 const RESTART_SCENARIO = 'tracks/ecommerce/scenarios/01-external-server-restart-sync-1.1.0.json';
 const RECONNECT_SCENARIO = 'tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json';
 const PACK = 'tracks/ecommerce/composition/packs/spec-external-data-sync-1.1.0.json';
-const CANDIDATES = 'grader/mutations/candidates';
+const MUTATIONS = 'grader/mutations';
 
 const cases = [
   {
@@ -100,9 +100,9 @@ test('external synchronization scenarios are focused and state-independent', () 
     'the previously promoted server-restart score must be preserved');
 });
 
-test('the draft pack preserves the existing stable check identities', () => {
+test('the qualified pack preserves the existing stable check identities', () => {
   const pack = compilePackDefinition(json(PACK), { source: PACK });
-  assert.equal(pack.state, 'draft');
+  assert.equal(pack.state, 'qualified');
   assert.deepEqual(pack.checks.map(check => [check.id, check.stableId, check.criteria]), [
     ['external-live', 'external-stock', ['901a']],
     ['external-reload', 'external-stock', ['901b']],
@@ -127,7 +127,7 @@ test('901b is independently selectable from the L1 2.3 recipe', () => {
 
 for (const entry of cases) {
   test(`${entry.backend} external-sync mutations are exact and fixture-bound`, () => {
-    const manifestPath = join(CANDIDATES,
+    const manifestPath = join(MUTATIONS,
       `${entry.backend}-ecom-l1-modular-2.3.0.json`);
     const manifest = json(manifestPath);
     const work = mkdtempSync(join(tmpdir(), `stack-bench-external-sync-${entry.backend}-`));
@@ -192,7 +192,7 @@ for (const entry of cases) {
 }
 
 test('MongoDB reconnect calibration freezes both catalog recovery paths only after going offline', () => {
-  const manifest = json(join(CANDIDATES, 'mongodb-ecom-l1-modular-2.3.0.json'));
+  const manifest = json(join(MUTATIONS, 'mongodb-ecom-l1-modular-2.3.0.json'));
   const mutation = manifest.mutations.find(candidate =>
     candidate.id === 'reconnect-generation-ignores-current-catalog');
   assert.deepEqual(mutationTargetKeys(mutation), ['901:901d']);
@@ -204,7 +204,7 @@ test('MongoDB reconnect calibration freezes both catalog recovery paths only aft
 });
 
 test('PostgreSQL reconnect calibration freezes catalog updates only after the offline boundary', () => {
-  const manifest = json(join(CANDIDATES, 'postgres-ecom-l1-modular-2.3.0.json'));
+  const manifest = json(join(MUTATIONS, 'postgres-ecom-l1-modular-2.3.0.json'));
   const mutation = manifest.mutations.find(candidate =>
     candidate.id === 'reconnect-does-not-send-current-catalog');
   assert.deepEqual(mutationTargetKeys(mutation), ['901:901d']);
@@ -214,7 +214,7 @@ test('PostgreSQL reconnect calibration freezes catalog updates only after the of
 });
 
 test('SpacetimeDB reconnect calibration preserves the last online stock snapshot', () => {
-  const manifest = json(join(CANDIDATES, 'spacetime-ecom-l1-modular-2.3.0.json'));
+  const manifest = json(join(MUTATIONS, 'spacetime-ecom-l1-modular-2.3.0.json'));
   const mutation = manifest.mutations.find(candidate =>
     candidate.id === 'stock-view-keeps-pre-reconnect-snapshot');
   const replacement = mutationEdits(mutation).at(-1).replace;

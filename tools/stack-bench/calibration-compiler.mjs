@@ -360,10 +360,11 @@ export function validateQualificationEvidenceArtifact(artifact, entry,
     const expected = new Map(scoredChecks.map(check => [
       `${check.source}:${check.featureId}:${check.criterionId}`, check,
     ]));
+    const qualificationLevel = Number(calibration.promotion.alias.slice(1));
     for (const result of payload.criteria ?? []) {
       const key = `${result.scenario}:${result.feature}:${result.criterion}`;
       const check = expected.get(key);
-      if (!check || result.track !== release.track || result.level !== release.compatibility.legacyLevel
+      if (!check || result.track !== release.track || result.level !== qualificationLevel
         || result.points !== check.points || result.status !== 'expected_fail'
         || result.evidenceStatus !== 'failed') {
         evidenceFailure(at, `contains invalid null result ${key}`);

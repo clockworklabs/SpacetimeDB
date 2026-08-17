@@ -31,7 +31,7 @@ const cases = [
 ];
 
 function load(entry) {
-  return JSON.parse(readFileSync(join(ROOT, 'grader', 'mutations', 'candidates', entry.manifest), 'utf8'));
+  return JSON.parse(readFileSync(join(ROOT, 'grader', 'mutations', entry.manifest), 'utf8'));
 }
 
 test('the 203a mutation scenario compiles and owns the concurrent quantity assertion', () => {
@@ -61,7 +61,7 @@ for (const entry of cases) {
       assert.equal(prepared.fixture.id, `ecommerce-l1-direct-actions-${entry.backend}`);
       assert.equal(prepared.sourceSha256, entry.fixtureSha256);
       assert.equal(manifest.schemaVersion, 1);
-      assert.equal(manifest.status, 'candidate');
+      assert.equal(manifest.status, 'active');
       assert.equal(manifest.backend, entry.backend);
       assert.equal(manifest.track, 'ecommerce');
       assert.equal(manifest.level, 1);

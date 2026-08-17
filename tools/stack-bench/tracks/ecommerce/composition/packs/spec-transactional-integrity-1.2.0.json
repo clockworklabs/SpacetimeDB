@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.spec.transactional-integrity",
   "version": "1.2.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Transactional integrity",
   "moduleType": "specification",
   "description": "Server authority, accounting, valid quantities, and unique reviews.",

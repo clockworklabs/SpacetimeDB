@@ -40,21 +40,23 @@ test('qualification status exposes the exact runner required by a recipe', () =>
   assert.equal(status.launch.ok, true);
 });
 
-test('qualification resolves the promoted framework-neutral L1 release exactly and by default', () => {
+test('qualification resolves the promoted modular L1 release exactly and by default', () => {
   const parsed = parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
-    '--track', 'ecommerce', '--level', '1', '--recipe', 'ecommerce.l1-standard@1.1.0']);
-  assert.equal(parsed.recipe, 'ecommerce.l1-standard@1.1.0');
+    '--track', 'ecommerce', '--level', '1', '--recipe', 'ecommerce.l1-modular@2.3.0']);
+  assert.equal(parsed.recipe, 'ecommerce.l1-modular@2.3.0');
   const status = qualificationReadiness(parsed.track, parsed.level, parsed.recipe);
-  assert.equal(status.scope.recipe.version, '1.1.0');
-  assert.equal(status.scope.calibration.version, '1.1.0');
+  assert.equal(status.scope.recipe.version, '2.3.0');
+  assert.equal(status.scope.calibration.version, '2.3.0');
   assert.equal(status.launch.ok, true);
   assert.equal(status.requiredEvidence.length, 13);
   assert.equal(status.promotion.ready, true);
   assert.deepEqual(status.promotion.blockers, []);
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
     && item.state === 'promoted' && item.target === 'promoted'));
-  assert(status.commands.every(command => command.includes('--recipe ecommerce.l1-standard@1.1.0')));
-  assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '1.1.0');
+  assert(status.commands.every(command => command.includes('--recipe ecommerce.l1-modular@2.3.0')));
+  assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '2.3.0');
+  assert.throws(() => qualificationReadiness('ecommerce', 1, 'ecommerce.l1-standard@1.1.0'),
+    /no recipe release|retired|requires exactly one catalogued/);
 });
 
 test('qualification resolves the promoted framework-neutral L2 release exactly and by default', () => {

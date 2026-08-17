@@ -16,22 +16,23 @@ const calibration = compileCalibrationFile('composition/calibrations/l1-modular-
   release,
 });
 
-test('the L1 modular calibration is a candidate with no invented live evidence', () => {
-  assert.equal(release.state, 'draft');
-  assert.equal(calibration.state, 'draft');
-  assert.equal(calibration.promotion.status, 'candidate');
-  assert.deepEqual(calibration.qualification.evidence, []);
+test('the L1 modular calibration is qualified by the complete live evidence set', () => {
+  assert.equal(release.state, 'qualified');
+  assert.equal(calibration.state, 'qualified');
+  assert.equal(calibration.promotion.status, 'promoted');
+  assert.equal(calibration.qualification.evidence.length, 13);
+  assert.equal(new Set(calibration.qualification.evidence.map(entry => entry.path)).size, 7);
   assert.deepEqual(calibration.qualification.stacks, [
-    { id: 'mongodb', status: 'candidate' },
-    { id: 'postgres', status: 'candidate' },
-    { id: 'spacetime', status: 'candidate' },
+    { id: 'mongodb', status: 'qualified' },
+    { id: 'postgres', status: 'qualified' },
+    { id: 'spacetime', status: 'qualified' },
   ]);
   assert.equal(calibration.references.entries.every(reference =>
-    reference.status === 'candidate' && reference.targetPath === undefined), true);
-  assert.equal(calibration.mutations.every(mutation => mutation.status === 'candidate'), true);
+    reference.status === 'active' && reference.targetPath === undefined), true);
+  assert.equal(calibration.mutations.every(mutation => mutation.status === 'active'), true);
 });
 
-test('the candidate registry owns one exact L1 2.3 mutation set per backend', () => {
+test('the active registry owns one exact L1 2.3 mutation set per backend', () => {
   const registry = loadReferenceRegistry();
   assert.deepEqual(validateReferenceRegistry(registry).issues, []);
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
@@ -39,11 +40,11 @@ test('the candidate registry owns one exact L1 2.3 mutation set per backend', ()
       candidate.id === `ecommerce-l1-direct-actions-${backend}`);
     assert(fixture.recipes.includes('ecommerce.l1-modular@2.3.0'));
     assert.deepEqual(fixture.mutationManifests,
-      [`grader/mutations/candidates/${backend}-ecom-l1-modular-2.3.0.json`]);
+      [`grader/mutations/${backend}-ecom-l1-modular-2.3.0.json`]);
   }
 });
 
-test('the comprehensive candidate has scored defects and only two supporting controls', () => {
+test('the comprehensive release has scored defects and only two supporting controls', () => {
   const mutations = new Map(calibration.mutations.map(entry => [entry.backend,
     new Map(entry.targets.map(target => [target.id, target.stableKeys]))]));
   const quantityKey = 'ecommerce.spec.concurrency-safety.duplicate-checkout.203a';

@@ -16,7 +16,8 @@ import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
 import { assertPlainReferenceSourceTree, inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
-  selectReferenceFixture, validateReferenceRegistry } from './reference-fixtures.mjs';
+  validateReferenceRegistry } from './reference-fixtures.mjs';
+import { resolveReferenceSelection } from './reference-selection.mjs';
 import { hashAppSource } from './source-snapshot.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -85,7 +86,7 @@ export function prepareReferenceSource(args) {
   if (!validation.ok) {
     throw new Error(`reference registry is invalid: ${validation.issues.join('; ')}`);
   }
-  const fixture = selectReferenceFixture(registry, args);
+  const fixture = resolveReferenceSelection(registry, args).fixture;
   const inspection = inspectImportedReference(fixture);
   if (!inspection.ok) {
     throw new Error(`${fixture.id} is invalid: ${inspection.failures.join('; ')}`);

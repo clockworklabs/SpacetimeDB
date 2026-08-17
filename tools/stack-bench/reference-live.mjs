@@ -18,7 +18,8 @@ import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeRunJson } from './artifacts.mjs';
 import { hashDirectory } from './provenance.mjs';
 import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
-  selectReferenceFixture, validateReferenceRegistry } from './reference-fixtures.mjs';
+  validateReferenceRegistry } from './reference-fixtures.mjs';
+import { resolveReferenceSelection } from './reference-selection.mjs';
 import { killTree } from './platform.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { recoverSupervisedRun, validateSupervisorState } from './recovery.mjs';
@@ -370,10 +371,11 @@ async function main() {
   const registry = loadReferenceRegistry();
   const validation = validateReferenceRegistry(registry);
   if (!validation.ok) throw new Error(`reference registry is invalid:\n${validation.issues.join('\n')}`);
-  const fixture = selectReferenceFixture(registry, args);
+  const selection = resolveReferenceSelection(registry, args);
+  const fixture = selection.fixture;
   const inspection = inspectImportedReference(fixture);
   if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
-  const context = referenceQualificationContext(fixture, args.recipe);
+  const context = referenceQualificationContext(fixture, selection.recipe);
 
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const id = `reference-live-${fixture.backend}-${stamp}-${process.pid}`;

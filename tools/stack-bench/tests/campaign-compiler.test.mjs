@@ -76,9 +76,9 @@ function modularDefinition({ requested = [], expected = [], observed = [] } = {}
 test('campaign compilation binds exact inputs and expands a balanced immutable attempt plan', () => {
   const plan = compile(definition());
   assert.equal(plan.summary.attempts, 9);
-  assert.equal(plan.bindings[0].recipe.id, 'ecommerce.l1-standard');
+  assert.equal(plan.bindings[0].recipe.id, 'ecommerce.l1-modular');
   assert.match(plan.bindings[0].recipe.contentSha256, /^[a-f0-9]{64}$/);
-  assert.equal(plan.bindings[0].calibration.id, 'ecommerce.l1-standard-calibration');
+  assert.equal(plan.bindings[0].calibration.id, 'ecommerce.l1-modular-calibration');
   assert.equal(plan.bindings[0].selection.completeness, 'full');
   assert.deepEqual(campaignIdentity(plan), { id: plan.id, version: '1.0.0',
     sha256: plan.contentSha256, state: 'draft' });
@@ -101,17 +101,17 @@ test('campaign identity ignores JSON formatting but changes with study semantics
   const changed = compile(definition({ repetitions: 4 }));
   assert.notEqual(changed.contentSha256, first.contentSha256);
   const partial = compile(definition({ selection: { packs: [],
-    checks: ['ecommerce.identity-access.accounts.1a'] } }));
+    checks: ['ecommerce.feature.accounts.accounts.1a'] } }));
   assert.notEqual(partial.conditions[0].sha256, first.conditions[0].sha256);
   assert.equal(partial.conditions[0].requested.levels[0].task.sha256,
     partial.bindings[0].task.sha256);
   assert.deepEqual(partial.conditions[0].requested.levels[0].selection.taskPacks,
     partial.bindings[0].selection.taskPacks);
   const identityOnly = compile(definition({ selection: {
-    packs: ['ecommerce.identity-access'], checks: [],
+    packs: ['ecommerce.feature.accounts'], checks: [],
   } }));
   assert.deepEqual(identityOnly.bindings[0].selection.taskPacks,
-    ['ecommerce.identity-access']);
+    ['ecommerce.feature.accounts']);
   assert.notEqual(identityOnly.bindings[0].task.sha256, first.bindings[0].task.sha256);
   assert.notEqual(identityOnly.conditions[0].sha256, first.conditions[0].sha256);
   const multiAgent = definition({ agents: [definition().agents[0],
@@ -157,7 +157,7 @@ test('modular campaigns bind requested, expected, and observed specifications in
     observed: ['ecommerce.spec.state-durability@1.0.0'] }));
   const selected = expected.conditions[0].requested.levels[0];
   assert.equal(expected.bindings[0].recipe.id, 'ecommerce.l1-modular');
-  assert.equal(expected.bindings[0].promotion.status, 'candidate');
+  assert.equal(expected.bindings[0].promotion.status, 'promoted');
   assert.equal(expected.bindings[0].selection, null,
     'condition-specific specification choices must not be flattened into a shared binding');
   assert.equal(selected.selection.schemaVersion, 3);

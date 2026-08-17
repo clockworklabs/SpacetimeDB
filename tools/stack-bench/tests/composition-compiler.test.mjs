@@ -22,7 +22,7 @@ const recipePath = name => join(ECOMMERCE, 'composition', 'recipes', name);
 
 test('the ecommerce composition tree validates as one source set', () => {
   assert.deepEqual(checkCompositions({ trackName: 'ecommerce' }), [{
-      track: 'ecommerce', packs: 33, fixtures: 2, recipes: 10, checks: 477, aliases: 4,
+      track: 'ecommerce', packs: 33, fixtures: 2, recipes: 10, checks: 477, aliases: 5,
   }]);
 });
 
@@ -75,7 +75,8 @@ test('ecommerce L1 and L2 recipes preserve current suite, feature, check, order,
   });
   assert.deepEqual(promotions.entries.map(entry => [entry.alias, entry.status, entry.recipe.id]), [
     ['L1', 'retired', 'ecommerce.l1-standard'],
-    ['L1', 'promoted', 'ecommerce.l1-standard'],
+    ['L1', 'retired', 'ecommerce.l1-standard'],
+    ['L1', 'promoted', 'ecommerce.l1-modular'],
     ['L2', 'retired', 'ecommerce.l2-standard'],
     ['L2', 'promoted', 'ecommerce.l2-standard'],
   ]);

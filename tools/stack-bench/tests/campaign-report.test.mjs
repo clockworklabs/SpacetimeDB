@@ -210,7 +210,7 @@ test('report generation is byte-for-byte reproducible and links immutable raw ev
     const output = join(root, claimed.claim.output);
     mkdirSync(output, { recursive: true });
     const evidence = run('run-1', claimed.claim.attempt,
-      { score: 51, max: 51, first: 51, cost: 2, durationSec: 30 });
+      { score: 58, max: 58, first: 58, cost: 2, durationSec: 30 });
     const timestamp = '2026-08-12T00:01:30.000Z';
     const agent = plan.agents.find(item => item.adapter === claimed.claim.attempt.agentAdapter);
     const stack = plan.stacks.find(item => item.id === claimed.claim.attempt.stack);

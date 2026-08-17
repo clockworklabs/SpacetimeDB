@@ -36,15 +36,16 @@ function printStandalonePrompt(app, extraArgs = []) {
 test('pack selection changes the real model prompt and exact task identity', () => {
   const app = mkdtempSync(join(tmpdir(), 'stack-bench-selected-task-'));
   try {
-    const selected = createRecipeTaskRequest(binding,
-      { packIds: ['ecommerce.identity-access'] });
-    const prompt = printPrompt(app, selected.request);
-    assert.match(prompt, /### Accounts/);
-    assert.doesNotMatch(prompt, /### Reviews/);
-    assert.doesNotMatch(prompt, /### Cart/);
-    assert.deepEqual(selected.selection.taskPacks, ['ecommerce.identity-access']);
+    const selected = createBoundRecipeTaskRequest(binding,
+      { featureIds: ['ecommerce.feature.accounts'] });
+    const visible = createAgentVisibleTaskRequest(binding, selected);
+    const prompt = printPrompt(app, visible);
+    assert.match(prompt, /## Accounts/);
+    assert.doesNotMatch(prompt, /## Reviews/);
+    assert.doesNotMatch(prompt, /## Cart/);
+    assert.deepEqual(selected.selection.promptPacks, ['ecommerce.feature.accounts']);
 
-    const tampered = structuredClone(selected.request);
+    const tampered = structuredClone(visible);
     tampered.task.sha256 = '0'.repeat(64);
     assert.throws(() => printPrompt(app, tampered), error =>
       /recipe task changed after request resolution/.test(String(error.stderr)));
@@ -52,27 +53,28 @@ test('pack selection changes the real model prompt and exact task identity', () 
 });
 
 test('pack dependencies become requested task scope while checks only narrow measurement', () => {
-  const durability = createRecipeTaskRequest(binding,
-    { packIds: ['ecommerce.session-durability'] });
-  assert.deepEqual(durability.selection.taskPacks, [
-    'ecommerce.cart-checkout',
-    'ecommerce.identity-access',
-    'ecommerce.session-durability',
+  const cart = createBoundRecipeTaskRequest(binding,
+    { featureIds: ['ecommerce.feature.cart-checkout'] });
+  assert.deepEqual(cart.selection.promptPacks, [
+    'ecommerce.feature.accounts',
+    'ecommerce.feature.cart-checkout',
+    'ecommerce.feature.catalog',
   ]);
-  assert.match(durability.task.requirementText, /signed-in session/);
-  assert.match(durability.task.requirementText, /### Cart/);
+  assert.match(cart.task.requirementText, /signed-in customer/);
+  assert.match(cart.task.requirementText, /## Cart and checkout/);
 
   const oneKey = binding.release.checkCatalog.find(check =>
-    check.packId === 'ecommerce.identity-access').stableKey;
-  const checkOnly = createRecipeTaskRequest(binding, { checkKeys: [oneKey] });
-  assert.equal(checkOnly.selection.taskPacks.length, binding.release.components.packs.length);
+    check.packId === 'ecommerce.feature.accounts').stableKey;
+  const full = createBoundRecipeTaskRequest(binding);
+  const checkOnly = createBoundRecipeTaskRequest(binding, { checkKeys: [oneKey] });
+  assert.deepEqual(checkOnly.selection.promptPacks, full.selection.promptPacks);
   assert.equal(checkOnly.selection.checks.length, 1);
-  assert.equal(checkOnly.task.requirementText, binding.plan.recipe.task.requirementText);
+  assert.equal(checkOnly.task.requirementText, full.task.requirementText);
 });
 
 test('ordinary runs select scored checks while test-development checks require exact selection', () => {
   const ordinary = createRecipeTaskRequest(binding);
-  assert.equal(ordinary.selection.checks.length, 39);
+  assert.equal(ordinary.selection.checks.length, 46);
   assert.equal(ordinary.selection.checks.every(check => check.points > 0), true);
   assert.equal(ordinary.selection.completeness, 'full');
 
@@ -86,13 +88,13 @@ test('ordinary runs select scored checks while test-development checks require e
 
 test('selected pack prompts contain only their own framework-neutral testing calls', () => {
   const candidate = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.l1-standard@1.1.0');
+    'ecommerce.l1-modular@2.3.0');
   const neutral = resolveGuidanceProfile('neutral@1.0.0', ['postgres']);
   const app = mkdtempSync(join(tmpdir(), 'stack-bench-candidate-task-'));
   try {
-    const identity = createRecipeTaskRequest(candidate,
-      { packIds: ['ecommerce.identity-access'] });
-    const prompt = printPrompt(app, identity.request, [
+    const identity = createBoundRecipeTaskRequest(candidate,
+      { featureIds: ['ecommerce.feature.accounts'] });
+    const prompt = printPrompt(app, createAgentVisibleTaskRequest(candidate, identity), [
       '--guidance', neutral.mode,
       '--guidance-document-json', JSON.stringify(neutral.documents.postgres),
       '--skills-json', JSON.stringify(neutral.skills.postgres.ids),
@@ -102,10 +104,11 @@ test('selected pack prompts contain only their own framework-neutral testing cal
     assert.doesNotMatch(identity.task.requirementText,
       /POST \/api\/checkout|POST \/api\/admin\/restock/);
 
-    const cart = createRecipeTaskRequest(candidate,
-      { packIds: ['ecommerce.cart-checkout'] });
+    const cart = createBoundRecipeTaskRequest(candidate,
+      { featureIds: ['ecommerce.feature.cart-checkout'] });
     assert.match(cart.task.requirementText, /POST \/api\/checkout/);
-    assert.doesNotMatch(cart.task.requirementText, /POST \/api\/auth\/signin|POST \/api\/admin\/restock/);
+    assert.match(cart.task.requirementText, /POST \/api\/auth\/signin/);
+    assert.doesNotMatch(cart.task.requirementText, /POST \/api\/admin\/restock/);
   } finally { rmSync(app, { recursive: true, force: true }); }
 });
 
@@ -175,13 +178,13 @@ test('a standalone recipe selects its exact prompt and cannot disagree with a bo
     const promoted = printStandalonePrompt(app);
     const candidate = printStandalonePrompt(app,
       ['--recipe', 'ecommerce.l1-modular@2.3.0']);
-    assert.notEqual(candidate, promoted);
+    assert.equal(candidate, promoted);
     assert.match(candidate, /data-buy-input/);
-    assert.doesNotMatch(promoted, /data-buy-input/);
+    assert.match(promoted, /data-buy-input/);
 
     const request = createRecipeTaskRequest(binding).request;
     assert.throws(() => printPrompt(app, request,
-      ['--recipe', 'ecommerce.l1-modular@2.3.0']), error =>
+      ['--recipe', 'ecommerce.l1-modular@2.2.0']), error =>
       /does not match bound task/.test(String(error.stderr)));
     assert.equal(agentRecipeRequest('ecommerce.l1-modular@2.3.0'),
       'ecommerce.l1-modular@2.3.0');

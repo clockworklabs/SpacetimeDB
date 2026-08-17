@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.spec.external-data-sync",
   "version": "1.1.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "External data synchronization",
   "moduleType": "specification",
   "description": "Independent probes for live external writes, reload persistence, server restart recovery, and client reconnect catch-up.",

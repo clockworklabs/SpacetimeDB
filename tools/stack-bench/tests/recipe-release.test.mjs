@@ -17,7 +17,6 @@ import { loadTrack } from '../tracks.mjs';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 const L1_RECIPE = join(ECOMMERCE, 'composition', 'recipes', 'l1-standard-1.1.0.json');
-const RETIRED_L1_RECIPE = join(ECOMMERCE, 'composition', 'recipes', 'l1-standard-1.0.0.json');
 
 function copyTrack() {
   const temp = mkdtempSync(join(tmpdir(), 'stack-bench-release-'));
@@ -145,31 +144,32 @@ test('legacy runner binding fails closed on drift and emits only the suite check
 
   const box = copyTrack();
   try {
-    editJson(box.recipe, value => { value.execution.reverse(); });
+    editJson(join(box.root, 'composition', 'recipes', 'l2-standard-1.2.0.json'),
+      value => { value.execution.reverse(); });
     const copiedTrack = { ...track, dir: box.root,
       suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
-    assert.throws(() => resolveRecipeRelease(copiedTrack, 1), /does not exactly match/);
+    assert.throws(() => resolveRecipeRelease(copiedTrack, 2), /does not exactly match/);
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
-test('the framework-neutral release is the promoted default and the retired release cannot launch', () => {
+test('the qualified modular release is the promoted default and retired releases cannot launch', () => {
   const track = loadTrack('ecommerce');
   const promoted = resolveRecipeRelease(track, 1);
-  const exact = resolveRecipeRelease(track, 1, 'ecommerce.l1-standard@1.1.0');
-  const retired = buildRecipeRelease(RETIRED_L1_RECIPE, { trackRoot: ECOMMERCE });
-  assert.equal(promoted.release.version, '1.1.0');
+  const exact = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.3.0');
+  assert.equal(promoted.release.id, 'ecommerce.l1-modular');
+  assert.equal(promoted.release.version, '2.3.0');
   assert.equal(promoted.status, 'promoted');
-  assert.equal(exact.release.version, '1.1.0');
+  assert.equal(exact.release.version, '2.3.0');
   assert.equal(exact.status, 'promoted');
-  assert.equal(retired.executionSha256, promoted.release.executionSha256);
-  assert.notEqual(retired.meaningSha256, promoted.release.meaningSha256);
-  const stableChecks = release => release.checkCatalog.map(({ packVersion: _packVersion, ...check }) => check);
-  assert.deepEqual(stableChecks(retired), stableChecks(promoted.release));
+  assert.equal(promoted.release.checkCatalog.length, 48);
+  assert.equal(promoted.release.scoring.points, 58);
   assert.equal(resolveRecipeRelease(track, 1, {
     id: promoted.release.id,
     version: promoted.release.version,
     contentSha256: promoted.release.contentSha256,
   }).release.contentSha256, promoted.release.contentSha256);
+  assert.throws(() => resolveRecipeRelease(track, 1, 'ecommerce.l1-standard@1.1.0'),
+    /exactly one catalogued/);
   assert.throws(() => resolveRecipeRelease(track, 1, 'ecommerce.l1-standard@1.0.0'),
     /exactly one catalogued/);
   assert.throws(() => resolveRecipeRelease(track, 1, 'ecommerce.l1-standard@9.9.9'),

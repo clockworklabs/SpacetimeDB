@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.feature.reviews",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Reviews",
   "moduleType": "feature",
   "description": "Item ratings and comments.",

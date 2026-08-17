@@ -13,7 +13,7 @@ import { prepareReferenceSource } from '../reference-agent.mjs';
 const ROOT = join(import.meta.dirname, '..');
 const SCENARIO_RELATIVE = 'tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json';
 const SCENARIO = join(ROOT, SCENARIO_RELATIVE);
-const CANDIDATES = join(ROOT, 'grader', 'mutations', 'candidates');
+const MUTATIONS = join(ROOT, 'grader', 'mutations');
 
 const cases = [
   ['mongodb', 'd90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40'],
@@ -45,7 +45,7 @@ test('the focused 902a candidate deterministically checks an already-open live l
 
 for (const [backend, fixtureSha256] of cases) {
   test(`${backend} has exact omission and duplication defects for the open-list check`, () => {
-    const manifest = JSON.parse(readFileSync(join(CANDIDATES,
+    const manifest = JSON.parse(readFileSync(join(MUTATIONS,
       `${backend}-ecom-l1-modular-2.3.0.json`), 'utf8'));
     const mutations = manifest.mutations.filter(mutation =>
       mutationTargetKeys(mutation).includes('902:902a'));
