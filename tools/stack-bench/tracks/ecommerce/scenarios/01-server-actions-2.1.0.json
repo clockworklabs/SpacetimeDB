@@ -19,7 +19,7 @@
           "points": 2,
           "steps": [
             { "do": "recordNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" }, "as": "speaker-before-guest" },
-            { "do": "callAction", "actor": "guest", "from": "buyer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id" }] }, "input": { "testid": "item-card", "contains": "Bluetooth Speaker", "attribute": "data-buy-input" }, "authentication": "none", "settleMs": 2000 },
+            { "do": "callAction", "actor": "guest", "from": "buyer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Bluetooth Speaker", "attribute": "data-buy-input" }, "authentication": "none", "settleMs": 2000 },
             { "do": "expectActionOutcome", "actor": "guest", "outcome": "refused" },
             { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" }, "relativeTo": "speaker-before-guest", "plus": 0 }
           ],
@@ -41,7 +41,7 @@
           "desc": "a direct purchase is attributed to the authenticated caller, not another account",
           "points": 2,
           "steps": [
-            { "do": "callAction", "actor": "attacker", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id" }] }, "input": { "testid": "item-card", "contains": "Desk Lamp", "attribute": "data-buy-input" }, "settleMs": 2000 },
+            { "do": "callAction", "actor": "attacker", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Desk Lamp", "attribute": "data-buy-input" }, "settleMs": 2000 },
             { "do": "expectActionOutcome", "actor": "attacker", "outcome": "accepted" },
             { "do": "click", "actor": "victim", "testid": "orders-toggle" },
             { "do": "expect", "actor": "victim", "testid": "order-item", "contains": "Desk Lamp", "absent": true },
@@ -68,7 +68,7 @@
           "steps": [
             { "do": "click", "actor": "admin", "testid": "admin-link" },
             { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "purifier-before-customer" },
-            { "do": "callAction", "actor": "customer", "from": "admin", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1], "params": [{ "name": "itemId", "in": "body" }, { "name": "warehouseId", "in": "body" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 2000 },
+            { "do": "callAction", "actor": "customer", "from": "admin", "action": "restock", "namedAction": { "id": "restock", "path": "/api/admin/restock", "reducer": "admin_restock", "args": [0, 0, 1], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "warehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-location-row", "contains": "Air Purifier", "attribute": "data-restock-input" }, "settleMs": 2000 },
             { "do": "expectActionOutcome", "actor": "customer", "outcome": "refused" },
             { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "purifier-before-customer", "plus": 0 }
           ],
@@ -89,7 +89,7 @@
           "desc": "the direct purchase operation creates an order at the store's current price",
           "points": 2,
           "steps": [
-            { "do": "callAction", "actor": "buyer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id" }] }, "input": { "testid": "item-card", "contains": "Espresso Machine", "attribute": "data-buy-input" }, "settleMs": 2000 },
+            { "do": "callAction", "actor": "buyer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Espresso Machine", "attribute": "data-buy-input" }, "settleMs": 2000 },
             { "do": "expectActionOutcome", "actor": "buyer", "outcome": "accepted" },
             { "do": "click", "actor": "buyer", "testid": "orders-toggle" },
             { "do": "expect", "actor": "buyer", "testid": "order-item", "contains": "Espresso Machine", "count": 1 },

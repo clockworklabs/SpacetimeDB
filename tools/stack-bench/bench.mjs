@@ -273,15 +273,24 @@ function restartSpecFor(args, appDir, track) {
     probe: track.restartProbe };
 }
 
-function runMutationControl(args, appDir, url, track) {
+export function mutationControlArgv(args, appDir, url, track) {
   const output = join(args.out, 'mutation-control.json');
-  rmSync(output, { force: true });
-  const argv = [join(ROOT, 'grader', 'mutation-test.mjs'), '--app', appDir,
+  const manifest = JSON.parse(readFileSync(args.mutations, 'utf8'));
+  const recipeTask = args.recipeTasks?.get(Number(manifest.level))?.agentRequest
+    ?? args.recipeTasks?.get(Number(manifest.level))?.request ?? null;
+  const recipe = agentRecipeIdentity(args.recipe, recipeTask);
+  return [join(ROOT, 'grader', 'mutation-test.mjs'), '--app', appDir,
     '--url', url, '--mutations', args.mutations, '--backend', args.backend,
     '--track', args.track, '--run-index', String(args.runIndex), '--out', output,
     '--restart-spec', JSON.stringify(restartSpecFor(args, appDir, track)),
     '--parent-attempt-id', args.parentAttemptId,
-    ...(args.recipe ? ['--recipe', args.recipe] : [])];
+    ...(recipe ? ['--recipe', recipe] : [])];
+}
+
+function runMutationControl(args, appDir, url, track) {
+  const output = join(args.out, 'mutation-control.json');
+  rmSync(output, { force: true });
+  const argv = mutationControlArgv(args, appDir, url, track);
   let processError = null;
   try { sh(process.execPath, argv, { stdio: 'inherit' }); }
   catch (error) { processError = String(error.message).split('\n')[0]; }
@@ -1368,11 +1377,13 @@ async function main() {
   process.exitCode = runExitCode(run.outcome);
 }
 
-main().catch(error => {
-  console.error(error.stack ?? error.message);
-  try { emergencyTeardown?.(); }
-  catch (cleanupError) {
-    console.error(`cleanup after failure also failed: ${String(cleanupError.message).split(/\r?\n/)[0]}`);
-  }
-  process.exitCode = 1;
-});
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
+  main().catch(error => {
+    console.error(error.stack ?? error.message);
+    try { emergencyTeardown?.(); }
+    catch (cleanupError) {
+      console.error(`cleanup after failure also failed: ${String(cleanupError.message).split(/\r?\n/)[0]}`);
+    }
+    process.exitCode = 1;
+  });
+}

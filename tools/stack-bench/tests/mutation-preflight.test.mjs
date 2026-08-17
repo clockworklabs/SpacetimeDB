@@ -6,8 +6,26 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { mutationControlArgv } from '../bench.mjs';
+import { loadTrack } from '../tracks.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+test('campaign-bound mutation grading forwards the manifest level exact recipe', () => {
+  const manifest = join(ROOT, 'grader', 'mutations', 'mongodb-ecom-l1.json');
+  const recipeTask = { schemaVersion: 3,
+    recipe: { id: 'ecommerce.l1-modular', version: '2.2.0' },
+    selection: {}, task: {} };
+  const args = { out: 'output', mutations: manifest, backend: 'mongodb',
+    track: 'ecommerce', runIndex: 0, parentAttemptId: 'campaign-attempt',
+    recipe: null, recipeTasks: new Map([[1, { request: recipeTask }]]) };
+  const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
+    loadTrack('ecommerce'));
+  assert.equal(argv[argv.indexOf('--recipe') + 1], 'ecommerce.l1-modular@2.2.0');
+  assert.throws(() => mutationControlArgv({ ...args,
+    recipe: 'ecommerce.l1-standard@1.1.0' }, 'app', 'http://localhost:5173',
+    loadTrack('ecommerce')), /does not match bound task/);
+});
 
 test('a mismatched mutation fixture fails before acquiring any backend resource', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-mutation-preflight-'));

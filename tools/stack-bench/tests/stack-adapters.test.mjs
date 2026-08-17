@@ -95,7 +95,8 @@ test('named action parameters map to HTTP paths/bodies and reducer argument orde
   const buy = { id: 'buy', path: '/api/items/:item/buy', reducer: 'buy_now', args: [0],
     params: [{ name: 'itemId', in: 'path', placeholder: ':item' }] };
   const restock = { id: 'restock', path: '/api/admin/restock', reducer: 'admin_restock', args: [0, 0, 1],
-    params: [{ name: 'itemId', in: 'body' }, { name: 'warehouseId', in: 'body' },
+    params: [{ name: 'itemId', in: 'body', wireType: 'u64' },
+      { name: 'warehouseId', in: 'body', wireType: 'u64' },
       { name: 'quantity', in: 'body' }] };
   const http = executeStackCapability(STACK_ADAPTER_REGISTRY.get('postgres'),
     'named-action', 'request', { action: buy, input: { values: { itemId: 42 } },
@@ -114,6 +115,24 @@ test('named action parameters map to HTTP paths/bodies and reducer argument orde
       spacetime: { uri: 'http://stdb.test', mod: 'shop' } });
   assert.equal(spacetime.url, 'http://stdb.test/v1/database/shop/call/admin_restock');
   assert.deepEqual(JSON.parse(spacetime.body), [7, 9, 3]);
+  const spacetimeStringIds = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
+    'named-action', 'request', { action: restock,
+      input: { values: { itemId: '7', warehouseId: '18446744073709551615', quantity: 3 } },
+      spacetime: { uri: 'http://stdb.test', mod: 'shop' } });
+  assert.equal(spacetimeStringIds.body, '[7,18446744073709551615,3]');
+  for (const itemId of ['-1', '18446744073709551616', '01']) {
+    assert.throws(() => executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
+      'named-action', 'request', { action: restock,
+        input: { values: { itemId, warehouseId: '9', quantity: 3 } },
+        spacetime: { uri: 'http://stdb.test', mod: 'shop' } }),
+    /invalid u64 value for reducer parameter "itemId"/);
+  }
+  const spacetimeText = executeStackCapability(STACK_ADAPTER_REGISTRY.get('spacetime'),
+    'named-action', 'request', { action: { id: 'lookup', path: '/lookup', reducer: 'lookup',
+      args: [''], params: [{ name: 'code', in: 'body' }] },
+      input: { values: { code: '007' } },
+      spacetime: { uri: 'http://stdb.test', mod: 'shop' } });
+  assert.equal(spacetimeText.body, '["007"]');
 });
 
 test('unknown stacks, capabilities, operations, and malformed plugins fail closed', () => {

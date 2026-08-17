@@ -54,6 +54,14 @@ function actorFor(capabilities, name) {
 const browserFor = capabilities => capabilities['browser-interaction'];
 const transportFor = capabilities => capabilities['transport-observation'];
 
+function namedActionRequest(named, action, input) {
+  try { return named.request(action, input); }
+  catch (error) {
+    if (error?.code === 'invalid_named_action_input') fail(error.message);
+    throw error;
+  }
+}
+
 const tokenRe = token => new RegExp(
   `(?<![A-Za-z0-9_-])${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`, 'g');
 const mentions = (value, token) => tokenRe(token).test(value);
@@ -432,7 +440,8 @@ async function replayAs({ input, capabilities, signal }) {
           reason: `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused` };
         return { attempted: false };
       }
-      const request = named.request(action, { ...input, args: [value, ...(action.args ?? []).slice(1)] });
+      const request = namedActionRequest(named, action,
+        { ...input, args: [value, ...(action.args ?? []).slice(1)] });
       if (!request?.url) {
         actor.replay = { inconclusive: true,
           reason: `could not resolve where to send named action "${action.id}" for this backend` };
@@ -590,7 +599,7 @@ async function callAction({ input, capabilities, signal }) {
       inconclusive(`no session found in ${caller.name}'s browser, so action "${input.action}" could not be issued as them`);
     }
   }
-  const request = named.request(action, { values });
+  const request = namedActionRequest(named, action, { values });
   if (!request?.url) inconclusive(`could not resolve where to send action "${input.action}" for this backend`);
   const response = await named.fetch(request.url, {
     method: 'POST',

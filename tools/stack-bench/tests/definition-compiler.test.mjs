@@ -124,7 +124,8 @@ test('extracted action inputs expose their runtime options without allowing scri
     action: 'buy', input: { testid: 'item-card', attribute: 'data-buy-input' },
     authentication: 'guest' })), /authentication: must be "actor" or "none"/);
   const namedReplay = { do: 'replayAs', actor: 'a', from: 'staff', match: 'ship',
-    namedAction: { id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0] },
+    namedAction: { id: 'ship', path: '/api/fulfilment/ship', reducer: 'ship_order', args: [0],
+      params: [{ name: 'orderId', in: 'body', wireType: 'u64' }] },
     namedTarget: { testid: 'order-item', contains: 'Webcam',
       attribute: 'data-entity-id', valueType: 'number' } };
   assert.doesNotThrow(() => compileScenarioDefinition(scenario(namedReplay)));
@@ -134,6 +135,10 @@ test('extracted action inputs expose their runtime options without allowing scri
   assert.throws(() => compileScenarioDefinition(scenario({ ...namedReplay,
     namedTarget: { ...namedReplay.namedTarget, valueType: 'bigint' } })),
   /valueType: must be "number" or "string"/);
+  assert.throws(() => compileScenarioDefinition(scenario({ ...namedReplay,
+    namedAction: { ...namedReplay.namedAction,
+      params: [{ name: 'orderId', in: 'body', wireType: 'f64' }] } })),
+  /wireType: must be "u64"/);
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'runScript',
     script: '../outside.mjs', args: [] })), /\.script: has the wrong type or value/);
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'runScript',

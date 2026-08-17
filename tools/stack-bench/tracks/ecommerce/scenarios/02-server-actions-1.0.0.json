@@ -22,7 +22,7 @@
           "desc": "the server refuses a customer's direct attempt to ship their own pending order",
           "points": 2,
           "steps": [
-            { "do": "callAction", "actor": "customer", "action": "ship", "namedAction": { "id": "ship", "path": "/api/fulfilment/ship", "reducer": "ship_order", "args": [0], "params": [{ "name": "orderId", "in": "body" }] }, "input": { "testid": "order-item", "contains": "Laptop Stand", "attribute": "data-ship-input" }, "settleMs": 2000 },
+            { "do": "callAction", "actor": "customer", "action": "ship", "namedAction": { "id": "ship", "path": "/api/fulfilment/ship", "reducer": "ship_order", "args": [0], "params": [{ "name": "orderId", "in": "body", "wireType": "u64" }] }, "input": { "testid": "order-item", "contains": "Laptop Stand", "attribute": "data-ship-input" }, "settleMs": 2000 },
             { "do": "expectActionOutcome", "actor": "customer", "outcome": "refused" },
             { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Laptop Stand" }, "notContains": "hipped" }
           ],
@@ -52,10 +52,10 @@
               "settleMs": 5000,
               "branches": [
                 [
-                  { "do": "callAction", "actor": "admin", "action": "transfer", "namedAction": { "id": "transfer", "path": "/api/admin/transfer", "reducer": "admin_transfer_stock", "args": [0, 0, 0, 25], "params": [{ "name": "itemId", "in": "body" }, { "name": "fromWarehouseId", "in": "body" }, { "name": "toWarehouseId", "in": "body" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-item-row", "contains": "Headphones", "attribute": "data-transfer-input" } }
+                  { "do": "callAction", "actor": "admin", "action": "transfer", "namedAction": { "id": "transfer", "path": "/api/admin/transfer", "reducer": "admin_transfer_stock", "args": [0, 0, 0, 25], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }, { "name": "fromWarehouseId", "in": "body", "wireType": "u64" }, { "name": "toWarehouseId", "in": "body", "wireType": "u64" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "admin-item-row", "contains": "Headphones", "attribute": "data-transfer-input" } }
                 ],
                 [
-                  { "do": "callAction", "actor": "customer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id" }] }, "input": { "testid": "item-card", "contains": "Headphones", "attribute": "data-buy-input" } }
+                  { "do": "callAction", "actor": "customer", "action": "buy", "namedAction": { "id": "buy", "path": "/api/items/:id/buy", "reducer": "buy_now", "args": [0], "params": [{ "name": "itemId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Headphones", "attribute": "data-buy-input" } }
                 ]
               ]
             },
@@ -86,9 +86,9 @@
           "desc": "the server refuses one customer trying to cancel another customer's still-pending order",
           "points": 2,
           "steps": [
-            { "do": "callAction", "actor": "owner", "action": "cancel", "namedAction": { "id": "cancel", "path": "/api/orders/:id/cancel", "reducer": "cancel_order", "args": [0], "params": [{ "name": "orderId", "in": "path", "placeholder": ":id" }] }, "input": { "testid": "order-item", "contains": "Chisel", "attribute": "data-cancel-input" }, "settleMs": 2000 },
+            { "do": "callAction", "actor": "owner", "action": "cancel", "namedAction": { "id": "cancel", "path": "/api/orders/:id/cancel", "reducer": "cancel_order", "args": [0], "params": [{ "name": "orderId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "order-item", "contains": "Chisel", "attribute": "data-cancel-input" }, "settleMs": 2000 },
             { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
-            { "do": "callAction", "actor": "other", "from": "owner", "action": "cancel", "namedAction": { "id": "cancel", "path": "/api/orders/:id/cancel", "reducer": "cancel_order", "args": [0], "params": [{ "name": "orderId", "in": "path", "placeholder": ":id" }] }, "input": { "testid": "order-item", "contains": "Laptop Stand", "attribute": "data-cancel-input" }, "settleMs": 2000 },
+            { "do": "callAction", "actor": "other", "from": "owner", "action": "cancel", "namedAction": { "id": "cancel", "path": "/api/orders/:id/cancel", "reducer": "cancel_order", "args": [0], "params": [{ "name": "orderId", "in": "path", "placeholder": ":id", "wireType": "u64" }] }, "input": { "testid": "order-item", "contains": "Laptop Stand", "attribute": "data-cancel-input" }, "settleMs": 2000 },
             { "do": "expectActionOutcome", "actor": "other", "outcome": "refused", "routeProvenBy": "owner" },
             { "do": "expect", "actor": "owner", "testid": "order-status", "in": { "testid": "order-item", "contains": "Laptop Stand" }, "notContains": "ancelled" }
           ],

@@ -154,7 +154,7 @@ function validateNamedActionParams(value, at) {
   const names = new Set();
   value.forEach((param, index) => {
     const where = `${at}[${index}]`;
-    strictObject(param, where, new Set(['name', 'in', 'placeholder']));
+    strictObject(param, where, new Set(['name', 'in', 'placeholder', 'wireType']));
     if (!nonEmptyString(param.name)) fail(`${where}.name`, 'must be a non-empty string');
     if (names.has(param.name)) fail(`${where}.name`, `duplicates ${JSON.stringify(param.name)}`);
     names.add(param.name);
@@ -163,6 +163,9 @@ function validateNamedActionParams(value, at) {
       if (!nonEmptyString(param.placeholder)) fail(`${where}.placeholder`, 'is required for a path parameter');
     } else if (param.placeholder !== undefined) {
       fail(`${where}.placeholder`, 'is allowed only for a path parameter');
+    }
+    if (param.wireType !== undefined && param.wireType !== 'u64') {
+      fail(`${where}.wireType`, 'must be "u64"');
     }
   });
 }

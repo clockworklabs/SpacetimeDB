@@ -156,6 +156,32 @@ test('named action input is exact and a missing route is not mistaken for a refu
   assert.equal(unrelatedProof.status, 'failed');
 });
 
+test('an invalid Spacetime u64 input fails before transport and cannot prove refusal', async () => {
+  let requests = 0;
+  const customer = {
+    name: 'customer',
+    loc: () => ({ waitFor: async () => {},
+      getAttribute: async () => JSON.stringify({ itemId: '-1' }) }),
+  };
+  const provided = services(new Map([['customer', customer]]), {
+    backend: 'spacetime',
+    spacetime: { uri: 'http://127.0.0.1:3000', mod: 'shop' },
+    actions: [{ id: 'buy', path: '/api/items/:id/buy', reducer: 'buy_now', args: [0],
+      params: [{ name: 'itemId', in: 'path', placeholder: ':id', wireType: 'u64' }] }],
+    fetchImpl: async () => { requests += 1; return { status: 400, ok: false }; },
+  });
+  const called = await run({ do: 'callAction', actor: 'customer', action: 'buy',
+    input: { testid: 'item-card', attribute: 'data-buy-input' },
+    authentication: 'none', settleMs: 0 }, provided);
+  assert.equal(called.status, 'failed');
+  assert.match(called.summary, /invalid u64 value/);
+  assert.equal(requests, 0);
+
+  const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused' }, provided);
+  assert.equal(checked.status, 'failed');
+  assert.match(checked.summary, /no callAction ran/);
+});
+
 test('account setup preserves scoped credentials and classifies browser failures', async () => {
   const calls = [];
   const locator = purpose => ({
