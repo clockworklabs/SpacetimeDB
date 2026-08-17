@@ -28,6 +28,11 @@
     },
     {
       "path": "server/src/index.ts",
+      "find": "  if (!userId) return itemsLive.slice(0, 10);",
+      "replace": "  if (!userId) return itemsLive.filter((item) => item.purchaseCount > 0).slice(0, 10);"
+    },
+    {
+      "path": "server/src/index.ts",
       "find": "async function broadcastRecommendedForAll() {\n  for (const userId of connectedUsers.keys()) {\n    await broadcastRecommendedForUser(userId);\n  }\n}",
       "replace": "async function broadcastRecommendedForAll() {\n  for (const userId of connectedUsers.keys()) {\n    await broadcastRecommendedForUser(userId);\n  }\n  await broadcastRecommendedForUser(null);\n}"
     },

@@ -47,6 +47,8 @@ test('L2 derived references expose every direct-action input with backend-native
         assert.match(source, /data-price-input=\{it\.name === "Gaming Mouse" \? JSON\.stringify\(\{ itemId: it\.id, price: 1 \}\) : undefined\}/);
         if (backend === 'mongodb') {
           const server = readFileSync(join(first, 'server', 'src', 'index.ts'), 'utf8');
+          assert.match(server, /itemsLive\.filter\(\(item\) => item\.purchaseCount > 0\)\.slice\(0, 10\)/,
+            'signed-out best sellers must exclude zero-purchase items');
           assert.match(server, /socket\.join\("visitors"\)/);
           assert.match(server, /await broadcastRecommendedForUser\(null\)/,
             'signed-out best sellers must receive live ranking updates');

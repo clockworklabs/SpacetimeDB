@@ -221,7 +221,7 @@
         "note": "The qualified L2 reference plus the exact action-input test handles required by the modular 1.4 candidate recipe."
       },
       "imported": {
-        "sourceSha256": "051dd7903e34930f6828cc16b4d92689d92efbdc2c06a198eaea83083ee78dc6"
+        "sourceSha256": "3c5dd399671c89d59c05f0834d3e24fe9d091fe406a1f4b23b9495411d1010cb"
       },
       "mutationManifests": [
         "grader/mutations/candidates/mongodb-ecom-l2-cumulative-1.4.0.json"
