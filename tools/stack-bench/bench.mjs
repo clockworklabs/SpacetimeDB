@@ -194,6 +194,7 @@ function runAgent(args, adapter, mode, level, appDir) {
   }
   const request = { mode, level, app: appDir, backend: args.backend, track: args.track,
     runIndex: args.runIndex, model: args.model, guidance: args.guidance, skills: args.skills,
+    recipe: args.recipe,
     guidanceDocument: args.guidanceDocument,
     recipeTask: args.recipeTasks?.get(level)?.agentRequest
       ?? args.recipeTasks?.get(level)?.request ?? null,

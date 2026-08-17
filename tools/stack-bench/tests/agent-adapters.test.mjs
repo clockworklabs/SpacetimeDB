@@ -43,7 +43,10 @@ test('requests are normalized and unsupported modes fail before launch', () => {
   const withoutSkills = agentRequestArgv(deterministic, { ...request, skills: [] });
   assert.equal(withoutSkills[withoutSkills.indexOf('--skills-json') + 1], '[]');
   const recipeTask = { schemaVersion: 1, recipe: {}, selection: {}, task: {} };
-  const withRecipeTask = agentRequestArgv(deterministic, { ...request, recipeTask });
+  const withRecipeTask = agentRequestArgv(deterministic,
+    { ...request, recipe: 'ecommerce.l1-modular@2.1.0', recipeTask });
+  assert.equal(withRecipeTask[withRecipeTask.indexOf('--recipe') + 1],
+    'ecommerce.l1-modular@2.1.0');
   assert.equal(withRecipeTask[withRecipeTask.indexOf('--recipe-task-json') + 1],
     JSON.stringify(recipeTask));
   assert.equal(agentRequestArgv(deterministic, { ...request, maxBudgetUsd: 12.5 })

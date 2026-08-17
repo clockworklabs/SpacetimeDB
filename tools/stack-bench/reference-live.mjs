@@ -8,7 +8,7 @@
 
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { closeSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync,
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync,
   writeSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -17,7 +17,8 @@ import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeRunJson } from './artifacts.mjs';
 import { hashDirectory } from './provenance.mjs';
-import { inspectImportedReference, loadReferenceRegistry, validateReferenceRegistry } from './reference-fixtures.mjs';
+import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
+  selectReferenceFixture, validateReferenceRegistry } from './reference-fixtures.mjs';
 import { killTree } from './platform.mjs';
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { recoverSupervisedRun, validateSupervisorState } from './recovery.mjs';
@@ -291,7 +292,7 @@ async function runOnce(fixture, args, id, repetition) {
   const harnessBefore = qualificationInputs();
   let processError = null;
   try {
-    cpSync(join(ROOT, fixture.targetPath), app, { recursive: true });
+    prepareReferenceFixtureSource(fixture, app);
     const adapter = STACK_ADAPTER_REGISTRY.get(fixture.backend);
     const env = { ...process.env, STACK_BENCH_SUPERVISOR_STATE: supervisorState,
       ...executeStackCapability(adapter, 'run-policy', 'supervisor-env',
@@ -351,9 +352,7 @@ async function main() {
   const registry = loadReferenceRegistry();
   const validation = validateReferenceRegistry(registry);
   if (!validation.ok) throw new Error(`reference registry is invalid:\n${validation.issues.join('\n')}`);
-  const fixture = registry.fixtures.find(candidate => candidate.backend === args.backend
-    && candidate.track === args.track && candidate.level === args.level && candidate.status !== 'blocked');
-  if (!fixture) throw new Error(`no imported ${args.track} L${args.level} fixture for ${args.backend}`);
+  const fixture = selectReferenceFixture(registry, args);
   const inspection = inspectImportedReference(fixture);
   if (!inspection.ok) throw new Error(`${fixture.id} import is invalid:\n${inspection.failures.join('\n')}`);
   const context = referenceQualificationContext(fixture, args.recipe);

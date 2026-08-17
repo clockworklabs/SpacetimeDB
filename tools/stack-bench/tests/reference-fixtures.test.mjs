@@ -1,23 +1,65 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { hashDirectory } from '../provenance.mjs';
 import { inspectReferenceCandidate, loadReferenceRegistry,
-  inspectImportedReference, validateReferenceRegistry } from '../reference-fixtures.mjs';
+  inspectImportedReference, selectReferenceFixture,
+  validateReferenceRegistry } from '../reference-fixtures.mjs';
 
 test('the reference registry binds active, blocked, and historical provenance lifecycles', () => {
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 6);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 0);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 3);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
   escaped.fixtures[0].archivedEvidence = ['results/unbound-grade.json'];
   escaped.fixtures[0].origin.source = '../outside';
   assert(validateReferenceRegistry(escaped).issues.some(issue => issue.includes('must stay inside')));
+});
+
+test('reference selection uses an exact recipe candidate and otherwise keeps the active default', () => {
+  const registry = loadReferenceRegistry();
+  assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1 }).id,
+    'ecommerce-l1-mongodb');
+  assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
+    recipe: 'ecommerce.l1-modular@2.1.0' }).id, 'ecommerce-l1-direct-actions-mongodb');
+  assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
+    recipe: 'ecommerce.l1-standard@1.1.0' }).id, 'ecommerce-l1-mongodb');
+  const blocked = structuredClone(registry);
+  blocked.fixtures.find(fixture => fixture.id === 'ecommerce-l1-direct-actions-mongodb').status = 'blocked';
+  assert.throws(() => selectReferenceFixture(blocked, { backend: 'mongodb', track: 'ecommerce', level: 1,
+    recipe: 'ecommerce.l1-modular@2.1.0' }), /exactly one/);
+});
+
+test('reference inspection rejects a symlink that the regular-file hash does not bind', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-link-'));
+  try {
+    const target = join(root, 'reference-apps', 'linked');
+    mkdirSync(join(target, 'server'), { recursive: true });
+    writeFileSync(join(target, 'server', 'package.json'), '{}\n');
+    writeFileSync(join(target, 'server', 'package-lock.json'), '{"lockfileVersion":3}\n');
+    writeFileSync(join(target, 'reference.json'), JSON.stringify({
+      schemaVersion: 1, kind: 'node-api', installDirectories: ['server'],
+    }));
+    const fixture = { id: 'linked', targetPath: 'reference-apps/linked', imported: {
+      path: 'reference-apps/linked', sourceSha256: hashDirectory(target).sha256,
+    } };
+    const link = join(target, 'unchecked-link.txt');
+    try { symlinkSync(join(target, 'server', 'package.json'), link, 'file'); }
+    catch (error) {
+      if (['EPERM', 'EACCES'].includes(error.code)) { t.skip('filesystem cannot create test symlinks'); return; }
+      throw error;
+    }
+    assert.equal(hashDirectory(target).sha256, fixture.imported.sourceSha256);
+    assert.match(inspectImportedReference(fixture, { root }).failures[0], /unsupported filesystem entry/);
+    unlinkSync(link);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('imported fixture inspection requires locks and rejects local or generated files', () => {
@@ -81,7 +123,7 @@ test('authored references bind checked-in bytes without inventing historical evi
       status: 'candidate', targetPath: 'reference-apps/authored', mutationManifests: [],
       origin: { kind: 'authored', note: 'Maintained as a benchmark oracle.' },
       imported: { path: 'reference-apps/authored', sourceSha256: hashDirectory(target).sha256 } };
-    const registry = { schemaVersion: 3, fixtures: [fixture] };
+    const registry = { schemaVersion: 4, fixtures: [fixture] };
 
     assert.deepEqual(validateReferenceRegistry(registry, { root }).issues, []);
     const reused = structuredClone(fixture);

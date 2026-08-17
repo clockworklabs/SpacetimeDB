@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -7,16 +7,28 @@ import test from 'node:test';
 import { parseReferenceAgentArgs, prepareReferenceSource,
   referenceDevCommand } from '../reference-agent.mjs';
 
-function argv({ mode = 'build', level = '2', runIndex = '0' } = {}) {
+function argv({ mode = 'build', level = '2', runIndex = '0', recipe } = {}) {
   return ['node', 'reference-agent.mjs', '--mode', mode, '--backend', 'mongodb',
     '--app', '/work/reference', '--track', 'ecommerce', '--level', level,
-    '--run-index', runIndex];
+    '--run-index', runIndex, ...(recipe ? ['--recipe', recipe] : [])];
 }
 
 test('the model-free reference builder accepts any explicit positive level', () => {
   assert.equal(parseReferenceAgentArgs(argv({ level: '1' })).level, 1);
   assert.equal(parseReferenceAgentArgs(argv({ level: '2' })).level, 2);
   assert.equal(parseReferenceAgentArgs(argv({ level: '3' })).level, 3);
+});
+
+test('the shared adapter request forwards the exact recipe into reference selection', async () => {
+  const { agentRequestArgv } = await import('../agent-adapter-contract.mjs');
+  const { AGENT_ADAPTER_REGISTRY } = await import('../agent-adapters.mjs');
+  const command = agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('reference-fixture'), {
+    mode: 'build', backend: 'mongodb', level: 1, app: '/work/reference',
+    track: 'ecommerce', runIndex: 0, model: 'reference-fixture',
+    guidance: 'prescribed', recipe: 'ecommerce.l1-modular@2.1.0',
+  });
+  const parsed = parseReferenceAgentArgs(['node', ...command]);
+  assert.equal(parsed.recipe, 'ecommerce.l1-modular@2.1.0');
 });
 
 test('the model-free reference builder rejects unsupported modes and malformed scope', () => {
@@ -45,5 +57,37 @@ test('reference adapter seeds an empty campaign app from the exact registered fi
     assert.equal(prepareReferenceSource(args).seeded, false);
     writeFileSync(join(args.app, 'unexpected.txt'), 'different source');
     assert.throws(() => prepareReferenceSource(args), /contains source other than/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a recipe-specific reference applies its exact patch without changing the qualified base', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-derived-'));
+  try {
+    const args = { backend: 'mongodb', track: 'ecommerce', level: 1,
+      recipe: 'ecommerce.l1-modular@2.1.0', app: join(root, 'app') };
+    const seeded = prepareReferenceSource(args);
+    assert.equal(seeded.fixture.id, 'ecommerce-l1-direct-actions-mongodb');
+    assert.equal(seeded.sourceSha256,
+      'd90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40');
+    const client = readFileSync(join(args.app, 'client', 'src', 'App.tsx'), 'utf8');
+    assert.match(client, /data-buy-input=/);
+    assert.match(client, /data-restock-input=/);
+    assert.equal(prepareReferenceSource(args).seeded, false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reference seeding rejects an unbound link in an otherwise empty destination', t => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-link-'));
+  try {
+    const app = join(root, 'app');
+    mkdirSync(app);
+    try { symlinkSync(join(root, 'missing-target'), join(app, 'unchecked-link'), 'file'); }
+    catch (error) {
+      if (['EPERM', 'EACCES'].includes(error.code)) { t.skip('filesystem cannot create test symlinks'); return; }
+      throw error;
+    }
+    assert.throws(() => prepareReferenceSource({
+      backend: 'mongodb', track: 'ecommerce', level: 1, app,
+    }), /unsupported filesystem entry/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

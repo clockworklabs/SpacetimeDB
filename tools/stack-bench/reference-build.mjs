@@ -7,7 +7,7 @@
 // node_modules, generated bindings or dist output.
 
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +20,7 @@ import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
 import { loadTrack } from './tracks.mjs';
 import { inspectImportedReference, loadReferenceRegistry,
-  validateReferenceRegistry } from './reference-fixtures.mjs';
+  prepareReferenceFixtureSource, validateReferenceRegistry } from './reference-fixtures.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RUN_BUILD = join(ROOT, 'container', 'run-build.mjs');
@@ -108,7 +108,7 @@ function qualify(fixture, imageIdentity) {
   let leaseEvidence = null;
   let error = null;
   try {
-    cpSync(join(ROOT, fixture.targetPath), app, { recursive: true });
+    prepareReferenceFixtureSource(fixture, app);
     const adapter = STACK_ADAPTER_REGISTRY.get(fixture.backend);
     const preparedLease = executeStackCapability(adapter, 'lease', 'prepare', {
       track: loadTrack(fixture.track), runIndex: 0, runtimeDir: work,

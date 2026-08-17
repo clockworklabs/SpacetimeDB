@@ -275,6 +275,7 @@ function parseArgs(argv) {
       case '--stack': a.guidance = argv[++i] === 'free' ? 'minimal' : 'prescribed'; break;
       case '--guidance': a.guidance = argv[++i]; break;
       case '--guidance-document-json': a.guidanceDocument = JSON.parse(argv[++i]); break;
+      case '--recipe': a.recipe = argv[++i]; break;
       case '--recipe-task-json': a.recipeTask = JSON.parse(argv[++i]); break;
       case '--thinking': a.thinking = argv[++i]; break;
       case '--max-budget-usd': a.maxBudgetUsd = Number(argv[++i]); break;
