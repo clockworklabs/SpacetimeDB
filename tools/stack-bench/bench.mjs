@@ -50,6 +50,7 @@ import { sandboxProbeMode } from './sandbox.mjs';
 import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from './source-snapshot.mjs';
 import { preserveLevelCheckpoint } from './source-checkpoint.mjs';
 import { compareRepairBaseline, createRepairGrant } from './repair-grant.mjs';
+import { canonicalDefinitionJson } from './definition-plan.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
@@ -381,7 +382,7 @@ async function main() {
       const expected = { level, recipe: `${declared.recipe.id}@${declared.recipe.version}`,
         features: declared.selection.requested.features,
         checks: declared.selection.requested.checks };
-      if (JSON.stringify(modularSelection) !== JSON.stringify(expected)) {
+      if (canonicalDefinitionJson(modularSelection) !== canonicalDefinitionJson(expected)) {
         throw new Error(`campaign selection changed before L${level}`);
       }
     } else if (modularSelection) {
