@@ -583,6 +583,8 @@ fn call_scheduled_reducer_until_done(
             // All we can do here is log an error.
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
             let reschedule = id.and_then(|id| {
+                // Prefer to reschedule interval schedules from the requested time, ignoring any delays or jitter.
+                // If you reschedule from `Timestamp::now`, delays will accumulate.
                 let reschedule_from = timing
                     .as_ref()
                     .map(|timing| timing.intended_at)
