@@ -569,7 +569,7 @@ namespace SpacetimeDB
 
         protected class CustomRowEventHandler
         {
-            private readonly bool _useNativeDispatch = EventListenersProvider.UseNativeDispatch;
+            private readonly bool _useNativeDispatch = Backend.UseNativeDispatch;
             private RowEventHandler? _nativeListeners;
             private readonly IEventListeners<RowEventHandler>? _indexedListeners;
 
@@ -582,7 +582,7 @@ namespace SpacetimeDB
             {
                 if (!_useNativeDispatch)
                 {
-                    _indexedListeners = EventListenersProvider.Create<RowEventHandler>();
+                    _indexedListeners = Backend.Create<RowEventHandler>();
                 }
             }
 
@@ -625,7 +625,7 @@ namespace SpacetimeDB
         }
         protected class CustomUpdateEventHandler
         {
-            private readonly bool _useNativeDispatch = EventListenersProvider.UseNativeDispatch;
+            private readonly bool _useNativeDispatch = Backend.UseNativeDispatch;
             private UpdateEventHandler? _nativeListeners;
             private readonly IEventListeners<UpdateEventHandler>? _indexedListeners;
 
@@ -638,7 +638,7 @@ namespace SpacetimeDB
             {
                 if (!_useNativeDispatch)
                 {
-                    _indexedListeners = EventListenersProvider.Create<UpdateEventHandler>();
+                    _indexedListeners = Backend.Create<UpdateEventHandler>();
                 }
             }
 
