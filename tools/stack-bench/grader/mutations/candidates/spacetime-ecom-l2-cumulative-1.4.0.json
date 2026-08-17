@@ -455,7 +455,7 @@
     },
     {
       "id": "transfer-warehouse-totals-omit-destination-credit",
-      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-totals-1.4.0.json",
       "targets": [
         {
           "feature": 2,
@@ -491,7 +491,7 @@
     },
     {
       "id": "catalog-search-keeps-pre-change-price",
-      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-live-price-1.4.0.json",
       "targets": [
         {
           "feature": 4,
@@ -502,8 +502,8 @@
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "  }, [items, searchQuery]);",
-          "replace": "  }, [searchQuery]);"
+          "find": "    return items.filter((i) => i.name.toLowerCase().includes(q));\n  }, [items, searchQuery]);",
+          "replace": "    // mutant: cache detached result rows and ignore later item-table updates\n    return items.filter((i) => i.name.toLowerCase().includes(q)).map((i) => ({ ...i }));\n  }, [searchQuery]);"
         }
       ]
     },
@@ -599,7 +599,7 @@
     },
     {
       "id": "catalog-price-rewrites-receipts",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-paid-price-history-1.4.0.json",
       "targets": [
         {
           "feature": 4,
@@ -635,7 +635,7 @@
     },
     {
       "id": "queue-warehouse-reports-west",
-      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-queue-warehouse-1.4.0.json",
       "targets": [
         {
           "feature": 1,

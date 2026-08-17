@@ -27,8 +27,8 @@
     { "id": "cancellation-core", "stableId": "cancellation-and-return", "source": "scenarios/02-features.json", "feature": 3, "criteria": ["3a"], "role": "feature" },
     { "id": "cancellation-history", "stableId": "cancellation-and-return", "source": "scenarios/02-self-contained-1.4.0.json", "feature": 3, "criteria": ["3b"], "role": "feature" },
     { "id": "return-complete", "stableId": "cancellation-and-return", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 3, "criteria": ["3c"], "role": "feature" },
-    { "id": "price-history-exact", "stableId": "price-history", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 4, "criteria": ["4a"], "role": "feature" },
-    { "id": "price-live-independent", "stableId": "price-history", "source": "scenarios/02-self-contained-1.4.0.json", "feature": 4, "criteria": ["4b"], "role": "feature" },
+    { "id": "price-history-exact", "stableId": "price-history", "source": "scenarios/02-paid-price-history-1.4.0.json", "feature": 4, "criteria": ["4a"], "role": "feature" },
+    { "id": "price-live-independent", "stableId": "price-history", "source": "scenarios/02-live-price-1.4.0.json", "feature": 4, "criteria": ["4b"], "role": "feature" },
     { "id": "price-cart-checkout", "stableId": "price-history", "source": "scenarios/02-features.json", "feature": 4, "criteria": ["4c"], "role": "feature" }
   ]
 }

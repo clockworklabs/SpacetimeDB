@@ -26,7 +26,7 @@
   },
   "checks": [
     { "id": "warehouse-transfer-corrected", "stableId": "warehouse-transfer", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 2, "criteria": ["2a", "2c"], "role": "feature" },
-    { "id": "warehouse-transfer-independent", "stableId": "warehouse-transfer", "source": "scenarios/02-self-contained-1.4.0.json", "feature": 2, "criteria": ["2b"], "role": "feature" },
+    { "id": "warehouse-transfer-independent", "stableId": "warehouse-transfer", "source": "scenarios/02-transfer-totals-1.4.0.json", "feature": 2, "criteria": ["2b"], "role": "feature" },
     { "id": "operational-views-low-stock", "stableId": "operational-views", "source": "scenarios/02-low-stock-1.4.0.json", "feature": 5, "criteria": ["5a"], "role": "feature" },
     { "id": "operational-views-core", "stableId": "operational-views", "source": "scenarios/02-features.json", "feature": 5, "criteria": ["5b", "5c"], "role": "feature" },
     { "id": "operational-views-kept-purchases", "stableId": "operational-views", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 5, "criteria": ["5d"], "role": "feature" }

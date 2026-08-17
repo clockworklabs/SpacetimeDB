@@ -447,7 +447,7 @@
     },
     {
       "id": "transfer-warehouse-totals-omit-destination-credit",
-      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-totals-1.4.0.json",
       "targets": [
         {
           "feature": 2,
@@ -483,19 +483,19 @@
     },
     {
       "id": "catalog-price-change-not-broadcast-to-visitors",
-      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-live-price-1.4.0.json",
       "targets": [
         {
           "feature": 4,
           "criterion": "4b"
         }
       ],
-      "desc": "The price is persisted but the price route omits its catalog broadcast.",
-      "file": "server/src/index.ts",
+      "desc": "The signed-out search result caches detached rows and ignores later catalog updates.",
+      "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "    await pool.query(`UPDATE item SET price = $1 WHERE id = $2`, [priceNum.toFixed(2), itemId]);\n    await broadcastCatalog();",
-          "replace": "    await pool.query(`UPDATE item SET price = $1 WHERE id = $2`, [priceNum.toFixed(2), itemId]);\n    // mutant: updated catalog is not broadcast"
+          "find": "    return items.filter((i) => i.name.toLowerCase().includes(q));\n  }, [items, search]);",
+          "replace": "    // mutant: cache detached result rows and ignore later catalog updates\n    return items.filter((i) => i.name.toLowerCase().includes(q)).map((i) => ({ ...i }));\n  }, [search]);"
         }
       ]
     },
@@ -591,7 +591,7 @@
     },
     {
       "id": "catalog-price-rewrites-receipts",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-paid-price-history-1.4.0.json",
       "targets": [
         {
           "feature": 4,
@@ -627,7 +627,7 @@
     },
     {
       "id": "queue-warehouse-reports-west",
-      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-queue-warehouse-1.4.0.json",
       "targets": [
         {
           "feature": 1,

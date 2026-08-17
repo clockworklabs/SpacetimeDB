@@ -451,7 +451,7 @@
     },
     {
       "id": "transfer-warehouse-totals-omit-destination-credit",
-      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-totals-1.4.0.json",
       "targets": [
         {
           "feature": 2,
@@ -487,7 +487,7 @@
     },
     {
       "id": "catalog-price-change-not-broadcast-to-visitors",
-      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-live-price-1.4.0.json",
       "targets": [
         {
           "feature": 4,
@@ -595,7 +595,7 @@
     },
     {
       "id": "catalog-price-rewrites-receipts",
-      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-paid-price-history-1.4.0.json",
       "targets": [
         {
           "feature": 4,
@@ -631,7 +631,7 @@
     },
     {
       "id": "queue-warehouse-reports-west",
-      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/02-queue-warehouse-1.4.0.json",
       "targets": [
         {
           "feature": 1,

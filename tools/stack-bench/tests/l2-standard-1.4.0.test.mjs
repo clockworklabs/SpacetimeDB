@@ -107,6 +107,28 @@ test('the low-stock boundary is isolated from the other operational views', () =
   assert.equal(steps(plan, lowStock.stableKey).feature.criteria.length, 1);
 });
 
+test('mutation-sensitive L2 checks own isolated scenarios and persisted evidence', () => {
+  const plan = compileRecipeFile(CURRENT, { trackRoot: TRACK });
+  const isolated = new Map([
+    ['ecommerce.operations-access.fulfilment-queue.1b', 'scenarios/02-queue-warehouse-1.4.0.json'],
+    ['ecommerce.inventory-operations.warehouse-transfer.2b', 'scenarios/02-transfer-totals-1.4.0.json'],
+    ['ecommerce.returns-pricing.price-history.4a', 'scenarios/02-paid-price-history-1.4.0.json'],
+    ['ecommerce.returns-pricing.price-history.4b', 'scenarios/02-live-price-1.4.0.json'],
+  ]);
+  for (const [stableKey, source] of isolated) {
+    assert.equal(check(plan, stableKey).source, source);
+    assert.equal(steps(plan, stableKey).feature.criteria.length, 1,
+      `${stableKey} must not share mutation state with another criterion`);
+  }
+
+  const history = steps(plan, 'ecommerce.returns-pricing.price-history.4a').steps;
+  const reload = history.findIndex(action => action.do === 'reload' && action.actor === 'customer');
+  const receipt = history.findIndex(action => action.do === 'expectNumber'
+    && action.testid === 'order-total');
+  assert(reload >= 0 && receipt > reload,
+    'paid-price history must be re-read from persisted state after the catalog changes');
+});
+
 test('corrected transfer checks assert source, destination, and exact total behavior', () => {
   const plan = compileRecipeFile(CURRENT, { trackRoot: TRACK });
   for (const key of [

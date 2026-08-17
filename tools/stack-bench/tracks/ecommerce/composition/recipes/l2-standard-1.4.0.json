@@ -58,6 +58,10 @@
     { "id": "features-existing@L2", "source": "scenarios/02-features.json" },
     { "id": "low-stock@L2", "source": "scenarios/02-low-stock-1.4.0.json" },
     { "id": "invariants-existing@L2", "source": "scenarios/02-invariants.json" },
+    { "id": "queue-warehouse@L2", "source": "scenarios/02-queue-warehouse-1.4.0.json" },
+    { "id": "transfer-totals@L2", "source": "scenarios/02-transfer-totals-1.4.0.json" },
+    { "id": "paid-price-history@L2", "source": "scenarios/02-paid-price-history-1.4.0.json" },
+    { "id": "live-price@L2", "source": "scenarios/02-live-price-1.4.0.json" },
     { "id": "self-contained@L2", "source": "scenarios/02-self-contained-1.4.0.json" },
     { "id": "strengthened@L2", "source": "scenarios/02-strengthened-1.4.0.json" },
     { "id": "server-actions@L2", "source": "scenarios/02-server-actions-1.1.0.json" }

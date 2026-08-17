@@ -25,6 +25,7 @@
   },
   "checks": [
     { "id": "fulfilment-core", "stableId": "fulfilment-queue", "source": "scenarios/02-features.json", "feature": 1, "criteria": ["1a", "1d"], "role": "feature" },
-    { "id": "fulfilment-independent", "stableId": "fulfilment-queue", "source": "scenarios/02-self-contained-1.4.0.json", "feature": 1, "criteria": ["1b", "1c", "1e"], "role": "feature" }
+    { "id": "fulfilment-warehouse", "stableId": "fulfilment-queue", "source": "scenarios/02-queue-warehouse-1.4.0.json", "feature": 1, "criteria": ["1b"], "role": "feature" },
+    { "id": "fulfilment-independent", "stableId": "fulfilment-queue", "source": "scenarios/02-self-contained-1.4.0.json", "feature": 1, "criteria": ["1c", "1e"], "role": "feature" }
   ]
 }

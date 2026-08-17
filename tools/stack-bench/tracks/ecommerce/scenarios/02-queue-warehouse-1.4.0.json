@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Ecommerce L2 fulfilment warehouse",
+  "note": "The warehouse-label check owns its order and queue state so another fulfilment check cannot affect its evidence.",
+  "features": [
+    {
+      "id": 1,
+      "name": "Fulfilment queue",
+      "actors": ["customer", "staff"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "fq-warehouse" },
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "click", "actor": "staff", "testid": "staff-link" }
+      ],
+      "criteria": [
+        {
+          "id": "1b",
+          "desc": "the queue names the warehouse the order will ship from",
+          "points": 1,
+          "statedBy": "which warehouse each will ship from",
+          "steps": [
+            { "do": "dbSetStock", "item": "Desk Lamp", "warehouse": "West", "quantity": 0, "settleMs": 2000 },
+            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Desk Lamp", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Desk Lamp", "within": 10000 },
+            { "do": "expect", "actor": "staff", "testid": "queue-warehouse", "in": { "testid": "queue-item", "contains": "Desk Lamp" }, "contains": "East" }
+          ]
+        }
+      ]
+    }
+  ]
+}
