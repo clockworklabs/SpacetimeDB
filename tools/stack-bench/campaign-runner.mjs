@@ -356,8 +356,10 @@ function validateCampaignAdmission(input, plan, directory) {
       || request.track !== plan.definition.track
       || canonicalDefinitionJson(request.levels) !== canonicalDefinitionJson(plan.definition.levels)
       || request.runIndex !== 0
-      || canonicalDefinitionJson(request.packs) !== canonicalDefinitionJson(plan.definition.selection.packs)
-      || canonicalDefinitionJson(request.checks) !== canonicalDefinitionJson(plan.definition.selection.checks)
+      || canonicalDefinitionJson(request.packs)
+        !== canonicalDefinitionJson(plan.definition.selection.packs ?? [])
+      || canonicalDefinitionJson(request.checks)
+        !== canonicalDefinitionJson(plan.definition.selection.checks ?? [])
       || request.smoke !== true
       || (plan.definition.runtime.buildImage !== null
         && request.image !== plan.definition.runtime.buildImage)

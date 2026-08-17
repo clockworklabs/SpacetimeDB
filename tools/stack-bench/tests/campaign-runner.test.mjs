@@ -13,6 +13,8 @@ import { claimNextAttempt, initializeCampaignDirectory,
   writeCampaignState } from '../campaign-scheduler.mjs';
 
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
+const productBrief = join(import.meta.dirname, '..', 'appliance',
+  'campaign.product-brief-reference.json');
 
 function frozenRuntime(root) {
   const digests = {
@@ -529,5 +531,30 @@ test('campaign admission covers every stack once per distinct agent adapter and 
     assert.equal(calls[0].smoke, true);
     assert.equal(readArtifact(admission.path,
       { expectedKind: 'campaign_admission' }).payload.campaignSha256, plan.contentSha256);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('campaign admission accepts a modular level selection without legacy pack filters', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-modular-campaign-admission-'));
+  try {
+    const plan = compileCampaignFile(productBrief);
+    const calls = [];
+    const admission = runCampaignAdmission(plan, root, {
+      env: {}, now: '2026-08-12T00:00:00.000Z', uuid: () => 'modular',
+      preflight: request => {
+        calls.push(request);
+        return { schemaVersion: 1, generatedAt: '2026-08-12T00:00:00.000Z',
+          request: { backends: request.backends, track: request.track, levels: request.levelList,
+            runIndex: request.runIndex, agentAdapter: request.agentAdapter,
+            packs: request.packIds, checks: request.checkKeys, image: request.image,
+            resultsDir: request.resultsDir, smoke: request.smoke },
+          ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] };
+      },
+    });
+    assert.equal(admission.payload.ok, true);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].packIds, []);
+    assert.deepEqual(calls[0].checkKeys, []);
+    assert.equal(calls[0].requestedScopes[0].levels[0].selection.schemaVersion, 3);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
