@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "kind": "campaign-manifest",
-  "id": "ecommerce-l1-unprescribed-reference",
+  "id": "ecommerce-l1-product-brief-reference",
   "version": "1.0.0",
   "state": "draft",
-  "title": "Ecommerce L1 unprescribed quality reference gate",
+  "title": "Ecommerce L1 product brief and quality validation",
   "track": "ecommerce",
   "levels": [1],
   "selection": {
@@ -38,7 +38,7 @@
   ],
   "conditions": [
     {
-      "id": "unprescribed-quality",
+      "id": "product-brief-quality",
       "version": "1.0.0",
       "guidanceProfile": "neutral@1.0.0",
       "repairPolicy": "scored-only@1.0.0",
@@ -63,7 +63,7 @@
   "repetitions": 2,
   "ordering": {
     "method": "balanced-rotation",
-    "seed": "unprescribed-quality-reference-1"
+    "seed": "product-brief-quality-reference-1"
   },
   "budgets": {
     "fixRounds": 0,

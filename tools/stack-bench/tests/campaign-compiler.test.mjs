@@ -262,12 +262,12 @@ test('the packaged model-free campaign example compiles without starting work', 
 
 test('the packaged modular reference gate scores quality specifications without prompting them', () => {
   const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance',
-    'campaign.unprescribed-reference.json'));
+    'campaign.product-brief-reference.json'));
   assert.equal(plan.state, 'draft');
   assert.deepEqual(plan.summary, { agents: 1, attempts: 6, conditions: 1,
     repetitions: 2, stacks: 3 });
   assert.equal(plan.agents[0].adapter, 'reference-fixture');
-  const expected = plan.conditions.find(condition => condition.id === 'unprescribed-quality');
+  const expected = plan.conditions.find(condition => condition.id === 'product-brief-quality');
   assert.deepEqual(expected.requested.levels[0].selection.specifications,
     { requested: [], expected: [
       'ecommerce.spec.access-control@1.0.0',

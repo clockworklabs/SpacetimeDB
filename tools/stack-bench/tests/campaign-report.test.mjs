@@ -168,23 +168,24 @@ test('campaign HTML labels observed-only behavior as zero-score first-build obse
   assert.equal(report.conditions[0].firstBuildObservations.sample.selectedAttempts, 1);
   assert.equal(report.conditions[0].firstBuildObservations.sample.measuredAttempts, 1);
   assert.equal(report.conditions[0].firstBuildObservations.metrics.passRate.center, 1);
-  assert.match(html, /Observed-only first-build behavior/);
-  assert.match(html, /contribute zero points/);
-  assert.match(html, /never provided to repair rounds/);
+  assert.match(html, /Additional first-build measurements/);
+  assert.match(html, /add no points to the score/);
+  assert.match(html, /do not enter repair feedback/);
   assert.match(html, /first-build-l1-observed\/bundle\.json/);
 });
 
-test('campaign HTML states each modular specification treatment in plain language', () => {
+test('campaign HTML states the build and evaluation setup in plain language', () => {
   const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance',
-    'campaign.unprescribed-reference.json'));
+    'campaign.product-brief-reference.json'));
   const state = createCampaignState(plan, { now: created });
   const report = buildCampaignReport(plan, state, () => {
     throw new Error('a pending campaign must not read run evidence');
   });
   const html = renderCampaignHtml(report);
-  assert.match(html, /Specification treatment/);
-  assert.match(html, /Expected specifications are withheld from the initial prompt but still score and may be repaired/);
-  assert.match(html, /unprescribed-quality/);
+  assert.match(html, /What this run asks for and tests/);
+  assert.match(html, /The build brief lists what the coding agent is asked to build/);
+  assert.match(html, /Additional measurements are reported separately/);
+  assert.match(html, /product-brief-quality/);
   assert.match(html, /ecommerce\.spec\.access-control@1\.0\.0/);
   assert.match(html, /ecommerce\.spec\.transactional-integrity@1\.0\.0/);
 });

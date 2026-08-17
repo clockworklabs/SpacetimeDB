@@ -111,17 +111,17 @@ case, the running Compose controller must match the campaign. This runtime bindi
 does not replace separate release-bundle signature/integrity verification.
 `campaign.example.json` is a zero-cost deterministic draft showing the complete
 shape; copy it outside the image and replace its study inputs before use.
-`campaign.unprescribed-reference.json` is the model-free draft gate for the
+`campaign.product-brief-reference.json` is the model-free draft gate for the
 primary modular L1 condition. The prompt requests the six product features and
-uses neutral backend guidance. It does not mention access control, state
-continuity, live updates, concurrency safety, or transactional integrity, but
-the public-surface checks supported by those five specifications count in the
-ordinary score and remain repairable. The exact registered reference fixture
-runs twice on each stack: six planned attempts with a 44-point denominator.
+uses neutral backend guidance. Its evaluation scope also covers access control,
+state continuity, live updates, concurrency safety, and transactional integrity;
+those checks count in the ordinary score and remain repairable. The exact
+registered reference fixture runs twice on each stack: six planned attempts
+with a 44-point denominator.
 External data synchronization is excluded because its current check needs a
-table contract in the prompt. This gate is qualification input, not comparative
-model data. Null and exact-mutation controls must pass separately before the
-condition can be frozen.
+table interface included in the build brief. This gate is qualification input,
+not comparative model data. Null and exact-mutation controls must pass
+separately before the condition can be frozen.
 
 Prepare durable state without launching an attempt, then run that exact frozen
 plan (or resume its remaining attempts) from the same persistent directory:

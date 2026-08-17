@@ -773,7 +773,7 @@ Implemented foundation: treatment is owned directly by the selected
 specification, so there is no redundant probe-profile axis. The reference adapter
 can seed an empty campaign app
 from the exact active fixture in the content-validated registry and rejects any
-different pre-existing source. `campaign.unprescribed-reference.json` fixes the
+different pre-existing source. `campaign.product-brief-reference.json` fixes the
 primary expected-quality condition: six requested product features, neutral
 backend guidance, and five unmentioned but scored/repairable specifications.
 It runs two model-free reference repetitions on all three stacks (six attempts)
@@ -949,7 +949,7 @@ them. Live qualification does not run concurrently with executable harness edits
     qualification remains part of the next campaign gate).
 24. [ ] SB-506 first-build capability probes (single-execution, source binding,
     zero-score isolation, repair exclusion, per-specification observed treatment,
-    exact-fixture reference seeding, a draft three-stack unprescribed-quality campaign,
+    exact-fixture reference seeding, a draft three-stack product-brief quality campaign,
     one-stack Docker execution, and exact controller-image tests are complete;
     live cross-stack reference/null/mutation qualification and a frozen appliance
     condition remain).

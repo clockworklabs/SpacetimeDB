@@ -256,6 +256,53 @@
     .checklist li { position: relative; padding-left: 28px; }
     .checklist li::before { position: absolute; left: 0; top: 0; color: var(--green); content: "✓"; font-weight: 900; }
     .checklist.open li::before { color: var(--amber); content: "→"; }
+    details { margin-top: 16px; }
+    summary { color: var(--blue); cursor: pointer; font-weight: 750; }
+    .catalog-link {
+      display: inline-flex;
+      margin-top: 10px;
+      color: var(--blue);
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .catalog-link:hover { color: var(--green); }
+    .test-catalog {
+      scroll-margin-top: 78px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+    .test-catalog > summary {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 20px 24px;
+      color: var(--ink);
+      font-size: 18px;
+      list-style-position: inside;
+    }
+    .test-catalog > summary span { color: var(--muted); font-size: 13px; font-weight: 650; }
+    .catalog-body { border-top: 1px solid var(--line); padding: 20px 24px 24px; }
+    .catalog-explainer { max-width: 900px; margin: 0 0 18px; color: var(--muted); }
+    .catalog-filter {
+      width: min(100%, 520px);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #070b0d;
+      padding: 10px 12px;
+      color: var(--ink);
+      font: inherit;
+    }
+    .catalog-filter:focus { border-color: var(--blue); outline: 2px solid var(--blue-soft); }
+    .catalog-group { margin-top: 22px; }
+    .catalog-group h4 { margin: 0 0 8px; color: var(--green); font-size: 15px; }
+    .catalog-table td:first-child { min-width: 150px; }
+    .catalog-status { white-space: nowrap; font-weight: 750; }
+    .catalog-status.scored { color: var(--green); }
+    .catalog-status.candidate { color: var(--amber); }
+    .catalog-status.supporting { color: var(--blue); }
+    .catalog-empty { color: var(--muted); }
     .quote {
       margin: 0;
       border-left: 4px solid var(--navy);
@@ -319,8 +366,6 @@
         <a href="#coverage">Coverage</a>
         <a href="#flow">How it works</a>
         <a href="#agent-inputs">Agent inputs</a>
-        <a href="#pilot">Pilot evidence</a>
-        <a href="#cost">Cost history</a>
         <a href="#product-changes">Product outcomes</a>
         <a href="#next">Next</a>
       </nav>
@@ -330,14 +375,14 @@
   <header class="shell">
     <div class="eyebrow">Visual engineering record · through 16 August 2026</div>
     <h1>How Stack Bench became an instrument we can trust.</h1>
-    <p class="dek">This is the useful history: what we tried, which results were invalid, what the failures taught us, what changed in the harness and product, and what evidence is ready to use today.</p>
+    <p class="dek">This is the useful history: what we learned, what changed in the test system and product, what is verified today, and what remains before a trustworthy comparison run.</p>
     <div class="status-row">
       <span class="pill">Docker-only build path</span>
       <span class="pill">384 automated tests passing</span>
       <span class="pill">Versioned recipes and evidence</span>
       <span class="pill">Framework-neutral L1 and L2 promoted</span>
       <span class="pill warn">Production hardening active</span>
-      <span class="pill warn">Pilot strengthened complete-measurement rules</span>
+      <span class="pill warn">Incomplete runs cannot be compared</span>
       <span class="pill warn">Repeated comparison is next</span>
     </div>
   </header>
@@ -346,26 +391,26 @@
     <section id="history" class="shell">
       <div class="section-head">
         <h2>The engineering timeline</h2>
-        <p>Each milestone records both the result and whether that result remains usable. The project advanced mostly by finding reasons not to trust an apparently clean score.</p>
+        <p>This timeline records engineering milestones and lessons. It does not present superseded experiments as benchmark evidence.</p>
       </div>
       <div class="timeline">
-        <div class="event"><time>Jun-Jul</time><div class="body"><h3>Sequential upgrades proved the basic idea</h3><p>An agent could carry an application through multiple levels, and the experiment expanded to three backends. The runs were useful exploration, but their exact inputs and evidence cannot be reconstructed.</p><div class="tags"><span class="tag invalid">Historical only</span><span class="tag">Idea validated</span></div></div></div>
+        <div class="event"><time>Jun-Jul</time><div class="body"><h3>Sequential upgrades proved the basic idea</h3><p>An agent could carry an application through multiple levels and across three backends. That exploration shaped Stack Bench, but its numbers are not used as benchmark evidence.</p><div class="tags"><span class="tag">Idea validated</span><span class="tag">Evidence reset</span></div></div></div>
         <div class="event"><time>Aug 4</time><div class="body"><h3>Stack Bench became an executable harness</h3><p>Browser grading, mutation testing, separate feature and guarantee axes, per-run databases, and a model-free fixture replaced manual interpretation. The first lesson was immediate: happy-path feature scores saturated on a strong model.</p><div class="tags"><span class="tag">Harness v0</span><span class="tag">Features saturated</span></div></div></div>
-        <div class="event"><time>Aug 6</time><div class="body"><h3>We voided every earlier score</h3><p>Transcript audits showed generated apps reading scenarios, grader code, contracts, and notes. The agent had access to the answer key. The response was Docker-only generation with grader inputs isolated from the coding environment and explicit contamination evidence.</p><div class="tags"><span class="tag invalid">Scores invalidated</span><span class="tag verified">Isolation added</span></div></div></div>
+        <div class="event"><time>Aug 6</time><div class="body"><h3>Generation and testing were separated</h3><p>An audit showed that the coding workspace and testing workspace were not isolated well enough. We stopped using those scores and moved generation into Docker with the independent test system outside the coding environment.</p><div class="tags"><span class="tag">Evidence reset</span><span class="tag verified">Isolation added</span></div></div></div>
         <div class="event"><time>Aug 7-9</time><div class="body"><h3>The cost story changed</h3><p>Code volume did not explain spend. Repeated context reads, compiler failures, source-diving, and repair turns did. Cost became evidence about developer friction, and the immutable unaided first build became a primary result rather than something repairs could overwrite.</p><div class="tags"><span class="tag invalid">Simple thesis rejected</span><span class="tag">First-build metric</span></div></div></div>
-        <div class="event"><time>Aug 10</time><div class="body"><h3>Isolation and scoring bugs consumed real runs</h3><p>Container starts failed, changing denominators looked like regressions, ports collided, and cleanup could not be assumed. Authenticated backend leases, bounded Docker builds, exact ownership, source rollback, and retained invalid attempts came directly from those failures.</p><div class="tags"><span class="tag invalid">Runs lost</span><span class="tag verified">Fail-closed lifecycle</span></div></div></div>
+        <div class="event"><time>Aug 10</time><div class="body"><h3>Run failures hardened the controller</h3><p>Container starts, changing score totals, port collisions, and cleanup failures showed where automation could produce misleading output. The controller now owns its resources, limits Docker builds, restores rejected repairs, and refuses to compare incomplete runs.</p><div class="tags"><span class="tag">Lesson applied</span><span class="tag verified">Safer lifecycle</span></div></div></div>
         <div class="event"><time>Aug 10-11</time><div class="body"><h3>The benchmark found real SDK and CLI defects</h3><p>Reconnect evidence isolated identity loss on the recommended TypeScript client path. A separate Docker reproduction proved a real <code>spacetime dev</code> log-stream authorization defect. Both fixes landed in product code with regressions, not as benchmark prompt workarounds.</p><div class="tags"><span class="tag verified">Product fixes</span><span class="tag">SDK + CLI</span></div></div></div>
         <div class="event"><time>Aug 11-13</time><div class="body"><h3>The grader itself became qualified</h3><p>Known-good references, blank-app null controls, and exact seeded defects were repeated in Docker. Packs, recipes, fixtures, calibration, typed artifacts, a 47-action executor registry, campaign admission, and reproducible reports turned a script collection into versioned product contracts.</p><div class="tags"><span class="tag verified">Reference + null + mutation</span><span class="tag">Versioned contracts</span></div></div></div>
         <div class="event"><time>Aug 14-15</time><div class="body"><h3>L1 and L2 reached a qualified framework-neutral baseline</h3><p>Ecommerce L1 1.1 and L2 1.2 retained their behavior and scoring while shared framework advice was removed. Each gained all 13 required qualification evidence slots across MongoDB, PostgreSQL, and SpacetimeDB before the promoted aliases moved.</p><div class="tags"><span class="tag verified">Qualified in Docker</span><span class="tag verified">Promoted</span></div></div></div>
-        <div class="event"><time>Aug 16</time><div class="body"><h3>The first frozen pilot exposed another acceptance gap</h3><p>SpacetimeDB produced 106/106 conclusive points. PostgreSQL and MongoDB earned every measurable point after repair but the same two-tab duplicate-checkout check was inconclusive at L1 and L2, leaving 104/106 declared coverage. The old scheduler called all three attempts completed; the production rule now invalidates and retries incomplete measurement instead of comparing it.</p><div class="tags"><span class="tag invalid">2 rows diagnostic only</span><span class="tag verified">No reduced denominators</span></div></div></div>
-        <div class="event"><time>Now</time><div class="body"><h3>Prompts, scoring, and repairs are modular and independent</h3><p>The primary L1 condition asks only for six product features with neutral backend guidance. Access control, state continuity, live updates, concurrency safety, and transactional integrity stay out of the initial prompt but still count in the 44-point score and can enter repair. The exact six-attempt three-stack reference gate is defined; cross-stack controls and repeated live comparisons are next.</p><div class="tags"><span class="tag current">Current work</span><span class="tag">Unprescribed but scored</span></div></div></div>
+        <div class="event"><time>Aug 16</time><div class="body"><h3>Incomplete runs were removed from comparisons</h3><p>A frozen trial showed that a completed process can still have missing measurements. Campaigns now retry incomplete attempts and exclude them from comparisons instead of calculating results from different totals.</p><div class="tags"><span class="tag">Lesson applied</span><span class="tag verified">Complete results required</span></div></div></div>
+        <div class="event"><time>Now</time><div class="body"><h3>What we ask for and what we test can be changed independently</h3><p>A run can use a short product brief while still testing production qualities such as access control, durability, live updates, concurrency, and transaction safety. Every run records both lists. Cross-stack test validation and repeated model runs are next.</p><div class="tags"><span class="tag current">Current work</span><span class="tag">Modular setup</span></div></div></div>
       </div>
     </section>
 
     <section id="summary" class="shell">
       <div class="section-head">
         <h2>Where the project stands now</h2>
-        <p>This is the current snapshot after the timeline above—not a claim that every historical result survived the hardening process.</p>
+        <p>This is the current verified state. Superseded run numbers are intentionally omitted.</p>
       </div>
       <div class="grid three">
         <article class="card">
@@ -399,37 +444,7 @@
       </div>
       <div class="callout warning" style="margin-top:16px">
         <strong>The honest current position</strong>
-        The harness is materially stronger and already useful for engineering and diagnostic runs. Framework-neutral L1 1.1 and L2 1.2 have complete repeated Docker reference, mutation, and null evidence on all three stacks, zero machine qualification blockers, and the promoted public aliases. A frozen one-repetition prescribed pilot ran on all three stacks. It exposed a production-policy gap: PostgreSQL and MongoDB had incomplete measurement coverage, so the current admission rule would retain those executions as invalid diagnostics rather than comparison rows. One run per stack also cannot establish variability or a backend winner.
-      </div>
-    </section>
-
-    <section id="pilot" class="shell">
-      <div class="section-head">
-        <h2>A historical pilot, and what it exposed</h2>
-        <p>Exactly one Claude Sonnet 5 attempt ran per stack on Linux/amd64 under the same frozen inputs. The table is retained because it changed the harness. It is diagnostic history—not a statistically repeated comparison and not a current three-row benchmark result.</p>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Stack</th><th>Unaided first build</th><th>After repair</th><th>Declared coverage / outcome</th><th>Normalized usage</th><th>Correction spend</th><th>Elapsed</th></tr></thead>
-          <tbody>
-            <tr><td><strong>PostgreSQL</strong></td><td>L1 45/50; L2 22/54</td><td>L1 50/50; L2 54/54</td><td>104/106 (98.1%); <code>inconclusive</code></td><td>$22.1678</td><td>$12.5077</td><td>about 1h 34m</td></tr>
-            <tr><td><strong>MongoDB</strong></td><td>L1 45/50; L2 49/54</td><td>L1 50/50; L2 54/54</td><td>104/106 (98.1%); <code>inconclusive</code></td><td>$19.8511</td><td>$9.1803</td><td>about 1h 27m</td></tr>
-            <tr><td><strong>SpacetimeDB</strong></td><td>L1 51/51; L2 48/55</td><td>L1 51/51; L2 55/55</td><td>106/106 (100%); <code>passed</code></td><td>$23.1575</td><td>$10.1609</td><td>about 1h 49m</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="grid three" style="margin-top:18px">
-        <article class="card"><div class="number">3 / 3</div><div class="label">planned attempts ran; only 1 / 3 meets the current complete-measurement rule</div></article>
-        <article class="card"><div class="number">$65.1764</div><div class="label">total normalized API-equivalent usage across the pilot</div></article>
-        <article class="card"><div class="number">about 4h 49m</div><div class="label">total execution time across the three attempts</div></article>
-      </div>
-      <div class="callout warning" style="margin-top:18px">
-        <strong>How to read this table</strong>
-        PostgreSQL and MongoDB earned every measurable point, but the same one-point two-tab observation was inconclusive at both levels. The historical scheduler accepted those rows because it kept score and coverage separate. The production rule is now stricter: both attempts would be invalid measurement, retried once, and excluded from comparison metrics unless all 106 declared points became measurable. This does not turn missing evidence into a failed app check. Repair spend is included in total normalized usage, not additional to it. Subscription use is normalized to the campaign's frozen API list-price equivalent; it is not an API invoice.
-      </div>
-      <div class="callout" style="margin-top:18px">
-        <strong>The hardening worked during a real run</strong>
-        SpacetimeDB's first L2 repair regressed already-working behavior. The controller rejected the candidate, restored the exact prior source, regraded the rollback successfully, and continued. The final campaign report then revalidated each raw result before reporting it.
+        The harness is materially stronger and already useful for engineering runs. Framework-neutral L1 1.1 and L2 1.2 have repeated Docker validation using known-good apps, deliberately broken apps, and blank apps on all three stacks. The next evidence milestone is a repeated model campaign in which every planned check completes. Until that finishes, this page makes no backend ranking or comparative cost claim.
       </div>
     </section>
 
@@ -471,7 +486,7 @@
     <section id="agent-inputs" class="shell">
       <div class="section-head">
         <h2>What the coding agent receives</h2>
-        <p>The benchmark must define the job precisely without exposing the answer key. Every behavior-affecting input is preserved with the run, so a later reader can tell exactly what was prescribed.</p>
+        <p>Every run saves the exact build brief, backend guidance, and repair messages, so anyone reviewing the result can see what the coding agent was asked to do.</p>
       </div>
 
       <div class="callout">
@@ -481,35 +496,34 @@
 
       <div class="grid two" style="margin-top:18px">
         <article class="card">
-          <h3>Prescriptive inputs we intentionally provide</h3>
+          <h3>Included in the build brief</h3>
           <ul class="checklist">
             <li><strong>Product requirements:</strong> the visible features, roles, business rules, error behavior, and real-time guarantees for the selected level.</li>
             <li><strong>UI and accessibility expectations:</strong> layout, states, basic visual language, keyboard behavior, and exact <code>data-testid</code> hooks used by browser automation.</li>
             <li><strong>Named write surface:</strong> required ordinary API route or reducer names for operations that the harness must replay concurrently or with hostile credentials.</li>
             <li><strong>Starting fixture:</strong> exact items, prices, categories, warehouse quantities, seeded roles, and intentionally empty collections. Fixture identity is versioned.</li>
             <li><strong>Backend build contract:</strong> assigned ports, database or module name, connection address, required app title, project layout, install/build/deploy commands, and disposable-data policy.</li>
-            <li><strong>Comparison stack when prescribed:</strong> PostgreSQL and MongoDB can be assigned Express, Socket.io, React, and a selected ORM; SpacetimeDB can be assigned its TypeScript module and client SDK. The exact backend guidance is versioned separately from the requested product behavior.</li>
+            <li><strong>Optional implementation guidance:</strong> a run can name frameworks and libraries, or name only the backend and connection details. This choice is saved separately from the product brief.</li>
             <li><strong>API reference where training data is weak:</strong> selected SpacetimeDB server/client skill documents are inlined and recorded. They explain supported APIs; they do not contain benchmark answers.</li>
             <li><strong>Execution protocol:</strong> work in the isolated app directory, bind dev servers correctly, run the opaque contract-lint command, leave the service running, and emit a completion marker.</li>
           </ul>
         </article>
         <article class="card">
-          <h3>What we deliberately do not provide</h3>
+          <h3>Kept in the independent test system</h3>
           <ul>
-            <li>The grader-side scenario files, browser action plan, point values, expected evidence, grader implementation, or score thresholds</li>
-            <li>A completed domain schema beyond the three stock interoperability tables, or any authorization policy, transaction design, subscription design, or application source code</li>
-            <li>The canonical reference applications, seeded mutations, null control, or known backend-specific failure list</li>
-            <li>Another backend's implementation instructions or a migration recipe that reveals how to translate the solution</li>
-            <li>Unrequested repair hints during the first attempt; that unaided build is preserved before any optional fix round</li>
+            <li>The browser and backend test steps, scoring rules, and expected evidence</li>
+            <li>The known-good, deliberately broken, and blank apps used to validate each test</li>
+            <li>Backend-specific test controls and the test runner implementation</li>
+            <li>Comparison logic that decides whether a run is complete enough to publish</li>
           </ul>
-          <p><strong>After grading:</strong> if repair rounds are part of the declared experiment, the agent receives a sanitized behavioral bug report: expected behavior, observed behavior, and useful evidence. It still does not receive grader source or grader-only checks.</p>
+          <p><strong>After testing:</strong> if repair rounds are enabled, the agent receives a plain bug report describing the expected behavior, observed behavior, and useful evidence. The original build remains saved separately.</p>
         </article>
       </div>
 
       <div class="grid three" style="margin-top:18px">
         <article class="card">
           <h3>Fixed for fairness</h3>
-          <p>The product requirements, fixture, scoring recipe, container, budgets, and run policy must match across stacks unless the experiment explicitly declares a different treatment.</p>
+          <p>The product requirements, starting data, scoring rules, container, budgets, and run policy must match across stacks unless the run explicitly records a different setup.</p>
         </article>
         <article class="card">
           <h3>Backend-specific by necessity</h3>
@@ -521,23 +535,23 @@
         </article>
       </div>
 
-      <h3 style="margin-top:30px">Independent choices that can be mixed and matched</h3>
+      <h3 style="margin-top:30px">Choices that can be mixed and matched</h3>
       <div class="grid three" style="margin-top:12px">
         <article class="card">
           <h3>Product features</h3>
           <p>Select what the agent must build: accounts, catalog, purchasing, cart/checkout, reviews, and warehouse administration. Each versioned feature owns its prompt fragment, public interface, and checks.</p>
         </article>
         <article class="card">
-          <h3>Product specifications</h3>
-          <p>Independently select guarantees such as access control, durability, live state, concurrency safety, and transactional integrity. Each can be requested, expected without initial disclosure, observed without scoring, or excluded.</p>
+          <h3>Quality checks</h3>
+          <p>Select production qualities such as access control, durability, live updates, concurrency safety, and transaction safety. For each run, choose whether each quality belongs in the build brief, the scored tests, both, or neither.</p>
         </article>
         <article class="card">
           <h3>Backend guidance</h3>
-          <p><strong>Prescribed</strong> names the framework and implementation guidance. <strong>Neutral</strong> supplies only access facts and API reference, without framework or architecture advice. The prescribed profile is qualified; the symmetric neutral profile is implemented and prompt-snapshotted but remains draft.</p>
+          <p>Choose how much technical direction the coding agent receives. A detailed brief can name frameworks and libraries. A minimal brief names the backend, connection details, and relevant API reference while leaving the architecture to the agent.</p>
         </article>
         <article class="card">
-          <h3>Grading treatment</h3>
-          <p><strong>Requested</strong> appears in the initial prompt, scores, and may be repaired. <strong>Expected</strong> is absent from the initial prompt but still scores and may be repaired. <strong>Observed</strong> is a source-bound first-build diagnostic with a separate denominator and no repair visibility. Cross-stack qualification of the shared unmentioned oracles is still required.</p>
+          <h3>Extra measurements</h3>
+          <p>A run may also record clearly labeled measurements that do not affect its score or repair loop. These are kept separate from the comparison result. Every shared check still has to be validated on MongoDB, PostgreSQL, and SpacetimeDB before use.</p>
         </article>
       </div>
 
@@ -586,19 +600,72 @@
         </table>
       </div>
 
+      <div class="callout" style="margin-top:18px">
+        <strong>Checks and points are different</strong>
+        A check is one test the runner performs. Points are the weight used in the final score, and some important checks are worth two points. Additional checks may run without affecting the score while we prove that the test itself is reliable.
+      </div>
+
       <div class="grid two" style="margin-top:18px">
         <article class="card">
-          <h3>Ecommerce L1 compatibility recipe</h3>
-          <div class="number">48 / 51</div>
-          <div class="label">executable checks / available points</div>
-          <p>Five packs: identity/access, session durability, catalog/inventory, cart/checkout, and reviews. Thirty-nine checks carry 51 points; nine are visible zero-point diagnostics. Framework-neutral 1.1 has all 13 required qualification evidence slots bound and is now the promoted L1 default.</p>
+          <h3>Current L1 test set</h3>
+          <div class="number">39 scored checks</div>
+          <ul class="checklist">
+            <li><strong>51</strong> is the maximum score</li>
+            <li><strong>9</strong> additional checks run but do not affect the score</li>
+          </ul>
+          <p>These tests cover accounts, session continuity, the catalog and inventory, buying and checkout, reviews, and the related production-quality checks.</p>
+          <details>
+            <summary>What are the 9 additional checks?</summary>
+            <ul>
+              <li>Exact orders and revenue after six buyers race for three units</li>
+              <li>A normal restock control and a restock during a purchase rush</li>
+              <li>The same cart updated from two tabs at once</li>
+              <li>Direct database changes reaching an open page, surviving reload, and catching up after reconnect</li>
+              <li>A review list opened at the same time another customer posts</li>
+            </ul>
+            <p>Eight could become scored checks after cross-stack validation. The normal restock check is a supporting control and may stay non-scoring.</p>
+          </details>
+          <a class="catalog-link" href="#l1-test-catalog" data-open-catalog="l1-test-catalog">Browse all 48 L1 checks →</a>
         </article>
         <article class="card">
-          <h3>Ecommerce L2 compatibility recipe</h3>
-          <div class="number">53 / 75</div>
-          <div class="label">executable checks / aggregate available points</div>
-          <p>Adds operations access, inventory operations, and returns/pricing, while rerunning selected L1 guarantee and systems coverage. The displayed run score is 55/55 for the new L2 layer plus 20/20 inherited regression points. Twelve checks remain zero-point diagnostics. Framework-neutral 1.2 has all 13 required qualification evidence slots bound across MongoDB, PostgreSQL, and SpacetimeDB and is now the promoted L2 default.</p>
+          <h3>Current L2 test set</h3>
+          <div class="number">41 scored checks</div>
+          <ul class="checklist">
+            <li><strong>75</strong> is the maximum score, including earlier L1 behavior</li>
+            <li><strong>12</strong> additional checks run but do not affect the score</li>
+          </ul>
+          <p>These tests add staff access, warehouse operations, returns, pricing, and selected L1 checks that make sure the upgrade did not break earlier behavior.</p>
+          <details>
+            <summary>What are the 12 additional checks?</summary>
+            <p>L2 reruns the nine L1 checks above and adds three:</p>
+            <ul>
+              <li>A customer does not see the shipping control; server-side rejection is already tested separately for points</li>
+              <li>A warehouse transfer racing a purchase preserves the exact stock total</li>
+              <li>One customer cannot cancel another customer's pending order</li>
+            </ul>
+            <p>The UI check is supporting evidence. The transfer and cancellation checks need exact broken-app validation before they can affect the score.</p>
+          </details>
+          <a class="catalog-link" href="#l2-test-catalog" data-open-catalog="l2-test-catalog">Browse all 53 L2 checks →</a>
         </article>
+      </div>
+
+      <div style="margin-top:18px">
+        <details id="l1-test-catalog" class="test-catalog">
+          <summary>All L1 checks <span>48 total · 39 scored · 9 additional</span></summary>
+          <div class="catalog-body">
+            <p class="catalog-explainer"><strong>Scored</strong> checks affect the result. <strong>Under validation</strong> checks run and produce evidence but add no points until they pass a known-good app and catch the intended deliberately broken app on every backend. <strong>Supporting</strong> checks confirm test setup or UI behavior and intentionally add no points.</p>
+            <input class="catalog-filter" type="search" placeholder="Search L1 checks" aria-label="Search L1 checks" data-filter-catalog="1">
+            <div data-test-catalog="1"></div>
+          </div>
+        </details>
+        <details id="l2-test-catalog" class="test-catalog">
+          <summary>All L2 checks <span>53 total · 41 scored · 12 additional</span></summary>
+          <div class="catalog-body">
+            <p class="catalog-explainer">L2 includes its new tests plus selected L1 checks that protect earlier behavior. The same scored, under-validation, and supporting labels apply.</p>
+            <input class="catalog-filter" type="search" placeholder="Search L2 checks" aria-label="Search L2 checks" data-filter-catalog="2">
+            <div data-test-catalog="2"></div>
+          </div>
+        </details>
       </div>
 
       <h3 style="margin-top:30px">Chat: retained compatibility coverage</h3>
@@ -611,7 +678,7 @@
         <article class="card">
           <h3>L2 product behavior</h3>
           <p>Private rooms, invitations and immediate removal, live editable profiles, friend requests, a single symmetric friendship relation, and live friend presence.</p>
-          <p><strong>Guarantees:</strong> private data withheld from unauthorized clients, owner-only writes, message ownership, idempotent friendship replay, profile owner-only updates, and open-view race coverage.</p>
+          <p><strong>Guarantees:</strong> private data protected from unauthorized clients, owner-only writes, message ownership, safe friendship replay, profile owner-only updates, and open-view race coverage.</p>
         </article>
       </div>
       <div class="callout warning" style="margin-top:18px">
@@ -750,7 +817,7 @@ else if (!evidenceIsMeasured(evidence)) {
         <article class="card">
           <h3>Exactly what that score proves</h3>
           <p>The current point-bearing check proves that the six-way rush leaves stock at exactly zero and that all six open clients agree on that number. Its backend-specific mutants are used during qualification to verify that the oracle notices a broken reservation/concurrency implementation.</p>
-          <p>It does <strong>not yet</strong> claim, for points, that exactly three durable orders exist or that revenue records exactly three sales. The population-wide order-count check is currently a visible zero-point diagnostic awaiting its own clean mutation proof; the revenue check is also withheld. This distinction is intentional and is preserved in published results.</p>
+          <p>It does <strong>not yet</strong> award points for the population-wide order count or exact revenue total. Those checks remain visible candidates until deliberately broken reference apps prove that each test catches the intended defect.</p>
           <p class="muted">That is the level of precision the result bundle retains: which behavior ran, how it was exercised, what was observed, whether the instrument completed, and whether the observation contributed to the score.</p>
         </article>
       </div>
@@ -792,72 +859,13 @@ else if (!evidenceIsMeasured(evidence)) {
       </div>
     </section>
 
-    <section id="cost" class="shell">
-      <div class="section-head">
-        <h2>How the cost analysis evolved</h2>
-        <p>This analysis is historically valuable because it explains the product direction. It is not a current publishable backend ranking.</p>
-      </div>
-
-      <blockquote class="quote">Cost was not primarily “how much code did the model write?” It was “how many calls did the work take, and how much accumulated context was reread on every call?”</blockquote>
-
-      <div class="grid three" style="margin-top:22px">
-        <article class="card"><div class="number">97-98%</div><div class="label">of the recorded bill was cache reads in the analyzed runs</div></article>
-        <article class="card"><div class="number">~1%</div><div class="label">difference in output tokens across the three compared builds</div></article>
-        <article class="card"><div class="number">~100x</div><div class="label">observed cost advantage of documenting a gap versus making the agent discover it</div></article>
-      </div>
-
-      <h3 style="margin-top:30px">The run that made the mechanism visible</h3>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Stack</th><th>Agent calls</th><th>Start context</th><th>End context</th><th>Average context</th><th>Historical bill</th></tr></thead>
-          <tbody>
-            <tr><td><strong>PostgreSQL</strong></td><td>154</td><td>50K</td><td>174K</td><td>96K</td><td>$7.27</td></tr>
-            <tr><td><strong>MongoDB</strong></td><td>90</td><td>50K</td><td>186K</td><td>121K</td><td>$5.95</td></tr>
-            <tr><td><strong>SpacetimeDB</strong></td><td>146</td><td>59K</td><td>218K</td><td>132K</td><td>$11.28</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="muted">SpacetimeDB took fewer calls than PostgreSQL but carried more context per call. The extra context included 21 TypeScript errors, ten expanded generic-constraint failures, and two research subagents. Output volume was nearly identical, so code generation volume did not explain the bill.</p>
-
-      <div class="grid two" style="margin-top:18px">
-        <article class="card">
-          <h3>Hypothesis killed: “the skill documents are the cost”</h3>
-          <p>The larger guidance pack was measurable, but only about $0.18 in the analyzed run—roughly 1.6% of that bill. The expensive behavior was the agent having to search SDK and generated-binding source to discover missing facts, then carrying that investigation through later calls.</p>
-          <p><strong>Product implication:</strong> better API shape, actionable errors, and concise documentation can reduce attempts and accumulated context more than simply shortening the prompt.</p>
-        </article>
-        <article class="card">
-          <h3>First try matters more than repair</h3>
-          <p>Early fix-loop data showed most gains in round one and little or no gain later. Some rounds chased inconclusive evidence or harness wording rather than defects. The unaided build became a first-class artifact because it explains both first-try quality and most of the downstream repair cost.</p>
-          <p><strong>Product implication:</strong> the useful metric is not only final score; it is first-try correctness, cost to reach a stable result, and guarantees retained during repair.</p>
-        </article>
-      </div>
-
-      <h3 style="margin-top:30px">What improved mechanically after product and guidance fixes</h3>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Signal</th><th>Earlier baseline</th><th>Later historical runs</th></tr></thead>
-          <tbody>
-            <tr><td>First-try score</td><td>42/50</td><td><strong>50/50, 51/51, 50/50</strong></td></tr>
-            <tr><td>Build failures</td><td>9 / 149 tool calls</td><td><strong>3 / 129</strong></td></tr>
-            <tr><td>TS2344 failures</td><td>10</td><td><strong>0</strong></td></tr>
-            <tr><td>Research subagents</td><td>2 ($1.44)</td><td><strong>0</strong></td></tr>
-            <tr><td>Thinking volume</td><td>284 KB</td><td><strong>194 KB</strong></td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="callout danger" style="margin-top:18px">
-        <strong>Do not quote “42% cheaper” or any current cost winner.</strong>
-        That headline compared one unusually expensive run with one cheaper run. Historical L1 cost varied from $5.97 to $22.51 for the same task, the sample was small, and many runs were later invalidated. The mechanism and engineering improvements are supported; the comparative price claim is not.
-      </div>
-    </section>
-
     <section id="lessons" class="shell">
       <div class="section-head">
         <h2>What the benchmark taught us</h2>
         <p>These are product lessons from building the instrument, not backend marketing claims.</p>
       </div>
       <div class="grid three">
-        <article class="card"><h3>Features and guarantees are different axes</h3><p>An app can pass new feature tests while breaking old promises. One historical MongoDB L2 build passed 54/54 new checks while losing two inherited L1 guarantees. Higher levels must rerun lower-level guarantees.</p></article>
+        <article class="card"><h3>New features can break old behavior</h3><p>An app can pass the checks for a new feature while breaking behavior from an earlier level. Every higher level must rerun the earlier checks instead of assuming they still work.</p></article>
         <article class="card"><h3>Functional full marks can hide deploy failures</h3><p>Two PostgreSQL shops could look equivalent in feature grading while only one survived an out-of-band write during an app-server outage. Durability and reconciliation need lifecycle tests, not another happy-path click.</p></article>
         <article class="card"><h3>The oracle can lie both ways</h3><p>A blank app scoring zero is necessary but insufficient. A good app can fail an over-constrained assertion, and a broken app can pass a vacuous one. Reference apps, null controls, and exact seeded mutations are all required.</p></article>
         <article class="card"><h3>Inconclusive is not failure</h3><p>If the harness could not observe a transport, acquire a resource, or keep a browser alive, that absence of evidence cannot become an application defect or a point. Outcomes are now structured separately.</p></article>
@@ -885,21 +893,21 @@ else if (!evidenceIsMeasured(evidence)) {
             <li>Typed evidence drives scoring, null/mutation controls, comparison, repair selection, and reporting; diagnostic wording does not decide outcomes</li>
             <li>Versioned stack adapters for three measured backends plus a deterministic test stack; versioned agent adapters for coding, deterministic, fault, and reference paths</li>
             <li>Operator <code>preflight</code>, pinned Linux/amd64 controller appliance, immutable campaign plans, resumable execution, and reproducible HTML reporting</li>
-            <li>373/373 automated tests pass on the host, including two live Playwright grades; the exact post-commit Linux controller is rebuilt and rerun for each evidence commit</li>
+            <li>384 automated tests pass, including live browser grades; the Linux controller is rebuilt and rerun for each evidence commit</li>
             <li>Real Docker smoke publishes a TypeScript module, verifies SQL and watcher health, and requires authorized logs</li>
             <li>Framework-neutral L1 1.1 and L2 1.2 each have fresh 13/13 qualification evidence and now own the promoted default aliases; prior releases are retired from new execution</li>
             <li>For every L2 stack, two stable pristine repetitions scored 55/55 plus 20/20 inherited; two mutation repetitions each caught all 3/3 declared defects, and the null control failed every scored criterion</li>
-            <li>A frozen prescribed L1/L2 pilot ran one attempt on each stack with immutable evidence, normalized cost/time, correction accounting, and a reproducible report. It exposed incomplete measurement on PostgreSQL and MongoDB; current campaigns invalidate and retry such attempts instead of comparing reduced denominators.</li>
-            <li>A draft modular L1 catalog separates six product features from six optional specifications, preserves all 48 existing criteria and 51 points, and gives every specification one explicit treatment: requested, expected, observed, or excluded. Expected requirements stay out of the initial prompt but count in scoring and repairs; observed-only behavior remains source-bound and separate. Qualification is still required.</li>
-            <li>A model-free Docker-backed SpacetimeDB reference run exercised the draft path end to end: requested features passed 14/14, the separate durability observation passed 4/4 with zero score contribution, no repairs ran, source hashes matched, and owned resources were released. This is one-stack execution proof, not qualification.</li>
-            <li>The primary draft unprescribed condition now asks only for the six product features under neutral backend guidance. Access control, state continuity, live updates, concurrency safety, and transactional integrity are absent from the initial prompt but still contribute to its 44-point score and remain repairable. A model-free reference gate fixes two exact repetitions on each of the three stacks—six attempts total. External data synchronization is excluded because its current oracle requires a disclosed table contract. The gate is prepared but has not yet supplied cross-stack qualification evidence.</li>
+            <li>Campaigns retry incomplete measurements and exclude them from comparisons if the planned checks still do not finish</li>
+            <li>The L1 catalog separates six product features from six optional production qualities while preserving the existing behavior and scoring</li>
+            <li>For each production quality, a run independently records whether it appears in the build brief, affects the score, can enter repairs, or is measured separately</li>
+            <li>A Docker-backed reference run proved that the modular path works end to end on SpacetimeDB; cross-stack validation is still required before comparison use</li>
           </ul>
         </article>
         <article class="card">
           <h3>Still required for production quality</h3>
           <ul class="checklist open">
-            <li>Repeat the frozen three-stack campaign enough times to measure variability; the completed one-repetition pilot cannot establish a winner</li>
-            <li>Qualify each unmentioned observation used by expected or observed treatment against reference, null, and exact-mutation controls on every supported stack, then prove the full condition in the Linux appliance</li>
+            <li>Run a complete repeated three-stack campaign to measure variability and produce the first publishable comparison</li>
+            <li>Validate every shared quality check against known-good, blank, and deliberately broken apps on every supported stack, then rerun the complete setup in Docker</li>
             <li>Resolve the remaining point-bearing <code>statedBy</code> warnings and add exact mutants before promoting currently diagnostic zero-point checks</li>
             <li>Move active scenario bodies from the strict compatibility executor into the general recipe executor; migrate chat into pack/recipe composition</li>
             <li>Package adapters as separately identified releases, finish CI tiers/replay, and complete distributable registry/SBOM/signature material when an external release is actually needed</li>
@@ -912,17 +920,17 @@ else if (!evidenceIsMeasured(evidence)) {
     <section id="next" class="shell">
       <div class="section-head">
         <h2>Recommended path from here</h2>
-        <p>The modular path now separates prompt disclosure from scoring and repair behavior. The useful next work is to qualify each unmentioned oracle across all three stacks, freeze the treatment conditions, then run enough repetitions to measure variability.</p>
+        <p>We can now choose the build brief and test list independently. The next work is to prove the shared checks on all three stacks, lock the exact run setup, and run enough complete attempts to measure normal variation.</p>
       </div>
       <div class="grid three">
-        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Qualify unmentioned checks</h3><p>Run each public-surface check used by expected or observed treatment against reference, null, and exact broken implementations on MongoDB, PostgreSQL, and SpacetimeDB.</p></article>
-        <article class="card"><div class="number">2</div><h3 style="margin-top:12px">Freeze the conditions</h3><p>Bind the exact feature, specification treatment, guidance, repair, adapter, and image identities and prove the complete conditions in the Linux appliance.</p></article>
-        <article class="card"><div class="number">3</div><h3 style="margin-top:12px">Run repeated comparisons</h3><p>Freeze prescribed and unprescribed campaign plans, run multiple clean attempts per stack, and publish variability, invalid-run rate, raw evidence, cost, and limitations.</p></article>
+        <article class="card"><div class="number">1</div><h3 style="margin-top:12px">Prove the checks</h3><p>Run every shared quality check against known-good, blank, and deliberately broken apps on MongoDB, PostgreSQL, and SpacetimeDB.</p></article>
+        <article class="card"><div class="number">2</div><h3 style="margin-top:12px">Lock the setup</h3><p>Save the exact product features, quality checks, backend guidance, repair rules, model adapter, and Docker image that define the comparison.</p></article>
+        <article class="card"><div class="number">3</div><h3 style="margin-top:12px">Run repeated comparisons</h3><p>Run several complete attempts per stack and publish the variation, incomplete-run rate, raw evidence, cost, and limitations.</p></article>
       </div>
 
       <div class="callout" style="margin-top:18px">
         <strong>The meeting decision</strong>
-        Agree that v1 is a reproducible evaluation appliance—not “all five levels.” The v1 finish line is: configurable requirements and checks, prescribed and unprescribed conditions, one Docker path, typed evidence, versioned stack/model adapters, operator preflight, and repeated L1/L2 campaigns whose raw artifacts can be independently inspected.
+        Agree that v1 is a reproducible testing product—not “all five levels.” The finish line is: configurable build briefs and checks, one Docker path, structured evidence, versioned backend and model support, setup checks, and repeated L1/L2 campaigns whose raw results can be independently inspected.
       </div>
     </section>
 
@@ -941,7 +949,7 @@ else if (!evidenceIsMeasured(evidence)) {
           <h3>Statements to avoid</h3>
           <ul>
             <li>Any current backend winner on cost or quality</li>
-            <li>Any percentage cost reduction from one historical run pair</li>
+            <li>Any percentage cost reduction until repeated complete runs support it</li>
             <li>Calling L3-L5 validated because definitions exist</li>
             <li>Calling model-free reference qualification a current comparative model campaign</li>
           </ul>
@@ -951,7 +959,80 @@ else if (!evidenceIsMeasured(evidence)) {
   </main>
 
   <footer>
-    <div class="shell">Stack Bench visual engineering history · assembled from the implementation plan, findings, immutable qualification evidence, retained pilot facts, and engineering journal · current as of 16 August 2026</div>
+    <div class="shell">Stack Bench visual engineering history · assembled from the implementation plan, verified test evidence, and engineering journal · current as of 16 August 2026</div>
   </footer>
+  <script type="application/json" id="test-catalog-data">{"1":[{"key":"ecommerce.identity-access.accounts.1a","area":"features","description":"a visitor can create an account and is signed in as it","points":1},{"key":"ecommerce.identity-access.accounts.1b","area":"features","description":"a taken username is refused and does not sign the visitor in as the existing account","points":1},{"key":"ecommerce.identity-access.accounts.1c","area":"features","description":"a wrong password is refused","points":1},{"key":"ecommerce.identity-access.accounts.1d","area":"features","description":"signing out and back in returns the same account","points":1},{"key":"ecommerce.session-durability.session-continuity.1e","area":"features","description":"the session survives a reload","points":1},{"key":"ecommerce.catalog-inventory.public-live-storefront.2a","area":"features","description":"a signed-out visitor sees the catalogue with prices and stock","points":1},{"key":"ecommerce.catalog-inventory.public-live-storefront.2b","area":"features","description":"the storefront shows ten items, alphabetically while nothing has been bought","points":1},{"key":"ecommerce.catalog-inventory.public-live-storefront.2c","area":"features","description":"a purchase moves the bought item to the front of the ranking, live","points":1},{"key":"ecommerce.catalog-inventory.public-live-storefront.2d","area":"features","description":"search finds an item that is not on the storefront","points":1},{"key":"ecommerce.cart-checkout.buying.3a","area":"features","description":"a signed-out visitor is offered no way to buy","points":1},{"key":"ecommerce.cart-checkout.buying.3b","area":"features","description":"buying reduces the stock every other client sees, without a reload","points":2},{"key":"ecommerce.cart-checkout.buying.3c","area":"features","description":"the purchase is recorded in the buyer's order history at the price paid","points":1},{"key":"ecommerce.cart-checkout.buying.3d","area":"features","description":"an item sells out visibly, and a checkout exceeding stock is refused and changes nothing","points":2},{"key":"ecommerce.cart-checkout.account-cart.4a","area":"features","description":"adding the same item twice raises its quantity instead of adding a second line","points":1},{"key":"ecommerce.cart-checkout.account-cart.4b","area":"features","description":"the cart survives a reload","points":1},{"key":"ecommerce.cart-checkout.account-cart.4c","area":"features","description":"the same account signed in elsewhere sees one cart, live","points":2},{"key":"ecommerce.cart-checkout.account-cart.4d","area":"features","description":"checkout creates one order, reduces stock and empties the cart","points":2},{"key":"ecommerce.reviews.reviews.6a","area":"features","description":"a customer can review an item and everyone sees it, signed out included","points":2},{"key":"ecommerce.reviews.reviews.6b","area":"features","description":"one review per customer per item — a second does not add a duplicate","points":1},{"key":"ecommerce.reviews.reviews.6c","area":"features","description":"the average rating reflects both reviewers, live","points":1},{"key":"ecommerce.catalog-inventory.admin-and-warehouses.7a","area":"features","description":"the admin area is for admins only","points":1},{"key":"ecommerce.catalog-inventory.admin-and-warehouses.7b","area":"features","description":"admin lists every item, every warehouse, and what each warehouse holds","points":1},{"key":"ecommerce.catalog-inventory.admin-and-warehouses.7c","area":"features","description":"the storefront stock is the sum across warehouses, and a restock raises it live","points":2},{"key":"ecommerce.identity-access.purchase-requires-account.101a","area":"invariants","description":"a purchase request replayed without a session creates no order and moves no stock","points":2},{"key":"ecommerce.cart-checkout.purchase-attribution.102a","area":"invariants","description":"an order cannot be placed in someone else's name by editing the request","points":2},{"key":"ecommerce.catalog-inventory.admin-controls-stock.103a","area":"invariants","description":"a restock replayed by a customer is refused and changes no stock","points":2},{"key":"ecommerce.cart-checkout.store-controls-price.104a","area":"invariants","description":"a purchase request with the price edited does not sell the item for less","points":2},{"key":"ecommerce.session-durability.account-state-persists.105a","area":"invariants","description":"cart and order history survive a reload as the same account","points":1},{"key":"ecommerce.session-durability.account-state-persists.105b","area":"invariants","description":"the same account survives the connection dropping and coming back","points":1},{"key":"ecommerce.cart-checkout.order-isolation.106a","area":"invariants","description":"a customer's order history contains only their own orders","points":1},{"key":"ecommerce.cart-checkout.books-balance.107a","area":"invariants","description":"revenue rises by exactly what was bought","points":1},{"key":"ecommerce.cart-checkout.books-balance.107b","area":"invariants","description":"what the store sold is what left the warehouses, and a fresh client agrees","points":1},{"key":"ecommerce.reviews.purchase-backed-review.108a","area":"invariants","description":"someone who never bought the item cannot review it","points":2},{"key":"ecommerce.reviews.purchase-backed-review.108b","area":"invariants","description":"buying the item earns the right to review it","points":1},{"key":"ecommerce.cart-checkout.cart-privacy.109a","area":"invariants","description":"one customer’s cart request replayed by another leaves the owner’s cart untouched","points":2},{"key":"ecommerce.cart-checkout.cart-privacy.109b","area":"invariants","description":"a quantity below one is refused rather than credited","points":1},{"key":"ecommerce.catalog-inventory.last-unit-sold-once.201a","area":"contention","description":"six customers buy the last three units at once: stock lands on exactly zero, never below","points":1},{"key":"ecommerce.catalog-inventory.last-unit-sold-once.201b","area":"contention","description":"exactly three of the six customers end up with an order, and none is charged twice","points":0},{"key":"ecommerce.catalog-inventory.last-unit-sold-once.201c","area":"contention","description":"revenue counts three sales, not six","points":0},{"key":"ecommerce.catalog-inventory.restock-during-rush.202-control","area":"contention","description":"an uncontended restock of five is stored by the server and shows on the storefront","points":0},{"key":"ecommerce.catalog-inventory.restock-during-rush.202a","area":"contention","description":"three purchases and a restock of five during the rush leave stock at start + 2","points":0},{"key":"ecommerce.cart-checkout.duplicate-checkout.203a","area":"contention","description":"the same item added from two tabs at once becomes one line of two","points":0},{"key":"ecommerce.cart-checkout.duplicate-checkout.203b","area":"contention","description":"checking the same cart out twice at once produces one order","points":1},{"key":"ecommerce.catalog-inventory.external-write-visible.901a","area":"systems","description":"a back-office script sets Desk Lamp's East stock to 5, directly in the database; an anonymous viewer with the storefront already open sees 50 without touching the page","points":0},{"key":"ecommerce.catalog-inventory.external-write-visible.901b","area":"systems","description":"the out-of-band change survives a reload — the page did not merely patch its own memory","points":0},{"key":"ecommerce.catalog-inventory.external-write-visible.901c","area":"systems","description":"a stock correction that lands while the app server is down shows on an open storefront once the server returns: East 5 + West 10 = 15, no reload","points":1},{"key":"ecommerce.catalog-inventory.external-write-visible.901d","area":"systems","description":"the client, not the server, misses the window: a correction lands while this browser is disconnected, and the page is current again once it reconnects","points":0},{"key":"ecommerce.catalog-inventory.list-open-during-change.902a","area":"systems","description":"one customer opens the Keyboard's reviews at the same moment another posts one: the opener ends with that review exactly once — not zero (stale fetch), not twice (fetch merged with its own live echo)","points":0}],"2":[{"key":"ecommerce.operations-access.fulfilment-queue.1a","area":"features","description":"an order placed by a customer appears in the staff queue without a reload","points":2},{"key":"ecommerce.operations-access.fulfilment-queue.1b","area":"features","description":"the queue names the warehouse the order will ship from","points":1},{"key":"ecommerce.operations-access.fulfilment-queue.1c","area":"features","description":"shipping removes the order from the queue for staff and marks it shipped for the customer, live","points":2},{"key":"ecommerce.operations-access.fulfilment-queue.1d","area":"features","description":"the fulfilment area is for staff and admins, not customers","points":1},{"key":"ecommerce.operations-access.fulfilment-queue.1e","area":"features","description":"the server refuses a ship request from a customer, not just the button","points":2},{"key":"ecommerce.inventory-operations.warehouse-transfer.2a","area":"features","description":"a transfer moves stock without creating or destroying any","points":3},{"key":"ecommerce.inventory-operations.warehouse-transfer.2b","area":"features","description":"the warehouse totals move live as stock is transferred","points":2},{"key":"ecommerce.inventory-operations.warehouse-transfer.2c","area":"features","description":"a transfer that would overdraw a warehouse is refused and changes nothing","points":2},{"key":"ecommerce.returns-pricing.cancellation-and-return.3a","area":"features","description":"cancelling a pending order returns its stock, empties it from the queue and lowers revenue","points":3},{"key":"ecommerce.returns-pricing.cancellation-and-return.3b","area":"features","description":"a cancelled order is shown as cancelled in the customer’s history","points":1},{"key":"ecommerce.returns-pricing.cancellation-and-return.3c","area":"features","description":"returning an item from a shipped order brings the stock back and lowers revenue","points":3},{"key":"ecommerce.returns-pricing.price-history.4a","area":"features","description":"a customer's receipt keeps the price that was paid after the price changes","points":3},{"key":"ecommerce.returns-pricing.price-history.4b","area":"features","description":"the new price reaches a signed-out visitor without a reload","points":2},{"key":"ecommerce.returns-pricing.price-history.4c","area":"features","description":"a price change updates an open cart and checkout charges the new price","points":3},{"key":"ecommerce.inventory-operations.operational-views.5a","area":"features","description":"an item falling to ten units or fewer joins the low-stock list, live","points":3},{"key":"ecommerce.inventory-operations.operational-views.5b","area":"features","description":"a purchase moves that category's units and revenue, live","points":3},{"key":"ecommerce.inventory-operations.operational-views.5c","area":"features","description":"buying from a category makes that category's other items recommended","points":2},{"key":"ecommerce.inventory-operations.operational-views.5d","area":"features","description":"a signed-out visitor sees best sellers in the recommendations slot","points":1},{"key":"ecommerce.operations-access.operator-authorization.201a","area":"invariants","description":"a customer replaying an admin's transfer moves no stock","points":2},{"key":"ecommerce.operations-access.operator-authorization.201b","area":"invariants","description":"a customer cannot set a price by replaying an admin's change","points":2},{"key":"ecommerce.operations-access.operator-authorization.201c","area":"invariants","description":"a customer cannot ship their own order","points":0},{"key":"ecommerce.inventory-operations.stock-conservation.202a","area":"invariants","description":"a transfer changes where stock is, never how much there is","points":2},{"key":"ecommerce.inventory-operations.stock-conservation.202b","area":"invariants","description":"a sale and its cancellation leave the shelf exactly as they found it","points":2},{"key":"ecommerce.inventory-operations.stock-conservation.202c","area":"invariants","description":"a fresh client sees the same totals, so nothing was only corrected in one browser","points":1},{"key":"ecommerce.inventory-operations.stock-conservation.202d","area":"invariants","description":"a transfer racing a purchase loses no unit between the rows: total = before − sold, exactly, however the two interleave","points":0},{"key":"ecommerce.returns-pricing.refund-accounting.203a","area":"invariants","description":"revenue rises by what was bought and falls by what was cancelled","points":3},{"key":"ecommerce.returns-pricing.refund-accounting.203b","area":"invariants","description":"a price change does not rewrite revenue already earned","points":2},{"key":"ecommerce.operations-access.order-owner.204a","area":"invariants","description":"one customer cannot cancel another's order","points":0},{"key":"ecommerce.catalog-inventory.last-unit-sold-once.201a","area":"contention","description":"six customers buy the last three units at once: stock lands on exactly zero, never below","points":1},{"key":"ecommerce.catalog-inventory.last-unit-sold-once.201b","area":"contention","description":"exactly three of the six customers end up with an order, and none is charged twice","points":0},{"key":"ecommerce.catalog-inventory.last-unit-sold-once.201c","area":"contention","description":"revenue counts three sales, not six","points":0},{"key":"ecommerce.catalog-inventory.restock-during-rush.202-control","area":"contention","description":"an uncontended restock of five is stored by the server and shows on the storefront","points":0},{"key":"ecommerce.catalog-inventory.restock-during-rush.202a","area":"contention","description":"three purchases and a restock of five during the rush leave stock at start + 2","points":0},{"key":"ecommerce.cart-checkout.duplicate-checkout.203a","area":"contention","description":"the same item added from two tabs at once becomes one line of two","points":0},{"key":"ecommerce.cart-checkout.duplicate-checkout.203b","area":"contention","description":"checking the same cart out twice at once produces one order","points":1},{"key":"ecommerce.identity-access.purchase-requires-account.101a","area":"invariants@L1","description":"a purchase request replayed without a session creates no order and moves no stock","points":2},{"key":"ecommerce.cart-checkout.purchase-attribution.102a","area":"invariants@L1","description":"an order cannot be placed in someone else's name by editing the request","points":2},{"key":"ecommerce.catalog-inventory.admin-controls-stock.103a","area":"invariants@L1","description":"a restock replayed by a customer is refused and changes no stock","points":2},{"key":"ecommerce.cart-checkout.store-controls-price.104a","area":"invariants@L1","description":"a purchase request with the price edited does not sell the item for less","points":2},{"key":"ecommerce.session-durability.account-state-persists.105a","area":"invariants@L1","description":"cart and order history survive a reload as the same account","points":1},{"key":"ecommerce.session-durability.account-state-persists.105b","area":"invariants@L1","description":"the same account survives the connection dropping and coming back","points":1},{"key":"ecommerce.cart-checkout.order-isolation.106a","area":"invariants@L1","description":"a customer's order history contains only their own orders","points":1},{"key":"ecommerce.cart-checkout.books-balance.107a","area":"invariants@L1","description":"revenue rises by exactly what was bought","points":1},{"key":"ecommerce.cart-checkout.books-balance.107b","area":"invariants@L1","description":"what the store sold is what left the warehouses, and a fresh client agrees","points":1},{"key":"ecommerce.reviews.purchase-backed-review.108a","area":"invariants@L1","description":"someone who never bought the item cannot review it","points":2},{"key":"ecommerce.reviews.purchase-backed-review.108b","area":"invariants@L1","description":"buying the item earns the right to review it","points":1},{"key":"ecommerce.cart-checkout.cart-privacy.109a","area":"invariants@L1","description":"one customer’s cart request replayed by another leaves the owner’s cart untouched","points":2},{"key":"ecommerce.cart-checkout.cart-privacy.109b","area":"invariants@L1","description":"a quantity below one is refused rather than credited","points":1},{"key":"ecommerce.catalog-inventory.external-write-visible.901a","area":"systems@L1","description":"a back-office script sets Desk Lamp's East stock to 5, directly in the database; an anonymous viewer with the storefront already open sees 50 without touching the page","points":0},{"key":"ecommerce.catalog-inventory.external-write-visible.901b","area":"systems@L1","description":"the out-of-band change survives a reload — the page did not merely patch its own memory","points":0},{"key":"ecommerce.catalog-inventory.external-write-visible.901c","area":"systems@L1","description":"a stock correction that lands while the app server is down shows on an open storefront once the server returns: East 5 + West 10 = 15, no reload","points":1},{"key":"ecommerce.catalog-inventory.external-write-visible.901d","area":"systems@L1","description":"the client, not the server, misses the window: a correction lands while this browser is disconnected, and the page is current again once it reconnects","points":0},{"key":"ecommerce.catalog-inventory.list-open-during-change.902a","area":"systems@L1","description":"one customer opens the Keyboard's reviews at the same moment another posts one: the opener ends with that review exactly once — not zero (stale fetch), not twice (fetch merged with its own live echo)","points":0}]}</script>
+  <script>
+    const testCatalog = JSON.parse(document.querySelector('#test-catalog-data').textContent);
+    const areaNames = {
+      features: 'User workflows',
+      invariants: 'Security and data correctness',
+      contention: 'Simultaneous actions',
+      systems: 'Restarts, reconnects, and direct data changes',
+      'invariants@L1': 'Earlier L1 security and data checks',
+      'systems@L1': 'Earlier L1 restart, reconnect, and direct-data checks'
+    };
+    const supportingChecks = new Set([
+      'ecommerce.catalog-inventory.restock-during-rush.202-control',
+      'ecommerce.operations-access.operator-authorization.201c'
+    ]);
+
+    function element(name, text, className) {
+      const node = document.createElement(name);
+      if (text !== undefined) node.textContent = text;
+      if (className) node.className = className;
+      return node;
+    }
+
+    function renderCatalog(level, query = '') {
+      const root = document.querySelector(`[data-test-catalog="${level}"]`);
+      const terms = query.trim().toLowerCase();
+      const checks = testCatalog[level].filter(check => !terms
+        || `${check.description} ${areaNames[check.area]} ${check.key}`.toLowerCase().includes(terms));
+      root.replaceChildren();
+      if (!checks.length) {
+        root.append(element('p', 'No checks match that search.', 'catalog-empty'));
+        return;
+      }
+      for (const area of [...new Set(checks.map(check => check.area))]) {
+        const groupChecks = checks.filter(check => check.area === area);
+        const group = element('div', undefined, 'catalog-group');
+        group.append(element('h4', `${areaNames[area]} · ${groupChecks.length} checks`));
+        const wrap = element('div', undefined, 'table-wrap');
+        const table = element('table', undefined, 'catalog-table');
+        const head = document.createElement('thead');
+        head.innerHTML = '<tr><th>Check</th><th>Status</th><th>Points</th></tr>';
+        const body = document.createElement('tbody');
+        for (const check of groupChecks) {
+          const row = document.createElement('tr');
+          const description = element('td', check.description);
+          const statusKind = check.points > 0 ? 'scored'
+            : supportingChecks.has(check.key) ? 'supporting' : 'candidate';
+          const statusText = statusKind === 'scored' ? 'Scored'
+            : statusKind === 'supporting' ? 'Supporting' : 'Under validation';
+          const status = element('td', statusText, `catalog-status ${statusKind}`);
+          const points = element('td', check.points ? String(check.points) : '—');
+          row.dataset.stableKey = check.key;
+          row.append(description, status, points);
+          body.append(row);
+        }
+        table.append(head, body);
+        wrap.append(table);
+        group.append(wrap);
+        root.append(group);
+      }
+    }
+
+    for (const level of ['1', '2']) {
+      renderCatalog(level);
+      document.querySelector(`[data-filter-catalog="${level}"]`)
+        .addEventListener('input', event => renderCatalog(level, event.target.value));
+    }
+    document.querySelectorAll('[data-open-catalog]').forEach(link => {
+      link.addEventListener('click', () => {
+        document.querySelector(`#${link.dataset.openCatalog}`).open = true;
+      });
+    });
+  </script>
 </body>
 </html>
