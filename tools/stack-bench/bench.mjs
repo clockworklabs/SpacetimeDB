@@ -40,7 +40,8 @@ import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest } from './r
 import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
-import { agentRequestArgv, agentSessionFailure, validateAgentResult } from './agent-adapter-contract.mjs';
+import { agentRecipeIdentity, agentRequestArgv, agentSessionFailure,
+  validateAgentResult } from './agent-adapter-contract.mjs';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from './agent-adapters.mjs';
 import { runPreflight } from './preflight.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
@@ -192,12 +193,13 @@ function runAgent(args, adapter, mode, level, appDir) {
   if (remainingBudget !== null && adapter.costLimit === 'unsupported') {
     throw new Error(`agent adapter ${adapter.id} cannot enforce --max-budget-usd`);
   }
+  const recipeTask = args.recipeTasks?.get(level)?.agentRequest
+    ?? args.recipeTasks?.get(level)?.request ?? null;
   const request = { mode, level, app: appDir, backend: args.backend, track: args.track,
     runIndex: args.runIndex, model: args.model, guidance: args.guidance, skills: args.skills,
-    recipe: args.recipe,
+    recipe: agentRecipeIdentity(args.recipe, recipeTask),
     guidanceDocument: args.guidanceDocument,
-    recipeTask: args.recipeTasks?.get(level)?.agentRequest
-      ?? args.recipeTasks?.get(level)?.request ?? null,
+    recipeTask,
     maxBudgetUsd: remainingBudget, adapterCostLimit: adapter.costLimit };
   const argv = agentRequestArgv(adapter, request);
   if (args.apiKey && !adapter.apiKeyEnvironmentVariable) {

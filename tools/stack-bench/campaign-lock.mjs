@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 const VERSION = 2;
 const HASH = /^[a-f0-9]{64}$/;
 const SAFE_ID = /^[a-z0-9][a-z0-9.-]*$/;
+const CONTAINER_HOSTNAME_MOUNT = /\/containers\/([a-f0-9]{64})\/hostname(?=\s|$)/;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const tokenHash = token => createHash('sha256').update(token).digest('hex');
 const fail = message => { throw new Error(`campaign lock: ${message}`); };
@@ -16,8 +17,17 @@ function processAlive(pid) {
   catch (error) { return error.code === 'EPERM'; }
 }
 
-function controllerInstance(env = process.env) {
-  return env.STACK_BENCH_CONTROLLER_INSTANCE?.trim() || hostname();
+export function controllerInstance(env = process.env, {
+  readMountInfo = () => readFileSync('/proc/self/mountinfo', 'utf8'),
+  fallbackHostname = hostname,
+} = {}) {
+  const explicit = env.STACK_BENCH_CONTROLLER_INSTANCE?.trim();
+  if (explicit) return explicit;
+  try {
+    const containerId = readMountInfo().match(CONTAINER_HOSTNAME_MOUNT)?.[1];
+    if (containerId) return containerId;
+  } catch { /* /proc is unavailable outside Linux containers */ }
+  return fallbackHostname();
 }
 
 function ownerAlive(record, currentInstance) {

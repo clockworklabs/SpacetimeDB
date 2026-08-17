@@ -4,9 +4,42 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { acquireCampaignLock, releaseCampaignLock } from '../campaign-lock.mjs';
+import { acquireCampaignLock, controllerInstance, releaseCampaignLock } from '../campaign-lock.mjs';
 
 const campaign = { id: 'ecommerce-l1-example', contentSha256: 'a'.repeat(64) };
+
+test('controller identity prefers explicit configuration over container and host identity', () => {
+  let mountRead = false;
+  assert.equal(controllerInstance({ STACK_BENCH_CONTROLLER_INSTANCE: '  controller-explicit  ' }, {
+    readMountInfo: () => { mountRead = true; return 'unused'; },
+    fallbackHostname: () => 'unused-host',
+  }), 'controller-explicit');
+  assert.equal(mountRead, false);
+});
+
+test('controller identity uses the exact Docker container id from its hostname mount', () => {
+  const id = 'ab'.repeat(32);
+  const mountInfo = [
+    '1044 997 0:81 / / rw,relatime - overlay overlay rw',
+    `1051 1044 0:70 /docker/containers/${id}/hostname /etc/hostname rw,relatime - tmpfs tmpfs rw`,
+    '1052 1044 0:70 /docker/containers/not-an-id/hostname /etc/hostname rw - tmpfs tmpfs rw',
+  ].join('\n');
+  assert.equal(controllerInstance({}, {
+    readMountInfo: () => mountInfo,
+    fallbackHostname: () => 'docker-desktop',
+  }), id);
+});
+
+test('controller identity falls back to hostname when container mount identity is unavailable', () => {
+  assert.equal(controllerInstance({}, {
+    readMountInfo: () => { throw Object.assign(new Error('no procfs'), { code: 'ENOENT' }); },
+    fallbackHostname: () => 'host-controller',
+  }), 'host-controller');
+  assert.equal(controllerInstance({}, {
+    readMountInfo: () => '/docker/containers/short-id/hostname /etc/hostname',
+    fallbackHostname: () => 'host-controller',
+  }), 'host-controller');
+});
 
 test('a campaign lock admits one exact controller and only its token can release it', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-lock-'));

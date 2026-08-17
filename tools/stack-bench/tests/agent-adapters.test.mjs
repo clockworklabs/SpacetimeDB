@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { AGENT_ADAPTER_SCHEMA_VERSION, agentRequestArgv, createAgentAdapterRegistry,
+import { AGENT_ADAPTER_SCHEMA_VERSION, agentRecipeIdentity, agentRequestArgv, createAgentAdapterRegistry,
   agentSessionFailure, defineAgentAdapter, validateAgentResult } from '../agent-adapter-contract.mjs';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../agent-adapters.mjs';
 
@@ -53,6 +53,19 @@ test('requests are normalized and unsupported modes fail before launch', () => {
     .includes('--max-budget-usd'), false);
   const reference = AGENT_ADAPTER_REGISTRY.get('reference-fixture');
   assert.throws(() => agentRequestArgv(reference, { ...request, mode: 'fix' }), /does not support mode fix/);
+});
+
+test('a campaign-bound task supplies the exact recipe when no direct CLI recipe exists', () => {
+  const recipeTask = { schemaVersion: 3,
+    recipe: { id: 'ecommerce.l1-modular', version: '2.2.0' },
+    selection: {}, task: {} };
+  const recipe = agentRecipeIdentity(null, recipeTask);
+  assert.equal(recipe, 'ecommerce.l1-modular@2.2.0');
+  const argv = agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('reference-fixture'),
+    { ...request, recipe, recipeTask });
+  assert.equal(argv[argv.indexOf('--recipe') + 1], 'ecommerce.l1-modular@2.2.0');
+  assert.throws(() => agentRecipeIdentity('ecommerce.l1-standard@1.1.0', recipeTask),
+    /does not match bound task/);
 });
 
 test('completion validation rejects wrong identity and malformed usage', () => {

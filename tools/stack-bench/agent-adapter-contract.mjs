@@ -177,6 +177,20 @@ export function agentSessionFailure(result) {
     appFailures: [], inconclusive: [], harnessFailures: [] };
 }
 
+export function agentRecipeIdentity(explicitRecipe, recipeTask) {
+  const bound = recipeTask?.recipe;
+  if (!bound) return explicitRecipe ?? null;
+  if (typeof bound.id !== 'string' || !bound.id
+    || typeof bound.version !== 'string' || !bound.version) {
+    throw new Error('recipe-bound agent task has an invalid recipe identity');
+  }
+  const identity = `${bound.id}@${bound.version}`;
+  if (explicitRecipe && explicitRecipe !== identity) {
+    throw new Error(`agent recipe ${explicitRecipe} does not match bound task ${identity}`);
+  }
+  return identity;
+}
+
 export function agentRequestArgv(adapter, request) {
   if (!adapter.modes.includes(request.mode)) {
     throw new Error(`agent adapter ${adapter.id} does not support mode ${request.mode}`);
