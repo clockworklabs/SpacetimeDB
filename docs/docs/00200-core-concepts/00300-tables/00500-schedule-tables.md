@@ -11,7 +11,7 @@ import { CppModuleVersionNotice } from "@site/src/components/CppModuleVersionNot
 Tables can trigger [reducers](../00200-functions/00300-reducers/00300-reducers.md) or [procedures](../00200-functions/00400-procedures.md) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
 
 :::tip Scheduling Procedures
-Procedures use the same scheduling pattern as reducers. Simply reference the procedure name in the `scheduled` attribute. This is particularly useful when you need scheduled tasks that make HTTP requests or perform other side effects. See [Scheduling Procedures](../00200-functions/00300-reducers/00300-reducers.md#scheduling-procedures) for an example.
+Procedures use the same scheduling pattern as reducers: pass the `onSchedule` option in TypeScript, or reference the procedure name in the `scheduled` attribute in other languages. This is particularly useful when you need scheduled tasks that make HTTP requests or perform other side effects. See [Scheduling Procedures](../00200-functions/00300-reducers/00300-reducers.md#scheduling-procedures) for an example.
 :::
 
 ## Defining a Schedule Table
@@ -23,21 +23,57 @@ The table attribute uses `scheduled` (with a "d") because it refers to the **sch
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
+In TypeScript, declare the binding on the reducer with the `onSchedule` option:
+
 ```typescript
+import { schema, table, t } from 'spacetimedb/server';
+
 const reminder = table(
-  { name: 'reminder', scheduled: (): any => send_reminder },
+  { name: 'reminder' },
   {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
     message: t.string(),
   }
 );
 
-export const send_reminder = spacetimedb.reducer({ arg: reminder.rowType }, (_ctx, { arg }) => {
+const spacetimedb = schema({ reminder });
+export default spacetimedb;
+
+export const sendReminder = spacetimedb.reducer(
+  { onSchedule: reminder },
+  { arg: reminder.rowType },
+  (_ctx, { arg }) => {
+    // Invoked automatically by the scheduler
+    // arg.message, arg.scheduledAt, arg.scheduledId
+  }
+);
+```
+
+`onSchedule` registers the reducer as the schedule table's target. Because the table definition does not reference the reducer, the table and the reducer can live in separate files without a circular import. A schedule table can be bound to at most one reducer or procedure; binding a second one is a schema error.
+
+The same option works on procedures, provided the procedure's return type is `t.unit()`. See [Scheduling Procedures](../00200-functions/00300-reducers/00300-reducers.md#scheduling-procedures).
+
+:::note Legacy `scheduled` table option
+Older code declares the binding on the table instead, using a thunk that forward-references the scheduled reducer:
+
+```typescript
+const reminder = table(
+  { name: 'reminder', scheduled: (): any => sendReminder },
+  {
+    scheduledId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    message: t.string(),
+  }
+);
+
+export const sendReminder = spacetimedb.reducer({ arg: reminder.rowType }, (_ctx, { arg }) => {
   // Invoked automatically by the scheduler
-  // arg.message, arg.scheduled_at, arg.scheduled_id
 });
 ```
+
+This form still works, but the forward reference forces the table and reducer into the same file and defeats type inference (hence the `(): any =>` cast). Prefer `onSchedule` in new code.
+:::
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -56,7 +92,7 @@ public static partial class Module
     {
         [SpacetimeDB.PrimaryKey]
         [SpacetimeDB.AutoInc]
-        public ulong Id;
+        public ulong ScheduledId;
         public uint UserId;
         public string Message;
         public ScheduleAt ScheduledAt;
@@ -81,7 +117,7 @@ use std::time::Duration;
 pub struct Reminder {
     #[primary_key]
     #[auto_inc]
-    id: u64,
+    scheduled_id: u64,
     user_id: u32,
     message: String,
     scheduled_at: ScheduleAt,
@@ -96,7 +132,7 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
 #[reducer(init)]
 fn init(ctx: &ReducerContext) {
     ctx.db.reminder_schedule().insert(Reminder {
-        id: 0,
+        scheduled_id: 0,
         user_id: 0,
         message: "Game tick".to_string(),
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
@@ -157,18 +193,18 @@ import { schema } from 'spacetimedb/server';
 const spacetimedb = schema({ reminder }); // reminder table defined above
 export default spacetimedb;
 
-export const schedule_periodic_tasks = spacetimedb.reducer((ctx) => {
+export const schedulePeriodicTasks = spacetimedb.reducer((ctx) => {
   // Schedule to run every 5 seconds (5,000,000 microseconds)
   ctx.db.reminder.insert({
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.interval(5_000_000n),
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.interval(5_000_000n),
     message: "Check for updates",
   });
 
   // Schedule to run every 100 milliseconds
   ctx.db.reminder.insert({
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.interval(100_000n), // 100ms in microseconds
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.interval(100_000n), // 100ms in microseconds
     message: "Game tick",
   });
 });
@@ -186,6 +222,7 @@ public static partial class Module
         // Schedule to run every 5 seconds
         ctx.Db.Reminder.Insert(new Reminder
         {
+            ScheduledId = 0,
             Message = "Check for updates",
             ScheduledAt = new ScheduleAt.Interval(TimeSpan.FromSeconds(5))
         });
@@ -193,6 +230,7 @@ public static partial class Module
         // Schedule to run every 100 milliseconds
         ctx.Db.Reminder.Insert(new Reminder
         {
+            ScheduledId = 0,
             Message = "Game tick",
             ScheduledAt = new ScheduleAt.Interval(TimeSpan.FromMilliseconds(100))
         });
@@ -211,14 +249,14 @@ use std::time::Duration;
 fn schedule_periodic_tasks(ctx: &ReducerContext) {
     // Schedule to run every 5 seconds
     ctx.db.reminder().insert(Reminder {
-        id: 0,
+        scheduled_id: 0,
         message: "Check for updates".to_string(),
         scheduled_at: ScheduleAt::Interval(Duration::from_secs(5).into()),
     });
 
     // Schedule to run every 100 milliseconds
     ctx.db.reminder().insert(Reminder {
-        id: 0,
+        scheduled_id: 0,
         message: "Game tick".to_string(),
         scheduled_at: ScheduleAt::Interval(Duration::from_millis(100).into()),
     });
@@ -232,14 +270,14 @@ fn schedule_periodic_tasks(ctx: &ReducerContext) {
 // Schedule to run every 5 seconds
 ctx.db[reminder].insert(Reminder{
     0,
-    ScheduleAt::interval(TimeDuration::from_seconds(5)),
+    ScheduleAt(TimeDuration::from_seconds(5)),
     "Check for updates"
 });
 
 // Schedule to run every 100 milliseconds
 ctx.db[reminder].insert(Reminder{
     0,
-    ScheduleAt::interval(TimeDuration::from_millis(100)),
+    ScheduleAt(TimeDuration::from_millis(100)),
     "Game tick"
 });
 ```
@@ -260,20 +298,20 @@ import { schema } from 'spacetimedb/server';
 const spacetimedb = schema({ reminder }); // reminder table defined above
 export default spacetimedb;
 
-export const schedule_timed_tasks = spacetimedb.reducer((ctx) => {
+export const scheduleTimedTasks = spacetimedb.reducer((ctx) => {
   // Schedule for 10 seconds from now
   const tenSecondsFromNow = ctx.timestamp.microsSinceUnixEpoch + 10_000_000n;
   ctx.db.reminder.insert({
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.time(tenSecondsFromNow),
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.time(tenSecondsFromNow),
     message: "Your auction has ended",
   });
 
   // Schedule for a specific Unix timestamp (microseconds since epoch)
   const targetTime = 1735689600_000_000n; // Jan 1, 2025 00:00:00 UTC
   ctx.db.reminder.insert({
-    scheduled_id: 0n,
-    scheduled_at: ScheduleAt.time(targetTime),
+    scheduledId: 0n,
+    scheduledAt: ScheduleAt.time(targetTime),
     message: "Happy New Year!",
   });
 });
@@ -294,6 +332,7 @@ public static partial class Module
         var tenSecondsFromNow = ctx.Timestamp + new TimeDuration(10_000_000);
         ctx.Db.Reminder.Insert(new Reminder
         {
+            ScheduledId = 0,
             Message = "Your auction has ended",
             ScheduledAt = new ScheduleAt.Time(tenSecondsFromNow)
         });
@@ -302,6 +341,7 @@ public static partial class Module
         var targetTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
         ctx.Db.Reminder.Insert(new Reminder
         {
+            ScheduledId = 0,
             Message = "Happy New Year!",
             ScheduledAt = new ScheduleAt.Time(targetTime)
         });
@@ -321,14 +361,14 @@ fn schedule_timed_tasks(ctx: &ReducerContext) {
     // Schedule for 10 seconds from now
     let ten_seconds_from_now = ctx.timestamp + Duration::from_secs(10);
     ctx.db.reminder().insert(Reminder {
-        id: 0,
+        scheduled_id: 0,
         message: "Your auction has ended".to_string(),
         scheduled_at: ScheduleAt::Time(ten_seconds_from_now),
     });
 
     // Schedule for immediate execution (current timestamp)
     ctx.db.reminder().insert(Reminder {
-        id: 0,
+        scheduled_id: 0,
         message: "Process now".to_string(),
         scheduled_at: ScheduleAt::Time(ctx.timestamp.clone()),
     });
@@ -343,14 +383,14 @@ fn schedule_timed_tasks(ctx: &ReducerContext) {
 Timestamp tenSecondsFromNow = ctx.timestamp + TimeDuration::from_seconds(10);
 ctx.db[reminder].insert(Reminder{
     0,
-    ScheduleAt::time(tenSecondsFromNow),
+    ScheduleAt(tenSecondsFromNow),
     "Your auction has ended"
 });
 
 // Schedule for immediate execution (current timestamp)
 ctx.db[reminder].insert(Reminder{
     0,
-    ScheduleAt::time(ctx.timestamp),
+    ScheduleAt(ctx.timestamp),
     "Process now"
 });
 ```
