@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileRecipeFile } from '../composition-compiler.mjs';
 import { buildRecipeRelease } from '../recipe-release.mjs';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest, createModularRecipeTaskRequest,
-  resolveBoundRecipeTaskRequest, resolveModularRecipeSelection }
+  resolveBoundRecipeTaskRequest, resolveModularRecipeSelection, selectScenarioChecks }
   from '../recipe-selection.mjs';
 
 const recipePath = join(import.meta.dirname, '..', 'tracks', 'ecommerce', 'composition',
@@ -13,6 +14,8 @@ const recipePath = join(import.meta.dirname, '..', 'tracks', 'ecommerce', 'compo
 const plan = compileRecipeFile(recipePath);
 const release = buildRecipeRelease(recipePath);
 const binding = { plan, release };
+const contentionPath = join(import.meta.dirname, '..', 'tracks', 'ecommerce', 'scenarios',
+  '01-duplicate-checkout-2.0.0.json');
 const specifications = [
   'ecommerce.spec.access-control@1.0.0',
   'ecommerce.spec.state-durability@1.0.0',
@@ -140,4 +143,15 @@ test('criteria with ordered state dependencies are not exposed as isolated probe
   assert.deepEqual(release.checkCatalog
     .filter(check => check.checkGroupId === 'cart-boundary')
     .map(check => check.criterionId), ['109a', '109b']);
+});
+
+test('the scored duplicate-checkout check owns all state needed when selected alone', () => {
+  const key = 'ecommerce.spec.concurrency-safety.duplicate-checkout.203b';
+  const selected = selectScenarioChecks(JSON.parse(readFileSync(contentionPath, 'utf8')),
+    { checks: release.checkCatalog }, [key]);
+
+  assert.deepEqual(selected.features[0].criteria.map(criterion => criterion.id), ['203b']);
+  assert.deepEqual(selected.features[0].setup.slice(-2).map(step => step.do),
+    ['clickConcurrently', 'click']);
+  assert.equal(selected.features[0].setup.at(-1).testid, 'cart-toggle');
 });

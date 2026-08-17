@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { createBoundRecipeTaskRequest } from '../recipe-selection.mjs';
 import { resolveRecipeRelease } from '../recipe-release.mjs';
-import { childFailureDetail, selectObservationScope } from '../run-suite.mjs';
+import { childFailureDetail, selectObservationScope, suitesForRecipe } from '../run-suite.mjs';
 import { loadTrack } from '../tracks.mjs';
 
 test('grader child diagnostics retain the cause instead of only trailing stack frames', () => {
@@ -38,4 +38,26 @@ test('observed-only scope is modular, disjoint, and contributes no score', () =>
   assert.throws(() => selectObservationScope(
     createBoundRecipeTaskRequest(binding, { featureIds: ['ecommerce.feature.accounts'] }),
     'observed'), /scope is empty/);
+});
+
+test('recipe-bound grading uses the recipe execution sources', () => {
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.0.0');
+  const suites = suitesForRecipe(track, binding);
+
+  assert.match(suites.find(suite => suite.id === 'duplicate-checkout').spec,
+    /01-duplicate-checkout-2\.0\.0\.json$/);
+  assert.equal(suites.some(suite => suite.inherited), false);
+});
+
+test('recipe execution keeps inherited suites out of the current-level score', () => {
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.2.0');
+  const suites = suitesForRecipe(track, binding);
+
+  assert.deepEqual(suites.filter(suite => suite.inherited)
+    .map(suite => ({ id: suite.id, fromLevel: suite.fromLevel })), [
+    { id: 'invariants@L1', fromLevel: 1 },
+    { id: 'systems@L1', fromLevel: 1 },
+  ]);
 });

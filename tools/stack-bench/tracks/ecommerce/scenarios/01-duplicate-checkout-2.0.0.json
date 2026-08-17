@@ -1,0 +1,203 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront — duplicate checkout",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "This focused suite owns the shared cart preparation needed by both duplicate-cart and duplicate-checkout checks, so either check can run independently.",
+  "features": [
+    {
+      "id": 203,
+      "name": "One cart, two tabs, one checkout",
+      "actors": [
+        "tab1",
+        "tab2",
+        "filler"
+      ],
+      "setup": [
+        {
+          "do": "signUp",
+          "actor": "tab1",
+          "name": "twin"
+        },
+        {
+          "do": "signIn",
+          "actor": "tab2",
+          "name": "twin"
+        },
+        {
+          "do": "signIn",
+          "actor": "filler",
+          "name": "twin"
+        },
+        {
+          "do": "fill",
+          "actor": "tab1",
+          "testid": "search-input",
+          "text": "Gaming Mouse",
+          "enter": true,
+          "settleMs": 1500
+        },
+        {
+          "do": "fill",
+          "actor": "tab2",
+          "testid": "search-input",
+          "text": "Gaming Mouse",
+          "enter": true,
+          "settleMs": 1500
+        },
+        {
+          "do": "clickConcurrently",
+          "testid": "add-to-cart",
+          "actors": [
+            "tab1",
+            "tab2"
+          ],
+          "in": {
+            "testid": "item-card",
+            "contains": "Gaming Mouse"
+          },
+          "settleMs": 4000
+        },
+        {
+          "do": "click",
+          "actor": "tab1",
+          "testid": "cart-toggle"
+        }
+      ],
+      "criteria": [
+        {
+          "id": "203a",
+          "desc": "the same item added from two tabs at once becomes one line of two",
+          "points": 0,
+          "withheld": "runs clean (2/2) but no mutant has been attempted against it yet.",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "tab1",
+              "testid": "cart-item",
+              "contains": "Gaming Mouse",
+              "count": 1
+            },
+            {
+              "do": "expectNumber",
+              "actor": "tab1",
+              "testid": "cart-quantity",
+              "in": {
+                "testid": "cart-item",
+                "contains": "Gaming Mouse"
+              },
+              "equals": 2
+            }
+          ],
+          "statedBy": "raises its quantity rather than adding a second line"
+        },
+        {
+          "id": "203b",
+          "desc": "checking the same cart out twice at once produces one order",
+          "points": 1,
+          "steps": [
+            {
+              "do": "click",
+              "actor": "tab1",
+              "testid": "checkout-submit"
+            },
+            {
+              "do": "wait",
+              "actor": "tab1",
+              "ms": 2500
+            },
+            {
+              "do": "fill",
+              "actor": "tab2",
+              "testid": "search-input",
+              "text": "Webcam",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "tab2",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Webcam"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "tab2",
+              "ms": 1200
+            },
+            {
+              "do": "click",
+              "actor": "tab2",
+              "testid": "cart-toggle"
+            },
+            {
+              "do": "click",
+              "actor": "tab2",
+              "testid": "checkout-submit"
+            },
+            {
+              "do": "wait",
+              "actor": "tab2",
+              "ms": 2500
+            },
+            {
+              "do": "fill",
+              "actor": "filler",
+              "testid": "search-input",
+              "text": "Keyboard",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "filler",
+              "testid": "add-to-cart",
+              "in": {
+                "testid": "item-card",
+                "contains": "Keyboard"
+              }
+            },
+            {
+              "do": "wait",
+              "actor": "filler",
+              "ms": 2000
+            },
+            {
+              "do": "callConcurrently",
+              "actors": [
+                "tab1",
+                "tab2"
+              ],
+              "action": "checkout",
+              "settleMs": 5000
+            },
+            {
+              "do": "expectCallOutcomes",
+              "accepted": 1
+            },
+            {
+              "do": "click",
+              "actor": "filler",
+              "testid": "orders-toggle"
+            },
+            {
+              "do": "expect",
+              "actor": "filler",
+              "testid": "order-item",
+              "contains": "Keyboard",
+              "count": 1
+            }
+          ],
+          "note": "replayConcurrently replays each actor's LAST POST, so a racing tab must not touch the cart after its checkout is captured — that would overwrite the captured request with an add-to-cart. A third session on the same account fills the cart instead, leaving tab1 and tab2 holding nothing but their checkouts. A checkout carries no JSON body, so it never lands in lastWrites — the replay must select it by URL with the match option, or it silently races the last add-to-cart instead.",
+          "provenBy": "checkout-not-idempotent (postgres-ecom-l1.json): stripping FOR UPDATE from the cart read at checkout made two replayed checkout requests each create an order — the criterion failed on its own assertion (expected exactly 1 order containing Keyboard, found 2). The unmutated app passes, refusing the second checkout with a 400.",
+          "withheld": "uses the spec's named `checkout` action so it can be issued on either stack. It previously replayed a captured HTTP write, which SpacetimeDB never produces — that client writes over WebSocket — so the criterion reported INCONCLUSIVE there and the two backends were scored out of different totals. Points retained: it has already failed a mutant on the stacks that could run it.",
+          "statedBy": "checking out twice must not produce two orders"
+        }
+      ],
+      "note": "Both tabs reach the item by search rather than trusting the storefront: earlier features in this suite buy things, which re-ranks the top ten. Each tab opens its OWN cart — panel state belongs to a browser context, not to the feature."
+    }
+  ]
+}

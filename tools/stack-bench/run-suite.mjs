@@ -34,6 +34,18 @@ import { hashAppSource } from './source-snapshot.mjs';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RESET = join(ROOT, 'reset-backend.mjs');
 
+export function suitesForRecipe(track, binding) {
+  if (!binding?.plan?.execution?.length) throw new Error('recipe has no executable suites');
+  return binding.plan.execution.map(entry => {
+    const inherited = entry.id.match(/@L(\d+)$/);
+    return {
+      id: entry.id,
+      spec: resolve(track.dir, entry.source),
+      ...(inherited ? { inherited: true, fromLevel: Number(inherited[1]) } : {}),
+    };
+  });
+}
+
 export function childFailureDetail(failure = null, stdout = '', limit = 600) {
   const lines = [failure?.stderr, stdout, failure?.message]
     .filter(value => value !== undefined && value !== null && String(value).trim())
@@ -354,7 +366,9 @@ async function main() {
     }
   }
   args.selection = selection;
-  const declaredSuites = suitesFor(track, args.level);
+  const declaredSuites = recipeBinding
+    ? suitesForRecipe(track, recipeBinding)
+    : suitesFor(track, args.level);
   if (selection) {
     const suiteIds = new Set(declaredSuites.map(suite => suite.id));
     const unmapped = selection.checks.filter(check => !suiteIds.has(check.executionId));

@@ -36,6 +36,7 @@
     { "id": "features", "source": "scenarios/01-features.json" },
     { "id": "invariants", "source": "scenarios/01-invariants.json" },
     { "id": "contention", "source": "scenarios/01-contention.json" },
+    { "id": "duplicate-checkout", "source": "scenarios/01-duplicate-checkout-2.0.0.json" },
     { "id": "systems", "source": "scenarios/01-systems.json" }
   ],
   "scoring": {
