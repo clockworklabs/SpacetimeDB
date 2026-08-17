@@ -31,14 +31,15 @@ export const add_two_numbers = spacetimedb.procedure(
 ```
 
 The `spacetimedb.procedure` function takes:
-* the procedure name,
-* (optional) an object representing its parameter types,
+* optional procedure options, such as `onSchedule`,
+* an optional object representing its parameter types,
 * its return type,
 * and the procedure function itself.
 
-The function will receive a `ProcedureContext` and an object of its arguments, and it must return
-a value corresponding to its return type. This return value will be sent to the caller, but will
-not be broadcast to any other clients.
+The exported value's name becomes the procedure name. The callback receives a `ProcedureContext`
+and, when the procedure has parameters, an object of its arguments. It must return a value
+corresponding to its return type. This return value will be sent to the caller, but will not be
+broadcast to any other clients.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
