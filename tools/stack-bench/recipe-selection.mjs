@@ -115,11 +115,15 @@ export function resolveModularRecipeSelection(release, {
         ? observation === 'requested' : check.observations.includes(observation)))
     .map(check => ({ ...check, treatment }));
   const pointBearing = checks => checks.filter(check => check.points > 0);
-  const featureChecks = pointBearing(selectChecks(featureSet, 'requested', 'requested'));
-  const requestedSpecChecks = pointBearing(selectChecks(requestedIds, 'requested', 'requested'));
-  const expectedChecks = pointBearing(selectChecks(expectedIds, 'unmentioned', 'expected'));
+  const eligibleFeatureChecks = selectChecks(featureSet, 'requested', 'requested');
+  const eligibleRequestedSpecChecks = selectChecks(requestedIds, 'requested', 'requested');
+  const eligibleExpectedChecks = selectChecks(expectedIds, 'unmentioned', 'expected');
   const observedChecks = selectChecks(observedIds, 'unmentioned', 'observed');
-  const checksByTreatment = { requested: requestedSpecChecks, expected: expectedChecks,
+  const featureChecks = pointBearing(eligibleFeatureChecks);
+  const requestedSpecChecks = pointBearing(eligibleRequestedSpecChecks);
+  const expectedChecks = pointBearing(eligibleExpectedChecks);
+  const checksByTreatment = { requested: eligibleRequestedSpecChecks,
+    expected: eligibleExpectedChecks,
     observed: observedChecks };
   for (const [treatment, refs] of Object.entries(treatmentSets)) {
     for (const ref of refs) {
@@ -130,15 +134,17 @@ export function resolveModularRecipeSelection(release, {
       }
     }
   }
+  const allEligibleChecks = [...eligibleFeatureChecks, ...eligibleRequestedSpecChecks,
+    ...eligibleExpectedChecks];
   const allScoredChecks = [...featureChecks, ...requestedSpecChecks, ...expectedChecks];
-  const availableScoredChecks = new Set(allScoredChecks.map(check => check.stableKey));
+  const availableChecks = new Set(allEligibleChecks.map(check => check.stableKey));
   for (const key of selectedCheckKeys) {
-    if (!availableScoredChecks.has(key)) {
-      throw new Error(`scored check ${key} is outside the requested/expected feature and specification scope`);
+    if (!availableChecks.has(key)) {
+      throw new Error(`check ${key} is outside the requested/expected feature and specification scope`);
     }
   }
   const scoredChecks = selectedCheckKeys.length
-    ? allScoredChecks.filter(check => selectedCheckKeys.includes(check.stableKey)) : allScoredChecks;
+    ? allEligibleChecks.filter(check => selectedCheckKeys.includes(check.stableKey)) : allScoredChecks;
   if (!scoredChecks.length) throw new Error('modular selection contains no scored checks');
   const observedKeys = new Set(observedChecks.map(check => check.stableKey));
   const checkOverlap = scoredChecks.filter(check => observedKeys.has(check.stableKey));

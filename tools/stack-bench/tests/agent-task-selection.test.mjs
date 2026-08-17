@@ -137,6 +137,27 @@ test('the real unprescribed prompt withholds every expected quality specificatio
   } finally { rmSync(app, { recursive: true, force: true }); }
 });
 
+test('exact modular qualification can include supporting checks without changing the prompt scope', () => {
+  const modular = resolveRecipeRelease(loadTrack('ecommerce'), 1,
+    'ecommerce.l1-modular@2.3.0');
+  const features = modular.release.components.packs
+    .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
+  const expectedSpecifications = modular.release.components.packs
+    .filter(pack => pack.moduleType === 'specification')
+    .map(pack => `${pack.id}@${pack.version}`);
+  const ordinary = createBoundRecipeTaskRequest(modular, { featureIds: features,
+    expectedSpecifications });
+  const exact = createBoundRecipeTaskRequest(modular, { featureIds: features,
+    expectedSpecifications, checkKeys: modular.release.checkCatalog.map(check => check.stableKey) });
+
+  assert.equal(ordinary.selection.checks.length, 46);
+  assert.equal(ordinary.selection.checks.every(check => check.points > 0), true);
+  assert.equal(exact.selection.checks.length, 48);
+  assert.equal(exact.selection.scoredPoints, 58);
+  assert.equal(exact.selection.checks.filter(check => check.points === 0).length, 2);
+  assert.deepEqual(exact.selection.promptPacks, ordinary.selection.promptPacks);
+});
+
 test('agent provenance uses the exact recipe execution instead of the legacy level suites', () => {
   const track = loadTrack('ecommerce');
   const modular = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.3.0');

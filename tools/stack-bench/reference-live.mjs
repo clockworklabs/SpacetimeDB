@@ -24,6 +24,7 @@ import { criterionEvidence, evidencePassed } from './check-evidence.mjs';
 import { recoverSupervisedRun, validateSupervisorState } from './recovery.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from './calibration-compiler.mjs';
 import { resolveRecipeRelease } from './recipe-release.mjs';
+import { isModularRecipeRelease } from './recipe-selection.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from './tracks.mjs';
 import { controllerRunner } from './runner-environment.mjs';
 
@@ -267,6 +268,22 @@ export function referenceQualificationContext(fixture, recipe = null) {
   return { binding, calibration, identity: calibrationQualificationIdentity(calibration) };
 }
 
+export function referenceQualificationSelectionArgs(binding) {
+  if (!binding?.release?.checkCatalog?.length) {
+    throw new Error('reference qualification requires an exact recipe check catalog');
+  }
+  const args = ['--check', binding.release.checkCatalog.map(check => check.stableKey).join(',')];
+  if (!isModularRecipeRelease(binding.release)) return args;
+  const features = binding.release.components.packs
+    .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
+  const specifications = binding.release.components.packs
+    .filter(pack => pack.moduleType === 'specification').map(pack => `${pack.id}@${pack.version}`);
+  if (!features.length || !specifications.length) {
+    throw new Error('modular reference qualification requires feature and specification modules');
+  }
+  return ['--feature-module', features.join(','), '--expect-spec', specifications.join(','), ...args];
+}
+
 export function referenceQualificationPaths(args, id) {
   const artifactPath = args.out ?? join(ROOT, 'results', 'reference-live', `${id}.json`);
   const artifactName = basename(artifactPath, extname(artifactPath));
@@ -281,7 +298,7 @@ export function referenceQualificationWorkRoot(env = process.env) {
   return resolve(env.STACK_BENCH_WORK_DIR ?? tmpdir());
 }
 
-async function runOnce(fixture, args, id, repetition) {
+async function runOnce(fixture, args, context, id, repetition) {
   const workRoot = referenceQualificationWorkRoot();
   mkdirSync(workRoot, { recursive: true });
   const work = mkdtempSync(join(workRoot, `reference-live-${fixture.backend}-`));
@@ -300,7 +317,8 @@ async function runOnce(fixture, args, id, repetition) {
     const benchArgs = [BENCH, '--backend', fixture.backend, '--track', fixture.track,
       '--levels', String(fixture.level), '--run-index', String(args.runIndex), '--fix-rounds', '0',
       '--app', app, '--out', output, '--agent-adapter', 'reference-fixture', '--skip-probe', '--no-media'];
-    if (args.recipe) benchArgs.push('--recipe', args.recipe);
+    benchArgs.push('--recipe', `${context.binding.release.id}@${context.binding.release.version}`);
+    benchArgs.push(...referenceQualificationSelectionArgs(context.binding));
     benchArgs.push('--parent-attempt-id', id);
     if (args.mutations) {
       if (fixture.mutationManifests.length !== 1) {
@@ -381,7 +399,7 @@ async function main() {
     runner: controllerRunner(), mutationControl: args.mutations, runs: [] };
   for (let repetition = 0; repetition < args.repetitions; repetition++) {
     console.log(`\nqualifying ${fixture.id}: clean run ${repetition + 1}/${args.repetitions}`);
-    const run = await runOnce(fixture, args, id, repetition);
+    const run = await runOnce(fixture, args, context, id, repetition);
     artifact.runs.push(run);
     // Repetition measures stability of a passing baseline. Repeating a setup or
     // infrastructure failure only wastes time and produces duplicate noise.

@@ -5,10 +5,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
-  referenceQualificationPaths, referenceQualificationRunner, referenceQualificationWorkRoot, rescueSupervisedLease,
-  runBounded } from '../reference-live.mjs';
+  referenceQualificationPaths, referenceQualificationRunner, referenceQualificationSelectionArgs,
+  referenceQualificationWorkRoot, rescueSupervisedLease, runBounded } from '../reference-live.mjs';
 import { writeArtifact, writeRunJson } from '../artifacts.mjs';
 import { createCheckEvidence } from '../check-evidence.mjs';
+import { createBoundRecipeTaskRequest } from '../recipe-selection.mjs';
+import { resolveRecipeRelease } from '../recipe-release.mjs';
+import { loadTrack } from '../tracks.mjs';
 
 const fixture = { backend: 'mongodb', track: 'ecommerce', level: 1,
   imported: { sourceSha256: 'a'.repeat(64) } };
@@ -44,6 +47,27 @@ test('reference qualification resolves the requested promoted calibration', () =
   assert.equal(context.binding.release.version, '1.1.0');
   assert.equal(context.calibration.version, '1.1.0');
   assert.equal(context.calibration.state, 'qualified');
+});
+
+test('modular reference qualification selects every exact check without prescribing specifications', () => {
+  const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
+    'ecommerce.l1-modular@2.3.0');
+  const argv = referenceQualificationSelectionArgs(binding);
+  const valueAfter = flag => argv[argv.indexOf(flag) + 1].split(',');
+  const featureIds = valueAfter('--feature-module');
+  const expectedSpecifications = valueAfter('--expect-spec');
+  const checkKeys = valueAfter('--check');
+
+  assert.equal(argv.includes('--request-spec'), false);
+  assert.equal(checkKeys.length, 48);
+  assert.equal(new Set(checkKeys).size, 48);
+  const task = createBoundRecipeTaskRequest(binding,
+    { featureIds, expectedSpecifications, checkKeys });
+  assert.equal(task.selection.checks.length, 48);
+  assert.equal(task.selection.scoredPoints, 58);
+  assert.equal(task.selection.checks.filter(check => check.points === 0).length, 2);
+  assert.equal(task.selection.specifications.requested.length, 0);
+  assert.equal(task.selection.specifications.expected.length, expectedSpecifications.length);
 });
 
 test('reference qualification keeps underlying runs beside the requested artifact', () => {

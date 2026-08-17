@@ -52,9 +52,41 @@ function runGrade(argv, timeoutMs = 300_000) {
   });
 }
 
-export function nullControlSuites(track, selectedLevel = null) {
+export function nullControlSuites(track, selectedLevel = null, binding = null) {
   if (selectedLevel !== null && !isDeclaredLevel(track, selectedLevel)) {
     throw new Error(`L${selectedLevel} is not declared for ${track.name}`);
+  }
+  if (binding) {
+    if (selectedLevel === null) throw new Error('recipe-bound null control requires one level');
+    if (!Array.isArray(binding.execution) || !binding.execution.length) {
+      throw new Error('recipe-bound null control requires a typed execution plan');
+    }
+    const executionIds = new Set();
+    const mappedKeys = new Set();
+    const suites = binding.execution.map(execution => {
+      if (executionIds.has(execution.id)) {
+        throw new Error(`recipe-bound null control repeats execution ${execution.id}`);
+      }
+      executionIds.add(execution.id);
+      const checks = binding.release.checkCatalog.filter(check => check.executionId === execution.id);
+      if (!checks.length) {
+        throw new Error(`recipe-bound null control execution ${execution.id} maps no checks`);
+      }
+      for (const check of checks) {
+        if (mappedKeys.has(check.stableKey)) {
+          throw new Error(`recipe-bound null control maps check ${check.stableKey} more than once`);
+        }
+        mappedKeys.add(check.stableKey);
+      }
+      return { id: execution.id, spec: resolve(track.dir, execution.source),
+        level: selectedLevel, checks };
+    });
+    const missing = binding.release.checkCatalog
+      .filter(check => !mappedKeys.has(check.stableKey)).map(check => check.stableKey);
+    if (missing.length) {
+      throw new Error(`recipe-bound null control leaves checks unmapped: ${missing.join(', ')}`);
+    }
+    return suites;
   }
   const seen = new Set();
   const suites = [];
@@ -108,22 +140,27 @@ async function main() {
     const url = `http://127.0.0.1:${port}`;
     for (const trackName of args.tracks) {
       const track = loadTrack(trackName);
-      const selectedSuites = nullControlSuites(track, args.level);
+      let binding = null;
       if (args.level !== null) {
-        const binding = resolveRecipeRelease(track, args.level, args.recipe);
+        binding = resolveRecipeRelease(track, args.level, args.recipe);
         if (!binding) throw new Error(`${trackName} L${args.level} has no recipe release`);
         const calibration = resolveCalibrationForRelease(binding.release,
           { trackRoot: track.dir, stackBenchRoot: ROOT });
         if (!calibration) throw new Error(`${trackName} L${args.level} has no calibration`);
         qualification = { binding, calibration, identity: calibrationQualificationIdentity(calibration) };
       }
+      const selectedSuites = nullControlSuites(track, args.level, binding);
+      const resolvedRecipe = binding
+        ? `${binding.release.id}@${binding.release.version}` : args.recipe;
       for (const suite of selectedSuites) {
         const reportPath = join(reportsDir, `${trackName}-l${suite.level}-${suite.id.replaceAll('@', '-')}.json`);
         process.stdout.write(`${trackName} L${suite.level} ${suite.id} (${basename(suite.spec)}) ... `);
         await runGrade(['--url', url, '--level', String(suite.level), '--spec', suite.spec,
           '--backend', 'postgres', '--track', trackName, '--app', app, '--out', reportPath,
           '--parent-attempt-id', nullAttemptId,
-          ...(args.recipe ? ['--recipe', args.recipe] : [])]);
+          ...(resolvedRecipe ? ['--recipe', resolvedRecipe] : []),
+          ...(binding ? ['--expected-recipe-sha256', binding.release.contentSha256] : []),
+          ...(suite.checks ?? []).flatMap(check => ['--selected-check', check.stableKey])]);
         const report = readArtifactPayload(reportPath, { expectedKind: 'grade' });
         suiteReports.push({ track: trackName, level: suite.level, id: suite.id,
           scenario: relative(track.dir, suite.spec).replaceAll('\\', '/'), report });
