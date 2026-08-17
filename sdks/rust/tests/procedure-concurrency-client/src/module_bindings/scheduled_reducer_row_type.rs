@@ -9,6 +9,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct ScheduledReducerRow {
     pub scheduled_id: u64,
     pub scheduled_at: __sdk::ScheduleAt,
+    pub insertion_context: String,
 }
 
 impl __sdk::InModule for ScheduledReducerRow {
@@ -21,6 +22,7 @@ impl __sdk::InModule for ScheduledReducerRow {
 pub struct ScheduledReducerRowCols {
     pub scheduled_id: __sdk::__query_builder::Col<ScheduledReducerRow, u64>,
     pub scheduled_at: __sdk::__query_builder::Col<ScheduledReducerRow, __sdk::ScheduleAt>,
+    pub insertion_context: __sdk::__query_builder::Col<ScheduledReducerRow, String>,
 }
 
 impl __sdk::__query_builder::HasCols for ScheduledReducerRow {
@@ -29,6 +31,7 @@ impl __sdk::__query_builder::HasCols for ScheduledReducerRow {
         ScheduledReducerRowCols {
             scheduled_id: __sdk::__query_builder::Col::new(table_name, "scheduled_id"),
             scheduled_at: __sdk::__query_builder::Col::new(table_name, "scheduled_at"),
+            insertion_context: __sdk::__query_builder::Col::new(table_name, "insertion_context"),
         }
     }
 }

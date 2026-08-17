@@ -545,14 +545,11 @@ mod rust_procedure_concurrency {
         make_test("procedure-concurrent-with-scheduled-reducer").run()
     }
 
-    /// Test that the scheduler has only a single active execution slot,
-    /// which can be occupied by a long-running or suspended procedure.
-    ///
-    /// We're not attached to this behavior, and in fact it should be changed.
-    /// At that time, this test should be altered to demonstrate that the execution is interleaved.
+    /// Test that the scheduler can dispatch a scheduled reducer while a previous
+    /// scheduled procedure is still running.
     #[test]
-    fn scheduled_procedure_scheduled_reducer_not_interleaved() {
-        make_test("scheduled-procedure-scheduled-reducer-not-interleaved").run()
+    fn scheduled_procedure_scheduled_reducer_interleaved() {
+        make_test("scheduled-procedure-scheduled-reducer-interleaved").run()
     }
 }
 

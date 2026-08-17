@@ -6,8 +6,11 @@ use crate::db::relational_db::RelationalDB;
 use crate::host::module_host::{CallProcedureParams, ModuleInfo};
 use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::{InvalidProcedureArguments, InvalidReducerArguments, NoSuchModule};
+use crate::worker_metrics::WORKER_METRICS;
 use anyhow::anyhow;
 use core::time::Duration;
+use futures::future::BoxFuture;
+use futures::stream::FuturesUnordered;
 use futures::{FutureExt, StreamExt};
 use rustc_hash::FxHashMap;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
@@ -16,7 +19,7 @@ use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StScheduledFields, ST_SCHEDULED_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::scheduler::ScheduleAt;
-use spacetimedb_lib::{TimeDuration, Timestamp};
+use spacetimedb_lib::{Identity, TimeDuration, Timestamp};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::bsatn::ToBsatn as _;
 use spacetimedb_sats::AlgebraicValue;
@@ -151,6 +154,8 @@ impl SchedulerStarter {
                 rx: self.rx,
                 queue,
                 key_map,
+                active_calls: FuturesUnordered::new(),
+                database_identity: module_host.info().database_identity,
                 module_host: module_host.downgrade(),
             }
             .run(),
@@ -276,6 +281,8 @@ struct SchedulerActor {
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
     queue: DelayQueue<QueueItem>,
     key_map: FxHashMap<ScheduledFunctionId, delay_queue::Key>,
+    active_calls: FuturesUnordered<ScheduledFunctionFuture>,
+    database_identity: Identity,
     module_host: WeakModuleHost,
 }
 
@@ -298,6 +305,17 @@ pub(crate) struct ScheduledFunctionParams(QueueItem);
 enum ScheduledFunctionKind {
     Reducer,
     Procedure,
+}
+
+type ScheduledFunctionFuture = BoxFuture<'static, ScheduledFunctionCompletion>;
+
+// The outer result is from `catch_unwind`, so `Err` means the scheduled call panicked.
+// The inner result is the normal module-host call result, such as `NoSuchModule`.
+type ScheduledFunctionCallResult = std::thread::Result<Result<CallScheduledFunctionResult, CallScheduledFunctionError>>;
+
+struct ScheduledFunctionCompletion {
+    item: QueueItem,
+    result: ScheduledFunctionCallResult,
 }
 
 impl ScheduledFunctionParams {
@@ -328,16 +346,26 @@ spacetimedb_table::static_assert_size!(QueueItem, 64);
 
 impl SchedulerActor {
     async fn run(mut self) {
+        let mut closing = false;
+        self.update_active_calls_metric();
         loop {
+            if closing && self.active_calls.is_empty() {
+                self.update_active_calls_metric();
+                break;
+            }
+
             tokio::select! {
-                msg = self.rx.recv() => match msg {
+                msg = self.rx.recv(), if !closing => match msg {
                     Some(MsgOrExit::Msg(msg)) => self.handle_message(msg),
                     // it's fine to just drop any messages in the queue because they've
                     // already been stored in the database
-                    Some(MsgOrExit::Exit) | None => break,
+                    Some(MsgOrExit::Exit) | None => closing = true,
                 },
-                Some(scheduled) = self.queue.next() => {
-                    self.handle_queued(scheduled).await;
+                Some(scheduled) = self.queue.next(), if !closing => {
+                    self.handle_queued(scheduled);
+                },
+                Some(completion) = self.active_calls.next(), if !self.active_calls.is_empty() => {
+                    self.handle_completion(completion);
                 }
             }
         }
@@ -374,7 +402,7 @@ impl SchedulerActor {
         }
     }
 
-    async fn handle_queued(&mut self, id: Expired<QueueItem>) {
+    fn handle_queued(&mut self, id: Expired<QueueItem>) {
         let item = id.into_inner();
         let id = match &item {
             QueueItem::Id { id, .. } => Some(*id),
@@ -388,19 +416,14 @@ impl SchedulerActor {
             return;
         };
 
-        let params = ScheduledFunctionParams(item.clone());
-        let result = match params.kind(module_host.info()) {
-            ScheduledFunctionKind::Procedure => {
-                panic::AssertUnwindSafe(module_host.call_scheduled_procedure(params))
-                    .catch_unwind()
-                    .await
-            }
-            ScheduledFunctionKind::Reducer => {
-                panic::AssertUnwindSafe(module_host.call_scheduled_reducer(params))
-                    .catch_unwind()
-                    .await
-            }
-        };
+        self.active_calls.push(call_scheduled_function(module_host, item));
+        self.update_active_calls_metric();
+    }
+
+    fn handle_completion(&mut self, completion: ScheduledFunctionCompletion) {
+        self.update_active_calls_metric();
+        let ScheduledFunctionCompletion { item, result } = completion;
+
         let result = match result {
             Ok(result) => result,
             Err(_) => {
@@ -420,20 +443,50 @@ impl SchedulerActor {
                 reschedule: Some(Reschedule { at_ts, at_real }),
             }) => {
                 if let QueueItem::Id { id, function_name, .. } = item {
-                    // If this was repeated, we need to add it back to the queue.
-                    let key = self.queue.insert_at(
-                        QueueItem::Id {
-                            id,
-                            function_name,
-                            at: at_ts,
-                        },
-                        at_real,
-                    );
-                    self.key_map.insert(id, key);
+                    // A schedule-table update may have queued a newer entry while
+                    // this call was running. Keep that newer entry authoritative.
+                    if !self.key_map.contains_key(&id) {
+                        let key = self.queue.insert_at(
+                            QueueItem::Id {
+                                id,
+                                function_name,
+                                at: at_ts,
+                            },
+                            at_real,
+                        );
+                        self.key_map.insert(id, key);
+                    }
                 }
             }
         }
     }
+
+    fn update_active_calls_metric(&self) {
+        WORKER_METRICS
+            .scheduler_active_scheduled_functions
+            .with_label_values(&self.database_identity)
+            .set(self.active_calls.len() as i64);
+    }
+}
+
+fn call_scheduled_function(module_host: ModuleHost, item: QueueItem) -> ScheduledFunctionFuture {
+    async move {
+        let params = ScheduledFunctionParams(item.clone());
+        let result = match params.kind(module_host.info()) {
+            ScheduledFunctionKind::Procedure => {
+                panic::AssertUnwindSafe(module_host.call_scheduled_procedure(params))
+                    .catch_unwind()
+                    .await
+            }
+            ScheduledFunctionKind::Reducer => {
+                panic::AssertUnwindSafe(module_host.call_scheduled_reducer(params))
+                    .catch_unwind()
+                    .await
+            }
+        };
+        ScheduledFunctionCompletion { item, result }
+    }
+    .boxed()
 }
 
 #[derive(Debug)]
