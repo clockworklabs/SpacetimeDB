@@ -218,6 +218,30 @@ function codeMetrics(args) {
   };
 }
 
+export function findMutationBackups(app, { readDir = readdirSync } = {}) {
+  const backups = [];
+  const walk = dir => {
+    let entries;
+    try {
+      entries = readDir(dir, { withFileTypes: true });
+    } catch (error) {
+      // Vite atomically replaces transient dependency directories while the
+      // app runs. They are not source and may vanish between parent and child
+      // reads; a missing directory cannot contain a mutation backup.
+      if (error?.code === 'ENOENT') return;
+      throw error;
+    }
+    for (const entry of entries) {
+      if (/^(node_modules|dist|\.vite|\.git|module_bindings)$/.test(entry.name)) continue;
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.isFile() && entry.name.endsWith('.mutation-backup')) backups.push(path);
+    }
+  };
+  walk(app);
+  return backups;
+}
+
 function resetDatabase(args) {
   process.stdout.write('  reset database ... ');
   try {
@@ -500,9 +524,7 @@ async function main() {
   // An interrupted mutation run leaves the app deliberately broken with a
   // backup beside it. Grading that produces confident numbers for source
   // nobody intended to measure.
-  const mutated = readdirSync(args.app, { recursive: true, withFileTypes: true })
-    .filter(e => e.isFile() && e.name.endsWith('.mutation-backup'))
-    .map(e => join(e.parentPath ?? e.path ?? args.app, e.name));
+  const mutated = findMutationBackups(args.app);
   if (mutated.length) {
     bundle.error = `app still carries mutation backups (${mutated.join(', ')}) — its source is mutated, not the build under test`;
     bundle.outcome = { kind: 'harness_failure', phase: 'mutation-cleanup', reason: bundle.error };

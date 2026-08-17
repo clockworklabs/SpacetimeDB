@@ -1,15 +1,38 @@
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { createBoundRecipeTaskRequest } from '../recipe-selection.mjs';
 import { resolveRecipeRelease } from '../recipe-release.mjs';
-import { childFailureDetail, selectObservationScope, suitesForRecipe } from '../run-suite.mjs';
+import { childFailureDetail, findMutationBackups, selectObservationScope,
+  suitesForRecipe } from '../run-suite.mjs';
 import { loadTrack } from '../tracks.mjs';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
+
+test('mutation backup scanning ignores volatile build caches and tolerates their removal', () => {
+  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-mutation-scan-'));
+  try {
+    mkdirSync(join(temp, 'server', 'src'), { recursive: true });
+    mkdirSync(join(temp, 'client', 'node_modules', '.vite', 'deps_temp'), { recursive: true });
+    const backup = join(temp, 'server', 'src', 'index.ts.mutation-backup');
+    writeFileSync(backup, 'source');
+    writeFileSync(join(temp, 'client', 'node_modules', '.vite', 'deps_temp',
+      'cache.mutation-backup'), 'generated');
+    assert.deepEqual(findMutationBackups(temp), [backup]);
+
+    const disappearing = Object.assign(new Error('directory disappeared'), { code: 'ENOENT' });
+    const directory = { name: 'source', isDirectory: () => true, isFile: () => false };
+    assert.deepEqual(findMutationBackups('/app', {
+      readDir: dir => {
+        if (dir === '/app') return [directory];
+        throw disappearing;
+      },
+    }), []);
+  } finally { rmSync(temp, { recursive: true, force: true }); }
+});
 
 test('grader child diagnostics retain the cause instead of only trailing stack frames', () => {
   const stderr = [
