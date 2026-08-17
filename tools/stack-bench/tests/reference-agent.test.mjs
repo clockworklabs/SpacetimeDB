@@ -79,9 +79,9 @@ test('a recipe-specific reference applies its exact patch without changing the q
 test('the L2 candidate prepares the exact six action inputs for every backend', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l2-derived-'));
   const expected = {
-    mongodb: '4041a45d7c4d3e446c406132132ccb21b1c68a0788348b7d98523c5431b92c63',
+    mongodb: '051dd7903e34930f6828cc16b4d92689d92efbdc2c06a198eaea83083ee78dc6',
     postgres: '99c8af18eb709aebfe8bc8d22b55aa13219c0c2dcc7fef07e384ebe5aaa8677a',
-    spacetime: 'f32768daf028bbfbe57e8c7349b1e10eff2db6a806be981abdbc8839b11b572a',
+    spacetime: '359ed185c5d9dff2754f806c1169314985baeb2bca90a09f2ab52a5ee056b8fc',
   };
   try {
     for (const [backend, sourceSha256] of Object.entries(expected)) {

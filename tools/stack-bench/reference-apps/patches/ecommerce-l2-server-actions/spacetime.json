@@ -20,6 +20,11 @@
       "path": "client/src/components/AdminPanel.tsx",
       "find": "<tr data-testid=\"admin-location-row\" key={k}>",
       "replace": "<tr data-testid=\"admin-location-row\" data-restock-input={JSON.stringify({ itemId: item.id.toString(), warehouseId: wh.id.toString(), quantity: 1 })} key={k}>"
+    },
+    {
+      "path": "backend/spacetimedb/src/index.ts",
+      "find": "    if (accountId === null) {\n      const items = [...ctx.db.item.iter()];",
+      "replace": "    if (accountId === null) {\n      const items = [...ctx.db.item.iter()].filter((item) => purchaseCountOf(item.id) > 0);"
     }
   ]
 }

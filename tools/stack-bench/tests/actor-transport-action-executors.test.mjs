@@ -213,6 +213,55 @@ test('account setup preserves scoped credentials and classifies browser failures
   assert.equal(bug.code, 'unclassified_exception');
 });
 
+test('sign in waits for a rendered toggle instead of silently missing the form', async () => {
+  const calls = [];
+  let formVisible = false;
+  const username = {
+    first() { return this; },
+    isVisible: async () => formVisible,
+    waitFor: async options => {
+      calls.push(['username', 'waitFor', options]);
+      assert.equal(formVisible, true);
+    },
+    fill: async value => calls.push(['username', 'fill', value]),
+  };
+  const fields = {
+    '[data-testid="signin-username"]': username,
+    '[data-testid="signin-password"]': { first() { return this; },
+      fill: async value => calls.push(['password', 'fill', value]) },
+    '[data-testid="signin-submit"]': { first() { return this; },
+      click: async () => calls.push(['submit', 'click']) },
+    '[data-testid="current-user"]': { first() { return this; },
+      waitFor: async options => calls.push(['current-user', 'waitFor', options]) },
+  };
+  const toggle = {
+    waitFor: async options => calls.push(['toggle', 'waitFor', options]),
+    click: async options => {
+      calls.push(['toggle', 'click', options]);
+      formVisible = true;
+    },
+  };
+  const actor = {
+    loc: id => {
+      assert.equal(id, 'signin-toggle');
+      return toggle;
+    },
+    page: { locator: selector => fields[selector] },
+  };
+
+  const result = await run({ do: 'signIn', actor: 'a', name: 'admin', password: 'secret', exact: true },
+    services(new Map([['a', actor]])));
+
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(calls.slice(0, 3), [
+    ['toggle', 'waitFor', { state: 'visible', timeout: 5000 }],
+    ['toggle', 'click', { timeout: 5000 }],
+    ['username', 'waitFor', { state: 'visible', timeout: 5000 }],
+  ]);
+  assert(calls.some(call => call[0] === 'username' && call[2] === 'admin'));
+  assert(calls.some(call => call[0] === 'password' && call[2] === 'secret'));
+});
+
 test('an unreplayable WebSocket write records structural evidence, not a fabricated rejection', async () => {
   const actor = {
     name: 'a',

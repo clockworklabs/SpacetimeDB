@@ -38,9 +38,19 @@ test('L2 derived references expose every direct-action input with backend-native
       if (backend === 'spacetime') {
         assert.match(source, /data-restock-input=\{JSON\.stringify\(\{ itemId: item\.id\.toString\(\), warehouseId: wh\.id\.toString\(\), quantity: 1 \}\)\}/);
         assert.match(source, /data-price-input=\{item\.name === 'Gaming Mouse' \? JSON\.stringify\(\{ itemId: item\.id\.toString\(\), price: 1 \}\) : undefined\}/);
+        const module = readFileSync(join(first, 'backend', 'spacetimedb', 'src', 'index.ts'), 'utf8');
+        assert.match(module,
+          /ctx\.db\.item\.iter\(\)\]\.filter\(\(item\) => purchaseCountOf\(item\.id\) > 0\)/,
+        'signed-out best sellers must exclude zero-purchase items');
       } else {
         assert.match(source, /data-restock-input=\{JSON\.stringify\(\{ itemId: loc\.itemId, warehouseId: loc\.warehouseId, quantity: 1 \}\)\}/);
         assert.match(source, /data-price-input=\{it\.name === "Gaming Mouse" \? JSON\.stringify\(\{ itemId: it\.id, price: 1 \}\) : undefined\}/);
+        if (backend === 'mongodb') {
+          const server = readFileSync(join(first, 'server', 'src', 'index.ts'), 'utf8');
+          assert.match(server, /socket\.join\("visitors"\)/);
+          assert.match(server, /await broadcastRecommendedForUser\(null\)/,
+            'signed-out best sellers must receive live ranking updates');
+        }
       }
     }
   } finally {

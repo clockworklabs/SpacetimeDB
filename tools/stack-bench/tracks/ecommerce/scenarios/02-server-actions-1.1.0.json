@@ -98,10 +98,10 @@
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "direct-owner" },
         { "do": "signUp", "actor": "other", "name": "direct-other" },
-        { "do": "fill", "actor": "owner", "testid": "search-input", "text": "Chisel", "enter": true, "settleMs": 1200 },
-        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Chisel" }, "settleMs": 1500 },
-        { "do": "fill", "actor": "owner", "testid": "search-input", "text": "Laptop Stand", "enter": true, "settleMs": 1200 },
-        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Laptop Stand" }, "settleMs": 1500 },
+        { "do": "fill", "actor": "owner", "testid": "search-input", "text": "Desk Lamp", "enter": true, "settleMs": 1200 },
+        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "settleMs": 1500 },
+        { "do": "fill", "actor": "owner", "testid": "search-input", "text": "Keyboard", "enter": true, "settleMs": 1200 },
+        { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" }, "settleMs": 1500 },
         { "do": "click", "actor": "owner", "testid": "orders-toggle" }
       ],
       "criteria": [
@@ -117,7 +117,7 @@
                 "id": "cancel", "path": "/api/orders/:id/cancel", "reducer": "cancel_order", "args": [0],
                 "params": [{ "name": "orderId", "in": "path", "placeholder": ":id", "wireType": "u64" }]
               },
-              "input": { "testid": "order-item", "contains": "Chisel", "attribute": "data-cancel-input" },
+              "input": { "testid": "order-item", "contains": "Desk Lamp", "attribute": "data-cancel-input" },
               "settleMs": 2000
             },
             { "do": "expectActionOutcome", "actor": "owner", "outcome": "accepted" },
@@ -127,11 +127,11 @@
                 "id": "cancel", "path": "/api/orders/:id/cancel", "reducer": "cancel_order", "args": [0],
                 "params": [{ "name": "orderId", "in": "path", "placeholder": ":id", "wireType": "u64" }]
               },
-              "input": { "testid": "order-item", "contains": "Laptop Stand", "attribute": "data-cancel-input" },
+              "input": { "testid": "order-item", "contains": "Keyboard", "attribute": "data-cancel-input" },
               "settleMs": 2000
             },
             { "do": "expectActionOutcome", "actor": "other", "outcome": "refused", "routeProvenBy": "owner" },
-            { "do": "expect", "actor": "owner", "testid": "order-status", "in": { "testid": "order-item", "contains": "Laptop Stand" }, "notContains": "ancelled" }
+            { "do": "expect", "actor": "owner", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "notContains": "ancelled" }
           ]
         }
       ]

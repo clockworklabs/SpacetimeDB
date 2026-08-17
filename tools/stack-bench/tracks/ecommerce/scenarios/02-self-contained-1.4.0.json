@@ -172,14 +172,14 @@
           "points": 1,
           "statedBy": "every one of these numbers is the same for every person looking at it",
           "steps": [
-            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Induction Cooktop", "enter": true, "settleMs": 1500 },
-            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "as": "fresh-stock-before" },
-            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "settleMs": 2000 },
+            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Headphones", "enter": true, "settleMs": 1500 },
+            { "do": "recordNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "as": "fresh-stock-before" },
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Headphones" }, "settleMs": 2000 },
             { "do": "click", "actor": "customer", "testid": "orders-toggle" },
-            { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Induction Cooktop" }, "settleMs": 2000 },
+            { "do": "click", "actor": "customer", "testid": "cancel-order", "in": { "testid": "order-item", "contains": "Headphones" }, "settleMs": 2000 },
             { "do": "freshClient", "actor": "customer" },
-            { "do": "fill", "actor": "customer-fresh", "testid": "search-input", "text": "Induction Cooktop", "enter": true, "settleMs": 2000 },
-            { "do": "expectNumber", "actor": "customer-fresh", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Induction Cooktop" }, "relativeTo": "fresh-stock-before", "plus": 0 }
+            { "do": "fill", "actor": "customer-fresh", "testid": "search-input", "text": "Headphones", "enter": true, "settleMs": 2000 },
+            { "do": "expectNumber", "actor": "customer-fresh", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "relativeTo": "fresh-stock-before", "plus": 0 }
           ]
         }
       ]

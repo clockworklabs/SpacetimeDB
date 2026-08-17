@@ -10,9 +10,9 @@
     "path": "../recipes/l2-standard-1.4.0.json",
     "id": "ecommerce.l2-standard",
     "version": "1.4.0",
-    "meaningSha256": "82e61747200b66724e5c93d3ea56e6db15f88b7768589ff2d7b320b3419762eb",
-    "executionSha256": "fc22168891ee2003d40c47c9115fe117e873f017c9f1777b523fec98c3e45187",
-    "contentSha256": "0ec7093d5bd431bddc92f0093c7779a7655993c824d6dc3274b1a404732947a7"
+    "meaningSha256": "745cdba6185ac2a910c6c7fc48040c6ae02df12d3ba4352f74cd7a6568a9779b",
+    "executionSha256": "be4b781a531a19ea1654e243b7a0adad7709f652f43a7dab28fa3243ec66fd6a",
+    "contentSha256": "d04a43eb6c6b0a224a65e42a5ba91986051af684e4fcf2624fd849406dd2f2e4"
   },
   "fixture": {
     "id": "ecommerce.operations",
@@ -25,7 +25,7 @@
       {
         "backend": "mongodb",
         "id": "ecommerce-l2-server-actions-mongodb",
-        "sourceSha256": "4041a45d7c4d3e446c406132132ccb21b1c68a0788348b7d98523c5431b92c63"
+        "sourceSha256": "051dd7903e34930f6828cc16b4d92689d92efbdc2c06a198eaea83083ee78dc6"
       },
       {
         "backend": "postgres",
@@ -35,7 +35,7 @@
       {
         "backend": "spacetime",
         "id": "ecommerce-l2-server-actions-spacetime",
-        "sourceSha256": "f32768daf028bbfbe57e8c7349b1e10eff2db6a806be981abdbc8839b11b572a"
+        "sourceSha256": "359ed185c5d9dff2754f806c1169314985baeb2bca90a09f2ab52a5ee056b8fc"
       }
     ]
   },
@@ -43,7 +43,7 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/candidates/mongodb-ecom-l2-cumulative-1.4.0.json",
-      "sha256": "1435fe446a7768154223aba6b5fb33315a2093f6792f10155848f5df2001bdf2",
+      "sha256": "809ca33a6d558fdd3048beee06bcfdd5a7c30c76c92dcf86da0fbb9be81ad1ba",
       "referenceId": "ecommerce-l2-server-actions-mongodb"
     },
     {
@@ -55,7 +55,7 @@
     {
       "backend": "spacetime",
       "path": "grader/mutations/candidates/spacetime-ecom-l2-cumulative-1.4.0.json",
-      "sha256": "41d3a61cb398b8a66880770c55f7dfb895acd558f160cf15332457334453d850",
+      "sha256": "f7234ff375f4b7885cb96f7884d39ff97f84703204814ab81755fd7dd0310249",
       "referenceId": "ecommerce-l2-server-actions-spacetime"
     }
   ],
