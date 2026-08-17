@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "fixtureSha256": "7deedf0dc4c17064b9a6a9bb76bc0c488cd04f21472ce7412539ac98368fd3e6",
+  "backend": "spacetime",
+  "track": "ecommerce",
+  "level": 1,
+  "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
+  "note": "Candidate mutation coverage for L1 modular 2.3. It preserves the 2.2 defects and adds deterministic concurrency, external-data synchronization, reconnect recovery, and already-open review-list defects.",
+  "mutations": [
+    {
+      "id": "purchase-does-not-reserve-stock-last-unit",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit-2.3.0.json",
+      "targets": [
+        { "feature": 201, "criterion": "201a" },
+        { "feature": 201, "criterion": "201b" },
+        { "feature": 201, "criterion": "201c" }
+      ],
+      "desc": "Create purchase orders without reserving stock, proving the focused last-unit stock, order-count, and revenue consequences.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  decrementStock(ctx, itemId, 1);",
+          "replace": "  // mutant: purchase creates an order without reserving inventory"
+        }
+      ]
+    },
+    {
+      "id": "purchase-does-not-reserve-stock-restock-race",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
+      "targets": [{ "feature": 202, "criterion": "202a" }],
+      "desc": "Create purchase orders without reserving stock, so the rush ends at start plus five instead of start plus two.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "  decrementStock(ctx, itemId, 1);",
+          "replace": "  // mutant: purchase creates an order without reserving inventory"
+        }
+      ]
+    },
+    {
+      "id": "restock-does-not-increase-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
+      "targets": [
+        { "feature": 202, "criterion": "202-control" },
+        { "feature": 202, "criterion": "202a" }
+      ],
+      "desc": "The restock reducer accepts the request but preserves existing stock, breaking both the ordinary restock precondition and the race total.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "      ctx.db.stock.id.update({ ...existing, quantity: existing.quantity + quantity });",
+          "replace": "      ctx.db.stock.id.update({ ...existing, quantity: existing.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "existing-cart-line-does-not-increment",
+      "targets": [{ "feature": 203, "criterion": "203a" }],
+      "desc": "The existing cart row is written back without increasing its quantity.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "ctx.db.cartItem.id.update({ ...existing, quantity: existing.quantity + 1 });",
+          "replace": "ctx.db.cartItem.id.update({ ...existing, quantity: existing.quantity });"
+        }
+      ]
+    },
+    {
+      "id": "checkout-does-not-empty-cart",
+      "targets": [{ "feature": 203, "criterion": "203b" }],
+      "desc": "Keep checked-out cart lines so the next serialized checkout creates a duplicate order.",
+      "file": "backend/spacetimedb/src/index.ts",
+      "edits": [
+        {
+          "find": "    ctx.db.cartItem.id.delete(line.id);",
+          "replace": "    // mutant: checked-out line remains in the cart"
+        }
+      ]
+    },
+    {
+      "id": "stock-subscription-snapshotted-once",
+      "scenario": "tracks/ecommerce/scenarios/01-external-live-sync-1.1.0.json",
+      "targets": [{ "feature": 901, "criterion": "901a" }],
+      "desc": "Render the first non-empty stock snapshot forever instead of following committed subscription updates.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';",
+          "replace": "import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';"
+        },
+        {
+          "find": "  const [stockRows] = useTable(tables.stock);",
+          "replace": "  const [liveStockRows] = useTable(tables.stock);\n  const frozenStockRows = useRef<typeof liveStockRows | null>(null);\n  if (frozenStockRows.current === null && liveStockRows.length > 0) {\n    frozenStockRows.current = liveStockRows;\n  }\n  const stockRows = frozenStockRows.current ?? liveStockRows;"
+        }
+      ]
+    },
+    {
+      "id": "stock-view-keeps-pre-reconnect-snapshot",
+      "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json",
+      "targets": [{ "feature": 901, "criterion": "901d" }],
+      "desc": "Continue following stock during the first connection, but retain its final snapshot after the SDK replaces the connection on reconnect.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';",
+          "replace": "import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';"
+        },
+        {
+          "find": "  const [stockRows] = useTable(tables.stock);",
+          "replace": "  const [liveStockRows] = useTable(tables.stock);\n  const firstStockConnection = useRef<DbConnection | null>(null);\n  const firstConnectionStockRows = useRef(liveStockRows);\n  if (isActive && firstStockConnection.current === null) {\n    firstStockConnection.current = conn;\n  }\n  if (conn === firstStockConnection.current) {\n    firstConnectionStockRows.current = liveStockRows;\n  }\n  const stockRows = conn === firstStockConnection.current\n    ? liveStockRows\n    : firstConnectionStockRows.current;"
+        }
+      ]
+    },
+    {
+      "id": "open-review-list-snapshots-on-selection",
+      "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
+      "targets": [{ "feature": 902, "criterion": "902a" }],
+      "desc": "Snapshot the selected item's reviews when the detail opens instead of following subscription updates.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    [reviews, selectedItemId]\n  );",
+          "replace": "    [selectedItemId] // mutant: the open list no longer follows review updates\n  );"
+        }
+      ]
+    },
+    {
+      "id": "open-review-list-renders-each-review-twice",
+      "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
+      "targets": [{ "feature": 902, "criterion": "902a" }],
+      "desc": "Render every committed review twice in the already-open list.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "                    itemReviews.map(r => (",
+          "replace": "                    [...itemReviews, ...itemReviews].map(r => ("
+        }
+      ]
+    }
+  ]
+}

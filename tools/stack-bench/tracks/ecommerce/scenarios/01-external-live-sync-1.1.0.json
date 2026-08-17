@@ -1,0 +1,50 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — external write live synchronization",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/stock|\\/warehouses",
+  "note": "A focused, independently runnable probe for an already-open storefront. The direct database writer is outside the application server, and this scenario measures only live propagation.",
+  "features": [
+    {
+      "id": 901,
+      "name": "An open storefront follows a direct database write",
+      "actors": ["viewer"],
+      "setup": [
+        {
+          "do": "expectNumber",
+          "actor": "viewer",
+          "testid": "item-stock",
+          "in": { "testid": "item-card", "contains": "Desk Lamp" },
+          "equals": 100,
+          "within": 10000
+        }
+      ],
+      "criteria": [
+        {
+          "id": "901a",
+          "desc": "a direct database write sets Desk Lamp's East stock to 5, and the already-open storefront updates from 100 to 50 without a reload or page action",
+          "points": 1,
+          "note": "This proposed score remains draft until the focused pristine and mutation controls are qualified.",
+          "steps": [
+            {
+              "do": "dbSetStock",
+              "item": "Desk Lamp",
+              "warehouse": "East",
+              "quantity": 5,
+              "settleMs": 4000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "viewer",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "equals": 50,
+              "within": 10000
+            }
+          ],
+          "statedBy": "when data changes by a path its server never saw"
+        }
+      ]
+    }
+  ]
+}

@@ -193,8 +193,10 @@ export function compileCalibrationDefinition(input, { source = '<calibration>' }
     if (control.role !== 'promotion-gate' && control.mutationTargets.length > 0) {
       fail(`${at}.mutationTargets`, 'is allowed only for promotion-gate controls');
     }
-    if (control.role === 'diagnostic') string(control.reason, `${at}.reason`);
-    else if (control.reason !== undefined) fail(`${at}.reason`, 'is allowed only for diagnostic controls');
+    if (control.reason !== undefined) string(control.reason, `${at}.reason`);
+    if (control.role === 'diagnostic' && control.reason === undefined) {
+      fail(`${at}.reason`, 'is required for diagnostic controls');
+    }
     if (controlKeys.has(control.stableKey)) fail(`${at}.stableKey`, `duplicates ${control.stableKey}`);
     controlKeys.add(control.stableKey);
   });

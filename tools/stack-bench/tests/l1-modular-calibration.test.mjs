@@ -9,8 +9,8 @@ import { buildRecipeRelease } from '../recipe-release.mjs';
 const BENCH = join(import.meta.dirname, '..');
 const TRACK = join(BENCH, 'tracks', 'ecommerce');
 const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',
-  'l1-modular-2.2.0.json'));
-const calibration = compileCalibrationFile('composition/calibrations/l1-modular-2.2.0.json', {
+  'l1-modular-2.3.0.json'));
+const calibration = compileCalibrationFile('composition/calibrations/l1-modular-2.3.0.json', {
   trackRoot: TRACK,
   stackBenchRoot: BENCH,
   release,
@@ -31,22 +31,23 @@ test('the L1 modular calibration is a candidate with no invented live evidence',
   assert.equal(calibration.mutations.every(mutation => mutation.status === 'candidate'), true);
 });
 
-test('the candidate registry owns one exact L1 2.2 mutation set per backend', () => {
+test('the candidate registry owns one exact L1 2.3 mutation set per backend', () => {
   const registry = loadReferenceRegistry();
   assert.deepEqual(validateReferenceRegistry(registry).issues, []);
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     const fixture = registry.fixtures.find(candidate =>
       candidate.id === `ecommerce-l1-direct-actions-${backend}`);
-    assert(fixture.recipes.includes('ecommerce.l1-modular@2.2.0'));
+    assert(fixture.recipes.includes('ecommerce.l1-modular@2.3.0'));
     assert.deepEqual(fixture.mutationManifests,
-      [`grader/mutations/candidates/${backend}-ecom-l1-modular-2.2.0.json`]);
+      [`grader/mutations/candidates/${backend}-ecom-l1-modular-2.3.0.json`]);
   }
 });
 
-test('the candidate carries proven defect shapes forward and adds exact 203a targets', () => {
+test('the comprehensive candidate has scored defects and only two supporting controls', () => {
   const mutations = new Map(calibration.mutations.map(entry => [entry.backend,
     new Map(entry.targets.map(target => [target.id, target.stableKeys]))]));
   const quantityKey = 'ecommerce.spec.concurrency-safety.duplicate-checkout.203a';
+  assert.equal(release.checkCatalog.find(check => check.stableKey === quantityKey).points, 1);
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     assert.deepEqual(mutations.get(backend).get('existing-cart-line-does-not-increment'),
       [quantityKey]);
@@ -60,19 +61,18 @@ test('the candidate carries proven defect shapes forward and adds exact 203a tar
     ['ecommerce.spec.concurrency-safety.duplicate-checkout.203b']);
   assert.deepEqual(mutations.get('spacetime').get('purchase-does-not-reserve-stock-restock-race'),
     ['ecommerce.spec.concurrency-safety.restock-race.202a']);
-
-  const quantityControl = calibration.controls.find(control =>
-    control.stableKey === quantityKey);
-  assert.deepEqual(quantityControl.mutationTargets, [
-    'mongodb:existing-cart-line-does-not-increment',
-    'postgres:existing-cart-line-does-not-increment',
-    'spacetime:existing-cart-line-does-not-increment',
-  ]);
-  const revenueControl = calibration.controls.find(control =>
-    control.stableKey === 'ecommerce.spec.concurrency-safety.last-unit.201c');
-  assert.deepEqual(revenueControl.mutationTargets, [
-    'mongodb:oversell-unguarded-decrement',
-    'postgres:oversell-no-row-lock',
-    'spacetime:purchase-does-not-reserve-stock-last-unit',
+  assert.deepEqual(mutations.get('mongodb').get('external-stock-polling-disabled'),
+    ['ecommerce.spec.external-data-sync.external-stock.901a']);
+  assert.deepEqual(mutations.get('postgres').get('reconnect-does-not-send-current-catalog'),
+    ['ecommerce.spec.external-data-sync.external-stock.901d']);
+  assert.deepEqual(mutations.get('mongodb').get('reconnect-generation-ignores-current-catalog'),
+    ['ecommerce.spec.external-data-sync.external-stock.901d']);
+  for (const backend of ['mongodb', 'postgres', 'spacetime']) {
+    assert.equal([...mutations.get(backend).values()].filter(keys =>
+      keys.includes('ecommerce.spec.live-state.open-list.902a')).length, 2);
+  }
+  assert.deepEqual(calibration.controls.map(control => [control.stableKey, control.role]), [
+    ['ecommerce.spec.concurrency-safety.restock-race.202-control', 'precondition'],
+    ['ecommerce.spec.external-data-sync.external-stock.901b', 'precondition'],
   ]);
 });

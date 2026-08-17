@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.external-data-sync",
+  "version": "1.1.0",
+  "state": "draft",
+  "title": "External data synchronization",
+  "moduleType": "specification",
+  "description": "Independent probes for live external writes, reload persistence, server restart recovery, and client reconnect catch-up.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "direct-database-write", "backend-lifecycle"],
+  "evidence": ["database-observation", "fresh-client-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 105000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.spec.external-data-sync.requirement", "path": "prompts/modular/l1-specifications.md", "order": 1500, "from": "## External data synchronization", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.warehouse-admin"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "external-live", "stableId": "external-stock", "source": "scenarios/01-external-live-sync-1.1.0.json", "feature": 901, "criteria": ["901a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.warehouse-admin"] },
+    { "id": "external-reload", "stableId": "external-stock", "source": "scenarios/01-external-reload-sync-1.1.0.json", "feature": 901, "criteria": ["901b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.warehouse-admin"] },
+    { "id": "external-server-restart", "stableId": "external-stock", "source": "scenarios/01-external-server-restart-sync-1.1.0.json", "feature": 901, "criteria": ["901c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.warehouse-admin"] },
+    { "id": "external-reconnect", "stableId": "external-stock", "source": "scenarios/01-external-reconnect-sync-1.1.0.json", "feature": 901, "criteria": ["901d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.warehouse-admin"] }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.live-state",
+  "version": "1.1.0",
+  "state": "draft",
+  "title": "Live state",
+  "moduleType": "specification",
+  "description": "Cross-client updates and reconnect convergence without reload.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "concurrent-actors"],
+  "evidence": ["browser-observation", "fresh-client-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 85000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.spec.live-state.catalog-purchasing", "path": "prompts/modular/l1-specifications.md", "order": 1200, "from": "## Live state: catalog and purchasing", "until": "## Live state: cart", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.purchasing"] },
+      { "id": "ecommerce.spec.live-state.cart", "path": "prompts/modular/l1-specifications.md", "order": 1210, "from": "## Live state: cart", "until": "## Live state: reviews", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] },
+      { "id": "ecommerce.spec.live-state.reviews", "path": "prompts/modular/l1-specifications.md", "order": 1220, "from": "## Live state: reviews", "until": "## Live state: warehouse administration", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.reviews"] },
+      { "id": "ecommerce.spec.live-state.warehouse-admin", "path": "prompts/modular/l1-specifications.md", "order": 1230, "from": "## Live state: warehouse administration", "until": "## Concurrency safety: purchasing", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.warehouse-admin"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "ranking", "source": "scenarios/01-features.json", "feature": 2, "criteria": ["2c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.purchasing"] },
+    { "id": "purchase-stock", "source": "scenarios/01-features.json", "feature": 3, "criteria": ["3b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.purchasing"] },
+    { "id": "shared-cart", "source": "scenarios/01-features.json", "feature": 4, "criteria": ["4c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] },
+    { "id": "rating", "source": "scenarios/01-features.json", "feature": 6, "criteria": ["6c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.reviews"] },
+    { "id": "warehouse-stock", "source": "scenarios/01-features.json", "feature": 7, "criteria": ["7c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.warehouse-admin"] },
+    { "id": "open-list", "source": "scenarios/01-open-list-live-2.3.0.json", "feature": 902, "criteria": ["902a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.reviews"] }
+  ]
+}

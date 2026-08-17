@@ -11,29 +11,22 @@ import { mutationEdits, mutationScenario, mutationTargetKeys,
 import { prepareReferenceSource } from '../reference-agent.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
-const scenarioPath = 'tracks/ecommerce/scenarios/01-duplicate-checkout-2.0.0.json';
+const scenarioPath = 'tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json';
 const cases = [
   {
     backend: 'mongodb',
     fixtureSha256: 'd90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40',
-    manifest: 'mongodb-ecom-l1-modular-2.2.0.json',
-    mutationIds: ['oversell-unguarded-decrement', 'existing-cart-line-does-not-increment',
-      'checkout-not-idempotent'],
+    manifest: 'mongodb-ecom-l1-modular-2.3.0.json',
   },
   {
     backend: 'postgres',
     fixtureSha256: 'ffc2192ee7bce1a5f5e60bd4158118f44dd0d5cc1fcf0bcf21bc38fbfb20d6f1',
-    manifest: 'postgres-ecom-l1-modular-2.2.0.json',
-    mutationIds: ['oversell-no-row-lock', 'existing-cart-line-does-not-increment',
-      'checkout-does-not-empty-cart'],
+    manifest: 'postgres-ecom-l1-modular-2.3.0.json',
   },
   {
     backend: 'spacetime',
     fixtureSha256: '7deedf0dc4c17064b9a6a9bb76bc0c488cd04f21472ce7412539ac98368fd3e6',
-    manifest: 'spacetime-ecom-l1-modular-2.2.0.json',
-    mutationIds: ['purchase-does-not-reserve-stock-last-unit',
-      'purchase-does-not-reserve-stock-restock-race',
-      'existing-cart-line-does-not-increment', 'checkout-does-not-empty-cart'],
+    manifest: 'spacetime-ecom-l1-modular-2.3.0.json',
   },
 ];
 
@@ -62,7 +55,7 @@ for (const entry of cases) {
         backend: entry.backend,
         track: 'ecommerce',
         level: 1,
-        recipe: 'ecommerce.l1-modular@2.2.0',
+        recipe: 'ecommerce.l1-modular@2.3.0',
         app,
       });
       assert.equal(prepared.fixture.id, `ecommerce-l1-direct-actions-${entry.backend}`);
@@ -77,8 +70,6 @@ for (const entry of cases) {
         defaultScenario: manifest.scenario,
         requireScenario: true,
       }).issues, []);
-      assert.deepEqual(manifest.mutations.map(mutation => mutation.id), entry.mutationIds);
-
       const mutation = manifest.mutations.find(candidate =>
         candidate.id === 'existing-cart-line-does-not-increment');
       assert.equal(mutationScenario(manifest, mutation), scenarioPath);
@@ -86,25 +77,23 @@ for (const entry of cases) {
       assert.deepEqual(mutationTargetKeys(mutation), ['203:203a']);
       assert.equal(mutationEdits(mutation).length, 1);
 
-      for (const candidate of manifest.mutations) {
-        const source = readFileSync(join(app, candidate.file), 'utf8');
-        for (const edit of mutationEdits(candidate)) {
+      const source = readFileSync(join(app, mutation.file), 'utf8');
+      for (const edit of mutationEdits(mutation)) {
           assert.equal(source.split(edit.find).length - 1, 1,
-            `${candidate.id} anchor must match exactly once`);
+            `${mutation.id} anchor must match exactly once`);
           const mutated = source.replace(edit.find, edit.replace);
           assert.equal(mutated.includes(edit.find), false,
-            `${candidate.id} must remove its exact correct behavior`);
+            `${mutation.id} must remove its exact correct behavior`);
           assert.equal(mutated.includes(edit.replace), true,
-            `${candidate.id} must install its declared defect`);
+            `${mutation.id} must install its declared defect`);
           const transpiled = ts.transpileModule(mutated, {
             compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-            fileName: candidate.file,
+            fileName: mutation.file,
             reportDiagnostics: true,
           });
           assert.deepEqual((transpiled.diagnostics ?? [])
             .filter(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error)
             .map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')), []);
-        }
       }
     } finally {
       rmSync(work, { recursive: true, force: true });

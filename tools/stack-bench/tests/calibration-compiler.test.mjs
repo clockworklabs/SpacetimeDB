@@ -76,7 +76,7 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   assert.equal(calibrationQualificationIdentity(first).sha256, first.qualificationSha256);
   assert.deepEqual(checkCalibrations({ trackName: 'ecommerce' })
     .map(result => `${result.id}@${result.version}:${result.state}`), [
-    'ecommerce.l1-modular-calibration@2.2.0:draft',
+    'ecommerce.l1-modular-calibration@2.3.0:draft',
     'ecommerce.l1-standard-calibration@1.0.0:qualified',
     'ecommerce.l1-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.1.0:qualified',

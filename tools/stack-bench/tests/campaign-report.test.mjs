@@ -188,7 +188,7 @@ test('campaign HTML states the build and evaluation setup in plain language', ()
   assert.match(html, /Additional measurements are reported separately/);
   assert.match(html, /product-brief-quality/);
   assert.match(html, /ecommerce\.spec\.access-control@1\.1\.0/);
-  assert.match(html, /ecommerce\.spec\.transactional-integrity@1\.1\.0/);
+  assert.match(html, /ecommerce\.spec\.transactional-integrity@1\.2\.0/);
 });
 
 test('report generation is byte-for-byte reproducible and links immutable raw evidence', () => {

@@ -111,12 +111,11 @@ test('selected pack prompts contain only their own framework-neutral testing cal
 
 test('the real unprescribed prompt withholds every expected quality specification', () => {
   const modular = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.l1-modular@2.2.0');
+    'ecommerce.l1-modular@2.3.0');
   const features = modular.release.components.packs
     .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
   const expectedSpecifications = modular.release.components.packs
-    .filter(pack => pack.moduleType === 'specification'
-      && pack.id !== 'ecommerce.spec.external-data-sync')
+    .filter(pack => pack.moduleType === 'specification')
     .map(pack => `${pack.id}@${pack.version}`);
   const task = createBoundRecipeTaskRequest(modular, {
     featureIds: features,
@@ -132,7 +131,7 @@ test('the real unprescribed prompt withholds every expected quality specificatio
     assert.doesNotMatch(prompt, /## Access control:|## State durability:|## Live state:|## Concurrency safety:|## Transactional integrity:/);
     assert.doesNotMatch(prompt, /server-enforced authority|survives a page reload|only one customer can receive the last unit|historical order prices do not change/);
     assert.doesNotMatch(JSON.stringify(visible), /ecommerce\.spec/);
-    assert.equal(task.selection.scoredPoints, 45);
+    assert.equal(task.selection.scoredPoints, 58);
     assert(task.selection.scoredChecks.some(check => check.treatment === 'expected'));
     assert.deepEqual(visible.selection.requested.checks, []);
   } finally { rmSync(app, { recursive: true, force: true }); }
@@ -140,12 +139,12 @@ test('the real unprescribed prompt withholds every expected quality specificatio
 
 test('agent provenance uses the exact recipe execution instead of the legacy level suites', () => {
   const track = loadTrack('ecommerce');
-  const modular = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.2.0');
+  const modular = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.3.0');
   const paths = agentScenarioPaths(track, 1, modular);
 
   assert.deepEqual(paths.map(path => path.replaceAll('\\', '/').split('/scenarios/')[1]),
     modular.execution.map(execution => execution.source.split('scenarios/')[1]));
-  assert(paths.some(path => path.endsWith('01-last-unit-2.2.0.json')));
+  assert(paths.some(path => path.endsWith('01-last-unit-2.3.0.json')));
   assert.equal(paths.some(path => path.endsWith('01-contention.json')), false);
 });
 
@@ -154,16 +153,16 @@ test('a standalone recipe selects its exact prompt and cannot disagree with a bo
   try {
     const promoted = printStandalonePrompt(app);
     const candidate = printStandalonePrompt(app,
-      ['--recipe', 'ecommerce.l1-modular@2.2.0']);
+      ['--recipe', 'ecommerce.l1-modular@2.3.0']);
     assert.notEqual(candidate, promoted);
     assert.match(candidate, /data-buy-input/);
     assert.doesNotMatch(promoted, /data-buy-input/);
 
     const request = createRecipeTaskRequest(binding).request;
     assert.throws(() => printPrompt(app, request,
-      ['--recipe', 'ecommerce.l1-modular@2.2.0']), error =>
+      ['--recipe', 'ecommerce.l1-modular@2.3.0']), error =>
       /does not match bound task/.test(String(error.stderr)));
-    assert.equal(agentRecipeRequest('ecommerce.l1-modular@2.2.0'),
-      'ecommerce.l1-modular@2.2.0');
+    assert.equal(agentRecipeRequest('ecommerce.l1-modular@2.3.0'),
+      'ecommerce.l1-modular@2.3.0');
   } finally { rmSync(app, { recursive: true, force: true }); }
 });

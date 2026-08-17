@@ -29,7 +29,7 @@ test('grader child diagnostics retain the cause instead of only trailing stack f
 
 test('observed-only scope is modular, disjoint, and contributes no score', () => {
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.l1-modular@2.2.0');
+    'ecommerce.l1-modular@2.3.0');
   const selected = createBoundRecipeTaskRequest(binding, {
     featureIds: ['ecommerce.feature.accounts'],
     observedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
@@ -47,17 +47,17 @@ test('observed-only scope is modular, disjoint, and contributes no score', () =>
 
 test('recipe-bound grading uses the recipe execution sources', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.2.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.3.0');
   const suites = suitesForRecipe(track, binding);
 
   assert.match(suites.find(suite => suite.id === 'duplicate-checkout').spec,
-    /01-duplicate-checkout-2\.0\.0\.json$/);
+    /01-duplicate-checkout-2\.3\.0\.json$/);
   assert.equal(suites.some(suite => suite.inherited), false);
 });
 
 test('hardened modular grading isolates the four direct server checks', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.2.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.3.0');
   const suites = suitesForRecipe(track, binding);
 
   assert.match(suites.find(suite => suite.id === 'server-actions').spec,

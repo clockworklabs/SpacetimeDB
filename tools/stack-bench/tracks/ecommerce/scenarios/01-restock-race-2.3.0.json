@@ -1,0 +1,139 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — restock during purchases",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "The control proves that ordinary restocking works before the race. It remains a non-scoring precondition so the benchmark does not award the same restock behavior twice. The scored race starts three purchases and one restock together, then checks their exact net effect.",
+  "features": [
+    {
+      "id": 202,
+      "name": "A restock during a rush is not lost",
+      "actors": ["admin", "a", "b", "c"],
+      "setup": [
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "signUp", "actor": "a", "name": "r1" },
+        { "do": "signUp", "actor": "b", "name": "r2" },
+        { "do": "signUp", "actor": "c", "name": "r3" }
+      ],
+      "criteria": [
+        {
+          "id": "202-control",
+          "points": 0,
+          "withheld": "A measured precondition for interpreting the race, not an additional product score. Candidate qualification includes an exact omitted-restock defect for every reference stack.",
+          "desc": "an uncontended restock of five is stored by the server and shows on the storefront",
+          "steps": [
+            {
+              "do": "recordNumber",
+              "actor": "admin",
+              "testid": "admin-location-qty",
+              "in": { "testid": "admin-location-row", "contains": "Bluetooth Speaker" },
+              "as": "warehouse-before"
+            },
+            {
+              "do": "recordNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Bluetooth Speaker" },
+              "as": "storefront-before"
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "restock-input",
+              "in": { "testid": "admin-location-row", "contains": "Bluetooth Speaker" },
+              "text": "5"
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "restock-submit",
+              "in": { "testid": "admin-location-row", "contains": "Bluetooth Speaker" }
+            },
+            { "do": "wait", "actor": "admin", "ms": 4000 },
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-location-qty",
+              "in": { "testid": "admin-location-row", "contains": "Bluetooth Speaker" },
+              "relativeTo": "warehouse-before",
+              "plus": 5,
+              "within": 8000
+            },
+            { "do": "pressKey", "actor": "a", "key": "Escape", "settleMs": 800 },
+            {
+              "do": "expectNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Bluetooth Speaker" },
+              "relativeTo": "storefront-before",
+              "plus": 5,
+              "within": 8000
+            }
+          ]
+        },
+        {
+          "id": "202a",
+          "points": 1,
+          "desc": "three purchases and a restock of five during the rush leave stock at start + 2",
+          "steps": [
+            {
+              "do": "recordNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Bluetooth Speaker" },
+              "as": "rush-before"
+            },
+            {
+              "do": "race",
+              "branches": [
+                [
+                  {
+                    "do": "clickConcurrently",
+                    "actors": ["a", "b", "c"],
+                    "testid": "buy-now",
+                    "in": { "testid": "item-card", "contains": "Bluetooth Speaker" },
+                    "settleMs": 500
+                  }
+                ],
+                [
+                  {
+                    "do": "fill",
+                    "actor": "admin",
+                    "testid": "restock-input",
+                    "in": { "testid": "admin-location-row", "contains": "Bluetooth Speaker" },
+                    "text": "5"
+                  },
+                  {
+                    "do": "click",
+                    "actor": "admin",
+                    "testid": "restock-submit",
+                    "in": { "testid": "admin-location-row", "contains": "Bluetooth Speaker" }
+                  }
+                ]
+              ],
+              "settleMs": 6000
+            },
+            { "do": "pressKey", "actor": "a", "key": "Escape", "settleMs": 800 },
+            {
+              "do": "expectNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Bluetooth Speaker" },
+              "relativeTo": "rush-before",
+              "plus": 2,
+              "within": 10000
+            }
+          ],
+          "statedBy": "a restock in one warehouse raises the storefront number live"
+        }
+      ]
+    }
+  ]
+}

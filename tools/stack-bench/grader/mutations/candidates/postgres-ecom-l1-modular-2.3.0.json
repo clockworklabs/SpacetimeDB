@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "fixtureSha256": "ffc2192ee7bce1a5f5e60bd4158118f44dd0d5cc1fcf0bcf21bc38fbfb20d6f1",
+  "backend": "postgres",
+  "track": "ecommerce",
+  "level": 1,
+  "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
+  "note": "Candidate mutation coverage for L1 modular 2.3. It preserves the 2.2 defects and adds deterministic concurrency, external-data synchronization, reconnect recovery, and already-open review-list defects.",
+  "mutations": [
+    {
+      "id": "oversell-no-row-lock",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit-2.3.0.json",
+      "targets": [
+        { "feature": 201, "criterion": "201a" },
+        { "feature": 201, "criterion": "201b" },
+        { "feature": 201, "criterion": "201c" }
+      ],
+      "desc": "Drop FOR UPDATE from the positive-stock row selection so simultaneous buyers can select the same units.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "           FOR UPDATE\n           LIMIT 1",
+          "replace": "           LIMIT 1"
+        }
+      ]
+    },
+    {
+      "id": "purchase-does-not-reserve-stock-restock-race",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
+      "targets": [{ "feature": 202, "criterion": "202a" }],
+      "desc": "A purchase still creates an order but updates the selected stock row by zero, so the rush ends at start plus five instead of start plus two.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "         UPDATE stock s SET quantity = quantity - 1\n         FROM target t",
+          "replace": "         UPDATE stock s SET quantity = quantity\n         FROM target t"
+        }
+      ]
+    },
+    {
+      "id": "restock-does-not-increase-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
+      "targets": [
+        { "feature": 202, "criterion": "202-control" },
+        { "feature": 202, "criterion": "202a" }
+      ],
+      "desc": "The restock endpoint accepts the request but preserves the existing quantity, breaking both the ordinary restock precondition and the race total.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    await pool.query(\n      `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n       ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,\n      [itemId, warehouseId, qty]\n    );",
+          "replace": "    await pool.query(\n      `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n       ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity`,\n      [itemId, warehouseId, qty]\n    );"
+        }
+      ]
+    },
+    {
+      "id": "existing-cart-line-does-not-increment",
+      "targets": [{ "feature": 203, "criterion": "203a" }],
+      "desc": "The cart upsert ignores an add that conflicts with an existing line.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = cart_item.quantity + excluded.quantity",
+          "replace": "ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = cart_item.quantity"
+        }
+      ]
+    },
+    {
+      "id": "checkout-does-not-empty-cart",
+      "targets": [{ "feature": 203, "criterion": "203b" }],
+      "desc": "Keep checked-out cart lines so the second checkout creates a duplicate order.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      await client.query(`DELETE FROM cart_item WHERE cart_id = $1`, [cartId]);",
+          "replace": "      // mutant: checked-out cart lines remain"
+        }
+      ]
+    },
+    {
+      "id": "external-stock-polling-disabled",
+      "scenario": "tracks/ecommerce/scenarios/01-external-live-sync-1.1.0.json",
+      "targets": [{ "feature": 901, "criterion": "901a" }],
+      "desc": "Stop reconciling direct database changes while preserving all application-route broadcasts.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  broadcastCatalog().catch((err) => console.error(\"poll broadcast failed\", err));",
+          "replace": "  // mutant: direct database catalog changes are never reconciled"
+        }
+      ]
+    },
+    {
+      "id": "reconnect-does-not-send-current-catalog",
+      "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json",
+      "targets": [{ "feature": 901, "criterion": "901d" }],
+      "desc": "A newly reconnected socket no longer receives the current catalog after missing the polling broadcast while offline.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    socket.emit(\"items:update\", { items: catalog });",
+          "replace": "    // mutant: reconnect keeps the client's stale catalog"
+        }
+      ]
+    },
+    {
+      "id": "open-review-list-ignores-live-update",
+      "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
+      "targets": [{ "feature": 902, "criterion": "902a" }],
+      "desc": "Ignore the committed review update in clients whose item detail is already open.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "          setItemDetail({ reviews: payload.reviews, average: payload.average });",
+          "replace": "          // mutant: the already-open review list ignores committed updates"
+        }
+      ]
+    },
+    {
+      "id": "open-review-list-renders-each-review-twice",
+      "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
+      "targets": [{ "feature": 902, "criterion": "902a" }],
+      "desc": "Render every committed review twice in the already-open list.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "            reviews.map((r) => (",
+          "replace": "            [...reviews, ...reviews].map((r) => ("
+        }
+      ]
+    }
+  ]
+}
