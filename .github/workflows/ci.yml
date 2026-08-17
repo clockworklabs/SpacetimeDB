@@ -266,7 +266,7 @@ jobs:
           fi
 
           tar -czf smoketest-support.tar.gz \
-            "target/debug/ci${EXE_SUFFIX}" \
+            "target/debug/ci-smoketests${EXE_SUFFIX}" \
             "${precompiled_modules[@]}"
 
       - name: Upload Cargo timing reports
@@ -437,7 +437,7 @@ jobs:
           if [ -f ~/emsdk/emsdk_env.sh ]; then
             source ~/emsdk/emsdk_env.sh
           fi
-          ./target/debug/ci smoketests run-archive \
+          ./target/debug/ci-smoketests run-archive \
             --archive-file smoketest-nextest.tar.zst \
             -- \
             --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }}
@@ -450,7 +450,7 @@ jobs:
           if (Test-Path "$env:USERPROFILE\emsdk\emsdk_env.ps1") {
             & "$env:USERPROFILE\emsdk\emsdk_env.ps1" | Out-Null
           }
-          .\target\debug\ci.exe smoketests run-archive `
+          .\target\debug\ci-smoketests.exe run-archive `
             --archive-file smoketest-nextest.tar.zst `
             -- `
             --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }}

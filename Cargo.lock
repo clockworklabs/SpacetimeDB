@@ -797,7 +797,7 @@ dependencies = [
 
 [[package]]
 name = "case-conversion-client"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
@@ -1312,7 +1312,7 @@ dependencies = [
 
 [[package]]
 name = "connect_disconnect_client"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -2344,7 +2344,7 @@ dependencies = [
 
 [[package]]
 name = "event-table-client"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -5960,7 +5960,7 @@ dependencies = [
 
 [[package]]
 name = "procedural-view-pk-client"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -5974,7 +5974,7 @@ dependencies = [
 
 [[package]]
 name = "procedure-client"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -5991,7 +5991,7 @@ dependencies = [
 
 [[package]]
 name = "procedure-concurrency-client"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -7429,7 +7429,7 @@ dependencies = [
 
 [[package]]
 name = "sdk-unreal-test-harness"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "serial_test",
  "spacetimedb-testing",
@@ -7902,7 +7902,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -7925,7 +7925,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-auth"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -7938,7 +7938,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bench"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -7989,7 +7989,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "heck 0.4.1",
  "humantime",
@@ -8001,14 +8001,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -8086,7 +8086,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -8145,7 +8145,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api-messages"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "bytes",
  "bytestring",
@@ -8168,7 +8168,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-codegen"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "convert_case 0.6.0",
@@ -8186,7 +8186,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-commitlog"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "async-stream",
  "bitflags 2.10.0",
@@ -8221,7 +8221,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-core"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -8349,7 +8349,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-data-structures"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "ahash 0.8.12",
  "crossbeam-queue",
@@ -8365,7 +8365,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-datastore"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "bytes",
@@ -8400,7 +8400,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-dst-lib"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "clap 4.5.50",
@@ -8420,7 +8420,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-durability"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -8441,7 +8441,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-engine"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8483,7 +8483,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-execution"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -8498,7 +8498,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-expr"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "bigdecimal",
@@ -8518,7 +8518,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-fs-utils"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -8534,7 +8534,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-guard"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "portpicker",
  "reqwest 0.12.24",
@@ -8543,7 +8543,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-index-scan-gate"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "spacetimedb-sats",
@@ -8582,7 +8582,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "bitflags 2.10.0",
@@ -8611,7 +8611,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-memory-usage"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "decorum",
  "ethnum",
@@ -8621,7 +8621,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-metrics"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "arrayvec",
  "itertools 0.12.1",
@@ -8631,7 +8631,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-paths"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -8647,7 +8647,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-pg"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8666,7 +8666,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-physical-plan"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "derive_more 0.99.20",
@@ -8683,7 +8683,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "bitflags 2.10.0",
  "either",
@@ -8696,7 +8696,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -8714,7 +8714,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query-builder"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "spacetimedb-lib",
 ]
@@ -8733,7 +8733,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-runtime"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "futures",
  "libc",
@@ -8743,7 +8743,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-runtime-core"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "async-task",
  "spin",
@@ -8751,7 +8751,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sats"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -8787,7 +8787,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-schema"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "convert_case 0.6.0",
@@ -8819,7 +8819,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sdk"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anymap3",
  "base64 0.21.7",
@@ -8863,7 +8863,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-smoketests"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -8874,7 +8874,6 @@ dependencies = [
  "reqwest 0.12.24",
  "serde_json",
  "socket2 0.5.10",
- "spacetimedb-core",
  "spacetimedb-guard",
  "tempfile",
  "tokio",
@@ -8886,7 +8885,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-snapshot"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "blake3",
@@ -8921,7 +8920,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sql-parser"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "derive_more 0.99.20",
  "spacetimedb-lib",
@@ -8931,7 +8930,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8973,7 +8972,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-subscription"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "spacetimedb-data-structures",
@@ -8988,7 +8987,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-table"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "ahash 0.8.12",
  "blake3",
@@ -9016,7 +9015,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-testing"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "bytes",
@@ -9047,7 +9046,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-update"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "bytes",
@@ -9137,7 +9136,7 @@ dependencies = [
 
 [[package]]
 name = "sqltest"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9554,7 +9553,7 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "test-client"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -9571,7 +9570,7 @@ dependencies = [
 
 [[package]]
 name = "test-counter"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "futures",
@@ -10556,7 +10555,7 @@ dependencies = [
 
 [[package]]
 name = "view-client"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -10572,7 +10571,7 @@ dependencies = [
 
 [[package]]
 name = "view-pk-client"
-version = "2.8.1"
+version = "2.8.2"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
