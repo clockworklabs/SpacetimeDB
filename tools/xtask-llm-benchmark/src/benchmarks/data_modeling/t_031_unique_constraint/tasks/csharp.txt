@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in C# that defines a table with a unique constraint on a non-primary-key column and a reducer that inserts rows.
 
 TABLES
-- Account
+- Account (private)
   - Struct: Account
   - Fields:
     - Id: ulong (primary key, AutoInc)
