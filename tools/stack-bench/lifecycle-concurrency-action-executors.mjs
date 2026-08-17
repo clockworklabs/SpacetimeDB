@@ -154,14 +154,17 @@ async function stopAppServer({ input, capabilities, signal }) {
   return { operation: 'stop' };
 }
 
-async function dbSetStock({ input, capabilities }) {
+async function dbSetStock({ input, capabilities, signal }) {
+  let result;
   try {
-    return await capabilities['database-write'].setStock(input);
+    result = await capabilities['database-write'].setStock(input);
   } catch (error) {
     if (error?.classification || harnessProcessFailure(error)) throw error;
     fail(`dbSetStock failed: ${((error.stdout ?? '') + (error.stderr ?? '')).trim().slice(-200)
       || error.message}`);
   }
+  await capabilities.clock.sleep(input.settleMs, signal);
+  return result;
 }
 
 async function setOffline({ input, capabilities, signal }) {
@@ -170,7 +173,12 @@ async function setOffline({ input, capabilities, signal }) {
   const offline = input.offline !== false;
   await actor.page.context().setOffline(offline);
   await browser.sleep(input.settleMs ?? 500, signal);
-  return { offline };
+  const browserOnline = await actor.page.evaluate(() => navigator.onLine);
+  if (browserOnline === offline) {
+    throw new Error(`setOffline requested browser network ${offline ? 'offline' : 'online'}, `
+      + `but navigator.onLine remained ${browserOnline}`);
+  }
+  return { offline, browserOnline };
 }
 
 async function closeClient({ input, capabilities }) {

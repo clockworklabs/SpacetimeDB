@@ -99,7 +99,7 @@
       "id": "stock-view-keeps-pre-reconnect-snapshot",
       "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json",
       "targets": [{ "feature": 901, "criterion": "901d" }],
-      "desc": "Continue following stock during the first connection, but retain its final snapshot after the SDK replaces the connection on reconnect.",
+      "desc": "Continue following stock until the browser goes offline, then retain the last online snapshot after network restoration.",
       "file": "client/src/App.tsx",
       "edits": [
         {
@@ -108,7 +108,7 @@
         },
         {
           "find": "  const [stockRows] = useTable(tables.stock);",
-          "replace": "  const [liveStockRows] = useTable(tables.stock);\n  const firstStockConnection = useRef<DbConnection | null>(null);\n  const firstConnectionStockRows = useRef(liveStockRows);\n  if (isActive && firstStockConnection.current === null) {\n    firstStockConnection.current = conn;\n  }\n  if (conn === firstStockConnection.current) {\n    firstConnectionStockRows.current = liveStockRows;\n  }\n  const stockRows = conn === firstStockConnection.current\n    ? liveStockRows\n    : firstConnectionStockRows.current;"
+          "replace": "  const [liveStockRows] = useTable(tables.stock);\n  const [freezeStockAfterOffline, setFreezeStockAfterOffline] = useState(false);\n  const lastOnlineStockRows = useRef(liveStockRows);\n  useEffect(() => {\n    const freezeStock = () => setFreezeStockAfterOffline(true);\n    window.addEventListener('offline', freezeStock);\n    return () => window.removeEventListener('offline', freezeStock);\n  }, []);\n  if (!freezeStockAfterOffline) {\n    lastOnlineStockRows.current = liveStockRows;\n  }\n  const stockRows = freezeStockAfterOffline ? lastOnlineStockRows.current : liveStockRows;"
         }
       ]
     },

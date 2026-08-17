@@ -95,12 +95,16 @@
       "id": "reconnect-does-not-send-current-catalog",
       "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json",
       "targets": [{ "feature": 901, "criterion": "901d" }],
-      "desc": "A newly reconnected socket no longer receives the current catalog after missing the polling broadcast while offline.",
-      "file": "server/src/index.ts",
+      "desc": "The client follows stock normally until the browser goes offline, then ignores catalog updates after network restoration.",
+      "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "    socket.emit(\"items:update\", { items: catalog });",
-          "replace": "    // mutant: reconnect keeps the client's stale catalog"
+          "find": "  const cartObservationRef = useRef(0);\n\n  function applyCartResponse",
+          "replace": "  const cartObservationRef = useRef(0);\n  const acceptCatalogUpdates = useRef(true);\n  useEffect(() => {\n    const stopCatalogRecovery = () => { acceptCatalogUpdates.current = false; };\n    window.addEventListener(\"offline\", stopCatalogRecovery);\n    return () => window.removeEventListener(\"offline\", stopCatalogRecovery);\n  }, []);\n\n  function applyCartResponse"
+        },
+        {
+          "find": "    socket.on(\"items:update\", (payload: { items: Item[] }) => setItems(payload.items));",
+          "replace": "    socket.on(\"items:update\", (payload: { items: Item[] }) => {\n      if (acceptCatalogUpdates.current) setItems(payload.items);\n    });"
         }
       ]
     },

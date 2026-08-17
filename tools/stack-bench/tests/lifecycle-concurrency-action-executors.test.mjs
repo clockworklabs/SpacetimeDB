@@ -23,6 +23,7 @@ function services(actors = new Map(), overrides = {}) {
       clients: { open: async () => {}, fresh: async () => 'a-fresh' },
       sleep,
     },
+    clock: overrides.clock ?? { sleep },
     concurrency: overrides.concurrency ?? {
       defaultWithin: 5000,
       dispatch: async () => null,
@@ -117,6 +118,7 @@ test('lifecycle operations distinguish missing control, unsafe refusal, and succ
 
 test('direct PostgreSQL stock writes quote names and require exactly one updated row', async () => {
   const calls = [];
+  const waits = [];
   const capability = createDatabaseWriteCapability({
     backend: 'postgres',
     dbName: 'bench',
@@ -124,9 +126,14 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
     exec: (command, args) => { calls.push([command, args]); return 'UPDATE 1\n'; },
   });
   const passed = await run({ do: 'dbSetStock', item: "Kid's Keyboard", warehouse: 'Main',
-    quantity: 7, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+    quantity: 7, settleMs: 17 }, {
+    ...services(new Map(), { databaseWrite: capability, clock: {
+      sleep: async ms => waits.push(ms),
+    } }),
+  });
   assert.equal(passed.status, 'passed');
   assert.match(calls[0][1].at(-1), /Kid''s Keyboard/);
+  assert.deepEqual(waits, [17]);
 
   const missed = createDatabaseWriteCapability({ backend: 'postgres', dbName: 'bench',
     expand: value => value, exec: () => 'UPDATE 0\n' });
@@ -134,6 +141,43 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
     quantity: 7, settleMs: 0 }, services(new Map(), { databaseWrite: missed }));
   assert.equal(failed.status, 'failed');
   assert.match(failed.summary, /was not updated/);
+});
+
+test('offline lifecycle preserves settling time and verifies browser network state', async () => {
+  const offlineStates = [];
+  const waits = [];
+  let browserOnline = true;
+  const actor = { page: {
+    evaluate: async () => browserOnline,
+    context: () => ({
+    setOffline: async value => {
+      offlineStates.push(value);
+      browserOnline = !value;
+    },
+  }) } };
+  const capabilities = services(new Map([['a', actor]]), { browser: {
+    clients: { open: async () => {}, fresh: async () => 'a-fresh' },
+    sleep: async ms => waits.push(ms),
+  } });
+  const disconnected = await run({ do: 'setOffline', actor: 'a', offline: true, settleMs: 10 },
+    capabilities);
+  const reconnected = await run({ do: 'setOffline', actor: 'a', offline: false, settleMs: 20 },
+    capabilities);
+  assert.equal(disconnected.status, 'passed');
+  assert.equal(disconnected.observation.browserOnline, false);
+  assert.equal(reconnected.status, 'passed');
+  assert.equal(reconnected.observation.browserOnline, true);
+  assert.deepEqual(offlineStates, [true, false]);
+  assert.deepEqual(waits, [10, 20]);
+});
+
+test('offline lifecycle fails closed when browser network state does not change', async () => {
+  const actor = { page: { evaluate: async () => true,
+    context: () => ({ setOffline: async () => {} }) } };
+  const result = await run({ do: 'setOffline', actor: 'a', offline: true, settleMs: 1 },
+    services(new Map([['a', actor]])));
+  assert.equal(result.status, 'harness_failure');
+  assert.match(result.summary, /navigator\.onLine remained true/);
 });
 
 test('client lifecycle delegates through the narrow browser capability', async () => {

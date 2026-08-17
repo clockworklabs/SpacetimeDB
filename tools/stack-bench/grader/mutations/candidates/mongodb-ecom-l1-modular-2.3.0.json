@@ -95,12 +95,20 @@
       "id": "reconnect-generation-ignores-current-catalog",
       "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json",
       "targets": [{ "feature": 901, "criterion": "901d" }],
-      "desc": "The first socket generation loads and follows stock normally, but later generations suppress both reconnect refresh and catalog events, leaving the page at its pre-disconnect value.",
+      "desc": "The client follows stock normally until the browser goes offline, then ignores both reconnect refreshes and catalog events after network restoration.",
       "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "    socketRef.current = socket;\n\n    socket.on(\"connect\", () => {\n      refreshItems().catch((err) => console.error(err));\n      if (token) {\n        refreshCart(token).catch((err) => console.error(err));\n      }\n    });\n\n    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));",
-          "replace": "    socketRef.current = socket;\n    let connectionGeneration = 0;\n\n    socket.on(\"connect\", () => {\n      connectionGeneration += 1;\n      if (connectionGeneration > 1) return;\n      refreshItems().catch((err) => console.error(err));\n      if (token) {\n        refreshCart(token).catch((err) => console.error(err));\n      }\n    });\n\n    socket.on(\"items:update\", (data: ItemT[]) => {\n      if (connectionGeneration === 1) setItems(data);\n    });"
+          "find": "  const socketRef = useRef<Socket | null>(null);\n\n  const saveSession",
+          "replace": "  const socketRef = useRef<Socket | null>(null);\n  const acceptCatalogUpdates = useRef(true);\n  useEffect(() => {\n    const stopCatalogRecovery = () => { acceptCatalogUpdates.current = false; };\n    window.addEventListener(\"offline\", stopCatalogRecovery);\n    return () => window.removeEventListener(\"offline\", stopCatalogRecovery);\n  }, []);\n\n  const saveSession"
+        },
+        {
+          "find": "    setItems(data.items);",
+          "replace": "    if (acceptCatalogUpdates.current) setItems(data.items);"
+        },
+        {
+          "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));",
+          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => {\n      if (acceptCatalogUpdates.current) setItems(data);\n    });"
         }
       ]
     },

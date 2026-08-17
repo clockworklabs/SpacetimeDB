@@ -34,7 +34,7 @@ function category(id) {
 }
 
 function capabilities(id, actionCategory) {
-  if (id === 'dbSetStock') return ['database-write'];
+  if (id === 'dbSetStock') return ['clock', 'database-write'];
   if (id === 'runScript') return ['application-files', 'subprocess'];
   if (id === 'restartBackend') return ['backend-lifecycle'];
   if (id === 'startAppServer' || id === 'stopAppServer') return ['application-lifecycle'];

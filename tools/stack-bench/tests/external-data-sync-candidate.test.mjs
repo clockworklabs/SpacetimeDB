@@ -83,6 +83,8 @@ test('external synchronization scenarios are focused and state-independent', () 
   const reconnectSteps = reconnect.features[0].criteria[0].steps;
   assert.deepEqual(reconnectSteps.map(step => step.do),
     ['setOffline', 'dbSetStock', 'setOffline', 'expectNumber']);
+  assert.equal(reconnectSteps[1].settleMs, 4000,
+    'the external write must remain inside the disconnected window before network restoration');
   assert.equal(reconnectSteps.at(-1).equals, 52,
     'East 7 + untouched West 45 must not depend on the server-restart scenario');
   assert.equal(reconnectSteps.some(step => ['startAppServer', 'stopAppServer'].includes(step.do)), false);
@@ -189,13 +191,36 @@ for (const entry of cases) {
   });
 }
 
-test('MongoDB reconnect calibration preserves initial load and suppresses only later generations', () => {
+test('MongoDB reconnect calibration freezes both catalog recovery paths only after going offline', () => {
   const manifest = json(join(CANDIDATES, 'mongodb-ecom-l1-modular-2.3.0.json'));
   const mutation = manifest.mutations.find(candidate =>
     candidate.id === 'reconnect-generation-ignores-current-catalog');
   assert.deepEqual(mutationTargetKeys(mutation), ['901:901d']);
   assert.equal(mutation.file, 'client/src/App.tsx');
-  assert.equal(mutationEdits(mutation).length, 1);
-  assert.match(mutationEdits(mutation)[0].replace, /connectionGeneration > 1/);
-  assert.match(mutationEdits(mutation)[0].replace, /connectionGeneration === 1/);
+  assert.equal(mutationEdits(mutation).length, 3);
+  assert.match(mutationEdits(mutation)[0].replace, /addEventListener\(\"offline\"/);
+  assert.match(mutationEdits(mutation)[1].replace, /acceptCatalogUpdates\.current/);
+  assert.match(mutationEdits(mutation)[2].replace, /acceptCatalogUpdates\.current/);
+});
+
+test('PostgreSQL reconnect calibration freezes catalog updates only after the offline boundary', () => {
+  const manifest = json(join(CANDIDATES, 'postgres-ecom-l1-modular-2.3.0.json'));
+  const mutation = manifest.mutations.find(candidate =>
+    candidate.id === 'reconnect-does-not-send-current-catalog');
+  assert.deepEqual(mutationTargetKeys(mutation), ['901:901d']);
+  assert.equal(mutation.file, 'client/src/App.tsx');
+  assert.match(mutationEdits(mutation)[0].replace, /addEventListener\(\"offline\"/);
+  assert.match(mutationEdits(mutation)[1].replace, /acceptCatalogUpdates\.current/);
+});
+
+test('SpacetimeDB reconnect calibration preserves the last online stock snapshot', () => {
+  const manifest = json(join(CANDIDATES, 'spacetime-ecom-l1-modular-2.3.0.json'));
+  const mutation = manifest.mutations.find(candidate =>
+    candidate.id === 'stock-view-keeps-pre-reconnect-snapshot');
+  const replacement = mutationEdits(mutation).at(-1).replace;
+  assert.deepEqual(mutationTargetKeys(mutation), ['901:901d']);
+  assert.equal(mutation.file, 'client/src/App.tsx');
+  assert.match(replacement, /addEventListener\('offline'/);
+  assert.match(replacement, /lastOnlineStockRows\.current = liveStockRows/);
+  assert.match(replacement, /freezeStockAfterOffline \? lastOnlineStockRows\.current/);
 });
