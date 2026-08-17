@@ -482,11 +482,30 @@ export function reconcileCampaign(campaignFile, directory,
 }
 
 export async function executeCampaign(campaignFile, directory,
-  { allowDraft = false, env = process.env, execute = runBounded,
+  { mode = 'frozen', env = process.env, execute = runBounded,
     admit = runCampaignAdmission } = {}) {
   const plan = compileCampaignFile(resolve(campaignFile));
-  if (plan.state !== 'frozen' && !allowDraft) {
+  if (!['frozen', 'model-free-trial'].includes(mode)) {
+    throw new Error(`unknown campaign execution mode ${JSON.stringify(mode)}`);
+  }
+  if (mode === 'frozen' && plan.state !== 'frozen') {
     throw new Error('campaign execution requires a frozen plan; draft plans are inspection-only');
+  }
+  if (mode === 'model-free-trial') {
+    if (plan.state !== 'draft') {
+      throw new Error('campaign trial requires a draft plan; use campaign run for a frozen plan');
+    }
+    const billable = plan.agents.filter(agent => agent.costLimit !== 'non-billable');
+    if (billable.length) {
+      throw new Error(`campaign trial requires non-billable agent adapters; found ${billable
+        .map(agent => agent.adapter).join(', ')}`);
+    }
+    const nonzeroPricing = plan.agents.filter(agent => Object.values(
+      plan.definition.pricing.models[agent.model] ?? {}).some(value => value !== 0));
+    if (nonzeroPricing.length) {
+      throw new Error(`campaign trial requires zero pricing for every selected model; found ${nonzeroPricing
+        .map(agent => agent.model).join(', ')}`);
+    }
   }
   const executionEnv = campaignExecutionEnvironment(plan, env);
   const lock = acquireCampaignLock(directory, plan);

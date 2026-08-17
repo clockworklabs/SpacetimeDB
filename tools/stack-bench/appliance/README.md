@@ -123,6 +123,20 @@ table interface included in the build brief. This gate is qualification input,
 not comparative model data. Null and exact-mutation controls must pass
 separately before the condition can be frozen.
 
+Run a draft through the complete campaign path only when it uses registered
+non-billable adapters and declares zero pricing for every selected model:
+
+```sh
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  campaign trial /opt/stack-bench/appliance/campaign.product-brief-reference.json \
+  --out /var/lib/stack-bench/results/product-brief-reference-trial
+```
+
+`campaign trial` refuses paid adapters and frozen plans. It exists to validate
+draft orchestration and evidence without model spend; its output is not
+comparative benchmark data. `campaign run` remains restricted to frozen plans.
+
 Prepare durable state without launching an attempt, then run that exact frozen
 plan (or resume its remaining attempts) from the same persistent directory:
 

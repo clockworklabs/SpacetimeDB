@@ -15,10 +15,11 @@ export function parseCampaignArgs(argv) {
   if (['status', 'report'].includes(command) && path && rest.length === 0) {
     return { command, directory: resolve(path) };
   }
-  if (['prepare', 'run', 'reconcile'].includes(command) && path && rest.length === 2 && rest[0] === '--out') {
+  if (['prepare', 'trial', 'run', 'reconcile'].includes(command)
+    && path && rest.length === 2 && rest[0] === '--out') {
     return { command, path: resolve(path), directory: resolve(rest[1]) };
   }
-  throw new Error('usage: campaign-cli.mjs validate|show <campaign.json> | prepare|run|reconcile <campaign.json> --out <directory> | status|report <directory>');
+  throw new Error('usage: campaign-cli.mjs validate|show <campaign.json> | prepare|trial|run|reconcile <campaign.json> --out <directory> | status|report <directory>');
 }
 
 async function main() {
@@ -42,8 +43,9 @@ async function main() {
     console.log(JSON.stringify(reconcileCampaign(args.path, args.directory), null, 2));
     return;
   }
-  if (args.command === 'run') {
-    const state = await executeCampaign(args.path, args.directory);
+  if (['trial', 'run'].includes(args.command)) {
+    const state = await executeCampaign(args.path, args.directory,
+      { mode: args.command === 'trial' ? 'model-free-trial' : 'frozen' });
     console.log(JSON.stringify(state, null, 2));
     if (state.status !== 'completed') process.exitCode = 1;
     return;

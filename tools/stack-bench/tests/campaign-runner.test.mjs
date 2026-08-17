@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -289,7 +289,7 @@ test('campaign validation binds observed-only evidence to its exact first-build 
     { buildImage: 'test-build-image' }), /selection\.observedChecks/);
 });
 
-test('draft campaigns cannot start unless an explicit test-only caller permits them', async () => {
+test('ordinary campaign execution refuses draft plans', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runner-draft-'));
   try {
     await assert.rejects(() => executeCampaign(example, root, { execute: async () => {
@@ -298,10 +298,43 @@ test('draft campaigns cannot start unless an explicit test-only caller permits t
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('campaign trials accept only non-billable draft plans with zero pricing', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runner-trial-policy-'));
+  try {
+    await assert.rejects(() => executeCampaign(example, root, {
+      mode: 'model-free-trial',
+      admit: () => ({ id: 'failed-admission', payload: { ok: false } }),
+      execute: async () => { throw new Error('must not launch'); },
+    }), /admission failed/);
+
+    const paid = JSON.parse(readFileSync(example, 'utf8'));
+    paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.9.0', model: 'claude-sonnet-5' }];
+    paid.pricing.models = { 'claude-sonnet-5': {
+      inputPerMillion: 0, outputPerMillion: 0,
+      cacheWritePerMillion: 0, cacheReadPerMillion: 0,
+    } };
+    const paidPath = join(root, 'paid.json');
+    writeFileSync(paidPath, `${JSON.stringify(paid, null, 2)}\n`);
+    await assert.rejects(() => executeCampaign(paidPath, join(root, 'paid'), {
+      mode: 'model-free-trial',
+      execute: async () => { throw new Error('must not launch'); },
+    }), /requires non-billable agent adapters/);
+
+    const priced = JSON.parse(readFileSync(example, 'utf8'));
+    priced.pricing.models.deterministic.inputPerMillion = 1;
+    const pricedPath = join(root, 'priced.json');
+    writeFileSync(pricedPath, `${JSON.stringify(priced, null, 2)}\n`);
+    await assert.rejects(() => executeCampaign(pricedPath, join(root, 'priced'), {
+      mode: 'model-free-trial',
+      execute: async () => { throw new Error('must not launch'); },
+    }), /requires zero pricing/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('failed campaign admission leaves every attempt pending and unclaimed', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runner-admission-fail-'));
   try {
-    await assert.rejects(() => executeCampaign(example, root, { allowDraft: true,
+    await assert.rejects(() => executeCampaign(example, root, { mode: 'model-free-trial',
       admit: () => ({ id: 'failed-admission', payload: { ok: false } }),
       execute: async () => { throw new Error('must not launch'); },
     }), /admission failed/);
@@ -350,7 +383,7 @@ test('model-free campaign execution checkpoints a retry and every completed atte
   const calls = [];
   const planned = compileCampaignFile(example);
   try {
-    const state = await executeCampaign(example, root, { allowDraft: true,
+    const state = await executeCampaign(example, root, { mode: 'model-free-trial',
       admit: () => ({ id: 'admission-1', payload: { ok: true } }),
       execute: async (command, argv, options) => {
         calls.push({ command, argv, options });
