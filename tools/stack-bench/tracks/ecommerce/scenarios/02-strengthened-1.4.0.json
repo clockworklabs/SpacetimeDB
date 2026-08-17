@@ -80,8 +80,9 @@
             { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Keyboard" } },
             { "do": "click", "actor": "customer", "testid": "orders-toggle", "settleMs": 1500 },
             { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "hipped", "within": 10000 },
+            { "do": "expectElementCount", "actor": "customer", "testid": "order-item", "contains": "Keyboard", "equals": 1, "within": 10000 },
             { "do": "click", "actor": "customer", "testid": "return-item", "in": { "testid": "order-item", "contains": "Keyboard" } },
-            { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "eturn", "within": 10000 },
+            { "do": "expect", "actor": "customer", "testid": "order-item", "contains": "eturned", "within": 10000 },
             { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "return-revenue-before", "plus": 0, "within": 10000 },
             { "do": "pressKey", "actor": "customer", "key": "Escape" },
             { "do": "expectNumber", "actor": "customer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Keyboard" }, "relativeTo": "return-stock-before", "plus": 0 }

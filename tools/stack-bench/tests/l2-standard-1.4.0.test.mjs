@@ -119,6 +119,16 @@ test('corrected transfer checks assert source, destination, and exact total beha
   assert.deepEqual(refused.map(action => [action.testid, action.in?.contains, action.plus]), [
     ['warehouse-total', 'East', 0], ['warehouse-total', 'West', 0], ['item-stock', 'Headphones', 0],
   ]);
+
+  const cancelled = check(plan, 'ecommerce.inventory-operations.stock-conservation.202b');
+  assert.equal(cancelled.source, 'scenarios/02-self-contained-1.4.0.json');
+  const cancellationSteps = steps(plan, cancelled.stableKey).steps;
+  assert(cancellationSteps.some(action => action.do === 'recordNumber'
+    && action.as === 'cancel-stock-before'));
+  assert(cancellationSteps.some(action => action.do === 'expectNumber'
+    && action.relativeTo === 'cancel-stock-before' && action.plus === -1));
+  assert(cancellationSteps.some(action => action.do === 'expectNumber'
+    && action.relativeTo === 'cancel-stock-before' && action.plus === 0));
 });
 
 test('price, return, ranking, and authorization corrections prove both sides of the behavior', () => {
@@ -132,8 +142,20 @@ test('price, return, ranking, and authorization corrections prove both sides of 
     && action.relativeTo === 'air-purifier-paid' && action.plus === 0));
 
   const returned = steps(plan, 'ecommerce.returns-pricing.cancellation-and-return.3c').steps;
-  assert(returned.some(action => action.do === 'expect' && action.testid === 'order-status'
-    && action.contains === 'eturn'));
+  assert(returned.some(action => action.do === 'expectElementCount'
+    && action.testid === 'order-item' && action.contains === 'Keyboard' && action.equals === 1));
+  assert(returned.some(action => action.do === 'expect' && action.testid === 'order-item'
+    && action.contains === 'eturned'));
+  assert(!returned.some(action => action.do === 'expect' && action.testid === 'order-status'
+    && /return/i.test(action.contains ?? '')));
+
+  const warehouse = steps(plan, 'ecommerce.operations-access.fulfilment-queue.1b').steps;
+  assert.deepEqual(warehouse[0], {
+    do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'West', quantity: 0, settleMs: 2000,
+  });
+  assert(warehouse.some(action => action.do === 'expect' && action.testid === 'queue-warehouse'
+    && action.in?.testid === 'queue-item' && action.in.contains === 'Desk Lamp'
+    && action.contains === 'East' && action.nonEmpty === undefined));
 
   const bestSellers = steps(plan, 'ecommerce.inventory-operations.operational-views.5d').steps;
   for (const item of ['Webcam', 'Coffee Grinder']) {
@@ -193,7 +215,7 @@ test('expected specifications stay out of the prompt while feature-owned machine
   assert.match(task.task.contractText, /data-ship-input/);
   assert.match(task.task.contractText, /data-price-input/);
   assert.match(task.task.contractText, /data-transfer-input/);
-  assert.match(task.task.contractText, /pending, shipped, cancelled, or returned/);
+  assert.doesNotMatch(task.task.contractText, /`returned-item`/);
 });
 
 test('a modular subset never exposes a specification check whose feature is absent', () => {

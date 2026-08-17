@@ -10,7 +10,7 @@
   "description": "Customer, staff, and administrator fulfilment workflows.",
   "requiresPacks": [],
   "conflictsWith": [],
-  "capabilities": ["browser", "direct-server-call"],
+  "capabilities": ["browser", "direct-database-write", "direct-server-call"],
   "evidence": ["browser-observation", "server-refusal"],
   "budget": { "status": "bounded", "maxRuntimeMs": 76000 },
   "task": {
