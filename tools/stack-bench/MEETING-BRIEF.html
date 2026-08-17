@@ -313,7 +313,7 @@
       <div class="timeline">
         <div class="event"><time>Jun-Jul</time><div class="body"><h3>Sequential upgrades proved the basic idea</h3><p>An agent could carry an application through multiple levels, and the experiment expanded to three backends. The runs were useful exploration, but their exact inputs and evidence cannot be reconstructed.</p><div class="tags"><span class="tag invalid">Historical only</span><span class="tag">Idea validated</span></div></div></div>
         <div class="event"><time>Aug 4</time><div class="body"><h3>Stack Bench became an executable harness</h3><p>Browser grading, mutation testing, separate feature and guarantee axes, per-run databases, and a model-free fixture replaced manual interpretation. The first lesson was immediate: happy-path feature scores saturated on a strong model.</p><div class="tags"><span class="tag">Harness v0</span><span class="tag">Features saturated</span></div></div></div>
-        <div class="event"><time>Aug 6</time><div class="body"><h3>We voided every earlier score</h3><p>Transcript audits showed generated apps reading scenarios, grader code, contracts, and notes. The agent had access to the answer key. The response was Docker-only generation with hidden grading inputs and explicit contamination evidence.</p><div class="tags"><span class="tag invalid">Scores invalidated</span><span class="tag verified">Isolation added</span></div></div></div>
+        <div class="event"><time>Aug 6</time><div class="body"><h3>We voided every earlier score</h3><p>Transcript audits showed generated apps reading scenarios, grader code, contracts, and notes. The agent had access to the answer key. The response was Docker-only generation with grader inputs isolated from the coding environment and explicit contamination evidence.</p><div class="tags"><span class="tag invalid">Scores invalidated</span><span class="tag verified">Isolation added</span></div></div></div>
         <div class="event"><time>Aug 7-9</time><div class="body"><h3>The cost story changed</h3><p>Code volume did not explain spend. Repeated context reads, compiler failures, source-diving, and repair turns did. Cost became evidence about developer friction, and the immutable unaided first build became a primary result rather than something repairs could overwrite.</p><div class="tags"><span class="tag invalid">Simple thesis rejected</span><span class="tag">First-build metric</span></div></div></div>
         <div class="event"><time>Aug 10</time><div class="body"><h3>Isolation and scoring bugs consumed real runs</h3><p>Container starts failed, changing denominators looked like regressions, ports collided, and cleanup could not be assumed. Authenticated backend leases, bounded Docker builds, exact ownership, source rollback, and retained invalid attempts came directly from those failures.</p><div class="tags"><span class="tag invalid">Runs lost</span><span class="tag verified">Fail-closed lifecycle</span></div></div></div>
         <div class="event"><time>Aug 10-11</time><div class="body"><h3>The benchmark found real SDK and CLI defects</h3><p>Reconnect evidence isolated identity loss on the recommended TypeScript client path. A separate Docker reproduction proved a real <code>spacetime dev</code> log-stream authorization defect. Both fixes landed in product code with regressions, not as benchmark prompt workarounds.</p><div class="tags"><span class="tag verified">Product fixes</span><span class="tag">SDK + CLI</span></div></div></div>
@@ -458,13 +458,13 @@
         <article class="card">
           <h3>What we deliberately do not provide</h3>
           <ul>
-            <li>The hidden scenario files, browser action plan, point values, expected evidence, grader implementation, or score thresholds</li>
+            <li>The grader-side scenario files, browser action plan, point values, expected evidence, grader implementation, or score thresholds</li>
             <li>A completed domain schema beyond the three stock interoperability tables, or any authorization policy, transaction design, subscription design, or application source code</li>
             <li>The canonical reference applications, seeded mutations, null control, or known backend-specific failure list</li>
             <li>Another backend's implementation instructions or a migration recipe that reveals how to translate the solution</li>
             <li>Unrequested repair hints during the first attempt; that unaided build is preserved before any optional fix round</li>
           </ul>
-          <p><strong>After grading:</strong> if repair rounds are part of the declared experiment, the agent receives a sanitized behavioral bug report: expected behavior, observed behavior, and useful evidence. It still does not receive grader source or hidden checks.</p>
+          <p><strong>After grading:</strong> if repair rounds are part of the declared experiment, the agent receives a sanitized behavioral bug report: expected behavior, observed behavior, and useful evidence. It still does not receive grader source or grader-only checks.</p>
         </article>
       </div>
 
@@ -512,7 +512,7 @@
     <section id="coverage" class="shell">
       <div class="section-head">
         <h2>What features and guarantees we test</h2>
-        <p>Requirements say what the app must do. Hidden tests establish whether it really does it. Diagnostic controls establish whether the test itself can be trusted.</p>
+        <p>Requirements say what the app must do. Independent verification establishes whether it really does it. Diagnostic controls establish whether the test itself can be trusted.</p>
       </div>
 
       <div class="grid three">
@@ -533,7 +533,7 @@
       <h3 style="margin-top:30px">Ecommerce: current requirement catalog</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Capability area</th><th>What the app is required to do</th><th>What hidden tests challenge</th></tr></thead>
+          <thead><tr><th>Capability area</th><th>What the app is required to do</th><th>What independent verification challenges</th></tr></thead>
           <tbody>
             <tr><td><strong>L1 identity and access</strong></td><td>Sign up, sign in/out, reject duplicate usernames and bad passwords, and preserve the same account through reload and reconnect.</td><td>Attempts to reuse a username as a credential; reload/reconnect continuity; requests without a valid session; fresh-client agreement.</td></tr>
             <tr><td><strong>L1 catalog and live inventory</strong></td><td>Public top-ten storefront, deterministic ranking, whole-catalog search, live stock, warehouse totals, admin restocking, and public review visibility.</td><td>Purchases and direct database writes while pages are open; writes while the app server is down; exact ranking, totals, and post-restart reconciliation without reload.</td></tr>
@@ -587,7 +587,7 @@
           <thead><tr><th>Test method</th><th>Why it exists</th><th>Representative proof</th></tr></thead>
           <tbody>
             <tr><td><strong>Isolated browser actors</strong></td><td>Checks the product through the same interface real users see, with separate sessions.</td><td>One buyer changes stock, cart, queue, rating, or presence for another actor without reload.</td></tr>
-            <tr><td><strong>Raw write replay</strong></td><td>A hidden button is not authorization. The server must reject an invalid caller.</td><td>Unsigned purchase, customer restock, forged price/identity, unauthorized ship/transfer/cancel/profile update.</td></tr>
+            <tr><td><strong>Raw write replay</strong></td><td>A UI-only restriction is not authorization. The server must reject an invalid caller.</td><td>Unsigned purchase, customer restock, forged price/identity, unauthorized ship/transfer/cancel/profile update.</td></tr>
             <tr><td><strong>Named concurrency</strong></td><td>Sequential clicking cannot expose race conditions.</td><td>Last-unit races, simultaneous checkout, cart writes from two tabs, transfer during purchase, concurrent senders.</td></tr>
             <tr><td><strong>Direct database mutation</strong></td><td>Real systems receive writes outside the application process.</td><td>An out-of-band stock or moderation change reaches every open client and agrees after reload.</td></tr>
             <tr><td><strong>Lifecycle faults</strong></td><td>Durability is not the same as surviving a page reload.</td><td>Stop the app/backend, mutate or wait, restart it, and require current state, identity continuity, and exactly-once scheduled work where applicable.</td></tr>
@@ -605,7 +605,7 @@
           <thead><tr><th>Stage</th><th>What the runner physically does</th><th>What prevents a false result</th></tr></thead>
           <tbody>
             <tr><td><strong>1. Prepare</strong></td><td>Verify that the app points at the benchmark-owned database, reset that database, restart when reseeding requires it, and wait for the app to answer.</td><td>The runner aborts instead of grading a foreign database, a failed reset, or source left mutated by an interrupted control run.</td></tr>
-            <tr><td><strong>2. Check the interface</strong></td><td>Open the app and verify the required <code>data-testid</code> hooks and named write actions. These are the controls the hidden tests will use.</td><td>Missing controls are reported explicitly. A test the harness cannot issue becomes inconclusive, not an application failure.</td></tr>
+            <tr><td><strong>2. Check the interface</strong></td><td>Open the app and verify the required <code>data-testid</code> hooks and named write actions. These are the controls the independent tests will use.</td><td>Missing controls are reported explicitly. A test the harness cannot issue becomes inconclusive, not an application failure.</td></tr>
             <tr><td><strong>3. Create users</strong></td><td>Launch Chromium and create a separate Playwright browser context for every actor in the feature. Each context has isolated cookies, local storage, network traffic, trace, and optional video.</td><td>One simulated user's identity cannot leak into another user's session. Every feature also uses run-scoped account and room names.</td></tr>
             <tr><td><strong>4. Arrange state</strong></td><td>Run setup actions through the UI or the declared stack action. Setup creates users, signs them in, navigates views, and establishes the exact state needed by the check.</td><td>A failed setup makes the check untestable; it does not masquerade as a behavioral assertion failure.</td></tr>
             <tr><td><strong>5. Apply pressure</strong></td><td>Click in several browsers at once, send authenticated writes at once, replay captured requests under another identity, change the database out of band, disconnect clients, or stop/restart the app or backend.</td><td>Concurrency first confirms that every target is ready, then dispatches with <code>Promise.all</code>. If fewer than two operations reach the server, the race is inconclusive.</td></tr>
@@ -823,7 +823,7 @@ else if (!evidenceIsMeasured(evidence)) {
         <article class="card"><h3>Functional full marks can hide deploy failures</h3><p>Two PostgreSQL shops could look equivalent in feature grading while only one survived an out-of-band write during an app-server outage. Durability and reconciliation need lifecycle tests, not another happy-path click.</p></article>
         <article class="card"><h3>The oracle can lie both ways</h3><p>A blank app scoring zero is necessary but insufficient. A good app can fail an over-constrained assertion, and a broken app can pass a vacuous one. Reference apps, null controls, and exact seeded mutations are all required.</p></article>
         <article class="card"><h3>Inconclusive is not failure</h3><p>If the harness could not observe a transport, acquire a resource, or keep a browser alive, that absence of evidence cannot become an application defect or a point. Outcomes are now structured separately.</p></article>
-        <article class="card"><h3>Isolation is an integrity feature</h3><p>The agent once read the answer key through ordinary file search. Docker-only generation, hidden grader inputs, exact backend leases, and secret-safe artifacts are part of measurement correctness—not deployment polish.</p></article>
+        <article class="card"><h3>Isolation is an integrity feature</h3><p>The agent once read the answer key through ordinary file search. Docker-only generation, isolated grader inputs, exact backend leases, and secret-safe artifacts are part of measurement correctness—not deployment polish.</p></article>
         <article class="card"><h3>Benchmarking can be product discovery</h3><p>The strongest output was not a score: failing first-try guarantees and cost traces led to a real reconnect identity defect, while unchanged Docker reproduction isolated a separate development log-authorization defect.</p></article>
       </div>
     </section>
@@ -853,7 +853,7 @@ else if (!evidenceIsMeasured(evidence)) {
             <li>For every L2 stack, two stable pristine repetitions scored 55/55 plus 20/20 inherited; two mutation repetitions each caught all 3/3 declared defects, and the null control failed every scored criterion</li>
             <li>A frozen prescribed L1/L2 pilot ran one attempt on each stack with immutable evidence, normalized cost/time, correction accounting, and a reproducible report. It exposed incomplete measurement on PostgreSQL and MongoDB; current campaigns invalidate and retry such attempts instead of comparing reduced denominators.</li>
             <li>A draft modular L1 catalog separates six product features from six optional specifications, preserves all 48 existing criteria and 51 points, and gives every specification one explicit treatment: requested, expected, observed, or excluded. Expected requirements stay out of the initial prompt but count in scoring and repairs; observed-only behavior remains source-bound and separate. Qualification is still required.</li>
-            <li>A model-free Docker-backed SpacetimeDB reference run exercised the draft path end to end: requested features passed 14/14, the separate hidden durability observation passed 4/4 with zero score contribution, no repairs ran, source hashes matched, and owned resources were released. This is one-stack execution proof, not qualification.</li>
+            <li>A model-free Docker-backed SpacetimeDB reference run exercised the draft path end to end: requested features passed 14/14, the separate durability observation passed 4/4 with zero score contribution, no repairs ran, source hashes matched, and owned resources were released. This is one-stack execution proof, not qualification.</li>
             <li>The primary draft unprescribed condition now asks only for the six product features under neutral backend guidance. Access control, state continuity, live updates, concurrency safety, and transactional integrity are absent from the initial prompt but still contribute to its 44-point score and remain repairable. A model-free reference gate fixes two exact repetitions on each of the three stacks—six attempts total. External data synchronization is excluded because its current oracle requires a disclosed table contract. The gate is prepared but has not yet supplied cross-stack qualification evidence.</li>
           </ul>
         </article>

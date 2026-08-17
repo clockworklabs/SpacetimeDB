@@ -801,7 +801,9 @@ Allow an operator to add a bounded number of repair rounds after a conclusive
 run exhausts its original budget. This is a continuation, not a campaign retry:
 it starts from the exact accepted source for one level, uses the same stack,
 model, condition, selection, repair policy, images, and generated repair report,
-and does not pay for another initial build.
+and does not pay for another full initial build. A narrowly scoped setup session
+may be needed to install dependencies and start an arbitrary generated project;
+its time, usage, and cost are recorded separately from correction rounds.
 
 The original run and its declared budget remain immutable. Each grant creates a
 new child artifact with its own requested rounds, cost/time limits, sessions,
@@ -815,10 +817,12 @@ and never enter the primary comparison.
 Eligibility fails closed. The parent must have conclusive application failures,
 an exhausted repair budget, complete selected-check measurement, a verified
 level checkpoint, and matching executable/runtime identities. A continuation
-first re-grades the restored source on fresh backend state. If the score,
+first re-grades the saved source on fresh backend state. If the score,
 selection, denominator, or evidence availability cannot be reproduced, it stops
-as a harness failure before a model call. Inconclusive or interrupted attempts
-use campaign retry/recovery instead; they are not repairable model failures.
+as a harness failure before a correction round. The setup session must leave
+the checkpoint source byte-for-byte unchanged, keeping setup operational rather
+than corrective. Inconclusive or interrupted attempts use campaign retry/recovery
+instead; they are not repairable model failures.
 
 Implementation stages:
 
@@ -829,14 +833,18 @@ Implementation stages:
    grading evidence are excluded. The offline orchestration loop passes, and
    the full 378-test suite passes on both the host and the exact Linux/amd64
    controller image.
-2. **Continuation engine.** Add `repair grant <run-dir> --level <N> --rounds <N>`
-   with explicit per-grant cost and wall-time caps. Rehydrate a clean work area,
-   re-grade the checkpoint, run the existing repair/rollback loop, and write an
-   append-only `repair_continuation` artifact and a new verified checkpoint.
-3. **Status and reporting.** Show planned rounds, granted rounds, current score,
-   remaining typed failures, per-round movement, spend, elapsed time, pause or
-   failure reason, and total effort to correctness without rewriting campaign
-   metrics.
+2. **Continuation engine - complete.** `repair grant <run-dir> --level <N> --rounds <N>`
+   applies explicit per-grant cost and wall-time caps, rehydrates
+   a clean work area, verifies and re-grades the checkpoint, reuses the existing
+   repair/rollback loop, and writes an append-only `repair_continuation`, bounded
+   process evidence, retained logs, and a new verified checkpoint.
+3. **Status and reporting - command foundation complete.** `repair status`
+   reports eligibility without starting work. Continuations record planned and
+   cumulative rounds, score, spend, elapsed time, baseline reproduction, setup,
+   failure reason, source identity, and downstream levels that require a fresh
+   run. The static campaign report and future live dashboard still need a
+   continuation-chain view showing remaining typed failures and per-round
+   movement.
 4. **Operator actions.** Expose bounded re-grade, selected-test, diagnostic,
    cancellation, and custom-prompt branch commands through the same controller.
    Every action records its parent checkpoint, exact input, actor/time, output,
@@ -949,9 +957,10 @@ them. Live qualification does not run concurrently with executable harness edits
     preflight, prompt/grading handoff, requested/expected/observed scope recording,
     expected scoring/repair, separate source-bound observed execution, and explicit
     treatment/report sections are complete).
-26. [ ] SB-508 finite post-run repair grants (strict per-level source checkpoints
-    pass the host and exact Linux controller suites; continuation execution,
-    artifacts, reporting, and controller commands remain).
+26. [x] SB-508 finite post-run repair grants (checkpoint verification, bounded
+    continuation execution, immutable linked artifacts, cumulative accounting,
+    controller commands, offline end-to-end coverage, and host/exact-image
+    acceptance are complete; the richer continuation-chain view belongs to E8).
 27. [ ] E8 local operator dashboard, after SB-508 freezes the command and event
     contracts; no harness behavior is implemented in the web layer.
 

@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
-import { emptyArtifactIdentities, readArtifactPayload, writeRunJson } from './artifacts.mjs';
+import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeRunJson } from './artifacts.mjs';
 import { hashDirectory } from './provenance.mjs';
 import { inspectImportedReference, loadReferenceRegistry, validateReferenceRegistry } from './reference-fixtures.mjs';
 import { killTree } from './platform.mjs';
@@ -157,7 +157,11 @@ export function rescueSupervisedLease(path, output) {
   if (!existsSync(state.leasePath)) {
     const runPath = join(output, 'run.json');
     if (!existsSync(runPath)) throw new Error(`backend lease disappeared without released run evidence: ${state.runId}`);
-    const lease = readArtifactPayload(runPath, { expectedKind: 'benchmark_run' }).backendLease;
+    const runArtifact = readArtifact(runPath);
+    if (!['benchmark_run', 'repair_continuation'].includes(runArtifact.kind)) {
+      throw new Error(`backend lease disappeared with unexpected run artifact ${runArtifact.kind}`);
+    }
+    const lease = runArtifact.payload.backendLease;
     const released = lease?.runId === state.runId && lease?.state === 'released'
       && lease?.resources?.buildContainer?.running === false
       && lease?.resources?.locks?.length > 0

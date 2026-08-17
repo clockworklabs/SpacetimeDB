@@ -333,7 +333,7 @@ correct app against a stated spec." It does NOT yet mean "the servers refuse
 hostile requests," because on the reference build the hostile requests could not
 even be constructed. Whether that is strength (nothing to attack) or a gap in
 the test (we never confirmed refusal) differs per criterion and is now visible
-per criterion instead of hidden inside a number.
+per criterion instead of collapsed into one number.
 
 ---
 ## 2026-08-09 — L2 lint under-verifies (not a blocker, recorded before first run)

@@ -13,10 +13,10 @@ succeeded, or exhausted its budget. Successful correction cost and unresolved
 correction spend are reported separately.
 
 The accepted source at the end of every level is also preserved and hash-bound
-to the run. This is the prerequisite for safely granting more correction rounds
-later without rebuilding the app or rewriting the original result. The
-post-run grant command is planned but is not implemented yet; campaign `retry`
-still means a fresh execution, not extra correction rounds.
+to the run. After a level conclusively fails and uses its declared correction
+budget, an operator can grant a finite number of additional rounds from that
+exact checkpoint. The new work is stored as a linked continuation; the original
+result is never rewritten. Campaign `retry` still means a fresh execution.
 
 Backends are interchangeable, so the model can be held fixed while the backend
 varies.
@@ -31,7 +31,7 @@ varies.
 
 The optional model-based SpacetimeDB behavioral review is separate from the
 measured coding sessions. Run it deliberately with `--behavioral-review`; it is
-off by default so campaign cost and token accounting never omit a hidden model
+off by default so campaign cost and token accounting never omit an unrecorded model
 call. The model-free friction report remains automatic.
 
 ## Run it
@@ -79,7 +79,29 @@ node bench.mjs --backend postgres --track ecommerce --levels 1 \
   --pack ecommerce.identity-access --check <stable-check-key>
 node bench.mjs --backend postgres --track ecommerce --levels 1 \
   --recipe ecommerce.l1-standard@1.1.0
+
+# Inspect an exhausted level, then grant at most four more correction rounds.
+npm run repair -- status <run-directory> --level 1
+npm run repair -- grant <run-directory> --level 1 --rounds 4 \
+  --max-budget-usd 25 --timeout-minutes 120
 ```
+
+A repair grant is accepted only when the parent has a complete, conclusive
+application failure, an exhausted round budget, an intact level checkpoint,
+and the exact current harness and adapter identities. A short setup session
+installs dependencies and starts the saved app; it is timed and costed
+separately from correction rounds. The setup session may not change source.
+The controller then verifies the source bytes and reproduces the prior score,
+test selection, denominator, and failed-criterion set before spending a
+correction round. If any of those checks differ, the continuation stops.
+
+Each grant creates `continuations/grant-<id>/` below its parent result. Its
+`run.json` records the original run, immediate parent, grant size, rounds used,
+cumulative rounds/cost/time, reproduced baseline, setup session, and new source
+checkpoint. `process.json` records the bounded controller process and retained
+logs. Repairing an earlier ladder level invalidates the meaning of later-level
+results; those levels are listed explicitly as needing a fresh run and are not
+charged to that earlier level's cumulative correction path.
 
 `--pack` changes requested scope: the agent receives only global recipe framing
 plus the selected packs' requirements and testing contracts. Declared pack
@@ -294,6 +316,8 @@ Evidence emitted into the result directory and `<app>/stack-bench/` includes:
 | `run.json` | exact stack, model, recipe, test-pack, prompt, image, repair budget, outcome, usage, and timing for the run |
 | `level-l<N>-checkpoint.json` | strict parent-linked identity for the source accepted at the end of a level |
 | `level-l<N>-source/` | source-only level checkpoint; dependencies, build output, prompts, sessions, and grading evidence are excluded |
+| `continuations/grant-<id>/run.json` | immutable child result for one finite post-run correction grant, including reproduced baseline and cumulative effort |
+| `continuations/grant-<id>/process.json` | bounded continuation-process outcome plus retained stdout/stderr identities |
 
 Recording is on by default; `--no-media` turns it off for a quick check. Watching
 the failing actor's video is the fastest way to confirm a verdict is real before

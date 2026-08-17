@@ -195,7 +195,7 @@ SpacetimeDB; chat remains blocked pending reconstruction.
 
 The import audit immediately earned its keep. Large files contained literal
 tool-output truncation markers, three locks were invalid JSON, another lock was
-semantically incomplete, and both Node servers had type errors hidden by dev
+semantically incomplete, and both Node servers had type errors obscured by dev
 transpilation. The Spacetime path also proved the Linux CLI alone is incomplete
 for binding generation: schema extraction launches a sibling
 `spacetimedb-standalone`. The repository build now produces and mounts both

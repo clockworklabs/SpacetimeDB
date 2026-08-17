@@ -27,6 +27,8 @@ export const ARTIFACT_KINDS = Object.freeze([
   'pack_budget_measurement',
   'performance_run',
   'preflight',
+  'repair_continuation',
+  'repair_process',
   'reference_build',
   'reference_qualification',
   'recovery',
@@ -41,13 +43,15 @@ const SECRET_KEYS = new Set(['apikey', 'leasetoken', 'ownershiptoken', 'password
 const ENVELOPE_KEYS = new Set([
   'artifactSchemaVersion', 'kind', 'id', 'attempt', 'timestamps', 'identities', 'payload',
 ]);
+const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'track', 'backend', 'model', 'guidance',
+  'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
+  'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
+  'skills', 'runtime']);
 const PAYLOAD_FIELDS = Object.freeze({
   action_check: new Set(['backend', 'results', 'missing']),
   backend_lease_evidence: new Set(['version', 'runId', 'backend', 'track', 'runIndex', 'ownerPid',
     'createdAt', 'stoppedAt', 'releasedAt', 'state', 'resources', 'ownership']),
-  benchmark_run: new Set(['status', 'track', 'backend', 'model', 'guidance', 'condition', 'stack',
-    'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels', 'contaminated', 'contamination',
-    'mutationControl', 'totals', 'outcome', 'selectionRequest', 'skills', 'runtime']),
+  benchmark_run: BENCHMARK_RUN_PAYLOAD_FIELDS,
   bug_report_quality: new Set(['bugs', 'vague', 'vaguePct']),
   campaign_admission: new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
     'ok', 'runtime', 'agents', 'conditions', 'reports']),
@@ -75,6 +79,9 @@ const PAYLOAD_FIELDS = Object.freeze({
     'seededBefore', 'sent', 'delivered', 'lost', 'elapsedMs', 'deliveryLatencyMs', 'server',
     'cpuSecondsPer1kDelivered']),
   preflight: new Set(['schemaVersion', 'generatedAt', 'request', 'ok', 'summary', 'checks']),
+  repair_continuation: new Set([...BENCHMARK_RUN_PAYLOAD_FIELDS, 'continuation']),
+  repair_process: new Set(['schemaVersion', 'parentRunId', 'level', 'roundsGranted',
+    'exitCode', 'signal', 'timedOut', 'streams']),
   reference_build: new Set(['isolation', 'image', 'fixtures', 'ok']),
   reference_qualification: new Set(['fixture', 'fixtureSha256', 'requiredRepetitions', 'isolation',
     'runner', 'mutationControl', 'runs', 'stable', 'sameImage', 'sameHarness', 'harnessSha256', 'ok']),
@@ -195,7 +202,100 @@ function validatePayload(kind, payload) {
       }
     }
   };
-  if (kind === 'benchmark_run') arrayWhenPresent('levels');
+  if (['benchmark_run', 'repair_continuation'].includes(kind)) arrayWhenPresent('levels');
+  if (kind === 'repair_continuation') {
+    objectWhenPresent('continuation');
+    if (!isObject(payload.continuation)) fail('repair_continuation payload.continuation is required');
+    const fields = new Set(['schemaVersion', 'rootRunId', 'parentRunId', 'level', 'grantIndex',
+      'roundsGranted', 'cumulativeRoundsBefore', 'cumulativeRoundsAfter', 'parentCheckpointSha256',
+      'baseline', 'resumeSetup', 'downstreamLevelsToRerun', 'cumulativeCostBeforeUsd',
+      'cumulativeCostAfterUsd', 'cumulativeDurationBeforeSec', 'cumulativeDurationAfterSec']);
+    for (const key of Object.keys(payload.continuation)) {
+      if (!fields.has(key)) fail(`repair_continuation payload.continuation.${key} is unknown`);
+    }
+    if (payload.continuation.schemaVersion !== 1) {
+      fail('repair_continuation payload.continuation.schemaVersion must be 1');
+    }
+    for (const field of ['rootRunId', 'parentRunId']) {
+      if (typeof payload.continuation[field] !== 'string' || !payload.continuation[field]) {
+        fail(`repair_continuation payload.continuation.${field} is required`);
+      }
+    }
+    for (const field of ['level', 'grantIndex', 'roundsGranted', 'cumulativeRoundsBefore',
+      'cumulativeRoundsAfter']) {
+      if (!Number.isSafeInteger(payload.continuation[field]) || payload.continuation[field] < 0) {
+        fail(`repair_continuation payload.continuation.${field} must be a non-negative integer`);
+      }
+    }
+    if (payload.continuation.level < 1 || payload.continuation.grantIndex < 1
+      || payload.continuation.roundsGranted < 1
+      || payload.continuation.cumulativeRoundsAfter < payload.continuation.cumulativeRoundsBefore
+      || payload.continuation.cumulativeRoundsAfter
+        > payload.continuation.cumulativeRoundsBefore + payload.continuation.roundsGranted) {
+      fail('repair_continuation payload.continuation round accounting is invalid');
+    }
+    if (!HASH.test(payload.continuation.parentCheckpointSha256 ?? '')) {
+      fail('repair_continuation payload.continuation.parentCheckpointSha256 is invalid');
+    }
+    for (const [before, after] of [['cumulativeCostBeforeUsd', 'cumulativeCostAfterUsd'],
+      ['cumulativeDurationBeforeSec', 'cumulativeDurationAfterSec']]) {
+      if (!Number.isFinite(payload.continuation[before]) || payload.continuation[before] < 0
+        || !Number.isFinite(payload.continuation[after])
+        || payload.continuation[after] < payload.continuation[before]) {
+        fail(`repair_continuation payload.continuation.${after} is invalid`);
+      }
+    }
+    if (!Array.isArray(payload.continuation.downstreamLevelsToRerun)
+      || payload.continuation.downstreamLevelsToRerun.some(level => !Number.isSafeInteger(level)
+        || level <= payload.continuation.level)
+      || new Set(payload.continuation.downstreamLevelsToRerun).size
+        !== payload.continuation.downstreamLevelsToRerun.length) {
+      fail('repair_continuation payload.continuation.downstreamLevelsToRerun is invalid');
+    }
+    if (payload.continuation.baseline !== null) {
+      if (!isObject(payload.continuation.baseline)) {
+        fail('repair_continuation payload.continuation.baseline must be an object or null');
+      }
+      const baselineFields = new Set(['score', 'max', 'selectionSha256', 'sourceSha256',
+        'outcome', 'reproduced', 'mismatches']);
+      for (const key of Object.keys(payload.continuation.baseline)) {
+        if (!baselineFields.has(key)) fail(`repair_continuation payload.continuation.baseline.${key} is unknown`);
+      }
+      const baseline = payload.continuation.baseline;
+      const scoreValid = baseline.score === null && baseline.max === null
+        || Number.isSafeInteger(baseline.score) && Number.isSafeInteger(baseline.max)
+          && baseline.max >= 1 && baseline.score >= 0 && baseline.score <= baseline.max;
+      const sourceValid = baseline.sourceSha256 === null
+        || HASH.test(baseline.sourceSha256 ?? '');
+      if (!scoreValid
+        || (baseline.selectionSha256 !== null && !HASH.test(baseline.selectionSha256 ?? ''))
+        || !sourceValid || !isObject(baseline.outcome)
+        || typeof baseline.outcome.kind !== 'string' || typeof baseline.reproduced !== 'boolean'
+        || !Array.isArray(baseline.mismatches)
+        || baseline.mismatches.some(item => typeof item !== 'string' || !item)
+        || (baseline.reproduced && (baseline.sourceSha256 === null || baseline.score === null))) {
+        fail('repair_continuation payload.continuation.baseline is invalid');
+      }
+    }
+    if (payload.continuation.resumeSetup !== null) {
+      if (!isObject(payload.continuation.resumeSetup)) {
+        fail('repair_continuation payload.continuation.resumeSetup must be an object or null');
+      }
+      const setupFields = new Set(['sessionId', 'costUsd', 'durationMs', 'sourceVerified']);
+      for (const key of Object.keys(payload.continuation.resumeSetup)) {
+        if (!setupFields.has(key)) fail(`repair_continuation payload.continuation.resumeSetup.${key} is unknown`);
+      }
+      const setup = payload.continuation.resumeSetup;
+      if (setup.sessionId !== null && (typeof setup.sessionId !== 'string' || !setup.sessionId)) {
+        fail('repair_continuation payload.continuation.resumeSetup.sessionId is invalid');
+      }
+      if (!Number.isFinite(setup.costUsd) || setup.costUsd < 0
+        || !Number.isFinite(setup.durationMs) || setup.durationMs < 0
+        || typeof setup.sourceVerified !== 'boolean') {
+        fail('repair_continuation payload.continuation.resumeSetup is invalid');
+      }
+    }
+  }
   if (kind === 'campaign_process') {
     if (payload.schemaVersion !== 1) fail('campaign_process payload.schemaVersion must be 1');
     if (typeof payload.executionId !== 'string' || !payload.executionId) {
@@ -226,6 +326,43 @@ function validatePayload(kind, payload) {
         if (stream.truncated !== (stream.bytes > stream.retainedBytes)) {
           fail(`campaign_process payload.streams.${name}.truncated is inconsistent`);
         }
+      }
+    }
+  }
+  if (kind === 'repair_process') {
+    if (payload.schemaVersion !== 1) fail('repair_process payload.schemaVersion must be 1');
+    if (typeof payload.parentRunId !== 'string' || !payload.parentRunId) {
+      fail('repair_process payload.parentRunId is required');
+    }
+    for (const field of ['level', 'roundsGranted']) {
+      if (!Number.isSafeInteger(payload[field]) || payload[field] < 1) {
+        fail(`repair_process payload.${field} must be a positive integer`);
+      }
+    }
+    if (payload.exitCode !== null && !Number.isInteger(payload.exitCode)) {
+      fail('repair_process payload.exitCode must be an integer or null');
+    }
+    if (payload.signal !== null && typeof payload.signal !== 'string') {
+      fail('repair_process payload.signal must be a string or null');
+    }
+    if (typeof payload.timedOut !== 'boolean') fail('repair_process payload.timedOut must be boolean');
+    if (payload.streams !== null && !isObject(payload.streams)) {
+      fail('repair_process payload.streams must be an object or null');
+    }
+    for (const [name, stream] of Object.entries(payload.streams ?? {})) {
+      if (!['stdout', 'stderr'].includes(name) || !isObject(stream)) {
+        fail(`repair_process payload.streams.${name} is invalid`);
+      }
+      const allowed = new Set(['path', 'sha256', 'bytes', 'retainedBytes', 'truncated']);
+      for (const key of Object.keys(stream)) {
+        if (!allowed.has(key)) fail(`repair_process payload.streams.${name}.${key} is unknown`);
+      }
+      if (stream.path !== `process.${name}.log` || !HASH.test(stream.sha256)
+        || !Number.isSafeInteger(stream.bytes) || stream.bytes < 0
+        || !Number.isSafeInteger(stream.retainedBytes) || stream.retainedBytes < 0
+        || stream.retainedBytes > stream.bytes
+        || stream.truncated !== (stream.bytes > stream.retainedBytes)) {
+        fail(`repair_process payload.streams.${name} is inconsistent`);
       }
     }
   }

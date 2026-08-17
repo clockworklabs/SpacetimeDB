@@ -565,7 +565,7 @@ export function lintShimScript(host, port, token) {
 }
 
 export function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
-  const lint = args.printPrompt ? './check-hooks.sh'
+  const lint = args.mode === 'resume' ? null : args.printPrompt ? './check-hooks.sh'
     : writeLintShim(args.app, lintEndpoint.port, lintEndpoint.token);
   const common = [
     'The app lives in /app — work there.',
@@ -588,6 +588,22 @@ export function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
   ];
   const skills = materials.skillsText ?? readAgentSkillDocuments(REPO, args.skills ?? []);
   if (skills) common.push('', '## Selected API reference', '', skills);
+
+  if (args.mode === 'resume') {
+    return [
+      'Restore the existing application to a runnable state.',
+      '',
+      'This is a saved application from an earlier completed run. Install its',
+      'dependencies and start its existing database module, server, and web client',
+      'as needed. Do not implement features or fix application behavior. Do not',
+      'change source files; the controller will verify that the saved source remains',
+      'byte-for-byte identical before grading it.',
+      '',
+      'Output RESUME_COMPLETE when the existing app is running.',
+      '',
+      ...common,
+    ].join('\n');
+  }
 
   if (args.mode === 'fix') {
     return [

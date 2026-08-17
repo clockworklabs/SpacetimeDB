@@ -10,7 +10,7 @@ const RESULT_FIELDS = new Set(['appDir', 'mode', 'level', 'track', 'backend', 'm
   'providerMetadata', 'transcript']);
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
-const MODES = new Set(['build', 'upgrade', 'fix']);
+const MODES = new Set(['build', 'upgrade', 'resume', 'fix']);
 const COST_LIMITS = new Set(['native', 'non-billable', 'unsupported']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 

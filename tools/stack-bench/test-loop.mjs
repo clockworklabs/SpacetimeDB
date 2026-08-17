@@ -12,7 +12,7 @@
 // Usage: node test-loop.mjs
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, existsSync, rmSync, mkdirSync } from 'node:fs';
+import { readFileSync, existsSync, rmSync, mkdirSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readArtifact, readRunJson } from './artifacts.mjs';
@@ -186,6 +186,63 @@ check('an unresolved app records budget exhaustion', exhaustedLevel?.repair?.sta
   && exhaustedLevel.repair.stopReason === 'budget-exhausted'
   && exhaustedLevel.stalled === true && exhausted.outcome?.kind === 'app_failure',
   JSON.stringify({ repair: exhaustedLevel?.repair, outcome: exhausted.outcome }));
+
+console.log('\nLoop test - a later finite grant continues the exact exhausted source');
+rmSync(WORK, { recursive: true, force: true });
+mkdirSync(APP, { recursive: true });
+runBench(['--fix-rounds', '2', '--model', 'deterministic-deferred']);
+const parentBefore = readFileSync(runPath, 'utf8');
+const deferred = readRunJson(runPath);
+check('the deferred parent exhausted its original two-round budget',
+  deferred.levels?.[0]?.repair?.status === 'budget-exhausted'
+    && deferred.levels[0].repair.roundsUsed === 2,
+  JSON.stringify(deferred.levels?.[0]?.repair));
+let continuationOutput = '';
+try {
+  continuationOutput = execFileSync('node', [join(ROOT, 'repair-cli.mjs'), 'grant', WORK,
+    '--level', '1', '--rounds', '2', '--timeout-minutes', '10'], {
+    encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: BENCH_TIMEOUT_MS,
+  });
+} catch (error) {
+  continuationOutput = `${error.stdout ?? ''}\n${error.stderr ?? ''}`;
+}
+const continuationRoot = join(WORK, 'continuations');
+const continuationDirectories = existsSync(continuationRoot)
+  ? readdirSync(continuationRoot, { withFileTypes: true }).filter(entry => entry.isDirectory()) : [];
+const continuationDirectory = continuationDirectories.length === 1
+  ? join(continuationRoot, continuationDirectories[0].name) : null;
+const continuationPath = continuationDirectory ? join(continuationDirectory, 'run.json') : null;
+check('repair grant produced one linked continuation',
+  continuationPath !== null && existsSync(continuationPath), continuationOutput.slice(-2000));
+if (continuationPath && existsSync(continuationPath)) {
+  const continuationArtifact = readArtifact(continuationPath, { expectedKind: 'repair_continuation' });
+  const continuation = continuationArtifact.payload;
+  const continuedLevel = continuation.levels?.[0];
+  check('continuation reproduced the exact failed baseline before spending a repair round',
+    continuation.continuation?.baseline?.reproduced === true
+      && continuation.continuation.baseline.score === deferred.levels[0].score
+      && continuation.continuation.baseline.sourceSha256 === deferred.levels[0].checkpoint.sha256,
+    JSON.stringify(continuation.continuation?.baseline));
+  check('continuation reached correctness inside its finite added budget',
+    continuation.outcome?.kind === 'passed'
+      && continuedLevel?.repair?.status === 'corrected'
+      && continuedLevel.repair.roundsUsed === 1
+      && continuation.continuation.cumulativeRoundsBefore === 2
+      && continuation.continuation.cumulativeRoundsAfter === 3,
+    JSON.stringify({ repair: continuedLevel?.repair, continuation: continuation.continuation }));
+  check('resume setup is visible, separately costed, and does not consume a repair round',
+    continuation.continuation.resumeSetup?.sourceVerified === true
+      && continuedLevel?.resumeSession?.sessionId === 'stub-resume'
+      && continuedLevel.resumeCostUsd > 0
+      && continuedLevel.fixRounds === 1,
+    JSON.stringify({ setup: continuation.continuation.resumeSetup,
+      resume: continuedLevel?.resumeSession, fixes: continuedLevel?.fixRounds }));
+  check('continuation process outcome is retained as a typed child artifact',
+    readArtifact(join(continuationDirectory, 'process.json'),
+      { expectedKind: 'repair_process' }).attempt.parentId === deferred.id);
+}
+check('grant left the original run artifact byte-for-byte unchanged',
+  readFileSync(runPath, 'utf8') === parentBefore);
 
 rmSync(WORK, { recursive: true, force: true });
 console.log(`\n${failures === 0 ? 'loop OK' : `${failures} check(s) failed`}`);

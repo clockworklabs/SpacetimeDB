@@ -19,7 +19,7 @@
   "agents": [
     {
       "adapter": "deterministic",
-      "adapterVersion": "1.0.0",
+      "adapterVersion": "1.1.0",
       "model": "deterministic"
     }
   ],

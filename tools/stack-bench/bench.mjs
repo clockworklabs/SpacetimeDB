@@ -21,7 +21,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync, renameSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
   moduleName, dbName, DEFAULT_TRACK } from './tracks.mjs';
 import { killTree } from './platform.mjs';
@@ -49,6 +49,7 @@ import { resolveAgentCredential } from './agent-credentials.mjs';
 import { sandboxProbeMode } from './sandbox.mjs';
 import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from './source-snapshot.mjs';
 import { preserveLevelCheckpoint } from './source-checkpoint.mjs';
+import { compareRepairBaseline, createRepairGrant } from './repair-grant.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
@@ -102,12 +103,17 @@ function parseArgs(argv) {
       // variance that confounds the L1->L2 comparison.
       case '--seed-from': a.seedFrom = argv[++i]; break;
       case '--parent-attempt-id': a.parentAttemptId = argv[++i]; break;
+      case '--repair-from': a.repairFrom = resolve(argv[++i]); break;
+      case '--repair-level': a.repairLevel = Number(argv[++i]); break;
       default: console.error(`Unknown argument: ${argv[i]}`); process.exit(2);
     }
   }
-  if (!a.backend) {
+  if (!a.backend && !a.repairFrom) {
     console.error('Usage: node bench.mjs --backend <b> --levels 1-3 [--fix-rounds 3] [--run-index N]');
     process.exit(2);
+  }
+  if (a.repairFrom && (!Number.isSafeInteger(a.repairLevel) || a.repairLevel < 1)) {
+    throw new Error('--repair-from requires --repair-level with a positive integer');
   }
   const [from, to] = a.levels.split('-').map(Number);
   a.levelList = Array.from({ length: (to ?? from) - from + 1 }, (_, i) => from + i);
@@ -301,8 +307,56 @@ function validateMutationInput(args) {
 
 async function main() {
   const args = parseArgs(process.argv);
+  let repairGrant = null;
+  if (args.repairFrom) {
+    repairGrant = createRepairGrant(args.repairFrom,
+      { level: args.repairLevel, rounds: args.fixRounds });
+    const config = repairGrant.configuration;
+    if (config.buildImage && process.env.STACK_BENCH_IMAGE
+      && config.buildImage !== process.env.STACK_BENCH_IMAGE) {
+      throw new Error('repair continuation build image differs from its parent run');
+    }
+    if (config.buildImage) process.env.STACK_BENCH_IMAGE = config.buildImage;
+    Object.assign(args, {
+      backend: config.backend,
+      track: config.track,
+      recipe: config.recipe,
+      levels: String(config.level),
+      levelList: [config.level],
+      runIndex: config.runIndex,
+      agentAdapter: config.agentAdapter,
+      model: config.model,
+      guidance: config.guidance,
+      guidanceDocument: config.guidanceDocument,
+      condition: config.condition,
+      selectionRequest: config.selectionRequest,
+      skills: config.skills,
+      packIds: [...(config.selectionRequest.packs ?? [])],
+      checkKeys: [...(config.selectionRequest.checks ?? [])],
+      featureIds: [],
+      requestedSpecifications: [],
+      expectedSpecifications: [],
+      observedSpecifications: [],
+      seedFrom: repairGrant.sourcePath,
+      url: config.url,
+      parentAttemptId: repairGrant.parent.id,
+      repairGrant,
+    });
+  }
   const stackAdapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const agentAdapter = AGENT_ADAPTER_REGISTRY.get(args.agentAdapter);
+  if (repairGrant) {
+    const currentAgent = agentAdapterIdentity(agentAdapter);
+    const parentAgent = repairGrant.parentArtifact.identities.agentAdapter;
+    if (currentAgent.id !== parentAgent?.id || currentAgent.version !== parentAgent?.version
+      || currentAgent.sha256 !== parentAgent?.sha256) {
+      throw new Error('repair continuation agent adapter differs from its parent run');
+    }
+    if (stackAdapter.id !== repairGrant.parentArtifact.identities.stackAdapter?.id
+      || stackAdapter.version !== repairGrant.parentArtifact.identities.stackAdapter?.version) {
+      throw new Error('repair continuation stack adapter differs from its parent run');
+    }
+  }
   resolveAgentCredential(args, agentAdapter);
   args.model ??= agentAdapter.defaultModel;
   if (args.retainBackend
@@ -360,6 +414,13 @@ async function main() {
       }
       args.recipeTasks.set(level, { ...resolved,
         agentRequest: createAgentVisibleTaskRequest(binding, resolved) });
+    }
+  }
+  if (repairGrant) {
+    const expectedSelection = repairGrant.level.selection?.sha256 ?? null;
+    const resolvedSelection = args.recipeTasks.get(repairGrant.level.level)?.request.selection.sha256 ?? null;
+    if (resolvedSelection !== expectedSelection) {
+      throw new Error('repair continuation test selection differs from its parent run');
     }
   }
   if (!args.selectionRequest.levels && (JSON.stringify(args.selectionRequest.packs) !== JSON.stringify(args.packIds)
@@ -433,7 +494,7 @@ async function main() {
       process.exit(2);
     }
   }
-  const url = args.url ?? `http://localhost:${portsFor(track, args.backend, args.runIndex).vite}`;
+  let url = args.url ?? `http://localhost:${portsFor(track, args.backend, args.runIndex).vite}`;
   const runDir = resultsName(track, args.backend, args.runIndex);
   const runId = newRunId({ track: args.track, backend: args.backend, runIndex: args.runIndex });
   const artifactLabel = `${runDir}-${runId}`;
@@ -459,6 +520,9 @@ async function main() {
   // teardown handlers existed, leaving a dead-owner lock and private lease.
   const ownWorkDir = !args.app;
   const appDir = args.app ?? join(workDirFor(track, args.backend, args.runIndex, runId), 'app');
+  if (args.repairGrant && url.startsWith('file:')) {
+    url = pathToFileURL(join(appDir, 'index.html')).href;
+  }
 
   // Every destructive or lifecycle operation is tied to this record. A boolean
   // "owned" flag could say yes without identifying what was owned, and after a
@@ -680,11 +744,16 @@ async function main() {
     const from = resolve(args.seedFrom);
     if (!existsSync(from)) { console.error(`--seed-from path does not exist: ${from}`); process.exit(2); }
     seedAppSource(from, appDir);
-    console.log(`  seeded from ${from} — level ${args.levelList[0]} will UPGRADE it, not rebuild`);
+    console.log(args.repairGrant
+      ? `  restored L${args.levelList[0]} checkpoint from ${from} for a bounded repair continuation`
+      : `  seeded from ${from} — level ${args.levelList[0]} will UPGRADE it, not rebuild`);
   }
 
   const started = Date.now();
-  const run = { id: runId, startedAt: new Date(started).toISOString(),
+  const run = { id: runId,
+    ...(args.repairGrant ? { kind: 'repair_continuation',
+      continuation: structuredClone(args.repairGrant.grant) } : {}),
+    startedAt: new Date(started).toISOString(),
     parentAttemptId: args.parentAttemptId ?? null,
     identities: emptyArtifactIdentities({
       agentAdapter: agentAdapterIdentity(agentAdapter),
@@ -694,7 +763,7 @@ async function main() {
     guidance: args.guidance, condition: args.condition ?? null,
     stack: args.guidance === 'minimal' ? 'free' : args.guidance,
     skills: args.skills ?? [],
-    runtime: { buildImage: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE },
+    runtime: { buildImage: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE, url },
     selectionRequest: args.selectionRequest,
     backendLease: publicBackendLease(readBackendLease(leasePath,
       { token: initialLease.ownershipToken, backend: args.backend, runId })),
@@ -721,34 +790,60 @@ async function main() {
 
   for (const level of args.levelList) {
     const t0 = Date.now();
+    const continuing = Boolean(args.repairGrant);
     console.log(`\n================ ${args.backend} — level ${level} ================`);
 
-    const firstMode = args.seedFrom ? 'upgrade' : 'build';
+    const firstMode = continuing ? 'resume' : args.seedFrom ? 'upgrade' : 'build';
     const build = await runAgent(args, agentAdapter,
       level === args.levelList[0] ? firstMode : 'upgrade', level, appDir);
     const buildLeak = auditContamination(appDir);
-    if (buildLeak) abortContaminated(`level ${level} build`, buildLeak);
+    if (buildLeak) abortContaminated(`level ${level} ${firstMode}`, buildLeak);
     // Carry the agent's own record of the setup up to the run. Comparing two
     // scores is only meaningful if the reasoning budget, permission mode and
     // CLI version behind them were the same, and that is not knowable after the
     // fact unless it was written down at the time.
     run.setup ??= build.setup;
+    if (continuing) {
+      run.continuation.resumeSetup = {
+        sessionId: build.sessionId ?? null,
+        costUsd: build.costUsd,
+        durationMs: build.durationMs,
+        sourceVerified: false,
+      };
+    }
     // No session, no app. Grading an empty directory yields a real-looking zero
     // that is a harness failure, not a result for this backend.
     const buildFailure = agentSessionFailure(build);
     if (buildFailure) {
       console.log(`  ABORTED: ${buildFailure.reason} — see ${join(appDir, `.session-*-l${level}.json`)}`);
+      const failedSession = { sessionId: build.sessionId ?? null, costUsd: build.costUsd,
+        durationMs: build.durationMs, usage: build.usage ?? null,
+        transcript: build.transcript ?? null, provenance: build.provenance ?? null,
+        providerMetadata: build.providerMetadata ?? null };
       run.levels.push({ level, score: null, max: null, error: buildFailure.reason,
         outcome: buildFailure,
-        buildSession: { sessionId: build.sessionId ?? null, costUsd: build.costUsd,
-          durationMs: build.durationMs, usage: build.usage ?? null,
-          transcript: build.transcript ?? null, provenance: build.provenance ?? null,
-          providerMetadata: build.providerMetadata ?? null },
+        ...(continuing
+          ? { resumeSession: failedSession, resumeCostUsd: build.costUsd }
+          : { buildSession: failedSession, buildCostUsd: build.costUsd }),
         sessionTotals: summarizeSessions([build]),
         costUsd: build.costUsd, durationMs: Date.now() - t0 });
       break;
     }
-    const firstBuildPath = join(args.out, `first-build-l${level}`);
+    if (continuing) {
+      // The resume session may install dependencies and start arbitrary project
+      // layouts, but it may not perform an unintended correction. Restoring edited source
+      // is insufficient: a running server could still hold code compiled from
+      // those edits. Reject any source mutation and grade only an unchanged
+      // checkpoint runtime.
+      const resumed = hashAppSource(appDir);
+      if (resumed.sha256 !== args.repairGrant.checkpoint.payload.source.sha256
+        || resumed.files.length !== args.repairGrant.checkpoint.payload.source.files) {
+        throw new Error('resume setup changed the parent checkpoint source');
+      }
+      run.continuation.resumeSetup.sourceVerified = true;
+    }
+    const firstBuildDirectory = continuing ? `baseline-l${level}` : `first-build-l${level}`;
+    const firstBuildPath = join(args.out, firstBuildDirectory);
     let firstBuildSource = null;
     try {
       const liveSource = hashAppSource(appDir);
@@ -758,7 +853,7 @@ async function main() {
         throw new Error('preserved first-build source differs from the live application source');
       }
       firstBuildSource = { sha256: liveSource.sha256, files: liveSource.files.length };
-      console.log(`  kept the unaided source at ${firstBuildPath}`);
+      console.log(`  kept the ${continuing ? 'continuation baseline' : 'unaided'} source at ${firstBuildPath}`);
     } catch (error) {
       console.log(`  !! could not bind the first-build source: ${String(error.message).split('\n')[0]}`);
     }
@@ -779,8 +874,35 @@ async function main() {
             .map(c => `${f.name}/${c.id}`))),
     };
 
+    if (continuing) {
+      const reproduction = compareRepairBaseline(args.repairGrant.level, {
+        score: firstBuild.score,
+        max: firstBuild.max,
+        selectionSha256: bundle?.selection?.sha256 ?? null,
+        sourceSha256: firstBuildSource?.sha256 ?? null,
+        expectedSourceSha256: args.repairGrant.checkpoint.payload.source.sha256,
+        outcome: firstBuild.outcome,
+      });
+      run.continuation.baseline = {
+        score: firstBuild.score,
+        max: firstBuild.max,
+        selectionSha256: bundle?.selection?.sha256 ?? null,
+        sourceSha256: firstBuildSource?.sha256 ?? null,
+        outcome: firstBuild.outcome,
+        ...reproduction,
+      };
+      if (!reproduction.reproduced) {
+        const reason = `restored checkpoint did not reproduce its parent: ${reproduction.mismatches.join(', ')}`;
+        console.log(`  CONTINUATION STOPPED: ${reason}`);
+        const failure = { kind: 'harness_failure', phase: 'continuation-baseline', reason,
+          appFailures: [], inconclusive: [], harnessFailures: [] };
+        firstBuild.outcome = failure;
+        bundle = { ...bundle, outcome: failure };
+      }
+    }
+
     const selectedObservedChecks = args.recipeTasks?.get(level)?.selection?.observedChecks ?? [];
-    if (selectedObservedChecks.length) {
+    if (!continuing && selectedObservedChecks.length) {
       const observationOut = join(args.out, `first-build-l${level}-observed`);
       let observationBundle = null;
       let observationOutcome;
@@ -830,12 +952,13 @@ async function main() {
     try {
       const gradingFrom = join(appDir, 'stack-bench');
       if (existsSync(gradingFrom)) {
-        cpSync(gradingFrom, join(args.out, `first-build-l${level}-grading`), {
+        const gradingDirectory = continuing ? `baseline-l${level}-grading` : `first-build-l${level}-grading`;
+        cpSync(gradingFrom, join(args.out, gradingDirectory), {
           recursive: true,
           filter: src => !/[\\/]media([\\/]|$)/.test(src),
         });
+        console.log(`  kept the ${continuing ? 'continuation baseline' : 'unaided'} grading at ${join(args.out, gradingDirectory)}`);
       }
-      console.log(`  kept the unaided grading at ${join(args.out, `first-build-l${level}-grading`)}`);
     } catch (e) {
       // Never worth losing a run over: the score is already recorded.
       console.log(`  !! could not keep the first build: ${String(e.message).split('\n')[0]}`);
@@ -981,6 +1104,9 @@ async function main() {
       roundsUsed: fixRounds,
       stopReason,
     };
+    if (continuing) {
+      run.continuation.cumulativeRoundsAfter = run.continuation.cumulativeRoundsBefore + fixRounds;
+    }
     let checkpoint = null;
     try {
       checkpoint = preserveLevelCheckpoint({
@@ -1021,12 +1147,12 @@ async function main() {
       // missing from the durable record.
       regression: bundle?.totals?.regression ?? null,
       selection: bundle?.selection ?? null,
-      firstBuild,
+      ...(continuing
+        ? { baseline: firstBuild, resumeCostUsd: build.costUsd, resumeSession: buildSession }
+        : { firstBuild, buildCostUsd: build.costUsd, buildSession }),
       contractPass: bundle?.totals?.contractPass ?? null,
       code: bundle?.code ?? null,
-      buildCostUsd: build.costUsd,
       fixCostUsd: Number(fixCost.toFixed(4)),
-      buildSession,
       fixSessions,
       sessionTotals,
       tokens: sessionTotals.tokens,
@@ -1113,7 +1239,8 @@ async function main() {
     // A level that never ran contributes nothing rather than NaN.
     score: run.levels.reduce((n, l) => n + (l.score ?? 0), 0),
     max: run.levels.reduce((n, l) => n + (l.max ?? 0), 0),
-    costUsd: Number(run.levels.reduce((n, l) => n + (l.buildCostUsd ?? 0) + (l.fixCostUsd ?? 0), 0).toFixed(4)),
+    costUsd: Number(run.levels.reduce((n, l) => n + (l.buildCostUsd ?? l.resumeCostUsd ?? 0)
+      + (l.fixCostUsd ?? 0), 0).toFixed(4)),
     fixRounds: run.levels.reduce((n, l) => n + (l.fixRounds ?? 0), 0),
     sessions: run.levels.reduce((n, l) => n + (l.sessionTotals?.sessions ?? 0), 0),
     tokens: run.levels.reduce((n, l) => n + (l.sessionTotals?.tokens ?? 0), 0),
@@ -1127,6 +1254,12 @@ async function main() {
     ungraded: run.levels.filter(l => !l.graded).map(l => l.level),
   };
   run.outcome = aggregateRunOutcome(run.levels);
+  if (args.repairGrant) {
+    run.continuation.cumulativeCostAfterUsd = Number((run.continuation.cumulativeCostBeforeUsd
+      + run.totals.costUsd).toFixed(4));
+    run.continuation.cumulativeDurationAfterSec = run.continuation.cumulativeDurationBeforeSec
+      + run.totals.durationSec;
+  }
   run.completedAt = new Date().toISOString();
   if (args.mutations && !run.mutationControl?.ok && !run.mutationControl?.skipped) {
     run.outcome = { kind: 'harness_failure', phase: 'mutation-control',
@@ -1173,11 +1306,13 @@ async function main() {
 
   console.log(`\n================ ${args.backend} summary ================`);
   for (const l of run.levels) {
-    const unaided = l.firstBuild?.score != null ? `${l.firstBuild.score}/${l.firstBuild.max} unaided → ` : '';
-    const score = l.graded ? `${unaided}${l.score}/${l.max}` : 'NOT GRADED';
+    const starting = l.firstBuild?.score != null
+      ? `${l.firstBuild.score}/${l.firstBuild.max} unaided → `
+      : l.baseline?.score != null ? `${l.baseline.score}/${l.baseline.max} resumed → ` : '';
+    const score = l.graded ? `${starting}${l.score}/${l.max}` : 'NOT GRADED';
     const correction = l.repair?.status?.replaceAll('-', ' ') ?? 'unknown';
     console.log(`  L${l.level}: ${score}  ${l.fixRounds} fix round(s)  ` +
-      `$${((l.buildCostUsd ?? 0) + (l.fixCostUsd ?? 0)).toFixed(2)} total` +
+      `$${((l.buildCostUsd ?? l.resumeCostUsd ?? 0) + (l.fixCostUsd ?? 0)).toFixed(2)} total` +
       ` ($${(l.fixCostUsd ?? 0).toFixed(2)} correction)  ${correction}  ${l.durationSec}s`);
   }
   console.log(`  TOTAL ${run.totals.score}/${run.totals.max}  ` +
