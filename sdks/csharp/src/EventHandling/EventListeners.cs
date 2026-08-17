@@ -4,49 +4,7 @@ using System.Runtime.CompilerServices;
 
 namespace SpacetimeDB.EventHandling
 {
-    public interface IEventListeners<T> where T : Delegate
-    {
-        int Count { get; }
-        T this[int index] { get; }
-
-        void Add(T listener);
-        void Remove(T listener);
-    }
-
-    public interface IEventListenersFactory
-    {
-        IEventListeners<T> Create<T>() where T : Delegate;
-    }
-
-    public static class EventListenersProvider
-    {
-        private enum Backend
-        {
-            Native,
-            Custom,
-        }
-
-        private static Backend SelectedBackend { get; set; }
-        private static IEventListenersFactory? CustomFactory { get; set; }
-
-        internal static bool UseNativeDispatch => SelectedBackend == Backend.Native;
-
-        public static void UseNativeEvents()
-        {
-            SelectedBackend = Backend.Native;
-            CustomFactory = null;
-        }
-
-        public static void UseCustomListeners(IEventListenersFactory? factory = null)
-        {
-            SelectedBackend = Backend.Custom;
-            CustomFactory = null;
-        }
-
-        internal static IEventListeners<T> Create<T>() where T : Delegate => CustomFactory?.Create<T>() ?? new BasicEventListeners<T>();
-    }
-
-    public class BasicEventListeners<T> : IEventListeners<T> where T : Delegate
+    internal class EventListeners<T> : IEventListeners<T> where T : Delegate
     {
         private const int SmallListenerThreshold = 8;
         private const int CollisionBucket = -1;
@@ -65,9 +23,9 @@ namespace SpacetimeDB.EventHandling
 
         public T this[int index] => _listeners[index]!;
 
-        public BasicEventListeners() : this(4) { }
+        public EventListeners() : this(4) { }
 
-        public BasicEventListeners(int initialSize)
+        public EventListeners(int initialSize)
         {
             _capacity = Math.Max(1, initialSize);
             _hashes = new int[_capacity];
