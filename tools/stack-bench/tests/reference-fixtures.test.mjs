@@ -57,7 +57,7 @@ test('the L2 hardening recipe selects one derived fixture per backend without re
     assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2 }).id,
       `ecommerce-l2-${backend}`);
     assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
-      recipe: 'ecommerce.l2-standard@1.3.0' }).id,
+      recipe: 'ecommerce.l2-standard@1.4.0' }).id,
     `ecommerce-l2-server-actions-${backend}`);
     assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
       recipe: 'ecommerce.l2-standard@1.2.0' }).id,

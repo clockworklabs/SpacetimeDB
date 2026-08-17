@@ -14,7 +14,12 @@
     {
       "path": "client/src/App.tsx",
       "find": "data-testid=\"admin-item-row\" key={it.id}",
-      "replace": "data-testid=\"admin-item-row\" data-transfer-input={it.name === \"Headphones\" ? JSON.stringify({ itemId: it.id, fromWarehouseId: warehouses.find((w) => w.name === \"East\")!.id, toWarehouseId: warehouses.find((w) => w.name === \"West\")!.id, quantity: 25 }) : undefined} key={it.id}"
+      "replace": "data-testid=\"admin-item-row\" data-price-input={it.name === \"Gaming Mouse\" ? JSON.stringify({ itemId: it.id, price: 1 }) : undefined} data-transfer-input={it.name === \"Headphones\" ? JSON.stringify({ itemId: it.id, fromWarehouseId: warehouses.find((w) => w.name === \"East\")!.id, toWarehouseId: warehouses.find((w) => w.name === \"West\")!.id, quantity: 25 }) : undefined} key={it.id}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"admin-location-row\" key={k}",
+      "replace": "data-testid=\"admin-location-row\" data-restock-input={JSON.stringify({ itemId: loc.itemId, warehouseId: loc.warehouseId, quantity: 1 })} key={k}"
     }
   ]
 }

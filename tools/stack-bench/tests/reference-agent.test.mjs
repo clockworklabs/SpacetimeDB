@@ -76,17 +76,17 @@ test('a recipe-specific reference applies its exact patch without changing the q
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('the L2 candidate prepares the exact four action inputs for every backend', () => {
+test('the L2 candidate prepares the exact six action inputs for every backend', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l2-derived-'));
   const expected = {
-    mongodb: 'b145b0ac453f7d51d1fe86463b2393bdda92f82d38d97b950ab347bf8587980d',
-    postgres: '574bea4e918b7ec15eb3a182e68b45bfe2630a07fee4ac4cf06b57268dd6add1',
-    spacetime: '9acf6f1223daef25dc855e29211b5db0116fd0d431f5185d264a0c48db5152f1',
+    mongodb: '4041a45d7c4d3e446c406132132ccb21b1c68a0788348b7d98523c5431b92c63',
+    postgres: '99c8af18eb709aebfe8bc8d22b55aa13219c0c2dcc7fef07e384ebe5aaa8677a',
+    spacetime: 'f32768daf028bbfbe57e8c7349b1e10eff2db6a806be981abdbc8839b11b572a',
   };
   try {
     for (const [backend, sourceSha256] of Object.entries(expected)) {
       const args = { backend, track: 'ecommerce', level: 2,
-        recipe: 'ecommerce.l2-standard@1.3.0', app: join(root, backend) };
+        recipe: 'ecommerce.l2-standard@1.4.0', app: join(root, backend) };
       const seeded = prepareReferenceSource(args);
       assert.equal(seeded.fixture.id, `ecommerce-l2-server-actions-${backend}`);
       assert.equal(seeded.sourceSha256, sourceSha256);
@@ -97,6 +97,7 @@ test('the L2 candidate prepares the exact four action inputs for every backend',
       const client = files.map(path => readFileSync(join(args.app, ...path.split('/')), 'utf8')).join('\n');
       for (const attribute of [
         'data-buy-input=', 'data-ship-input=', 'data-cancel-input=', 'data-transfer-input=',
+        'data-restock-input=', 'data-price-input=',
       ]) assert.match(client, new RegExp(attribute));
       const verified = prepareReferenceSource(args);
       assert.equal(verified.seeded, false);

@@ -1,0 +1,665 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "fixtureSha256": "99c8af18eb709aebfe8bc8d22b55aa13219c0c2dcc7fef07e384ebe5aaa8677a",
+  "backend": "postgres",
+  "track": "ecommerce",
+  "level": 2,
+  "note": "Candidate cumulative L2 1.4 mutation coverage. The first nine mutations carry the qualified L1 2.3 defect shapes onto the exact derived L2 source; the remaining mutations cover L2-specific behavior.",
+  "mutations": [
+    {
+      "id": "oversell-no-row-lock",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit-2.3.0.json",
+      "targets": [
+        {
+          "feature": 201,
+          "criterion": "201a"
+        },
+        {
+          "feature": 201,
+          "criterion": "201b"
+        },
+        {
+          "feature": 201,
+          "criterion": "201c"
+        }
+      ],
+      "desc": "Drop FOR UPDATE from the positive-stock row selection so simultaneous buyers can select the same units.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "           FOR UPDATE\n           LIMIT 1",
+          "replace": "           LIMIT 1"
+        }
+      ]
+    },
+    {
+      "id": "purchase-does-not-reserve-stock-restock-race",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
+      "targets": [
+        {
+          "feature": 202,
+          "criterion": "202a"
+        }
+      ],
+      "desc": "A purchase still creates an order but updates the selected stock row by zero, so the rush ends at start plus five instead of start plus two.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "         UPDATE stock s SET quantity = quantity - 1\n         FROM target t",
+          "replace": "         UPDATE stock s SET quantity = quantity\n         FROM target t"
+        }
+      ]
+    },
+    {
+      "id": "restock-does-not-increase-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
+      "targets": [
+        {
+          "feature": 202,
+          "criterion": "202-control"
+        },
+        {
+          "feature": 202,
+          "criterion": "202a"
+        }
+      ],
+      "desc": "The restock endpoint accepts the request but preserves the existing quantity, breaking both the ordinary restock precondition and the race total.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    await pool.query(\n      `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n       ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,\n      [itemId, warehouseId, qty]\n    );",
+          "replace": "    await pool.query(\n      `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n       ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity`,\n      [itemId, warehouseId, qty]\n    );"
+        }
+      ]
+    },
+    {
+      "id": "existing-cart-line-does-not-increment",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
+      "targets": [
+        {
+          "feature": 203,
+          "criterion": "203a"
+        }
+      ],
+      "desc": "The cart upsert ignores an add that conflicts with an existing line.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = cart_item.quantity + excluded.quantity",
+          "replace": "ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = cart_item.quantity"
+        }
+      ]
+    },
+    {
+      "id": "checkout-does-not-empty-cart",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
+      "targets": [
+        {
+          "feature": 203,
+          "criterion": "203b"
+        }
+      ],
+      "desc": "Keep checked-out cart lines so the second checkout creates a duplicate order.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      await client.query(`DELETE FROM cart_item WHERE cart_id = $1`, [cartId]);",
+          "replace": "      // mutant: checked-out cart lines remain"
+        }
+      ]
+    },
+    {
+      "id": "external-stock-polling-disabled",
+      "scenario": "tracks/ecommerce/scenarios/01-external-live-sync-1.1.0.json",
+      "targets": [
+        {
+          "feature": 901,
+          "criterion": "901a"
+        }
+      ],
+      "desc": "Stop reconciling direct database changes while preserving all application-route broadcasts.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  broadcastCatalog().catch((err) => console.error(\"poll broadcast failed\", err));",
+          "replace": "  // mutant: direct database catalog changes are never reconciled"
+        }
+      ]
+    },
+    {
+      "id": "reconnect-does-not-send-current-catalog",
+      "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json",
+      "targets": [
+        {
+          "feature": 901,
+          "criterion": "901d"
+        }
+      ],
+      "desc": "The client follows stock normally until the browser goes offline, then ignores catalog updates after network restoration.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const cartObservationRef = useRef(0);\n\n  function applyCartResponse",
+          "replace": "  const cartObservationRef = useRef(0);\n  const acceptCatalogUpdates = useRef(true);\n  useEffect(() => {\n    const stopCatalogRecovery = () => { acceptCatalogUpdates.current = false; };\n    window.addEventListener(\"offline\", stopCatalogRecovery);\n    return () => window.removeEventListener(\"offline\", stopCatalogRecovery);\n  }, []);\n\n  function applyCartResponse"
+        },
+        {
+          "find": "    socket.on(\"items:update\", (payload: { items: Item[] }) => setItems(payload.items));",
+          "replace": "    socket.on(\"items:update\", (payload: { items: Item[] }) => {\n      if (acceptCatalogUpdates.current) setItems(payload.items);\n    });"
+        }
+      ]
+    },
+    {
+      "id": "open-review-list-ignores-live-update",
+      "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
+      "targets": [
+        {
+          "feature": 902,
+          "criterion": "902a"
+        }
+      ],
+      "desc": "Ignore the committed review update in clients whose item detail is already open.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "          setItemDetail({ reviews: payload.reviews, average: payload.average });",
+          "replace": "          // mutant: the already-open review list ignores committed updates"
+        }
+      ]
+    },
+    {
+      "id": "open-review-list-renders-each-review-twice",
+      "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
+      "targets": [
+        {
+          "feature": 902,
+          "criterion": "902a"
+        }
+      ],
+      "desc": "Render every committed review twice in the already-open list.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "            reviews.map((r) => (",
+          "replace": "            [...reviews, ...reviews].map((r) => ("
+        }
+      ]
+    },
+    {
+      "id": "cancel-does-not-restore-stock-feature",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3a"
+        }
+      ],
+      "desc": "Cancellation commits but restores zero units to each recorded warehouse row.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "          [l.item_id, l.warehouse_id, l.quantity]\n        );\n      }\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);",
+          "replace": "          [l.item_id, l.warehouse_id, 0]\n        );\n      }\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);"
+        }
+      ]
+    },
+    {
+      "id": "cancel-does-not-restore-stock-fresh-client",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "targets": [
+        {
+          "feature": 202,
+          "criterion": "202b"
+        },
+        {
+          "feature": 202,
+          "criterion": "202c"
+        }
+      ],
+      "desc": "Cancellation commits but restores zero units, so a fresh client reads the persisted shortfall.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "          [l.item_id, l.warehouse_id, l.quantity]\n        );\n      }\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);",
+          "replace": "          [l.item_id, l.warehouse_id, 0]\n        );\n      }\n      await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);"
+        }
+      ]
+    },
+    {
+      "id": "cancel-restores-stock-but-keeps-pending-status",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3b"
+        }
+      ],
+      "desc": "Cancellation restores allocations but writes pending back to order history.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "await client.query(`UPDATE orders SET status = 'cancelled' WHERE id = $1`, [orderId]);",
+          "replace": "await client.query(`UPDATE orders SET status = 'pending' WHERE id = $1`, [orderId]);"
+        }
+      ]
+    },
+    {
+      "id": "cancelled-order-remains-in-revenue-feature",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3a"
+        }
+      ],
+      "desc": "Admin revenue includes cancelled order totals even though cancellation otherwise succeeds.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "COALESCE((SELECT SUM(total) FROM orders WHERE status != 'cancelled'), 0)",
+          "replace": "COALESCE((SELECT SUM(total) FROM orders), 0)"
+        }
+      ]
+    },
+    {
+      "id": "cancelled-order-remains-in-revenue-invariant",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "targets": [
+        {
+          "feature": 203,
+          "criterion": "203a"
+        }
+      ],
+      "desc": "Admin revenue includes cancelled order totals even though cancellation otherwise succeeds.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "COALESCE((SELECT SUM(total) FROM orders WHERE status != 'cancelled'), 0)",
+          "replace": "COALESCE((SELECT SUM(total) FROM orders), 0)"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-transfer-stock-focused",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 201,
+          "criterion": "201a"
+        }
+      ],
+      "desc": "The transfer route replaces its administrator gate with ordinary authentication.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/admin/transfer\",\n  requireAdmin,",
+          "replace": "app.post(\n  \"/api/admin/transfer\",\n  requireAuth,"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-change-price-focused",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 201,
+          "criterion": "201b"
+        }
+      ],
+      "desc": "The price route replaces its administrator gate with ordinary authentication.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/admin/price\",\n  requireAdmin,",
+          "replace": "app.post(\n  \"/api/admin/price\",\n  requireAuth,"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order-direct-1-1",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions-1.1.0.json",
+      "targets": [
+        {
+          "feature": 201,
+          "criterion": "201c"
+        }
+      ],
+      "desc": "The shipping route replaces its staff gate with ordinary authentication.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/fulfilment/ship\",\n  requireStaff,",
+          "replace": "app.post(\n  \"/api/fulfilment/ship\",\n  requireAuth,"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-cancel-foreign-order-1-1",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions-1.1.0.json",
+      "targets": [
+        {
+          "feature": 204,
+          "criterion": "204a"
+        }
+      ],
+      "desc": "Cancellation retains authentication and pending-state validation but drops order ownership.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;\n    const client = await pool.connect();\n    try {\n      await client.query(\"BEGIN\");\n      const orderRow = await client.query(`SELECT id, account_id, status FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);\n      if (orderRow.rowCount === 0 || orderRow.rows[0].account_id !== accountId) {",
+          "replace": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;\n    const client = await pool.connect();\n    try {\n      await client.query(\"BEGIN\");\n      const orderRow = await client.query(`SELECT id, account_id, status FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);\n      if (orderRow.rowCount === 0) {"
+        }
+      ]
+    },
+    {
+      "id": "queue-depth-lags-one-order",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1a"
+        }
+      ],
+      "desc": "The queue renders every order but its visible depth remains one behind.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "<strong data-testid=\"queue-depth\">{queue.depth}</strong>",
+          "replace": "<strong data-testid=\"queue-depth\">{Math.max(0, queue.depth - 1)}</strong>"
+        }
+      ]
+    },
+    {
+      "id": "ship-acknowledges-without-changing-status",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1c"
+        }
+      ],
+      "desc": "Shipping returns success but keeps the order pending, leaving both live views unchanged.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "`UPDATE orders SET status = 'shipped' WHERE id = $1 AND status = 'pending' RETURNING account_id`",
+          "replace": "`UPDATE orders SET status = 'pending' WHERE id = $1 AND status = 'pending' RETURNING account_id`"
+        }
+      ]
+    },
+    {
+      "id": "customer-sees-fulfilment-navigation",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1d"
+        }
+      ],
+      "desc": "The fulfilment navigation is shown to every signed-in account instead of only staff and administrators.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "        {account && (account.isStaff || account.isAdmin) && (\n          <button className=\"btn btn-ghost btn-sm\" data-testid=\"staff-link\"",
+          "replace": "        {account && (\n          <button className=\"btn btn-ghost btn-sm\" data-testid=\"staff-link\""
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order-focused",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1e"
+        }
+      ],
+      "desc": "The shipping route replaces its staff gate with ordinary authentication.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/fulfilment/ship\",\n  requireStaff,",
+          "replace": "app.post(\n  \"/api/fulfilment/ship\",\n  requireAuth,"
+        }
+      ]
+    },
+    {
+      "id": "transfer-debits-source-without-crediting-existing-destination",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 2,
+          "criterion": "2a"
+        },
+        {
+          "feature": 202,
+          "criterion": "202a"
+        }
+      ],
+      "desc": "A transfer debits the source row but inserts or increments the destination by zero, violating both directional movement and total conservation while still committing successfully.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      await client.query(\n        `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n         ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,\n        [itemId, toWarehouseId, qty]\n      );",
+          "replace": "      await client.query(\n        `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n         ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,\n        [itemId, toWarehouseId, 0]\n      );"
+        }
+      ]
+    },
+    {
+      "id": "transfer-warehouse-totals-omit-destination-credit",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "targets": [
+        {
+          "feature": 2,
+          "criterion": "2b"
+        }
+      ],
+      "desc": "A transfer debits the source but inserts or increments the destination by zero, so the live warehouse totals do not move in opposite directions.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      await client.query(\n        `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n         ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,\n        [itemId, toWarehouseId, qty]\n      );",
+          "replace": "      await client.query(\n        `INSERT INTO stock (item_id, warehouse_id, quantity) VALUES ($1, $2, $3)\n         ON CONFLICT (item_id, warehouse_id) DO UPDATE SET quantity = stock.quantity + excluded.quantity`,\n        [itemId, toWarehouseId, 0]\n      );"
+        }
+      ]
+    },
+    {
+      "id": "transfer-overdraft-guard-removed",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 2,
+          "criterion": "2c"
+        }
+      ],
+      "desc": "The transaction no longer rejects a source warehouse with insufficient quantity, allowing an overdrawn transfer to commit.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      if (available < qty) {\n        await client.query(\"ROLLBACK\");\n        res.status(409).json({ error: \"warehouse does not have enough stock to transfer\" });\n        return;\n      }",
+          "replace": "      // mutant: insufficient source stock is not rejected"
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-change-not-broadcast-to-visitors",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "targets": [
+        {
+          "feature": 4,
+          "criterion": "4b"
+        }
+      ],
+      "desc": "The price is persisted but the price route omits its catalog broadcast.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    await pool.query(`UPDATE item SET price = $1 WHERE id = $2`, [priceNum.toFixed(2), itemId]);\n    await broadcastCatalog();",
+          "replace": "    await pool.query(`UPDATE item SET price = $1 WHERE id = $2`, [priceNum.toFixed(2), itemId]);\n    // mutant: updated catalog is not broadcast"
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-change-not-broadcast-to-open-carts",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 4,
+          "criterion": "4c"
+        }
+      ],
+      "desc": "The price reaches the catalog but the price route omits its targeted open-cart broadcasts.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    for (const row of cartAccounts.rows) {\n      await broadcastCart(row.account_id);\n    }",
+          "replace": "    void cartAccounts; // mutant: carts containing this item are not refreshed"
+        }
+      ]
+    },
+    {
+      "id": "low-stock-excludes-boundary-ten",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 5,
+          "criterion": "5a"
+        }
+      ],
+      "desc": "The low-stock view uses a strict boundary and omits items with exactly ten units.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    .filter((it) => it.stock <= 10)",
+          "replace": "    .filter((it) => it.stock < 10)"
+        }
+      ]
+    },
+    {
+      "id": "category-totals-ignore-pending-purchases",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 5,
+          "criterion": "5b"
+        }
+      ],
+      "desc": "Category totals include only shipped orders, so a newly accepted pending purchase is absent from the live totals.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "           COALESCE(SUM(CASE WHEN oi.returned = false AND o.status != 'cancelled' THEN oi.quantity ELSE 0 END), 0)::int AS units,\n           COALESCE(SUM(CASE WHEN oi.returned = false AND o.status != 'cancelled' THEN oi.quantity * oi.price ELSE 0 END), 0) AS revenue",
+          "replace": "           COALESCE(SUM(CASE WHEN oi.returned = false AND o.status = 'shipped' THEN oi.quantity ELSE 0 END), 0)::int AS units,\n           COALESCE(SUM(CASE WHEN oi.returned = false AND o.status = 'shipped' THEN oi.quantity * oi.price ELSE 0 END), 0) AS revenue"
+        }
+      ]
+    },
+    {
+      "id": "recommendations-ignore-pending-purchases",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 5,
+          "criterion": "5c"
+        }
+      ],
+      "desc": "Personal recommendations derive categories only from shipped orders, so a newly accepted pending purchase has no influence.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "     WHERE o.account_id = $1 AND oi.returned = false AND o.status != 'cancelled'`,",
+          "replace": "     WHERE o.account_id = $1 AND oi.returned = false AND o.status = 'shipped'`,"
+        }
+      ]
+    },
+    {
+      "id": "cancelled-purchases-remain-in-best-sellers",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 5,
+          "criterion": "5d"
+        }
+      ],
+      "desc": "Best-seller purchase counts keep cancelled orders, so the cancelled product remains visible to a signed-out visitor.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      WHERE oi.returned = false AND o.status != 'cancelled'\n      GROUP BY oi.item_id",
+          "replace": "      WHERE oi.returned = false\n      GROUP BY oi.item_id"
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-rewrites-receipts",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 4,
+          "criterion": "4a"
+        }
+      ],
+      "desc": "Changing a catalog price cascades into saved order lines and recomputes historical order totals.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    await pool.query(`UPDATE item SET price = $1 WHERE id = $2`, [priceNum.toFixed(2), itemId]);\n    await broadcastCatalog();",
+          "replace": "    await pool.query(`UPDATE item SET price = $1 WHERE id = $2`, [priceNum.toFixed(2), itemId]);\n    await pool.query(`UPDATE order_item SET price = $1 WHERE item_id = $2`, [priceNum.toFixed(2), itemId]);\n    await pool.query(\n      `UPDATE orders o SET total = totals.total FROM (\n         SELECT order_id, SUM(quantity * price) AS total FROM order_item GROUP BY order_id\n       ) totals WHERE o.id = totals.order_id`\n    );\n    await broadcastCatalog();"
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-rewrites-earned-revenue",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "targets": [
+        {
+          "feature": 203,
+          "criterion": "203b"
+        }
+      ],
+      "desc": "Changing a catalog price cascades into saved order lines and recomputes historical order totals and revenue.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    await pool.query(`UPDATE item SET price = $1 WHERE id = $2`, [priceNum.toFixed(2), itemId]);\n    await broadcastCatalog();",
+          "replace": "    await pool.query(`UPDATE item SET price = $1 WHERE id = $2`, [priceNum.toFixed(2), itemId]);\n    await pool.query(`UPDATE order_item SET price = $1 WHERE item_id = $2`, [priceNum.toFixed(2), itemId]);\n    await pool.query(\n      `UPDATE orders o SET total = totals.total FROM (\n         SELECT order_id, SUM(quantity * price) AS total FROM order_item GROUP BY order_id\n       ) totals WHERE o.id = totals.order_id`\n    );\n    await broadcastCatalog();"
+        }
+      ]
+    },
+    {
+      "id": "queue-warehouse-reports-west",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1b"
+        }
+      ],
+      "desc": "The queue renders West for the deterministic Desk Lamp allocation even though the order reserved stock in East.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "{line.warehouse}",
+          "replace": "{\"West\"}"
+        }
+      ]
+    },
+    {
+      "id": "returned-line-marker-omitted",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3c"
+        }
+      ],
+      "desc": "A returned order line keeps its persisted returned state, restored stock, and adjusted revenue but omits the visible returned marker.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "l.returned ? \" (returned)\" : \"\"",
+          "replace": "\"\""
+        }
+      ]
+    }
+  ]
+}

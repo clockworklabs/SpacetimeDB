@@ -7,10 +7,10 @@ import { buildRecipeRelease } from '../recipe-release.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
-const RECIPE = join(TRACK, 'composition', 'recipes', 'l2-standard-1.3.0.json');
-const CALIBRATION = join(TRACK, 'composition', 'calibrations', 'l2-standard-1.3.0.json');
+const RECIPE = join(TRACK, 'composition', 'recipes', 'l2-standard-1.4.0.json');
+const CALIBRATION = join(TRACK, 'composition', 'calibrations', 'l2-standard-1.4.0.json');
 
-test('L2 1.3 has a source-bound draft calibration for the complete cumulative recipe', () => {
+test('L2 1.4 has a source-bound draft calibration for the complete modular recipe', () => {
   const release = buildRecipeRelease(RECIPE, { trackRoot: TRACK });
   const plan = compileCalibrationFile(CALIBRATION, {
     trackRoot: TRACK,
@@ -20,7 +20,7 @@ test('L2 1.3 has a source-bound draft calibration for the complete cumulative re
 
   assert.deepEqual({ id: release.id, version: release.version, state: release.state,
     checks: release.checkCatalog.length, points: release.scoring.points }, {
-    id: 'ecommerce.l2-standard', version: '1.3.0', state: 'draft', checks: 76, points: 111,
+    id: 'ecommerce.l2-standard', version: '1.4.0', state: 'draft', checks: 76, points: 117,
   });
   assert.equal(plan.state, 'draft');
   assert.equal(plan.recipe.contentSha256, release.contentSha256);
@@ -29,15 +29,15 @@ test('L2 1.3 has a source-bound draft calibration for the complete cumulative re
     ['mongodb', 'candidate'], ['postgres', 'candidate'], ['spacetime', 'candidate'],
   ]);
   assert.deepEqual(plan.mutations.map(entry => [entry.backend, entry.status, entry.targets.length]), [
-    ['mongodb', 'candidate', 6], ['postgres', 'candidate', 6], ['spacetime', 'candidate', 7],
+    ['mongodb', 'candidate', 35], ['postgres', 'candidate', 35], ['spacetime', 'candidate', 35],
   ]);
   for (const mutation of plan.mutations) {
     const targets = new Map(mutation.targets.map(target => [target.id, target.stableKeys]));
-    assert.deepEqual(targets.get('customer-can-ship-order-replay'),
+    assert.deepEqual(targets.get('customer-can-ship-order-focused'),
       ['ecommerce.operations-access.fulfilment-queue.1e']);
-    assert.deepEqual(targets.get('customer-can-ship-order-direct'),
+    assert.deepEqual(targets.get('customer-can-ship-order-direct-1-1'),
       ['ecommerce.operations-access.operator-authorization.201c']);
-    assert.deepEqual(targets.get('customer-can-cancel-foreign-order'),
+    assert.deepEqual(targets.get('customer-can-cancel-foreign-order-1-1'),
       ['ecommerce.operations-access.order-owner.204a']);
     assert.equal([...targets.values()].some(stableKeys =>
       stableKeys.includes('ecommerce.inventory-operations.stock-conservation.202d')), false);
@@ -49,19 +49,10 @@ test('L2 1.3 has a source-bound draft calibration for the complete cumulative re
       'ecommerce.spec.concurrency-safety.last-unit.201c',
     ]);
   }
-  assert.equal(plan.controls.length, 8);
-  const revenue = plan.controls.find(control =>
-    control.stableKey === 'ecommerce.spec.concurrency-safety.last-unit.201c');
-  assert.deepEqual(revenue, {
-    stableKey: 'ecommerce.spec.concurrency-safety.last-unit.201c',
-    role: 'promotion-gate',
-    promotionPolicy: 'must-pass-reference-and-kill-declared-mutant',
-    mutationTargets: [
-      'mongodb:oversell-unguarded-decrement',
-      'postgres:oversell-no-row-lock',
-      'spacetime:purchase-does-not-reserve-stock-last-unit',
-    ],
-  });
+  assert.deepEqual(plan.controls.map(control => [control.stableKey, control.role]), [
+    ['ecommerce.spec.concurrency-safety.restock-race.202-control', 'precondition'],
+    ['ecommerce.spec.external-data-sync.external-stock.901b', 'precondition'],
+  ]);
   assert.equal(plan.qualification.evidence.length, 0);
   assert.deepEqual(plan.qualification.stacks.map(stack => stack.status),
     ['candidate', 'candidate', 'candidate']);

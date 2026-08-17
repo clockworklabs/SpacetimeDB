@@ -210,7 +210,7 @@
       "track": "ecommerce",
       "level": 2,
       "status": "candidate",
-      "recipes": ["ecommerce.l2-standard@1.3.0"],
+      "recipes": ["ecommerce.l2-standard@1.4.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/l2/mongodb",
         "baseSha256": "6aafa2ec888b4049a87f488469f16118cd480517bfa876e57538f751744d1c7b",
@@ -218,13 +218,13 @@
       },
       "origin": {
         "kind": "authored",
-        "note": "The qualified L2 reference plus the exact action-input test handles required by the 1.3 candidate recipe."
+        "note": "The qualified L2 reference plus the exact action-input test handles required by the modular 1.4 candidate recipe."
       },
       "imported": {
-        "sourceSha256": "b145b0ac453f7d51d1fe86463b2393bdda92f82d38d97b950ab347bf8587980d"
+        "sourceSha256": "4041a45d7c4d3e446c406132132ccb21b1c68a0788348b7d98523c5431b92c63"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/mongodb-ecom-l2-cumulative-1.3.0.json"
+        "grader/mutations/candidates/mongodb-ecom-l2-cumulative-1.4.0.json"
       ],
       "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
     },
@@ -234,7 +234,7 @@
       "track": "ecommerce",
       "level": 2,
       "status": "candidate",
-      "recipes": ["ecommerce.l2-standard@1.3.0"],
+      "recipes": ["ecommerce.l2-standard@1.4.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/l2/postgres",
         "baseSha256": "70e2c03771fe8eb35defb8669bfca465e86714b849534241bcd1ab83a23792b0",
@@ -242,13 +242,13 @@
       },
       "origin": {
         "kind": "authored",
-        "note": "The qualified L2 reference plus the exact action-input test handles required by the 1.3 candidate recipe."
+        "note": "The qualified L2 reference plus the exact action-input test handles required by the modular 1.4 candidate recipe."
       },
       "imported": {
-        "sourceSha256": "574bea4e918b7ec15eb3a182e68b45bfe2630a07fee4ac4cf06b57268dd6add1"
+        "sourceSha256": "99c8af18eb709aebfe8bc8d22b55aa13219c0c2dcc7fef07e384ebe5aaa8677a"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/postgres-ecom-l2-cumulative-1.3.0.json"
+        "grader/mutations/candidates/postgres-ecom-l2-cumulative-1.4.0.json"
       ],
       "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
     },
@@ -258,7 +258,7 @@
       "track": "ecommerce",
       "level": 2,
       "status": "candidate",
-      "recipes": ["ecommerce.l2-standard@1.3.0"],
+      "recipes": ["ecommerce.l2-standard@1.4.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/l2/spacetime",
         "baseSha256": "cd562347bede7943167f776bf48dde1fc8e06a963ad1a2cd111bb020c9d7a375",
@@ -266,13 +266,13 @@
       },
       "origin": {
         "kind": "authored",
-        "note": "The qualified L2 reference plus the exact action-input test handles required by the 1.3 candidate recipe."
+        "note": "The qualified L2 reference plus the exact action-input test handles required by the modular 1.4 candidate recipe."
       },
       "imported": {
-        "sourceSha256": "9acf6f1223daef25dc855e29211b5db0116fd0d431f5185d264a0c48db5152f1"
+        "sourceSha256": "f32768daf028bbfbe57e8c7349b1e10eff2db6a806be981abdbc8839b11b572a"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/spacetime-ecom-l2-cumulative-1.3.0.json"
+        "grader/mutations/candidates/spacetime-ecom-l2-cumulative-1.4.0.json"
       ],
       "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
     },
