@@ -36,4 +36,7 @@ test('meeting brief keeps retired framing and obsolete comparison data out of vi
   assert.doesNotMatch(html, /104\/106|\$65\.1764|\$22\.1678/);
   assert.match(html, /39 scored checks/);
   assert.match(html, /41 scored checks/);
+  assert.match(html, /Browse all 39 scored L1 checks/);
+  assert.match(html, /10 candidates · 2 supporting controls/);
+  assert.doesNotMatch(html, /<th>Status<\/th>|additional checks run but do not affect the score/);
 });

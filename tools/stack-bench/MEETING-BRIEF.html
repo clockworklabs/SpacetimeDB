@@ -298,10 +298,6 @@
     .catalog-group { margin-top: 22px; }
     .catalog-group h4 { margin: 0 0 8px; color: var(--green); font-size: 15px; }
     .catalog-table td:first-child { min-width: 150px; }
-    .catalog-status { white-space: nowrap; font-weight: 750; }
-    .catalog-status.scored { color: var(--green); }
-    .catalog-status.candidate { color: var(--amber); }
-    .catalog-status.supporting { color: var(--blue); }
     .catalog-empty { color: var(--muted); }
     .quote {
       margin: 0;
@@ -602,7 +598,7 @@
 
       <div class="callout" style="margin-top:18px">
         <strong>Checks and points are different</strong>
-        A check is one test the runner performs. Points are the weight used in the final score, and some important checks are worth two points. Additional checks may run without affecting the score while we prove that the test itself is reliable.
+        A check is one test the runner performs. Points are the weight used in the final score, and some important checks are worth two points. The catalogs below contain only tests that affect the benchmark score.
       </div>
 
       <div class="grid two" style="margin-top:18px">
@@ -611,59 +607,43 @@
           <div class="number">39 scored checks</div>
           <ul class="checklist">
             <li><strong>51</strong> is the maximum score</li>
-            <li><strong>9</strong> additional checks run but do not affect the score</li>
           </ul>
           <p>These tests cover accounts, session continuity, the catalog and inventory, buying and checkout, reviews, and the related production-quality checks.</p>
-          <details>
-            <summary>What are the 9 additional checks?</summary>
-            <ul>
-              <li>Exact orders and revenue after six buyers race for three units</li>
-              <li>A normal restock control and a restock during a purchase rush</li>
-              <li>The same cart updated from two tabs at once</li>
-              <li>Direct database changes reaching an open page, surviving reload, and catching up after reconnect</li>
-              <li>A review list opened at the same time another customer posts</li>
-            </ul>
-            <p>Eight could become scored checks after cross-stack validation. The normal restock check is a supporting control and may stay non-scoring.</p>
-          </details>
-          <a class="catalog-link" href="#l1-test-catalog" data-open-catalog="l1-test-catalog">Browse all 48 L1 checks →</a>
+          <a class="catalog-link" href="#l1-test-catalog" data-open-catalog="l1-test-catalog">Browse all 39 scored L1 checks →</a>
         </article>
         <article class="card">
           <h3>Current L2 test set</h3>
           <div class="number">41 scored checks</div>
           <ul class="checklist">
             <li><strong>75</strong> is the maximum score, including earlier L1 behavior</li>
-            <li><strong>12</strong> additional checks run but do not affect the score</li>
           </ul>
           <p>These tests add staff access, warehouse operations, returns, pricing, and selected L1 checks that make sure the upgrade did not break earlier behavior.</p>
-          <details>
-            <summary>What are the 12 additional checks?</summary>
-            <p>L2 reruns the nine L1 checks above and adds three:</p>
-            <ul>
-              <li>A customer does not see the shipping control; server-side rejection is already tested separately for points</li>
-              <li>A warehouse transfer racing a purchase preserves the exact stock total</li>
-              <li>One customer cannot cancel another customer's pending order</li>
-            </ul>
-            <p>The UI check is supporting evidence. The transfer and cancellation checks need exact broken-app validation before they can affect the score.</p>
-          </details>
-          <a class="catalog-link" href="#l2-test-catalog" data-open-catalog="l2-test-catalog">Browse all 53 L2 checks →</a>
+          <a class="catalog-link" href="#l2-test-catalog" data-open-catalog="l2-test-catalog">Browse all 41 scored L2 checks →</a>
         </article>
       </div>
 
       <div style="margin-top:18px">
         <details id="l1-test-catalog" class="test-catalog">
-          <summary>All L1 checks <span>48 total · 39 scored · 9 additional</span></summary>
+          <summary>Scored L1 tests <span>39 checks · 51 points</span></summary>
           <div class="catalog-body">
-            <p class="catalog-explainer"><strong>Scored</strong> checks affect the result. <strong>Under validation</strong> checks run and produce evidence but add no points until they pass a known-good app and catch the intended deliberately broken app on every backend. <strong>Supporting</strong> checks confirm test setup or UI behavior and intentionally add no points.</p>
+            <p class="catalog-explainer">Every test in this list affects the L1 benchmark score. Test-development work is listed separately below.</p>
             <input class="catalog-filter" type="search" placeholder="Search L1 checks" aria-label="Search L1 checks" data-filter-catalog="1">
             <div data-test-catalog="1"></div>
           </div>
         </details>
         <details id="l2-test-catalog" class="test-catalog">
-          <summary>All L2 checks <span>53 total · 41 scored · 12 additional</span></summary>
+          <summary>Scored L2 tests <span>41 checks · 75 points</span></summary>
           <div class="catalog-body">
-            <p class="catalog-explainer">L2 includes its new tests plus selected L1 checks that protect earlier behavior. The same scored, under-validation, and supporting labels apply.</p>
+            <p class="catalog-explainer">Every test in this list affects the L2 benchmark score. L2 includes new tests plus selected L1 tests that protect earlier behavior.</p>
             <input class="catalog-filter" type="search" placeholder="Search L2 checks" aria-label="Search L2 checks" data-filter-catalog="2">
             <div data-test-catalog="2"></div>
+          </div>
+        </details>
+        <details id="test-development-catalog" class="test-catalog">
+          <summary>Test development <span>10 candidates · 2 supporting controls</span></summary>
+          <div class="catalog-body">
+            <p class="catalog-explainer">These are not benchmark-score tests. Candidate tests are being proven against correct and deliberately broken apps before they can join the scorecard. Supporting controls verify that test setup or UI behavior worked and are not intended to award points.</p>
+            <div data-test-development></div>
           </div>
         </details>
       </div>
@@ -976,6 +956,20 @@ else if (!evidenceIsMeasured(evidence)) {
       'ecommerce.catalog-inventory.restock-during-rush.202-control',
       'ecommerce.operations-access.operator-authorization.201c'
     ]);
+    const developmentReasons = {
+      'ecommerce.catalog-inventory.last-unit-sold-once.201b': 'The population-wide order assertion was rewritten after the older version could pass vacuously. The replacement still needs exact broken-app proof on every backend.',
+      'ecommerce.catalog-inventory.last-unit-sold-once.201c': 'The exact revenue assertion needs a stable cross-stack accounting observation and exact broken-app proof.',
+      'ecommerce.catalog-inventory.restock-during-rush.202-control': 'This is a setup control. It proves an ordinary restock works before the runner applies concurrent pressure; basic restocking is already scored elsewhere.',
+      'ecommerce.catalog-inventory.restock-during-rush.202a': 'The candidate broken implementation exists, but the check has not completed repeated cross-stack Docker validation.',
+      'ecommerce.cart-checkout.duplicate-checkout.203a': 'Correct reference apps have passed it, but the exact two-tab broken implementation has not completed cross-stack validation.',
+      'ecommerce.catalog-inventory.external-write-visible.901a': 'The direct-database live-update check still needs correct-app and exact broken-app proof through the same public interface on every backend.',
+      'ecommerce.catalog-inventory.external-write-visible.901b': 'The reload-persistence part of the direct-database test still needs its own exact broken-app proof on every backend.',
+      'ecommerce.catalog-inventory.external-write-visible.901d': 'The client-reconnect check still needs repeated correct-app and exact missed-update proof on every backend.',
+      'ecommerce.catalog-inventory.list-open-during-change.902a': 'The fetch-and-live-update race still needs an exact stale-or-duplicate-list implementation that this assertion reliably catches on every backend.',
+      'ecommerce.operations-access.operator-authorization.201c': 'This checks that a customer cannot see the shipping button. Server-side rejection is already scored separately, so this remains supporting UI evidence.',
+      'ecommerce.inventory-operations.stock-conservation.202d': 'The transfer-versus-purchase race needs to catch the exact read-modify-write bug repeatedly on every backend.',
+      'ecommerce.operations-access.order-owner.204a': 'The current sequence can reject the request because the order is already cancelled instead of because the caller is wrong. The test must be rewritten before it can score.'
+    };
 
     function element(name, text, className) {
       const node = document.createElement(name);
@@ -987,8 +981,8 @@ else if (!evidenceIsMeasured(evidence)) {
     function renderCatalog(level, query = '') {
       const root = document.querySelector(`[data-test-catalog="${level}"]`);
       const terms = query.trim().toLowerCase();
-      const checks = testCatalog[level].filter(check => !terms
-        || `${check.description} ${areaNames[check.area]} ${check.key}`.toLowerCase().includes(terms));
+      const checks = testCatalog[level].filter(check => check.points > 0 && (!terms
+        || `${check.description} ${areaNames[check.area]} ${check.key}`.toLowerCase().includes(terms)));
       root.replaceChildren();
       if (!checks.length) {
         root.append(element('p', 'No checks match that search.', 'catalog-empty'));
@@ -1001,19 +995,46 @@ else if (!evidenceIsMeasured(evidence)) {
         const wrap = element('div', undefined, 'table-wrap');
         const table = element('table', undefined, 'catalog-table');
         const head = document.createElement('thead');
-        head.innerHTML = '<tr><th>Check</th><th>Status</th><th>Points</th></tr>';
+        head.innerHTML = '<tr><th>Check</th><th>Points</th></tr>';
         const body = document.createElement('tbody');
         for (const check of groupChecks) {
           const row = document.createElement('tr');
           const description = element('td', check.description);
-          const statusKind = check.points > 0 ? 'scored'
-            : supportingChecks.has(check.key) ? 'supporting' : 'candidate';
-          const statusText = statusKind === 'scored' ? 'Scored'
-            : statusKind === 'supporting' ? 'Supporting' : 'Under validation';
-          const status = element('td', statusText, `catalog-status ${statusKind}`);
-          const points = element('td', check.points ? String(check.points) : '—');
+          const points = element('td', String(check.points));
           row.dataset.stableKey = check.key;
-          row.append(description, status, points);
+          row.append(description, points);
+          body.append(row);
+        }
+        table.append(head, body);
+        wrap.append(table);
+        group.append(wrap);
+        root.append(group);
+      }
+    }
+
+    function renderTestDevelopment() {
+      const root = document.querySelector('[data-test-development]');
+      const unique = [...new Map([...testCatalog['1'], ...testCatalog['2']]
+        .filter(check => check.points === 0).map(check => [check.key, check])).values()];
+      for (const kind of ['candidate', 'supporting']) {
+        const checks = unique.filter(check => supportingChecks.has(check.key)
+          ? kind === 'supporting' : kind === 'candidate');
+        const group = element('div', undefined, 'catalog-group');
+        group.append(element('h4', kind === 'candidate'
+          ? `Candidates being proven · ${checks.length}` : `Supporting controls · ${checks.length}`));
+        const wrap = element('div', undefined, 'table-wrap');
+        const table = element('table', undefined, 'catalog-table');
+        const head = document.createElement('thead');
+        head.innerHTML = '<tr><th>Test</th><th>Starts at</th><th>Why it is not scored</th></tr>';
+        const body = document.createElement('tbody');
+        for (const check of checks) {
+          const row = document.createElement('tr');
+          row.dataset.stableKey = check.key;
+          row.append(
+            element('td', check.description),
+            element('td', testCatalog['1'].some(item => item.key === check.key) ? 'L1' : 'L2'),
+            element('td', developmentReasons[check.key])
+          );
           body.append(row);
         }
         table.append(head, body);
@@ -1028,6 +1049,7 @@ else if (!evidenceIsMeasured(evidence)) {
       document.querySelector(`[data-filter-catalog="${level}"]`)
         .addEventListener('input', event => renderCatalog(level, event.target.value));
     }
+    renderTestDevelopment();
     document.querySelectorAll('[data-open-catalog]').forEach(link => {
       link.addEventListener('click', () => {
         document.querySelector(`#${link.dataset.openCatalog}`).open = true;
