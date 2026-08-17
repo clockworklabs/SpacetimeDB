@@ -922,15 +922,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ci-dep-check"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ci-common",
- "duct",
-]
-
-[[package]]
 name = "ci-docs-build"
 version = "0.1.0"
 dependencies = [
