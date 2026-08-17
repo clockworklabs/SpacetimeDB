@@ -22,8 +22,13 @@ test('reference qualification requires an explicit valid stack scope', () => {
   assert.equal(args.track, 'ecommerce');
   assert.equal(args.level, 2);
   assert.equal(args.mutations, false);
+  assert.equal(args.timeoutMinutes, 60);
+  const mutationArgs = parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
+    '--mutations']);
+  assert.equal(mutationArgs.mutations, true);
+  assert.equal(mutationArgs.timeoutMinutes, 90);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
-    '--mutations']).mutations, true);
+    '--mutations', '--timeout-minutes', '120']).timeoutMinutes, 120);
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '3']).level, 3);
   assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',

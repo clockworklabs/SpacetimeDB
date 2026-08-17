@@ -98,6 +98,15 @@ test('every L2 criterion owns each recorded value that it reads', () => {
   }
 });
 
+test('the low-stock boundary is isolated from the other operational views', () => {
+  const plan = compileRecipeFile(CURRENT, { trackRoot: TRACK });
+  const lowStock = check(plan, 'ecommerce.inventory-operations.operational-views.5a');
+  const categoryTotals = check(plan, 'ecommerce.inventory-operations.operational-views.5b');
+  assert.equal(lowStock.source, 'scenarios/02-low-stock-1.4.0.json');
+  assert.equal(categoryTotals.source, 'scenarios/02-features.json');
+  assert.equal(steps(plan, lowStock.stableKey).feature.criteria.length, 1);
+});
+
 test('corrected transfer checks assert source, destination, and exact total behavior', () => {
   const plan = compileRecipeFile(CURRENT, { trackRoot: TRACK });
   for (const key of [

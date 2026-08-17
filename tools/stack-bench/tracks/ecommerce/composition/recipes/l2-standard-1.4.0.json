@@ -38,7 +38,7 @@
 
     { "path": "../packs/operations-access-features-1.0.0.json", "id": "ecommerce.operations-access-features", "version": "1.0.0", "includeRoles": ["feature"] },
     { "path": "../packs/operations-access-specifications-1.0.0.json", "id": "ecommerce.operations-access-specifications", "version": "1.0.0", "includeRoles": ["guarantee"] },
-    { "path": "../packs/inventory-operations-features-1.0.0.json", "id": "ecommerce.inventory-operations-features", "version": "1.0.0", "includeRoles": ["feature"] },
+    { "path": "../packs/inventory-operations-features-1.1.0.json", "id": "ecommerce.inventory-operations-features", "version": "1.1.0", "includeRoles": ["feature"] },
     { "path": "../packs/inventory-operations-specifications-1.0.0.json", "id": "ecommerce.inventory-operations-specifications", "version": "1.0.0", "includeRoles": ["guarantee"] },
     { "path": "../packs/returns-pricing-features-1.0.0.json", "id": "ecommerce.returns-pricing-features", "version": "1.0.0", "includeRoles": ["feature"] },
     { "path": "../packs/returns-pricing-specifications-1.0.0.json", "id": "ecommerce.returns-pricing-specifications", "version": "1.0.0", "includeRoles": ["guarantee"] }
@@ -56,6 +56,7 @@
     { "id": "external-reconnect@L1", "source": "scenarios/01-external-reconnect-sync-1.1.0.json" },
     { "id": "open-list-live@L1", "source": "scenarios/01-open-list-live-2.3.0.json" },
     { "id": "features-existing@L2", "source": "scenarios/02-features.json" },
+    { "id": "low-stock@L2", "source": "scenarios/02-low-stock-1.4.0.json" },
     { "id": "invariants-existing@L2", "source": "scenarios/02-invariants.json" },
     { "id": "self-contained@L2", "source": "scenarios/02-self-contained-1.4.0.json" },
     { "id": "strengthened@L2", "source": "scenarios/02-strengthened-1.4.0.json" },

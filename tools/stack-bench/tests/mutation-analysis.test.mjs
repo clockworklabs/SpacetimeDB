@@ -60,6 +60,12 @@ test('recipe-bound mutation grading selects only checks owned by the scenario', 
   assert(keys.includes('ecommerce.operations-access.fulfilment-queue.1a'));
   assert(!keys.includes('ecommerce.operations-access.fulfilment-queue.1b'),
     '1b moved to a self-contained scenario and must not be graded from the legacy source');
+  assert(!keys.includes('ecommerce.inventory-operations.operational-views.5a'),
+    '5a moved to an isolated scenario and must not share state with the remaining views');
+  assert.deepEqual(releaseScenarioCheckKeys(binding.release, track.dir,
+    join(track.dir, 'scenarios', '02-low-stock-1.4.0.json')), [
+    'ecommerce.inventory-operations.operational-views.5a',
+  ]);
   assert.throws(() => releaseScenarioCheckKeys(binding.release, track.dir,
     join(track.dir, 'scenarios', '03-features.json')),
   /has no checks/);

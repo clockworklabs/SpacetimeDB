@@ -46,7 +46,7 @@ function qualificationInputs() {
 
 export function parseReferenceQualificationArgs(argv) {
   const args = { track: 'ecommerce', level: 1, repetitions: 2,
-    runIndex: 0, spacetimePort: 3310, timeoutMinutes: 60, mutations: false };
+    runIndex: 0, spacetimePort: 3310, timeoutMinutes: null, mutations: false };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--backend') args.backend = argv[++i];
     else if (argv[i] === '--track') args.track = argv[++i];
@@ -77,6 +77,7 @@ export function parseReferenceQualificationArgs(argv) {
   if (!Number.isInteger(args.spacetimePort) || args.spacetimePort < 1024 || args.spacetimePort > 65535) {
     throw new Error('--spacetime-port must be an integer from 1024 through 65535');
   }
+  args.timeoutMinutes ??= args.mutations ? 90 : 60;
   if (!Number.isFinite(args.timeoutMinutes) || args.timeoutMinutes < 10 || args.timeoutMinutes > 240) {
     throw new Error('--timeout-minutes must be from 10 through 240');
   }

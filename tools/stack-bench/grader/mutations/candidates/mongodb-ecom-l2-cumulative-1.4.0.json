@@ -523,7 +523,7 @@
     },
     {
       "id": "low-stock-excludes-boundary-ten",
-      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "scenario": "tracks/ecommerce/scenarios/02-low-stock-1.4.0.json",
       "targets": [
         {
           "feature": 5,

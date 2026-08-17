@@ -55,6 +55,8 @@ import { canonicalDefinitionJson } from './definition-plan.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
+const MUTATION_BASE_TIMEOUT_MS = 5 * 60_000;
+const MUTATION_PROBE_TIMEOUT_MS = 75_000;
 
 function parseArgs(argv) {
   const a = { model: null, agentAdapter: 'claude-code',
@@ -287,12 +289,22 @@ export function mutationControlArgv(args, appDir, url, track) {
     ...(recipe ? ['--recipe', recipe] : [])];
 }
 
+export function mutationControlTimeoutMs(manifest) {
+  const mutations = Array.isArray(manifest?.mutations) ? manifest.mutations : [];
+  const measured = MUTATION_BASE_TIMEOUT_MS + mutations.reduce((total, mutation) =>
+    total + MUTATION_PROBE_TIMEOUT_MS + 2 * Number(mutation.settleMs ?? 4000), 0);
+  return Math.max(COMMAND_TIMEOUT_MS, measured);
+}
+
 function runMutationControl(args, appDir, url, track) {
   const output = join(args.out, 'mutation-control.json');
   rmSync(output, { force: true });
+  const manifest = JSON.parse(readFileSync(args.mutations, 'utf8'));
   const argv = mutationControlArgv(args, appDir, url, track);
   let processError = null;
-  try { sh(process.execPath, argv, { stdio: 'inherit' }); }
+  try { sh(process.execPath, argv, {
+    stdio: 'inherit', timeout: mutationControlTimeoutMs(manifest),
+  }); }
   catch (error) { processError = String(error.message).split('\n')[0]; }
   if (!existsSync(output)) {
     return { ok: false, artifact: output, processError,

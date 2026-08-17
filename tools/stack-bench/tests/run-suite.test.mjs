@@ -100,7 +100,7 @@ test('cumulative ownership survives inherited execution id renames', () => {
     assert(inherited.every(suite => suite.id.endsWith('-base')));
     assert(inherited.every(suite => suite.fromLevel === 1));
     assert.deepEqual(suites.filter(suite => !suite.inherited).map(suite => suite.id),
-      ['features-existing@L2', 'invariants-existing@L2', 'self-contained@L2',
+      ['features-existing@L2', 'low-stock@L2', 'invariants-existing@L2', 'self-contained@L2',
         'strengthened@L2', 'server-actions@L2']);
   } finally { rmSync(temp, { recursive: true, force: true }); }
 });

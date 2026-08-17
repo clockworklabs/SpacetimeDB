@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { mutationControlArgv } from '../bench.mjs';
+import { mutationControlArgv, mutationControlTimeoutMs } from '../bench.mjs';
 import { loadTrack } from '../tracks.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,6 +25,12 @@ test('campaign-bound mutation grading forwards the manifest level exact recipe',
   assert.throws(() => mutationControlArgv({ ...args,
     recipe: 'ecommerce.l1-standard@1.1.0' }, 'app', 'http://localhost:5173',
     loadTrack('ecommerce')), /does not match bound task/);
+});
+
+test('mutation control time grows with the declared defect inventory', () => {
+  assert.equal(mutationControlTimeoutMs({ mutations: [] }), 20 * 60_000);
+  assert.equal(mutationControlTimeoutMs({ mutations: Array.from({ length: 35 }, () => ({})) }),
+    5 * 60_000 + 35 * (75_000 + 8_000));
 });
 
 test('a mismatched mutation fixture fails before acquiring any backend resource', () => {
