@@ -8,10 +8,10 @@ const bundle = criteria => ({ totals: { score: 1, max: 2 }, suites: {
   feature: { features: [{ id: 'f', criteria }] }, lint: { pass: true },
 } });
 
-const typed = (id, status, summary) => {
+const typed = (id, status, summary, points = 1) => {
   const evidence = createCheckEvidence({ status, code: status === 'passed' ? 'completed' : 'test_result',
     phase: 'assertion', summary, startedAtMs: 1, completedAtMs: 2 });
-  return { id, points: 1, evidence };
+  return { id, points, evidence };
 };
 
 test('missing output and explicit harness failure are not app failures', () => {
@@ -48,6 +48,30 @@ test('app failures and inconclusive evidence remain separately visible', () => {
 test('inconclusive-only grades are not reported as passing', () => {
   assert.equal(classifyBundle(bundle([typed('a', 'inconclusive', 'not measurable')])).kind,
     'inconclusive');
+});
+
+test('zero-point evidence cannot fail or invalidate a scored benchmark outcome', () => {
+  const outcome = classifyBundle(bundle([
+    typed('scored', 'passed', null),
+    typed('candidate', 'failed', 'candidate behavior failed', 0),
+    typed('control', 'inconclusive', 'supporting control unavailable', 0),
+  ]));
+  assert.equal(outcome.kind, 'passed');
+  assert.deepEqual(outcome.appFailures, []);
+  assert.deepEqual(outcome.inconclusive, []);
+});
+
+test('an explicitly selected zero-only scope still has a qualification outcome', () => {
+  const scoped = {
+    totals: { score: 0, max: 0 },
+    selection: { checks: [{ stableKey: 'candidate' }], attemptedChecks: ['candidate'],
+      reportedChecks: ['candidate'], notRun: [] },
+    suites: { development: { features: [{ id: 'f', criteria: [
+      { ...typed('candidate', 'failed', 'candidate behavior failed', 0), stableKey: 'candidate' },
+    ] }] }, lint: { pass: true } },
+  };
+  assert.equal(classifyBundle(scoped).kind, 'app_failure');
+  assert.deepEqual(classifyBundle(scoped).appFailures, ['development/f/candidate']);
 });
 
 test('typed harness failures outrank prose and application failures', () => {

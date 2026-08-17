@@ -28,7 +28,13 @@ export function classifyBundle(bundle) {
       appFailures: [], inconclusive: [], harnessFailures: [] };
   }
   const all = criteria(bundle);
-  const classified = all.map(criterion => {
+  // Point-bearing checks define an ordinary benchmark outcome. Zero-point
+  // criteria are retained as test-development evidence, but they must not
+  // fail, invalidate, or repair a scored run. A deliberately selected
+  // zero-only scope still receives a useful outcome for qualification work.
+  const pointBearing = all.filter(criterion => Number(criterion.points) > 0);
+  const outcomeCriteria = pointBearing.length ? pointBearing : all;
+  const classified = outcomeCriteria.map(criterion => {
     const evidence = criterionEvidence(criterion);
     return { disposition: evidenceDisposition(evidence), key: criterion.key };
   });

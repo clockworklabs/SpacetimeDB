@@ -152,8 +152,9 @@ test('campaign validation rejects an application result that stopped before its 
     'a perfect requested score may still lose an inherited guarantee');
   run.levels[0] = { ...run.levels[0], regression: null,
     outcome: { kind: 'app_failure', appFailures: ['systems/diagnostic'] } };
-  assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run,
-    'a zero-point diagnostic failure may leave the requested score perfect');
+  assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
+    /levels\.L1\.score/,
+    'test-development evidence cannot turn a perfect scored result into an application failure');
   run.levels[0] = { ...run.levels[0], score: 0, outcome: { kind: 'passed' },
     repair: { status: 'corrected', budgetRounds: 3, roundsUsed: 3, stopReason: null } };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),

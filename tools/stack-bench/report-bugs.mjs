@@ -46,7 +46,10 @@ for (const file of readdirSync(resultsDir).filter(name => /^grading-.*\.json$/.t
   for (const feature of report.features ?? []) {
     // Only typed application failures are sent to a fix round. Inconclusive or
     // harness-failure evidence describes the benchmark, not the generated app.
+    // Zero-point criteria are test-development evidence and never control an
+    // ordinary repair loop, even when their behavioral observation failed.
     for (const criterion of feature.criteria ?? []) {
+      if (!(Number(criterion.points) > 0)) continue;
       const evidence = criterionEvidence(criterion);
       if (!evidenceIsRepairable(evidence)) continue;
       const observed = renderRepairDiagnostic(evidence);

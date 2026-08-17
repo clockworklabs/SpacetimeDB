@@ -61,6 +61,20 @@ test('pack dependencies become requested task scope while checks only narrow mea
   assert.equal(checkOnly.task.requirementText, binding.plan.recipe.task.requirementText);
 });
 
+test('ordinary runs select scored checks while test-development checks require exact selection', () => {
+  const ordinary = createRecipeTaskRequest(binding);
+  assert.equal(ordinary.selection.checks.length, 39);
+  assert.equal(ordinary.selection.checks.every(check => check.points > 0), true);
+  assert.equal(ordinary.selection.completeness, 'full');
+
+  const candidate = binding.release.checkCatalog.find(check => check.points === 0);
+  assert(candidate);
+  const development = createRecipeTaskRequest(binding, { checkKeys: [candidate.stableKey] });
+  assert.deepEqual(development.selection.checks.map(check => check.stableKey), [candidate.stableKey]);
+  assert.equal(development.selection.scoredPoints, 0);
+  assert.equal(development.selection.completeness, 'subset');
+});
+
 test('selected pack prompts contain only their own framework-neutral testing calls', () => {
   const candidate = resolveRecipeRelease(loadTrack('ecommerce'), 1,
     'ecommerce.l1-standard@1.1.0');

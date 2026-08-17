@@ -165,9 +165,10 @@ test('campaign HTML labels observed-only behavior as zero-score first-build obse
     { exitCode: 0, run: evidence }, { now: '2026-08-12T00:02:00.000Z' });
   const report = buildCampaignReport(plan, state, () => evidence);
   const html = renderCampaignHtml(report);
-  assert.equal(report.conditions[0].firstBuildObservations.sample.selectedAttempts, 1);
-  assert.equal(report.conditions[0].firstBuildObservations.sample.measuredAttempts, 1);
-  assert.equal(report.conditions[0].firstBuildObservations.metrics.passRate.center, 1);
+  const condition = report.conditions.find(item => item.stack === claimed.claim.attempt.stack);
+  assert.equal(condition.firstBuildObservations.sample.selectedAttempts, 1);
+  assert.equal(condition.firstBuildObservations.sample.measuredAttempts, 1);
+  assert.equal(condition.firstBuildObservations.metrics.passRate.center, 1);
   assert.match(html, /Additional first-build measurements/);
   assert.match(html, /add no points to the score/);
   assert.match(html, /do not enter repair feedback/);

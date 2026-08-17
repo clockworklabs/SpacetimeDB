@@ -34,7 +34,8 @@ test('the modular L1 catalog owns every existing criterion exactly once', () => 
   const fullyRequested = resolveModularRecipeSelection(release, {
     requestedSpecifications: specifications,
   });
-  assert.equal(fullyRequested.scoredChecks.length, 48);
+  assert.equal(fullyRequested.scoredChecks.length, 39);
+  assert.equal(fullyRequested.scoredChecks.every(check => check.points > 0), true);
   assert.equal(fullyRequested.scoredPoints, 51);
   assert.equal(fullyRequested.observedChecks.length, 0);
 });

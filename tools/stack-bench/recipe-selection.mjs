@@ -114,9 +114,10 @@ export function resolveModularRecipeSelection(release, {
       && (check.observations === undefined
         ? observation === 'requested' : check.observations.includes(observation)))
     .map(check => ({ ...check, treatment }));
-  const featureChecks = selectChecks(featureSet, 'requested', 'requested');
-  const requestedSpecChecks = selectChecks(requestedIds, 'requested', 'requested');
-  const expectedChecks = selectChecks(expectedIds, 'unmentioned', 'expected');
+  const pointBearing = checks => checks.filter(check => check.points > 0);
+  const featureChecks = pointBearing(selectChecks(featureSet, 'requested', 'requested'));
+  const requestedSpecChecks = pointBearing(selectChecks(requestedIds, 'requested', 'requested'));
+  const expectedChecks = pointBearing(selectChecks(expectedIds, 'unmentioned', 'expected'));
   const observedChecks = selectChecks(observedIds, 'unmentioned', 'observed');
   const checksByTreatment = { requested: requestedSpecChecks, expected: expectedChecks,
     observed: observedChecks };
@@ -228,9 +229,11 @@ export function resolveRecipeSelection(release, { packIds = [], checkKeys = [] }
   }
 
   const checks = new Set(requestedChecks);
+  const benchmarkChecks = release.checkCatalog.filter(check => check.points > 0);
   const selected = release.checkCatalog.filter(check => taskPacks.has(check.packId)
-    && (!checks.size || checks.has(check.stableKey)));
+    && (checks.size ? checks.has(check.stableKey) : check.points > 0));
   if (!selected.length) throw new Error('pack/check request selects no checks');
+  const selectedKeys = new Set(selected.map(check => check.stableKey));
 
   const identityDocument = {
     schemaVersion: 1,
@@ -244,7 +247,7 @@ export function resolveRecipeSelection(release, { packIds = [], checkKeys = [] }
     requested: { packs: [...requestedPacks].sort(), checks: [...requestedChecks].sort() },
     taskPacks: [...taskPacks].sort(),
     sha256: sha256(canonicalDefinitionJson(identityDocument)),
-    completeness: selected.length === release.checkCatalog.length ? 'full' : 'subset',
+    completeness: benchmarkChecks.every(check => selectedKeys.has(check.stableKey)) ? 'full' : 'subset',
     scoredPoints: selected.reduce((total, check) => total + check.points, 0),
     checks: selected.map(({ stableKey, executionId, packId, checkGroupId, source,
       featureId, criterionId, description, points }) => ({ stableKey, executionId, packId,
