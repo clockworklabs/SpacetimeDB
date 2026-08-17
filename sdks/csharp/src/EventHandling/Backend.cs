@@ -16,7 +16,7 @@ namespace SpacetimeDB.EventHandling
         public static void UseCustomListeners(IEventListenersFactory? factory = null)
         {
             UseNativeDispatch = false;
-            CustomFactory = null;
+            CustomFactory = factory;
         }
 
         internal static IEventListeners<T> Create<T>() where T : Delegate => CustomFactory?.Create<T>() ?? new EventListeners<T>();
