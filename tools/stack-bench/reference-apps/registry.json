@@ -97,7 +97,9 @@
       "imported": {
         "sourceSha256": "d90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40"
       },
-      "mutationManifests": [],
+      "mutationManifests": [
+        "grader/mutations/candidates/mongodb-ecom-l1-modular-2.2.0.json"
+      ],
       "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
     },
     {
@@ -119,7 +121,9 @@
       "imported": {
         "sourceSha256": "ffc2192ee7bce1a5f5e60bd4158118f44dd0d5cc1fcf0bcf21bc38fbfb20d6f1"
       },
-      "mutationManifests": [],
+      "mutationManifests": [
+        "grader/mutations/candidates/postgres-ecom-l1-modular-2.2.0.json"
+      ],
       "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
     },
     {
@@ -141,7 +145,9 @@
       "imported": {
         "sourceSha256": "7deedf0dc4c17064b9a6a9bb76bc0c488cd04f21472ce7412539ac98368fd3e6"
       },
-      "mutationManifests": [],
+      "mutationManifests": [
+        "grader/mutations/candidates/spacetime-ecom-l1-modular-2.2.0.json"
+      ],
       "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
     },
     {
@@ -217,7 +223,9 @@
       "imported": {
         "sourceSha256": "b145b0ac453f7d51d1fe86463b2393bdda92f82d38d97b950ab347bf8587980d"
       },
-      "mutationManifests": [],
+      "mutationManifests": [
+        "grader/mutations/candidates/mongodb-ecom-l2-cumulative-1.3.0.json"
+      ],
       "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
     },
     {
@@ -239,7 +247,9 @@
       "imported": {
         "sourceSha256": "574bea4e918b7ec15eb3a182e68b45bfe2630a07fee4ac4cf06b57268dd6add1"
       },
-      "mutationManifests": [],
+      "mutationManifests": [
+        "grader/mutations/candidates/postgres-ecom-l2-cumulative-1.3.0.json"
+      ],
       "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
     },
     {
@@ -261,7 +271,9 @@
       "imported": {
         "sourceSha256": "9acf6f1223daef25dc855e29211b5db0116fd0d431f5185d264a0c48db5152f1"
       },
-      "mutationManifests": [],
+      "mutationManifests": [
+        "grader/mutations/candidates/spacetime-ecom-l2-cumulative-1.3.0.json"
+      ],
       "qualification": "Candidate source for three-stack Docker reference and mutation qualification."
     },
     {

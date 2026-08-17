@@ -16,17 +16,24 @@ const cases = [
   {
     backend: 'mongodb',
     fixtureSha256: 'd90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40',
-    manifest: 'mongodb-ecom-l1-cart-quantity-2.2.0.json',
+    manifest: 'mongodb-ecom-l1-modular-2.2.0.json',
+    mutationIds: ['oversell-unguarded-decrement', 'existing-cart-line-does-not-increment',
+      'checkout-not-idempotent'],
   },
   {
     backend: 'postgres',
     fixtureSha256: 'ffc2192ee7bce1a5f5e60bd4158118f44dd0d5cc1fcf0bcf21bc38fbfb20d6f1',
-    manifest: 'postgres-ecom-l1-cart-quantity-2.2.0.json',
+    manifest: 'postgres-ecom-l1-modular-2.2.0.json',
+    mutationIds: ['oversell-no-row-lock', 'existing-cart-line-does-not-increment',
+      'checkout-does-not-empty-cart'],
   },
   {
     backend: 'spacetime',
     fixtureSha256: '7deedf0dc4c17064b9a6a9bb76bc0c488cd04f21472ce7412539ac98368fd3e6',
-    manifest: 'spacetime-ecom-l1-cart-quantity-2.2.0.json',
+    manifest: 'spacetime-ecom-l1-modular-2.2.0.json',
+    mutationIds: ['purchase-does-not-reserve-stock-last-unit',
+      'purchase-does-not-reserve-stock-restock-race',
+      'existing-cart-line-does-not-increment', 'checkout-does-not-empty-cart'],
   },
 ];
 
@@ -66,32 +73,39 @@ for (const entry of cases) {
       assert.equal(manifest.track, 'ecommerce');
       assert.equal(manifest.level, 1);
       assert.equal(manifest.fixtureSha256, prepared.sourceSha256);
-      assert.equal(mutationScenario(manifest, manifest.mutations[0]), scenarioPath);
       assert.deepEqual(validateMutationDefinitions(manifest.mutations, {
         defaultScenario: manifest.scenario,
         requireScenario: true,
       }).issues, []);
-      assert.equal(manifest.mutations.length, 1);
+      assert.deepEqual(manifest.mutations.map(mutation => mutation.id), entry.mutationIds);
 
-      const mutation = manifest.mutations[0];
+      const mutation = manifest.mutations.find(candidate =>
+        candidate.id === 'existing-cart-line-does-not-increment');
+      assert.equal(mutationScenario(manifest, mutation), scenarioPath);
       assert.equal(mutation.id, 'existing-cart-line-does-not-increment');
       assert.deepEqual(mutationTargetKeys(mutation), ['203:203a']);
       assert.equal(mutationEdits(mutation).length, 1);
 
-      const source = readFileSync(join(app, mutation.file), 'utf8');
-      const edit = mutationEdits(mutation)[0];
-      assert.equal(source.split(edit.find).length - 1, 1, 'anchor must match exactly once');
-      const mutated = source.replace(edit.find, edit.replace);
-      assert.equal(mutated.includes(edit.find), false, 'mutation must remove its exact correct behavior');
-      assert.equal(mutated.includes(edit.replace), true, 'mutation must install its declared defect');
-      const transpiled = ts.transpileModule(mutated, {
-        compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-        fileName: mutation.file,
-        reportDiagnostics: true,
-      });
-      assert.deepEqual((transpiled.diagnostics ?? [])
-        .filter(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error)
-        .map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')), []);
+      for (const candidate of manifest.mutations) {
+        const source = readFileSync(join(app, candidate.file), 'utf8');
+        for (const edit of mutationEdits(candidate)) {
+          assert.equal(source.split(edit.find).length - 1, 1,
+            `${candidate.id} anchor must match exactly once`);
+          const mutated = source.replace(edit.find, edit.replace);
+          assert.equal(mutated.includes(edit.find), false,
+            `${candidate.id} must remove its exact correct behavior`);
+          assert.equal(mutated.includes(edit.replace), true,
+            `${candidate.id} must install its declared defect`);
+          const transpiled = ts.transpileModule(mutated, {
+            compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+            fileName: candidate.file,
+            reportDiagnostics: true,
+          });
+          assert.deepEqual((transpiled.diagnostics ?? [])
+            .filter(diagnostic => diagnostic.category === ts.DiagnosticCategory.Error)
+            .map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')), []);
+        }
+      }
     } finally {
       rmSync(work, { recursive: true, force: true });
     }

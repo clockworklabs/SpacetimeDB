@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "fixtureSha256": "574bea4e918b7ec15eb3a182e68b45bfe2630a07fee4ac4cf06b57268dd6add1",
+  "backend": "postgres",
+  "track": "ecommerce",
+  "level": 2,
+  "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.0.0.json",
+  "note": "Candidate mutation coverage for the cumulative L2 1.3 recipe. It carries forward the focused L1 defects and the existing L2 shipping-authorization oracle on the derived source, then adds exact direct-action defects for shipping and cancellation.",
+  "mutations": [
+    {
+      "id": "oversell-no-row-lock",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit-2.2.0.json",
+      "targets": [
+        { "feature": 201, "criterion": "201a" },
+        { "feature": 201, "criterion": "201b" },
+        { "feature": 201, "criterion": "201c" }
+      ],
+      "desc": "Drop FOR UPDATE from the positive-stock row selection so simultaneous buyers can select the same units.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "           FOR UPDATE\n           LIMIT 1",
+          "replace": "           LIMIT 1"
+        }
+      ]
+    },
+    {
+      "id": "existing-cart-line-does-not-increment",
+      "targets": [{ "feature": 203, "criterion": "203a" }],
+      "desc": "The cart upsert ignores an add that conflicts with an existing line.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = cart_item.quantity + excluded.quantity",
+          "replace": "ON CONFLICT (cart_id, item_id) DO UPDATE SET quantity = cart_item.quantity"
+        }
+      ]
+    },
+    {
+      "id": "checkout-does-not-empty-cart",
+      "targets": [{ "feature": 203, "criterion": "203b" }],
+      "desc": "Keep checked-out cart lines so the second checkout creates a duplicate order.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      await client.query(`DELETE FROM cart_item WHERE cart_id = $1`, [cartId]);",
+          "replace": "      // mutant: checked-out cart lines remain"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order-replay",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [{ "feature": 1, "criterion": "1e" }],
+      "desc": "Replace the staff gate with ordinary authentication, proving the inherited replay-based authorization check.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/fulfilment/ship\",\n  requireStaff,",
+          "replace": "app.post(\n  \"/api/fulfilment/ship\",\n  requireAuth,"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order-direct",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions-1.0.0.json",
+      "targets": [{ "feature": 201, "criterion": "201c" }],
+      "desc": "Replace the staff gate on the shipping route with ordinary authentication, allowing a customer to ship their own pending order.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/fulfilment/ship\",\n  requireStaff,",
+          "replace": "app.post(\n  \"/api/fulfilment/ship\",\n  requireAuth,"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-cancel-foreign-order",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions-1.0.0.json",
+      "targets": [{ "feature": 204, "criterion": "204a" }],
+      "desc": "Remove the customer ownership comparison from cancellation while retaining the missing-order and pending-order checks.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;\n    const client = await pool.connect();\n    try {\n      await client.query(\"BEGIN\");\n      const orderRow = await client.query(`SELECT id, account_id, status FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);\n      if (orderRow.rowCount === 0 || orderRow.rows[0].account_id !== accountId) {",
+          "replace": "app.post(\n  \"/api/orders/:id/cancel\",\n  requireAuth,\n  asyncHandler(async (req, res) => {\n    const orderId = Number(req.params.id);\n    const accountId = req.account!.id;\n    const client = await pool.connect();\n    try {\n      await client.query(\"BEGIN\");\n      const orderRow = await client.query(`SELECT id, account_id, status FROM orders WHERE id = $1 FOR UPDATE`, [orderId]);\n      if (orderRow.rowCount === 0) {"
+        }
+      ]
+    }
+  ]
+}

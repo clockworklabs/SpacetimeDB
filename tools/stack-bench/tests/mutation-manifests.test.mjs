@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { mutationEdits, mutationScenario, mutationTargetKeys,
   validateMutationDefinitions } from '../mutation-analysis.mjs';
-import { loadReferenceRegistry } from '../reference-fixtures.mjs';
+import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../reference-fixtures.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MUTATIONS = join(ROOT, 'grader', 'mutations');
@@ -47,18 +48,27 @@ test('current mutation anchors match their hash-bound canonical fixture exactly 
   const registry = loadReferenceRegistry();
   for (const fixture of registry.fixtures.filter(candidate =>
     candidate.status === 'candidate' || candidate.status === 'active')) {
-    for (const relativeManifest of fixture.mutationManifests) {
-      const manifest = JSON.parse(readFileSync(join(ROOT, relativeManifest), 'utf8'));
-      assert.equal(manifest.fixtureSha256, fixture.imported.sourceSha256,
-        `${fixture.id} manifest is bound to different source bytes`);
-      for (const mutation of manifest.mutations) {
-        const source = readFileSync(join(ROOT, fixture.targetPath, mutation.file), 'utf8');
-        for (const edit of mutationEdits(mutation)) {
-          const matches = source.split(edit.find).length - 1;
-          assert.equal(matches, 1,
-            `${fixture.id}/${mutation.id} anchor matched ${matches} times in ${mutation.file}`);
+    if (!fixture.mutationManifests.length) continue;
+    const temporary = fixture.source
+      ? mkdtempSync(join(tmpdir(), `stack-bench-mutation-fixture-${fixture.backend}-`)) : null;
+    try {
+      const sourceRoot = temporary ?? join(ROOT, fixture.targetPath);
+      if (temporary) prepareReferenceFixtureSource(fixture, temporary);
+      for (const relativeManifest of fixture.mutationManifests) {
+        const manifest = JSON.parse(readFileSync(join(ROOT, relativeManifest), 'utf8'));
+        assert.equal(manifest.fixtureSha256, fixture.imported.sourceSha256,
+          `${fixture.id} manifest is bound to different source bytes`);
+        for (const mutation of manifest.mutations) {
+          const source = readFileSync(join(sourceRoot, mutation.file), 'utf8');
+          for (const edit of mutationEdits(mutation)) {
+            const matches = source.split(edit.find).length - 1;
+            assert.equal(matches, 1,
+              `${fixture.id}/${mutation.id} anchor matched ${matches} times in ${mutation.file}`);
+          }
         }
       }
+    } finally {
+      if (temporary) rmSync(temporary, { recursive: true, force: true });
     }
   }
 });
