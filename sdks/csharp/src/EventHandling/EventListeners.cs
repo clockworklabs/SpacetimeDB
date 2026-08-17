@@ -20,14 +20,30 @@ namespace SpacetimeDB.EventHandling
 
     public static class EventListenersProvider
     {
+        private enum Backend
+        {
+            Native,
+            Custom,
+        }
+
+        private static Backend SelectedBackend { get; set; }
         private static IEventListenersFactory? CustomFactory { get; set; }
 
-        public static IEventListeners<T> Create<T>() where T : Delegate => CustomFactory?.Create<T>() ?? new BasicEventListeners<T>();
-        
-        public static void SetFactory(IEventListenersFactory factory)
+        internal static bool UseNativeDispatch => SelectedBackend == Backend.Native;
+
+        public static void UseNativeEvents()
         {
-            CustomFactory = factory;
+            SelectedBackend = Backend.Native;
+            CustomFactory = null;
         }
+
+        public static void UseCustomListeners(IEventListenersFactory? factory = null)
+        {
+            SelectedBackend = Backend.Custom;
+            CustomFactory = null;
+        }
+
+        internal static IEventListeners<T> Create<T>() where T : Delegate => CustomFactory?.Create<T>() ?? new BasicEventListeners<T>();
     }
 
     public class BasicEventListeners<T> : IEventListeners<T> where T : Delegate
