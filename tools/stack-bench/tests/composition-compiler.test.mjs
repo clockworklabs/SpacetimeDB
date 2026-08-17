@@ -22,7 +22,7 @@ const recipePath = name => join(ECOMMERCE, 'composition', 'recipes', name);
 
 test('the ecommerce composition tree validates as one source set', () => {
   assert.deepEqual(checkCompositions({ trackName: 'ecommerce' }), [{
-      track: 'ecommerce', packs: 26, fixtures: 2, recipes: 7, checks: 305, aliases: 4,
+      track: 'ecommerce', packs: 29, fixtures: 2, recipes: 9, checks: 406, aliases: 4,
   }]);
 });
 
@@ -97,6 +97,40 @@ test('framework-neutral releases change task meaning without changing execution 
   assert.match(l1.recipe.task.requirementText, /POST \/api\/auth\/signin/);
   assert.match(l1.recipe.task.requirementText, /POST \/api\/admin\/restock/);
   assert.match(l1.recipe.task.requirementText, /POST \/api\/checkout/);
+});
+
+test('the L2 hardening candidate promotes only the three focused checks and keeps every score key', () => {
+  const oldPlan = compileRecipeFile(recipePath('l2-standard-1.2.0.json'), { trackRoot: ECOMMERCE });
+  const candidate = compileRecipeFile(recipePath('l2-standard-1.3.0.json'), { trackRoot: ECOMMERCE });
+  const promoted = new Set([
+    'ecommerce.operations-access.operator-authorization.201c',
+    'ecommerce.inventory-operations.stock-conservation.202d',
+    'ecommerce.operations-access.order-owner.204a',
+  ]);
+  assert.equal(candidate.recipe.state, 'draft');
+  assert.equal(candidate.checks.length, oldPlan.checks.length);
+  assert.deepEqual(candidate.checks.map(check => check.stableKey).sort(),
+    oldPlan.checks.map(check => check.stableKey).sort());
+  for (const check of candidate.checks) {
+    const previous = oldPlan.checks.find(item => item.stableKey === check.stableKey);
+    if (promoted.has(check.stableKey)) {
+      assert.equal(previous.points, 0);
+      assert.equal(check.points, 2);
+      assert.equal(check.source, 'scenarios/02-server-actions-1.0.0.json');
+    } else {
+      assert.deepEqual({ points: check.points, source: check.source },
+        { points: previous.points, source: previous.source });
+    }
+  }
+  assert.equal(candidate.scoring.points, oldPlan.scoring.points + 6);
+  assert.match(candidate.recipe.task.contractText, /data-ship-input/);
+  assert.match(candidate.recipe.task.contractText, /data-cancel-input/);
+  assert.match(candidate.recipe.task.contractText, /data-transfer-input/);
+  const focused = candidate.execution.find(execution => execution.id === 'server-actions');
+  assert.deepEqual(focused.checkGroups.map(group => group.feature.id), [201, 202, 204]);
+  assert(focused.checkGroups.flatMap(group => group.feature.criteria)
+    .every(criterion => criterion.steps.some(step => step.do === 'callAction'
+      || step.do === 'race')));
 });
 
 test('full ecommerce recipes compose the exact legacy builder task from pack-owned fragments', () => {
@@ -372,6 +406,34 @@ test('explicit scoring must name every selected stable check exactly once', () =
     assert.equal(plan.scoring.points, 7);
     assert.equal(plan.checks[0].sourcePoints, 2);
     assert.equal(plan.checks[0].points, 7);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+test('a versioned criterion can move to a focused scenario without changing its stable key', () => {
+  const box = sandbox();
+  try {
+    writeFileSync(join(box.root, 'scenarios', '02.json'), JSON.stringify({
+      level: 1,
+      features: [{ id: 2, name: 'Focused check', actors: ['a'], setup: [], criteria: [
+        { id: '1b', desc: 'Focused behavior', points: 3,
+          steps: [{ do: 'wait', actor: 'a', ms: 1 }] },
+      ] }],
+    }));
+    box.writePack('a', { checks: [
+      { id: 'group-baseline', stableId: 'group', source: 'scenarios/01.json',
+        feature: 1, role: 'feature' },
+      { id: 'group-focused', stableId: 'group', source: 'scenarios/02.json',
+        feature: 2, role: 'feature' },
+    ] });
+    const recipe = box.makeRecipe(['a']);
+    recipe.execution.push({ id: 'focused', source: 'scenarios/02.json' });
+    const plan = compileRecipeFile(box.writeRecipe(recipe), { trackRoot: box.root });
+    assert.deepEqual(plan.checks.map(check => check.stableKey), [
+      'example.a.group.1a',
+      'example.a.group.1b',
+    ]);
+    assert(plan.execution.every(execution =>
+      execution.checkGroups.every(group => group.checkGroupId === 'group')));
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 

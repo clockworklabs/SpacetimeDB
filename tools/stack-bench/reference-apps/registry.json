@@ -84,7 +84,7 @@
       "track": "ecommerce",
       "level": 1,
       "status": "candidate",
-      "recipes": ["ecommerce.l1-modular@2.1.0"],
+      "recipes": ["ecommerce.l1-modular@2.1.0", "ecommerce.l1-modular@2.2.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/mongodb",
         "baseSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a",
@@ -106,7 +106,7 @@
       "track": "ecommerce",
       "level": 1,
       "status": "candidate",
-      "recipes": ["ecommerce.l1-modular@2.1.0"],
+      "recipes": ["ecommerce.l1-modular@2.1.0", "ecommerce.l1-modular@2.2.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/postgres",
         "baseSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc",
@@ -128,7 +128,7 @@
       "track": "ecommerce",
       "level": 1,
       "status": "candidate",
-      "recipes": ["ecommerce.l1-modular@2.1.0"],
+      "recipes": ["ecommerce.l1-modular@2.1.0", "ecommerce.l1-modular@2.2.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/spacetime",
         "baseSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1",

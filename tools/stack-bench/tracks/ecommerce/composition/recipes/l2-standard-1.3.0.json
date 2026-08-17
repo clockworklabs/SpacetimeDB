@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "kind": "benchmark-recipe",
+  "id": "ecommerce.l2-standard",
+  "version": "1.3.0",
+  "state": "draft",
+  "title": "Ecommerce L2 hardened candidate",
+  "track": "ecommerce",
+  "compatibility": { "legacyLevel": 2 },
+  "fixture": { "path": "../fixtures/operations-1.0.0.json", "id": "ecommerce.operations", "version": "1.0.0" },
+  "task": {
+    "mode": "upgrade",
+    "baseRecipe": { "path": "l1-standard-1.1.0.json", "id": "ecommerce.l1-standard", "version": "1.1.0" },
+    "framing": {
+      "requirements": [
+        { "id": "ecommerce.l2.introduction", "path": "prompts/02-operations.md", "order": 10, "until": "## New: warehouse staff", "modes": ["upgrade"] },
+        { "id": "ecommerce.l2.starting-data", "path": "prompts/02-operations.md", "order": 70, "from": "## Starting data", "modes": ["upgrade"] }
+      ],
+      "contracts": [
+        { "id": "ecommerce.l2.contract-heading", "path": "contracts/appendix-02.md", "order": 2000, "until": "| `app-title`", "modes": ["upgrade"] },
+        { "id": "ecommerce.l2.contract-footer", "path": "contracts/appendix-02.md", "order": 2070, "from": "Before declaring", "modes": ["upgrade"] }
+      ]
+    }
+  },
+  "packs": [
+    { "path": "../packs/identity-access-1.1.0.json", "id": "ecommerce.identity-access", "version": "1.1.0", "includeRoles": ["guarantee"] },
+    { "path": "../packs/catalog-inventory-1.1.0.json", "id": "ecommerce.catalog-inventory", "version": "1.1.0", "includeRoles": ["guarantee"] },
+    { "path": "../packs/cart-checkout-1.1.0.json", "id": "ecommerce.cart-checkout", "version": "1.1.0", "includeRoles": ["guarantee"] },
+    { "path": "../packs/session-durability-1.1.0.json", "id": "ecommerce.session-durability", "version": "1.1.0", "includeRoles": ["guarantee"] },
+    { "path": "../packs/reviews-1.0.0.json", "id": "ecommerce.reviews", "version": "1.0.0", "includeRoles": ["guarantee"] },
+    { "path": "../packs/operations-access-1.1.0.json", "id": "ecommerce.operations-access", "version": "1.1.0", "includeRoles": ["feature", "guarantee"] },
+    { "path": "../packs/inventory-operations-1.2.0.json", "id": "ecommerce.inventory-operations", "version": "1.2.0", "includeRoles": ["feature", "guarantee"] },
+    { "path": "../packs/returns-pricing-1.0.0.json", "id": "ecommerce.returns-pricing", "version": "1.0.0", "includeRoles": ["feature", "guarantee"] }
+  ],
+  "execution": [
+    { "id": "features", "source": "scenarios/02-features.json" },
+    { "id": "invariants", "source": "scenarios/02-invariants.json" },
+    { "id": "server-actions", "source": "scenarios/02-server-actions-1.0.0.json" },
+    { "id": "contention", "source": "scenarios/01-contention.json" },
+    { "id": "invariants@L1", "source": "scenarios/01-invariants.json" },
+    { "id": "systems@L1", "source": "scenarios/01-systems.json" }
+  ],
+  "scoring": { "mode": "legacy-source-points" }
+}

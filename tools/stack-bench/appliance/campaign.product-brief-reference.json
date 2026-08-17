@@ -11,7 +11,7 @@
     "levels": [
       {
         "level": 1,
-        "recipe": "ecommerce.l1-modular@2.1.0",
+        "recipe": "ecommerce.l1-modular@2.2.0",
         "features": [
           "ecommerce.feature.accounts",
           "ecommerce.feature.cart-checkout",
@@ -49,7 +49,7 @@
             "requested": [],
             "expected": [
               "ecommerce.spec.access-control@1.1.0",
-              "ecommerce.spec.concurrency-safety@1.0.0",
+              "ecommerce.spec.concurrency-safety@1.1.0",
               "ecommerce.spec.live-state@1.0.0",
               "ecommerce.spec.state-durability@1.0.0",
               "ecommerce.spec.transactional-integrity@1.1.0"

@@ -102,7 +102,7 @@ test('selected pack prompts contain only their own framework-neutral testing cal
 
 test('the real unprescribed prompt withholds every expected quality specification', () => {
   const modular = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.l1-modular@2.1.0');
+    'ecommerce.l1-modular@2.2.0');
   const features = modular.release.components.packs
     .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
   const expectedSpecifications = modular.release.components.packs
@@ -123,7 +123,7 @@ test('the real unprescribed prompt withholds every expected quality specificatio
     assert.doesNotMatch(prompt, /## Access control:|## State durability:|## Live state:|## Concurrency safety:|## Transactional integrity:/);
     assert.doesNotMatch(prompt, /server-enforced authority|survives a page reload|only one customer can receive the last unit|historical order prices do not change/);
     assert.doesNotMatch(JSON.stringify(visible), /ecommerce\.spec/);
-    assert.equal(task.selection.scoredPoints, 44);
+    assert.equal(task.selection.scoredPoints, 45);
     assert(task.selection.scoredChecks.some(check => check.treatment === 'expected'));
     assert.deepEqual(visible.selection.requested.checks, []);
   } finally { rmSync(app, { recursive: true, force: true }); }

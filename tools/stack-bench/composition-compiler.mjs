@@ -101,7 +101,7 @@ const PACK_FIELDS = new Set([
   'moduleType', 'requiresPacks', 'conflictsWith', 'capabilities', 'evidence', 'budget', 'task', 'checks',
 ]);
 const CHECK_REF_FIELDS = new Set([
-  'id', 'source', 'feature', 'criteria', 'role', 'observations', 'requiresFeatures',
+  'id', 'stableId', 'source', 'feature', 'criteria', 'role', 'observations', 'requiresFeatures',
 ]);
 const BUDGET_FIELDS = new Set(['status', 'maxRuntimeMs']);
 const PACK_TASK_FIELDS = new Set(['requirements', 'contracts']);
@@ -245,6 +245,7 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
     id(check.id, `${at}.id`);
     if (checkIds.has(check.id)) fail(`${at}.id`, `duplicate check group ${check.id}`);
     checkIds.add(check.id);
+    if (check.stableId !== undefined) id(check.stableId, `${at}.stableId`);
     string(check.source, `${at}.source`);
     if (!Number.isInteger(check.feature) || check.feature < 1) {
       fail(`${at}.feature`, 'must be a positive integer');
@@ -636,7 +637,10 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
         packId: pack.id,
         packVersion: pack.version,
         ...(pack.moduleType === undefined ? {} : { moduleType: pack.moduleType }),
-        checkGroupId: check.id,
+        // `id` identifies this source slice inside the pack. `stableId` keeps
+        // its published score keys unchanged when one criterion moves to a
+        // focused, independently versioned scenario.
+        checkGroupId: check.stableId ?? check.id,
         role: check.role,
         ...(check.observations === undefined ? {} : { observations: check.observations }),
         ...(check.requiresFeatures === undefined ? {} : { requiresFeatures: check.requiresFeatures }),

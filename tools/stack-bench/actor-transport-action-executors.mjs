@@ -624,8 +624,13 @@ async function expectActionOutcome({ input, capabilities }) {
     if (call.accepted) {
       fail(`server accepted action "${call.action}" as ${actor.name}, who is not allowed to do it`);
     }
+    const routeProof = input.routeProvenBy === undefined ? null
+      : actorFor(capabilities, input.routeProvenBy).actionCall;
+    const provenPrivateNotFound = call.status === 404 && routeProof?.accepted === true
+      && routeProof.action === call.action;
     const deliberateRefusal = (Number.isInteger(call.status) && call.status >= 400
-      && call.status < 500 && call.status !== 404) || call.applicationRejected === true;
+      && call.status < 500 && (call.status !== 404 || provenPrivateNotFound))
+      || call.applicationRejected === true;
     if (!deliberateRefusal) {
       fail(`action "${call.action}" failed with ${call.status ? `HTTP ${call.status}` : 'no server response'}; `
         + 'that does not prove the server refused the caller');

@@ -185,6 +185,16 @@ test('the framework-neutral release is the promoted default and the retired rele
   }), /unknown field/);
 });
 
+test('a catalogued compatibility candidate may harden zero-point checks without losing stable checks', () => {
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.3.0');
+  const promoted = resolveRecipeRelease(track, 2);
+  assert.equal(binding.status, 'candidate');
+  assert.equal(binding.release.scoring.points, 81);
+  assert.deepEqual(binding.release.checkCatalog.map(check => check.stableKey).sort(),
+    promoted.release.checkCatalog.map(check => check.stableKey).sort());
+});
+
 test('the grader rejects parent/child recipe drift before launching a browser', () => {
   const grader = join(import.meta.dirname, '..', 'grader', 'grade.mjs');
   const result = spawnSync(process.execPath, [grader,

@@ -118,6 +118,8 @@ test('extracted action inputs expose their runtime options without allowing scri
   assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'callAction', actor: 'a',
     action: 'buy', input: { testid: 'item-card', contains: 'Desk Lamp',
       attribute: 'data-buy-input' }, authentication: 'none' })));
+  assert.doesNotThrow(() => compileScenarioDefinition(scenario({ do: 'expectActionOutcome',
+    actor: 'a', outcome: 'refused', routeProvenBy: 'owner' })));
   assert.throws(() => compileScenarioDefinition(scenario({ do: 'callAction', actor: 'a',
     action: 'buy', input: { testid: 'item-card', attribute: 'data-buy-input' },
     authentication: 'guest' })), /authentication: must be "actor" or "none"/);

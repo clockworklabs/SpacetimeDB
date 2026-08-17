@@ -133,7 +133,10 @@ test('named action input is exact and a missing route is not mistaken for a refu
   assert.equal(rejectedInput.status, 'failed');
   assert.match(rejectedInput.summary, /must contain exactly/);
 
-  const missing = services(new Map([['customer', actor({ itemId: 1, warehouseId: 2, quantity: 3 })]]), {
+  const route = { name: 'route', actionCall: { action: 'restock', accepted: true, status: 200 } };
+  const missing = services(new Map([
+    ['customer', actor({ itemId: 1, warehouseId: 2, quantity: 3 })], ['route', route],
+  ]), {
     actions: [action], fetchImpl: async () => ({ status: 404, ok: false }),
   });
   await run({ do: 'callAction', actor: 'customer', action: 'restock',
@@ -141,6 +144,16 @@ test('named action input is exact and a missing route is not mistaken for a refu
   const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused' }, missing);
   assert.equal(checked.status, 'failed');
   assert.match(checked.summary, /does not prove/);
+
+  const privateResource = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused',
+    routeProvenBy: 'route' }, missing);
+  assert.equal(privateResource.status, 'passed');
+  assert.equal(privateResource.observation.status, 404);
+
+  route.actionCall.action = 'different-action';
+  const unrelatedProof = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused',
+    routeProvenBy: 'route' }, missing);
+  assert.equal(unrelatedProof.status, 'failed');
 });
 
 test('account setup preserves scoped credentials and classifies browser failures', async () => {

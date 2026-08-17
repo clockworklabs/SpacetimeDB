@@ -9,7 +9,12 @@
     {
       "alias": "L1",
       "status": "candidate",
-      "recipe": { "path": "recipes/l1-modular-2.1.0.json", "id": "ecommerce.l1-modular", "version": "2.1.0" }
+      "recipe": { "path": "recipes/l1-modular-2.2.0.json", "id": "ecommerce.l1-modular", "version": "2.2.0" }
+    },
+    {
+      "alias": "L2",
+      "status": "candidate",
+      "recipe": { "path": "recipes/l2-standard-1.3.0.json", "id": "ecommerce.l2-standard", "version": "1.3.0" }
     }
   ]
 }

@@ -28,6 +28,8 @@ test('reference selection uses an exact recipe candidate and otherwise keeps the
   assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
     recipe: 'ecommerce.l1-modular@2.1.0' }).id, 'ecommerce-l1-direct-actions-mongodb');
   assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
+    recipe: 'ecommerce.l1-modular@2.2.0' }).id, 'ecommerce-l1-direct-actions-mongodb');
+  assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
     recipe: 'ecommerce.l1-standard@1.1.0' }).id, 'ecommerce-l1-mongodb');
   const blocked = structuredClone(registry);
   blocked.fixtures.find(fixture => fixture.id === 'ecommerce-l1-direct-actions-mongodb').status = 'blocked';

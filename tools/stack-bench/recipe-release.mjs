@@ -377,6 +377,29 @@ export function assertLegacyRecipeParity(plan, track, level) {
   }
 }
 
+function assertCompatibilityCandidateContinuity(plan, promotedPlan, track, level) {
+  assertLegacyRecipeParity(promotedPlan, track, level);
+  if (plan.recipe.compatibility?.legacyLevel !== Number(level)) {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} does not declare L${level} compatibility`);
+  }
+  if (plan.scoring.mode !== 'legacy-source-points') {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} cannot use the legacy runner with ${plan.scoring.mode} scoring`);
+  }
+  const baseline = new Map(promotedPlan.checks.map(check => [check.stableKey, check]));
+  const candidate = new Map(plan.checks.map(check => [check.stableKey, check]));
+  const missing = [...baseline.keys()].filter(stableKey => !candidate.has(stableKey));
+  const added = [...candidate.keys()].filter(stableKey => !baseline.has(stableKey));
+  if (missing.length || added.length) {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} changes the L${level} compatibility check set`);
+  }
+  for (const [stableKey, previous] of baseline) {
+    const next = candidate.get(stableKey);
+    if (next.points < previous.points || (previous.points > 0 && next.points !== previous.points)) {
+      throw new Error(`${plan.recipe.id}@${plan.recipe.version} changes the established score for ${stableKey}`);
+    }
+  }
+}
+
 function exactRecipeRequest(requested) {
   if (requested === null || requested === undefined) return null;
   if (typeof requested === 'string') {
@@ -437,7 +460,14 @@ export function resolveRecipeRelease(track, level, requested = null) {
   const selection = choices[0];
   const recipePath = join(track.dir, 'composition', selection.recipe.path);
   const plan = compileRecipeFile(recipePath, { trackRoot: track.dir });
-  if (plan.recipe.compatibility !== null) assertLegacyRecipeParity(plan, track, level);
+  if (plan.recipe.compatibility !== null && selection.status === 'candidate') {
+    if (promoted.length !== 1) {
+      throw new Error(`${alias} compatibility candidate requires exactly one promoted baseline; found ${promoted.length}`);
+    }
+    const promotedPlan = compileRecipeFile(join(track.dir, 'composition', promoted[0].recipe.path),
+      { trackRoot: track.dir });
+    assertCompatibilityCandidateContinuity(plan, promotedPlan, track, level);
+  } else if (plan.recipe.compatibility !== null) assertLegacyRecipeParity(plan, track, level);
   else if (!plan.packs.length
     || plan.packs.some(pack => !['feature', 'specification'].includes(pack.moduleType))) {
     throw new Error(`${plan.recipe.id}@${plan.recipe.version} is neither a compatibility recipe nor modular`);

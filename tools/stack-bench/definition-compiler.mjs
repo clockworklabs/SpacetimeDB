@@ -61,7 +61,7 @@ export const ACTION_DEFINITIONS = Object.freeze({
     { contains: string, notContains: string, count: integer, absent: boolean, ...locator, ...within }),
   expectActorsWith: fields({ ...actors, testid: nonEmptyString, contains: string,
     equals: integer, maxEach: integer }),
-  expectActionOutcome: fields({ ...actor, outcome: nonEmptyString }),
+  expectActionOutcome: fields({ ...actor, outcome: nonEmptyString }, { routeProvenBy: nonEmptyString }),
   expectAgreement: fields({ ...actors, testid: nonEmptyString },
     { numeric: boolean, ...locator, ...within }),
   expectAllPresent: fields({ ...actor, prefix: string, count: integer, within: number }),
