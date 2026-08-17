@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in Rust that defines three tables with basic columns.
 
 TABLES
-- user
+- user (private)
   - Struct: User
   - Fields:
     - id: i32 (primary key)
@@ -9,7 +9,7 @@ TABLES
     - age: i32
     - active: bool
 
-- product
+- product (private)
   - Struct: Product
   - Fields:
     - id: i32 (primary key)
@@ -17,7 +17,7 @@ TABLES
     - price: f32
     - in_stock: bool
 
-- note
+- note (private)
   - Struct: Note
   - Fields:
     - id: i32 (primary key)
