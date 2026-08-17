@@ -775,12 +775,12 @@ can seed an empty campaign app
 from the exact active fixture in the content-validated registry and rejects any
 different pre-existing source. `campaign.product-brief-reference.json` fixes the
 primary expected-quality condition: six requested product features, neutral
-backend guidance, and five unmentioned but scored/repairable specifications.
+backend guidance, and six unmentioned but scored/repairable specifications.
 It runs two model-free reference repetitions on all three stacks (six attempts)
-with an exact 44-point denominator. External data synchronization remains
-excluded because its current oracle requires a disclosed table contract. This
-prepares reproducible reference input; it does not replace required live
-reference, null, and exact-mutation evidence.
+with the complete 58-point L1 denominator. External data synchronization uses
+the grader-owned database interface and is included without adding its quality
+requirements to the build prompt. This prepares reproducible reference input;
+it does not replace required live reference, null, and exact-mutation evidence.
 
 ### SB-507: Condition-aware campaigns and reports
 

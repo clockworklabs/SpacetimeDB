@@ -114,14 +114,13 @@ shape; copy it outside the image and replace its study inputs before use.
 `campaign.product-brief-reference.json` is the model-free draft gate for the
 primary modular L1 condition. The prompt requests the six product features and
 uses neutral backend guidance. Its evaluation scope also covers access control,
-state continuity, live updates, concurrency safety, and transactional integrity;
-those checks count in the ordinary score and remain repairable. The exact
-registered reference fixture runs twice on each stack: six planned attempts
-with a 44-point denominator.
-External data synchronization is excluded because its current check needs a
-table interface included in the build brief. This gate is qualification input,
-not comparative model data. Null and exact-mutation controls must pass
-separately before the condition can be frozen.
+state continuity, live updates, concurrency safety, transactional integrity,
+and synchronization after direct database writes. Those checks count in the
+ordinary 58-point score without adding the quality specifications to the build
+prompt. The exact registered reference fixture runs twice on each stack: six
+planned attempts. This gate is qualification input, not comparative model data.
+Null and exact-mutation controls must pass separately before the condition can
+be frozen.
 
 Run a draft through the complete campaign path only when it uses registered
 non-billable adapters and declares zero pricing for every selected model:
