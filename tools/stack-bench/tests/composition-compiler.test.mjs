@@ -254,6 +254,8 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
     /qualified packs require a bounded runtime budget/);
   assert.throws(() => compilePackDefinition({ ...pack, moduleType: 'mode' }),
     /moduleType.*feature or specification/);
+  assert.throws(() => compilePackDefinition({ ...pack, stableId: 'Published Score' }),
+    /stableId.*lowercase letters/);
   assert.throws(() => compilePackDefinition({ ...pack, moduleType: 'feature', checks: [
     { ...pack.checks[0], role: 'guarantee' },
   ] }), /feature modules cannot own guarantee/);
@@ -273,6 +275,11 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
   assert.deepEqual(specification.checks[0].observations, ['requested', 'unmentioned']);
   assert.deepEqual(specification.checks[0].requiresFeatures, ['example.feature']);
   assert.deepEqual(specification.task.requirements[0].requiresFeatures, ['example.feature']);
+
+  const renamed = compilePackDefinition({ ...pack, id: 'example.feature-v2',
+    stableId: 'example.feature' });
+  assert.equal(renamed.id, 'example.feature-v2');
+  assert.equal(renamed.stableId, 'example.feature');
 
   const fixture = {
     schemaVersion: 1, kind: 'fixture-set', id: 'example.fixture', version: '1.0.0', state: 'draft',
@@ -457,6 +464,75 @@ test('a versioned criterion can move to a focused scenario without changing its 
     ]);
     assert(plan.execution.every(execution =>
       execution.checkGroups.every(group => group.checkGroupId === 'group')));
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+test('separate modules can share a published scoring namespace without hiding their ownership', () => {
+  const box = sandbox();
+  try {
+    writeFileSync(join(box.root, 'scenarios', '01.json'), JSON.stringify({
+      level: 1,
+      features: [{ id: 1, name: 'Feature', actors: ['a'], setup: [], criteria: [
+        { id: '1a', desc: 'Requested behavior', points: 2,
+          steps: [{ do: 'wait', actor: 'a', ms: 1 }] },
+        { id: '1b', desc: 'Quality property', points: 3,
+          steps: [{ do: 'wait', actor: 'a', ms: 1 }] },
+      ] }],
+    }));
+    box.writePack('feature', {
+      moduleType: 'feature', stableId: 'example.published',
+      checks: [{ id: 'group', source: 'scenarios/01.json', feature: 1,
+        criteria: ['1a'], role: 'feature' }],
+    });
+    box.writePack('specification', {
+      moduleType: 'specification', stableId: 'example.published',
+      task: { requirements: [{ id: 'example.specification.requirement', path: 'prompts/task.md',
+        order: 11, requiresFeatures: ['example.feature'] }], contracts: [] },
+      checks: [{ id: 'group', source: 'scenarios/01.json', feature: 1,
+        criteria: ['1b'], role: 'guarantee', observations: ['requested', 'unmentioned'],
+        requiresFeatures: ['example.feature'] }],
+    });
+    const recipe = box.makeRecipe(['feature', 'specification'], { mode: 'explicit', weights: {
+      'example.published.group.1a': 2,
+      'example.published.group.1b': 3,
+    } });
+    recipe.packs[1].includeRoles = ['guarantee'];
+    const plan = compileRecipeFile(box.writeRecipe(recipe), { trackRoot: box.root });
+    assert.deepEqual(plan.checks.map(check => ({
+      stableKey: check.stableKey,
+      packId: check.packId,
+      stablePackId: check.stablePackId,
+    })), [
+      { stableKey: 'example.published.group.1a', packId: 'example.feature',
+        stablePackId: 'example.published' },
+      { stableKey: 'example.published.group.1b', packId: 'example.specification',
+        stablePackId: 'example.published' },
+    ]);
+    assert.deepEqual(plan.packs.map(selected => [selected.id, selected.stableId]), [
+      ['example.feature', 'example.published'],
+      ['example.specification', 'example.published'],
+    ]);
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
+test('published scoring namespaces still reject duplicate stable check keys', () => {
+  const box = sandbox();
+  try {
+    writeFileSync(join(box.root, 'scenarios', '02.json'), JSON.stringify({
+      level: 1,
+      features: [{ id: 2, name: 'Other feature', actors: ['a'], setup: [], criteria: [
+        { id: '1a', desc: 'Conflicting identity', points: 1,
+          steps: [{ do: 'wait', actor: 'a', ms: 1 }] },
+      ] }],
+    }));
+    box.writePack('a', { stableId: 'example.published' });
+    box.writePack('b', { stableId: 'example.published', checks: [
+      { id: 'group', source: 'scenarios/02.json', feature: 2, role: 'feature' },
+    ] });
+    const recipe = box.makeRecipe(['a', 'b']);
+    recipe.execution.push({ id: 'other', source: 'scenarios/02.json' });
+    assert.throws(() => compileRecipeFile(box.writeRecipe(recipe), { trackRoot: box.root }),
+      /duplicate stable check key example\.published\.group\.1a/);
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 

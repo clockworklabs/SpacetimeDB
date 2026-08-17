@@ -98,7 +98,8 @@ function contained(root, from, path, at) {
 
 const PACK_FIELDS = new Set([
   'schemaVersion', 'kind', 'id', 'version', 'state', 'title', 'description',
-  'moduleType', 'requiresPacks', 'conflictsWith', 'capabilities', 'evidence', 'budget', 'task', 'checks',
+  'moduleType', 'stableId', 'requiresPacks', 'conflictsWith', 'capabilities', 'evidence', 'budget',
+  'task', 'checks',
 ]);
 const CHECK_REF_FIELDS = new Set([
   'id', 'stableId', 'source', 'feature', 'criteria', 'role', 'observations', 'requiresFeatures',
@@ -195,6 +196,7 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
   const pack = structuredClone(input);
   strictObject(pack, source, PACK_FIELDS);
   identityFields(pack, source, 'test-pack');
+  if (pack.stableId !== undefined) id(pack.stableId, `${source}.stableId`);
   if (pack.moduleType !== undefined && !MODULE_TYPES.has(pack.moduleType)) {
     fail(`${source}.moduleType`, 'must be feature or specification');
   }
@@ -643,6 +645,7 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
       selectedFeatures.push({
         packId: pack.id,
         packVersion: pack.version,
+        ...(pack.stableId === undefined ? {} : { stablePackId: pack.stableId }),
         ...(pack.moduleType === undefined ? {} : { moduleType: pack.moduleType }),
         // `id` identifies this source slice inside the pack. `stableId` keeps
         // its published score keys unchanged when one criterion moves to a
@@ -689,12 +692,13 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
   for (const suite of execution) {
     for (const group of suite.checkGroups) {
       for (const criterion of group.feature.criteria) {
-        const stableKey = `${group.packId}.${group.checkGroupId}.${criterion.id}`;
+        const stableKey = `${group.stablePackId ?? group.packId}.${group.checkGroupId}.${criterion.id}`;
         if (stableKeys.has(stableKey)) fail(recipeSource, `duplicate stable check key ${stableKey}`);
         stableKeys.add(stableKey);
         checks.push({
           stableKey,
           packId: group.packId,
+          ...(group.stablePackId === undefined ? {} : { stablePackId: group.stablePackId }),
           checkGroupId: group.checkGroupId,
           criterionId: criterion.id,
           role: group.role,
@@ -748,6 +752,7 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
       version: pack.version,
       state: pack.state,
       title: pack.title,
+      ...(pack.stableId === undefined ? {} : { stableId: pack.stableId }),
       ...(pack.moduleType === undefined ? {} : { moduleType: pack.moduleType }),
       path,
       includeRoles: selection.includeRoles,

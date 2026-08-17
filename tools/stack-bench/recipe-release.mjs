@@ -70,13 +70,14 @@ function checkDetails(plan) {
   for (const execution of plan.execution) {
     for (const group of execution.checkGroups) {
       for (const criterion of group.feature.criteria) {
-        const stableKey = `${group.packId}.${group.checkGroupId}.${criterion.id}`;
+        const stableKey = `${group.stablePackId ?? group.packId}.${group.checkGroupId}.${criterion.id}`;
         const compiled = plan.checks.find(check => check.stableKey === stableKey);
         if (!compiled) throw new Error(`compiled recipe lost check ${stableKey}`);
         details.push({
           stableKey,
           executionId: execution.id,
           packId: group.packId,
+          ...(group.stablePackId === undefined ? {} : { stablePackId: group.stablePackId }),
           packVersion: group.packVersion,
           checkGroupId: group.checkGroupId,
           role: group.role,
@@ -214,6 +215,7 @@ export function buildRecipeRelease(recipePath, { trackRoot } = {}) {
     },
     packs: plan.packs.map(pack => ({
       id: pack.id,
+      ...(pack.stableId === undefined ? {} : { stableId: pack.stableId }),
       ...(pack.moduleType === undefined ? {} : { moduleType: pack.moduleType }),
       includeRoles: [...pack.includeRoles].sort(),
       capabilities: [...pack.capabilities].sort(),
@@ -234,6 +236,7 @@ export function buildRecipeRelease(recipePath, { trackRoot } = {}) {
       scenario: scenarioDefinitions[execution.source],
       checkGroups: execution.checkGroups.map(group => ({
         packId: group.packId,
+        ...(group.stablePackId === undefined ? {} : { stablePackId: group.stablePackId }),
         checkGroupId: group.checkGroupId,
         role: group.role,
         ...(group.observations === undefined ? {} : { observations: group.observations }),
@@ -303,6 +306,7 @@ export function buildRecipeRelease(recipePath, { trackRoot } = {}) {
         path: trackRelative(root, fixturePath), sha256: sha256(readFileSync(fixturePath)) },
       packs: plan.packs.map(pack => ({ id: pack.id, version: pack.version, state: pack.state,
         ...packSource(pack), includeRoles: [...pack.includeRoles].sort(),
+        ...(pack.stableId === undefined ? {} : { stableId: pack.stableId }),
         ...(pack.moduleType === undefined ? {} : { moduleType: pack.moduleType }),
         requiresPacks: [...pack.requiresPacks].sort() }))
         .sort((a, b) => a.id.localeCompare(b.id)),
@@ -318,6 +322,7 @@ export function buildRecipeRelease(recipePath, { trackRoot } = {}) {
       stableKey: detail.stableKey,
       executionId: detail.executionId,
       packId: detail.packId,
+      ...(detail.stablePackId === undefined ? {} : { stablePackId: detail.stablePackId }),
       packVersion: detail.packVersion,
       checkGroupId: detail.checkGroupId,
       role: detail.role,
@@ -422,7 +427,7 @@ function cumulativeBasePlan(plan, track, level) {
 
 function executionStableKeys(execution) {
   return execution.checkGroups.flatMap(group => group.feature.criteria.map(criterion =>
-    `${group.packId}.${group.checkGroupId}.${criterion.id}`));
+    `${group.stablePackId ?? group.packId}.${group.checkGroupId}.${criterion.id}`));
 }
 
 function legacyExecutionPlan(plan, track, level) {
