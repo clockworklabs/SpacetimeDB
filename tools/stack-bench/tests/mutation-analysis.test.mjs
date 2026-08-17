@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import test from 'node:test';
 import { classifyMutationResult, groupMutationsByScenario, mutationScenario,
-  validateMutationBaseline, resolveMutationFile,
+  validateMutationBaseline, releaseScenarioCheckKeys, resolveMutationFile,
   validateMutationDefinitions } from '../mutation-analysis.mjs';
 import { createCheckEvidence } from '../check-evidence.mjs';
+import { resolveRecipeRelease } from '../recipe-release.mjs';
+import { loadTrack } from '../tracks.mjs';
 
 const report = (criteria, setupError = null) => ({
   total: Object.values(criteria).filter(value => value === true).length,
@@ -47,6 +50,19 @@ test('mutation scenarios may override a manifest default and are required for ex
   assert.deepEqual([...groups.keys()], ['scenarios/base.json', 'scenarios/upgrade.json']);
   assert.deepEqual([...groups.values()].map(entries => entries.map(entry => entry.id)),
     [['break-b'], ['upgrade']]);
+});
+
+test('recipe-bound mutation grading selects only checks owned by the scenario', () => {
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.4.0');
+  const keys = releaseScenarioCheckKeys(binding.release, track.dir,
+    join(track.dir, 'scenarios', '02-features.json'));
+  assert(keys.includes('ecommerce.operations-access.fulfilment-queue.1a'));
+  assert(!keys.includes('ecommerce.operations-access.fulfilment-queue.1b'),
+    '1b moved to a self-contained scenario and must not be graded from the legacy source');
+  assert.throws(() => releaseScenarioCheckKeys(binding.release, track.dir,
+    join(track.dir, 'scenarios', '03-features.json')),
+  /has no checks/);
 });
 
 test('a mutation can declare exact targets across multiple features', () => {

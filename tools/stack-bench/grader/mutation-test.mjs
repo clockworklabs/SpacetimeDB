@@ -37,11 +37,13 @@ import {
   groupMutationsByScenario,
   mutationEdits,
   mutationTargetKeys,
+  releaseScenarioCheckKeys,
   resolveMutationFile,
   validateMutationBaseline,
   validateMutationDefinitions,
 } from "../mutation-analysis.mjs";
 import { dbName, loadTrack } from "../tracks.mjs";
+import { resolveRecipeRelease } from "../recipe-release.mjs";
 import { resetBackend } from "../reset-backend.mjs";
 import { fetchStatus } from "../readiness.mjs";
 import { executeStackCapability } from "../stack-adapter-contract.mjs";
@@ -154,6 +156,12 @@ async function grade(a, reportPath) {
   if (a.restartSpec) gradeArgs.push("--restart-spec", JSON.stringify(a.restartSpec));
   if (a.mutationAttemptId) gradeArgs.push("--parent-attempt-id", a.mutationAttemptId);
   if (a.recipe) gradeArgs.push("--recipe", a.recipe);
+  if (a.expectedRecipeSha256) {
+    gradeArgs.push("--expected-recipe-sha256", a.expectedRecipeSha256);
+  }
+  for (const stableKey of a.selectedCheckKeys ?? []) {
+    gradeArgs.push("--selected-check", stableKey);
+  }
   execFileSync(process.execPath, gradeArgs, {
     stdio: "pipe",
     encoding: "utf8",
@@ -244,6 +252,13 @@ async function main() {
   args.track = spec.track;
   args.level = String(spec.level);
   const track = loadTrack(args.track);
+  if (args.recipe) {
+    const binding = resolveRecipeRelease(track, Number(args.level), args.recipe);
+    if (!binding) throw new Error(`${args.track} L${args.level} has no recipe release`);
+    args.recipe = `${binding.release.id}@${binding.release.version}`;
+    args.expectedRecipeSha256 = binding.release.contentSha256;
+    args.recipeRelease = binding.release;
+  }
   args.slug ??= track.slug;
   args.probe ??= track.restartProbe;
   args.dbName ??= dbName(track, Number(args.runIndex));
@@ -310,6 +325,9 @@ async function main() {
   const baselines = [];
   for (const [scenarioPath, mutations] of groups) {
     args.spec = scenarioPath;
+    args.selectedCheckKeys = args.recipeRelease
+      ? releaseScenarioCheckKeys(args.recipeRelease, track.dir, scenarioPath)
+      : [];
     console.log(`Baseline (unmutated app, ${scenarioPath})...`);
     await waitForApp(args);
     const baseline = await grade(args, reportPath);

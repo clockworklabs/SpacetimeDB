@@ -37,6 +37,20 @@ export function groupMutationsByScenario(manifest) {
   return groups;
 }
 
+export function releaseScenarioCheckKeys(release, trackDir, scenarioPath) {
+  if (!release || !Array.isArray(release.checkCatalog)) {
+    throw new Error('recipe-bound mutation grading requires a compiled release check catalog');
+  }
+  const selectedScenario = resolve(scenarioPath);
+  const keys = release.checkCatalog
+    .filter(check => resolve(trackDir, check.source) === selectedScenario)
+    .map(check => check.stableKey);
+  if (keys.length === 0) {
+    throw new Error(`mutation scenario ${scenarioPath} has no checks in the exact recipe release`);
+  }
+  return keys;
+}
+
 export function resolveMutationFile(app, file) {
   const root = resolve(app);
   const target = resolve(root, file);
