@@ -7,6 +7,7 @@ import { mutationScenario, mutationTargetKeys, validateMutationDefinitions } fro
 import { sha256 } from './provenance.mjs';
 import { loadReferenceRegistry, validateReferenceRegistry } from './reference-fixtures.mjs';
 import { readArtifact } from './artifacts.mjs';
+import { executionPlanForRelease } from './recipe-release.mjs';
 import { missingRunnerObservation } from './runner-environment.mjs';
 
 export const CALIBRATION_SCHEMA_VERSION = 1;
@@ -288,18 +289,33 @@ function exactEvidenceIdentity(actual, expected, at) {
   }
 }
 
-function currentLevelPoints(release) {
-  // suitesFor() gives inherited guarantee suites an @L<n> suffix. The run's
-  // displayed score covers the selected level; inherited guarantees are
-  // reported separately even though the recipe's aggregate point total binds
-  // both. Keep the evidence gate aligned with that runtime contract.
-  return release.checkCatalog
-    .filter(check => !/@L[1-9]\d*$/.test(check.executionId))
-    .reduce((sum, check) => sum + check.points, 0);
+export function currentLevelPoints(release, execution) {
+  if (!Array.isArray(execution) || execution.length === 0) {
+    throw new Error('qualification requires a typed execution plan');
+  }
+  const ownership = new Map();
+  for (const entry of execution) {
+    if (typeof entry?.id !== 'string' || !entry.id || ownership.has(entry.id)
+      || !['current', 'inherited'].includes(entry.ownership?.kind)) {
+      throw new Error('qualification received an invalid typed execution plan');
+    }
+    ownership.set(entry.id, entry.ownership.kind);
+  }
+  const selected = new Set();
+  let points = 0;
+  for (const check of release.checkCatalog) {
+    const kind = ownership.get(check.executionId);
+    if (!kind) throw new Error(`typed execution plan is missing ${check.executionId}`);
+    selected.add(check.executionId);
+    if (kind === 'current') points += check.points;
+  }
+  const empty = [...ownership.keys()].filter(id => !selected.has(id));
+  if (empty.length) throw new Error(`typed execution plan has no checks for ${empty.join(', ')}`);
+  return points;
 }
 
 export function validateQualificationEvidenceArtifact(artifact, entry,
-  { calibration, qualificationIdentity, release, references }) {
+  { calibration, qualificationIdentity, release, references, execution }) {
   const at = `evidence.${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`;
   if (!artifact || typeof artifact !== 'object') evidenceFailure(at, 'is not an artifact');
   exactEvidenceIdentity(artifact.identities?.recipe,
@@ -376,7 +392,7 @@ export function validateQualificationEvidenceArtifact(artifact, entry,
     evidenceFailure(at, 'does not satisfy the repeated Docker gate');
   }
   const repetitions = new Set();
-  const expectedRunScore = currentLevelPoints(release);
+  const expectedRunScore = currentLevelPoints(release, execution);
   for (const run of payload.runs) {
     repetitions.add(run.repetition);
     if (run.ok !== true || run.processError !== null || run.outcome !== 'passed'
@@ -502,6 +518,10 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
   if (!release.sourceManifest.some(entry => entry.path === recipeRef.relative && entry.kinds.includes('recipe'))) {
     fail(`${source}.recipe.path`, 'does not name the resolved recipe source');
   }
+  const execution = executionPlanForRelease(recipeRef.absolute, {
+    trackRoot: root,
+    level: Number(calibration.promotion.alias.slice(1)),
+  });
   if (calibration.fixture.id !== release.components.fixture.id
     || calibration.fixture.version !== release.components.fixture.version) {
     fail(`${source}.fixture`, 'does not match the resolved fixture identity');
@@ -523,7 +543,11 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
       fail(at, 'targets a different backend or track');
     }
     if (entry.imported?.sourceSha256 !== selection.sourceSha256) fail(`${at}.sourceSha256`, 'is stale');
-    return { ...selection, status: entry.status, targetPath: entry.targetPath };
+    return {
+      ...selection,
+      status: entry.status,
+      ...(entry.targetPath ? { targetPath: entry.targetPath } : {}),
+    };
   });
 
   const stableByLegacyKey = new Map(release.checkCatalog.map(check => [
@@ -588,6 +612,7 @@ export function compileCalibrationFile(calibrationPath, { trackRoot, stackBenchR
       qualificationIdentity,
       release,
       references,
+      execution,
     });
   const equivalenceDecisions = calibration.equivalenceDecisions.map((decision, index) => ({
     ...decision,

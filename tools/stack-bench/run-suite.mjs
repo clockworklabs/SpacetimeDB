@@ -35,15 +35,14 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const RESET = join(ROOT, 'reset-backend.mjs');
 
 export function suitesForRecipe(track, binding) {
-  if (!binding?.plan?.execution?.length) throw new Error('recipe has no executable suites');
-  return binding.plan.execution.map(entry => {
-    const inherited = entry.id.match(/@L(\d+)$/);
-    return {
-      id: entry.id,
-      spec: resolve(track.dir, entry.source),
-      ...(inherited ? { inherited: true, fromLevel: Number(inherited[1]) } : {}),
-    };
-  });
+  if (!binding?.execution?.length) throw new Error('recipe has no typed execution plan');
+  return binding.execution.map(entry => ({
+    id: entry.id,
+    spec: resolve(track.dir, entry.source),
+    ...(entry.ownership.kind === 'inherited'
+      ? { inherited: true, fromLevel: entry.ownership.fromLevel }
+      : {}),
+  }));
 }
 
 export function childFailureDetail(failure = null, stdout = '', limit = 600) {

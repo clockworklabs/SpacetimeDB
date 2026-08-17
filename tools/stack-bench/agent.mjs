@@ -652,6 +652,22 @@ export function buildPrompt(args, p, track, lintEndpoint, materials = {}) {
   ].join('\n');
 }
 
+export function agentScenarioPaths(track, level, recipeBinding = null) {
+  const execution = recipeBinding?.execution;
+  if (execution) return execution.map(entry => resolve(track.dir, entry.source));
+  return suitesFor(track, level).map(suite => suite.spec);
+}
+
+export function agentRecipeRequest(explicitRecipe = null, recipeTask = null) {
+  const bound = recipeTask?.recipe;
+  if (!bound) return explicitRecipe;
+  const identity = `${bound.id}@${bound.version}`;
+  if (explicitRecipe && explicitRecipe !== identity) {
+    throw new Error(`agent recipe ${explicitRecipe} does not match bound task ${identity}`);
+  }
+  return bound;
+}
+
 // A build must not be able to read the thing that grades it.
 // The deny list itself lives in sandbox.mjs, shared with probe-sandbox.mjs so
 // the probe proves the rules a build actually gets.
@@ -664,7 +680,8 @@ async function main() {
   const defaultSkills = executeStackCapability(adapter, 'agent', 'default-skills');
   const selectedSkills = selectAgentSkills(defaultSkills, args.skills ?? null);
   const skillsText = readAgentSkillDocuments(REPO, selectedSkills);
-  const recipeBinding = resolveRecipeRelease(track, args.level, args.recipeTask?.recipe ?? null);
+  const recipeBinding = resolveRecipeRelease(track, args.level,
+    agentRecipeRequest(args.recipe ?? null, args.recipeTask ?? null));
   if (args.recipeTask && !recipeBinding) {
     throw new Error(`L${args.level} has no recipe release for the requested task`);
   }
@@ -734,7 +751,7 @@ async function main() {
   const bugReportText = args.mode === 'fix' && existsSync(bugReportPath)
     ? readFileSync(bugReportPath, 'utf8') : null;
   const provenance = sessionProvenance({ prompt, skillsText, contractText, bugReportText,
-    scenarioPaths: suitesFor(track, args.level).map(suite => suite.spec),
+    scenarioPaths: agentScenarioPaths(track, args.level, recipeBinding),
     trackDir: track.dir, trackManifestPath: join(track.dir, 'track.json') });
   writeFileSync(join(args.app, `.prompt-${args.mode}-l${args.level}.md`), prompt);
 

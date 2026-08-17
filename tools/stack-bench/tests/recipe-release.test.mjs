@@ -252,6 +252,58 @@ test('cumulative continuity does not trust mutable scenario level labels', () =>
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
+test('the first cumulative level bootstraps only from the exact promoted lower level', () => {
+  const box = copyTrack();
+  try {
+    const recipe = join(box.root, 'composition', 'recipes', 'l3-bootstrap-1.0.0.json');
+    const source = JSON.parse(readFileSync(
+      join(box.root, 'composition', 'recipes', 'l2-standard-1.2.0.json'), 'utf8'));
+    source.id = 'ecommerce.l3-bootstrap';
+    source.version = '1.0.0';
+    source.state = 'draft';
+    source.title = 'L3 bootstrap fixture';
+    source.compatibility = { legacyLevel: 3, mode: 'cumulative' };
+    source.task.baseRecipe = { path: 'l2-standard-1.2.0.json',
+      id: 'ecommerce.l2-standard', version: '1.2.0' };
+    writeFileSync(recipe, `${JSON.stringify(source, null, 2)}\n`);
+    editJson(join(box.root, 'composition', 'candidates.json'), value => {
+      value.entries.push({ alias: 'L3', status: 'candidate', recipe: {
+        path: 'recipes/l3-bootstrap-1.0.0.json', id: source.id, version: source.version,
+      } });
+    });
+    const track = loadTrack('ecommerce');
+    const copiedTrack = { ...track, dir: box.root,
+      suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
+
+    const candidate = resolveRecipeRelease(copiedTrack, 3, 'ecommerce.l3-bootstrap@1.0.0');
+    assert.equal(candidate.status, 'candidate');
+    assert(candidate.execution.every(execution => execution.ownership.kind === 'inherited'));
+    assert.deepEqual([...new Set(candidate.execution.map(execution => execution.ownership.fromLevel))]
+      .sort(), [1, 2]);
+
+    editJson(recipe, value => {
+      value.task.baseRecipe = { path: 'l2-standard-1.1.0.json',
+        id: 'ecommerce.l2-standard', version: '1.1.0' };
+    });
+    assert.throws(() => resolveRecipeRelease(copiedTrack, 3,
+      'ecommerce.l3-bootstrap@1.0.0'), /is not promoted L2/);
+
+    editJson(recipe, value => {
+      value.state = 'qualified';
+      value.task.baseRecipe = { path: 'l2-standard-1.2.0.json',
+        id: 'ecommerce.l2-standard', version: '1.2.0' };
+    });
+    editJson(join(box.root, 'composition', 'promotions.json'), value => {
+      value.entries.push({ alias: 'L3', status: 'promoted', recipe: {
+        path: 'recipes/l3-bootstrap-1.0.0.json', id: source.id, version: source.version,
+      } });
+    });
+    const promoted = resolveRecipeRelease(copiedTrack, 3);
+    assert.equal(promoted.status, 'promoted');
+    assert.equal(promoted.release.task.baseRecipe.version, '1.2.0');
+  } finally { rmSync(box.temp, { recursive: true, force: true }); }
+});
+
 test('promoting a cumulative recipe cannot drop checks retained from earlier releases', () => {
   const box = copyTrack();
   try {

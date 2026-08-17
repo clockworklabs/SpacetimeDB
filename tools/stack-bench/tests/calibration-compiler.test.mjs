@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { calibrationQualificationIdentity, compileCalibrationDefinition, compileCalibrationFile,
-  resolveCalibrationForRelease, validateQualificationEvidenceArtifact } from '../calibration-compiler.mjs';
+  currentLevelPoints, resolveCalibrationForRelease,
+  validateQualificationEvidenceArtifact } from '../calibration-compiler.mjs';
 import { readArtifact } from '../artifacts.mjs';
 import { checkCalibrations } from '../check-calibration.mjs';
 import { resolveRecipeRelease } from '../recipe-release.mjs';
@@ -75,10 +76,12 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   assert.equal(calibrationQualificationIdentity(first).sha256, first.qualificationSha256);
   assert.deepEqual(checkCalibrations({ trackName: 'ecommerce' })
     .map(result => `${result.id}@${result.version}:${result.state}`), [
+    'ecommerce.l1-modular-calibration@2.2.0:draft',
     'ecommerce.l1-standard-calibration@1.0.0:qualified',
     'ecommerce.l1-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.2.0:qualified',
+    'ecommerce.l2-standard-calibration@1.3.0:draft',
   ]);
 });
 
@@ -89,6 +92,7 @@ test('qualification evidence is semantically bound and tampering fails closed', 
     qualificationIdentity: calibrationQualificationIdentity(plan),
     release: binding.release,
     references: plan.references.entries,
+    execution: binding.execution,
   };
   const referenceEntry = plan.qualification.evidence.find(entry =>
     entry.kind === 'reference' && entry.stack === 'mongodb' && entry.repetition === 1);
@@ -151,8 +155,33 @@ test('the qualified L2 release keeps its score contract and binds fresh qualific
     && evidence.stack === 'mongodb' && evidence.repetition === 1);
   const artifact = readArtifact(join(ROOT, entry.path));
   const context = { calibration: plan, qualificationIdentity: calibrationQualificationIdentity(plan),
-    release: binding.release, references: plan.references.entries };
+    release: binding.release, references: plan.references.entries, execution: binding.execution };
   assert.doesNotThrow(() => validateQualificationEvidenceArtifact(artifact, entry, context));
+});
+
+test('qualification uses typed ownership when inherited execution ids are renamed', () => {
+  const binding = resolveRecipeRelease(TRACK, 2);
+  const release = structuredClone(binding.release);
+  const execution = structuredClone(binding.execution);
+  const rename = id => id.replace(/@L1$/, '-base');
+  for (const entry of execution) entry.id = rename(entry.id);
+  for (const check of release.checkCatalog) check.executionId = rename(check.executionId);
+
+  assert.equal(currentLevelPoints(release, execution), 55);
+  const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
+    'l2-standard-1.2.0.json'), {
+    trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release,
+  });
+  const entry = plan.qualification.evidence.find(evidence => evidence.kind === 'reference'
+    && evidence.stack === 'mongodb' && evidence.repetition === 1);
+  const artifact = readArtifact(join(ROOT, entry.path));
+  assert.doesNotThrow(() => validateQualificationEvidenceArtifact(artifact, entry, {
+    calibration: plan,
+    qualificationIdentity: calibrationQualificationIdentity(plan),
+    release,
+    references: plan.references.entries,
+    execution,
+  }));
 });
 
 test('qualification identity excludes governance transitions but binds executable controls', () => {

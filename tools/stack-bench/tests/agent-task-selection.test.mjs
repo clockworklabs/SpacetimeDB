@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { agentRecipeRequest, agentScenarioPaths } from '../agent.mjs';
 import { resolveGuidanceProfile } from '../condition-compiler.mjs';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest,
   createRecipeTaskRequest } from '../recipe-selection.mjs';
@@ -19,6 +20,14 @@ function printPrompt(app, request, extraArgs = []) {
   return execFileSync(process.execPath, [AGENT, '--mode', 'build', '--backend', 'postgres',
     '--track', 'ecommerce', '--level', '1', '--app', app,
     '--recipe-task-json', JSON.stringify(request), ...extraArgs, '--print-prompt'], {
+    encoding: 'utf8', stdio: 'pipe',
+    env: { ...process.env, STACK_BENCH_IMAGE: 'prompt-review-does-not-use-docker' },
+  });
+}
+
+function printStandalonePrompt(app, extraArgs = []) {
+  return execFileSync(process.execPath, [AGENT, '--mode', 'build', '--backend', 'postgres',
+    '--track', 'ecommerce', '--level', '1', '--app', app, ...extraArgs, '--print-prompt'], {
     encoding: 'utf8', stdio: 'pipe',
     env: { ...process.env, STACK_BENCH_IMAGE: 'prompt-review-does-not-use-docker' },
   });
@@ -126,5 +135,35 @@ test('the real unprescribed prompt withholds every expected quality specificatio
     assert.equal(task.selection.scoredPoints, 45);
     assert(task.selection.scoredChecks.some(check => check.treatment === 'expected'));
     assert.deepEqual(visible.selection.requested.checks, []);
+  } finally { rmSync(app, { recursive: true, force: true }); }
+});
+
+test('agent provenance uses the exact recipe execution instead of the legacy level suites', () => {
+  const track = loadTrack('ecommerce');
+  const modular = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.2.0');
+  const paths = agentScenarioPaths(track, 1, modular);
+
+  assert.deepEqual(paths.map(path => path.replaceAll('\\', '/').split('/scenarios/')[1]),
+    modular.execution.map(execution => execution.source.split('scenarios/')[1]));
+  assert(paths.some(path => path.endsWith('01-last-unit-2.2.0.json')));
+  assert.equal(paths.some(path => path.endsWith('01-contention.json')), false);
+});
+
+test('a standalone recipe selects its exact prompt and cannot disagree with a bound task', () => {
+  const app = mkdtempSync(join(tmpdir(), 'stack-bench-standalone-recipe-'));
+  try {
+    const promoted = printStandalonePrompt(app);
+    const candidate = printStandalonePrompt(app,
+      ['--recipe', 'ecommerce.l1-modular@2.2.0']);
+    assert.notEqual(candidate, promoted);
+    assert.match(candidate, /data-buy-input/);
+    assert.doesNotMatch(promoted, /data-buy-input/);
+
+    const request = createRecipeTaskRequest(binding).request;
+    assert.throws(() => printPrompt(app, request,
+      ['--recipe', 'ecommerce.l1-modular@2.2.0']), error =>
+      /does not match bound task/.test(String(error.stderr)));
+    assert.equal(agentRecipeRequest('ecommerce.l1-modular@2.2.0'),
+      'ecommerce.l1-modular@2.2.0');
   } finally { rmSync(app, { recursive: true, force: true }); }
 });

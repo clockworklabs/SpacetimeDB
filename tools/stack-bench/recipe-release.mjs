@@ -420,6 +420,136 @@ function cumulativeBasePlan(plan, track, level) {
   return basePlan;
 }
 
+function executionStableKeys(execution) {
+  return execution.checkGroups.flatMap(group => group.feature.criteria.map(criterion =>
+    `${group.packId}.${group.checkGroupId}.${criterion.id}`));
+}
+
+function legacyExecutionPlan(plan, track, level) {
+  const declared = new Map(suitesFor(track, level).map(suite => [suite.id, suite]));
+  return plan.execution.map(execution => {
+    const suite = declared.get(execution.id);
+    if (!suite) {
+      throw new Error(`${plan.recipe.id}@${plan.recipe.version} has no declared L${level} execution ${execution.id}`);
+    }
+    return {
+      id: execution.id,
+      source: execution.source,
+      ownership: suite.inherited
+        ? { kind: 'inherited', fromLevel: suite.fromLevel }
+        : { kind: 'current', level: Number(level) },
+    };
+  });
+}
+
+// Ownership is release structure, not an execution-id naming convention. A
+// cumulative recipe inherits every check selected by its exact base recipe;
+// the remaining checks belong to the level being introduced. Recursing through
+// bases preserves the original owner when L3 carries both L1 and L2 checks.
+function cumulativeExecutionPlan(plan, track, level) {
+  const base = plan.recipe.task.baseRecipe;
+  if (!base) throw new Error(`${plan.recipe.id}@${plan.recipe.version} has no cumulative base recipe`);
+  const basePlan = compileRecipeFile(join(track.dir, 'composition', base.path), {
+    trackRoot: track.dir,
+  });
+  const declaredBaseLevel = basePlan.recipe.compatibility?.legacyLevel;
+  const baseLevel = declaredBaseLevel ?? Number(level) - 1;
+  if (!Number.isInteger(baseLevel) || baseLevel < 1 || baseLevel !== Number(level) - 1) {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} must inherit exact L${Number(level) - 1}, `
+      + `not L${baseLevel}`);
+  }
+  const baseExecution = executionPlanForRecipe(basePlan, track, baseLevel);
+  const baseById = new Map(basePlan.execution.map(execution => [execution.id, execution]));
+  const baseOrigins = new Map();
+  for (const owned of baseExecution) {
+    const execution = baseById.get(owned.id);
+    if (!execution) throw new Error(`base recipe lost execution ${owned.id}`);
+    const origin = owned.ownership.kind === 'inherited'
+      ? owned.ownership.fromLevel : owned.ownership.level;
+    for (const stableKey of executionStableKeys(execution)) baseOrigins.set(stableKey, origin);
+  }
+
+  return plan.execution.map(execution => {
+    const stableKeys = executionStableKeys(execution);
+    const inherited = stableKeys.filter(stableKey => baseOrigins.has(stableKey));
+    if (inherited.length === 0) {
+      return { id: execution.id, source: execution.source,
+        ownership: { kind: 'current', level: Number(level) } };
+    }
+    if (inherited.length !== stableKeys.length) {
+      throw new Error(`${plan.recipe.id}@${plan.recipe.version} execution ${execution.id} `
+        + 'mixes inherited and current-level checks');
+    }
+    const origins = new Set(inherited.map(stableKey => baseOrigins.get(stableKey)));
+    if (origins.size !== 1) {
+      throw new Error(`${plan.recipe.id}@${plan.recipe.version} execution ${execution.id} `
+        + `mixes checks owned by levels ${[...origins].sort((a, b) => a - b).join(', ')}`);
+    }
+    return { id: execution.id, source: execution.source,
+      ownership: { kind: 'inherited', fromLevel: [...origins][0] } };
+  });
+}
+
+export function executionPlanForRecipe(plan, track, level) {
+  if (plan.recipe.compatibility?.mode === 'cumulative') {
+    return cumulativeExecutionPlan(plan, track, level);
+  }
+  if (plan.recipe.compatibility !== null) return legacyExecutionPlan(plan, track, level);
+  return plan.execution.map(execution => ({
+    id: execution.id,
+    source: execution.source,
+    ownership: { kind: 'current', level: Number(level) },
+  }));
+}
+
+export function executionPlanForRelease(recipePath, { trackRoot, level } = {}) {
+  if (!Number.isInteger(Number(level)) || Number(level) < 1) {
+    throw new Error('typed execution ownership requires a positive level');
+  }
+  const root = realpathSync(resolve(trackRoot));
+  const plan = compileRecipeFile(recipePath, { trackRoot: root });
+  const manifestPath = join(root, 'track.json');
+  const manifest = compileTrackManifest(readJson(manifestPath, 'track manifest'), {
+    source: manifestPath,
+  });
+  return executionPlanForRecipe(plan, {
+    ...manifest,
+    name: plan.recipe.track,
+    dir: root,
+  }, Number(level));
+}
+
+function assertInitialCumulativeBase(plan, promotionCatalog, track, level) {
+  const numericLevel = Number(level);
+  if (numericLevel <= 1) {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} cannot bootstrap cumulative L${numericLevel}`);
+  }
+  const lowerAlias = `L${numericLevel - 1}`;
+  const promotedBase = promotionCatalog.entries.filter(entry =>
+    entry.alias === lowerAlias && entry.status === 'promoted');
+  if (promotedBase.length !== 1) {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} initial cumulative L${numericLevel} `
+      + `requires exactly one promoted ${lowerAlias} base; found ${promotedBase.length}`);
+  }
+  const embedded = cumulativeBasePlan(plan, track, level);
+  const selected = promotedBase[0];
+  if (embedded.recipe.id !== selected.recipe.id || embedded.recipe.version !== selected.recipe.version) {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} initial cumulative L${numericLevel} base `
+      + `${embedded.recipe.id}@${embedded.recipe.version} is not promoted ${lowerAlias} `
+      + `${selected.recipe.id}@${selected.recipe.version}`);
+  }
+  const embeddedRelease = buildRecipeRelease(join(track.dir, 'composition', plan.recipe.task.baseRecipe.path), {
+    trackRoot: track.dir,
+  });
+  const promotedRelease = buildRecipeRelease(join(track.dir, 'composition', selected.recipe.path), {
+    trackRoot: track.dir,
+  });
+  if (embeddedRelease.contentSha256 !== promotedRelease.contentSha256) {
+    throw new Error(`${plan.recipe.id}@${plan.recipe.version} initial cumulative L${numericLevel} `
+      + `does not bind the exact promoted ${lowerAlias} content`);
+  }
+}
+
 function assertCumulativeContinuity(plan, previousPlans, track, level) {
   if (previousPlans.length === 0) {
     throw new Error(`${plan.recipe.id}@${plan.recipe.version} has no cumulative L${level} baseline`);
@@ -493,7 +623,8 @@ export function resolveRecipeRelease(track, level, requested = null) {
   const catalogPath = join(track.dir, 'composition', 'promotions.json');
   if (!existsSync(catalogPath)) return null;
   let selectedCatalogPath = catalogPath;
-  let catalog = compilePromotionFile(catalogPath, { trackRoot: track.dir });
+  const promotionCatalog = compilePromotionFile(catalogPath, { trackRoot: track.dir });
+  let catalog = promotionCatalog;
   const alias = `L${Number(level)}`;
   const exact = exactRecipeRequest(requested);
   if (!exact && !catalog.entries.some(entry => entry.alias === alias)) return null;
@@ -524,21 +655,29 @@ export function resolveRecipeRelease(track, level, requested = null) {
   const plan = compileRecipeFile(recipePath, { trackRoot: track.dir });
   const compatibilityMode = plan.recipe.compatibility?.mode ?? 'legacy-parity';
   if (plan.recipe.compatibility !== null && selection.status === 'candidate') {
-    if (promoted.length !== 1) {
-      throw new Error(`${alias} compatibility candidate requires exactly one promoted baseline; found ${promoted.length}`);
-    }
-    const promotedPlan = compileRecipeFile(join(track.dir, 'composition', promoted[0].recipe.path),
-      { trackRoot: track.dir });
     if (compatibilityMode === 'cumulative') {
-      assertCumulativeContinuity(plan, [promotedPlan], track, level);
-    } else assertCompatibilityCandidateContinuity(plan, promotedPlan, track, level);
+      if (promoted.length === 0) assertInitialCumulativeBase(plan, promotionCatalog, track, level);
+      else {
+        const promotedPlan = compileRecipeFile(join(track.dir, 'composition', promoted[0].recipe.path),
+          { trackRoot: track.dir });
+        assertCumulativeContinuity(plan, [promotedPlan], track, level);
+      }
+    } else {
+      if (promoted.length !== 1) {
+        throw new Error(`${alias} compatibility candidate requires exactly one promoted baseline; found ${promoted.length}`);
+      }
+      const promotedPlan = compileRecipeFile(join(track.dir, 'composition', promoted[0].recipe.path),
+        { trackRoot: track.dir });
+      assertCompatibilityCandidateContinuity(plan, promotedPlan, track, level);
+    }
   } else if (plan.recipe.compatibility !== null) {
     if (compatibilityMode === 'cumulative') {
-      const previousPlans = catalog.entries
+      const previousPlans = promotionCatalog.entries
         .filter(entry => entry.alias === alias && entry.status === 'retired')
         .map(entry => compileRecipeFile(join(track.dir, 'composition', entry.recipe.path),
           { trackRoot: track.dir }));
-      assertCumulativeContinuity(plan, previousPlans, track, level);
+      if (previousPlans.length === 0) assertInitialCumulativeBase(plan, promotionCatalog, track, level);
+      else assertCumulativeContinuity(plan, previousPlans, track, level);
     }
     else assertLegacyRecipeParity(plan, track, level);
   }
@@ -558,6 +697,7 @@ export function resolveRecipeRelease(track, level, requested = null) {
       sha256: sha256(readFileSync(selectedCatalogPath)) },
     recipePath,
     plan,
+    execution: executionPlanForRecipe(plan, track, level),
     release,
   };
 }

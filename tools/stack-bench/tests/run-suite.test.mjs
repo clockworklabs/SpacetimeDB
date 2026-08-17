@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { createBoundRecipeTaskRequest } from '../recipe-selection.mjs';
 import { resolveRecipeRelease } from '../recipe-release.mjs';
 import { childFailureDetail, selectObservationScope, suitesForRecipe } from '../run-suite.mjs';
 import { loadTrack } from '../tracks.mjs';
+
+const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 
 test('grader child diagnostics retain the cause instead of only trailing stack frames', () => {
   const stderr = [
@@ -72,4 +77,29 @@ test('recipe execution keeps inherited suites out of the current-level score', (
     { id: 'invariants@L1', fromLevel: 1 },
     { id: 'systems@L1', fromLevel: 1 },
   ]);
+});
+
+test('cumulative ownership survives inherited execution id renames', () => {
+  const temp = mkdtempSync(join(tmpdir(), 'stack-bench-execution-ownership-'));
+  const root = join(temp, 'ecommerce');
+  try {
+    cpSync(ECOMMERCE, root, { recursive: true });
+    const recipe = join(root, 'composition', 'recipes', 'l2-standard-1.3.0.json');
+    const value = JSON.parse(readFileSync(recipe, 'utf8'));
+    for (const execution of value.execution) {
+      if (execution.id.endsWith('@L1')) execution.id = `${execution.id.slice(0, -3)}-base`;
+    }
+    writeFileSync(recipe, `${JSON.stringify(value, null, 2)}\n`);
+    const track = { ...loadTrack('ecommerce'), dir: root,
+      suites: JSON.parse(readFileSync(join(root, 'track.json'), 'utf8')).suites };
+    const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.3.0');
+    const suites = suitesForRecipe(track, binding);
+    const inherited = suites.filter(suite => suite.inherited);
+
+    assert.equal(inherited.length, 7);
+    assert(inherited.every(suite => suite.id.endsWith('-base')));
+    assert(inherited.every(suite => suite.fromLevel === 1));
+    assert.deepEqual(suites.filter(suite => !suite.inherited).map(suite => suite.id),
+      ['features', 'invariants', 'server-actions']);
+  } finally { rmSync(temp, { recursive: true, force: true }); }
 });
