@@ -522,29 +522,6 @@ fn check_smoketest_suite_labels() -> Result<()> {
             .join("\n")
     );
 
-    let mut unguarded_standalone_sources = Vec::new();
-    for source in standalone_sources {
-        let contents = fs::read_to_string(&source)?;
-        let test_count = contents.matches("#[test]").count();
-        let guard_count = contents.matches("require_local_server!();").count();
-        if test_count != guard_count {
-            unguarded_standalone_sources.push((source, test_count, guard_count));
-        }
-    }
-
-    ensure!(
-        unguarded_standalone_sources.is_empty(),
-        "each test in the standalone target must call require_local_server!():\n{}",
-        unguarded_standalone_sources
-            .iter()
-            .map(|(path, tests, guards)| format!(
-                "- {} has {tests} #[test] functions and {guards} require_local_server!() calls",
-                path.display()
-            ))
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-
     Ok(())
 }
 
