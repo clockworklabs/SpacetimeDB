@@ -15,8 +15,9 @@
       ],
       "contracts": [
         { "id": "ecommerce.l1-modular.interface", "path": "prompts/modular/l1-hooks.md", "order": 1900, "from": "## Public testing interface", "until": "## Catalog hooks", "modes": ["fresh"] },
-        { "id": "ecommerce.l1-modular.purchase-action-input", "path": "prompts/modular/l1-action-inputs.md", "order": 2210, "from": "## Purchase action input", "until": "## Restock action input", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
-        { "id": "ecommerce.l1-modular.restock-action-input", "path": "prompts/modular/l1-action-inputs.md", "order": 2510, "from": "## Restock action input", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.warehouse-admin"] }
+        { "id": "ecommerce.l1-modular.purchase-action-input", "path": "prompts/modular/l1-action-inputs-1.1.0.md", "order": 2210, "from": "## Purchase action input", "until": "## Cart quantity action input", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+        { "id": "ecommerce.l1-modular.cart-action-input", "path": "prompts/modular/l1-action-inputs-1.1.0.md", "order": 2410, "from": "## Cart quantity action input", "until": "## Restock action input", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] },
+        { "id": "ecommerce.l1-modular.restock-action-input", "path": "prompts/modular/l1-action-inputs-1.1.0.md", "order": 2510, "from": "## Restock action input", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.warehouse-admin"] }
       ]
     }
   },
@@ -42,6 +43,7 @@
     { "id": "review-uniqueness", "source": "scenarios/01-review-uniqueness-2.4.0.json" },
     { "id": "review-rating-live", "source": "scenarios/01-review-rating-live-2.4.0.json" },
     { "id": "warehouse-admin", "source": "scenarios/01-warehouse-admin-2.4.0.json" },
+    { "id": "warehouse-stock-live", "source": "scenarios/01-warehouse-stock-live-2.4.0.json" },
     { "id": "server-actions", "source": "scenarios/01-server-actions-2.4.0.json" },
     { "id": "invariants", "source": "scenarios/01-invariants-2.4.0.json" },
     { "id": "last-unit", "source": "scenarios/01-last-unit-2.3.0.json" },

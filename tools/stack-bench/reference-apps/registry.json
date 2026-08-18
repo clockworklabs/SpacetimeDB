@@ -84,7 +84,7 @@
       "track": "ecommerce",
       "level": 1,
       "status": "active",
-      "recipes": ["ecommerce.l1-modular@2.3.0", "ecommerce.l1-modular@2.4.0"],
+      "recipes": ["ecommerce.l1-modular@2.3.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/mongodb",
         "baseSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a",
@@ -108,7 +108,7 @@
       "track": "ecommerce",
       "level": 1,
       "status": "active",
-      "recipes": ["ecommerce.l1-modular@2.3.0", "ecommerce.l1-modular@2.4.0"],
+      "recipes": ["ecommerce.l1-modular@2.3.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/postgres",
         "baseSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc",
@@ -132,7 +132,7 @@
       "track": "ecommerce",
       "level": 1,
       "status": "active",
-      "recipes": ["ecommerce.l1-modular@2.3.0", "ecommerce.l1-modular@2.4.0"],
+      "recipes": ["ecommerce.l1-modular@2.3.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/spacetime",
         "baseSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1",
@@ -149,6 +149,78 @@
         "grader/mutations/spacetime-ecom-l1-modular-2.3.0.json"
       ],
       "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.3.0/."
+    },
+    {
+      "id": "ecommerce-l1-action-inputs-2.4-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "candidate",
+      "recipes": ["ecommerce.l1-modular@2.4.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/mongodb",
+        "baseSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a",
+        "patchPath": "reference-apps/patches/ecommerce-l1-action-inputs-2.4/mongodb.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified MongoDB reference plus the exact action-input handles required by L1 2.4."
+      },
+      "imported": {
+        "sourceSha256": "76810d72211fc0182aa31b663ffc153a82ff1918cd34902187873a4b53a4ebf2"
+      },
+      "mutationManifests": [
+        "grader/mutations/candidates/mongodb-ecom-l1-modular-2.4.0.json"
+      ],
+      "qualification": "Pending exact L1 2.4 Docker reference and mutation evidence."
+    },
+    {
+      "id": "ecommerce-l1-action-inputs-2.4-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "candidate",
+      "recipes": ["ecommerce.l1-modular@2.4.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/postgres",
+        "baseSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc",
+        "patchPath": "reference-apps/patches/ecommerce-l1-action-inputs-2.4/postgres.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified PostgreSQL reference plus the exact action-input handles required by L1 2.4."
+      },
+      "imported": {
+        "sourceSha256": "389d778f1835377fd2f92864d6afa20851c65076c80ddecba1e860cf7f4d9ec9"
+      },
+      "mutationManifests": [
+        "grader/mutations/candidates/postgres-ecom-l1-modular-2.4.0.json"
+      ],
+      "qualification": "Pending exact L1 2.4 Docker reference and mutation evidence."
+    },
+    {
+      "id": "ecommerce-l1-action-inputs-2.4-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "candidate",
+      "recipes": ["ecommerce.l1-modular@2.4.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/spacetime",
+        "baseSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1",
+        "patchPath": "reference-apps/patches/ecommerce-l1-action-inputs-2.4/spacetime.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified SpacetimeDB reference plus the exact action-input handles required by L1 2.4."
+      },
+      "imported": {
+        "sourceSha256": "d5cb5af9db96b3ae4ff2b0d928dec4394ac6f88dfdce83201a0d8508b69902e5"
+      },
+      "mutationManifests": [
+        "grader/mutations/candidates/spacetime-ecom-l1-modular-2.4.0.json"
+      ],
+      "qualification": "Pending exact L1 2.4 Docker reference and mutation evidence."
     },
     {
       "id": "ecommerce-l2-mongodb",

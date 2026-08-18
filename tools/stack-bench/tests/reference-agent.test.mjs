@@ -76,6 +76,23 @@ test('a recipe-specific reference applies its exact patch without changing the q
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('the L1 2.4 candidate uses its separately bound action-input fixture', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l1-2.4-'));
+  try {
+    const args = { backend: 'mongodb', track: 'ecommerce', level: 1,
+      recipe: 'ecommerce.l1-modular@2.4.0', app: join(root, 'app') };
+    const seeded = prepareReferenceSource(args);
+    assert.equal(seeded.fixture.id, 'ecommerce-l1-action-inputs-2.4-mongodb');
+    assert.equal(seeded.sourceSha256,
+      '76810d72211fc0182aa31b663ffc153a82ff1918cd34902187873a4b53a4ebf2');
+    const client = readFileSync(join(args.app, 'client', 'src', 'App.tsx'), 'utf8');
+    for (const attribute of ['data-buy-input=', 'data-cart-input=', 'data-restock-input=']) {
+      assert.match(client, new RegExp(attribute));
+    }
+    assert.equal(prepareReferenceSource(args).seeded, false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('the L2 candidate prepares the exact six action inputs for every backend', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l2-derived-'));
   const expected = {

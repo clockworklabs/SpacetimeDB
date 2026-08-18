@@ -26,7 +26,7 @@
     { "id": "purchase-stock", "source": "scenarios/01-buying-2.4.0.json", "feature": 3, "criteria": ["3b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.purchasing"] },
     { "id": "shared-cart", "source": "scenarios/01-cart-2.4.0.json", "feature": 4, "criteria": ["4c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] },
     { "id": "rating", "source": "scenarios/01-review-rating-live-2.4.0.json", "feature": 6, "criteria": ["6c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.reviews"] },
-    { "id": "warehouse-stock", "source": "scenarios/01-warehouse-admin-2.4.0.json", "feature": 7, "criteria": ["7c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.warehouse-admin"] },
+    { "id": "warehouse-stock", "source": "scenarios/01-warehouse-stock-live-2.4.0.json", "feature": 7, "criteria": ["7c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.warehouse-admin"] },
     { "id": "open-list", "source": "scenarios/01-open-list-live-2.3.0.json", "feature": 902, "criteria": ["902a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.reviews"] }
   ]
 }

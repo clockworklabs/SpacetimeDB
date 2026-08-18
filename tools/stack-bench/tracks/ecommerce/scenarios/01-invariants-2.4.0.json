@@ -166,12 +166,16 @@
       "criteria": [
         {
           "id": "109a",
-          "desc": "one customer's cart request replayed by another leaves the owner's cart untouched",
+          "desc": "the same cart action run by another customer changes only that customer's cart",
           "points": 2,
           "steps": [
-            { "do": "replayAs", "actor": "stranger", "from": "owner", "match": "cart", "settleMs": 2500 },
+            { "do": "callAction", "actor": "stranger", "from": "owner", "action": "cart-add", "namedAction": { "id": "cart-add", "path": "/api/cart", "reducer": "add_to_cart", "args": [0], "params": [{ "name": "itemId", "in": "body", "wireType": "u64" }] }, "input": { "testid": "item-card", "contains": "Coffee Grinder", "attribute": "data-buy-input" }, "settleMs": 2000 },
+            { "do": "expectActionOutcome", "actor": "stranger", "outcome": "accepted" },
             { "do": "expect", "actor": "owner", "testid": "cart-item", "contains": "Coffee Grinder", "count": 1 },
-            { "do": "expectNumber", "actor": "owner", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Coffee Grinder" }, "equals": 1 }
+            { "do": "expectNumber", "actor": "owner", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Coffee Grinder" }, "equals": 1 },
+            { "do": "click", "actor": "stranger", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "stranger", "testid": "cart-item", "contains": "Coffee Grinder", "count": 1 },
+            { "do": "expectNumber", "actor": "stranger", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Coffee Grinder" }, "equals": 1 }
           ],
           "statedBy": "one customer cannot read or change another customer's cart"
         },
@@ -182,8 +186,8 @@
           "steps": [
             { "do": "recordNumber", "actor": "owner", "testid": "cart-total", "as": "cart-total-before-invalid" },
             { "do": "recordNumber", "actor": "owner", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Coffee Grinder" }, "as": "cart-quantity-before-invalid" },
-            { "do": "replayAs", "actor": "owner", "from": "owner", "match": "cart", "swap": { "find": "\"quantity\":1", "with": "\"quantity\":-3" }, "settleMs": 2500 },
-            { "do": "expectReplayRejected", "actor": "owner" },
+            { "do": "callAction", "actor": "owner", "action": "cart-set-quantity", "namedAction": { "id": "cart-set-quantity", "path": "/api/cart/:itemId", "method": "PATCH", "reducer": "update_cart_quantity", "args": [0, -3], "params": [{ "name": "itemId", "in": "path", "placeholder": ":itemId", "wireType": "u64" }, { "name": "quantity", "in": "body" }] }, "input": { "testid": "cart-item", "contains": "Coffee Grinder", "attribute": "data-cart-input" }, "settleMs": 2000 },
+            { "do": "expectActionOutcome", "actor": "owner", "outcome": "refused" },
             { "do": "expectNumber", "actor": "owner", "testid": "cart-total", "relativeTo": "cart-total-before-invalid", "plus": 0 },
             { "do": "expectNumber", "actor": "owner", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Coffee Grinder" }, "relativeTo": "cart-quantity-before-invalid", "plus": 0 }
           ],

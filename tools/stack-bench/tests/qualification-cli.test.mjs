@@ -40,16 +40,20 @@ test('qualification status exposes the exact runner required by a recipe', () =>
   assert.equal(status.launch.ok, true);
 });
 
-test('new candidates disclose and block incomplete per-stack defect coverage', () => {
+test('new candidates disclose complete defect coverage and wait for live evidence', () => {
   const status = qualificationReadiness('ecommerce', 1, 'ecommerce.l1-modular@2.4.0');
   assert.equal(status.defectChecks.totalChecks, 46);
   assert.equal(status.defectChecks.totalPoints, 58);
   assert.deepEqual(status.defectChecks.stacks.map(item => [item.stack, item.coveredChecks]), [
-    ['mongodb', 9], ['postgres', 9], ['spacetime', 9],
+    ['mongodb', 46], ['postgres', 46], ['spacetime', 46],
   ]);
+  assert(status.defectChecks.stacks.every(item => item.coveredPoints === 58
+    && item.missingChecks.length === 0));
   assert.equal(status.promotion.ready, false);
   assert.equal(status.promotion.blockers
-    .filter(item => item.code === 'defect_check_coverage_incomplete').length, 3);
+    .filter(item => item.code === 'defect_check_coverage_incomplete').length, 0);
+  assert.equal(status.promotion.blockers
+    .filter(item => item.code === 'evidence_missing').length, 7);
 });
 
 test('qualification resolves the promoted modular L1 release exactly and by default', () => {

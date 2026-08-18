@@ -97,7 +97,8 @@ test('corrected purchasing, cart, review, and warehouse checks are independently
 test('corrected workflows do not grade a particular panel-closing interaction', () => {
   for (const name of ['01-buying-2.4.0.json', '01-cart-2.4.0.json',
     '01-review-visibility-2.4.0.json', '01-review-uniqueness-2.4.0.json',
-    '01-review-rating-live-2.4.0.json', '01-warehouse-admin-2.4.0.json']) {
+    '01-review-rating-live-2.4.0.json', '01-warehouse-admin-2.4.0.json',
+    '01-warehouse-stock-live-2.4.0.json']) {
     const spec = compileScenarioDefinition(readJson(join(root, 'scenarios', name)));
     const actions = spec.features.flatMap(feature => [
       ...feature.setup,
@@ -114,11 +115,11 @@ test('corrected workflows do not grade a particular panel-closing interaction', 
     && step.testid === 'cart-count' && step.equals === 0));
 
   const warehouse = compileScenarioDefinition(readJson(join(root, 'scenarios',
-    '01-warehouse-admin-2.4.0.json')));
-  const liveRestock = warehouse.features[0].criteria.find(criterion => criterion.id === '7c');
-  assert.deepEqual(liveRestock.steps[0], {
-    do: 'click', actor: 'admin', testid: 'admin-link',
-  });
+    '01-warehouse-stock-live-2.4.0.json')));
+  assert(warehouse.features[0].setup.some(step => step.do === 'click'
+    && step.actor === 'admin' && step.testid === 'admin-link'));
+  assert.equal(warehouse.features[0].criteria.length, 1);
+  assert.equal(warehouse.features[0].criteria[0].id, '7c');
 });
 
 test('every scored L1 2.4 check is independently selectable with its numeric prerequisites', () => {
@@ -188,6 +189,9 @@ test('sibling checks no longer provide account, accounting, or cart state', () =
   assert(byId.get(107).setup.some(step => step.as === 'stand-before'));
   assert(byId.get(109).setup.some(step => step.testid === 'add-to-cart'));
   const invalidQuantity = byId.get(109).criteria.find(criterion => criterion.id === '109b').steps;
-  assert(invalidQuantity.some(step => step.do === 'expectReplayRejected'));
+  assert(invalidQuantity.some(step => step.do === 'callAction'
+    && step.action === 'cart-set-quantity' && step.namedAction.method === 'PATCH'));
+  assert(invalidQuantity.some(step => step.do === 'expectActionOutcome'
+    && step.outcome === 'refused'));
   assert.equal(invalidQuantity.filter(step => step.relativeTo).length, 2);
 });

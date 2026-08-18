@@ -14,7 +14,7 @@ test('the reference registry binds active, blocked, and historical provenance li
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 12);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 0);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 3);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
   escaped.fixtures[0].archivedEvidence = ['results/unbound-grade.json'];
@@ -28,6 +28,8 @@ test('reference selection uses an exact recipe release and otherwise keeps the u
     'ecommerce-l1-mongodb');
   assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
     recipe: 'ecommerce.l1-modular@2.3.0' }).id, 'ecommerce-l1-direct-actions-mongodb');
+  assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
+    recipe: 'ecommerce.l1-modular@2.4.0' }).id, 'ecommerce-l1-action-inputs-2.4-mongodb');
   assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1,
     recipe: 'ecommerce.l1-standard@1.1.0' }).id, 'ecommerce-l1-mongodb');
   const blocked = structuredClone(registry);
