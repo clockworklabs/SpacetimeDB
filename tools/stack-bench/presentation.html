@@ -25,10 +25,6 @@
     --green:  #4cf490;
     --green-25: #4cf49040;
     --green-10: #4cf4901a;
-    --purple: #a880ff;
-    --blue:   #02befa;
-    --yellow: #fbdc8e;
-    --red:    #ff4c4c;
     --n1: #e6e9f0;  /* primary text */
     --n3: #b6c0cf;  /* secondary text */
     --n4: #6f7987;  /* muted */
@@ -115,7 +111,6 @@
   }
   .card h3 { font-size: 1rem; margin-bottom: .45rem; color: var(--green); font-weight: 600; }
   .card p { font-size: .9rem; }
-  .card.pu h3 { color: var(--purple); } .card.bl h3 { color: var(--blue); } .card.ye h3 { color: var(--yellow); }
 
   table { border-collapse: collapse; margin: 1.2rem 0; font-size: .92rem; max-width: 880px; width: 100%; }
   th, td { text-align: left; padding: .55rem .9rem; border-bottom: 1px solid var(--shade4); color: var(--n3); vertical-align: top; }
@@ -128,8 +123,7 @@
     content: '';
     position: absolute; inset: 0;
     background:
-      radial-gradient(60% 50% at 70% 20%, var(--green-10), transparent 70%),
-      radial-gradient(40% 40% at 20% 85%, #a880ff14, transparent 70%);
+      radial-gradient(60% 50% at 70% 20%, var(--green-10), transparent 70%);
     pointer-events: none;
   }
   #hero .brand { display: flex; align-items: center; gap: .7rem; margin-bottom: 1.6rem; }
@@ -143,14 +137,13 @@
   .loop rect.node { fill: #0f191f; stroke: #162d38; rx: 9; }
   .loop .edge { stroke: #363840; stroke-width: 1.4; fill: none; marker-end: url(#arr); }
   .loop .flow { stroke: var(--green); stroke-width: 1.6; fill: none; stroke-dasharray: 5 7; animation: dash 1.2s linear infinite; opacity: .85; }
-  .loop .back { stroke: var(--yellow); }
   @keyframes dash { to { stroke-dashoffset: -12; } }
   section.on .pulse { animation: pulse 3.6s ease-in-out infinite; }
   @keyframes pulse { 0%,100% { stroke: #162d38; } 50% { stroke: var(--green-25); } }
 
   .caps { display: grid; gap: .55rem; font-family: var(--font-mono); font-size: .85rem; max-width: 640px; margin-top: 1rem; }
   .caps div { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px dashed var(--shade1); padding-bottom: .45rem; color: var(--n3); }
-  .caps b { color: var(--red); font-weight: 600; white-space: nowrap; }
+  .caps b { color: var(--n1); font-weight: 600; white-space: nowrap; }
 
   @keyframes breathe { 0%,100% { border-color: var(--n5); } 50% { border-color: var(--green-25); } }
   .empty {
@@ -343,7 +336,7 @@
   @keyframes lineIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   .term .cmd { color: var(--n1); }
   .term .ok { color: var(--green); }
-  .term .warn { color: var(--yellow); }
+  .term .warn { color: var(--n1); }
   .term .dim { color: var(--n4); }
   section.on .term .tl:nth-child(2)  { animation-delay: .3s; }
   section.on .term .tl:nth-child(3)  { animation-delay: .9s; }
@@ -401,8 +394,6 @@
   .axrow { display: grid; grid-template-columns: 6.6rem 1fr; gap: 1rem; align-items: baseline;
            border-bottom: 1px dashed var(--shade1); padding-bottom: .5rem; color: var(--n3); }
   .axrow .ax { font-family: var(--font-mono); font-size: .78rem; color: var(--green); }
-  .axrow.pu .ax { color: var(--purple); }
-  .axrow.bl .ax { color: var(--blue); }
   .axrow i.ok { font-style: normal; color: var(--green); }
   .axrow code { color: var(--n1); }
 
@@ -416,11 +407,11 @@
   .stockline { position: relative; height: 1.3em; }
   .stockline span { position: absolute; left: 0; top: 0; }
   .s-old { color: var(--green); }
-  .s-new { color: var(--yellow); opacity: 0; }
+  .s-new { color: var(--green); opacity: 0; }
   section.on .d-sold { animation: dSOld 7s infinite; }
   section.on .d-snew { animation: dSNew 7s infinite; }
   @keyframes dSOld { 0%, 44% { opacity: 1; } 48%, 90% { opacity: 0; } 96%, 100% { opacity: 1; } }
-  @keyframes dSNew { 0%, 44% { opacity: 0; } 48%, 62% { opacity: 1; color: var(--yellow); } 66%, 90% { opacity: 1; color: var(--green); } 96%, 100% { opacity: 0; } }
+  @keyframes dSNew { 0%, 44% { opacity: 0; } 48%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
   .buy {
     justify-self: start; font-family: var(--font-mono); font-size: .74rem;
     color: var(--green); border: 1px solid var(--green-25); border-radius: 6px;
@@ -444,13 +435,12 @@
   .thumb .th { font-family: var(--font-mono); font-size: .74rem; color: var(--n1);
                padding: .4rem .7rem; background: var(--shade5); border-bottom: 1px solid var(--shade1); }
   .thumb .th b { color: var(--green); font-weight: 600; }
-  .thumb.shop .th b { color: var(--yellow); }
   .tgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; padding: .7rem; }
   .prod { border: 1px solid var(--shade1); border-radius: 6px; padding: .45rem .5rem; font-family: var(--font-mono); font-size: .66rem; color: var(--n4); }
   .prod b { display: block; color: var(--n3); font-weight: 500; margin-bottom: .15rem; }
   .prod .stock { color: var(--green); }
   section.on .prod .tick { animation: stockTick 5s steps(1) infinite; }
-  @keyframes stockTick { 0%, 55% { color: var(--green); } 60%, 78% { color: var(--yellow); } 80%, 100% { color: var(--green); } }
+  @keyframes stockTick { 0%, 55% { opacity: 1; } 60%, 78% { opacity: .45; } 80%, 100% { opacity: 1; } }
 
   /* staged mutation captions */
   .mutcap { font-family: var(--font-mono); font-size: .78rem; min-height: 1.4em; position: relative; max-width: 760px; }
@@ -579,8 +569,8 @@
   <div class="demo-tag r d2">simulated clients &middot; illustrative latency</div>
   <div class="axes r d3">
     <div class="axrow"><span class="ax">features</span><span><i class="ok">&#10003;</i> <code>add-to-cart</code> every described feature, asserted from the shopper's side</span></div>
-    <div class="axrow pu"><span class="ax">invariants</span><span><i class="ok">&#10003;</i> <code>cart-isolated-per-user</code> bob can never see alice's cart, whatever features exist</span></div>
-    <div class="axrow bl"><span class="ax">delivery</span><span><i class="ok">&#10003;</i> <code>stock-live</code> every client, exactly once, in the same order, across reconnects</span></div>
+    <div class="axrow"><span class="ax">invariants</span><span><i class="ok">&#10003;</i> <code>cart-isolated-per-user</code> bob can never see alice's cart, whatever features exist</span></div>
+    <div class="axrow"><span class="ax">delivery</span><span><i class="ok">&#10003;</i> <code>stock-live</code> every client, exactly once, in the same order, across reconnects</span></div>
   </div>
   <div class="caps r d5">
     <div><span>console error during a feature</span><b>cap 2 / 3</b></div>
@@ -594,7 +584,7 @@
   <div class="kicker r">the application</div>
   <h2 class="r d1">One storefront, five levels</h2>
   <div class="thumbs r d2">
-    <div class="thumb shop" style="max-width:420px">
+    <div class="thumb" style="max-width:420px">
       <div class="th"><b>ecommerce</b> &middot; storefront, cart, warehouses</div>
       <div class="tgrid">
         <div class="prod"><b>headphones</b>$89 <span class="stock tick">&middot; 3 left</span></div>
