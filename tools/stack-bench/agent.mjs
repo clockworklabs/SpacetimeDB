@@ -15,7 +15,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, realpathSync,
-         openSync, readSync, closeSync } from 'node:fs';
+         openSync, readSync, closeSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve, basename, relative, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +37,121 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(ROOT, '..', '..');
 const CONTROL_COMMAND_TIMEOUT_MS = 120_000;
 const BUILD_SESSION_TIMEOUT_MS = 58 * 60_000;
+const DEFAULT_CODING_INTERRUPTION_RETRIES = 2;
+
+function text(value) {
+  return Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? '');
+}
+
+export function parseCodingSessionResult(raw) {
+  const value = text(raw).trim();
+  if (!value) return null;
+  try { return JSON.parse(value); } catch { /* try the last JSON line */ }
+  for (const line of value.split(/\r?\n/).reverse()) {
+    try { return JSON.parse(line); } catch { /* keep looking */ }
+  }
+  return null;
+}
+
+function codingProcessDiagnostic(error) {
+  const line = text(error?.stderr).split(/\r?\n/)
+    .find(item => item.startsWith('STACK_BENCH_CODING_PROCESS_DIAGNOSTIC '));
+  if (!line) return null;
+  try { return JSON.parse(line.slice('STACK_BENCH_CODING_PROCESS_DIAGNOSTIC '.length)); }
+  catch { return null; }
+}
+
+export function codingSessionInterruption(error, result) {
+  if (result?.terminal_reason === 'api_error' && typeof result.session_id === 'string'
+    && result.session_id) {
+    return { kind: 'provider-api-error', resumeSession: result.session_id,
+      recoverStoppedContainer: false, terminalReason: 'api_error',
+      providerStatus: result.api_error_status ?? null };
+  }
+  if (error?.status !== 137) return null;
+  const diagnostic = codingProcessDiagnostic(error);
+  const memory = String(diagnostic?.cgroupMemory ?? '');
+  const oomEvent = /(?:^|\n)oom(?:_kill)?\s+[1-9]\d*(?:\n|$)/m.test(memory);
+  if (diagnostic?.container?.OOMKilled === true || oomEvent) return null;
+  return { kind: 'coding-process-killed', resumeSession: null,
+    recoverStoppedContainer: true, terminalReason: null, providerStatus: null,
+    diagnostic: diagnostic ? {
+      status: diagnostic.status ?? null,
+      signal: diagnostic.signal ?? null,
+      containerExitCode: diagnostic.container?.ExitCode ?? null,
+      oomKilled: diagnostic.container?.OOMKilled ?? null,
+    } : null };
+}
+
+export function aggregateCodingSessionResults(results) {
+  const sessions = results.filter(Boolean);
+  const last = sessions.at(-1) ?? {};
+  const usage = { input_tokens: 0, output_tokens: 0,
+    cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  for (const result of sessions) {
+    for (const key of Object.keys(usage)) usage[key] += Number(result.usage?.[key] ?? 0);
+  }
+  return {
+    ...last,
+    total_cost_usd: sessions.reduce((sum, item) => sum + Number(item.total_cost_usd ?? 0), 0),
+    num_turns: sessions.reduce((sum, item) => sum + Number(item.num_turns ?? 0), 0),
+    usage,
+  };
+}
+
+export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBudgetUsd = null }) {
+  if (typeof invoke !== 'function') throw new Error('coding session invoke function is required');
+  if (!Number.isInteger(retryLimit) || retryLimit < 0 || retryLimit > 3) {
+    throw new Error('coding interruption retry limit must be an integer from 0 to 3');
+  }
+  let raw = '';
+  let spawnError = null;
+  const sessionResults = [];
+  const interruptions = [];
+  let resumeSession = null;
+  let recoverStoppedContainer = false;
+  for (let invocation = 0; invocation <= retryLimit; invocation++) {
+    const priorCost = sessionResults.reduce((sum, item) =>
+      sum + Number(item.total_cost_usd ?? 0), 0);
+    const invocationBudget = maxBudgetUsd == null ? null
+      : Number((maxBudgetUsd - priorCost).toFixed(6));
+    if (invocationBudget !== null && invocationBudget <= 0) {
+      spawnError = `coding session exhausted its $${maxBudgetUsd} cost cap before recovery`;
+      break;
+    }
+    const input = resumeSession
+      ? 'The provider interrupted the previous response. Continue the same task from the existing files. '
+        + 'Verify the application is running and finish with the completion marker requested earlier.'
+      : invocation === 0 ? prompt
+        : 'A prior coding process was terminated. Continue this task from the existing files; do not start over.\n\n'
+          + prompt;
+    let error = null;
+    try {
+      raw = text(invoke({ input, maxBudgetUsd: invocationBudget, resumeSession,
+        recoverStoppedContainer, invocation }));
+    } catch (err) {
+      error = err;
+      raw = text(err.stdout);
+    }
+    const result = parseCodingSessionResult(raw);
+    if (result) sessionResults.push(result);
+    if (!error && result?.is_error === false) break;
+    const interruption = codingSessionInterruption(error, result);
+    if (!interruption || invocation === retryLimit) {
+      spawnError = codingSessionFailure(error ?? {
+        status: 1, stdout: raw, stderr: result?.result ?? 'coding session reported failure',
+      });
+      break;
+    }
+    interruptions.push({ ...interruption, invocation: invocation + 1,
+      sessionId: result?.session_id ?? null,
+      costUsd: Number((result?.total_cost_usd ?? 0).toFixed(6)) });
+    resumeSession = interruption.resumeSession;
+    recoverStoppedContainer = interruption.recoverStoppedContainer;
+  }
+  return { raw, spawnError, sessionResults, interruptions,
+    result: aggregateCodingSessionResults(sessionResults) };
+}
 
 export function codingSessionFailure(error) {
   const status = Number.isInteger(error?.status) ? `exit ${error.status}` : null;
@@ -181,6 +296,16 @@ function thinkingVolume(appDir, sessionId) {
     return { blocks, signatureBytes: bytes,
              bytesPerBlock: blocks ? Math.round(bytes / blocks) : 0 };
   } catch { return null; }
+}
+
+function combinedThinkingVolume(appDir, sessionIds) {
+  const volumes = [...new Set(sessionIds.filter(Boolean))]
+    .map(id => thinkingVolume(appDir, id)).filter(Boolean);
+  if (!volumes.length) return null;
+  const blocks = volumes.reduce((sum, item) => sum + item.blocks, 0);
+  const signatureBytes = volumes.reduce((sum, item) => sum + item.signatureBytes, 0);
+  return { blocks, signatureBytes,
+    bytesPerBlock: blocks ? Math.round(signatureBytes / blocks) : 0 };
 }
 
 
@@ -759,8 +884,13 @@ async function main() {
   writeFileSync(join(args.app, `.prompt-${args.mode}-l${args.level}.md`), prompt);
 
   const started = Date.now();
-  let raw = '';
-  let spawnError = null;
+  const retryLimitRaw = process.env.STACK_BENCH_CODING_INTERRUPTION_RETRIES
+    ?? String(DEFAULT_CODING_INTERRUPTION_RETRIES);
+  const retryLimit = Number(retryLimitRaw);
+  if (!Number.isInteger(retryLimit) || retryLimit < 0 || retryLimit > 3) {
+    throw new Error('STACK_BENCH_CODING_INTERRUPTION_RETRIES must be an integer from 0 to 3');
+  }
+  let coding;
   try {
     // The prompt goes in on stdin, not as an argument. Windows caps a command
     // line at 32767 characters, and the SpacetimeDB prompt carries the skill
@@ -792,22 +922,27 @@ async function main() {
     // Same CLI arguments, run somewhere the harness does not exist. The
     // container path is a separate script so that what a build can reach is
     // stated in one place — see container/run-build.mjs.
-    raw = execFileSync(process.execPath, [
-      join(ROOT, 'container', 'run-build.mjs'),
-      '--app', args.app,
-      '--backend', args.backend,
-      '--image', imageIdentity.id,
-      '--effort', EFFORT,
-      '--model', args.model,
-      ...(args.maxBudgetUsd != null ? ['--max-budget-usd', String(args.maxBudgetUsd)] : []),
-      '--settings', `/app/${basename(settings)}`,
-      '--ports', [p.vite, p.express].filter(Boolean).join(','),
-      ...(args.apiKey ? ['--api-key', args.apiKey] : []),
-    ], { input: prompt, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: cliEnv,
-      timeout: BUILD_SESSION_TIMEOUT_MS });
+    coding = runCodingSessionWithRecovery({ prompt, retryLimit, maxBudgetUsd: args.maxBudgetUsd,
+      invoke: ({ input, maxBudgetUsd, resumeSession, recoverStoppedContainer }) =>
+        execFileSync(process.execPath, [
+          join(ROOT, 'container', 'run-build.mjs'),
+          '--app', args.app,
+          '--backend', args.backend,
+          '--image', imageIdentity.id,
+          '--effort', EFFORT,
+          '--model', args.model,
+          ...(maxBudgetUsd != null ? ['--max-budget-usd', String(maxBudgetUsd)] : []),
+          '--settings', `/app/${basename(settings)}`,
+          '--ports', [p.vite, p.express].filter(Boolean).join(','),
+          ...(args.apiKey ? ['--api-key', args.apiKey] : []),
+          ...(resumeSession ? ['--resume-session', resumeSession] : []),
+          ...(recoverStoppedContainer ? ['--recover-stopped-container'] : []),
+        ], { input, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: cliEnv,
+          timeout: BUILD_SESSION_TIMEOUT_MS }),
+    });
   } catch (err) {
-    raw = (err.stdout || '').toString();
-    spawnError = codingSessionFailure(err);
+    coding = { raw: '', spawnError: codingSessionFailure(err), sessionResults: [],
+      interruptions: [], result: {} };
   }
 
   // The session is over, so the lint endpoint has no reason to stay open — and
@@ -815,8 +950,7 @@ async function main() {
   // result.
   killTree(lintServer.pid);
 
-  let result = {};
-  try { result = JSON.parse(raw); } catch { /* non-JSON means the session died */ }
+  const { raw, spawnError, sessionResults, interruptions, result } = coding;
   // A session that never started produced no code, and grading an empty
   // directory reports a real-looking 0 for the backend. Say so instead: this
   // failure mode cost a run once already, silently.
@@ -860,6 +994,7 @@ async function main() {
       // cache tier is unknown cannot be compared with one taken later.
       cacheTier: '5m',
       autoUpdater: 'disabled',
+      codingInterruptionRetries: { limit: retryLimit, used: interruptions.length },
       // In a container the host CLI is not the one that ran, so the version is
       // read from the image. Reporting the host's would attribute a number to
       // software that took no part in producing it.
@@ -901,11 +1036,13 @@ async function main() {
     tokensPerTurn: turns ? Math.round((input + output + cacheWrite + cacheRead) / turns) : null,
     // Reasoning volume, measured rather than assumed — the budget is unpinned,
     // so this is how a change in the CLI default becomes visible in the record.
-    thinking: thinkingVolume(args.app, result.session_id),
+    thinking: combinedThinkingVolume(args.app, sessionResults.map(item => item.session_id)),
     durationMs: Date.now() - started,
     sessionId: result.session_id ?? null,
     ok: result.is_error === false,
-    providerMetadata: { failureCode: result.is_error === true ? 'provider-session-error' : null },
+    providerMetadata: { failureCode: result.is_error === true ? 'provider-session-error' : null,
+      interruptions, invocations: sessionResults.length,
+      sessionIds: [...new Set(sessionResults.map(item => item.session_id).filter(Boolean))] },
   };
   writeFileSync(join(args.app, `.session-${args.mode}-l${args.level}.json`), JSON.stringify({ ...out, text: result.result }, null, 2));
   console.log(JSON.stringify(out));

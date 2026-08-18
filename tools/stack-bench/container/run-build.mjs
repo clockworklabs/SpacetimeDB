@@ -32,6 +32,7 @@ import { DEFAULT_BUILD_IMAGE } from '../product-config.mjs';
 import { dockerMountArguments } from '../container-mount.mjs';
 import { dockerHostGatewayArguments } from '../docker-network.mjs';
 import { containerAuthCommand, resolveContainerAuth } from './container-auth.mjs';
+import { recoverStoppedBuildContainer } from './recover-build-container.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d = null) => { const i = argv.indexOf(k); return i === -1 ? d : argv[i + 1]; };
@@ -64,6 +65,13 @@ if (maxBudgetUsd !== null && (!Number.isFinite(Number(maxBudgetUsd)) || Number(m
   console.error('run-build.mjs: --max-budget-usd must be a positive number');
   process.exit(2);
 }
+const resumeSession = opt('--resume-session');
+if (resumeSession !== null
+  && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(resumeSession)) {
+  console.error('run-build.mjs: --resume-session must be a UUID');
+  process.exit(2);
+}
+const recoverStoppedContainer = argv.includes('--recover-stopped-container');
 const ports = (opt('--ports', '') || '').split(',').filter(Boolean);
 
 const containerPlan = executeStackCapability(adapter, 'build-container', 'plan', {
@@ -170,8 +178,8 @@ catch (error) {
   process.exit(3);
 }
 
-const existing = inspectContainer(containerName);
-const priorContainer = leaseContext.lease.resources.buildContainer ?? null;
+let existing = inspectContainer(containerName);
+let priorContainer = leaseContext.lease.resources.buildContainer ?? null;
 if (existing) {
   if (!priorContainer) {
     console.error(`run-build.mjs: refusing to adopt existing unleased container ${containerName}`);
@@ -183,10 +191,21 @@ if (existing) {
     process.exit(3);
   }
   if (!existing.running) {
-    console.error(`run-build.mjs: leased container ${containerName} stopped unexpectedly; refusing to replace it`);
-    process.exit(3);
+    if (!recoverStoppedContainer) {
+      console.error(`run-build.mjs: leased container ${containerName} stopped unexpectedly; refusing to replace it`);
+      process.exit(3);
+    }
+    try {
+      leaseContext = recoverStoppedBuildContainer({ existing, containerName, leaseContext, backend,
+        dockerEnv, timeoutMs: DOCKER_TIMEOUT_MS });
+      priorContainer = null;
+      existing = null;
+    } catch (error) {
+      console.error(`run-build.mjs: could not recover stopped container: ${error.message}`);
+      process.exit(3);
+    }
   }
-  if (existing.networkMode !== expectedNetworkMode) {
+  if (existing && existing.networkMode !== expectedNetworkMode) {
     console.error(`run-build.mjs: leased container ${containerName} uses network ${existing.networkMode}, `
       + `expected ${expectedNetworkMode}`);
     process.exit(3);
@@ -332,6 +351,7 @@ const claudeArgs = [
   // that is all there is, but the flag is kept so host and container runs are
   // configured identically.
   '--add-dir', '/app',
+  ...(resumeSession !== null ? ['--resume', resumeSession] : []),
 ];
 // The sandbox settings file is written into the app directory by the caller,
 // so it arrives through the /app mount at a known container path.
