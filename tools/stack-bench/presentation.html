@@ -527,37 +527,44 @@
   .st .sv .bad  { color: #fc6897; }
 
   /* attack picker */
-  .atk { display: grid; grid-template-columns: minmax(210px, 260px) 1fr; gap: 1.4rem; width: 100%; max-width: 1000px; }
-  @media (max-width: 800px) { .atk { grid-template-columns: 1fr; gap: .9rem; } }
-  .atk-list { display: grid; gap: .3rem; align-content: start; }
+  /* all 21 on the board at once, three columns of seven */
+  .atk { display: grid; gap: .9rem; width: 100%; max-width: 1000px; }
+  .atk-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: .25rem .5rem; }
+  @media (max-width: 860px) { .atk-list { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .atk-list { grid-template-columns: 1fr; } }
   .atk-item {
+    display: grid; grid-template-columns: 1.6rem 1fr; gap: .4rem; align-items: baseline;
     text-align: left; background: none; cursor: pointer;
     border: 1px solid transparent; border-left: 2px solid var(--shade1);
-    border-radius: 0 6px 6px 0; padding: .5rem .8rem;
-    font-family: var(--font-mono); font-size: .8rem; color: var(--n4);
-    transition: color .2s, border-color .2s, background .2s;
+    border-radius: 0 6px 6px 0; padding: .32rem .6rem;
+    font-family: var(--font-mono); font-size: .76rem; color: var(--n4);
+    transition: color .15s, border-color .15s, background .15s;
   }
+  .atk-item em { font-style: normal; font-size: .66rem; color: var(--n5); }
   .atk-item:hover { color: var(--n3); background: #0d1418; }
   .atk-item.on { color: var(--green); border-left-color: var(--green); background: var(--green-10); }
-  .atk-item small { display: block; font-size: .68rem; color: var(--n5); margin-top: .15rem; }
-  .atk-item.on small { color: var(--n4); }
+  .atk-item.on em { color: var(--green-25); }
 
-  .atk-stage { border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10; overflow: hidden; min-height: 232px; }
+  .atk-stage { border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10; overflow: hidden; min-height: 190px; }
   .atk-panel { display: none; }
   .atk-panel.on { display: block; }
   .atk-head {
+    display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;
     padding: .55rem .9rem; border-bottom: 1px solid var(--shade1);
     font-family: var(--font-mono); font-size: .76rem; color: var(--n4);
   }
+  .atk-head span:first-child { color: var(--n1); }
   .atk-body { padding: .9rem; display: grid; gap: .55rem; font-family: var(--font-mono); font-size: .8rem; }
   .step {
-    display: grid; grid-template-columns: 4.4rem 1fr; gap: .7rem; align-items: center;
+    display: grid; grid-template-columns: 3.4rem 1fr; gap: .7rem; align-items: start;
     color: var(--n3); opacity: 0; transform: translateY(6px);
     animation: stepIn .4s ease forwards;
   }
   .step .actor { color: var(--n4); font-size: .74rem; }
+  .step .actor { padding-top: .42rem; }
   .step .what {
-    border: 1px solid var(--shade1); border-radius: 6px; padding: .38rem .7rem; background: #0d1418;
+    border: 1px solid var(--shade1); border-radius: 6px; padding: .38rem .7rem;
+    background: #0d1418; line-height: 1.45;
   }
   .step .what.hit { border-color: #fc689766; color: #fc6897; }
   .step .what.hold { border-color: var(--green-25); color: var(--green); background: var(--green-10); }
@@ -945,88 +952,197 @@
   <h2 class="r d1">The harness breaks the store 21 ways</h2>
   <div class="atk r d2">
     <div class="atk-list" role="tablist">
-      <button class="atk-item on" data-atk="a1" role="tab">concurrent checkout<small>two shoppers, one unit</small></button>
-      <button class="atk-item" data-atk="a2" role="tab">backend restart<small>mid-order, deploy or crash</small></button>
-      <button class="atk-item" data-atk="a3" role="tab">client disconnect<small>drops and comes back</small></button>
-      <button class="atk-item" data-atk="a4" role="tab">cart isolation<small>one shopper, one cart</small></button>
-      <button class="atk-item" data-atk="a5" role="tab">forged write<small>a request claiming to be someone else</small></button>
-      <button class="atk-item" data-atk="a6" role="tab">event order<small>two writers at once</small></button>
-      <button class="atk-item" data-atk="a7" role="tab">stock transfer<small>a move and a sale at once</small></button>
+      <button class="atk-item on" data-atk="c1" role="tab"><em>L1</em>purchase needs an account</button>
+      <button class="atk-item" data-atk="c2" role="tab"><em>L1</em>orders keep their author</button>
+      <button class="atk-item" data-atk="c3" role="tab"><em>L1</em>only admins move stock</button>
+      <button class="atk-item" data-atk="c4" role="tab"><em>L1</em>the store sets the price</button>
+      <button class="atk-item" data-atk="c5" role="tab"><em>L1</em>an account keeps its own</button>
+      <button class="atk-item" data-atk="c6" role="tab"><em>L1</em>order history is private</button>
+      <button class="atk-item" data-atk="c7" role="tab"><em>L1</em>the books balance</button>
+      <button class="atk-item" data-atk="c8" role="tab"><em>L1</em>a review follows a purchase</button>
+      <button class="atk-item" data-atk="c9" role="tab"><em>L1</em>a cart is private</button>
+      <button class="atk-item" data-atk="c10" role="tab"><em>L1</em>the last unit sells once</button>
+      <button class="atk-item" data-atk="c11" role="tab"><em>L1</em>a restock in a rush holds</button>
+      <button class="atk-item" data-atk="c12" role="tab"><em>L1</em>one cart, two tabs</button>
+      <button class="atk-item" data-atk="c13" role="tab"><em>L1</em>outside writes show up</button>
+      <button class="atk-item" data-atk="c14" role="tab"><em>L1</em>a list opened mid-change</button>
+      <button class="atk-item" data-atk="c15" role="tab"><em>L2</em>operating needs an operator</button>
+      <button class="atk-item" data-atk="c16" role="tab"><em>L2</em>stock is conserved</button>
+      <button class="atk-item" data-atk="c17" role="tab"><em>L2</em>the books balance on refunds</button>
+      <button class="atk-item" data-atk="c18" role="tab"><em>L2</em>an order has one owner</button>
+      <button class="atk-item" data-atk="c19" role="tab"><em>L3</em>scheduled work survives</button>
+      <button class="atk-item" data-atk="c20" role="tab"><em>L3</em>a restart fires nothing early</button>
+      <button class="atk-item" data-atk="c21" role="tab"><em>L3</em>time moves no stock</button>
     </div>
     <div class="atk-stage">
-      <div class="atk-panel on" id="a1">
-        <div class="atk-head">one unit in stock &middot; both checkouts arrive together</div>
+      <div class="atk-panel on" id="c1">
+        <div class="atk-head"><span>Purchase requires an account</span><span>buyer &middot; guest</span></div>
         <div class="atk-body">
-          <div class="step"><span class="actor">alice</span><span class="what">checkout &middot; reads 1 in stock</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what">checkout &middot; reads 1 in stock</span></div>
-          <div class="step"><span class="actor">store</span><span class="what hold">one order confirmed &middot; stock 0</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what">told sold out</span></div>
+          <div class="step"><span class="actor">101a</span><span class="what">a purchase request replayed without a session creates no order and moves no stock</span></div>
         </div>
-        <div class="atk-verdict">&#10003; exactly one order for the last unit</div>
+        <div class="atk-verdict">1 check, and the store has to hold every one</div>
       </div>
-      <div class="atk-panel" id="a2">
-        <div class="atk-head">an order is confirmed, then the backend restarts</div>
+      <div class="atk-panel" id="c2">
+        <div class="atk-head"><span>Purchases are attributed to whoever made them</span><span>victim &middot; attacker</span></div>
         <div class="atk-body">
-          <div class="step"><span class="actor">alice</span><span class="what">order confirmed on screen</span></div>
-          <div class="step"><span class="actor">harness</span><span class="what hit">backend restarted</span></div>
-          <div class="step"><span class="actor">alice</span><span class="what hold">order still there, same id</span></div>
-          <div class="step"><span class="actor">store</span><span class="what hold">stock still reflects the sale</span></div>
+          <div class="step"><span class="actor">102a</span><span class="what">an order cannot be placed in someone else's name by editing the request</span></div>
         </div>
-        <div class="atk-verdict">&#10003; a confirmed order survives the restart</div>
+        <div class="atk-verdict">1 check, and the store has to hold every one</div>
       </div>
-      <div class="atk-panel" id="a3">
-        <div class="atk-head">a shopper's connection drops while the store keeps moving</div>
+      <div class="atk-panel" id="c3">
+        <div class="atk-head"><span>Stock is administered by admins only</span><span>admin &middot; customer</span></div>
         <div class="atk-body">
-          <div class="step"><span class="actor">bob</span><span class="what hit">connection dropped</span></div>
-          <div class="step"><span class="actor">store</span><span class="what">3 price changes land while he is away</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what">reconnects</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what hold">all 3 present, each exactly once</span></div>
+          <div class="step"><span class="actor">103a</span><span class="what">a restock replayed by a customer is refused and changes no stock</span></div>
         </div>
-        <div class="atk-verdict">&#10003; catches up with no gaps and no repeats</div>
+        <div class="atk-verdict">1 check, and the store has to hold every one</div>
       </div>
-      <div class="atk-panel" id="a4">
-        <div class="atk-head">two shoppers, side by side, in the same store</div>
+      <div class="atk-panel" id="c4">
+        <div class="atk-head"><span>The price is the store's to set</span><span>buyer</span></div>
         <div class="atk-body">
-          <div class="step"><span class="actor">alice</span><span class="what">adds an item to her cart</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what hold">cart stays his own</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what">opens checkout</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what hold">totals his items only</span></div>
+          <div class="step"><span class="actor">104a</span><span class="what">a purchase request with the price edited does not sell the item for less</span></div>
         </div>
-        <div class="atk-verdict">&#10003; a cart belongs to one shopper</div>
+        <div class="atk-verdict">1 check, and the store has to hold every one</div>
       </div>
-      <div class="atk-panel" id="a5">
-        <div class="atk-head">a write arrives claiming to be another shopper</div>
+      <div class="atk-panel" id="c5">
+        <div class="atk-head"><span>An account keeps what belongs to it</span><span>shopper</span></div>
         <div class="atk-body">
-          <div class="step"><span class="actor">harness</span><span class="what">replays alice's own request</span></div>
-          <div class="step"><span class="actor">harness</span><span class="what hit">swaps the identity to bob</span></div>
-          <div class="step"><span class="actor">store</span><span class="what hold">write refused</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what hold">order history unchanged</span></div>
+          <div class="step"><span class="actor">105a</span><span class="what">cart and order history survive a reload as the same account</span></div>
+          <div class="step"><span class="actor">105b</span><span class="what">the same account survives the connection dropping and coming back</span></div>
         </div>
-        <div class="atk-verdict">&#10003; the shopper is whoever the connection says</div>
+        <div class="atk-verdict">2 checks, and the store has to hold every one</div>
       </div>
-      <div class="atk-panel" id="a6">
-        <div class="atk-head">two writers change the same catalog at once</div>
+      <div class="atk-panel" id="c6">
+        <div class="atk-head"><span>One customer's orders are not another's</span><span>one &middot; two</span></div>
         <div class="atk-body">
-          <div class="step"><span class="actor">alice</span><span class="what">6 updates, as fast as allowed</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what">6 updates, at the same time</span></div>
-          <div class="step"><span class="actor">alice</span><span class="what hold">sees all 12, in one order</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what hold">sees all 12, in the same order</span></div>
+          <div class="step"><span class="actor">106a</span><span class="what">a customer's order history contains only their own orders</span></div>
         </div>
-        <div class="atk-verdict">&#10003; every client agrees on what happened, and in what order</div>
+        <div class="atk-verdict">1 check, and the store has to hold every one</div>
       </div>
-      <div class="atk-panel" id="a7">
-        <div class="atk-head">stock moves between warehouses while a customer is buying</div>
+      <div class="atk-panel" id="c7">
+        <div class="atk-head"><span>The books balance</span><span>buyer &middot; admin</span></div>
         <div class="atk-body">
-          <div class="step"><span class="actor">staff</span><span class="what">moves 5 units, warehouse a to b</span></div>
-          <div class="step"><span class="actor">alice</span><span class="what hit">buys 1, mid-transfer</span></div>
-          <div class="step"><span class="actor">store</span><span class="what hold">total across warehouses still adds up</span></div>
-          <div class="step"><span class="actor">store</span><span class="what hold">both warehouses stay at or above zero</span></div>
+          <div class="step"><span class="actor">107a</span><span class="what">revenue rises by exactly what was bought</span></div>
+          <div class="step"><span class="actor">107b</span><span class="what">what the store sold is what left the warehouses, and a fresh client agrees</span></div>
         </div>
-        <div class="atk-verdict">&#10003; the move and the sale agree on one total</div>
+        <div class="atk-verdict">2 checks, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c8">
+        <div class="atk-head"><span>A review is a claim about a purchase</span><span>owner &middot; stranger</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">108a</span><span class="what">someone who never bought the item cannot review it</span></div>
+          <div class="step"><span class="actor">108b</span><span class="what">buying the item earns the right to review it</span></div>
+        </div>
+        <div class="atk-verdict">2 checks, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c9">
+        <div class="atk-head"><span>A cart is nobody else’s business</span><span>owner &middot; stranger</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">109a</span><span class="what">one customer’s cart request replayed by another leaves the owner’s cart untouched</span></div>
+          <div class="step"><span class="actor">109b</span><span class="what">a quantity below one is refused rather than credited</span></div>
+        </div>
+        <div class="atk-verdict">2 checks, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c10">
+        <div class="atk-head"><span>The last unit is sold once</span><span>a &middot; b &middot; c &middot; d &middot; e &middot; f</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">201a</span><span class="what">six customers buy the last three units at once: stock lands on exactly zero, never below</span></div>
+          <div class="step"><span class="actor">201b</span><span class="what">exactly three of the six customers end up with an order, and none is charged twice</span></div>
+          <div class="step"><span class="actor">201c</span><span class="what">revenue counts three sales, not six</span></div>
+        </div>
+        <div class="atk-verdict">3 checks, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c11">
+        <div class="atk-head"><span>A restock during a rush is not lost</span><span>admin &middot; a &middot; b &middot; c</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">202-control</span><span class="what">an uncontended restock of five is stored by the server and shows on the storefront</span></div>
+          <div class="step"><span class="actor">202a</span><span class="what">three purchases and a restock of five during the rush leave stock at start + 2</span></div>
+        </div>
+        <div class="atk-verdict">2 checks, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c12">
+        <div class="atk-head"><span>One cart, two tabs, one checkout</span><span>tab1 &middot; tab2 &middot; filler</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">203a</span><span class="what">the same item added from two tabs at once becomes one line of two</span></div>
+          <div class="step"><span class="actor">203b</span><span class="what">checking the same cart out twice at once produces one order</span></div>
+        </div>
+        <div class="atk-verdict">2 checks, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c13">
+        <div class="atk-head"><span>A write from outside the app is visible without reload</span><span>viewer</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">901a</span><span class="what">a back-office script sets Desk Lamp's East stock to 5, directly in the database; an anonymous viewer with the storefront already open sees 50 without touching the page</span></div>
+          <div class="step"><span class="actor">901b</span><span class="what">the out-of-band change survives a reload — the page did not merely patch its own memory</span></div>
+          <div class="step"><span class="actor">901c</span><span class="what">a stock correction that lands while the app server is down shows on an open storefront once the server returns: East 5 + West 10 = 15, no reload</span></div>
+          <div class="step"><span class="actor">901d</span><span class="what">the client, not the server, misses the window: a correction lands while this browser is disconnected, and the page is current again once it reconnects</span></div>
+        </div>
+        <div class="atk-verdict">4 checks, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c14">
+        <div class="atk-head"><span>A list being opened while its contents change</span><span>reader &middot; reviewer</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">902a</span><span class="what">one customer opens the Keyboard's reviews at the same moment another posts one: the opener ends with that review exactly once — not zero (stale fetch), not twice (fetch merged with its own live echo)</span></div>
+        </div>
+        <div class="atk-verdict">1 check, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c15">
+        <div class="atk-head"><span>Operating the store requires being an operator</span><span>admin &middot; customer</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">201a</span><span class="what">a customer replaying an admin's transfer moves no stock</span></div>
+          <div class="step"><span class="actor">201b</span><span class="what">a customer cannot set a price by replaying an admin's change</span></div>
+          <div class="step"><span class="actor">201c</span><span class="what">a customer cannot ship their own order</span></div>
+        </div>
+        <div class="atk-verdict">3 checks, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c16">
+        <div class="atk-head"><span>Stock is conserved however it moves</span><span>admin &middot; customer</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">202a</span><span class="what">a transfer changes where stock is, never how much there is</span></div>
+          <div class="step"><span class="actor">202b</span><span class="what">a sale and its cancellation leave the shelf exactly as they found it</span></div>
+          <div class="step"><span class="actor">202c</span><span class="what">a fresh client sees the same totals, so nothing was only corrected in one browser</span></div>
+          <div class="step"><span class="actor">202d</span><span class="what">a transfer racing a purchase loses no unit between the rows: total = before − sold, exactly, however the two interleave</span></div>
+        </div>
+        <div class="atk-verdict">4 checks, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c17">
+        <div class="atk-head"><span>The books still balance once money can flow backwards</span><span>admin &middot; customer</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">203a</span><span class="what">revenue rises by what was bought and falls by what was cancelled</span></div>
+          <div class="step"><span class="actor">203b</span><span class="what">a price change does not rewrite revenue already earned</span></div>
+        </div>
+        <div class="atk-verdict">2 checks, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c18">
+        <div class="atk-head"><span>An order belongs to the person who placed it</span><span>one &middot; two</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">204a</span><span class="what">one customer cannot cancel another's order</span></div>
+        </div>
+        <div class="atk-verdict">1 check, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c19">
+        <div class="atk-head"><span>Scheduled work survives a restart</span><span>admin &middot; watcher</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">311a</span><span class="what">a restock scheduled before a restart still fires after it, once, at its own time — an in-memory timer does not survive and must not be how this was built</span></div>
+          <div class="step"><span class="actor">311b</span><span class="what">it fired exactly once — the restart did not replay it</span></div>
+        </div>
+        <div class="atk-verdict">2 checks, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c20">
+        <div class="atk-head"><span>A restart does not make pending work fire early</span><span>admin &middot; watcher</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">312a</span><span class="what">a restock due in three minutes has not applied thirty seconds after a restart — re-reading pending work must not run it</span></div>
+        </div>
+        <div class="atk-verdict">1 check, and the store has to hold every one</div>
+      </div>
+      <div class="atk-panel" id="c21">
+        <div class="atk-head"><span>Time does not create or destroy stock</span><span>shopper &middot; admin</span></div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">313a</span><span class="what">a reservation taken and left to expire returns exactly what it took, counted in the admin's own totals</span></div>
+        </div>
+        <div class="atk-verdict">1 check, and the store has to hold every one</div>
       </div>
     </div>
   </div>
-  <p class="supp r d3" style="margin-top:1.2rem">Twenty-one criteria go at the store on purpose, on top of the thirteen that check it does the job at all. Seven of them are here. Pick one to see how it plays out.</p>
+  <p class="supp r d3" style="margin-top:1.2rem">Twenty-one criteria go at the store on purpose, on top of the thirteen that check it does the job at all. Pick any one to see the checks it makes.</p>
 </section>
 
 <!-- 6 proving the grader -->
