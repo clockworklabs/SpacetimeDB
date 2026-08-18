@@ -827,7 +827,7 @@
     <span>SpacetimeDB</span>
   </div>
   <h1 class="r d1">Stack Bench</h1>
-  <p class="lead r d2" style="margin-top:1.4rem">AI agents write backends now. Nobody measures whether what they ship actually works.</p>
+  <p class="lead r d2" style="margin-top:1.4rem">AI agents write backends now. Stack Bench measures whether what they ship actually works.</p>
   <p class="r d3" style="margin-top:1rem">Stack Bench has an agent build a real-time store, then attacks the result the way production would. Every failure is found by using the app, and every fix lands on the bill.</p>
 </section>
 
@@ -866,7 +866,7 @@
 <!-- 3 a run -->
 <section>
   <div class="kicker r">the loop</div>
-  <h2 class="r d1">It does not stop at the first attempt</h2>
+  <h2 class="r d1">The first attempt is only the first round</h2>
   <svg class="cyc r d2" viewBox="0 0 960 250" role="img" aria-label="build, grade, report, fix, grade again, done">
     <defs>
       <marker id="a3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
@@ -914,7 +914,7 @@
     <div class="st">spend<span class="sv"><span class="v-c1">$4.12</span><span class="v-c2">$4.73</span></span></div>
     <div class="st">outcome<span class="sv"><span class="v-o1 bad">3 failed</span><span class="v-o2 good">accepted</span></span></div>
   </div>
-  <p class="supp r d4" style="margin-top:1.1rem">A failed criterion comes back as a sentence about what a customer saw, never as the check that caught it. The agent gets a bounded number of rounds; the counter keeps running whether or not they help.</p>
+  <p class="supp r d4" style="margin-top:1.1rem">A failed criterion comes back as a sentence about what a customer saw. The agent gets a bounded number of rounds, and the counter keeps running through every one of them.</p>
 </section>
 
 <!-- 4 graded like a customer -->
@@ -973,7 +973,7 @@
     <text class="sub acc" x="46" y="252">failures only</text>
     <text class="sub" x="46" y="266">behavioural</text>
   </svg>
-  <p class="supp r d3">The agent builds inside a sealed container and never sees the grader. The grader drives the deployed app through real browser contexts and emits one typed verdict per criterion. Only failures, described the way a customer would describe them, travel back up the dashed edge for the next fix round.</p>
+  <p class="supp r d3">The agent builds inside a sealed container, with the grader on the other side of the wall. The grader drives the deployed app through real browser contexts and emits one typed verdict per criterion. Failures travel back up the dashed edge as customer-facing descriptions for the next fix round.</p>
 </section>
 
 <!-- 5 break it on purpose -->
@@ -990,7 +990,7 @@
   </div>
   <div class="fork r d2">
     <div class="branch good"><span class="tagl">stack serialises the write</span> &#10003; one order stands &middot; stock 0 &middot; the other shopper is told sold out</div>
-    <div class="branch bad"><span class="tagl">guard was missed</span> &#10007; two orders, one unit &middot; stock &minus;1 &middot; a customer never gets what they paid for</div>
+    <div class="branch bad"><span class="tagl">guard was missed</span> &#10007; two orders, one unit &middot; stock &minus;1 &middot; one customer is owed a refund</div>
   </div>
   <p class="supp r d3" style="margin-top:1.2rem">Which way this lands is decided entirely by the stack underneath, and it stays invisible until a real customer hits it. The harness forces the collision on purpose and asserts that exactly one order survives.</p>
   <p class="lvls r d4">L1 identity &middot; L2 authorization &middot; <b>L3 atomicity</b> &middot; L4 deferred work &middot; L5 volume &nbsp; <span class="dim">levels are cumulative</span></p>
@@ -999,17 +999,17 @@
 <!-- 5b why it differs -->
 <section>
   <div class="kicker r">why the bill differs</div>
-  <h2 class="r d1">Either the database refuses to sell it twice, or your code has to</h2>
+  <h2 class="r d1">Either the database keeps the count, or your code has to</h2>
   <div class="guar r d2">
     <div class="col win">
       <div class="appbox">
         <div class="boxlbl">what the agent writes</div>
-        <div class="emptyslot">nothing to assemble</div>
+        <div class="emptyslot">one call, and it holds</div>
       </div>
       <div class="arrowup">&#9650;</div>
       <div class="dbbox">
         <div class="boxlbl">database</div>
-        <div class="seal">will not let the write overlap</div>
+        <div class="seal">serialises the write itself</div>
       </div>
       <div class="verdictline ok">&#10003; correct however the agent writes it</div>
     </div>
@@ -1026,21 +1026,21 @@
       <div class="arrowup">&#9650;</div>
       <div class="dbbox">
         <div class="boxlbl">database</div>
-        <div class="emptyslot">offers the pieces, enforces nothing</div>
+        <div class="emptyslot">offers the pieces, leaves the rule to you</div>
       </div>
       <div class="verdictline risk">
-        <span class="s-ok">correct only while every piece is right</span>
-        <span class="s-no">&#10007; one piece forgotten &rarr; sold twice</span>
+        <span class="s-ok">correct while every piece is right</span>
+        <span class="s-no">&#10007; one piece missed &rarr; sold twice</span>
       </div>
     </div>
   </div>
-  <p class="supp r d3" style="margin-top:1.3rem">That is the whole bet. On one side the database will not let the agent get it wrong. On the other the agent has to build the guarantee itself, and every piece it has to remember is a piece it can forget, at a cost that shows up in the bill.</p>
+  <p class="supp r d3" style="margin-top:1.3rem">That is the whole bet. On one side the database owns the rule, so the agent gets it right by default. On the other the agent assembles the rule itself, and every piece it has to remember is a piece that can go missing, at a cost that shows up in the bill.</p>
 </section>
 
-<!-- 6 you can't game it -->
+<!-- 6 proving the grader -->
 <section>
-  <div class="kicker r">you can't game it</div>
-  <h2 class="r d1">The grader has to catch a defect we plant</h2>
+  <div class="kicker r">proving the grader</div>
+  <h2 class="r d1">The grader earns the right to score</h2>
   <div class="gflow r d2">
     <span class="gnode">checkout</span><span class="arr">&rarr;</span>
     <span class="gnode guard">guard: stock &ge; 1</span><span class="arr">&rarr;</span>
@@ -1049,11 +1049,11 @@
   </div>
   <div class="gtag r d2">mutation removes the guard from a fully passing app</div>
   <div class="expect r d3">
-    <div><span>criterion <b style="color:var(--n1)">no-oversell</b></span><span class="must">must fail &middot; kill confirmed</span></div>
-    <div><span>every other criterion</span><span class="rest">must still pass &middot; no collateral</span></div>
-    <div><span>blank app, full suite</span><span class="rest">must score zero everywhere</span></div>
+    <div><span>criterion <b style="color:var(--n1)">no-oversell</b></span><span class="must">fails &middot; kill confirmed</span></div>
+    <div><span>every other criterion</span><span class="rest">still passes &middot; clean kill</span></div>
+    <div><span>blank app, full suite</span><span class="rest">holds at zero</span></div>
   </div>
-  <p class="supp r d4">A criterion earns the right to score only after it catches a defect planted in a passing app, hits nothing it did not declare, and awards nothing to an empty build. A planted defect that survives is a hole in the grader, not a pass for the app.</p>
+  <p class="supp r d4">A criterion earns the right to score once it catches a defect planted in a passing app, hits exactly the criterion it declared, and holds an empty build at zero. A planted defect that survives points at the grader, and the criterion goes back for repair.</p>
 </section>
 
 <!-- 7 receipts -->
@@ -1070,7 +1070,7 @@
     <div class="vrow"><span>graded under</span><span>ecommerce.l1-standard@1.1.0</span></div>
   </div>
   <p class="alsofiles r d3">Beside it in the same directory: <b>the exact prompt the agent received</b>, its <b>session cost and token count</b>, the <b>bug report</b> it was given, a <b>video per actor</b>, and a <b>hash-bound copy of the source</b> that produced this score.</p>
-  <p class="supp r d4" style="margin-top:1rem">One typed state per check, the evidence that produced it, and the recipe it was graded under. A score that cannot be traced back to these files does not ship.</p>
+  <p class="supp r d4" style="margin-top:1rem">One typed state per check, the evidence that produced it, and the recipe it was graded under. Every published score traces back to these files.</p>
 </section>
 
 <!-- 8 scoreboard -->
