@@ -1038,8 +1038,7 @@ jobs:
         run: |
           if ! command -v unity >/dev/null 2>&1; then
             curl -fsSL https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh | UNITY_CLI_CHANNEL=beta bash
-            echo "$HOME/.unity/bin" >> "$GITHUB_PATH"
-            export PATH="$HOME/.unity/bin:$PATH"
+            source ~/.bashrc
           fi
           unity --version
 
