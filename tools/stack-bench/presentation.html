@@ -807,14 +807,14 @@
   </div>
   <h1 class="r d1">Stack Bench</h1>
   <p class="lead r d2" style="margin-top:1.4rem">Stack Bench measures whether the backend an AI agent ships actually works.</p>
-  <p class="r d3" style="margin-top:1rem">Stack Bench has an agent build a real-time store and the warehouse operation behind it, then attacks the result the way production would. Every failure is found by using the app, and every fix lands on the bill.</p>
+  <p class="r d3" style="margin-top:1rem">An agent builds a real-time store and the warehouse operation behind it. Stack Bench then attacks what it built, the way production would. Every failure turns up by using the app, and every fix lands on the bill.</p>
 </section>
 
 <!-- 2 the bet -->
 <section>
   <div class="kicker r">what is measured</div>
   <h2 class="r d1">Same app. Same model. Different database.</h2>
-  <p class="lead r d2" style="margin-top:.6rem">One agent builds the same application over and over: a live storefront, and the warehouses, stock and admin side that runs it. The prompt, the requirements and the model stay pinned; the database underneath is the only thing that changes.</p>
+  <p class="lead r d2" style="margin-top:.6rem">One agent builds the same application over and over: a live storefront, plus the warehouses, stock and admin that run it. The prompt, the requirements and the model stay pinned. The database underneath is the only thing that changes.</p>
   <div class="mt r d3" role="img" aria-label="three databases reach the same score after different numbers of fix rounds and different spend">
     <div class="mt-head">
       <div>database</div><div class="rt fin">51 / 51</div><div class="rt">rounds</div><div class="rt">cost</div>
@@ -835,7 +835,7 @@
       <div class="mt-val mut js-rounds">0</div><div class="mt-val js-cost">$0.00</div>
     </div>
   </div>
-  <p class="supp r d4">Every run lands on the same score, because the loop keeps going until every criterion passes. The spend and the round count behind that score are the measurement.</p>
+  <p class="supp r d4">Every run lands on the same score, because the loop keeps going until every criterion passes. The measurement is what it cost to get there, and how many rounds it took.</p>
 </section>
 
 <!-- 3 a run -->
@@ -949,13 +949,13 @@
     <text class="sub acc" x="46" y="252">failures only</text>
     <text class="sub" x="46" y="266">behavioral</text>
   </svg>
-  <p class="supp r d3">The agent builds inside a sealed container, with the grader on the other side of the wall. The grader drives the deployed app through real browser contexts and emits one typed verdict per criterion. Failures travel back up the dashed edge as customer-facing descriptions for the next fix round.</p>
+  <p class="supp r d3">The agent builds inside a sealed container, and the grader works from the other side of that wall. It drives the deployed app through real browser contexts and writes one typed verdict per criterion. Failures go back to the agent as plain descriptions of what a customer saw.</p>
 </section>
 
 <!-- 5 break it on purpose -->
 <section>
   <div class="kicker r">break it on purpose</div>
-  <h2 class="r d1">Every way a store like this goes wrong</h2>
+  <h2 class="r d1">The harness breaks the store seven ways</h2>
   <div class="atk r d2">
     <div class="atk-list" role="tablist">
       <button class="atk-item on" data-atk="a1" role="tab">concurrent checkout<small>two shoppers, one unit</small></button>
@@ -1039,13 +1039,13 @@
       </div>
     </div>
   </div>
-  <p class="supp r d3" style="margin-top:1.2rem">Each of these is a criterion the harness drives on purpose, in a real browser, against the store the agent built. Pick one to see the shape of the attack.</p>
+  <p class="supp r d3" style="margin-top:1.2rem">Each one runs in a real browser against the store the agent built. Pick one to see how it plays out.</p>
 </section>
 
 <!-- 6 proving the grader -->
 <section>
   <div class="kicker r">proving the grader</div>
-  <h2 class="r d1">Every criterion is proven on a defect we planted</h2>
+  <h2 class="r d1">We plant a defect, and the grader has to catch it</h2>
   <div class="proof r d2" role="img" aria-label="three planted inputs and the verdicts each has to produce">
     <div class="prow">
       <span class="pin">a passing store, with its stock guard removed</span>
@@ -1066,7 +1066,7 @@
       <span class="pok">&#10003;</span>
     </div>
   </div>
-  <p class="supp r d4" style="margin-top:1.2rem">A criterion scores once it has answered all three on known input. A planted defect that survives points at the grader, so that criterion goes back for repair, and prompts, guidance and tests stay untouched.</p>
+  <p class="supp r d4" style="margin-top:1.2rem">A criterion starts scoring once it answers all three on known input. If a planted defect survives, the grader is at fault, so that criterion goes back for repair. Prompts, guidance and tests stay untouched.</p>
 </section>
 
 <!-- 7 receipts -->
@@ -1083,7 +1083,7 @@
     <div class="vrow"><span>graded under</span><span>ecommerce.l1-standard@1.1.0</span></div>
   </div>
   <p class="alsofiles r d3">Beside it in the same directory: <b>the exact prompt the agent received</b>, its <b>session cost and token count</b>, the <b>bug report</b> it was given, a <b>video per actor</b>, and a <b>hash-bound copy of the source</b> that produced this score.</p>
-  <p class="supp r d4" style="margin-top:1rem">One typed state per check, the evidence that produced it, and the recipe it was graded under. Every published score traces back to these files.</p>
+  <p class="supp r d4" style="margin-top:1rem">Each check leaves one typed state, the evidence that produced it, and the recipe it was graded under. Every published score traces back to these files.</p>
 </section>
 
 <!-- 8 scoreboard -->

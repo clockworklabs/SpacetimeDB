@@ -81,17 +81,17 @@
 
 <h1>Stack Bench</h1>
 <p>Stack Bench measures whether the backend an AI agent ships actually works.</p>
-<p>An agent builds a real-time store and the warehouse operation behind it, from a fixed prompt. The harness drives real browsers against it, hands back whatever failed, and lets the agent fix it, recording what that took.</p>
+<p>An agent builds a real-time store and the warehouse operation behind it, from a fixed prompt. The harness then drives real browsers against it, hands back whatever failed, and lets the agent fix it, recording what that took.</p>
 
 <h2>Same app. Same model. Different database.</h2>
-<p>One agent builds the same application over and over, with a different database underneath each time: a live storefront, and the warehouses, stock and admin side that runs it. Everything else is held fixed: the prompt, the model, the requirements. What comes out is a bill.</p>
+<p>One agent builds the same application over and over: a live storefront, plus the warehouses, stock and admin that run it. The database underneath changes each time, and everything else is held fixed. What comes out is a bill.</p>
 
 <h2>The loop runs until it passes</h2>
 <p>Build, then grade, then hand back what failed as a sentence about what a customer saw, then fix, then grade again. A failed criterion never travels back as the check that caught it, so the agent cannot write to the test.</p>
 <p>Because the loop continues to a full score, the interesting number is the cost of getting there and the number of rounds it took.</p>
 
-<h2>What gets broken on purpose</h2>
-<p>Each of these runs against the store the agent built, in real browsers, with one isolated context per shopper.</p>
+<h2>The harness breaks the store seven ways</h2>
+<p>Each one runs against the store the agent built, in real browsers, with one isolated context per shopper.</p>
 <ul>
   <li><b>Concurrent checkout.</b> Two shoppers buy the last unit at the same instant. Exactly one order stands.</li>
   <li><b>Backend restart.</b> An order is confirmed, the backend restarts mid-run, and the order is still there afterwards.</li>
@@ -102,12 +102,12 @@
   <li><b>Stock transfer.</b> Units move between warehouses while a customer is buying, and the total across warehouses still adds up.</li>
 </ul>
 
-<h2>Every criterion is proven on a defect we planted</h2>
-<p>A criterion scores once it has answered all three of these on known input.</p>
+<h2>We plant a defect, and the grader has to catch it</h2>
+<p>A criterion starts scoring once it answers all three of these on known input.</p>
 <div class="rule"><span>a passing store, with its stock guard removed</span><b>the no-oversell criterion fails</b></div>
 <div class="rule"><span>that same run, read across the whole suite</span><b>every other criterion still passes</b></div>
 <div class="rule"><span>a store with nothing built in it at all</span><b>the whole suite holds at zero</b></div>
-<p style="margin-top:1rem">A planted defect that survives points at the grader, and that criterion goes back for repair. Prompts, guidance and tests are never adjusted to make a failing check pass.</p>
+<p style="margin-top:1rem">If a planted defect survives, the grader is at fault, so that criterion goes back for repair. Prompts, guidance and tests stay untouched.</p>
 
 <h2>One store. Three databases. Three bills.</h2>
 <table>
