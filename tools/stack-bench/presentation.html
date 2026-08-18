@@ -348,6 +348,71 @@
   section.on .rail u.rB { animation: mtB 10s linear infinite; }
   section.on .rail u.rC { animation: mtC 10s linear infinite; }
 
+  /* where the guarantee lives: one grid, so the two sides line up row for row */
+  .guar { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem 1.6rem; width: 100%; max-width: 940px; }
+  @media (max-width: 800px) { .guar { grid-template-columns: 1fr; } }
+  .gcap { font-family: var(--font-mono); font-size: .8rem; letter-spacing: .04em; color: var(--n4); }
+  .gcap.win { color: var(--green); }
+  .gwrap {
+    border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10;
+    padding: .85rem; display: grid; gap: .4rem; align-content: start;
+  }
+  .gwrap.win { border-color: var(--green-25); }
+  .glbl { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .08em; color: var(--n5); }
+  .gstep {
+    font-family: var(--font-mono); font-size: .78rem; color: var(--n3); background: #0d1418;
+    border: 1px solid var(--shade1); border-radius: 6px; padding: .5rem .7rem;
+  }
+  .gwrap.win .gstep { color: var(--green); background: var(--green-10); border-color: var(--green-25); }
+  .gnote { font-family: var(--font-mono); font-size: .72rem; color: var(--n4); padding-top: .1rem; }
+  /* one piece goes missing, and the outcome on that side moves with it */
+  section.on .gstep.drop { animation: gDrop 7s ease-in-out infinite; }
+  @keyframes gDrop {
+    0%, 48%   { opacity: 1; color: var(--n3); border-color: var(--shade1); }
+    55%, 92%  { opacity: .3; color: #fc6897; border-color: #fc689766; }
+    99%, 100% { opacity: 1; color: var(--n3); border-color: var(--shade1); }
+  }
+  .gres {
+    font-family: var(--font-mono); font-size: .84rem; text-align: center;
+    padding: .55rem; border-radius: 6px; position: relative; min-height: 2.5em;
+    display: grid; place-items: center;
+  }
+  .gres.ok { color: var(--green); background: var(--green-10); border: 1px solid var(--green-25); }
+  .gres.flip { border: 1px solid var(--shade1); }
+  .gres.flip span { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; }
+  .gres.flip .f-ok { color: var(--n3); }
+  .gres.flip .f-no { color: #fc6897; }
+  section.on .gres.flip .f-ok { animation: gOk 7s ease-in-out infinite; }
+  section.on .gres.flip .f-no { animation: gNo 7s ease-in-out infinite; }
+  @keyframes gOk { 0%, 48% { opacity: 1 } 55%, 92% { opacity: 0 } 99%, 100% { opacity: 1 } }
+  @keyframes gNo { 0%, 48% { opacity: 0 } 55%, 92% { opacity: 1 } 99%, 100% { opacity: 0 } }
+
+  /* proving the grader: three planted inputs, three verdicts that have to come back */
+  .proof { display: grid; gap: .5rem; width: 100%; max-width: 940px; }
+  .prow {
+    display: grid; grid-template-columns: 1fr 1.6rem 1fr 1.6rem; align-items: center; gap: .6rem;
+    border: 1px solid var(--shade1); border-radius: 8px; background: #0a0d10;
+    padding: .75rem .9rem; font-family: var(--font-mono); font-size: .82rem;
+  }
+  .prow .pin  { color: var(--n3); }
+  .prow .parr { color: var(--n5); text-align: center; }
+  .prow .pout { color: var(--n1); }
+  .prow .pok  { color: var(--green); text-align: center; opacity: 0; }
+  @media (max-width: 700px) {
+    .prow { grid-template-columns: 1fr 1.6rem; }
+    .prow .parr { display: none; }
+  }
+  section.on .prow { animation: pRow 9s ease-in-out infinite; }
+  section.on .prow .pok { animation: pOk 9s ease-in-out infinite; }
+  section.on .prow:nth-child(2), section.on .prow:nth-child(2) .pok { animation-delay: 1.2s; }
+  section.on .prow:nth-child(3), section.on .prow:nth-child(3) .pok { animation-delay: 2.4s; }
+  @keyframes pRow {
+    0%, 4%    { border-color: var(--shade1); background: #0a0d10; }
+    10%, 88%  { border-color: var(--green-25); background: #0b1512; }
+    96%, 100% { border-color: var(--shade1); background: #0a0d10; }
+  }
+  @keyframes pOk { 0%, 6% { opacity: 0 } 12%, 88% { opacity: 1 } 96%, 100% { opacity: 0 } }
+
   /* technical diagrams */
   .dia { width: 100%; max-width: 1000px; margin: .4rem 0 1rem; }
   .dia text { font-family: var(--font-mono); fill: var(--n3); font-size: 12px; }
@@ -491,12 +556,6 @@
   .st .sv .wait { color: var(--n4); }
   .st .sv .bad  { color: #fc6897; }
 
-  .expect { display: grid; gap: .45rem; margin-top: 1.2rem; font-family: var(--font-mono); font-size: .84rem; max-width: 900px; width: 100%; }
-  .expect div { display: flex; justify-content: space-between; gap: 1.5rem; border-bottom: 1px dashed var(--shade1); padding-bottom: .45rem; color: var(--n4); }
-  .expect b { font-weight: 500; }
-  .expect .must { color: #fc6897; white-space: nowrap; }
-  .expect .rest { color: var(--green); white-space: nowrap; }
-
   /* attack picker */
   .atk { display: grid; grid-template-columns: minmax(210px, 260px) 1fr; gap: 1.4rem; width: 100%; max-width: 1000px; }
   @media (max-width: 800px) { .atk { grid-template-columns: 1fr; gap: .9rem; } }
@@ -544,78 +603,6 @@
     opacity: 0; animation: stepIn .4s ease 1.7s forwards;
   }
   .atk-panel.on .atk-verdict { animation-delay: 1.7s; }
-
-  /* where the guarantee lives */
-  .guar { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6rem; width: 100%; max-width: 1000px; }
-  @media (max-width: 800px) { .guar { grid-template-columns: 1fr; gap: 1.2rem; } }
-  .col { display: grid; gap: .5rem; align-content: start; }
-  .col > .caption {
-    font-family: var(--font-mono); font-size: .8rem; color: var(--n4); text-align: center;
-  }
-  .appbox, .dbbox {
-    border-radius: 10px; padding: .8rem; font-family: var(--font-mono);
-    position: relative; min-height: 92px;
-  }
-  .appbox { border: 1px dashed var(--n5); background: #0a0d10; }
-  .dbbox  { border: 1px solid var(--shade1); background: linear-gradient(180deg, #0e161b, #0a0d10); }
-  .boxlbl { font-size: .72rem; color: var(--n4); letter-spacing: .08em; margin-bottom: .55rem; }
-  .col.win .dbbox { border-color: var(--green-25); }
-
-  .seal {
-    display: grid; place-items: center; height: 46px; border-radius: 8px;
-    background: var(--green-10); border: 1px solid var(--green-25); color: var(--green);
-    font-size: .86rem;
-  }
-  section.on .seal { animation: sealGlow 4.5s ease-in-out infinite; }
-  @keyframes sealGlow { 0%,100% { box-shadow: none; } 50% { box-shadow: 0 0 18px #4cf49022; } }
-
-  .parts { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; }
-  .part {
-    border: 1px solid var(--shade1); border-radius: 6px; padding: .4rem .55rem;
-    font-size: .72rem; color: var(--n3); background: #0d1418; text-align: center;
-  }
-  section.on .part.drop { animation: partDrop 4.5s ease-in-out infinite; }
-  @keyframes partDrop {
-    0%, 42%  { opacity: 1; border-color: var(--shade1); color: var(--n3); transform: none; }
-    52%, 88% { opacity: .2; border-color: #fc689766; color: #fc6897; transform: translateY(6px); }
-    96%,100% { opacity: 1; border-color: var(--shade1); color: var(--n3); transform: none; }
-  }
-  .emptyslot {
-    display: grid; place-items: center; height: 46px; border-radius: 8px;
-    border: 1px dashed var(--n5); color: var(--n5); font-size: .78rem;
-  }
-  .verdictline {
-    font-family: var(--font-mono); font-size: .8rem; text-align: center;
-    padding: .45rem; border-radius: 6px; min-height: 2.2em;
-  }
-  .verdictline.ok { color: var(--green); background: var(--green-10); border: 1px solid var(--green-25); }
-  .verdictline.risk { position: relative; border: 1px solid transparent; }
-  .verdictline.risk span { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; }
-  .verdictline.risk .s-ok { color: var(--n4); }
-  .verdictline.risk .s-no { color: #fc6897; }
-  section.on .verdictline.risk .s-ok { animation: rOk 4.5s ease-in-out infinite; }
-  section.on .verdictline.risk .s-no { animation: rNo 4.5s ease-in-out infinite; }
-  @keyframes rOk { 0%, 40% { opacity: 1; } 48%, 92% { opacity: 0; } 98%,100% { opacity: 1; } }
-  @keyframes rNo { 0%, 44% { opacity: 0; } 52%, 90% { opacity: 1; } 96%,100% { opacity: 0; } }
-  .arrowup { text-align: center; color: var(--n5); font-family: var(--font-mono); font-size: .8rem; line-height: 1; }
-
-  /* guard removal */
-  .gflow { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; width: 100%; max-width: 900px; margin-bottom: 1rem; }
-  .gnode {
-    font-family: var(--font-mono); font-size: clamp(.7rem, 1.4vw, .84rem);
-    border: 1px solid var(--shade1); border-radius: 6px; padding: .5rem .85rem;
-    color: var(--n3); background: #0d1418;
-  }
-  .gnode.guard { border-color: var(--green-25); color: var(--green); position: relative; }
-  section.on .gnode.guard { animation: guardGone 5s ease-in-out infinite; }
-  @keyframes guardGone {
-    0%, 34%  { opacity: 1; border-color: var(--green-25); color: var(--green); filter: none; }
-    42%, 88% { opacity: .25; border-color: #fc689766; color: #fc6897; filter: grayscale(1); }
-    96%,100% { opacity: 1; border-color: var(--green-25); color: var(--green); filter: none; }
-  }
-  .gflow .arr { color: var(--n5); font-family: var(--font-mono); }
-  .gtag { font-family: var(--font-mono); font-size: .74rem; color: #fc6897; opacity: 0; }
-  section.on .gtag { animation: evShow 5s ease-in-out infinite; animation-delay: 1.5s; }
 
   /* verdict card */
   .vcard {
@@ -790,8 +777,6 @@
   @keyframes rSNew { 0%, 24% { opacity: 0; } 28%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
   section.on .r-verd { animation: rVerd 11s infinite; }
   @keyframes rVerd { 0%, 34% { opacity: 0; } 40%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
-  .lvls { font-family: var(--font-mono); font-size: .74rem; color: var(--n4); margin-top: 1.1rem; }
-  .lvls b { color: var(--green); font-weight: 600; border: 1px solid var(--green-25); border-radius: 999px; padding: .1rem .55rem; }
 
   .artifacts { font-family: var(--font-mono); font-size: .8rem; color: var(--n4); margin-top: 1rem; max-width: 66ch; }
   .artifacts span { color: var(--green); }
@@ -896,46 +881,47 @@
 <section>
   <div class="kicker r">the loop</div>
   <h2 class="r d1">The first attempt is only the first round</h2>
-  <svg class="cyc r d2" viewBox="0 0 960 262" role="img" aria-label="build, grade, report, fix, grade again, done">
+  <svg class="cyc r d2" viewBox="0 0 960 250" role="img" aria-label="build, grade, report, fix, grade again, done">
     <defs>
       <marker id="a3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
         <path d="M0 0 L8 4 L0 8 z" fill="#253239"/>
       </marker>
     </defs>
 
-    <rect class="n p-build" x="30" y="40" width="150" height="52"/>
-    <text class="nl p-build" x="52" y="64">build</text>
-    <text x="52" y="80">agent writes the store</text>
+    <rect class="n p-build" x="20" y="40" width="196" height="52"/>
+    <text class="nl p-build" x="42" y="64">build</text>
+    <text x="42" y="80">agent writes the store</text>
 
-    <rect class="n p-grade1" x="250" y="40" width="150" height="52"/>
-    <text class="nl p-grade1" x="272" y="64">grade</text>
-    <text x="272" y="80">drive real clients</text>
+    <rect class="n p-grade1" x="276" y="40" width="196" height="52"/>
+    <text class="nl p-grade1" x="298" y="64">grade</text>
+    <text x="298" y="80">drive real clients</text>
 
-    <polygon class="n p-dec1" points="500,66 570,32 640,66 570,100"/>
-    <text class="nl p-dec1" x="545" y="70">all pass?</text>
+    <polygon class="n p-dec1" points="520,66 595,32 670,66 595,100"/>
+    <text class="nl p-dec1" x="560" y="70">all pass?</text>
 
-    <rect class="n p-done" x="760" y="40" width="170" height="52"/>
-    <text class="nl p-done" x="782" y="64">done</text>
-    <text x="782" y="80">score, cost, evidence</text>
+    <rect class="n p-done" x="750" y="40" width="196" height="52"/>
+    <text class="nl p-done" x="772" y="64">done</text>
+    <text x="772" y="80">score, cost, evidence</text>
 
-    <rect class="n p-report" x="500" y="170" width="150" height="52"/>
-    <text class="nl p-report" x="522" y="194">bug report</text>
-    <text x="522" y="210">what a user saw</text>
+    <rect class="n p-report" x="497" y="170" width="196" height="52"/>
+    <text class="nl p-report" x="519" y="194">bug report</text>
+    <text x="519" y="210">what a user saw</text>
 
-    <rect class="n p-fix" x="250" y="170" width="150" height="52"/>
-    <text class="nl p-fix" x="272" y="194">fix</text>
-    <text x="272" y="210">bounded rounds</text>
+    <rect class="n p-fix" x="276" y="170" width="196" height="52"/>
+    <text class="nl p-fix" x="298" y="194">fix</text>
+    <text x="298" y="210">bounded rounds</text>
 
-    <path class="edge2 e1" d="M180 66 H246"/>
-    <path class="edge2 e2" d="M400 66 H496"/>
-    <path class="edge2 e3" d="M640 66 H756"/>
-    <text class="br br-yes" x="668" y="58" style="fill:#4cf490">yes</text>
+    <path class="edge2 e1" d="M216 66 H272"/>
+    <path class="edge2 e2" d="M472 66 H516"/>
+    <path class="edge2 e3" d="M674 66 H746"/>
+    <text class="br br-yes" x="690" y="58" style="fill:#4cf490">yes</text>
 
-    <path class="edge2 e4" d="M570 100 V166"/>
-    <text class="br br-no" x="580" y="132">no</text>
-    <path class="edge2 e5" d="M500 196 H404"/>
-    <path class="edge2 e6" d="M325 170 V96" marker-end="url(#a3)"/>
-    <text x="250" y="246">re-graded from scratch, every level below it too</text>
+    <path class="edge2 e4" d="M595 100 V166"/>
+    <text class="br br-no" x="605" y="132">no</text>
+    <path class="edge2 e5" d="M497 196 H476"/>
+    <path class="edge2 e6" d="M374 170 V96" marker-end="url(#a3)"/>
+    <text text-anchor="end" x="364" y="136">re-graded from scratch,</text>
+    <text text-anchor="end" x="364" y="152">every level below it too</text>
   </svg>
   <div class="state r d3">
     <div class="st">round<span class="sv"><span class="v-r1">1</span><span class="v-r2">2</span></span></div>
@@ -964,16 +950,16 @@
     <text class="lbl" x="78" y="110">preflight gate</text><text class="sub" x="78" y="124">24 checks &middot; blocks spend</text>
 
     <rect class="b" x="385" y="92" width="200" height="40"/>
-    <text class="lbl" x="405" y="110">agent adapter</text><text class="sub" x="405" y="124">versioned &middot; mode: build | fix</text>
+    <text class="lbl" x="405" y="110">agent adapter</text><text class="sub" x="405" y="124">versioned &middot; build or fix</text>
 
     <rect class="b" x="700" y="92" width="200" height="40"/>
     <text class="lbl" x="718" y="110">backend lease</text><text class="sub" x="718" y="124">token-scoped &middot; owns services</text>
 
     <rect class="b lit" x="385" y="168" width="200" height="40"/>
-    <text class="lbl" x="405" y="186">sealed container</text><text class="sub" x="405" y="200">no host access &middot; no marking scheme</text>
+    <text class="lbl" x="405" y="186">sealed container</text><text class="sub" x="405" y="200">no host access &middot; no rubric</text>
 
     <rect class="b lit" x="700" y="168" width="200" height="40" style="animation-delay:.8s"/>
-    <text class="lbl" x="718" y="186">db services</text><text class="sub" x="718" y="200">per run &middot; reset between suites</text>
+    <text class="lbl" x="718" y="186">db services</text><text class="sub" x="718" y="200">per run &middot; reset each suite</text>
 
     <rect class="b key" x="385" y="244" width="515" height="40"/>
     <text class="lbl" x="405" y="262">app under test</text><text class="sub" x="405" y="276">contract of data-testid hooks &middot; deployed, running</text>
@@ -998,7 +984,7 @@
     <path class="e flow" d="M600 284 V300 H515 V316"/>
     <path class="e flow" d="M310 366 V392"/>
     <path class="e flow" d="M720 366 V392"/>
-    <path class="e back" d="M130 418 H40 V110 H381" />
+    <path class="e back" d="M130 418 H40 V150 H430 V134" marker-end="url(#a2)"/>
     <text class="sub acc" x="46" y="252">failures only</text>
     <text class="sub" x="46" y="266">behavioural</text>
   </svg>
@@ -1052,7 +1038,7 @@
       <div class="atk-panel" id="a4">
         <div class="atk-head">two shoppers, side by side, in the same store</div>
         <div class="atk-body">
-          <div class="step"><span class="actor">alice</span><span class="what">adds a monitor to her cart</span></div>
+          <div class="step"><span class="actor">alice</span><span class="what">adds an item to her cart</span></div>
           <div class="step"><span class="actor">bob</span><span class="what hold">cart stays his own</span></div>
           <div class="step"><span class="actor">bob</span><span class="what">opens checkout</span></div>
           <div class="step"><span class="actor">bob</span><span class="what hold">totals his items only</span></div>
@@ -1082,67 +1068,63 @@
     </div>
   </div>
   <p class="supp r d3" style="margin-top:1.2rem">Each of these is a criterion the harness drives on purpose, in a real browser, against the store the agent built. Pick one to see the shape of the attack.</p>
-  <p class="lvls r d4">L1 identity &middot; L2 authorization &middot; <b>L3 atomicity</b> &middot; L4 deferred work &middot; L5 volume &nbsp; <span class="dim">levels are cumulative</span></p>
 </section>
 
 <!-- 5b why it differs -->
 <section>
   <div class="kicker r">why the bill differs</div>
   <h2 class="r d1">Either the database keeps the count, or your code keeps it</h2>
-  <div class="guar r d2">
-    <div class="col win">
-      <div class="appbox">
-        <div class="boxlbl">what the agent writes</div>
-        <div class="emptyslot">one call, and it holds</div>
-      </div>
-      <div class="arrowup">&#9650;</div>
-      <div class="dbbox">
-        <div class="boxlbl">database</div>
-        <div class="seal">serialises the write itself</div>
-      </div>
-      <div class="verdictline ok">&#10003; correct however the agent writes it</div>
+  <div class="guar r d2" role="img" aria-label="the rule lives in the database on one side and in the app on the other">
+    <div class="gcap win">the database keeps the count</div>
+    <div class="gcap">your code keeps the count</div>
+
+    <div class="gwrap win">
+      <div class="glbl">what the agent writes</div>
+      <div class="gstep">one call</div>
+      <div class="gnote">the database serialises it</div>
     </div>
-    <div class="col">
-      <div class="appbox">
-        <div class="boxlbl">what the agent writes</div>
-        <div class="parts">
-          <div class="part">open a transaction</div>
-          <div class="part drop">lock the row</div>
-          <div class="part">re-check the stock</div>
-          <div class="part">commit, or retry</div>
-        </div>
-      </div>
-      <div class="arrowup">&#9650;</div>
-      <div class="dbbox">
-        <div class="boxlbl">database</div>
-        <div class="emptyslot">offers the pieces, leaves the rule to you</div>
-      </div>
-      <div class="verdictline risk">
-        <span class="s-ok">correct while every piece is right</span>
-        <span class="s-no">&#10007; one piece missed &rarr; sold twice</span>
-      </div>
+    <div class="gwrap">
+      <div class="glbl">what the agent writes</div>
+      <div class="gstep">open a transaction</div>
+      <div class="gstep drop">lock the row</div>
+      <div class="gstep">re-check the stock</div>
+      <div class="gstep">commit, or retry</div>
+    </div>
+
+    <div class="gres ok">&#10003; one order &middot; stock 0</div>
+    <div class="gres flip">
+      <span class="f-ok">&#10003; one order &middot; stock 0</span>
+      <span class="f-no">&#10007; two orders &middot; stock &minus;1</span>
     </div>
   </div>
-  <p class="supp r d3" style="margin-top:1.3rem">That is the whole bet. On one side the database owns the rule, so the agent gets it right by default. On the other the agent assembles the rule itself, and every piece it has to remember is a piece that can go missing, at a cost that shows up in the bill.</p>
+  <p class="supp r d3" style="margin-top:1.3rem">Two shoppers reach for the last unit at the same instant. On one side the database owns that rule, so the agent gets it right whatever it writes. On the other the agent assembles the rule out of four pieces, and every piece it has to remember is a piece that can go missing, at a cost that shows up in the bill.</p>
 </section>
 
 <!-- 6 proving the grader -->
 <section>
   <div class="kicker r">proving the grader</div>
-  <h2 class="r d1">The grader earns the right to score</h2>
-  <div class="gflow r d2">
-    <span class="gnode">checkout</span><span class="arr">&rarr;</span>
-    <span class="gnode guard">guard: stock &ge; 1</span><span class="arr">&rarr;</span>
-    <span class="gnode">decrement</span><span class="arr">&rarr;</span>
-    <span class="gnode">commit</span>
+  <h2 class="r d1">Every criterion is proven on a defect we planted</h2>
+  <div class="proof r d2" role="img" aria-label="three planted inputs and the verdicts each has to produce">
+    <div class="prow">
+      <span class="pin">a passing store, with its stock guard removed</span>
+      <span class="parr">&rarr;</span>
+      <span class="pout">the no-oversell criterion fails</span>
+      <span class="pok">&#10003;</span>
+    </div>
+    <div class="prow">
+      <span class="pin">that same run, read across the whole suite</span>
+      <span class="parr">&rarr;</span>
+      <span class="pout">every other criterion still passes</span>
+      <span class="pok">&#10003;</span>
+    </div>
+    <div class="prow">
+      <span class="pin">a store with nothing built in it at all</span>
+      <span class="parr">&rarr;</span>
+      <span class="pout">the whole suite holds at zero</span>
+      <span class="pok">&#10003;</span>
+    </div>
   </div>
-  <div class="gtag r d2">mutation removes the guard from a fully passing app</div>
-  <div class="expect r d3">
-    <div><span>criterion <b style="color:var(--n1)">no-oversell</b></span><span class="must">fails &middot; kill confirmed</span></div>
-    <div><span>every other criterion</span><span class="rest">still passes &middot; clean kill</span></div>
-    <div><span>blank app, full suite</span><span class="rest">holds at zero</span></div>
-  </div>
-  <p class="supp r d4">A criterion earns the right to score once it catches a defect planted in a passing app, hits exactly the criterion it declared, and holds an empty build at zero. A planted defect that survives points at the grader, and the criterion goes back for repair.</p>
+  <p class="supp r d4" style="margin-top:1.2rem">A criterion scores once it has answered all three on known input. A planted defect that survives points at the grader, so that criterion goes back for repair, and prompts, guidance and tests stay untouched.</p>
 </section>
 
 <!-- 7 receipts -->
