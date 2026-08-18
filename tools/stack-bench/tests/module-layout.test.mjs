@@ -37,6 +37,13 @@ test('the project root contains no implementation modules', () => {
     .filter(entry => entry.isDirectory()).map(entry => entry.name).sort(), SOURCE_AREAS);
 });
 
+test('tracked production areas contain no tmp-named scratch modules', () => {
+  const scratch = modulesBelow(ROOT)
+    .map(path => relative(ROOT, path))
+    .filter(path => /(?:^|[\\/])tmp-/.test(path));
+  assert.deepEqual(scratch, []);
+});
+
 test('production-relative module references resolve after source reorganization', () => {
   const missing = [];
   for (const file of modulesBelow(ROOT)) {
