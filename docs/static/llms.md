@@ -105,6 +105,12 @@ A module is a collection of functions and schema definitions, which can be writt
 - [What is SpacetimeDB?](/docs/intro/what-is-spacetimedb): SpacetimeDB is a database that is also a server.
 - [The Zen of SpacetimeDB](/docs/intro/zen): SpacetimeDB is built on 5 core principles. As you embrace these simple principles, you will find your troubles simply melt away. These principles guide both how we develop SpacetimeDB and how you should think about building applications with it.
 
+### migrating-from-convex
+
+This guide is for teams moving an application backend from Convex to a
+
+- [Migrating from Convex](/docs/migrating-from-convex): This guide is for teams moving an application backend from Convex to a
+
 ### quickstarts
 
 - [Angular Quickstart](/docs/quickstarts/angular): Get a SpacetimeDB Angular app running in under 5 minutes.
@@ -142,6 +148,12 @@ Guides, references, and tools to help you build with SpacetimeDB.
 The Spacetime Algebraic Type System JSON format defines how Spacetime AlgebraicTypes and AlgebraicValues are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the HTTP Databases API and the WebSocket text protocol. Note that SATS-JSON is not self-describing, and so a SATS value represented in JSON requires knowing the value's schema to meaningfully understand it - for example, it's not possible to tell whether a JSON object with a single field is a ProductValue with one element or a SumValue.
 
 - [SATS-JSON Data Format](/docs/sats-json): The Spacetime Algebraic Type System JSON format defines how Spacetime AlgebraicTypes and AlgebraicValues are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the HTTP Databases API and the WebSocket text protocol. Note that SATS-JSON is not self-describing, and so a SATS value represented in JSON requires knowing the value's schema to meaningfully understand it - for example, it's not possible to tell whether a JSON object with a single field is a ProductValue with one element or a SumValue.
+
+### submodules
+
+A submodule is a SpacetimeDB module that can be included in another module's database. The submodule's tables and functions register under a namespace you choose, keeping them separate from the consumer's own tables and from other submodules.
+
+- [Submodules](/docs/submodules): A submodule is a SpacetimeDB module that can be included in another module's database. The submodule's tables and functions register under a namespace you choose, keeping them separate from the consumer's own tables and from other submodules.
 
 ### tables
 
