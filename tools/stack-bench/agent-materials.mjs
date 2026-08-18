@@ -3,6 +3,14 @@ import { join } from 'node:path';
 
 const SKILL_ID = /^[a-z][a-z0-9-]*$/;
 
+// Prompt material is part of the experiment identity. Git may check text out
+// with platform-specific line endings, so normalize it before hashing or
+// showing it to the model.
+export function normalizePromptText(text) {
+  if (typeof text !== 'string') throw new Error('prompt material must be text');
+  return text.replace(/\r\n?/g, '\n');
+}
+
 function validateSkills(skills) {
   if (!Array.isArray(skills) || skills.some(skill => typeof skill !== 'string' || !SKILL_ID.test(skill))
     || new Set(skills).size !== skills.length) throw new Error('agent skills are invalid');
@@ -22,5 +30,7 @@ export function agentSkillPaths(repository, skills) {
 
 export function readAgentSkillDocuments(repository, skills, { read = readFileSync } = {}) {
   const strip = markdown => markdown.replace(/^---\n[\s\S]*?\n---\n/, '');
-  return agentSkillPaths(repository, skills).map(path => strip(read(path, 'utf8'))).join('\n\n---\n\n');
+  return agentSkillPaths(repository, skills)
+    .map(path => strip(normalizePromptText(read(path, 'utf8'))))
+    .join('\n\n---\n\n');
 }

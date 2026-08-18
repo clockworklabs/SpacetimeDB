@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { agentSkillPaths, readAgentSkillDocuments, selectAgentSkills } from '../agent-materials.mjs';
+import { agentSkillPaths, normalizePromptText, readAgentSkillDocuments,
+  selectAgentSkills } from '../agent-materials.mjs';
 
 test('stack defaults and explicit agent skill selections resolve predictably', () => {
   assert.deepEqual(selectAgentSkills(['typescript-server'], null), ['typescript-server']);
@@ -18,4 +19,12 @@ test('skill documents are read in selected order with front matter removed', () 
     read: path => `---\nname: ignored\n---\n${path.split(/[\\/]/).at(-2)}`,
   });
   assert.equal(text, 'typescript-server\n\n---\n\ntypescript-client');
+});
+
+test('prompt material is identical across platform line endings', () => {
+  assert.equal(normalizePromptText('one\r\ntwo\rthree\n'), 'one\ntwo\nthree\n');
+  const text = readAgentSkillDocuments('/repo', ['typescript-server'], {
+    read: () => '---\r\nname: ignored\r\n---\r\nreference\r\nline\r\n',
+  });
+  assert.equal(text, 'reference\nline\n');
 });

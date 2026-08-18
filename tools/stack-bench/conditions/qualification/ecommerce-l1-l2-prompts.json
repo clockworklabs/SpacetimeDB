@@ -19,8 +19,8 @@
       },
       "document": {
         "path": "backends/minimal/mongodb.md",
-        "sha256": "a9eb0922896d91d346dc7351e6db66d55137f6acc1d6be506d8af5856d5f8c43",
-        "bytes": 1161
+        "sha256": "eca561911144891233e51a38255c24d1fa9626b2240d75b8aef7bffc493688f1",
+        "bytes": 1131
       },
       "skills": {
         "ids": [],
@@ -28,12 +28,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "a6b244f303e50a672505108253390147a597d04928698a29d425c2b3d07c751c",
-        "bytes": 1167
+        "sha256": "3a4aae839e437a81b7042341c6f25ec9a853fef85d26c2a07e6af7b09247a6f3",
+        "bytes": 1138
       },
       "prompt": {
-        "sha256": "fd2997b8d6e42a4ed3281a2a4ce839f5f337d39cbd81ebc9e3d74c91deffc7cc",
-        "bytes": 9078
+        "sha256": "0c763dfbe871236b274f21e2ff1a1f4ebc1360ad1f2a5ba1701a3fe76a8bf262",
+        "bytes": 9048
       }
     },
     {
@@ -46,8 +46,8 @@
       },
       "document": {
         "path": "backends/minimal/mongodb.md",
-        "sha256": "a9eb0922896d91d346dc7351e6db66d55137f6acc1d6be506d8af5856d5f8c43",
-        "bytes": 1161
+        "sha256": "eca561911144891233e51a38255c24d1fa9626b2240d75b8aef7bffc493688f1",
+        "bytes": 1131
       },
       "skills": {
         "ids": [],
@@ -55,12 +55,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "a6b244f303e50a672505108253390147a597d04928698a29d425c2b3d07c751c",
-        "bytes": 1167
+        "sha256": "3a4aae839e437a81b7042341c6f25ec9a853fef85d26c2a07e6af7b09247a6f3",
+        "bytes": 1138
       },
       "prompt": {
-        "sha256": "d0e6e4fc0387560847dda3cf0180c918a423cdbc32854f68a9b87bb688dc668d",
-        "bytes": 1827
+        "sha256": "7777394f1c126afb1127cf036ffbc208d2c779a9f62389396757734cb64dbe44",
+        "bytes": 1797
       }
     },
     {
@@ -73,8 +73,8 @@
       },
       "document": {
         "path": "backends/minimal/mongodb.md",
-        "sha256": "a9eb0922896d91d346dc7351e6db66d55137f6acc1d6be506d8af5856d5f8c43",
-        "bytes": 1161
+        "sha256": "eca561911144891233e51a38255c24d1fa9626b2240d75b8aef7bffc493688f1",
+        "bytes": 1131
       },
       "skills": {
         "ids": [],
@@ -82,12 +82,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "a6b244f303e50a672505108253390147a597d04928698a29d425c2b3d07c751c",
-        "bytes": 1167
+        "sha256": "3a4aae839e437a81b7042341c6f25ec9a853fef85d26c2a07e6af7b09247a6f3",
+        "bytes": 1138
       },
       "prompt": {
-        "sha256": "c1a93c6ad92ba252df08ab54dfb8de87ef9cca1f871ab61330fc2d6777830ed0",
-        "bytes": 11309
+        "sha256": "fb0b1e4b40354771f82ef92dae060b2bf89165b66c7272e54eb8b4673aa13438",
+        "bytes": 11279
       }
     },
     {
@@ -100,8 +100,8 @@
       },
       "document": {
         "path": "backends/minimal/postgres.md",
-        "sha256": "1dbe83b3312a234b5daae2bce61beb638c5263f9a13b5af4cc4883a797e9aabb",
-        "bytes": 1216
+        "sha256": "796684376433fd6d0cca7a9b957f45426639df9a944fb8b8ddbd55a9c92fee13",
+        "bytes": 1186
       },
       "skills": {
         "ids": [],
@@ -109,12 +109,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "032acea9781bc5691ed337c060e5f2ae1979f4f4700402c2f3d1951ae6f2cdbe",
-        "bytes": 1247
+        "sha256": "2dc13b593058284309fbb216101725d62143418522a89aadea0691e1f80c38b5",
+        "bytes": 1218
       },
       "prompt": {
-        "sha256": "91841c49eaf4cb20e512aa749a06cfdcbded6e36914ba532638bafc0e20dd90a",
-        "bytes": 9158
+        "sha256": "2b2faae4309b85e82433360c6fe724a4000e705018c404f031c87afa8cbc4b6f",
+        "bytes": 9128
       }
     },
     {
@@ -127,8 +127,8 @@
       },
       "document": {
         "path": "backends/minimal/postgres.md",
-        "sha256": "1dbe83b3312a234b5daae2bce61beb638c5263f9a13b5af4cc4883a797e9aabb",
-        "bytes": 1216
+        "sha256": "796684376433fd6d0cca7a9b957f45426639df9a944fb8b8ddbd55a9c92fee13",
+        "bytes": 1186
       },
       "skills": {
         "ids": [],
@@ -136,12 +136,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "032acea9781bc5691ed337c060e5f2ae1979f4f4700402c2f3d1951ae6f2cdbe",
-        "bytes": 1247
+        "sha256": "2dc13b593058284309fbb216101725d62143418522a89aadea0691e1f80c38b5",
+        "bytes": 1218
       },
       "prompt": {
-        "sha256": "882e34501fc678b888d20952e4b1b7b5b34a57ad59292c8d823f50cbbad8a07a",
-        "bytes": 1907
+        "sha256": "ad2c47c5eec6c7be75aaa0e31c38698d33d9933f8c797fa88d9d839a966edd4c",
+        "bytes": 1877
       }
     },
     {
@@ -154,8 +154,8 @@
       },
       "document": {
         "path": "backends/minimal/postgres.md",
-        "sha256": "1dbe83b3312a234b5daae2bce61beb638c5263f9a13b5af4cc4883a797e9aabb",
-        "bytes": 1216
+        "sha256": "796684376433fd6d0cca7a9b957f45426639df9a944fb8b8ddbd55a9c92fee13",
+        "bytes": 1186
       },
       "skills": {
         "ids": [],
@@ -163,12 +163,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "032acea9781bc5691ed337c060e5f2ae1979f4f4700402c2f3d1951ae6f2cdbe",
-        "bytes": 1247
+        "sha256": "2dc13b593058284309fbb216101725d62143418522a89aadea0691e1f80c38b5",
+        "bytes": 1218
       },
       "prompt": {
-        "sha256": "485f21aa4e3f1c9ed6377591aae79bb160b1fe944e6954fd01dda9cd2a56fcba",
-        "bytes": 11389
+        "sha256": "cc0a382c8ccc477db0743a6a751ffced99f5db6ad829222cdf82b5fc8790f5c7",
+        "bytes": 11359
       }
     },
     {
@@ -189,16 +189,16 @@
           "typescript-server",
           "typescript-client"
         ],
-        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
-        "bytes": 22506
+        "sha256": "afd869741a5b1b57e52b824262c7ca6bd9f5af40643fca2b44df48979387e909",
+        "bytes": 21313
       },
       "backendMaterial": {
         "sha256": "9ff5e511d3632411afc47e1ad24c1c0c6ef5116da7e3fd76813f473e08bfb021",
         "bytes": 1214
       },
       "prompt": {
-        "sha256": "602564a3b50406b53937792ebe87cd45e7a029f715f9b3783f4d7aaae24a2af2",
-        "bytes": 31659
+        "sha256": "d25a4a769b90464c10c181d2a07ba2910b31480f36a1d93d70c73495cd216cb4",
+        "bytes": 30466
       }
     },
     {
@@ -219,16 +219,16 @@
           "typescript-server",
           "typescript-client"
         ],
-        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
-        "bytes": 22506
+        "sha256": "afd869741a5b1b57e52b824262c7ca6bd9f5af40643fca2b44df48979387e909",
+        "bytes": 21313
       },
       "backendMaterial": {
         "sha256": "9ff5e511d3632411afc47e1ad24c1c0c6ef5116da7e3fd76813f473e08bfb021",
         "bytes": 1214
       },
       "prompt": {
-        "sha256": "06dc52c5eac92944a74b769b71adccec96743f4454bdba2f631c701354ef5a8c",
-        "bytes": 24408
+        "sha256": "d4a70c21ee157a9d2d47a2386312f901a2fd8a14db7592319aea2c94ee165ce4",
+        "bytes": 23215
       }
     },
     {
@@ -249,16 +249,16 @@
           "typescript-server",
           "typescript-client"
         ],
-        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
-        "bytes": 22506
+        "sha256": "afd869741a5b1b57e52b824262c7ca6bd9f5af40643fca2b44df48979387e909",
+        "bytes": 21313
       },
       "backendMaterial": {
         "sha256": "9ff5e511d3632411afc47e1ad24c1c0c6ef5116da7e3fd76813f473e08bfb021",
         "bytes": 1214
       },
       "prompt": {
-        "sha256": "f3a269253cfb5f1b100ee9944e014aa3be4d457be8bc91d1dc4430c7e60d991f",
-        "bytes": 33890
+        "sha256": "faa4e1425d987b17d20364c230fedc99b111cbfd7854216481a7b26bc1e2d48b",
+        "bytes": 32697
       }
     },
     {
@@ -271,8 +271,8 @@
       },
       "document": {
         "path": "backends/minimal/mongodb.md",
-        "sha256": "a9eb0922896d91d346dc7351e6db66d55137f6acc1d6be506d8af5856d5f8c43",
-        "bytes": 1161
+        "sha256": "eca561911144891233e51a38255c24d1fa9626b2240d75b8aef7bffc493688f1",
+        "bytes": 1131
       },
       "skills": {
         "ids": [],
@@ -280,12 +280,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "a6b244f303e50a672505108253390147a597d04928698a29d425c2b3d07c751c",
-        "bytes": 1167
+        "sha256": "3a4aae839e437a81b7042341c6f25ec9a853fef85d26c2a07e6af7b09247a6f3",
+        "bytes": 1138
       },
       "prompt": {
-        "sha256": "fd2997b8d6e42a4ed3281a2a4ce839f5f337d39cbd81ebc9e3d74c91deffc7cc",
-        "bytes": 9078
+        "sha256": "0c763dfbe871236b274f21e2ff1a1f4ebc1360ad1f2a5ba1701a3fe76a8bf262",
+        "bytes": 9048
       }
     },
     {
@@ -298,8 +298,8 @@
       },
       "document": {
         "path": "backends/minimal/mongodb.md",
-        "sha256": "a9eb0922896d91d346dc7351e6db66d55137f6acc1d6be506d8af5856d5f8c43",
-        "bytes": 1161
+        "sha256": "eca561911144891233e51a38255c24d1fa9626b2240d75b8aef7bffc493688f1",
+        "bytes": 1131
       },
       "skills": {
         "ids": [],
@@ -307,12 +307,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "a6b244f303e50a672505108253390147a597d04928698a29d425c2b3d07c751c",
-        "bytes": 1167
+        "sha256": "3a4aae839e437a81b7042341c6f25ec9a853fef85d26c2a07e6af7b09247a6f3",
+        "bytes": 1138
       },
       "prompt": {
-        "sha256": "d0e6e4fc0387560847dda3cf0180c918a423cdbc32854f68a9b87bb688dc668d",
-        "bytes": 1827
+        "sha256": "7777394f1c126afb1127cf036ffbc208d2c779a9f62389396757734cb64dbe44",
+        "bytes": 1797
       }
     },
     {
@@ -325,8 +325,8 @@
       },
       "document": {
         "path": "backends/minimal/mongodb.md",
-        "sha256": "a9eb0922896d91d346dc7351e6db66d55137f6acc1d6be506d8af5856d5f8c43",
-        "bytes": 1161
+        "sha256": "eca561911144891233e51a38255c24d1fa9626b2240d75b8aef7bffc493688f1",
+        "bytes": 1131
       },
       "skills": {
         "ids": [],
@@ -334,12 +334,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "a6b244f303e50a672505108253390147a597d04928698a29d425c2b3d07c751c",
-        "bytes": 1167
+        "sha256": "3a4aae839e437a81b7042341c6f25ec9a853fef85d26c2a07e6af7b09247a6f3",
+        "bytes": 1138
       },
       "prompt": {
-        "sha256": "c1a93c6ad92ba252df08ab54dfb8de87ef9cca1f871ab61330fc2d6777830ed0",
-        "bytes": 11309
+        "sha256": "fb0b1e4b40354771f82ef92dae060b2bf89165b66c7272e54eb8b4673aa13438",
+        "bytes": 11279
       }
     },
     {
@@ -352,8 +352,8 @@
       },
       "document": {
         "path": "backends/minimal/postgres.md",
-        "sha256": "1dbe83b3312a234b5daae2bce61beb638c5263f9a13b5af4cc4883a797e9aabb",
-        "bytes": 1216
+        "sha256": "796684376433fd6d0cca7a9b957f45426639df9a944fb8b8ddbd55a9c92fee13",
+        "bytes": 1186
       },
       "skills": {
         "ids": [],
@@ -361,12 +361,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "032acea9781bc5691ed337c060e5f2ae1979f4f4700402c2f3d1951ae6f2cdbe",
-        "bytes": 1247
+        "sha256": "2dc13b593058284309fbb216101725d62143418522a89aadea0691e1f80c38b5",
+        "bytes": 1218
       },
       "prompt": {
-        "sha256": "91841c49eaf4cb20e512aa749a06cfdcbded6e36914ba532638bafc0e20dd90a",
-        "bytes": 9158
+        "sha256": "2b2faae4309b85e82433360c6fe724a4000e705018c404f031c87afa8cbc4b6f",
+        "bytes": 9128
       }
     },
     {
@@ -379,8 +379,8 @@
       },
       "document": {
         "path": "backends/minimal/postgres.md",
-        "sha256": "1dbe83b3312a234b5daae2bce61beb638c5263f9a13b5af4cc4883a797e9aabb",
-        "bytes": 1216
+        "sha256": "796684376433fd6d0cca7a9b957f45426639df9a944fb8b8ddbd55a9c92fee13",
+        "bytes": 1186
       },
       "skills": {
         "ids": [],
@@ -388,12 +388,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "032acea9781bc5691ed337c060e5f2ae1979f4f4700402c2f3d1951ae6f2cdbe",
-        "bytes": 1247
+        "sha256": "2dc13b593058284309fbb216101725d62143418522a89aadea0691e1f80c38b5",
+        "bytes": 1218
       },
       "prompt": {
-        "sha256": "882e34501fc678b888d20952e4b1b7b5b34a57ad59292c8d823f50cbbad8a07a",
-        "bytes": 1907
+        "sha256": "ad2c47c5eec6c7be75aaa0e31c38698d33d9933f8c797fa88d9d839a966edd4c",
+        "bytes": 1877
       }
     },
     {
@@ -406,8 +406,8 @@
       },
       "document": {
         "path": "backends/minimal/postgres.md",
-        "sha256": "1dbe83b3312a234b5daae2bce61beb638c5263f9a13b5af4cc4883a797e9aabb",
-        "bytes": 1216
+        "sha256": "796684376433fd6d0cca7a9b957f45426639df9a944fb8b8ddbd55a9c92fee13",
+        "bytes": 1186
       },
       "skills": {
         "ids": [],
@@ -415,12 +415,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "032acea9781bc5691ed337c060e5f2ae1979f4f4700402c2f3d1951ae6f2cdbe",
-        "bytes": 1247
+        "sha256": "2dc13b593058284309fbb216101725d62143418522a89aadea0691e1f80c38b5",
+        "bytes": 1218
       },
       "prompt": {
-        "sha256": "485f21aa4e3f1c9ed6377591aae79bb160b1fe944e6954fd01dda9cd2a56fcba",
-        "bytes": 11389
+        "sha256": "cc0a382c8ccc477db0743a6a751ffced99f5db6ad829222cdf82b5fc8790f5c7",
+        "bytes": 11359
       }
     },
     {
@@ -441,16 +441,16 @@
           "typescript-server",
           "typescript-client"
         ],
-        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
-        "bytes": 22506
+        "sha256": "afd869741a5b1b57e52b824262c7ca6bd9f5af40643fca2b44df48979387e909",
+        "bytes": 21313
       },
       "backendMaterial": {
         "sha256": "e9d6d12f52ea2f8659ed7176847ddc9d28158ac69334d756ff0bb3ac7dc4f5fa",
         "bytes": 1523
       },
       "prompt": {
-        "sha256": "1762c57b25793c25c40ab4ff8352a34e1dc208bbdf3acd0f0da789faaaa8b932",
-        "bytes": 31968
+        "sha256": "d2b35ce2da1c88e8a5bcd67342f29eff923f99dd42dcc9db6a78b522978fe210",
+        "bytes": 30775
       }
     },
     {
@@ -471,16 +471,16 @@
           "typescript-server",
           "typescript-client"
         ],
-        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
-        "bytes": 22506
+        "sha256": "afd869741a5b1b57e52b824262c7ca6bd9f5af40643fca2b44df48979387e909",
+        "bytes": 21313
       },
       "backendMaterial": {
         "sha256": "e9d6d12f52ea2f8659ed7176847ddc9d28158ac69334d756ff0bb3ac7dc4f5fa",
         "bytes": 1523
       },
       "prompt": {
-        "sha256": "2f259b2bb96cde5b376523e4c812e973f80b577c55af6a0d6114bc03bace9ebe",
-        "bytes": 24717
+        "sha256": "ccbafc7d27f6122daeaa2ea30cfbc006fa9dc574db4e2f6756866f5dceaee93e",
+        "bytes": 23524
       }
     },
     {
@@ -501,16 +501,16 @@
           "typescript-server",
           "typescript-client"
         ],
-        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
-        "bytes": 22506
+        "sha256": "afd869741a5b1b57e52b824262c7ca6bd9f5af40643fca2b44df48979387e909",
+        "bytes": 21313
       },
       "backendMaterial": {
         "sha256": "e9d6d12f52ea2f8659ed7176847ddc9d28158ac69334d756ff0bb3ac7dc4f5fa",
         "bytes": 1523
       },
       "prompt": {
-        "sha256": "0b6a866e102065d2abceeae007b82478938962c379f11a803023625bdf92fe21",
-        "bytes": 34199
+        "sha256": "c6e2a488ad9187dd3dbfb0c86908366ccc21fd645c94cb35eba157f9ce8118a4",
+        "bytes": 33006
       }
     },
     {
@@ -523,8 +523,8 @@
       },
       "document": {
         "path": "backends/mongodb.md",
-        "sha256": "6258a190cb357f8e2dad5f4f5503291a164fbe0e92369442c5a77f9e5c859273",
-        "bytes": 2298
+        "sha256": "886a5491aea27e6fc08be981134db4e1a811211b7c87ac13ff49b3ae69b6f06f",
+        "bytes": 2235
       },
       "skills": {
         "ids": [],
@@ -532,12 +532,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "eca11afc57d42c02f1e87d13886e301696f417f66b5aab7cb58a552fc15ac5b7",
-        "bytes": 2270
+        "sha256": "05e6a3ed2f297ddbbcc98d70f7dfcd549270156cbd0d472e57e6da1fc918742a",
+        "bytes": 2208
       },
       "prompt": {
-        "sha256": "42de896eef4b8746e27e398b72aed93730b1d05f64d4549e8b3e06e194c30c4f",
-        "bytes": 10181
+        "sha256": "a8b17ee7c00b3b7bee11fb15962765199d16f80e8e274c9850a1394ecc82564e",
+        "bytes": 10118
       }
     },
     {
@@ -550,8 +550,8 @@
       },
       "document": {
         "path": "backends/mongodb.md",
-        "sha256": "6258a190cb357f8e2dad5f4f5503291a164fbe0e92369442c5a77f9e5c859273",
-        "bytes": 2298
+        "sha256": "886a5491aea27e6fc08be981134db4e1a811211b7c87ac13ff49b3ae69b6f06f",
+        "bytes": 2235
       },
       "skills": {
         "ids": [],
@@ -559,12 +559,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "eca11afc57d42c02f1e87d13886e301696f417f66b5aab7cb58a552fc15ac5b7",
-        "bytes": 2270
+        "sha256": "05e6a3ed2f297ddbbcc98d70f7dfcd549270156cbd0d472e57e6da1fc918742a",
+        "bytes": 2208
       },
       "prompt": {
-        "sha256": "2f181baf539e9109ed952441adcd6d0cefcee906019629587002980dabe79e8b",
-        "bytes": 2930
+        "sha256": "6b51da80bbcd8efc784c70651d9cda83c93d03f20ea0edfdf41d02d2f71dd036",
+        "bytes": 2867
       }
     },
     {
@@ -577,8 +577,8 @@
       },
       "document": {
         "path": "backends/mongodb.md",
-        "sha256": "6258a190cb357f8e2dad5f4f5503291a164fbe0e92369442c5a77f9e5c859273",
-        "bytes": 2298
+        "sha256": "886a5491aea27e6fc08be981134db4e1a811211b7c87ac13ff49b3ae69b6f06f",
+        "bytes": 2235
       },
       "skills": {
         "ids": [],
@@ -586,12 +586,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "eca11afc57d42c02f1e87d13886e301696f417f66b5aab7cb58a552fc15ac5b7",
-        "bytes": 2270
+        "sha256": "05e6a3ed2f297ddbbcc98d70f7dfcd549270156cbd0d472e57e6da1fc918742a",
+        "bytes": 2208
       },
       "prompt": {
-        "sha256": "c04b35dfef7342f7eef1796b56dcdcf2a5b6bccdb5d32b1e4375e6b093d4fcc5",
-        "bytes": 12412
+        "sha256": "ef0764803dc2abe1b71b507ca7f79efe9f578784b10ff981cb872c3e035c4398",
+        "bytes": 12349
       }
     },
     {
@@ -604,8 +604,8 @@
       },
       "document": {
         "path": "backends/postgres.md",
-        "sha256": "51296aac5c5041a716ca3dbed8a5b2d9a9f7882ce0d948e031dc3f7d123deea5",
-        "bytes": 2454
+        "sha256": "4dc66d42cf465c1f96e442e0a266d22988faed1151ffccaa14ac55eac5460d38",
+        "bytes": 2389
       },
       "skills": {
         "ids": [],
@@ -613,12 +613,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "4ac560ab3e03ce841cd2566d917b6d6cf876d93c21be3b91ed17e3691a005a7f",
-        "bytes": 2451
+        "sha256": "1ee06ee4d45f4a6842a751b62d404decafceda1e78151781527f336f6ba390b6",
+        "bytes": 2387
       },
       "prompt": {
-        "sha256": "2160a5f1ee8b837b07ca5778819ed4d03b2caf4ce27e76d0dc381d9c4b24111d",
-        "bytes": 10362
+        "sha256": "ab107b65dd98ea2d06eb024a52179b50d77add170cc66802498d4098e6c088ec",
+        "bytes": 10297
       }
     },
     {
@@ -631,8 +631,8 @@
       },
       "document": {
         "path": "backends/postgres.md",
-        "sha256": "51296aac5c5041a716ca3dbed8a5b2d9a9f7882ce0d948e031dc3f7d123deea5",
-        "bytes": 2454
+        "sha256": "4dc66d42cf465c1f96e442e0a266d22988faed1151ffccaa14ac55eac5460d38",
+        "bytes": 2389
       },
       "skills": {
         "ids": [],
@@ -640,12 +640,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "4ac560ab3e03ce841cd2566d917b6d6cf876d93c21be3b91ed17e3691a005a7f",
-        "bytes": 2451
+        "sha256": "1ee06ee4d45f4a6842a751b62d404decafceda1e78151781527f336f6ba390b6",
+        "bytes": 2387
       },
       "prompt": {
-        "sha256": "a4ec39ff6bd5a344abc889353b43d4b44b66c0cabda5d617e990aabb5a8778e7",
-        "bytes": 3111
+        "sha256": "80cb67ea32b810fdaf0aa53f4d1b1868b6b95f19e33426be3ea3ec85bed80079",
+        "bytes": 3046
       }
     },
     {
@@ -658,8 +658,8 @@
       },
       "document": {
         "path": "backends/postgres.md",
-        "sha256": "51296aac5c5041a716ca3dbed8a5b2d9a9f7882ce0d948e031dc3f7d123deea5",
-        "bytes": 2454
+        "sha256": "4dc66d42cf465c1f96e442e0a266d22988faed1151ffccaa14ac55eac5460d38",
+        "bytes": 2389
       },
       "skills": {
         "ids": [],
@@ -667,12 +667,12 @@
         "bytes": 0
       },
       "backendMaterial": {
-        "sha256": "4ac560ab3e03ce841cd2566d917b6d6cf876d93c21be3b91ed17e3691a005a7f",
-        "bytes": 2451
+        "sha256": "1ee06ee4d45f4a6842a751b62d404decafceda1e78151781527f336f6ba390b6",
+        "bytes": 2387
       },
       "prompt": {
-        "sha256": "d3090ff2fb265971f2cd5e0487e55737c96e5f131eeb4e48a806dd7e1d4c695e",
-        "bytes": 12593
+        "sha256": "922c5222ddac5b862c18e8d1d9efa68e3b505252238db511606d837a647f2b63",
+        "bytes": 12528
       }
     },
     {
@@ -685,24 +685,24 @@
       },
       "document": {
         "path": "backends/spacetime.md",
-        "sha256": "210eab379617b40c481676f4e83c5ae951f95d67edd7056f3851edd82b3d4fb9",
-        "bytes": 4049
+        "sha256": "c573c44bcaa92cc0f60a2b0b1ba4c9a0242a4a57a3f43dbede29e3e4a7695915",
+        "bytes": 3952
       },
       "skills": {
         "ids": [
           "typescript-server",
           "typescript-client"
         ],
-        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
-        "bytes": 22506
+        "sha256": "afd869741a5b1b57e52b824262c7ca6bd9f5af40643fca2b44df48979387e909",
+        "bytes": 21313
       },
       "backendMaterial": {
-        "sha256": "6b1cf0dd8b592634c834f1821d8ad75263e413aa0b12737aa4a4edaddd7c0405",
-        "bytes": 4233
+        "sha256": "a8af2bc84a32de48ac9280cee5f6aa6931149aee9c21c2a6b58f04ba2cb5e136",
+        "bytes": 4137
       },
       "prompt": {
-        "sha256": "2bf789fd48977a9a5b242c7a36ed090912f60de59c9e62dccc269c7aff3636c6",
-        "bytes": 34679
+        "sha256": "fb433b74fadfff6ba775f0e56c0582f1909d304cfadf5c93c3e096a6dc33d35f",
+        "bytes": 33389
       }
     },
     {
@@ -715,24 +715,24 @@
       },
       "document": {
         "path": "backends/spacetime.md",
-        "sha256": "210eab379617b40c481676f4e83c5ae951f95d67edd7056f3851edd82b3d4fb9",
-        "bytes": 4049
+        "sha256": "c573c44bcaa92cc0f60a2b0b1ba4c9a0242a4a57a3f43dbede29e3e4a7695915",
+        "bytes": 3952
       },
       "skills": {
         "ids": [
           "typescript-server",
           "typescript-client"
         ],
-        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
-        "bytes": 22506
+        "sha256": "afd869741a5b1b57e52b824262c7ca6bd9f5af40643fca2b44df48979387e909",
+        "bytes": 21313
       },
       "backendMaterial": {
-        "sha256": "6b1cf0dd8b592634c834f1821d8ad75263e413aa0b12737aa4a4edaddd7c0405",
-        "bytes": 4233
+        "sha256": "a8af2bc84a32de48ac9280cee5f6aa6931149aee9c21c2a6b58f04ba2cb5e136",
+        "bytes": 4137
       },
       "prompt": {
-        "sha256": "4f17b975d849df2dc121d52695884b12df9e0d571d1abb0b96fc912937acb3a1",
-        "bytes": 27428
+        "sha256": "098493b4409a7e6947fddf4a7ade0865628e3d9e47fe3eca4eea633aa5f46405",
+        "bytes": 26138
       }
     },
     {
@@ -745,26 +745,26 @@
       },
       "document": {
         "path": "backends/spacetime.md",
-        "sha256": "210eab379617b40c481676f4e83c5ae951f95d67edd7056f3851edd82b3d4fb9",
-        "bytes": 4049
+        "sha256": "c573c44bcaa92cc0f60a2b0b1ba4c9a0242a4a57a3f43dbede29e3e4a7695915",
+        "bytes": 3952
       },
       "skills": {
         "ids": [
           "typescript-server",
           "typescript-client"
         ],
-        "sha256": "952c0c0784688221fb9611f02bfa250d941d02d083573089f3420e073d00e977",
-        "bytes": 22506
+        "sha256": "afd869741a5b1b57e52b824262c7ca6bd9f5af40643fca2b44df48979387e909",
+        "bytes": 21313
       },
       "backendMaterial": {
-        "sha256": "6b1cf0dd8b592634c834f1821d8ad75263e413aa0b12737aa4a4edaddd7c0405",
-        "bytes": 4233
+        "sha256": "a8af2bc84a32de48ac9280cee5f6aa6931149aee9c21c2a6b58f04ba2cb5e136",
+        "bytes": 4137
       },
       "prompt": {
-        "sha256": "e2a0c791c075f24e885e6547823bd329275a3b16a4ae34c836eb287d2638ea9c",
-        "bytes": 36910
+        "sha256": "7442532e536d1e9161de2c368887054b9e97a4c3aa8d2c46f0c1c3c3b26f8fa3",
+        "bytes": 35620
       }
     }
   ],
-  "contentSha256": "5051cf0cf1ea823804ac0eb75010a69cd7f4580e7294e54801bcfe94e8e4f55f"
+  "contentSha256": "e2b51eaed54138a0cee5765dfa62cf4c2101b6e030fa851ac10a09dabc3088b3"
 }

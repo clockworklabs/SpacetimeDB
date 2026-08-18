@@ -31,7 +31,7 @@ import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from './product-config.mjs';
 import { dockerMountArguments } from './container-mount.mjs';
-import { readAgentSkillDocuments, selectAgentSkills } from './agent-materials.mjs';
+import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from './agent-materials.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(ROOT, '..', '..');
@@ -364,7 +364,7 @@ export function readBackendGuidanceDocument(document, fallbackRelativePath) {
   if (resolvedRel === '..' || resolvedRel.startsWith(`..${sep}`) || isAbsolute(resolvedRel)) {
     throw new Error('campaign guidance document resolves outside the Stack Bench root');
   }
-  const bytes = readFileSync(selectedPath);
+  const bytes = Buffer.from(normalizePromptText(readFileSync(selectedPath, 'utf8')), 'utf8');
   if (document && (sha256(bytes) !== document.sha256 || bytes.length !== document.bytes)) {
     throw new Error(`campaign guidance document changed after compilation: ${document.path}`);
   }

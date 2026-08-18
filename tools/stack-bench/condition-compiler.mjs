@@ -3,7 +3,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
-import { readAgentSkillDocuments } from './agent-materials.mjs';
+import { normalizePromptText, readAgentSkillDocuments } from './agent-materials.mjs';
 import { sha256 } from './provenance.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -106,7 +106,7 @@ function resolveGuidance(catalog, reference, stacks, stackBenchRoot) {
     const rel = profile.documents[stack];
     if (typeof rel !== 'string' || !rel) fail(`${reference}.documents.${stack}`, 'is required');
     const path = contained(stackBenchRoot, rel, `${reference}.documents.${stack}`);
-    const bytes = readFileSync(path);
+    const bytes = Buffer.from(normalizePromptText(readFileSync(path, 'utf8')), 'utf8');
     documents[stack] = { path: relative(stackBenchRoot, path).split(sep).join('/'),
       sha256: sha256(bytes), bytes: bytes.length };
     const ids = profile.skills[stack];
