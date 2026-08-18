@@ -54,6 +54,10 @@ test('L2 1.4 has a source-bound draft calibration for the complete modular recip
     ['ecommerce.spec.external-data-sync.external-stock.901b', 'precondition'],
   ]);
   assert.equal(plan.qualification.evidence.length, 0);
+  assert.deepEqual({
+    referenceRepetitions: plan.qualification.referenceRepetitions,
+    mutationRepetitions: plan.qualification.mutationRepetitions,
+  }, { referenceRepetitions: 1, mutationRepetitions: 1 });
   assert.deepEqual(plan.qualification.stacks.map(stack => stack.status),
     ['candidate', 'candidate', 'candidate']);
   assert.match(plan.qualificationSha256, /^[a-f0-9]{64}$/);

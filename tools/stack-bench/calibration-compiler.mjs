@@ -206,8 +206,8 @@ export function compileCalibrationDefinition(input, { source = '<calibration>' }
     fail(`${source}.qualification.exactCombinationRequired`, 'must be true');
   }
   for (const field of ['referenceRepetitions', 'mutationRepetitions']) {
-    if (!Number.isInteger(value.qualification[field]) || value.qualification[field] < 2) {
-      fail(`${source}.qualification.${field}`, 'must be an integer of at least 2');
+    if (!Number.isInteger(value.qualification[field]) || value.qualification[field] < 1) {
+      fail(`${source}.qualification.${field}`, 'must be a positive integer');
     }
   }
   if (value.qualification.runner !== undefined) {

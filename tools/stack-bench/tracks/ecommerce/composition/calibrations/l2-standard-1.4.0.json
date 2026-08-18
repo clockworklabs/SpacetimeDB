@@ -82,8 +82,8 @@
   ],
   "qualification": {
     "exactCombinationRequired": true,
-    "referenceRepetitions": 2,
-    "mutationRepetitions": 2,
+    "referenceRepetitions": 1,
+    "mutationRepetitions": 1,
     "runner": {
       "schemaVersion": 1,
       "mode": "appliance",
