@@ -909,8 +909,6 @@ dependencies = [
  "anyhow",
  "clap 4.5.50",
  "lookup-pr-release",
- "regex",
- "serde",
 ]
 
 [[package]]
@@ -4132,8 +4130,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap 4.5.50",
+ "regex",
  "serde",
  "serde_json",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
