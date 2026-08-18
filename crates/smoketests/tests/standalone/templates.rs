@@ -9,16 +9,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
-#[path = "../shared/template_registry.rs"]
-mod template_registry;
-
 macro_rules! registered_template_ids {
     ($($test_name:ident => $template_id:literal),+ $(,)?) => {
         const REGISTERED_TEMPLATE_IDS: &[&str] = &[$($template_id),+];
     };
 }
 
-template_registry::for_each_template!(registered_template_ids);
+spacetimedb_smoketests::for_each_smoketest_template!(registered_template_ids);
 
 fn init_template(template_id: &str) -> Result<(TempDir, PathBuf)> {
     let tmpdir = tempfile::tempdir().context("Failed to create temp dir")?;

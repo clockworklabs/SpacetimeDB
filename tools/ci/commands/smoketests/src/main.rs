@@ -111,8 +111,8 @@ fn main() -> Result<()> {
         }
         Some(SmoketestCmd::CheckModList) => {
             check_smoketests_mod_rs_complete()?;
-            check_smoketest_suite_labels()?;
-            eprintln!("smoketests/mod.rs and suite labels are up to date.");
+            check_no_require_local_server_cluster_tests()?;
+            eprintln!("smoketest module lists and suite constraints are up to date.");
             Ok(())
         }
         Some(SmoketestCmd::Archive { archive_file }) => archive_smoketests(&archive_file, args.suite),
@@ -410,57 +410,49 @@ fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, auth_host: b
 fn check_smoketests_mod_rs_complete() -> Result<()> {
     ensure_repo_root()?;
 
-    let expected_dir = Path::new("crates/smoketests/tests/smoketests");
-    let mut expected = std::collections::BTreeSet::<String>::new();
-    for entry in fs::read_dir(expected_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name == "mod.rs" {
-            continue;
-        }
-        if name.starts_with('.') {
-            continue;
-        }
-
-        let ft = entry.file_type()?;
-        if ft.is_dir() {
-            expected.insert(name.to_string());
-        } else if ft.is_file()
-            && path.extension() == Some(OsStr::new("rs"))
-            && let Some(stem) = path.file_stem()
-        {
-            expected.insert(stem.to_string_lossy().to_string());
-        }
-    }
-
     let out = cmd!("cargo", "test", "-p", "spacetimedb-smoketests", "--", "--list",).read()?;
 
-    let mut present = std::collections::BTreeSet::<String>::new();
-    for line in out.lines() {
-        let line = line.trim();
-        let parts: Vec<&str> = line.split("::").collect();
-        if parts.len() < 2 {
-            continue;
-        }
-        if parts[0] != "smoketests" {
-            continue;
-        }
-        present.insert(parts[1].to_string());
-    }
+    for suite in ["cluster", "standalone"] {
+        let expected_dir = Path::new("crates/smoketests/tests").join(suite);
+        let mut expected = std::collections::BTreeSet::<String>::new();
+        for entry in fs::read_dir(&expected_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name == "mod.rs" || name.starts_with('.') {
+                continue;
+            }
 
-    let missing = expected
-        .into_iter()
-        .filter(|m| !present.contains(m))
-        .collect::<Vec<_>>();
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                expected.insert(name.to_string());
+            } else if file_type.is_file()
+                && path.extension() == Some(OsStr::new("rs"))
+                && let Some(stem) = path.file_stem()
+            {
+                expected.insert(stem.to_string_lossy().to_string());
+            }
+        }
 
-    if !missing.is_empty() {
-        bail!(
-            "crates/smoketests/tests/smoketests/mod.rs appears incomplete; missing modules (not present in `cargo test -- --list`):\n{}",
+        let present = out
+            .lines()
+            .filter_map(|line| {
+                let mut parts = line.trim().split("::");
+                (parts.next() == Some(suite)).then(|| parts.next()).flatten()
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let missing = expected
+            .into_iter()
+            .filter(|module| !present.contains(module.as_str()))
+            .collect::<Vec<_>>();
+
+        ensure!(
+            missing.is_empty(),
+            "crates/smoketests/tests/{suite}.rs appears incomplete; missing modules (not present in `cargo test -- --list`):\n{}",
             missing
                 .iter()
-                .map(|m| format!("- mod {m};"))
+                .map(|module| format!("- mod {module};"))
                 .collect::<Vec<_>>()
                 .join("\n")
         );
@@ -469,52 +461,20 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
     Ok(())
 }
 
-fn check_smoketest_suite_labels() -> Result<()> {
-    let tests_dir = Path::new("crates/smoketests/tests");
-    let standalone_dir = tests_dir.join("standalone");
-    let standalone_module_sources = collect_rust_sources(&standalone_dir)?;
-    let mut standalone_sources = standalone_module_sources.clone();
-    standalone_sources.retain(|path| path.file_name() != Some(OsStr::new("mod.rs")));
-    standalone_sources.push(tests_dir.join("standalone.rs"));
-
-    for module_source in standalone_module_sources
-        .iter()
-        .filter(|path| path.file_name() == Some(OsStr::new("mod.rs")))
-    {
-        let module = fs::read_to_string(module_source)?;
-        for line in module.lines() {
-            let line = line.trim();
-            let Some(relative_path) = line
-                .strip_prefix("#[path = \"")
-                .and_then(|line| line.strip_suffix("\"]"))
-            else {
-                continue;
-            };
-            standalone_sources.push(
-                module_source
-                    .parent()
-                    .context("standalone module source has no parent")?
-                    .join(relative_path),
-            );
-        }
-    }
-
-    let standalone_sources = standalone_sources
-        .into_iter()
-        .map(fs::canonicalize)
-        .collect::<std::io::Result<std::collections::BTreeSet<_>>>()?;
-
+fn check_no_require_local_server_cluster_tests() -> Result<()> {
     let mut misplaced_guards = Vec::new();
-    for source in collect_rust_sources(tests_dir)? {
+    let mut cluster_sources = collect_rust_sources(Path::new("crates/smoketests/tests/cluster"))?;
+    cluster_sources.push(PathBuf::from("crates/smoketests/tests/cluster.rs"));
+    for source in cluster_sources {
         let contents = fs::read_to_string(&source)?;
-        if contents.contains("require_local_server!();") && !standalone_sources.contains(&fs::canonicalize(&source)?) {
+        if contents.contains("require_local_server!") {
             misplaced_guards.push(source);
         }
     }
 
     ensure!(
         misplaced_guards.is_empty(),
-        "require_local_server!() may only be used in the standalone smoketest target:\n{}",
+        "require_local_server!() may not be used in cluster smoketests:\n{}",
         misplaced_guards
             .iter()
             .map(|path| format!("- {}", path.display()))

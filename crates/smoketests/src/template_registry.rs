@@ -1,4 +1,6 @@
-macro_rules! for_each_template {
+#[doc(hidden)]
+#[macro_export]
+macro_rules! for_each_smoketest_template {
     ($callback:ident) => {
         $callback! {
             test_template_angular_ts => "angular-ts",
@@ -28,5 +30,3 @@ macro_rules! for_each_template {
         }
     };
 }
-
-pub(crate) use for_each_template;

@@ -19,9 +19,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
-#[path = "../shared/template_registry.rs"]
-mod template_registry;
-
 // ============================================================================
 // Template metadata
 // ============================================================================
@@ -951,4 +948,4 @@ macro_rules! template_tests {
     };
 }
 
-template_registry::for_each_template!(template_tests);
+spacetimedb_smoketests::for_each_smoketest_template!(template_tests);
