@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 
-import { parsePreflightArgs, probeLoopbackPort, runPreflight } from '../commands/preflight.mjs';
+import { parsePreflightArgs, probeLoopbackPort, runPreflight } from '../src/runtime/preflight.mjs';
 import { createArtifact, validateArtifact } from '../src/evidence/artifacts.mjs';
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.mjs';
 

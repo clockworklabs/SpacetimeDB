@@ -11,6 +11,7 @@ const SOURCE_AREAS = [
 const SKIPPED_DIRECTORIES = new Set([
   'archive', 'local-notes', 'node_modules', 'results', 'tests',
 ]);
+const RELATIVE_MODULE = /(?:from\s+|import\s*\()(['"])(\.\.?\/[^'"\r\n]+?\.mjs)\1/g;
 
 function modulesBelow(directory, output = []) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -20,6 +21,11 @@ function modulesBelow(directory, output = []) {
     else if (entry.isFile() && extname(entry.name) === '.mjs') output.push(path);
   }
   return output;
+}
+
+function relativeModuleTargets(file) {
+  return [...readFileSync(file, 'utf8').matchAll(RELATIVE_MODULE)]
+    .map(match => resolve(dirname(file), match[2]));
 }
 
 test('the project root contains no implementation modules', () => {
@@ -33,15 +39,52 @@ test('the project root contains no implementation modules', () => {
 
 test('production-relative module references resolve after source reorganization', () => {
   const missing = [];
-  const relativeModule = /(?:from\s+|import\s*\()(['"])(\.\.?\/[^'"\r\n]+?\.mjs)\1/g;
   for (const file of modulesBelow(ROOT)) {
-    const source = readFileSync(file, 'utf8');
-    for (const match of source.matchAll(relativeModule)) {
-      const target = resolve(dirname(file), match[2]);
-      if (!existsSync(target)) missing.push(`${relative(ROOT, file)} -> ${match[2]}`);
+    for (const target of relativeModuleTargets(file)) {
+      if (!existsSync(target)) missing.push(`${relative(ROOT, file)} -> ${relative(dirname(file), target)}`);
     }
   }
   assert.deepEqual(missing, []);
+});
+
+test('production libraries do not import command entrypoints', () => {
+  const violations = [];
+  for (const area of ['src', 'grader', 'dashboard']) {
+    const directory = join(ROOT, area);
+    if (!existsSync(directory)) continue;
+    for (const file of modulesBelow(directory)) {
+      const source = readFileSync(file, 'utf8');
+      if (/from\s+['"][^'"]*commands\/|import\s*\(['"][^'"]*commands\//.test(source)) {
+        violations.push(relative(ROOT, file));
+      }
+    }
+  }
+  assert.deepEqual(violations, []);
+});
+
+test('production modules have no circular imports', () => {
+  const files = modulesBelow(ROOT);
+  const known = new Set(files);
+  const graph = new Map(files.map(file => [file,
+    relativeModuleTargets(file).filter(target => known.has(target))]));
+  const visited = new Set();
+  const active = new Set();
+  const stack = [];
+  function visit(file) {
+    if (active.has(file)) {
+      const cycle = [...stack.slice(stack.indexOf(file)), file]
+        .map(path => relative(ROOT, path)).join(' -> ');
+      assert.fail(`circular import: ${cycle}`);
+    }
+    if (visited.has(file)) return;
+    visited.add(file);
+    active.add(file);
+    stack.push(file);
+    for (const target of graph.get(file)) visit(target);
+    stack.pop();
+    active.delete(file);
+  }
+  for (const file of files) visit(file);
 });
 
 test('package command entrypoints exist', () => {

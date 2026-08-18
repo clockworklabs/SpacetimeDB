@@ -22,7 +22,7 @@ import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtur
 import { resolveReferenceSelection } from './reference-selection.mjs';
 import { killTree } from '../runtime/platform.mjs';
 import { criterionEvidence, evidencePassed } from '../evidence/check-evidence.mjs';
-import { recoverSupervisedRun, validateSupervisorState } from '../../commands/recovery.mjs';
+import { recoverSupervisedRun, validateSupervisorState } from '../runtime/recovery.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../composition/calibration-compiler.mjs';
 import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { isModularRecipeRelease } from '../composition/recipe-selection.mjs';

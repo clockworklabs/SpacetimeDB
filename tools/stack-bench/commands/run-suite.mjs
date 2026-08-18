@@ -30,7 +30,7 @@ import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.mjs';
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
-import { GENERATED_APP_LAYOUT_EXIT_CODE } from './reset-backend.mjs';
+import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const RESET = join(ROOT, 'commands', 'reset-backend.mjs');

@@ -43,9 +43,9 @@ import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { agentRecipeIdentity, agentRequestArgv, agentSessionFailure,
   validateAgentResult } from '../src/agents/agent-adapter-contract.mjs';
 import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../src/agents/agent-adapters.mjs';
-import { runPreflight } from './preflight.mjs';
+import { runPreflight } from '../src/runtime/preflight.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
-import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from './recovery.mjs';
+import { SUPERVISOR_STATE_VERSION, writeRecoveryArtifact } from '../src/runtime/recovery.mjs';
 import { resolveAgentCredential } from '../src/agents/agent-credentials.mjs';
 import { sandboxProbeMode } from '../src/runtime/sandbox.mjs';
 import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.mjs';

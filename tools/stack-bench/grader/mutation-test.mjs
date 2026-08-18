@@ -44,7 +44,7 @@ import {
 } from "../src/evidence/mutation-analysis.mjs";
 import { dbName, loadTrack } from "../src/composition/tracks.mjs";
 import { resolveRecipeRelease } from "../src/composition/recipe-release.mjs";
-import { resetBackend } from "../commands/reset-backend.mjs";
+import { resetBackend } from "../src/stacks/backend-reset.mjs";
 import { fetchStatus } from "../src/runtime/readiness.mjs";
 import { executeStackCapability } from "../src/stacks/stack-adapter-contract.mjs";
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.mjs";

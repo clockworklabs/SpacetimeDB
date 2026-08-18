@@ -1,8 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
+import { executeStackLeaseCapability } from '../stacks/stack-lease-capabilities.mjs';
 
 export const LEASE_VERSION = 1;
 const LEASE_STATES = new Set(['created', 'starting', 'active', 'restarting',
@@ -38,9 +37,6 @@ export function createBackendLease({ runId, backend, track, runIndex, ownerPid =
   requireString(track, 'track');
   if (!Number.isInteger(runIndex) || runIndex < 0) fail('runIndex must be a non-negative integer');
   if (!Number.isInteger(ownerPid) || ownerPid <= 0) fail('ownerPid must be a positive integer');
-  let adapter;
-  try { adapter = STACK_ADAPTER_REGISTRY.get(backend); }
-  catch (error) { fail(error.message); }
   const resources = {
     serverUri,
     database,
@@ -53,7 +49,7 @@ export function createBackendLease({ runId, backend, track, runIndex, ownerPid =
     listenerPids: [],
   };
   try {
-    executeStackCapability(adapter, 'lease', 'validate-resources', {
+    executeStackLeaseCapability(backend, 'validate-resources', {
       resources,
       helpers: { requireString, loopbackHttpUri },
     });
@@ -86,11 +82,8 @@ export function validateBackendLease(lease, { token, backend, runId, active = fa
   if (backend !== undefined && backend !== lease.backend) fail(`backend is ${lease.backend}, not ${backend}`);
   if (runId !== undefined && runId !== lease.runId) fail(`runId is ${lease.runId}, not ${runId}`);
   if (active && !['active', 'restarting'].includes(lease.state)) fail(`lease is ${lease.state}, not active`);
-  let adapter;
-  try { adapter = STACK_ADAPTER_REGISTRY.get(lease.backend); }
-  catch (error) { fail(error.message); }
   try {
-    executeStackCapability(adapter, 'lease', 'validate-resources', {
+    executeStackLeaseCapability(lease.backend, 'validate-resources', {
       resources: lease.resources,
       helpers: { requireString, loopbackHttpUri },
     });

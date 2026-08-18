@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
-import { resetBackend } from '../commands/reset-backend.mjs';
+import { resetBackend } from '../src/stacks/backend-reset.mjs';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.mjs';
 import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout } from '../src/runtime/spacetime-layout.mjs';
 

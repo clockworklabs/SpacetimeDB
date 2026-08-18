@@ -10,7 +10,7 @@ import { claimNextAttempt, finishCampaignExecution, initializeCampaignDirectory,
   markInterruptedExecution, readCampaignState, writeCampaignState } from './campaign-scheduler.mjs';
 import { rescueSupervisedLease, runBounded } from '../references/reference-live.mjs';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
-import { runPreflight } from '../../commands/preflight.mjs';
+import { runPreflight } from '../runtime/preflight.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
 import { validateReleaseManifest } from '../releases/release-manifest.mjs';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';

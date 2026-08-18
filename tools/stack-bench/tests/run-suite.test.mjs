@@ -9,7 +9,7 @@ import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, resetFailureOutcome, suitesForRecipe } from '../commands/run-suite.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
-import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../commands/reset-backend.mjs';
+import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 
