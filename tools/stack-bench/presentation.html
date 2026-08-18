@@ -348,23 +348,6 @@
   section.on .rail u.rB { animation: mtB 10s linear infinite; }
   section.on .rail u.rC { animation: mtC 10s linear infinite; }
 
-  /* the race, settled two ways; the panels reuse the attack format */
-  .race { width: 100%; max-width: 1000px; display: grid; gap: .7rem; }
-  .race-tabs { display: flex; gap: .4rem; flex-wrap: wrap; }
-  .race-tab {
-    background: none; cursor: pointer; text-align: left;
-    font-family: var(--font-mono); font-size: .82rem; color: var(--n4);
-    border: 1px solid var(--shade1); border-radius: 8px; padding: .55rem .9rem;
-  }
-  .race-tab:hover { color: var(--n3); background: #0d1418; }
-  .race-tab.on { color: var(--green); border-color: var(--green-25); background: var(--green-10); }
-  .atk-bill {
-    display: flex; justify-content: space-between; gap: 1rem;
-    padding: .55rem .9rem; border-top: 1px solid var(--shade1);
-    font-family: var(--font-mono); font-size: .78rem; color: var(--n4);
-  }
-  .atk-bill b { color: var(--n1); font-weight: 500; }
-
   /* proving the grader: three planted inputs, three verdicts that have to come back */
   .proof { display: grid; gap: .5rem; width: 100%; max-width: 940px; }
   .prow {
@@ -574,7 +557,6 @@
   .atk-panel.on .step:nth-child(2) { animation-delay: .5s; }
   .atk-panel.on .step:nth-child(3) { animation-delay: .9s; }
   .atk-panel.on .step:nth-child(4) { animation-delay: 1.3s; }
-  .atk-verdict.fail { color: #fc6897; border-top-color: #fc689733; background: #fc689710; }
   .atk-verdict {
     margin: .2rem .9rem .9rem; padding: .5rem .8rem; border-radius: 6px;
     font-family: var(--font-mono); font-size: .78rem;
@@ -1060,43 +1042,6 @@
   <p class="supp r d3" style="margin-top:1.2rem">Each of these is a criterion the harness drives on purpose, in a real browser, against the store the agent built. Pick one to see the shape of the attack.</p>
 </section>
 
-<!-- 5b why it differs -->
-<section>
-  <div class="kicker r">why the bill differs</div>
-  <h2 class="r d1">Two shoppers, one unit, and someone has to settle it</h2>
-  <div class="race r d2">
-    <div class="race-tabs">
-      <button class="race-tab on" data-race="r1" role="tab">the database settles it</button>
-      <button class="race-tab" data-race="r2" role="tab">the agent settles it</button>
-    </div>
-    <div class="atk-stage">
-      <div class="atk-panel on" id="r1">
-        <div class="atk-head">both checkouts arrive in the same millisecond</div>
-        <div class="atk-body">
-          <div class="step"><span class="actor">alice</span><span class="what">presses buy</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what">presses buy, same instant</span></div>
-          <div class="step"><span class="actor">database</span><span class="what hold">takes the two of them one at a time</span></div>
-          <div class="step"><span class="actor">store</span><span class="what hold">alice ordered &middot; bob sold out &middot; stock 0</span></div>
-        </div>
-        <div class="atk-verdict">&#10003; one order for one unit</div>
-        <div class="atk-bill"><span>the agent wrote <b>one call</b></span><span><b>1</b> fix round &middot; <b>$4.73</b></span></div>
-      </div>
-      <div class="atk-panel" id="r2">
-        <div class="atk-head">the same instant, with the rule left to the agent</div>
-        <div class="atk-body">
-          <div class="step"><span class="actor">alice</span><span class="what">reads stock &middot; 1 left</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what hit">reads stock &middot; 1 left, before alice writes</span></div>
-          <div class="step"><span class="actor">alice</span><span class="what">writes stock 0, order confirmed</span></div>
-          <div class="step"><span class="actor">bob</span><span class="what">writes stock 0, order confirmed</span></div>
-        </div>
-        <div class="atk-verdict fail">&#10007; two orders for one unit</div>
-        <div class="atk-bill"><span>the agent wrote <b>a transaction, a lock, a re-check and a retry</b></span><span><b>3</b> fix rounds &middot; <b>$11.28</b></span></div>
-      </div>
-    </div>
-  </div>
-  <p class="supp r d3" style="margin-top:1.2rem">The second reader is the whole problem. A database that settles the race itself never lets it happen, so the agent gets this right whatever it writes. A database that leaves the race to the agent makes correctness something the agent has to build, out of four steps, and the rounds it takes to get all four right land on the bill.</p>
-</section>
-
 <!-- 6 proving the grader -->
 <section>
   <div class="kicker r">proving the grader</div>
@@ -1252,15 +1197,6 @@
     };
     requestAnimationFrame(tick);
   }
-
-  // the race, settled two ways
-  document.querySelectorAll('.race-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const stage = btn.closest('.race');
-      stage.querySelectorAll('.race-tab').forEach(b => b.classList.toggle('on', b === btn));
-      stage.querySelectorAll('.atk-panel').forEach(p => p.classList.toggle('on', p.id === btn.dataset.race));
-    });
-  });
 
   // attack picker
   document.querySelectorAll('.atk-item').forEach(btn => {
