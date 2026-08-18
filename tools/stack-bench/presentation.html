@@ -851,14 +851,14 @@
   </div>
   <h1 class="r d1">Stack Bench</h1>
   <p class="lead r d2" style="margin-top:1.4rem">Stack Bench measures whether the backend an AI agent ships actually works.</p>
-  <p class="r d3" style="margin-top:1rem">Stack Bench has an agent build a real-time store, then attacks the result the way production would. Every failure is found by using the app, and every fix lands on the bill.</p>
+  <p class="r d3" style="margin-top:1rem">Stack Bench has an agent build a real-time store and the warehouse operation behind it, then attacks the result the way production would. Every failure is found by using the app, and every fix lands on the bill.</p>
 </section>
 
 <!-- 2 the bet -->
 <section>
   <div class="kicker r">what is measured</div>
   <h2 class="r d1">Same app. Same model. Different database.</h2>
-  <p class="lead r d2" style="margin-top:.6rem">One agent builds the same storefront over and over. The prompt, the requirements and the model stay pinned; the database underneath is the only thing that changes.</p>
+  <p class="lead r d2" style="margin-top:.6rem">One agent builds the same application over and over: a live storefront, and the warehouses, stock and admin side that runs it. The prompt, the requirements and the model stay pinned; the database underneath is the only thing that changes.</p>
   <div class="mt r d3" role="img" aria-label="three databases reach the same score after different numbers of fix rounds and different spend">
     <div class="mt-head">
       <div>database</div><div class="rt fin">51 / 51</div><div class="rt">rounds</div><div class="rt">cost</div>
@@ -1008,6 +1008,7 @@
       <button class="atk-item" data-atk="a4" role="tab">cart isolation<small>one shopper, one cart</small></button>
       <button class="atk-item" data-atk="a5" role="tab">forged write<small>a request claiming to be someone else</small></button>
       <button class="atk-item" data-atk="a6" role="tab">event order<small>two writers at once</small></button>
+      <button class="atk-item" data-atk="a7" role="tab">stock transfer<small>a move and a sale at once</small></button>
     </div>
     <div class="atk-stage">
       <div class="atk-panel on" id="a1">
@@ -1069,6 +1070,16 @@
           <div class="step"><span class="actor">bob</span><span class="what hold">sees all 12, in the same order</span></div>
         </div>
         <div class="atk-verdict">&#10003; every client agrees on what happened, and in what order</div>
+      </div>
+      <div class="atk-panel" id="a7">
+        <div class="atk-head">stock moves between warehouses while a customer is buying</div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">staff</span><span class="what">moves 5 units, warehouse a to b</span></div>
+          <div class="step"><span class="actor">alice</span><span class="what hit">buys 1, mid-transfer</span></div>
+          <div class="step"><span class="actor">store</span><span class="what hold">total across warehouses still adds up</span></div>
+          <div class="step"><span class="actor">store</span><span class="what hold">both warehouses stay at or above zero</span></div>
+        </div>
+        <div class="atk-verdict">&#10003; the move and the sale agree on one total</div>
       </div>
     </div>
   </div>

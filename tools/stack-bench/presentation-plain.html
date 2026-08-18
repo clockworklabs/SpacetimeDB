@@ -81,10 +81,10 @@
 
 <h1>Stack Bench</h1>
 <p>Stack Bench measures whether the backend an AI agent ships actually works.</p>
-<p>An agent builds a real-time store from a fixed prompt. The harness drives real browsers against it, hands back whatever failed, and lets the agent fix it, recording what that took.</p>
+<p>An agent builds a real-time store and the warehouse operation behind it, from a fixed prompt. The harness drives real browsers against it, hands back whatever failed, and lets the agent fix it, recording what that took.</p>
 
 <h2>Same app. Same model. Different database.</h2>
-<p>One agent builds the same store over and over, with a different database underneath each time. Everything else is held fixed: the prompt, the model, the requirements. What comes out is a bill.</p>
+<p>One agent builds the same application over and over, with a different database underneath each time: a live storefront, and the warehouses, stock and admin side that runs it. Everything else is held fixed: the prompt, the model, the requirements. What comes out is a bill.</p>
 
 <h2>The loop runs until it passes</h2>
 <p>Build, then grade, then hand back what failed as a sentence about what a customer saw, then fix, then grade again. A failed criterion never travels back as the check that caught it, so the agent cannot write to the test.</p>
@@ -99,6 +99,7 @@
   <li><b>Cart isolation.</b> One shopper's cart stays their own.</li>
   <li><b>Forged write.</b> A request altered to look like another shopper is refused.</li>
   <li><b>Event order.</b> Two writers change the catalog at once and every client agrees on the order.</li>
+  <li><b>Stock transfer.</b> Units move between warehouses while a customer is buying, and the total across warehouses still adds up.</li>
 </ul>
 
 <h2>Every rule the agent writes itself can go wrong</h2>
