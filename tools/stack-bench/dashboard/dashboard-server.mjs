@@ -14,7 +14,7 @@ import { campaignDetail, discoverPlans, readCampaignArtifactBody, readDashboardO
 const DASHBOARD_ROOT = dirname(fileURLToPath(import.meta.url));
 const STACK_BENCH_ROOT = dirname(DASHBOARD_ROOT);
 const PUBLIC_ROOT = join(DASHBOARD_ROOT, 'public');
-const CAMPAIGN_CLI = join(STACK_BENCH_ROOT, 'campaign-cli.mjs');
+const CAMPAIGN_CLI = join(STACK_BENCH_ROOT, 'commands', 'campaign-cli.mjs');
 const SAFE_NAME = /^[a-z0-9][a-z0-9.-]{2,119}$/;
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const STATIC = new Map([

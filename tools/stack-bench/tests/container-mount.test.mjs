@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { dockerMountArguments } from '../container-mount.mjs';
+import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
 
 test('container mounts distinguish host binds from release-owned volumes', () => {
   assert.deepEqual(dockerMountArguments({

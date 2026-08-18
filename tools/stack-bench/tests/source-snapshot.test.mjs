@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from '../source-snapshot.mjs';
+import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } from '../src/runtime/source-snapshot.mjs';
 
 const put = (path, content) => {
   mkdirSync(join(path, '..'), { recursive: true });

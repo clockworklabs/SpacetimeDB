@@ -6,11 +6,11 @@ import test from 'node:test';
 
 import { calibrationQualificationIdentity, compileCalibrationDefinition, compileCalibrationFile,
   currentLevelPoints, resolveCalibrationForRelease,
-  validateQualificationEvidenceArtifact } from '../calibration-compiler.mjs';
-import { readArtifact } from '../artifacts.mjs';
-import { checkCalibrations } from '../check-calibration.mjs';
-import { resolveRecipeRelease } from '../recipe-release.mjs';
-import { loadTrack } from '../tracks.mjs';
+  validateQualificationEvidenceArtifact } from '../src/composition/calibration-compiler.mjs';
+import { readArtifact } from '../src/evidence/artifacts.mjs';
+import { checkCalibrations } from '../commands/check-calibration.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = loadTrack('ecommerce');

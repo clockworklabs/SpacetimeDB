@@ -71,8 +71,8 @@ npm run test:container
 build, upgrade, and fix prompts for every packaged stack under prescribed and
 neutral guidance, then compares their exact bytes with the reviewed appliance
 snapshot. If an intentional prompt change occurs, inspect the rendered prompts
-with `agent.mjs --print-prompt` before refreshing the snapshot with
-`node prompt-snapshot.mjs --write`.
+with `commands/agent.mjs --print-prompt` before refreshing the snapshot with
+`node commands/prompt-snapshot.mjs --write`.
 
 `preflight` says whether the exact requested run can start and gives a concrete
 fix for each failure. It checks Docker/Compose, resource floors, image and
@@ -90,12 +90,12 @@ not fixture reports. Every public track is included by default and the complete
 criterion evidence is written under `results/`.
 
 ```bash
-node bench.mjs --backend spacetime --levels 1-2
-node bench.mjs --backend postgres  --levels 1-2 --run-index 1
-node bench.mjs --backend mongodb   --levels 1-2 --run-index 2
-node bench.mjs --backend postgres --track ecommerce --levels 1 \
+npm run bench -- --backend spacetime --levels 1-2
+npm run bench -- --backend postgres  --levels 1-2 --run-index 1
+npm run bench -- --backend mongodb   --levels 1-2 --run-index 2
+npm run bench -- --backend postgres --track ecommerce --levels 1 \
   --pack ecommerce.identity-access --check <stable-check-key>
-node bench.mjs --backend postgres --track ecommerce --levels 1 \
+npm run bench -- --backend postgres --track ecommerce --levels 1 \
   --recipe ecommerce.l1-standard@1.1.0
 
 # Inspect an exhausted level, then grant at most four more correction rounds.
@@ -205,10 +205,10 @@ npm run recipe -- diff <old-recipe.json> <new-recipe.json> --track ecommerce
 separately, names requirement/contract fragments added or removed, then names the calibration bindings and evidence repetitions that
 must be redone. `recipe show --pack` and `--check` produce a selected scope with
 its own deterministic selection hash, bound to the source recipe hash. The same
-flags on `bench.mjs` run that scope. Packs and individual checks are combined as
+flags on `npm run bench` run that scope. Packs and individual checks are combined as
 a union. Run, bundle, and grade artifacts record the request, the exact checks
 it resolved to, which checks were attempted, and any checks not run with their
-reason. A subset can be an intentional benchmark run. `compare-runs.mjs` refuses
+reason. A subset can be an intentional benchmark run. `npm run compare` refuses
 different recipe or selection identities and refuses any run whose scope cannot
 be proven. Pre-v1 results are preserved under `archive/pre-v1/` for historical
 inspection only; active readers do not infer or migrate their meaning.
@@ -279,17 +279,17 @@ The grader never reloads except to probe for that, so "real-time" means real-tim
 
 | Path | Purpose |
 |---|---|
-| `bench.mjs` | runs everything for one backend, unattended |
-| `agent.mjs` | drives one headless coding session (build, upgrade, fix) |
-| `run-suite.mjs` | grades one app: reset, lint, then each suite |
-| `report-bugs.mjs` | turns findings into a behavioural bug report for the agent |
+| `commands/bench.mjs` | runs everything for one backend, unattended |
+| `commands/agent.mjs` | drives one headless coding session (build, upgrade, fix) |
+| `commands/run-suite.mjs` | grades one app: reset, lint, then each suite |
+| `commands/report-bugs.mjs` | turns failed checks into a repair report for the agent |
 | `grader/grade.mjs` | executes scenarios against real clients |
 | `grader/mutation-test.mjs` | validates the grader by injecting known defects |
 | `linter/lint.mjs` | checks the app exposes the contract's test ids |
 | `docker-compose.yaml` | the Postgres and MongoDB services |
 | `appliance/` | dedicated Linux runner controller image, Compose bundle, and operator guide |
 | `reset-db.sh`, `restart-backend.sh` | environment control used by the suites |
-| `tracks.mjs` | resolves a track: its paths, suites, ports and names |
+| `src/composition/tracks.mjs` | resolves a track: its paths, suites, ports and names |
 | `tracks/<name>/` | one application: prompts, contracts, scenarios, lint walk |
 | `backends/` | per-backend setup and deploy instructions given to the agent |
 ## Validation safeguards

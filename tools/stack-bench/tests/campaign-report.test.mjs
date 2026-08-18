@@ -4,16 +4,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { emptyArtifactIdentities, readArtifact, writeRunJson } from '../artifacts.mjs';
-import { compileCampaignFile } from '../campaign-compiler.mjs';
+import { emptyArtifactIdentities, readArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
 import { buildCampaignReport, generateCampaignReport,
   campaignRunMetrics, campaignRunFirstBuildObservations, formatDurationMs, renderCampaignHtml,
-  validateCampaignReport } from '../campaign-report.mjs';
-import { canonicalDefinitionJson } from '../definition-plan.mjs';
-import { sha256 } from '../provenance.mjs';
-import { runCampaignAdmission } from '../campaign-runner.mjs';
+  validateCampaignReport } from '../src/campaigns/campaign-report.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { sha256 } from '../src/evidence/provenance.mjs';
+import { runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution,
-  initializeCampaignDirectory, writeCampaignState } from '../campaign-scheduler.mjs';
+  initializeCampaignDirectory, writeCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
 const created = '2026-08-12T00:00:00.000Z';

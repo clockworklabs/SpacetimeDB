@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseImageId, resolveContainerImage } from '../container-image.mjs';
+import { parseImageId, resolveContainerImage } from '../src/runtime/container-image.mjs';
 
 const ID = `sha256:${'a'.repeat(64)}`;
 

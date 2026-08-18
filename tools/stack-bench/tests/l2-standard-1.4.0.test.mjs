@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileRecipeFile } from '../composition-compiler.mjs';
-import { buildRecipeRelease } from '../recipe-release.mjs';
-import { createModularRecipeTaskRequest, resolveModularRecipeSelection } from '../recipe-selection.mjs';
+import { compileRecipeFile } from '../src/composition/composition-compiler.mjs';
+import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { createModularRecipeTaskRequest, resolveModularRecipeSelection } from '../src/composition/recipe-selection.mjs';
 
 const TRACK = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 const recipe = name => join(TRACK, 'composition', 'recipes', name);

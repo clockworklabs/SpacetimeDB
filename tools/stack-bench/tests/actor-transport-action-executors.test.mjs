@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ACTION_REGISTRY } from '../action-catalog.mjs';
-import { createActionRunContext, executeAction } from '../action-contract.mjs';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
+import { createActionRunContext, executeAction } from '../src/actions/action-contract.mjs';
 import {
   ACTOR_TRANSPORT_ACTION_IDS,
   ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
   createNamedActionsCapability,
-} from '../actor-transport-action-executors.mjs';
+} from '../src/actions/actor-transport-action-executors.mjs';
 
 function services(actors, overrides = {}) {
   const verification = [];

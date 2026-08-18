@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseQualificationArgs, qualificationReadiness } from '../qualification-cli.mjs';
+import { parseQualificationArgs, qualificationReadiness } from '../commands/qualification-cli.mjs';
 
 test('qualification status lists exact evidence and launch readiness without writing', () => {
   const status = qualificationReadiness('ecommerce', 1);

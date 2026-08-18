@@ -19,7 +19,7 @@
 //   node check-mutations.mjs --app <dir> --mutations <file> --quiet   (exit code only)
 
 import { readFileSync, existsSync } from 'node:fs';
-import { mutationEdits, resolveMutationFile, validateMutationDefinitions } from '../mutation-analysis.mjs';
+import { mutationEdits, resolveMutationFile, validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
 
 function parseArgs(argv) {
   const a = {};

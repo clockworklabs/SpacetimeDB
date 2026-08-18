@@ -6,9 +6,9 @@ import test from 'node:test';
 import ts from 'typescript';
 
 import { mutationEdits, mutationTargetKeys,
-  validateMutationDefinitions } from '../mutation-analysis.mjs';
-import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../reference-fixtures.mjs';
-import { buildRecipeRelease } from '../recipe-release.mjs';
+  validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
+import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../src/references/reference-fixtures.mjs';
+import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');

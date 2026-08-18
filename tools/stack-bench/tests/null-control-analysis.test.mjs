@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { analyseNullReports } from '../null-control-analysis.mjs';
-import { createCheckEvidence } from '../check-evidence.mjs';
+import { analyseNullReports } from '../src/evidence/null-control-analysis.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 
 const criterion = (id, points, status, phase = 'assertion', summary = null) => ({
   id, points, evidence: createCheckEvidence({ status,

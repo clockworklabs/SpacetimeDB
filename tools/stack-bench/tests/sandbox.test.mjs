@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { sandboxProbeMode } from '../sandbox.mjs';
+import { sandboxProbeMode } from '../src/runtime/sandbox.mjs';
 
 test('appliance isolation replaces the single-host model CLI sandbox probe', () => {
   assert.equal(sandboxProbeMode({ appliance: true, stackRequired: true }), 'container-isolation');

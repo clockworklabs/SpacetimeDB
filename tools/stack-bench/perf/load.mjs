@@ -23,12 +23,12 @@
 //                 [--clients 8] [--rounds 20] [--out report.json]
 
 import { existsSync } from 'node:fs';
-import { sampleProcesses as hostSample } from '../platform.mjs';
+import { sampleProcesses as hostSample } from '../src/runtime/platform.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { emptyArtifactIdentities, writeArtifact } from '../artifacts.mjs';
+import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
 
 // Playwright is already installed for the grader and the linter; resolving it
 // from there keeps this tool install-free rather than adding a third copy of a

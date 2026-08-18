@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-import { resolveAgentCredential } from '../agent-credentials.mjs';
+import { resolveAgentCredential } from '../src/agents/agent-credentials.mjs';
 
 const paid = { id: 'paid', apiKeyEnvironmentVariable: 'PROVIDER_API_KEY' };
 const modelFree = { id: 'model-free', apiKeyEnvironmentVariable: null };

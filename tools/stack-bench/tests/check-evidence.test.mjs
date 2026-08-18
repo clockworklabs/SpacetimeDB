@@ -11,12 +11,12 @@ import {
   evidenceIsRepairable,
   evidencePassed,
   validateCheckEvidence,
-} from '../check-evidence.mjs';
+} from '../src/evidence/check-evidence.mjs';
 import {
   evidenceStatusLabel,
   renderEvidenceConsoleLine,
   renderRepairDiagnostic,
-} from '../evidence-presentation.mjs';
+} from '../src/evidence/evidence-presentation.mjs';
 
 function evidence(overrides = {}) {
   return createCheckEvidence({

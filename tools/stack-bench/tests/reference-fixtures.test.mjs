@@ -3,11 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { hashDirectory } from '../provenance.mjs';
+import { hashDirectory } from '../src/evidence/provenance.mjs';
 import { inspectReferenceCandidate, loadReferenceRegistry,
   inspectImportedReference, selectReferenceFixture,
-  validateReferenceRegistry } from '../reference-fixtures.mjs';
-import { resolveReferenceSelection } from '../reference-selection.mjs';
+  validateReferenceRegistry } from '../src/references/reference-fixtures.mjs';
+import { resolveReferenceSelection } from '../src/references/reference-selection.mjs';
 
 test('the reference registry binds active, blocked, and historical provenance lifecycles', () => {
   const registry = loadReferenceRegistry();

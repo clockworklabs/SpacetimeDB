@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
-  validateCompiledCampaignPlan } from '../campaign-compiler.mjs';
-import { canonicalDefinitionJson } from '../definition-plan.mjs';
-import { sha256 } from '../provenance.mjs';
+  validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { sha256 } from '../src/evidence/provenance.mjs';
 
 function definition(overrides = {}) {
   return {

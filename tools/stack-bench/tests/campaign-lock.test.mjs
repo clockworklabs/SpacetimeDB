@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { acquireCampaignLock, controllerInstance, releaseCampaignLock } from '../campaign-lock.mjs';
+import { acquireCampaignLock, controllerInstance, releaseCampaignLock } from '../src/campaigns/campaign-lock.mjs';
 
 const campaign = { id: 'ecommerce-l1-example', contentSha256: 'a'.repeat(64) };
 

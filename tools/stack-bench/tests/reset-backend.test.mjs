@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { createBackendLease, writeBackendLease } from '../backend-lease.mjs';
-import { resetBackend } from '../reset-backend.mjs';
-import { containerReachableSpacetimeUri } from '../spacetime-target.mjs';
-import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout } from '../spacetime-layout.mjs';
+import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
+import { resetBackend } from '../commands/reset-backend.mjs';
+import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.mjs';
+import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout } from '../src/runtime/spacetime-layout.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -35,7 +35,7 @@ test('the Node reset entrypoint refuses without an authenticated lease', () => {
   delete env.STACK_BENCH_LEASE;
   delete env.STACK_BENCH_LEASE_TOKEN;
   assert.throws(() => execFileSync(process.execPath,
-    [join(ROOT, 'reset-backend.mjs'), 'mongodb', '.'], { env, stdio: 'pipe' }),
+    [join(ROOT, 'commands', 'reset-backend.mjs'), 'mongodb', '.'], { env, stdio: 'pipe' }),
   /STACK_BENCH_LEASE is required/);
 });
 
@@ -51,7 +51,7 @@ test('the reset entrypoint reports a generated layout separately from a harness 
   writeBackendLease(leasePath, lease);
   try {
     const result = spawnSync(process.execPath,
-      [join(ROOT, 'reset-backend.mjs'), 'spacetime', app], {
+      [join(ROOT, 'commands', 'reset-backend.mjs'), 'spacetime', app], {
         encoding: 'utf8',
         env: { ...process.env, STACK_BENCH_LEASE: leasePath,
           STACK_BENCH_LEASE_TOKEN: lease.ownershipToken },

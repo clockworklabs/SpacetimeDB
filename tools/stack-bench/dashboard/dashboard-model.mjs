@@ -3,10 +3,10 @@ import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, rea
 } from 'node:fs';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 
-import { readArtifact, readArtifactPayload } from '../artifacts.mjs';
-import { compileCampaignFile, validateCompiledCampaignPlan } from '../campaign-compiler.mjs';
-import { canonicalDefinitionJson } from '../definition-plan.mjs';
-import { readCampaignState, validateCampaignState } from '../campaign-scheduler.mjs';
+import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.mjs';
+import { compileCampaignFile, validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { readCampaignState, validateCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 
 const MAX_LOG_BYTES = 96 * 1024;
 const MAX_PUBLIC_TEXT_BYTES = 8 * 1024 * 1024;

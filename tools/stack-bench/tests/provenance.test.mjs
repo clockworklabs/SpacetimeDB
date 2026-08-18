@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { hashDirectory, hashFiles, hashRubric, sessionProvenance, sha256 } from '../provenance.mjs';
+import { hashDirectory, hashFiles, hashRubric, sessionProvenance, sha256 } from '../src/evidence/provenance.mjs';
 
 test('file-set hashes bind both relative names and exact bytes', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-provenance-'));

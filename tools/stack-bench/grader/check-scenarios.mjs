@@ -9,9 +9,9 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadTrack, listTracks, DEFAULT_TRACK } from '../tracks.mjs';
-import { compileScenarioDefinition } from '../definition-compiler.mjs';
-import { ACTION_REGISTRY } from '../action-catalog.mjs';
+import { loadTrack, listTracks, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

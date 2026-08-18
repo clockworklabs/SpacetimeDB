@@ -5,11 +5,11 @@ import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
-import { readArtifactPayload } from '../artifacts.mjs';
+import { readArtifactPayload } from '../src/evidence/artifacts.mjs';
 import { acquireResourceLock, createBackendLease, readBackendLease,
-  writeBackendLease } from '../backend-lease.mjs';
+  writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { recoveryPlan, recoverSupervisedRun, SUPERVISOR_STATE_VERSION,
-  validateSupervisorState } from '../recovery.mjs';
+  validateSupervisorState } from '../commands/recovery.mjs';
 
 function fixture({ state = 'active' } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-recovery-'));

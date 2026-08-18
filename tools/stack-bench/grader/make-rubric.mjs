@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadTrack, DEFAULT_TRACK } from '../tracks.mjs';
+import { loadTrack, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 

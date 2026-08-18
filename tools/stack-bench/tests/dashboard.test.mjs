@@ -5,15 +5,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { emptyArtifactIdentities, writeArtifact } from '../artifacts.mjs';
-import { compileCampaignFile } from '../campaign-compiler.mjs';
-import { createCampaignState } from '../campaign-scheduler.mjs';
-import { canonicalDefinitionJson } from '../definition-plan.mjs';
+import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
+import { createCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { campaignDetail, parseRunProgress, readCampaignArtifactBody, resolveCampaignArtifact,
   summarizeCampaign,
 } from '../dashboard/dashboard-model.mjs';
 import { createDashboardServer, parseDashboardArgs } from '../dashboard/dashboard-server.mjs';
-import { sha256 } from '../provenance.mjs';
+import { sha256 } from '../src/evidence/provenance.mjs';
 
 test('dashboard run progress reports only completed grades while the next repair is underway', () => {
   const progress = parseRunProgress(`
@@ -93,7 +93,7 @@ test('dashboard can display an in-flight schema-1 campaign without reopening it 
 test('dashboard keeps a schema-2 campaign readable after the controller is upgraded', t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-historical-v2-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const source = join(process.cwd(), 'tools', 'stack-bench', 'appliance', 'campaign.example.json');
+  const source = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
   const currentPlan = compileCampaignFile(source);
   const state = createCampaignState(currentPlan, { now: '2026-08-18T12:00:00.000Z' });
   const historicalPlan = structuredClone(currentPlan);

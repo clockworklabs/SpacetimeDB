@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import test from 'node:test';
 
-import { checkCompositions } from '../check-composition.mjs';
+import { checkCompositions } from '../commands/check-composition.mjs';
 import {
   compileFixtureDefinition,
   compilePackDefinition,
@@ -13,9 +13,9 @@ import {
   compileRecipeDefinition,
   compileRecipeFile,
   resolveTaskFragment,
-} from '../composition-compiler.mjs';
-import { compileScenarioDefinition } from '../definition-compiler.mjs';
-import { loadTrack, suitesFor } from '../tracks.mjs';
+} from '../src/composition/composition-compiler.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { loadTrack, suitesFor } from '../src/composition/tracks.mjs';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 const recipePath = name => join(ECOMMERCE, 'composition', 'recipes', name);

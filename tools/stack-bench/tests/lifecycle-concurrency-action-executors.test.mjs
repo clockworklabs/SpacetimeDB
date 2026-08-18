@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ACTION_REGISTRY } from '../action-catalog.mjs';
-import { createActionRunContext, executeAction } from '../action-contract.mjs';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
+import { createActionRunContext, executeAction } from '../src/actions/action-contract.mjs';
 import {
   createDatabaseWriteCapability,
   createLifecycleCapability,
   LIFECYCLE_CONCURRENCY_ACTION_IDS,
   LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
-} from '../lifecycle-concurrency-action-executors.mjs';
+} from '../src/actions/lifecycle-concurrency-action-executors.mjs';
 
 const sleep = async () => {};
 

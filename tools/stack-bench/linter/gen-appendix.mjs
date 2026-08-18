@@ -7,7 +7,7 @@
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadTrack, DEFAULT_TRACK } from '../tracks.mjs';
+import { loadTrack, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 
 const trackArg = process.argv.includes('--track')
   ? process.argv[process.argv.indexOf('--track') + 1]

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { settledLocatorCount } from '../browser-evidence.mjs';
+import { settledLocatorCount } from '../src/evidence/browser-evidence.mjs';
 
 test('an optional locator timeout is counted as a healthy absence', async () => {
   const timeout = Object.assign(new Error('not visible'), { name: 'TimeoutError' });

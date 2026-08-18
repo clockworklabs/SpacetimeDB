@@ -3,16 +3,18 @@ import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { ARTIFACT_SCHEMA_VERSION, createArtifact, readArtifact, readArtifactPayload,
-  readRunJson, writeArtifact, writeRunJson } from '../artifacts.mjs';
-import { createCheckEvidence } from '../check-evidence.mjs';
+  readRunJson, writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 
 const BENCH_ROOT = join(import.meta.dirname, '..');
 
 function freshEngineIdentity(root = BENCH_ROOT) {
+  const artifactsUrl = pathToFileURL(join(root, 'src', 'evidence', 'artifacts.mjs')).href;
   const result = spawnSync(process.execPath, ['--input-type=module', '--eval',
-    "import { currentEngineIdentity } from './artifacts.mjs'; console.log(JSON.stringify(currentEngineIdentity()));"],
+    `import { currentEngineIdentity } from ${JSON.stringify(artifactsUrl)}; console.log(JSON.stringify(currentEngineIdentity()));`],
   { cwd: root, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   return JSON.parse(result.stdout);

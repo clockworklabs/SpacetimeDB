@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createCheckEvidence } from '../check-evidence.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { aggregatePackRuntime, exceededPackBudgets, measureGradePackRuntime,
-  PACK_RUNTIME_METRIC } from '../pack-runtime.mjs';
+  PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.mjs';
 
 const evidence = durationMs => createCheckEvidence({ status: 'passed', code: 'completed',
   phase: 'assertion', startedAtMs: 100, completedAtMs: 100 + durationMs });

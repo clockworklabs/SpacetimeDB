@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 
-import { updateBackendLease } from '../backend-lease.mjs';
+import { updateBackendLease } from '../src/runtime/backend-lease.mjs';
 
 export function recoverStoppedBuildContainer({ existing, containerName, leaseContext, backend,
   dockerEnv = process.env, timeoutMs = 120_000, execute = spawnSync }) {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { agentSkillPaths, normalizePromptText, readAgentSkillDocuments,
-  selectAgentSkills } from '../agent-materials.mjs';
+  selectAgentSkills } from '../src/agents/agent-materials.mjs';
 
 test('stack defaults and explicit agent skill selections resolve predictably', () => {
   assert.deepEqual(selectAgentSkills(['typescript-server'], null), ['typescript-server']);

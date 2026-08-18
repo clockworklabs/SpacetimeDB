@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseCampaignArgs } from '../campaign-cli.mjs';
+import { parseCampaignArgs } from '../commands/campaign-cli.mjs';
 
 const argv = (...args) => ['node', 'campaign-cli.mjs', ...args];
 

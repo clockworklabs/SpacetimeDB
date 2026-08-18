@@ -3,9 +3,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { codingSessionFailure, ensureDatabase, hostServiceAddress, lintShimScript } from '../agent.mjs';
-import { createBackendLease, writeBackendLease } from '../backend-lease.mjs';
-import { loadTrack } from '../tracks.mjs';
+import { codingSessionFailure, ensureDatabase, hostServiceAddress, lintShimScript } from '../commands/agent.mjs';
+import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
 
 const track = loadTrack('ecommerce');
 

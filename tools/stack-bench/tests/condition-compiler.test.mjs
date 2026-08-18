@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 
 import { resolveGuidanceProfile, resolveStudyConditions,
-  validateConditionReference } from '../condition-compiler.mjs';
+  validateConditionReference } from '../src/campaigns/condition-compiler.mjs';
 
 const prescribed = { id: 'prescribed', version: '1.0.0',
   guidanceProfile: 'prescribed@1.0.0', repairPolicy: 'scored-only@1.0.0' };

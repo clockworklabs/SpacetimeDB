@@ -7,7 +7,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const SERVER = join(ROOT, 'lint-server.mjs');
+const SERVER = join(ROOT, 'commands', 'lint-server.mjs');
 
 async function waitForPort(path) {
   const deadline = Date.now() + 5_000;

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileRecipeFile } from '../composition-compiler.mjs';
-import { buildRecipeRelease } from '../recipe-release.mjs';
+import { compileRecipeFile } from '../src/composition/composition-compiler.mjs';
+import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 
 const recipePath = join(import.meta.dirname, '..', 'tracks', 'ecommerce', 'composition',
   'recipes', 'l1-modular-2.2.0.json');

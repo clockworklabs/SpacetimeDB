@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { compareCriterionEvidence, formatRepairProgress } from '../scoring.mjs';
-import { createCheckEvidence } from '../check-evidence.mjs';
+import { compareCriterionEvidence, formatRepairProgress } from '../src/evidence/scoring.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 
 const criterion = (id, passed, options = {}) => ({
   ...typedCriterion(id, options.inconclusive ? 'inconclusive' : passed ? 'passed' : 'failed', null),

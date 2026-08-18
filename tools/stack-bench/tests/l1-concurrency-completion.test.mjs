@@ -6,10 +6,10 @@ import test from 'node:test';
 import ts from 'typescript';
 
 import { mutationEdits, mutationScenario, mutationTargetKeys,
-  validateMutationDefinitions } from '../mutation-analysis.mjs';
-import { prepareReferenceSource } from '../reference-agent.mjs';
-import { buildRecipeRelease } from '../recipe-release.mjs';
-import { selectScenarioChecks } from '../recipe-selection.mjs';
+  validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
+import { prepareReferenceSource } from '../src/references/reference-agent.mjs';
+import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');

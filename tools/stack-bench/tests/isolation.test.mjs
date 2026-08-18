@@ -7,7 +7,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const AGENT = join(ROOT, 'agent.mjs');
+const AGENT = join(ROOT, 'commands', 'agent.mjs');
 
 const args = app => [AGENT, '--mode', 'build', '--backend', 'spacetime', '--track', 'loop',
   '--level', '1', '--app', app];

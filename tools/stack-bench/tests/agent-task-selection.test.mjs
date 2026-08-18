@@ -5,15 +5,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { agentRecipeRequest, agentScenarioPaths } from '../agent.mjs';
-import { resolveGuidanceProfile } from '../condition-compiler.mjs';
+import { agentRecipeRequest, agentScenarioPaths } from '../commands/agent.mjs';
+import { resolveGuidanceProfile } from '../src/campaigns/condition-compiler.mjs';
 import { createAgentVisibleTaskRequest, createBoundRecipeTaskRequest,
-  createRecipeTaskRequest } from '../recipe-selection.mjs';
-import { resolveRecipeRelease } from '../recipe-release.mjs';
-import { loadTrack } from '../tracks.mjs';
+  createRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
-const AGENT = join(ROOT, 'agent.mjs');
+const AGENT = join(ROOT, 'commands', 'agent.mjs');
 const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1);
 
 function printPrompt(app, request, extraArgs = []) {

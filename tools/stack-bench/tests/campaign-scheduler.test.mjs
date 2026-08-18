@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileCampaignFile } from '../campaign-compiler.mjs';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
 import { claimNextAttempt, createCampaignState, finishCampaignExecution,
   initializeCampaignDirectory, markInterruptedExecution, readCampaignState,
-  validateCampaignState, writeCampaignState } from '../campaign-scheduler.mjs';
+  validateCampaignState, writeCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
 const plan = () => compileCampaignFile(example);

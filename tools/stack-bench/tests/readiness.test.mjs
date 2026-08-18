@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchStatus } from '../readiness.mjs';
+import { fetchStatus } from '../src/runtime/readiness.mjs';
 
 test('a readiness fetch that never settles terminates at its explicit deadline', async () => {
   const started = Date.now();

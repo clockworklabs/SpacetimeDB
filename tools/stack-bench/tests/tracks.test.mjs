@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import test from 'node:test';
 
-import { levelPrompt, listTracks, loadTrack, suitesFor } from '../tracks.mjs';
+import { levelPrompt, listTracks, loadTrack, suitesFor } from '../src/composition/tracks.mjs';
 
 test('every validated track level has a prompt and declared scenario files', () => {
   for (const name of listTracks()) {

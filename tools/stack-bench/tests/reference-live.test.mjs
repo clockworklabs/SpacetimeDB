@@ -6,12 +6,12 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
   referenceQualificationPaths, referenceQualificationRunner, referenceQualificationSelectionArgs,
-  referenceQualificationWorkRoot, rescueSupervisedLease, runBounded } from '../reference-live.mjs';
-import { writeArtifact, writeRunJson } from '../artifacts.mjs';
-import { createCheckEvidence } from '../check-evidence.mjs';
-import { createBoundRecipeTaskRequest } from '../recipe-selection.mjs';
-import { resolveRecipeRelease } from '../recipe-release.mjs';
-import { loadTrack } from '../tracks.mjs';
+  referenceQualificationWorkRoot, rescueSupervisedLease, runBounded } from '../src/references/reference-live.mjs';
+import { writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
 
 const fixture = { backend: 'mongodb', track: 'ecommerce', level: 1,
   imported: { sourceSha256: 'a'.repeat(64) } };

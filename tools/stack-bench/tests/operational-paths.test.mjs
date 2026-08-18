@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { operationalOutputRoot } from '../operational-paths.mjs';
+import { operationalOutputRoot } from '../src/runtime/operational-paths.mjs';
 
 const STACK_BENCH_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -46,7 +46,7 @@ test('transcript archiving creates its default directory under durable results',
   t.after(() => rmSync(isolatedHome, { recursive: true, force: true }));
 
   execFileSync(process.execPath, [
-    join(STACK_BENCH_ROOT, 'archive-transcripts.mjs'),
+    join(STACK_BENCH_ROOT, 'commands', 'archive-transcripts.mjs'),
     '--app', join(resultsRoot, 'no-transcript-app'),
     '--label', 'path-test',
   ], {

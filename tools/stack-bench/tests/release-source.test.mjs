@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { releaseSourceIdentity, releaseSourceRoot } from '../release-source.mjs';
+import { releaseSourceIdentity, releaseSourceRoot } from '../src/releases/release-source.mjs';
 
 test('the release-source CLI anchors itself to the repository instead of the caller cwd', () => {
   assert.equal(releaseSourceRoot(), realpathSync(join(import.meta.dirname, '..', '..', '..')));
@@ -14,7 +14,7 @@ function repository() {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-'));
   const files = ['.dockerignore', 'licenses/BSL.txt', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
     'crates/bindings-typescript/package.json', 'skills/typescript-server/SKILL.md',
-    'tools/stack-bench/bench.mjs'];
+    'tools/stack-bench/commands/bench.mjs'];
   for (const path of files) {
     const absolute = join(root, ...path.split('/'));
     mkdirSync(dirname(absolute), { recursive: true });
@@ -44,7 +44,7 @@ test('release source identity hashes only the exact tracked build inputs', () =>
     assert.equal(before.paths.includes('skills'), true);
     writeFileSync(join(root, 'tools', 'stack-bench', 'JOURNAL.local.md'), 'different local notes\n');
     assert.deepEqual(releaseSourceIdentity(root, { runGit: git(files) }), before);
-    writeFileSync(join(root, 'tools', 'stack-bench', 'bench.mjs'), 'changed tracked input\n');
+    writeFileSync(join(root, 'tools', 'stack-bench', 'commands', 'bench.mjs'), 'changed tracked input\n');
     assert.notEqual(releaseSourceIdentity(root, { runGit: git(files) }).sha256, before.sha256);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -53,7 +53,7 @@ test('release source identity refuses a changed or untracked release input', () 
   const { root, files } = repository();
   try {
     assert.throws(() => releaseSourceIdentity(root, { runGit: git(files,
-      { changed: ' M tools/stack-bench/bench.mjs\n?? tools/stack-bench/local.mjs\n' }) }),
+      { changed: ' M tools/stack-bench/commands/bench.mjs\n?? tools/stack-bench/local.mjs\n' }) }),
     /release source paths are not clean/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

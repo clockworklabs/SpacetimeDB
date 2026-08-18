@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 
-import { createArtifact, currentEngineIdentity, recipeArtifactIdentities, writeArtifact } from '../artifacts.mjs';
-import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../calibration-compiler.mjs';
-import { PACK_RUNTIME_METRIC } from '../pack-runtime.mjs';
+import { createArtifact, currentEngineIdentity, recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
+import { PACK_RUNTIME_METRIC } from '../src/composition/pack-runtime.mjs';
 import { loadPackBudgetEvidence, PACK_BUDGET_POLICY, parsePackBudgetArgs,
-  recommendPackBudgets } from '../pack-budget.mjs';
-import { resolveRecipeRelease } from '../recipe-release.mjs';
-import { loadTrack } from '../tracks.mjs';
+  recommendPackBudgets } from '../src/composition/pack-budget.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
 
 const track = loadTrack('ecommerce');
 const binding = resolveRecipeRelease(track, 1);

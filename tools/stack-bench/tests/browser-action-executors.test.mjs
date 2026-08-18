@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ACTION_REGISTRY } from '../action-catalog.mjs';
-import { createActionRunContext, executeAction } from '../action-contract.mjs';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
+import { createActionRunContext, executeAction } from '../src/actions/action-contract.mjs';
 import {
   BROWSER_ACTION_IDS,
   BROWSER_ACTION_IMPLEMENTATIONS,
   parseRenderedNumber,
-} from '../browser-action-executors.mjs';
+} from '../src/actions/browser-action-executors.mjs';
 
 function services(actor, overrides = {}) {
   const recorded = new Map();

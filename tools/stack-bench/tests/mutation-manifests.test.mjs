@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { mutationEdits, mutationScenario, mutationTargetKeys,
-  validateMutationDefinitions } from '../mutation-analysis.mjs';
-import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../reference-fixtures.mjs';
+  validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
+import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../src/references/reference-fixtures.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MUTATIONS = join(ROOT, 'grader', 'mutations');

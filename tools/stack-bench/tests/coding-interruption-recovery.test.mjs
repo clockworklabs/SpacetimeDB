@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { aggregateCodingSessionResults, codingSessionInterruption,
-  parseCodingSessionResult, runCodingSessionWithRecovery } from '../agent.mjs';
-import { createBackendLease, readBackendLease, writeBackendLease } from '../backend-lease.mjs';
+  parseCodingSessionResult, runCodingSessionWithRecovery } from '../commands/agent.mjs';
+import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { recoverStoppedBuildContainer } from '../container/recover-build-container.mjs';
 
 test('provider mid-response errors resume the exact paid session', () => {

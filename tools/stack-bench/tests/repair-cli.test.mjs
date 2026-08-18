@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseRepairArgs } from '../repair-cli.mjs';
+import { parseRepairArgs } from '../commands/repair-cli.mjs';
 
 test('repair CLI separates inspection from one explicitly bounded grant', () => {
   const status = parseRepairArgs(['node', 'repair-cli.mjs', 'status', './run', '--level', '2']);

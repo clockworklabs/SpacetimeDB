@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { writeArtifact } from '../artifacts.mjs';
-import { createCheckEvidence } from '../check-evidence.mjs';
+import { writeArtifact } from '../src/evidence/artifacts.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 
-const CLI = join(import.meta.dirname, '..', 'compare-runs.mjs');
+const CLI = join(import.meta.dirname, '..', 'commands', 'compare-runs.mjs');
 const RECIPE = 'a'.repeat(64);
 
 function runDirectory(root, name, { selection = 'b'.repeat(64), identified = true } = {}) {

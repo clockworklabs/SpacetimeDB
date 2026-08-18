@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { createBoundRecipeTaskRequest } from '../recipe-selection.mjs';
-import { resolveRecipeRelease } from '../recipe-release.mjs';
+import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
-  applicationFailureTotals, resetFailureOutcome, suitesForRecipe } from '../run-suite.mjs';
-import { loadTrack } from '../tracks.mjs';
-import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../reset-backend.mjs';
+  applicationFailureTotals, resetFailureOutcome, suitesForRecipe } from '../commands/run-suite.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
+import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../commands/reset-backend.mjs';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 

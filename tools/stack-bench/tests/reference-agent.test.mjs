@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { parseReferenceAgentArgs, prepareReferenceSource,
-  referenceDevCommand } from '../reference-agent.mjs';
+  referenceDevCommand } from '../src/references/reference-agent.mjs';
 
 function argv({ mode = 'build', level = '2', runIndex = '0', recipe } = {}) {
   return ['node', 'reference-agent.mjs', '--mode', mode, '--backend', 'mongodb',
@@ -20,8 +20,8 @@ test('the model-free reference builder accepts any explicit positive level', () 
 });
 
 test('the shared adapter request forwards the exact recipe into reference selection', async () => {
-  const { agentRequestArgv } = await import('../agent-adapter-contract.mjs');
-  const { AGENT_ADAPTER_REGISTRY } = await import('../agent-adapters.mjs');
+  const { agentRequestArgv } = await import('../src/agents/agent-adapter-contract.mjs');
+  const { AGENT_ADAPTER_REGISTRY } = await import('../src/agents/agent-adapters.mjs');
   const command = agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('reference-fixture'), {
     mode: 'build', backend: 'mongodb', level: 1, app: '/work/reference',
     track: 'ecommerce', runIndex: 0, model: 'reference-fixture',

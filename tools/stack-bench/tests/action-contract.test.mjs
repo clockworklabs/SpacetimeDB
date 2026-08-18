@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { ACTION_REGISTRY, legacyActionPlugin } from '../action-catalog.mjs';
+import { ACTION_REGISTRY, legacyActionPlugin } from '../src/actions/action-catalog.mjs';
 import {
   ACTION_EVIDENCE_SCHEMA_VERSION,
   ACTION_INPUT_SCHEMA_VERSION,
@@ -13,8 +13,8 @@ import {
   createActionRegistry,
   createActionRunContext,
   executeAction,
-} from '../action-contract.mjs';
-import { ACTION_IDS } from '../definition-compiler.mjs';
+} from '../src/actions/action-contract.mjs';
+import { ACTION_IDS } from '../src/composition/definition-compiler.mjs';
 
 const fixture = JSON.parse(readFileSync(
   join(import.meta.dirname, 'fixtures', 'definitions', 'all-actions.json'), 'utf8'));

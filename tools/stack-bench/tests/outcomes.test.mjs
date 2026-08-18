@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
-  mutationControlEligible, runExitCode } from '../outcomes.mjs';
-import { createCheckEvidence } from '../check-evidence.mjs';
+  mutationControlEligible, runExitCode } from '../src/evidence/outcomes.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 
 const bundle = criteria => ({ totals: { score: 1, max: 2 }, suites: {
   feature: { features: [{ id: 'f', criteria }] }, lint: { pass: true },

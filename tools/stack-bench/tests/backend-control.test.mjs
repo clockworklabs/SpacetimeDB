@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { captureBackendDiagnostics, controlBackend, hostedStopScript } from '../backend-control.mjs';
-import { createBackendLease, writeBackendLease } from '../backend-lease.mjs';
+import { captureBackendDiagnostics, controlBackend, hostedStopScript } from '../src/runtime/backend-control.mjs';
+import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 
 test('backend control refuses without an authenticated lease', async () => {
   const priorPath = process.env.STACK_BENCH_LEASE;

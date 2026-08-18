@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { summarizeSessions } from '../session-metrics.mjs';
+import { summarizeSessions } from '../src/evidence/session-metrics.mjs';
 
 test('session totals include build and every fix without treating missing metrics as data', () => {
   const totals = summarizeSessions([

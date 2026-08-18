@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { createArtifact, readArtifact } from '../artifacts.mjs';
-import { preserveLevelCheckpoint } from '../source-checkpoint.mjs';
+import { createArtifact, readArtifact } from '../src/evidence/artifacts.mjs';
+import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.mjs';
 
 test('a level checkpoint preserves only source and binds it to the parent run', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-level-checkpoint-'));

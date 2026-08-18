@@ -30,8 +30,8 @@ import { dirname, join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { emptyArtifactIdentities, readArtifactPayload, writeRunJson } from "../artifacts.mjs";
-import { controlBackend } from "../backend-control.mjs";
+import { emptyArtifactIdentities, readArtifactPayload, writeRunJson } from "../src/evidence/artifacts.mjs";
+import { controlBackend } from "../src/runtime/backend-control.mjs";
 import {
   classifyMutationResult,
   groupMutationsByScenario,
@@ -41,13 +41,13 @@ import {
   resolveMutationFile,
   validateMutationBaseline,
   validateMutationDefinitions,
-} from "../mutation-analysis.mjs";
-import { dbName, loadTrack } from "../tracks.mjs";
-import { resolveRecipeRelease } from "../recipe-release.mjs";
-import { resetBackend } from "../reset-backend.mjs";
-import { fetchStatus } from "../readiness.mjs";
-import { executeStackCapability } from "../stack-adapter-contract.mjs";
-import { STACK_ADAPTER_REGISTRY } from "../stack-adapters.mjs";
+} from "../src/evidence/mutation-analysis.mjs";
+import { dbName, loadTrack } from "../src/composition/tracks.mjs";
+import { resolveRecipeRelease } from "../src/composition/recipe-release.mjs";
+import { resetBackend } from "../commands/reset-backend.mjs";
+import { fetchStatus } from "../src/runtime/readiness.mjs";
+import { executeStackCapability } from "../src/stacks/stack-adapter-contract.mjs";
+import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.mjs";
 
 // Resolve tooling relative to this file so the runner works from any directory.
 const HERE = dirname(fileURLToPath(import.meta.url));

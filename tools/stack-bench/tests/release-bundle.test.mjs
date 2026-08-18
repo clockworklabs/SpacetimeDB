@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { generateSpdxImageSbom, materializeReleaseManifest } from '../release-bundle.mjs';
-import { RELEASE_MANIFEST_SCHEMA_VERSION } from '../release-manifest.mjs';
+import { generateSpdxImageSbom, materializeReleaseManifest } from '../src/releases/release-bundle.mjs';
+import { RELEASE_MANIFEST_SCHEMA_VERSION } from '../src/releases/release-manifest.mjs';
 
 const digest = 'a'.repeat(64);
 const reference = `registry.example/controller@sha256:${digest}`;
@@ -51,7 +51,7 @@ test('SBOM generation leaves no output after invalid or unbound tool output', ()
 });
 
 test('release bundle CLI rejects unknown and duplicate options', () => {
-  const script = join(import.meta.dirname, '..', 'release-bundle.mjs');
+  const script = join(import.meta.dirname, '..', 'src', 'releases', 'release-bundle.mjs');
   const unknown = spawnSync(process.execPath, [script, 'sbom', reference,
     '--output', 'x', '--surprise', 'y'], { encoding: 'utf8' });
   assert.equal(unknown.status, 2);

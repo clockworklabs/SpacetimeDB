@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { createBackendLease, writeBackendLease } from '../backend-lease.mjs';
+import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_DIR = join(HERE, '..');

@@ -3,10 +3,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { ACTION_IDS, compileScenarioDefinition } from '../definition-compiler.mjs';
-import { checkDefinitionGoldens } from '../definition-goldens.mjs';
-import { canonicalDefinitionJson } from '../definition-plan.mjs';
-import { TRACKS_DIR } from '../tracks.mjs';
+import { ACTION_IDS, compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { checkDefinitionGoldens } from '../commands/definition-goldens.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { TRACKS_DIR } from '../src/composition/tracks.mjs';
 
 test('committed normalized definition plans have no semantic drift', () => {
   assert.deepEqual(checkDefinitionGoldens(), { checked: 4, changed: [] });

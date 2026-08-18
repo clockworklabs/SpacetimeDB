@@ -21,36 +21,36 @@ import { chromium } from 'playwright';
 import { readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { harnessBrowserFailure, harnessProcessFailure } from '../harness-errors.mjs';
-import { compileScenarioDefinition } from '../definition-compiler.mjs';
-import { loadTrack } from '../tracks.mjs';
-import { recipeArtifactIdentities, writeArtifact } from '../artifacts.mjs';
-import { resolveCalibrationForRelease } from '../calibration-compiler.mjs';
-import { resolveGradeRecipeArtifactBinding } from '../recipe-release.mjs';
-import { selectScenarioChecks } from '../recipe-selection.mjs';
-import { ACTION_REGISTRY } from '../action-catalog.mjs';
-import { createActionRunContext, executeAction } from '../action-contract.mjs';
-import { createCheckEvidence, evidenceDisposition, evidenceIsMeasured, evidencePassed } from '../check-evidence.mjs';
-import { evidenceNowMs } from '../evidence-timing.mjs';
-import { renderEvidenceConsoleLine } from '../evidence-presentation.mjs';
-import { measureGradePackRuntime } from '../pack-runtime.mjs';
-import { executeStackCapability } from '../stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../stack-adapters.mjs';
+import { harnessBrowserFailure, harnessProcessFailure } from '../src/evidence/harness-errors.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
+import { recipeArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
+import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-release.mjs';
+import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
+import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
+import { createActionRunContext, executeAction } from '../src/actions/action-contract.mjs';
+import { createCheckEvidence, evidenceDisposition, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.mjs';
+import { evidenceNowMs } from '../src/evidence/evidence-timing.mjs';
+import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.mjs';
+import { measureGradePackRuntime } from '../src/composition/pack-runtime.mjs';
+import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import {
   BROWSER_ACTION_IDS,
   BROWSER_ACTION_IMPLEMENTATIONS,
-} from '../browser-action-executors.mjs';
+} from '../src/actions/browser-action-executors.mjs';
 import {
   ACTOR_TRANSPORT_ACTION_IDS,
   ACTOR_TRANSPORT_ACTION_IMPLEMENTATIONS,
   createNamedActionsCapability,
-} from '../actor-transport-action-executors.mjs';
+} from '../src/actions/actor-transport-action-executors.mjs';
 import {
   createDatabaseWriteCapability,
   createLifecycleCapability,
   LIFECYCLE_CONCURRENCY_ACTION_IDS,
   LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
-} from '../lifecycle-concurrency-action-executors.mjs';
+} from '../src/actions/lifecycle-concurrency-action-executors.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_WITHIN = 5000;

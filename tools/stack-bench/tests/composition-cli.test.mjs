@@ -6,12 +6,12 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { diffRecipeFiles, selectRecipeRelease, validatePackFile,
-  validateRecipeFile, showRecipeFile } from '../composition-cli.mjs';
-import { hashDirectory } from '../provenance.mjs';
-import { loadTrack } from '../tracks.mjs';
+  validateRecipeFile, showRecipeFile } from '../commands/composition-cli.mjs';
+import { hashDirectory } from '../src/evidence/provenance.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
 
 const SOURCE = loadTrack('ecommerce').dir;
-const CLI = join(import.meta.dirname, '..', 'composition-cli.mjs');
+const CLI = join(import.meta.dirname, '..', 'commands', 'composition-cli.mjs');
 
 test('pack and recipe validation resolve their full source context without writing', () => {
   const before = hashDirectory(SOURCE);

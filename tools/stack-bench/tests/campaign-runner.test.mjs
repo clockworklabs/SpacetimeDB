@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileCampaignFile } from '../campaign-compiler.mjs';
-import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../artifacts.mjs';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
+import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../src/evidence/artifacts.mjs';
 import { attemptArgv, campaignExecutionEnvironment, campaignSlotEnvironment, executeCampaign,
-  reconcileCampaign, runCampaignAdmission, validateCampaignRun } from '../campaign-runner.mjs';
-import { sha256 } from '../provenance.mjs';
+  reconcileCampaign, runCampaignAdmission, validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
+import { sha256 } from '../src/evidence/provenance.mjs';
 import { claimNextAttempt, initializeCampaignDirectory,
-  writeCampaignState } from '../campaign-scheduler.mjs';
+  writeCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
 const productBrief = join(import.meta.dirname, '..', 'appliance',
@@ -368,7 +368,7 @@ test('failed campaign admission leaves every attempt pending and unclaimed', asy
       admit: () => ({ id: 'failed-admission', payload: { ok: false } }),
       execute: async () => { throw new Error('must not launch'); },
     }), /admission failed/);
-    const { readCampaignState } = await import('../campaign-scheduler.mjs');
+    const { readCampaignState } = await import('../src/campaigns/campaign-scheduler.mjs');
     const state = readCampaignState(root).state;
     assert.equal(state.status, 'prepared');
     assert.equal(state.summary.executions, 0);
@@ -424,7 +424,7 @@ test('model-free campaign execution checkpoints a retry and every completed atte
           stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log'),
         });
         const parent = argv[argv.indexOf('--parent-attempt-id') + 1];
-        const { emptyArtifactIdentities, writeRunJson } = await import('../artifacts.mjs');
+        const { emptyArtifactIdentities, writeRunJson } = await import('../src/evidence/artifacts.mjs');
         if (calls.length === 1) return { code: 1, timedOut: false };
         const completedAt = new Date().toISOString();
         const attempt = planned.attempts.find(item => item.id === parent);
@@ -496,7 +496,7 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
         const agent = planned.agents.find(item => item.adapter === attempt.agentAdapter);
         const stack = planned.stacks.find(item => item.id === attempt.stack);
         const completedAt = new Date().toISOString();
-        const { writeRunJson } = await import('../artifacts.mjs');
+        const { writeRunJson } = await import('../src/evidence/artifacts.mjs');
         writeRunJson(join(output, 'run.json'), { id: `parallel-${runIndex}`,
           parentAttemptId: parent, startedAt: completedAt, completedAt,
           identities: emptyArtifactIdentities({ agentAdapter: agent.identity,

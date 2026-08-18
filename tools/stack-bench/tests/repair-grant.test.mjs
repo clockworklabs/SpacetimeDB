@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { emptyArtifactIdentities, writeRunJson } from '../artifacts.mjs';
-import { compareRepairBaseline, createRepairGrant, inspectRepairParent } from '../repair-grant.mjs';
-import { preserveLevelCheckpoint } from '../source-checkpoint.mjs';
+import { emptyArtifactIdentities, writeRunJson } from '../src/evidence/artifacts.mjs';
+import { compareRepairBaseline, createRepairGrant, inspectRepairParent } from '../src/runtime/repair-grant.mjs';
+import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.mjs';
 
 function parentFixture(root, overrides = {}) {
   const app = join(root, 'app');

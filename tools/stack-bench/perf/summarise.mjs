@@ -11,7 +11,7 @@
 
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { readArtifactPayload } from '../artifacts.mjs';
+import { readArtifactPayload } from '../src/evidence/artifacts.mjs';
 
 const dir = process.argv[2];
 if (!dir) { console.error('Usage: node summarise.mjs <dir>'); process.exit(2); }

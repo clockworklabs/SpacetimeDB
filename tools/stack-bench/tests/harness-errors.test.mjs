@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { harnessBrowserFailure, harnessProcessFailure } from '../harness-errors.mjs';
+import { harnessBrowserFailure, harnessProcessFailure } from '../src/evidence/harness-errors.mjs';
 
 test('child-process timeouts are harness failures, not application findings', () => {
   const error = Object.assign(new Error('spawnSync docker ETIMEDOUT'), {

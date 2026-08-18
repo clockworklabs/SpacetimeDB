@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { writeArtifact } from '../artifacts.mjs';
-import { createCheckEvidence } from '../check-evidence.mjs';
+import { writeArtifact } from '../src/evidence/artifacts.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 
-const CLI = join(import.meta.dirname, '..', 'report-bugs.mjs');
+const CLI = join(import.meta.dirname, '..', 'commands', 'report-bugs.mjs');
 
 function writeGrade(app, status, summary, { grading = join(app, 'stack-bench'),
   feature = 'Accounts', points = 1 } = {}) {

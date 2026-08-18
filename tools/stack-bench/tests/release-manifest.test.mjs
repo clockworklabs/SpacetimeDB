@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { sha256 } from '../provenance.mjs';
+import { sha256 } from '../src/evidence/provenance.mjs';
 import { RELEASE_MANIFEST_SCHEMA_VERSION, validateReleaseManifest,
-  verifyReleaseBundle } from '../release-manifest.mjs';
+  verifyReleaseBundle } from '../src/releases/release-manifest.mjs';
 
 const roles = ['controller', 'build-sandbox', 'postgres', 'mongodb'];
 

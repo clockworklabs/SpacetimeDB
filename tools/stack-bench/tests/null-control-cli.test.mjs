@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { compileScenarioDefinition } from '../definition-compiler.mjs';
-import { nullControlSuites, parseNullControlArgs } from '../null-control.mjs';
-import { resolveRecipeRelease } from '../recipe-release.mjs';
-import { selectScenarioChecks } from '../recipe-selection.mjs';
-import { loadTrack } from '../tracks.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
+import { nullControlSuites, parseNullControlArgs } from '../commands/null-control.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
 
 test('null qualification can select one exact track and level', () => {
   const args = parseNullControlArgs(['node', 'null-control.mjs',

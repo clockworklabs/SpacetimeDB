@@ -15,8 +15,8 @@ import {
   releaseResourceLocks,
   updateBackendLease,
   writeBackendLease,
-} from '../backend-lease.mjs';
-import { releaseBackendLease } from '../backend-teardown.mjs';
+} from '../src/runtime/backend-lease.mjs';
+import { releaseBackendLease } from '../src/runtime/backend-teardown.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -200,7 +200,7 @@ test('listener operations refuse a process not captured by the lease', async () 
     lease.resources.listenerPids = [process.pid + 1000];
     writeBackendLease(path, lease);
     assert.throws(() => execFileSync(process.execPath,
-      [join(HERE, '..', 'lease-cli.mjs'), 'listener-pid', 'spacetime'], {
+      [join(HERE, '..', 'commands', 'lease-cli.mjs'), 'listener-pid', 'spacetime'], {
         env: { ...process.env, STACK_BENCH_LEASE: path,
           STACK_BENCH_LEASE_TOKEN: lease.ownershipToken },
         stdio: 'pipe',

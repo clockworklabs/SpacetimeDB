@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../reference-fixtures.mjs';
+import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../src/references/reference-fixtures.mjs';
 
 const fixtures = new Map(loadReferenceRegistry().fixtures
   .filter(fixture => fixture.id.startsWith('ecommerce-l2-server-actions-'))

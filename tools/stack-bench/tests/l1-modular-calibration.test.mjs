@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { compileCalibrationFile } from '../calibration-compiler.mjs';
-import { loadReferenceRegistry, validateReferenceRegistry } from '../reference-fixtures.mjs';
-import { buildRecipeRelease } from '../recipe-release.mjs';
+import { compileCalibrationFile } from '../src/composition/calibration-compiler.mjs';
+import { loadReferenceRegistry, validateReferenceRegistry } from '../src/references/reference-fixtures.mjs';
+import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 
 const BENCH = join(import.meta.dirname, '..');
 const TRACK = join(BENCH, 'tracks', 'ecommerce');

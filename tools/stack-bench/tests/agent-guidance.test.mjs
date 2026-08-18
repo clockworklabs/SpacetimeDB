@@ -3,9 +3,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { readBackendGuidanceDocument } from '../agent.mjs';
-import { normalizePromptText } from '../agent-materials.mjs';
-import { sha256 } from '../provenance.mjs';
+import { readBackendGuidanceDocument } from '../commands/agent.mjs';
+import { normalizePromptText } from '../src/agents/agent-materials.mjs';
+import { sha256 } from '../src/evidence/provenance.mjs';
 
 const documentPath = 'backends/postgres.md';
 const absolute = join(import.meta.dirname, '..', documentPath);

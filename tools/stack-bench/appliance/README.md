@@ -33,7 +33,7 @@ From a clean repository checkout, compute the exact tracked release-source
 identity and build Linux/amd64:
 
 ```powershell
-$source = node tools/stack-bench/release-source.mjs --json | ConvertFrom-Json
+$source = node tools/stack-bench/src/releases/release-source.mjs --json | ConvertFrom-Json
 docker build --platform linux/amd64 `
   -f tools/stack-bench/appliance/Controller.Dockerfile `
   --build-arg SOURCE_REVISION=$($source.revision) `

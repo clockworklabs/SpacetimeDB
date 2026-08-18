@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createModularRecipeTaskRequest, resolveModularRecipeSelection,
-  resolveModularRecipeTaskRequest } from '../recipe-selection.mjs';
+  resolveModularRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 
 const module = (id, moduleType, requiresPacks = []) => ({
   id, version: '1.0.0', moduleType, requiresPacks,

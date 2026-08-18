@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { AGENT_ADAPTER_SCHEMA_VERSION, agentRecipeIdentity, agentRequestArgv, createAgentAdapterRegistry,
-  agentSessionFailure, defineAgentAdapter, validateAgentResult } from '../agent-adapter-contract.mjs';
-import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../agent-adapters.mjs';
+  agentSessionFailure, defineAgentAdapter, validateAgentResult } from '../src/agents/agent-adapter-contract.mjs';
+import { AGENT_ADAPTER_REGISTRY, agentAdapterIdentity } from '../src/agents/agent-adapters.mjs';
 
 const request = { mode: 'build', level: 1, app: 'C:\\bench\\app', backend: 'stub',
   track: 'loop', runIndex: 0, model: 'deterministic', guidance: 'prescribed', skills: null };

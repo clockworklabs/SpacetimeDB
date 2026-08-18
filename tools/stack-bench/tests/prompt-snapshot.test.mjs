@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { verifyPromptSnapshot } from '../prompt-snapshot.mjs';
+import { verifyPromptSnapshot } from '../commands/prompt-snapshot.mjs';
 
 test('the exact model prompts match the reviewed, symmetric L1/L2 guidance snapshot without Docker', () => {
   const snapshot = verifyPromptSnapshot();

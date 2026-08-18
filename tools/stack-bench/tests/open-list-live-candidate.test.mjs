@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import test from 'node:test';
 import ts from 'typescript';
 
-import { compileScenarioDefinition } from '../definition-compiler.mjs';
+import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { mutationEdits, mutationScenario, mutationTargetKeys,
-  validateMutationDefinitions } from '../mutation-analysis.mjs';
-import { prepareReferenceSource } from '../reference-agent.mjs';
+  validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
+import { prepareReferenceSource } from '../src/references/reference-agent.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const SCENARIO_RELATIVE = 'tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json';
