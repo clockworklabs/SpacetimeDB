@@ -73,6 +73,18 @@ function readRecord(path) {
   return validateRecord(parsed, path);
 }
 
+export function campaignLockIsActive(directory, campaign,
+  { currentInstance = controllerInstance(), alive = ownerAlive } = {}) {
+  const path = join(resolve(directory), '.campaign.lock.json');
+  const record = readRecord(path);
+  if (record === null) return false;
+  if (!campaign || record.campaignId !== campaign.id
+    || record.campaignSha256 !== campaign.contentSha256) {
+    fail(`${path} does not belong to the stored campaign`);
+  }
+  return alive(record, currentInstance);
+}
+
 export function acquireCampaignLock(directory, campaign,
   { ownerPid = process.pid, ownerInstance = controllerInstance(), now = new Date().toISOString(), alive = ownerAlive,
     uuid = randomUUID } = {}) {

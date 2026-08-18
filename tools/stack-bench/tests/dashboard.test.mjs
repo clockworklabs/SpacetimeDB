@@ -105,6 +105,15 @@ test('dashboard can display an in-flight schema-1 campaign without reopening it 
   assert.equal(summary.maxParallel, 1);
   assert.equal(summary.attempts[0].progress.phase, 'Repairing L1 · round 1 of 3');
   assert.deepEqual(summary.attempts[0].progress.latestScore, { score: 31, max: 58 });
+
+  const interrupted = summarizeCampaign(root, { controllerActive: () => false });
+  assert.equal(interrupted.status, 'attention-required');
+  assert.equal(interrupted.interrupted, true);
+  assert.equal(interrupted.summary.running, 0);
+  assert.equal(interrupted.summary.interrupted, 1);
+  assert.equal(interrupted.attempts[0].status, 'interrupted');
+  assert.equal(interrupted.attempts[0].execution.status, 'interrupted');
+  assert.equal(interrupted.attempts[0].progress.phase, 'Controller stopped before completion');
 });
 
 test('dashboard keeps a schema-2 campaign readable after the controller is upgraded', t => {

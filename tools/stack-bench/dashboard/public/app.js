@@ -7,7 +7,8 @@ const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character =>
 })[character]);
 const title = value => ({ postgres: 'PostgreSQL', mongodb: 'MongoDB', spacetime: 'SpacetimeDB' }[value] ?? value);
 const statusLabel = value => ({ running: 'Running', completed: 'Completed', prepared: 'Ready',
-  'attention-required': 'Needs attention', invalid: 'Invalid run', unreadable: 'Cannot read' }[value] ?? value);
+  'attention-required': 'Needs attention', interrupted: 'Interrupted',
+  invalid: 'Invalid run', unreadable: 'Cannot read' }[value] ?? value);
 const relativeTime = value => {
   if (!value) return '—';
   const seconds = Math.max(0, (Date.now() - Date.parse(value)) / 1000);

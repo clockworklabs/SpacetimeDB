@@ -5,6 +5,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 
 import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.mjs';
 import { compileCampaignFile, validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
+import { campaignLockIsActive } from '../src/campaigns/campaign-lock.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { readCampaignState, validateCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 
@@ -312,17 +313,31 @@ function summarizeAttempt(attempt, campaignDirectory, fixRounds, { includeLog = 
   };
 }
 
-export function summarizeCampaign(directory, { includeLogs = false, includePackage = false } = {}) {
+export function summarizeCampaign(directory, {
+  includeLogs = false,
+  includePackage = false,
+  controllerActive = null,
+} = {}) {
   const { plan, state } = readDashboardCampaignState(directory);
-  const attempts = state.attempts.map(attempt => summarizeAttempt(attempt, directory,
+  let attempts = state.attempts.map(attempt => summarizeAttempt(attempt, directory,
     plan.definition.budgets.fixRounds, { includeLog: includeLogs }));
+  const interrupted = state.status === 'running' && controllerActive !== null
+    && !controllerActive(directory, plan);
+  if (interrupted) {
+    attempts = attempts.map(attempt => attempt.status !== 'running' ? attempt : ({
+      ...attempt,
+      status: 'interrupted',
+      execution: attempt.execution ? { ...attempt.execution, status: 'interrupted' } : null,
+      progress: { ...attempt.progress, phase: 'Controller stopped before completion' },
+    }));
+  }
   return {
     key: basename(resolve(directory)),
     id: plan.id,
     version: plan.version,
     title: plan.title,
     state: plan.state,
-    status: state.status,
+    status: interrupted ? 'attention-required' : state.status,
     track: plan.definition.track,
     levels: plan.definition.levels,
     stacks: plan.stacks.map(stack => stack.id),
@@ -330,14 +345,20 @@ export function summarizeCampaign(directory, { includeLogs = false, includePacka
     maxParallel: state.maxParallel,
     createdAt: state.createdAt,
     updatedAt: state.updatedAt,
-    summary: state.summary,
+    summary: interrupted ? { ...state.summary, interrupted: state.summary.running, running: 0 }
+      : state.summary,
+    interrupted,
+    ...(interrupted ? { statusReason: 'The campaign controller is no longer running.' } : {}),
     budgets: plan.definition.budgets,
     attempts,
     ...(includePackage ? { package: campaignPackage(directory, state.attempts) } : {}),
   };
 }
 
-export function discoverCampaigns(campaignsRoot, { includeLogs = false } = {}) {
+export function discoverCampaigns(campaignsRoot, {
+  includeLogs = false,
+  controllerActive = campaignLockIsActive,
+} = {}) {
   if (!existsSync(campaignsRoot)) return [];
   const campaigns = [];
   for (const entry of readdirSync(campaignsRoot, { withFileTypes: true })) {
@@ -345,7 +366,7 @@ export function discoverCampaigns(campaignsRoot, { includeLogs = false } = {}) {
     const directory = join(campaignsRoot, entry.name);
     if (!existsSync(join(directory, 'state.json')) || !existsSync(join(directory, 'plan.json'))) continue;
     try {
-      campaigns.push(summarizeCampaign(directory, { includeLogs }));
+      campaigns.push(summarizeCampaign(directory, { includeLogs, controllerActive }));
     } catch (error) {
       campaigns.push({ key: entry.name, id: entry.name, title: entry.name,
         status: 'unreadable', error: error.message, attempts: [] });
@@ -376,9 +397,14 @@ export function discoverPlans(plansRoot) {
   return plans.sort((left, right) => left.title.localeCompare(right.title));
 }
 
-export function readDashboardOverview({ resultsRoot, plansRoot, operations = [] }) {
+export function readDashboardOverview({
+  resultsRoot,
+  plansRoot,
+  operations = [],
+  controllerActive = campaignLockIsActive,
+}) {
   const campaignsRoot = join(resolve(resultsRoot), 'campaigns');
-  const campaigns = discoverCampaigns(campaignsRoot);
+  const campaigns = discoverCampaigns(campaignsRoot, { controllerActive });
   const plans = discoverPlans(plansRoot);
   const counts = {
     running: campaigns.filter(campaign => campaign.status === 'running').length,
@@ -390,10 +416,10 @@ export function readDashboardOverview({ resultsRoot, plansRoot, operations = [] 
     operations };
 }
 
-export function campaignDetail(resultsRoot, key) {
+export function campaignDetail(resultsRoot, key, { controllerActive = campaignLockIsActive } = {}) {
   if (!/^[a-z0-9][a-z0-9.-]*$/.test(key)) throw new Error('campaign key is invalid');
   return summarizeCampaign(contained(join(resolve(resultsRoot), 'campaigns'), key, 'campaign'),
-    { includeLogs: true, includePackage: true });
+    { includeLogs: true, includePackage: true, controllerActive });
 }
 
 export function readJsonLines(path) {

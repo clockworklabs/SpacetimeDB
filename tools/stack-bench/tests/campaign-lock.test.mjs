@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { acquireCampaignLock, controllerInstance, releaseCampaignLock } from '../src/campaigns/campaign-lock.mjs';
+import { acquireCampaignLock, campaignLockIsActive, controllerInstance,
+  releaseCampaignLock } from '../src/campaigns/campaign-lock.mjs';
 
 const campaign = { id: 'ecommerce-l1-example', contentSha256: 'a'.repeat(64) };
 
@@ -97,6 +98,23 @@ test('a live controller in a different container retains its lock', () => {
       ownerInstance: 'replacement-container', alive: record => record.ownerInstance === 'running-container' }),
     /already controlled by running-container pid 14/);
     assert.equal(releaseCampaignLock(first), true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('campaign lock liveness is read without changing stale ownership evidence', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-lock-status-'));
+  try {
+    assert.equal(campaignLockIsActive(root, campaign, { currentInstance: 'dashboard',
+      alive: () => true }), false);
+    const lock = acquireCampaignLock(root, campaign, { ownerPid: 14,
+      ownerInstance: 'campaign-controller', uuid: () => 'campaign-token', alive: () => false });
+    assert.equal(campaignLockIsActive(root, campaign, { currentInstance: 'dashboard',
+      alive: record => record.ownerInstance === 'campaign-controller' }), true);
+    assert.equal(campaignLockIsActive(root, campaign, { currentInstance: 'dashboard',
+      alive: () => false }), false);
+    assert.throws(() => campaignLockIsActive(root,
+      { ...campaign, contentSha256: 'b'.repeat(64) }, { alive: () => true }), /does not belong/);
+    assert.equal(releaseCampaignLock(lock), true);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
