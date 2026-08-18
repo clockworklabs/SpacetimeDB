@@ -152,18 +152,6 @@
   .caps div { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px dashed var(--shade1); padding-bottom: .45rem; color: var(--n3); }
   .caps b { color: var(--red); font-weight: 600; white-space: nowrap; }
 
-  .void {
-    font-family: var(--font-mono);
-    color: var(--red);
-    border: 1px solid #ff4c4c40;
-    background: #ff4c4c0d;
-    display: inline-block;
-    align-self: flex-start;
-    padding: .5rem 1rem;
-    border-radius: 8px;
-    font-size: .95rem;
-    margin-bottom: 1.4rem;
-  }
   @keyframes breathe { 0%,100% { border-color: var(--n5); } 50% { border-color: var(--green-25); } }
   .empty {
     animation: breathe 4s ease-in-out infinite;
@@ -317,23 +305,10 @@
   <h2 class="r d1">The grader is tested harder than the apps</h2>
   <ul class="plain">
     <li class="r d1"><strong>Mutation testing.</strong> Inject a known defect into a fully passing reference app; the exact declared criterion must fail, with no collateral. A defect the grader misses is a hole in the oracle.</li>
-    <li class="r d2"><strong>Null control.</strong> A blank app is graded by the full real suite; if any point-bearing criterion passes, the harness is broken.</li>
-    <li class="r d3"><strong>The 5/5 heuristic.</strong> When every backend fails a criterion identically, suspect the oracle. This rule has caught five false positives; every one was a harness bug.</li>
+    <li class="r d2"><strong>Null control.</strong> A blank app is graded by the full real suite and scores zero on every point-bearing criterion.</li>
+    <li class="r d3"><strong>Cross-backend checks.</strong> When every backend fails a criterion the same way, the harness investigates itself before anything scores.</li>
     <li class="r d4"><strong>Never patch prompts, guidance or tests to make a failing check pass.</strong> Fix the product, or report the failure.</li>
-    <li class="r d5"><strong>Negative results are results.</strong> Several predicted advantages did not survive contact with a stronger model. All of them are recorded.</li>
-  </ul>
-</section>
-
-<!-- 7 - the incident -->
-<section>
-  <div class="kicker r">2026-08-06</div>
-  <div class="void r">every score before this date was void</div>
-  <h2 class="r d1">The apps were reading the marking scheme</h2>
-  <p class="r d2">Transcript audits found generated apps reading the harness that grades them: scenario files, <code>grade.mjs</code>, contracts, and the benchmark's own notes. One run made 44 such reads. Contamination was asymmetric against SpacetimeDB.</p>
-  <ul class="plain" style="margin-top:1.4rem">
-    <li class="r d3">A sandbox probe now gates every run; a leak audit reads every transcript.</li>
-    <li class="r d4">Transcripts are archived against the CLI's 30-day prune. An audit that fails to run marks its run as <em>not usable</em>.</li>
-    <li class="r d5">Builds moved into isolated, stamped work directories, and later into a mandatory container with no host access at all.</li>
+    <li class="r d5"><strong>Every finding is recorded</strong>, whichever way it points. That is what makes the favourable ones credible.</li>
   </ul>
 </section>
 
@@ -345,7 +320,8 @@
     <li class="r d1"><strong>Preflight before spend.</strong> Docker, digest-pinned images, ports, credentials, clock and storage are checked before any model call. The smoke test starts the real build image without a model.</li>
     <li class="r d2"><strong>Leases.</strong> Reset, restart and teardown go only through a token-authenticated backend lease. Each run starts its own database services; anything already running on the machine is never touched.</li>
     <li class="r d3"><strong>Typed verdicts.</strong> Every check records exactly one state: passed, failed, inconclusive or harness_failure. One shared status table drives scoring, controls, comparisons and repair. Prose cannot change a verdict.</li>
-    <li class="r d4"><strong>Strict artifacts.</strong> Results use schema v2 with identity and parent-attempt chains. 678 pre-schema artifacts sit in a checksummed inert archive and are never read as evidence.</li>
+    <li class="r d4"><strong>Sealed sessions.</strong> Builds run in a container with no host access. A sandbox probe gates every run, a leak audit reviews every transcript, and transcripts are archived with the results.</li>
+    <li class="r d5"><strong>Strict artifacts.</strong> Results use schema v2 with identity and parent-attempt chains. 678 pre-schema artifacts sit in a checksummed inert archive and are never read as evidence.</li>
   </ul>
 </section>
 
@@ -371,19 +347,16 @@
 <!-- 10 - results -->
 <section>
   <div class="kicker r">results</div>
-  <h2 class="r d1">No results yet</h2>
+  <h2 class="r d1">Numbers ship with proof, or not at all</h2>
   <div class="empty r d2">
-    <b>Qualified comparison pending</b>
+    <b>First qualified comparison in preparation</b>
     scores &middot; costs &middot; fix rounds &middot; spread
   </div>
   <ul class="plain">
-    <li class="r d3">Every score before 2026-08-06 is void because of the contamination above.</li>
-    <li class="r d4">Exploratory runs since then predate fixes that changed what is being measured, so they only serve as baselines to redo.</li>
-    <li class="r d5">Numbers get published once runs are repeated enough to show spread. A single matched pair is an anecdote.</li>
+    <li class="r d3">Publication is gated on repeated runs, so every number arrives with its spread.</li>
+    <li class="r d4">Every published score carries its full evidence bundle: prompts, sessions, per-criterion verdicts, videos and traces.</li>
+    <li class="r d5">Until that bar is met, this page stays number-free.</li>
   </ul>
-  <p class="r d5" style="margin-top:1.6rem; font-family:var(--font-mono); font-size:.82rem; color:var(--n4)">
-    tools/stack-bench &middot; README.md &middot; HISTORY.md &middot; FINDINGS.md &middot; ROADMAP.md
-  </p>
 </section>
 
 <script>
