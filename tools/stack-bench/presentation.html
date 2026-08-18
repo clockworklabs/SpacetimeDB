@@ -207,19 +207,23 @@
 
   /* mutation demo: one injected defect, exactly one criterion flips */
   .mut { display: flex; flex-direction: column; gap: .9rem; max-width: 760px; margin: 1rem 0 1.2rem; }
-  .mutrow { display: flex; align-items: center; gap: 1rem; }
+  .mutrow { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .mutrow .mutlabel:last-child { width: auto; }
   .mutlabel { font-family: var(--font-mono); font-size: .78rem; color: var(--n4); width: 11rem; flex: none; }
-  .dots { display: flex; gap: .55rem; }
-  .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--green); opacity: .85; }
-  .dot.hollow { background: none; border: 1.5px solid var(--n5); }
+  .dots { display: flex; gap: .45rem; }
+  .dot {
+    width: 30px; height: 8px; border-radius: 999px;
+    background: var(--green-10); border: 1px solid var(--green-25);
+  }
+  .dot.hollow { background: none; border: 1px dashed var(--n5); }
   section.on .dot.hit { animation: defect 4s ease-in-out infinite; }
   @keyframes defect {
-    0%, 30%  { background: var(--green); transform: scale(1); }
-    40%, 85% { background: var(--red); transform: scale(1.25); }
-    95%,100% { background: var(--green); transform: scale(1); }
+    0%, 30%  { background: var(--green-10); border-color: var(--green-25); box-shadow: none; }
+    40%, 85% { background: #fc689726; border-color: #fc6897; box-shadow: 0 0 14px #fc689733; }
+    95%,100% { background: var(--green-10); border-color: var(--green-25); box-shadow: none; }
   }
   section.on .mutnote { animation: assertPop 4s ease-in-out infinite; }
-  .mutnote { font-family: var(--font-mono); font-size: .78rem; color: var(--red); opacity: 0; }
+  .mutnote { font-family: var(--font-mono); font-size: .78rem; color: #fc6897; opacity: 0; }
 
   /* preflight checklist ticks */
   ul.checks { list-style: none; display: grid; gap: .6rem; max-width: 62ch; margin: .4rem 0 1.2rem; }
@@ -245,7 +249,7 @@
     display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
   }
   .banner.pass { background: var(--green-10); border: 1px solid var(--green-25); color: var(--green); }
-  .banner.fail { background: #ff4c4c12; border: 1px solid #ff4c4c40; color: var(--red); }
+  .banner.fail { background: #fc689726; border: 1px solid #fc689766; color: #fc6897; }
   section.on .banner.pass { animation: bannerIn .5s ease .3s backwards; }
   section.on .banner.fail { animation: bannerIn .5s ease .55s backwards; }
   @keyframes bannerIn { from { opacity: 0; transform: translateY(10px); } }
@@ -425,12 +429,9 @@
   .mutcap { font-family: var(--font-mono); font-size: .78rem; min-height: 1.4em; position: relative; max-width: 760px; }
   .mutcap span { position: absolute; left: 0; top: 0; opacity: 0; white-space: nowrap; }
   section.on .mc1 { animation: mc1 4s ease-in-out infinite; color: var(--n4); }
-  section.on .mc2 { animation: mc2 4s ease-in-out infinite; color: var(--red); }
+  section.on .mc2 { animation: mc2 4s ease-in-out infinite; color: #fc6897; }
   @keyframes mc1 { 0%, 28% { opacity: 1; } 36%, 90% { opacity: 0; } 98%, 100% { opacity: 1; } }
   @keyframes mc2 { 0%, 32% { opacity: 0; } 40%, 86% { opacity: 1; } 94%, 100% { opacity: 0; } }
-  section.on .ring { animation: ringIn 4s ease-in-out infinite; }
-  .ring { position: absolute; inset: -6px; border: 1.5px solid var(--red); border-radius: 50%; opacity: 0; }
-  .dotwrap { position: relative; }
 
   /* video player mock */
   .player { max-width: 720px; width: 100%; border: 1px solid var(--shade1); border-radius: 10px; overflow: hidden; background: #0a0d10; }
@@ -616,7 +617,7 @@
       <span class="mutlabel">reference app</span>
       <div class="dots">
         <div class="dot"></div><div class="dot"></div><div class="dot"></div>
-        <div class="dotwrap"><div class="dot hit"></div><div class="ring"></div></div>
+        <div class="dot hit"></div>
         <div class="dot"></div><div class="dot"></div><div class="dot"></div>
       </div>
     </div>
