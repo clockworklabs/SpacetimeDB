@@ -382,6 +382,11 @@
   .gres.flip span { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; }
   .gres.flip .f-ok { color: var(--n3); }
   .gres.flip .f-no { color: #fc6897; }
+  .gbill {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    font-family: var(--font-mono); font-size: .8rem; color: var(--n4); padding: .1rem .25rem;
+  }
+  .gbill b { color: var(--n1); font-weight: 500; font-size: .95rem; }
   section.on .gres.flip .f-ok { animation: gOk 7s ease-in-out infinite; }
   section.on .gres.flip .f-no { animation: gNo 7s ease-in-out infinite; }
   @keyframes gOk { 0%, 48% { opacity: 1 } 55%, 92% { opacity: 0 } 99%, 100% { opacity: 1 } }
@@ -1073,18 +1078,18 @@
 <!-- 5b why it differs -->
 <section>
   <div class="kicker r">why the bill differs</div>
-  <h2 class="r d1">Either the database keeps the count, or your code keeps it</h2>
-  <div class="guar r d2" role="img" aria-label="the rule lives in the database on one side and in the app on the other">
-    <div class="gcap win">the database keeps the count</div>
-    <div class="gcap">your code keeps the count</div>
+  <h2 class="r d1">Every rule the agent writes itself can go wrong</h2>
+  <div class="guar r d2" role="img" aria-label="one side writes one call, the other writes four steps, and the rounds and the bill follow">
+    <div class="gcap win">the database enforces the rule</div>
+    <div class="gcap">the agent enforces the rule</div>
 
     <div class="gwrap win">
-      <div class="glbl">what the agent writes</div>
+      <div class="glbl">to sell the last unit once, the agent writes</div>
       <div class="gstep">one call</div>
-      <div class="gnote">the database serializes it</div>
+      <div class="gnote">the database settles the race itself</div>
     </div>
     <div class="gwrap">
-      <div class="glbl">what the agent writes</div>
+      <div class="glbl">to sell the last unit once, the agent writes</div>
       <div class="gstep">open a transaction</div>
       <div class="gstep drop">lock the row</div>
       <div class="gstep">re-check the stock</div>
@@ -1096,8 +1101,11 @@
       <span class="f-ok">&#10003; one order &middot; stock 0</span>
       <span class="f-no">&#10007; two orders &middot; stock &minus;1</span>
     </div>
+
+    <div class="gbill"><span>1 fix round</span><b>$4.73</b></div>
+    <div class="gbill"><span>3 fix rounds</span><b>$11.28</b></div>
   </div>
-  <p class="supp r d3" style="margin-top:1.3rem">Two shoppers reach for the last unit at the same instant. On one side the database owns that rule, so the agent gets it right whatever it writes. On the other the agent assembles the rule out of four pieces, and every piece it has to remember is a piece that can go missing, at a cost that shows up in the bill.</p>
+  <p class="supp r d3" style="margin-top:1.3rem">Two shoppers reach for the last unit at the same instant. On one side the database settles that race itself, and the agent gets it right whatever it writes. On the other the agent writes the rule out of four steps, and missing any one of them sells the unit twice. Each miss comes back as a failed criterion, and the rounds it takes to find them land on the bill.</p>
 </section>
 
 <!-- 6 proving the grader -->

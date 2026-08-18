@@ -101,15 +101,16 @@
   <li><b>Event order.</b> Two writers change the catalog at once and every client agrees on the order.</li>
 </ul>
 
-<h2>Either the database keeps the count, or your code keeps it</h2>
-<p>Selling the last unit exactly once is one line of intent and several lines of care. A database that serializes the write owns that rule itself, and the agent gets it right whatever it writes. A database that offers the pieces leaves the rule to the agent: open a transaction, lock the row, re-check the stock, commit or retry.</p>
-<p>Every piece the agent has to remember is a piece that can go missing, and that shows up in the bill.</p>
+<h2>Every rule the agent writes itself can go wrong</h2>
+<p>Two shoppers reach for the last unit at the same instant. A database that settles that race itself owns the rule, so the agent gets it right whatever it writes: one call, and it holds.</p>
+<p>A database that offers the pieces leaves the rule to the agent, who writes it out of four steps: open a transaction, lock the row, re-check the stock, commit or retry. Missing any one of them sells the unit twice.</p>
+<p>Each miss comes back as a failed criterion, and the rounds it takes to find them land on the bill.</p>
 
-<h2>The grader earns the right to score</h2>
-<p>A criterion is allowed to score once it has been proven on known answers.</p>
-<div class="rule"><span>a defect planted in a passing app</span><b>the declared criterion fails</b></div>
-<div class="rule"><span>every other criterion</span><b>still passes, clean kill</b></div>
-<div class="rule"><span>a blank app, full suite</span><b>holds at zero</b></div>
+<h2>Every criterion is proven on a defect we planted</h2>
+<p>A criterion scores once it has answered all three of these on known input.</p>
+<div class="rule"><span>a passing store, with its stock guard removed</span><b>the no-oversell criterion fails</b></div>
+<div class="rule"><span>that same run, read across the whole suite</span><b>every other criterion still passes</b></div>
+<div class="rule"><span>a store with nothing built in it at all</span><b>the whole suite holds at zero</b></div>
 <p style="margin-top:1rem">A planted defect that survives points at the grader, and that criterion goes back for repair. Prompts, guidance and tests are never adjusted to make a failing check pass.</p>
 
 <h2>One store. Three databases. Three bills.</h2>
