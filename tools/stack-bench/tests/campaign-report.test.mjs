@@ -57,6 +57,8 @@ test('report read model keeps invalid evidence separate and computes declared di
   assert.deepEqual(report.scope.bindings, plan.bindings);
   assert.deepEqual(report.scope.runtime, plan.definition.runtime);
   assert.deepEqual(report.scope.pricing, plan.definition.pricing);
+  assert.deepEqual(report.scope.repetitionsByStack, plan.summary.repetitionsByStack);
+  assert.equal(report.scope.parallelism, plan.summary.parallelism);
   assert.equal(report.attempts[0].executions[0].admissionEvidence,
     'admissions/admission-1.json');
   assert.match(report.contentSha256, /^[a-f0-9]{64}$/);

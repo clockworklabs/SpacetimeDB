@@ -9,7 +9,7 @@ import { inspectCampaign, validateCampaignRun } from './campaign-runner.mjs';
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
 import { sha256 } from './provenance.mjs';
 
-export const CAMPAIGN_REPORT_SCHEMA_VERSION = 3;
+export const CAMPAIGN_REPORT_SCHEMA_VERSION = 4;
 
 const number = value => Number.isFinite(value) ? value : null;
 const ratio = (value, max) => Number.isFinite(value) && Number.isFinite(max) && max > 0
@@ -222,7 +222,8 @@ export function validateCampaignReport(input) {
   exactFields(input.campaign, new Set(['id', 'version', 'state', 'sha256', 'title']),
     'campaign report.campaign');
   exactFields(input.scope, new Set(['track', 'levels', 'selection', 'bindings', 'stacks',
-    'agents', 'conditions', 'repetitions', 'runtime', 'pricing']), 'campaign report.scope');
+    'agents', 'conditions', 'repetitions', 'repetitionsByStack', 'parallelism',
+    'runtime', 'pricing']), 'campaign report.scope');
   exactFields(input.policy, new Set(['primaryMetric', 'secondaryMetrics', 'dispersion',
     'invalidAttempts', 'missingData', 'comparisonUnit']), 'campaign report.policy');
   if (typeof input.campaign.id !== 'string' || !input.campaign.id
@@ -232,9 +233,20 @@ export function validateCampaignReport(input) {
     || !Array.isArray(input.scope.stacks) || !Array.isArray(input.scope.agents)
     || !Array.isArray(input.scope.conditions)
     || !Number.isInteger(input.scope.repetitions) || input.scope.repetitions < 1
+    || !input.scope.repetitionsByStack || typeof input.scope.repetitionsByStack !== 'object'
+    || Array.isArray(input.scope.repetitionsByStack)
+    || !Number.isInteger(input.scope.parallelism) || input.scope.parallelism < 1
+    || input.scope.parallelism > 21
     || !input.scope.runtime || typeof input.scope.runtime !== 'object'
     || !input.scope.pricing || typeof input.scope.pricing !== 'object') {
     throw new Error('campaign report exact scope is invalid');
+  }
+  const expectedStackIds = input.scope.stacks.map(stack => stack.id).sort();
+  if (canonicalDefinitionJson(Object.keys(input.scope.repetitionsByStack).sort())
+      !== canonicalDefinitionJson(expectedStackIds)
+    || Object.values(input.scope.repetitionsByStack)
+      .some(value => !Number.isInteger(value) || value < 1)) {
+    throw new Error('campaign report stack repetitions are invalid');
   }
   for (const [index, row] of input.conditions.entries()) {
     const at = `campaign report.conditions[${index}]`;
@@ -367,6 +379,8 @@ export function buildCampaignReport(plan, state, readRun) {
       selection: plan.definition.selection, bindings: plan.bindings, stacks: plan.stacks,
       conditions: plan.conditions,
       agents: plan.agents, repetitions: plan.definition.repetitions,
+      repetitionsByStack: plan.summary.repetitionsByStack,
+      parallelism: plan.summary.parallelism,
       runtime: plan.definition.runtime, pricing: plan.definition.pricing },
     policy: plan.definition.analysis,
     attempts: rows,
