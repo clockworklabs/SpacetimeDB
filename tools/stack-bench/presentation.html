@@ -392,6 +392,39 @@
   /* the bill, filled in */
   .billcell .v { display: block; margin-top: .4rem; font-size: 1.15rem; color: var(--n1); }
   .billcell .v.accent { color: var(--green); }
+  /* technical diagrams */
+  .dia { width: 100%; max-width: 1000px; margin: .4rem 0 1rem; }
+  .dia text { font-family: var(--font-mono); fill: var(--n3); font-size: 12px; }
+  .dia .lbl { fill: var(--n1); font-size: 12.5px; }
+  .dia .sub { fill: var(--n4); font-size: 10px; }
+  .dia .acc { fill: var(--green); }
+  .dia rect.b { fill: #0d1418; stroke: #1b3540; rx: 6; }
+  .dia rect.b.key { stroke: var(--green-25); }
+  .dia .e { stroke: #2b3a42; stroke-width: 1.3; fill: none; marker-end: url(#a2); }
+  .dia .e.back { stroke: #3d4c55; stroke-dasharray: 4 4; }
+  section.on .dia .flow {
+    stroke: var(--green); stroke-width: 1.6; fill: none;
+    stroke-dasharray: 6 10; animation: dashRun 1.1s linear infinite; opacity: .9;
+  }
+  @keyframes dashRun { to { stroke-dashoffset: -16; } }
+  section.on .dia .lit { animation: litUp 6s ease-in-out infinite; }
+  @keyframes litUp { 0%,100% { stroke: #1b3540; } 50% { stroke: var(--green-25); } }
+
+  /* transaction timeline */
+  .tl-dia .life { stroke: #22323a; stroke-width: 1; }
+  .tl-dia .op { fill: #0d1418; stroke: #24404a; rx: 4; }
+  .tl-dia .op.win { stroke: var(--green-25); }
+  .tl-dia .op.lose { stroke: #fc689766; }
+  .tl-dia .ok { fill: var(--green); }
+  .tl-dia .no { fill: #fc6897; }
+  section.on .tl-dia .sweep { animation: sweepX 7s linear infinite; }
+  @keyframes sweepX { 0% { transform: translateX(0); opacity: 0; } 4% { opacity: 1; } 92% { opacity: 1; } 100% { transform: translateX(720px); opacity: 0; } }
+  section.on .tl-dia .ev { opacity: 0; animation: evShow 7s ease-in-out infinite; }
+  @keyframes evShow { 0%, 6% { opacity: 0; } 12%, 92% { opacity: 1; } 98%, 100% { opacity: 0; } }
+  .tl-dia .ev.e2 { animation-delay: .5s; } .tl-dia .ev.e3 { animation-delay: 1.0s; }
+  .tl-dia .ev.e4 { animation-delay: 1.5s; } .tl-dia .ev.e5 { animation-delay: 2.1s; }
+  .tl-dia .ev.e6 { animation-delay: 2.7s; }
+
   /* restart beat in the storefront demo */
   .live { position: relative; }
   .outage {
@@ -559,53 +592,114 @@
 
 <!-- 4 graded like a customer -->
 <section>
-  <div class="kicker r">graded like a customer</div>
-  <h2 class="r d1">Two real browsers. Then the backend dies.</h2>
-  <div class="live r d2" role="img" aria-label="a purchase propagates, then the backend restarts and nothing is lost">
-    <div class="client">
-      <div class="chead"><i></i><i></i><span class="who">alice &middot; isolated browser</span></div>
-      <div class="bigprod"><b>headphones</b><span>$89</span><span class="buy d-buy">buy now</span></div>
-      <div class="toast d-toast">order placed &#10003;</div>
-    </div>
-    <div class="lane"><i class="zip d-zip"></i></div>
-    <div class="client">
-      <div class="chead"><i></i><i></i><span class="who">bob &middot; separate identity</span></div>
-      <div class="bigprod"><b>headphones</b><span>$89</span>
-        <span class="stockline"><span class="s-old d-sold">3 left</span><span class="s-new d-snew">2 left</span></span>
-      </div>
-      <div class="verd d-verd">&#10003; stock-live &middot; seen in bob's browser, no reload</div>
-      <div class="verd2 d-verd2">&#10003; nothing lost &middot; alice's order survived the restart</div>
-    </div>
-    <div class="outage d-outage">&#10227; backend restarted mid-run</div>
-  </div>
-  <p class="supp r d3">No code review. One browser per user, acting through the real UI, and the criterion passes only when the other user can see the result. Then the harness restarts the backend and checks that nothing acknowledged has vanished.</p>
+  <div class="kicker r">the harness</div>
+  <h2 class="r d1">What actually runs</h2>
+  <svg class="dia r d2" viewBox="0 0 960 452" role="img" aria-label="stack bench architecture">
+    <defs>
+      <marker id="a2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0 0 L8 4 L0 8 z" fill="#2b3a42"/>
+      </marker>
+    </defs>
+
+    <rect class="b key" x="385" y="8" width="200" height="40"/>
+    <text class="lbl" x="405" y="26">controller</text><text class="sub" x="405" y="40">bench.mjs &middot; one run id</text>
+
+    <rect class="b" x="60" y="92" width="200" height="40"/>
+    <text class="lbl" x="78" y="110">preflight gate</text><text class="sub" x="78" y="124">24 checks &middot; blocks spend</text>
+
+    <rect class="b" x="385" y="92" width="200" height="40"/>
+    <text class="lbl" x="405" y="110">agent adapter</text><text class="sub" x="405" y="124">versioned &middot; mode: build | fix</text>
+
+    <rect class="b" x="700" y="92" width="200" height="40"/>
+    <text class="lbl" x="718" y="110">backend lease</text><text class="sub" x="718" y="124">token-scoped &middot; owns services</text>
+
+    <rect class="b lit" x="385" y="168" width="200" height="40"/>
+    <text class="lbl" x="405" y="186">sealed container</text><text class="sub" x="405" y="200">no host access &middot; no marking scheme</text>
+
+    <rect class="b lit" x="700" y="168" width="200" height="40" style="animation-delay:.8s"/>
+    <text class="lbl" x="718" y="186">db services</text><text class="sub" x="718" y="200">per run &middot; reset between suites</text>
+
+    <rect class="b key" x="385" y="244" width="515" height="40"/>
+    <text class="lbl" x="405" y="262">app under test</text><text class="sub" x="405" y="276">contract of data-testid hooks &middot; deployed, running</text>
+
+    <rect class="b key" x="130" y="320" width="770" height="46"/>
+    <text class="lbl" x="150" y="338">grader</text>
+    <text class="sub" x="150" y="354">one browser context per actor &middot; 49 capability-scoped actions &middot; per-criterion deadline</text>
+
+    <rect class="b" x="130" y="396" width="360" height="44"/>
+    <text class="lbl" x="150" y="414">typed verdict</text><text class="sub" x="150" y="429">passed | failed | inconclusive | harness_failure</text>
+
+    <rect class="b" x="540" y="396" width="360" height="44"/>
+    <text class="lbl" x="560" y="414">evidence bundle</text><text class="sub" x="560" y="429">prompt &middot; session cost &middot; video &middot; trace &middot; hashes</text>
+
+    <path class="e" d="M470 48 V70 H160 V88"/>
+    <path class="e flow" d="M485 48 V88"/>
+    <path class="e" d="M500 48 V70 H800 V88"/>
+    <path class="e flow" d="M485 132 V164"/>
+    <path class="e flow" d="M800 132 V164"/>
+    <path class="e flow" d="M485 208 V240"/>
+    <path class="e flow" d="M800 208 V240"/>
+    <path class="e flow" d="M600 284 V300 H515 V316"/>
+    <path class="e flow" d="M310 366 V392"/>
+    <path class="e flow" d="M720 366 V392"/>
+    <path class="e back" d="M130 418 H40 V110 H381" />
+    <text class="sub acc" x="46" y="252">failures only</text>
+    <text class="sub" x="46" y="266">behavioural</text>
+  </svg>
+  <p class="supp r d3">The agent builds inside a sealed container and never sees the grader. The grader drives the deployed app through real browser contexts and emits one typed verdict per criterion. Only failures, described the way a customer would describe them, travel back up the dashed edge for the next fix round.</p>
 </section>
 
 <!-- 5 break it on purpose -->
 <section>
   <div class="kicker r">break it on purpose</div>
-  <h2 class="r d1">Two shoppers, one unit left</h2>
-  <div class="live r d2" role="img" aria-label="two clients race for the last unit; exactly one order succeeds">
-    <div class="client">
-      <div class="chead"><i></i><i></i><span class="who">alice</span></div>
-      <div class="bigprod"><b>monitor</b><span>$310</span>
-        <span class="stockline"><span class="s-old r-sold">1 left</span><span class="s-new r-snew">0 left</span></span>
-        <span class="buy r-buy">buy now</span></div>
-      <div class="win-toast r-win">order confirmed &#10003;</div>
-    </div>
-    <div class="lane"></div>
-    <div class="client">
-      <div class="chead"><i></i><i></i><span class="who">bob &middot; same instant</span></div>
-      <div class="bigprod"><b>monitor</b><span>$310</span>
-        <span class="stockline"><span class="s-old r-sold">1 left</span><span class="s-new r-snew">0 left</span></span>
-        <span class="buy r-buy2">buy now</span></div>
-      <div class="lose-toast r-lose">sold out</div>
-      <div class="verd r-verd">&#10003; no-oversell &middot; exactly one order for the last unit</div>
-    </div>
-  </div>
-  <div class="demo-tag r d2">contention arrives at level 3</div>
-  <p class="lvls r d3">L1 identity &middot; L2 authorization &middot; <b>L3 atomicity</b> &middot; L4 deferred work &middot; L5 volume &nbsp;&nbsp;<span class="dim">validated through L2, cumulative: later levels re-check everything before them</span></p>
-  <p class="supp r d4">Losing an update here is not a style problem. It is a sold item that ships twice, and the harness is built to force that moment and catch it.</p>
+  <h2 class="r d1">Two writers, one row, one unit of stock</h2>
+  <svg class="dia tl-dia r d2" viewBox="0 0 960 300" role="img" aria-label="two concurrent transactions contending for the last unit">
+    <text class="sub" x="20" y="18">t &rarr;</text>
+
+    <text class="lbl" x="20" y="70">alice</text>
+    <line class="life" x1="110" y1="64" x2="930" y2="64"/>
+    <g class="ev">
+      <rect class="op" x="140" y="50" width="86" height="28"/><text x="152" y="68">BEGIN</text>
+    </g>
+    <g class="ev e2">
+      <rect class="op" x="248" y="50" width="128" height="28"/><text x="260" y="68">read stock=1</text>
+    </g>
+    <g class="ev e4">
+      <rect class="op win" x="470" y="50" width="128" height="28"/><text x="482" y="68">write stock=0</text>
+    </g>
+    <g class="ev e5">
+      <rect class="op win" x="620" y="50" width="118" height="28"/><text class="ok" x="632" y="68">COMMIT &#10003;</text>
+    </g>
+
+    <text class="lbl acc" x="20" y="160">row</text>
+    <text class="sub" x="20" y="176">monitor</text>
+    <line class="life" x1="110" y1="150" x2="930" y2="150"/>
+    <g class="ev e3">
+      <rect class="op" x="248" y="136" width="128" height="28"/><text x="262" y="154">stock = 1</text>
+    </g>
+    <g class="ev e5">
+      <rect class="op" x="620" y="136" width="118" height="28"/><text class="ok" x="640" y="154">stock = 0</text>
+    </g>
+
+    <text class="lbl" x="20" y="248">bob</text>
+    <line class="life" x1="110" y1="242" x2="930" y2="242"/>
+    <g class="ev e2">
+      <rect class="op" x="196" y="228" width="86" height="28"/><text x="208" y="246">BEGIN</text>
+    </g>
+    <g class="ev e3">
+      <rect class="op" x="304" y="228" width="128" height="28"/><text x="316" y="246">read stock=1</text>
+    </g>
+    <g class="ev e4">
+      <rect class="op lose" x="470" y="228" width="128" height="28"/><text x="482" y="246">write stock=0</text>
+    </g>
+    <g class="ev e6">
+      <rect class="op lose" x="620" y="228" width="196" height="28"/><text class="no" x="632" y="246">rejected &middot; sold out</text>
+    </g>
+
+    <line class="sweep" x1="120" y1="34" x2="120" y2="270" stroke="#4cf49055" stroke-width="1.5"/>
+  </svg>
+  <p class="supp r d3">Both transactions read the same value before either writes. If the stack lets both commit, the store sold one monitor twice and the bug reaches a customer, not a test report. The harness drives this collision deliberately and asserts exactly one order stands.</p>
+  <p class="lvls r d4">L1 identity &middot; L2 authorization &middot; <b>L3 atomicity</b> &middot; L4 deferred work &middot; L5 volume &nbsp; <span class="dim">levels are cumulative</span></p>
 </section>
 
 <!-- 6 you can't game it -->
