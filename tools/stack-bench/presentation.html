@@ -512,6 +512,60 @@
   .st .sv .good { color: var(--green); }
   .st .sv .bad  { color: #fc6897; }
 
+  .expect { display: grid; gap: .45rem; margin-top: 1.2rem; font-family: var(--font-mono); font-size: .84rem; max-width: 900px; width: 100%; }
+  .expect div { display: flex; justify-content: space-between; gap: 1.5rem; border-bottom: 1px dashed var(--shade1); padding-bottom: .45rem; color: var(--n4); }
+  .expect b { font-weight: 500; }
+  .expect .must { color: #fc6897; white-space: nowrap; }
+  .expect .rest { color: var(--green); white-space: nowrap; }
+
+  /* attack picker */
+  .atk { display: grid; grid-template-columns: minmax(210px, 260px) 1fr; gap: 1.4rem; width: 100%; max-width: 1000px; }
+  @media (max-width: 800px) { .atk { grid-template-columns: 1fr; gap: .9rem; } }
+  .atk-list { display: grid; gap: .3rem; align-content: start; }
+  .atk-item {
+    text-align: left; background: none; cursor: pointer;
+    border: 1px solid transparent; border-left: 2px solid var(--shade1);
+    border-radius: 0 6px 6px 0; padding: .5rem .8rem;
+    font-family: var(--font-mono); font-size: .8rem; color: var(--n4);
+    transition: color .2s, border-color .2s, background .2s;
+  }
+  .atk-item:hover { color: var(--n3); background: #0d1418; }
+  .atk-item.on { color: var(--green); border-left-color: var(--green); background: var(--green-10); }
+  .atk-item small { display: block; font-size: .68rem; color: var(--n5); margin-top: .15rem; }
+  .atk-item.on small { color: var(--n4); }
+
+  .atk-stage { border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10; overflow: hidden; min-height: 232px; }
+  .atk-panel { display: none; }
+  .atk-panel.on { display: block; }
+  .atk-head {
+    padding: .55rem .9rem; border-bottom: 1px solid var(--shade1);
+    font-family: var(--font-mono); font-size: .76rem; color: var(--n4);
+  }
+  .atk-body { padding: .9rem; display: grid; gap: .55rem; font-family: var(--font-mono); font-size: .8rem; }
+  .step {
+    display: grid; grid-template-columns: 4.4rem 1fr; gap: .7rem; align-items: center;
+    color: var(--n3); opacity: 0; transform: translateY(6px);
+    animation: stepIn .4s ease forwards;
+  }
+  .step .actor { color: var(--n4); font-size: .74rem; }
+  .step .what {
+    border: 1px solid var(--shade1); border-radius: 6px; padding: .38rem .7rem; background: #0d1418;
+  }
+  .step .what.hit { border-color: #fc689766; color: #fc6897; }
+  .step .what.hold { border-color: var(--green-25); color: var(--green); background: var(--green-10); }
+  @keyframes stepIn { to { opacity: 1; transform: none; } }
+  .atk-panel.on .step:nth-child(1) { animation-delay: .1s; }
+  .atk-panel.on .step:nth-child(2) { animation-delay: .5s; }
+  .atk-panel.on .step:nth-child(3) { animation-delay: .9s; }
+  .atk-panel.on .step:nth-child(4) { animation-delay: 1.3s; }
+  .atk-verdict {
+    margin: .2rem .9rem .9rem; padding: .5rem .8rem; border-radius: 6px;
+    font-family: var(--font-mono); font-size: .78rem;
+    border: 1px solid var(--green-25); background: var(--green-10); color: var(--green);
+    opacity: 0; animation: stepIn .4s ease 1.7s forwards;
+  }
+  .atk-panel.on .atk-verdict { animation-delay: 1.7s; }
+
   /* where the guarantee lives */
   .guar { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6rem; width: 100%; max-width: 1000px; }
   @media (max-width: 800px) { .guar { grid-template-columns: 1fr; gap: 1.2rem; } }
@@ -979,20 +1033,80 @@
 <!-- 5 break it on purpose -->
 <section>
   <div class="kicker r">break it on purpose</div>
-  <h2 class="r d1">Two shoppers hit checkout at the same instant</h2>
-  <div class="collide r d2" role="img" aria-label="two concurrent checkouts against one unit of stock">
-    <div class="ch">one unit left &middot; both requests arrive before either write lands</div>
-    <div class="cbody">
-      <div class="row2"><span>alice</span><div class="rail"><i class="req2 q1">checkout</i></div><span class="rowend">reads 1</span></div>
-      <div class="row2"><span>bob</span><div class="rail"><i class="req2 q2">checkout</i></div><span class="rowend">reads 1</span></div>
-      <div class="stockrow"><span>stock before</span><b>1</b></div>
+  <h2 class="r d1">Every way a store like this goes wrong</h2>
+  <div class="atk r d2">
+    <div class="atk-list" role="tablist">
+      <button class="atk-item on" data-atk="a1" role="tab">concurrent checkout<small>two shoppers, one unit</small></button>
+      <button class="atk-item" data-atk="a2" role="tab">backend restart<small>mid-order, deploy or crash</small></button>
+      <button class="atk-item" data-atk="a3" role="tab">client disconnect<small>drops and comes back</small></button>
+      <button class="atk-item" data-atk="a4" role="tab">cart isolation<small>one shopper, one cart</small></button>
+      <button class="atk-item" data-atk="a5" role="tab">forged write<small>a request claiming to be someone else</small></button>
+      <button class="atk-item" data-atk="a6" role="tab">event order<small>two writers at once</small></button>
+    </div>
+    <div class="atk-stage">
+      <div class="atk-panel on" id="a1">
+        <div class="atk-head">one unit in stock &middot; both checkouts arrive together</div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">alice</span><span class="what">checkout &middot; reads 1 in stock</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what">checkout &middot; reads 1 in stock</span></div>
+          <div class="step"><span class="actor">store</span><span class="what hold">one order confirmed &middot; stock 0</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what">told sold out</span></div>
+        </div>
+        <div class="atk-verdict">&#10003; exactly one order for the last unit</div>
+      </div>
+      <div class="atk-panel" id="a2">
+        <div class="atk-head">an order is confirmed, then the backend restarts</div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">alice</span><span class="what">order confirmed on screen</span></div>
+          <div class="step"><span class="actor">harness</span><span class="what hit">backend restarted</span></div>
+          <div class="step"><span class="actor">alice</span><span class="what hold">order still there, same id</span></div>
+          <div class="step"><span class="actor">store</span><span class="what hold">stock still reflects the sale</span></div>
+        </div>
+        <div class="atk-verdict">&#10003; a confirmed order survives the restart</div>
+      </div>
+      <div class="atk-panel" id="a3">
+        <div class="atk-head">a shopper's connection drops while the store keeps moving</div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">bob</span><span class="what hit">connection dropped</span></div>
+          <div class="step"><span class="actor">store</span><span class="what">3 price changes land while he is away</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what">reconnects</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what hold">all 3 present, each exactly once</span></div>
+        </div>
+        <div class="atk-verdict">&#10003; catches up with no gaps and no repeats</div>
+      </div>
+      <div class="atk-panel" id="a4">
+        <div class="atk-head">two shoppers, side by side, in the same store</div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">alice</span><span class="what">adds a monitor to her cart</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what hold">cart stays his own</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what">opens checkout</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what hold">totals his items only</span></div>
+        </div>
+        <div class="atk-verdict">&#10003; a cart belongs to one shopper</div>
+      </div>
+      <div class="atk-panel" id="a5">
+        <div class="atk-head">a write arrives claiming to be another shopper</div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">harness</span><span class="what">replays alice's own request</span></div>
+          <div class="step"><span class="actor">harness</span><span class="what hit">swaps the identity to bob</span></div>
+          <div class="step"><span class="actor">store</span><span class="what hold">write refused</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what hold">order history unchanged</span></div>
+        </div>
+        <div class="atk-verdict">&#10003; the shopper is whoever the connection says</div>
+      </div>
+      <div class="atk-panel" id="a6">
+        <div class="atk-head">two writers change the same catalogue at once</div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">alice</span><span class="what">6 updates, as fast as allowed</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what">6 updates, at the same time</span></div>
+          <div class="step"><span class="actor">alice</span><span class="what hold">sees all 12, in one order</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what hold">sees all 12, in the same order</span></div>
+        </div>
+        <div class="atk-verdict">&#10003; every client agrees on what happened, and in what order</div>
+      </div>
     </div>
   </div>
-  <div class="fork r d2">
-    <div class="branch good"><span class="tagl">stack serialises the write</span> &#10003; one order stands &middot; stock 0 &middot; the other shopper is told sold out</div>
-    <div class="branch bad"><span class="tagl">guard was missed</span> &#10007; two orders, one unit &middot; stock &minus;1 &middot; one customer is owed a refund</div>
-  </div>
-  <p class="supp r d3" style="margin-top:1.2rem">The database underneath decides which way this lands, and it stays invisible until a real customer hits it. The harness forces the collision on purpose and asserts that exactly one order survives.</p>
+  <p class="supp r d3" style="margin-top:1.2rem">Each of these is a criterion the harness drives on purpose, in a real browser, against the store the agent built. Pick one to see the shape of the attack.</p>
   <p class="lvls r d4">L1 identity &middot; L2 authorization &middot; <b>L3 atomicity</b> &middot; L4 deferred work &middot; L5 volume &nbsp; <span class="dim">levels are cumulative</span></p>
 </section>
 
@@ -1137,6 +1251,16 @@
     targetTimer = setTimeout(() => { target = null; }, 1200);
   };
   const base = () => (target !== null ? target : nearest());
+
+  // attack picker
+  document.querySelectorAll('.atk-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const stage = btn.closest('.atk');
+      stage.querySelectorAll('.atk-item').forEach(b => b.classList.toggle('on', b === btn));
+      stage.querySelectorAll('.atk-panel').forEach(p => p.classList.toggle('on', p.id === btn.dataset.atk));
+    });
+  });
+
   addEventListener('keydown', e => {
     if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) {
       e.preventDefault(); goTo(base() + 1);
