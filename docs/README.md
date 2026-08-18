@@ -141,6 +141,37 @@ To add a new page after all previous pages, use the smallest multiple of 100 lar
 - Use relative links for linking between documentation pages, as this will ensure
   that links work correctly with versioning and localization.
 
+## Releasing the Docs
+
+The live documentation at [spacetimedb.com/docs](https://spacetimedb.com/docs) is built and
+published from the `docs/release` branch, not from `master`. Two GitHub workflows run on every
+push to `docs/release`:
+
+- **Docs / Publish** (`.github/workflows/docs-publish.yaml`) — builds the Docusaurus site and
+  deploys it to the website.
+- **Docs / Update llms files** (`.github/workflows/docs-update-llms.yaml`) — regenerates
+  `docs/static/llms.md` and commits it directly back to `docs/release`.
+
+### How to release
+
+All docs changes land on `master` first, via normal PRs. To publish the current state of
+`master`, point `docs/release` at the head of `master` and force-push:
+
+```bash
+git fetch origin
+git push --force origin origin/master:docs/release
+```
+
+### Why the force-push is expected
+
+The **Docs / Update llms files** workflow commits generated `llms.md` output directly onto
+`docs/release`, so that branch always accumulates commits that don't exist on `master`. Those
+commits are pure build output and are regenerated automatically after every release push, so
+it is safe — and required — to discard them with a force-push.
+
+For the same reason, never commit hand-written content directly to `docs/release`: it will be
+wiped by the next release. Land the change on `master` and re-release instead.
+
 ## License
 
 This documentation repository is licensed under Apache 2.0.
