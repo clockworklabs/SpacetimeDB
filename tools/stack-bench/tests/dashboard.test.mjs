@@ -102,6 +102,10 @@ test('dashboard serves real state and protects campaign launch with its local se
   const page = await fetch(origin);
   assert.equal(page.status, 200);
   assert.match(await page.text(), /StackBench Control Room/);
+  const brand = await fetch(`${origin}/spacetimedb-mark.svg`);
+  assert.equal(brand.status, 200);
+  assert.equal(brand.headers.get('content-type'), 'image/svg+xml');
+  assert.match(await brand.text(), /viewBox="0 0 35 32"/);
   const overview = await (await fetch(`${origin}/api/overview`)).json();
   assert.equal(overview.canStart, true);
   assert.equal(overview.csrfToken, 'test-session-token');
