@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Purchasing and orders",
+  "note": "Each purchase check owns its state. Checks inspect durable results after reload instead of requiring panels to close through a particular keyboard interaction.",
+  "features": [
+    {
+      "id": 3,
+      "name": "Buying",
+      "actors": ["buyer", "watcher", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "eli" },
+        { "do": "signUp", "actor": "watcher", "name": "fay" }
+      ],
+      "criteria": [
+        {
+          "id": "3a",
+          "desc": "a signed-out visitor is offered no way to buy",
+          "points": 1,
+          "steps": [
+            { "do": "expect", "actor": "visitor", "testid": "buy-now", "absent": true },
+            { "do": "expect", "actor": "visitor", "testid": "add-to-cart", "absent": true }
+          ],
+          "statedBy": "a signed-out visitor sees no buy or add-to-cart action"
+        },
+        {
+          "id": "3b",
+          "desc": "buying reduces the stock every other client sees, without a reload",
+          "points": 2,
+          "steps": [
+            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "equals": 100 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Espresso Machine" } },
+            { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "equals": 99 },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "equals": 99 }
+          ],
+          "statedBy": "buying an item reduces its stock by one for everyone"
+        },
+        {
+          "id": "3c",
+          "desc": "the purchase is recorded in the buyer's order history at the price paid",
+          "points": 1,
+          "steps": [
+            { "do": "fill", "actor": "buyer", "testid": "search-input", "text": "Coffee Grinder", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
+            { "do": "click", "actor": "buyer", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "buyer", "testid": "order-item", "contains": "Coffee Grinder" },
+            { "do": "expectNumber", "actor": "buyer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "atLeast": 64 }
+          ],
+          "statedBy": "it creates an order for the buyer, visible in their order history"
+        },
+        {
+          "id": "3d",
+          "desc": "an item sells out visibly, and a checkout exceeding stock is refused and changes nothing",
+          "points": 2,
+          "steps": [
+            { "do": "fill", "actor": "buyer", "testid": "search-input", "text": "Mirrorless Camera", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "buyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "wait", "actor": "buyer", "ms": 800 },
+            { "do": "click", "actor": "buyer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "wait", "actor": "buyer", "ms": 800 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "wait", "actor": "buyer", "ms": 800 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "wait", "actor": "buyer", "ms": 800 },
+            { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Mirrorless Camera" }, "equals": 0 },
+            { "do": "expect", "actor": "buyer", "testid": "out-of-stock", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+            { "do": "click", "actor": "buyer", "testid": "cart-toggle" },
+            { "do": "click", "actor": "buyer", "testid": "checkout-submit" },
+            { "do": "expect", "actor": "buyer", "testid": "buy-error", "within": 6000 },
+            { "do": "expect", "actor": "buyer", "testid": "cart-item", "contains": "Mirrorless Camera" },
+            { "do": "reload", "actor": "buyer", "settleMs": 3000 },
+            { "do": "expectNumber", "actor": "buyer", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Mirrorless Camera" }, "equals": 0 }
+          ],
+          "statedBy": "an item with zero stock cannot be bought"
+        }
+      ]
+    }
+  ]
+}

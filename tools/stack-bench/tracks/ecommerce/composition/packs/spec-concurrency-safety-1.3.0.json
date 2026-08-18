@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.concurrency-safety",
+  "version": "1.3.0",
+  "state": "draft",
+  "title": "Concurrency safety",
+  "moduleType": "specification",
+  "description": "Stock race safety and duplicate-submit protection.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "concurrent-actors"],
+  "evidence": ["concurrent-outcome", "database-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 125000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.spec.concurrency-safety.purchasing", "path": "prompts/modular/l1-specifications-1.1.0.md", "order": 1300, "from": "## Concurrency safety: purchasing", "until": "## Concurrency safety: restocking", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+      { "id": "ecommerce.spec.concurrency-safety.restocking", "path": "prompts/modular/l1-specifications-1.1.0.md", "order": 1310, "from": "## Concurrency safety: restocking", "until": "## Concurrency safety: checkout", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] },
+      { "id": "ecommerce.spec.concurrency-safety.checkout", "path": "prompts/modular/l1-specifications-1.1.0.md", "order": 1320, "from": "## Concurrency safety: checkout", "until": "## Transactional integrity: reviews", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "stock-limit", "source": "scenarios/01-buying-2.4.0.json", "feature": 3, "criteria": ["3d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.cart-checkout", "ecommerce.feature.purchasing"] },
+    { "id": "last-unit", "source": "scenarios/01-last-unit-2.3.0.json", "feature": 201, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] },
+    { "id": "restock-race", "source": "scenarios/01-restock-race-2.3.0.json", "feature": 202, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing", "ecommerce.feature.warehouse-admin"] },
+    { "id": "duplicate-checkout", "source": "scenarios/01-duplicate-checkout-2.3.0.json", "feature": 203, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] }
+  ]
+}

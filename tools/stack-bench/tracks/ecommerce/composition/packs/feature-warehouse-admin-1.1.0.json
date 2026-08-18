@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.warehouse-admin",
+  "version": "1.1.0",
+  "state": "draft",
+  "title": "Warehouse administration",
+  "moduleType": "feature",
+  "description": "Warehouse inventory, restocking, and revenue views.",
+  "requiresPacks": ["ecommerce.feature.accounts@1.0.0", "ecommerce.feature.catalog@1.0.0"],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.feature.warehouse-admin.requirement", "path": "prompts/modular/l1-features.md", "order": 600, "from": "## Warehouse administration", "modes": ["fresh"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.feature.warehouse-admin.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2500, "from": "## Warehouse administration hooks", "modes": ["fresh"] }
+    ]
+  },
+  "checks": [
+    { "id": "warehouse-view", "source": "scenarios/01-warehouse-admin-2.4.0.json", "feature": 7, "criteria": ["7b"], "role": "feature" }
+  ]
+}

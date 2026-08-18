@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.purchasing",
+  "version": "1.1.0",
+  "state": "draft",
+  "title": "Purchasing and orders",
+  "moduleType": "feature",
+  "description": "Immediate purchase and customer order history.",
+  "requiresPacks": ["ecommerce.feature.accounts@1.0.0", "ecommerce.feature.catalog@1.0.0"],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 24000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.feature.purchasing.requirement", "path": "prompts/modular/l1-features.md", "order": 300, "from": "## Purchasing and orders", "until": "## Cart and checkout", "modes": ["fresh"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.feature.purchasing.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2200, "from": "## Purchasing hooks", "until": "## Cart hooks", "modes": ["fresh"] }
+    ]
+  },
+  "checks": [
+    { "id": "purchase-order", "source": "scenarios/01-buying-2.4.0.json", "feature": 3, "criteria": ["3c"], "role": "feature" }
+  ]
+}

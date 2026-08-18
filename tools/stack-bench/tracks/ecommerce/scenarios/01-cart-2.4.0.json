@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Cart and checkout",
+  "note": "Each check owns its account and cart state. Checkout is verified after reload through persistent cart count, stock, and order state, without requiring a particular panel lifecycle or Escape-key handler.",
+  "features": [
+    {
+      "id": 4,
+      "name": "Cart belongs to the account",
+      "actors": ["quantity", "reload", "live1", "live2", "checkout"],
+      "setup": [
+        { "do": "signUp", "actor": "quantity", "name": "nora" },
+        { "do": "signUp", "actor": "reload", "name": "omar" },
+        { "do": "signUp", "actor": "live1", "name": "pia" },
+        { "do": "signUp", "actor": "checkout", "name": "quinn" }
+      ],
+      "criteria": [
+        {
+          "id": "4a",
+          "desc": "adding the same item twice raises its quantity instead of adding a second line",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "quantity", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
+            { "do": "wait", "actor": "quantity", "ms": 800 },
+            { "do": "click", "actor": "quantity", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
+            { "do": "click", "actor": "quantity", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "quantity", "testid": "cart-item", "contains": "Headphones", "count": 1 },
+            { "do": "expectNumber", "actor": "quantity", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Headphones" }, "equals": 2 }
+          ],
+          "statedBy": "adding an item that is already in the cart raises its quantity"
+        },
+        {
+          "id": "4b",
+          "desc": "the cart survives a reload",
+          "points": 1,
+          "steps": [
+            { "do": "fill", "actor": "reload", "testid": "search-input", "text": "Laptop Stand", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "reload", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Laptop Stand" } },
+            { "do": "reload", "actor": "reload", "settleMs": 3000 },
+            { "do": "click", "actor": "reload", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "reload", "testid": "cart-item", "contains": "Laptop Stand" }
+          ],
+          "statedBy": "the cart survives a reload"
+        },
+        {
+          "id": "4c",
+          "desc": "the same account signed in elsewhere sees one cart, live",
+          "points": 2,
+          "steps": [
+            { "do": "signIn", "actor": "live2", "name": "pia" },
+            { "do": "click", "actor": "live2", "testid": "cart-toggle" },
+            { "do": "fill", "actor": "live1", "testid": "search-input", "text": "Induction Cooktop", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "live1", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Induction Cooktop" } },
+            { "do": "expect", "actor": "live2", "testid": "cart-item", "contains": "Induction Cooktop", "within": 10000 }
+          ],
+          "statedBy": "the same account signed in twice sees one cart, and a change made in one place appears in the other without a reload"
+        },
+        {
+          "id": "4d",
+          "desc": "checkout creates one order, reduces stock and empties the cart",
+          "points": 2,
+          "steps": [
+            { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "equals": 100 },
+            { "do": "click", "actor": "checkout", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
+            { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 1 },
+            { "do": "click", "actor": "checkout", "testid": "cart-toggle" },
+            { "do": "click", "actor": "checkout", "testid": "checkout-submit" },
+            { "do": "wait", "actor": "checkout", "ms": 1500 },
+            { "do": "reload", "actor": "checkout", "settleMs": 3000 },
+            { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 0 },
+            { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "equals": 99 },
+            { "do": "click", "actor": "checkout", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "checkout", "testid": "order-item", "contains": "Headphones" }
+          ],
+          "statedBy": "checkout turns the cart into one order, reduces stock for every line, and empties the cart"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Warehouse administration",
+  "note": "The live-restock check opens its own admin view and makes no assumptions about UI state left by another check.",
+  "features": [
+    {
+      "id": 7,
+      "name": "Admin and warehouses",
+      "actors": ["admin", "customer", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "jon" },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }
+      ],
+      "criteria": [
+        {
+          "id": "7a",
+          "desc": "the admin area is for admins only",
+          "points": 1,
+          "steps": [
+            { "do": "expect", "actor": "admin", "testid": "admin-link" },
+            { "do": "expect", "actor": "customer", "testid": "admin-link", "absent": true },
+            { "do": "expect", "actor": "customer", "testid": "admin-panel", "absent": true }
+          ],
+          "statedBy": "admin accounts see an admin area; customers do not"
+        },
+        {
+          "id": "7b",
+          "desc": "admin lists every item, every warehouse, and what each warehouse holds",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "admin", "testid": "admin-link" },
+            { "do": "expect", "actor": "admin", "testid": "admin-item-row", "count": 12 },
+            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "East" },
+            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "West" },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" }, "equals": 100 }
+          ],
+          "statedBy": "admin lists every item with its stock, every warehouse, and the stock of each item in each warehouse"
+        },
+        {
+          "id": "7c",
+          "desc": "the storefront stock is the sum across warehouses, and a restock raises it live",
+          "points": 2,
+          "steps": [
+            { "do": "click", "actor": "admin", "testid": "admin-link" },
+            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Gaming Mouse", "enter": true, "settleMs": 1500 },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "equals": 100 },
+            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "25", "in": { "testid": "admin-location-row", "contains": "Gaming Mouse" } },
+            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Gaming Mouse" } },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "equals": 125, "within": 10000 },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" }, "equals": 125 }
+          ],
+          "statedBy": "an item's stock on the storefront is the sum of that item's units across all warehouses"
+        }
+      ]
+    }
+  ]
+}

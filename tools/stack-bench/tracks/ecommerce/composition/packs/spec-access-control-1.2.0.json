@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.spec.access-control",
+  "version": "1.2.0",
+  "state": "draft",
+  "title": "Access control",
+  "moduleType": "specification",
+  "description": "Server-enforced authentication, authorization, ownership, and privacy.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "direct-server-call", "request-replay"],
+  "evidence": ["browser-observation", "server-response"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 90000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.spec.access-control.purchasing", "path": "prompts/modular/l1-specifications-1.1.0.md", "order": 1000, "from": "## Access control: purchasing", "until": "## Access control: warehouse administration", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+      { "id": "ecommerce.spec.access-control.warehouse-admin", "path": "prompts/modular/l1-specifications-1.1.0.md", "order": 1010, "from": "## Access control: warehouse administration", "until": "## Access control: reviews", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.warehouse-admin"] },
+      { "id": "ecommerce.spec.access-control.reviews", "path": "prompts/modular/l1-specifications-1.1.0.md", "order": 1020, "from": "## Access control: reviews", "until": "## Access control: cart", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.reviews"] },
+      { "id": "ecommerce.spec.access-control.cart", "path": "prompts/modular/l1-specifications-1.1.0.md", "order": 1030, "from": "## Access control: cart", "until": "## State durability: accounts", "modes": ["fresh"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "signed-out-purchase", "source": "scenarios/01-buying-2.4.0.json", "feature": 3, "criteria": ["3a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+    { "id": "admin-ui", "source": "scenarios/01-warehouse-admin-2.4.0.json", "feature": 7, "criteria": ["7a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.warehouse-admin"] },
+    { "id": "purchase-session", "source": "scenarios/01-server-actions-2.1.0.json", "feature": 101, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+    { "id": "purchase-attribution", "source": "scenarios/01-server-actions-2.1.0.json", "feature": 102, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+    { "id": "admin-write", "source": "scenarios/01-server-actions-2.1.0.json", "feature": 103, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.warehouse-admin"] },
+    { "id": "order-ownership", "source": "scenarios/01-invariants.json", "feature": 106, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+    { "id": "review-eligibility", "source": "scenarios/01-invariants.json", "feature": 108, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.reviews"] },
+    { "id": "cart-boundary", "source": "scenarios/01-invariants.json", "feature": 109, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] }
+  ]
+}

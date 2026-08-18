@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.cart-checkout",
+  "version": "1.1.0",
+  "state": "draft",
+  "title": "Cart and checkout",
+  "moduleType": "feature",
+  "description": "Account cart operations and checkout.",
+  "requiresPacks": ["ecommerce.feature.accounts@1.0.0", "ecommerce.feature.catalog@1.0.0"],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 42000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.feature.cart-checkout.requirement", "path": "prompts/modular/l1-features.md", "order": 400, "from": "## Cart and checkout", "until": "## Reviews", "modes": ["fresh"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.feature.cart-checkout.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2300, "from": "## Cart hooks", "until": "## Review hooks", "modes": ["fresh"] }
+    ]
+  },
+  "checks": [
+    { "id": "cart", "source": "scenarios/01-cart-2.4.0.json", "feature": 4, "criteria": ["4a", "4d"], "role": "feature" }
+  ]
+}
