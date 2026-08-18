@@ -425,53 +425,7 @@
   .tl-dia .ev.e4 { animation-delay: 1.5s; } .tl-dia .ev.e5 { animation-delay: 2.1s; }
   .tl-dia .ev.e6 { animation-delay: 2.7s; }
 
-  /* one requirement, three implementations */
-  .req {
-    width: 100%; max-width: 980px; border: 1px solid var(--green-25); border-radius: 8px;
-    background: var(--shade5); padding: .7rem 1rem; font-family: var(--font-mono);
-    font-size: .9rem; color: var(--n1); margin-bottom: .3rem;
-  }
-  .req span { color: var(--green); }
-  .impls { display: grid; grid-template-columns: repeat(3, 1fr); gap: .9rem; width: 100%; max-width: 980px; }
-  @media (max-width: 800px) { .impls { grid-template-columns: 1fr; } }
-  .impl {
-    border: 1px solid var(--shade1); border-radius: 8px; background: #0a0d10; overflow: hidden;
-    opacity: 0; transform: translateY(10px); transition: opacity .5s ease, transform .5s ease;
-  }
-  section.on .impl { opacity: 1; transform: none; }
-  section.on .impl:nth-child(2) { transition-delay: .15s; }
-  section.on .impl:nth-child(3) { transition-delay: .3s; }
-  .impl .ih {
-    font-family: var(--font-mono); font-size: .74rem; color: var(--n4);
-    padding: .4rem .7rem; border-bottom: 1px solid var(--shade1);
-    display: flex; justify-content: space-between; gap: .5rem;
-  }
-  .impl pre {
-    margin: 0; padding: .7rem; font-family: var(--font-mono);
-    font-size: clamp(.62rem, 1.15vw, .74rem); line-height: 1.55; color: var(--n3);
-    white-space: pre-wrap; word-break: break-word;
-  }
-  .impl .k { color: var(--green); }
-  .impl .c { color: var(--n5); }
-  .lines { font-family: var(--font-mono); font-size: .72rem; color: var(--n4); }
 
-  /* mutation diff */
-  .diff {
-    width: 100%; max-width: 900px; border: 1px solid var(--shade1); border-radius: 8px;
-    background: #0a0d10; font-family: var(--font-mono); font-size: clamp(.7rem, 1.4vw, .85rem);
-    overflow: hidden;
-  }
-  .diff .dh { padding: .45rem .8rem; border-bottom: 1px solid var(--shade1); color: var(--n4); font-size: .74rem; }
-  .diff .dl { padding: .22rem .8rem; color: var(--n3); white-space: pre-wrap; }
-  .diff .dl.rm { background: #fc689714; color: #fc6897; }
-  .diff .dl.add { background: var(--green-10); color: var(--green); }
-  section.on .diff .dl.rm { animation: diffPulse 4s ease-in-out infinite; }
-  @keyframes diffPulse { 0%, 40% { background: transparent; color: var(--n3); } 50%, 90% { background: #fc689714; color: #fc6897; } }
-  .expect { display: grid; gap: .4rem; margin-top: 1rem; font-family: var(--font-mono); font-size: .82rem; max-width: 900px; width: 100%; }
-  .expect div { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px dashed var(--shade1); padding-bottom: .35rem; color: var(--n4); }
-  .expect b { font-weight: 500; }
-  .expect .must { color: #fc6897; }
-  .expect .rest { color: var(--green); }
 
   /* artifact tree */
   .tree {
@@ -485,11 +439,124 @@
   }
   .tree pre b { color: var(--n3); font-weight: 400; }
   .tree pre em { color: var(--green); font-style: normal; }
-  .jsonbox { border: 1px solid var(--shade1); border-radius: 8px; background: #0a0d10; overflow: hidden; }
-  .jsonbox .jh { padding: .4rem .8rem; border-bottom: 1px solid var(--shade1); font-family: var(--font-mono); font-size: .72rem; color: var(--n4); }
-  .jsonbox pre { padding: .8rem; color: var(--n3); white-space: pre-wrap; }
-  .jsonbox .key { color: var(--n4); }
-  .jsonbox .str { color: var(--green); }
+
+  /* operation chains: what each stack makes the agent get right */
+  .reqbar {
+    width: 100%; max-width: 1000px; border: 1px solid var(--green-25); border-radius: 8px;
+    background: var(--shade5); padding: .65rem 1rem; font-family: var(--font-mono);
+    font-size: clamp(.78rem, 1.5vw, .92rem); color: var(--n1); margin-bottom: 1.3rem;
+  }
+  .reqbar b { color: var(--green); font-weight: 600; }
+  .chains { display: grid; gap: 1.15rem; width: 100%; max-width: 1000px; }
+  .chain { display: grid; grid-template-columns: 5.5rem 1fr; gap: 1rem; align-items: center; }
+  @media (max-width: 700px) { .chain { grid-template-columns: 1fr; gap: .5rem; } }
+  .chain .who { font-family: var(--font-mono); font-size: .86rem; color: var(--n1); }
+  .ops { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+  .op-pill {
+    font-family: var(--font-mono); font-size: clamp(.66rem, 1.3vw, .78rem);
+    border: 1px solid var(--shade1); border-radius: 6px; padding: .35rem .7rem;
+    color: var(--n3); background: #0d1418; white-space: nowrap;
+    opacity: 0; transform: translateX(-8px);
+    transition: opacity .35s ease, transform .35s ease;
+  }
+  section.on .op-pill { opacity: 1; transform: none; }
+  .op-pill.solo { border-color: var(--green-25); color: var(--green); background: var(--green-10); }
+  .op-pill.risk { border-color: #fc689766; color: #fc6897; }
+  section.on .op-pill.risk { animation: riskPulse 3.4s ease-in-out infinite 1.2s; }
+  @keyframes riskPulse { 0%,100% { box-shadow: none; } 50% { box-shadow: 0 0 12px #fc689733; } }
+  .ops .sep { color: var(--n5); font-family: var(--font-mono); font-size: .8rem; }
+  .cost-note { font-family: var(--font-mono); font-size: .74rem; color: var(--n4); margin-left: .3rem; white-space: nowrap; }
+  .cost-note b { color: var(--n1); font-weight: 600; }
+  .cost-note.warn b { color: #fc6897; }
+
+  section.on .ops .op-pill:nth-child(1) { transition-delay: 0.12s; }
+  section.on .ops .op-pill:nth-child(2) { transition-delay: 0.24s; }
+  section.on .ops .op-pill:nth-child(3) { transition-delay: 0.36s; }
+  section.on .ops .op-pill:nth-child(4) { transition-delay: 0.48s; }
+  section.on .ops .op-pill:nth-child(5) { transition-delay: 0.60s; }
+  section.on .ops .op-pill:nth-child(6) { transition-delay: 0.72s; }
+  section.on .ops .op-pill:nth-child(7) { transition-delay: 0.84s; }
+  section.on .ops .op-pill:nth-child(8) { transition-delay: 0.96s; }
+
+  /* guard removal */
+  .gflow { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; width: 100%; max-width: 900px; margin-bottom: 1rem; }
+  .gnode {
+    font-family: var(--font-mono); font-size: clamp(.7rem, 1.4vw, .84rem);
+    border: 1px solid var(--shade1); border-radius: 6px; padding: .5rem .85rem;
+    color: var(--n3); background: #0d1418;
+  }
+  .gnode.guard { border-color: var(--green-25); color: var(--green); position: relative; }
+  section.on .gnode.guard { animation: guardGone 5s ease-in-out infinite; }
+  @keyframes guardGone {
+    0%, 34%  { opacity: 1; border-color: var(--green-25); color: var(--green); filter: none; }
+    42%, 88% { opacity: .25; border-color: #fc689766; color: #fc6897; filter: grayscale(1); }
+    96%,100% { opacity: 1; border-color: var(--green-25); color: var(--green); filter: none; }
+  }
+  .gflow .arr { color: var(--n5); font-family: var(--font-mono); }
+  .gtag { font-family: var(--font-mono); font-size: .74rem; color: #fc6897; opacity: 0; }
+  section.on .gtag { animation: evShow 5s ease-in-out infinite; animation-delay: 1.5s; }
+
+  /* verdict card */
+  .vcard {
+    width: 100%; max-width: 480px; border: 1px solid #fc689766; border-radius: 10px;
+    background: #0d1418; overflow: hidden; font-family: var(--font-mono);
+  }
+  .vcard .vh {
+    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    padding: .6rem .9rem; border-bottom: 1px solid var(--shade1); background: #fc689714;
+  }
+  .vcard .vh b { color: var(--n1); font-size: .9rem; font-weight: 600; }
+  .vcard .vh span { color: #fc6897; font-size: .78rem; letter-spacing: .1em; }
+  .vcard .vrow { display: flex; justify-content: space-between; gap: 1rem; padding: .42rem .9rem; font-size: .78rem; color: var(--n3); }
+  .vcard .vrow span:first-child { color: var(--n4); }
+  .vcard .vrow.ev span:last-child { color: var(--green); }
+
+  /* side-by-side outcome simulation */
+  .sims { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; width: 100%; max-width: 1000px; }
+  @media (max-width: 800px) { .sims { grid-template-columns: 1fr; } }
+  .sim { border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10; overflow: hidden; }
+  .sim.good { border-color: var(--green-25); }
+  .sim.bad  { border-color: #fc689766; }
+  .sim .sh {
+    padding: .5rem .9rem; border-bottom: 1px solid var(--shade1);
+    font-family: var(--font-mono); font-size: .8rem; color: var(--n1);
+    display: flex; justify-content: space-between; gap: .6rem;
+  }
+  .sim.good .sh em { color: var(--green); font-style: normal; }
+  .sim.bad  .sh em { color: #fc6897; font-style: normal; }
+  .simbody { padding: .9rem; display: grid; gap: .55rem; font-family: var(--font-mono); font-size: .8rem; }
+  .lane2 { display: grid; grid-template-columns: 3.4rem 1fr; gap: .6rem; align-items: center; color: var(--n4); }
+  .track { height: 26px; border-radius: 5px; background: #0d1418; border: 1px solid var(--shade1); position: relative; overflow: hidden; }
+  .pkt {
+    position: absolute; top: 50%; margin-top: -8px; left: 6px; height: 16px;
+    border-radius: 4px; padding: 0 .45rem; font-size: .66rem; line-height: 16px;
+    background: var(--green-10); border: 1px solid var(--green-25); color: var(--green);
+    white-space: nowrap; opacity: 0;
+  }
+  .pkt.b { background: #1b2129; border-color: #2b3a42; color: var(--n3); }
+  section.on .pkt.a1 { animation: pktRun 8s ease-in-out infinite; }
+  section.on .pkt.b1 { animation: pktRun 8s ease-in-out infinite .6s; }
+  @keyframes pktRun {
+    0%      { left: 6px; opacity: 0; }
+    6%      { opacity: 1; }
+    38%     { left: calc(100% - 92px); opacity: 1; }
+    46%,100%{ left: calc(100% - 92px); opacity: 0; }
+  }
+  .stockbox {
+    display: flex; align-items: center; justify-content: space-between;
+    border-top: 1px solid var(--shade1); margin-top: .3rem; padding-top: .6rem;
+    font-family: var(--font-mono); font-size: .82rem; color: var(--n4);
+  }
+  .stockbox .val { position: relative; height: 1.3em; min-width: 9rem; text-align: right; }
+  .stockbox .val span { position: absolute; right: 0; top: 0; opacity: 0; }
+  section.on .sv1 { animation: svA 8s ease-in-out infinite; }
+  section.on .sv2 { animation: svB 8s ease-in-out infinite; }
+  @keyframes svA { 0%, 44% { opacity: 1; } 50%, 92% { opacity: 0; } 97%, 100% { opacity: 1; } }
+  @keyframes svB { 0%, 44% { opacity: 0; } 50%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+  .outcome { font-family: var(--font-mono); font-size: .78rem; opacity: 0; padding: 0 .9rem .8rem; }
+  .outcome.ok { color: var(--green); }
+  .outcome.no { color: #fc6897; }
+  section.on .outcome { animation: evShow 8s ease-in-out infinite; animation-delay: 2.6s; }
 
   /* restart beat in the storefront demo */
   .live { position: relative; }
@@ -612,48 +679,38 @@
 <!-- 2 the bet -->
 <section>
   <div class="kicker r">the bet</div>
-  <h2 class="r d1">One requirement. Whatever the stack makes you write.</h2>
-  <div class="req r d2">criterion <span>no-oversell</span> &mdash; the last unit may be sold exactly once, under concurrent checkout</div>
-  <div class="impls r d2">
-    <div class="impl">
-      <div class="ih"><span>stack a</span><span>4 lines</span></div>
-<pre><span class="k">reducer</span> checkout(ctx, sku) {
-  <span class="k">const</span> p = ctx.db.product
-        .sku.find(sku);
-  <span class="k">if</span> (p.stock &lt; 1) <span class="k">throw</span> ...
-  ctx.db.product.sku.update(
-    {...p, stock: p.stock - 1});
-}
-<span class="c">// one transaction by construction</span></pre>
+  <h2 class="r d1">One requirement. Whatever the stack makes you get right.</h2>
+  <div class="reqbar r d2">criterion <b>no-oversell</b> &mdash; the last unit sells exactly once, under concurrent checkout</div>
+  <div class="chains r d2">
+    <div class="chain">
+      <span class="who">stack a</span>
+      <div class="ops">
+        <span class="op-pill solo">one transaction</span>
+        <span class="cost-note"><b>1</b> thing to get right</span>
+      </div>
     </div>
-    <div class="impl">
-      <div class="ih"><span>stack b</span><span>~14 lines</span></div>
-<pre><span class="k">await</span> db.transaction(<span class="k">async</span> tx =&gt; {
-  <span class="k">const</span> [p] = <span class="k">await</span> tx
-    .select().from(product)
-    .where(eq(product.sku, sku))
-    .<span class="k">for</span>(<span class="str">'update'</span>);        <span class="c">// lock</span>
-  <span class="k">if</span> (p.stock &lt; 1) <span class="k">throw</span> ...
-  <span class="k">await</span> tx.update(product)
-    .set({stock: p.stock - 1})
-    .where(eq(product.sku, sku));
-});
-<span class="c">// forget FOR UPDATE = oversell</span></pre>
+    <div class="chain">
+      <span class="who">stack b</span>
+      <div class="ops">
+        <span class="op-pill">begin</span><span class="sep">&rarr;</span>
+        <span class="op-pill risk">lock the row</span><span class="sep">&rarr;</span>
+        <span class="op-pill">read stock</span><span class="sep">&rarr;</span>
+        <span class="op-pill">write stock</span><span class="sep">&rarr;</span>
+        <span class="op-pill">commit</span>
+        <span class="cost-note warn"><b>5</b> &middot; skip the lock and it oversells</span>
+      </div>
     </div>
-    <div class="impl">
-      <div class="ih"><span>stack c</span><span>~12 lines</span></div>
-<pre><span class="k">const</span> r = <span class="k">await</span> Product
-  .findOneAndUpdate(
-    {sku, stock: {$gte: 1}},
-    {$inc: {stock: -1}},
-    {new: <span class="k">true</span>});
-<span class="k">if</span> (!r) <span class="k">throw</span> ...
-<span class="c">// atomic only if the guard is
-// inside the query, and only
-// for a single document</span></pre>
+    <div class="chain">
+      <span class="who">stack c</span>
+      <div class="ops">
+        <span class="op-pill risk">guard inside the query</span><span class="sep">&rarr;</span>
+        <span class="op-pill">atomic update</span><span class="sep">&rarr;</span>
+        <span class="op-pill risk">one document only</span>
+        <span class="cost-note warn"><b>3</b> &middot; atomic only if all three hold</span>
+      </div>
     </div>
   </div>
-  <p class="supp r d3" style="margin-top:1.2rem">Same criterion, same prompt, same model. What differs is how much the agent has to get right, and every extra thing it must remember is a chance to ship an oversell.</p>
+  <p class="supp r d3" style="margin-top:1.4rem">Same criterion, same prompt, same model. What changes is how many things the agent has to remember, and every one of them is a chance to ship a store that sells the last unit twice.</p>
 </section>
 
 <!-- 3 a run -->
@@ -736,53 +793,32 @@
 <!-- 5 break it on purpose -->
 <section>
   <div class="kicker r">break it on purpose</div>
-  <h2 class="r d1">Two writers, one row, one unit of stock</h2>
-  <svg class="dia tl-dia r d2" viewBox="0 0 960 300" role="img" aria-label="two concurrent transactions contending for the last unit">
-    <text class="sub" x="20" y="18">t &rarr;</text>
-
-    <text class="lbl" x="20" y="70">alice</text>
-    <line class="life" x1="110" y1="64" x2="930" y2="64"/>
-    <g class="ev">
-      <rect class="op" x="140" y="50" width="86" height="28"/><text x="152" y="68">BEGIN</text>
-    </g>
-    <g class="ev e2">
-      <rect class="op" x="248" y="50" width="128" height="28"/><text x="260" y="68">read stock=1</text>
-    </g>
-    <g class="ev e4">
-      <rect class="op win" x="470" y="50" width="128" height="28"/><text x="482" y="68">write stock=0</text>
-    </g>
-    <g class="ev e5">
-      <rect class="op win" x="620" y="50" width="118" height="28"/><text class="ok" x="632" y="68">COMMIT &#10003;</text>
-    </g>
-
-    <text class="lbl acc" x="20" y="160">row</text>
-    <text class="sub" x="20" y="176">monitor</text>
-    <line class="life" x1="110" y1="150" x2="930" y2="150"/>
-    <g class="ev e3">
-      <rect class="op" x="248" y="136" width="128" height="28"/><text x="262" y="154">stock = 1</text>
-    </g>
-    <g class="ev e5">
-      <rect class="op" x="620" y="136" width="118" height="28"/><text class="ok" x="640" y="154">stock = 0</text>
-    </g>
-
-    <text class="lbl" x="20" y="248">bob</text>
-    <line class="life" x1="110" y1="242" x2="930" y2="242"/>
-    <g class="ev e2">
-      <rect class="op" x="196" y="228" width="86" height="28"/><text x="208" y="246">BEGIN</text>
-    </g>
-    <g class="ev e3">
-      <rect class="op" x="304" y="228" width="128" height="28"/><text x="316" y="246">read stock=1</text>
-    </g>
-    <g class="ev e4">
-      <rect class="op lose" x="470" y="228" width="128" height="28"/><text x="482" y="246">write stock=0</text>
-    </g>
-    <g class="ev e6">
-      <rect class="op lose" x="620" y="228" width="196" height="28"/><text class="no" x="632" y="246">rejected &middot; sold out</text>
-    </g>
-
-    <line class="sweep" x1="120" y1="34" x2="120" y2="270" stroke="#4cf49055" stroke-width="1.5"/>
-  </svg>
-  <p class="supp r d3">Both transactions read the same value before either writes. If the stack lets both commit, the store sold one monitor twice and the bug reaches a customer, not a test report. The harness drives this collision deliberately and asserts exactly one order stands.</p>
+  <h2 class="r d1">Two shoppers hit checkout at the same instant</h2>
+  <div class="sims r d2" role="img" aria-label="the same collision run against two stacks, with different outcomes">
+    <div class="sim good">
+      <div class="sh"><span>stack that serialises writes</span><em>holds</em></div>
+      <div class="simbody">
+        <div class="lane2"><span>alice</span><div class="track"><i class="pkt a1">checkout</i></div></div>
+        <div class="lane2"><span>bob</span><div class="track"><i class="pkt b1">checkout</i></div></div>
+        <div class="stockbox"><span>stock</span>
+          <span class="val"><span class="sv1">1 &middot; available</span><span class="sv2" style="color:var(--green)">0 &middot; sold once</span></span>
+        </div>
+      </div>
+      <div class="outcome ok">&#10003; one order stands, the other is told sold out</div>
+    </div>
+    <div class="sim bad">
+      <div class="sh"><span>stack where the guard was missed</span><em>oversells</em></div>
+      <div class="simbody">
+        <div class="lane2"><span>alice</span><div class="track"><i class="pkt a1">checkout</i></div></div>
+        <div class="lane2"><span>bob</span><div class="track"><i class="pkt b1">checkout</i></div></div>
+        <div class="stockbox"><span>stock</span>
+          <span class="val"><span class="sv1">1 &middot; available</span><span class="sv2" style="color:#fc6897">-1 &middot; sold twice</span></span>
+        </div>
+      </div>
+      <div class="outcome no">&#10007; two orders, one unit &middot; the second customer never gets it</div>
+    </div>
+  </div>
+  <p class="supp r d3" style="margin-top:1.2rem">Both requests read the same stock before either writes. Whether that ends in one order or two is decided entirely by the stack underneath, and it is invisible until a real customer hits it. The harness forces the collision on purpose and checks which way it lands.</p>
   <p class="lvls r d4">L1 identity &middot; L2 authorization &middot; <b>L3 atomicity</b> &middot; L4 deferred work &middot; L5 volume &nbsp; <span class="dim">levels are cumulative</span></p>
 </section>
 
@@ -790,18 +826,19 @@
 <section>
   <div class="kicker r">you can't game it</div>
   <h2 class="r d1">The grader has to catch a defect we plant</h2>
-  <div class="diff r d2">
-    <div class="dh">reference app &middot; server/checkout.ts &middot; mutation <span style="color:var(--n3)">no-oversell-guard-removed</span></div>
-    <div class="dl">  const p = await load(sku);</div>
-    <div class="dl rm">- if (p.stock &lt; 1) throw new SoldOut();</div>
-    <div class="dl">  await commit({ ...p, stock: p.stock - 1 });</div>
+  <div class="gflow r d2">
+    <span class="gnode">checkout</span><span class="arr">&rarr;</span>
+    <span class="gnode guard">guard: stock &ge; 1</span><span class="arr">&rarr;</span>
+    <span class="gnode">decrement</span><span class="arr">&rarr;</span>
+    <span class="gnode">commit</span>
   </div>
+  <div class="gtag r d2">mutation removes the guard from a fully passing app</div>
   <div class="expect r d3">
     <div><span>criterion <b style="color:var(--n1)">no-oversell</b></span><span class="must">must fail &middot; kill confirmed</span></div>
     <div><span>every other criterion</span><span class="rest">must still pass &middot; no collateral</span></div>
     <div><span>blank app, full suite</span><span class="rest">must score zero everywhere</span></div>
   </div>
-  <p class="supp r d4">A criterion is not allowed to score anything until it has caught a defect planted in a passing app, hit only the criterion it declared, and awarded nothing to an empty build. If a planted defect survives, the hole is in the grader, not the app.</p>
+  <p class="supp r d4">A criterion earns the right to score only after it catches a defect planted in a passing app, hits nothing it did not declare, and awards nothing to an empty build. A planted defect that survives is a hole in the grader, not a pass for the app.</p>
 </section>
 
 <!-- 7 receipts -->
@@ -823,18 +860,13 @@
 │   ├── bob-no-oversell.png
 │   └── bob-no-oversell.trace.zip
 └── level-l1-source/  <b>hash-bound</b></pre>
-    <div class="jsonbox">
-      <div class="jh">grading-l1.json &middot; one criterion</div>
-<pre>{
-  <span class="key">"criterion"</span>: <span class="str">"no-oversell"</span>,
-  <span class="key">"state"</span>: <span class="str">"failed"</span>,
-  <span class="key">"observed"</span>: <span class="str">"2 orders for 1 unit"</span>,
-  <span class="key">"actor"</span>: <span class="str">"bob"</span>,
-  <span class="key">"deadline_ms"</span>: 5000,
-  <span class="key">"evidence"</span>: [<span class="str">"media/bob-no-oversell.webm"</span>,
-               <span class="str">"media/bob-no-oversell.trace.zip"</span>],
-  <span class="key">"recipe"</span>: <span class="str">"ecommerce.l1-standard@1.1.0"</span>
-}</pre>
+    <div class="vcard">
+      <div class="vh"><b>no-oversell</b><span>FAILED</span></div>
+      <div class="vrow"><span>observed</span><span>2 orders for 1 unit</span></div>
+      <div class="vrow"><span>actor</span><span>bob</span></div>
+      <div class="vrow"><span>deadline</span><span>5000 ms</span></div>
+      <div class="vrow ev"><span>evidence</span><span>video &middot; screenshot &middot; trace</span></div>
+      <div class="vrow"><span>recipe</span><span>ecommerce.l1-standard@1.1.0</span></div>
     </div>
   </div>
   <p class="supp r d3" style="margin-top:1.2rem">One typed state per check, the evidence that produced it, and the exact recipe it was graded under. A score that cannot be traced back to these files does not ship.</p>
