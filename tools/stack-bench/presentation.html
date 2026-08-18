@@ -42,7 +42,7 @@
     --font-mono: 'Source Code Pro Variable', monospace;   /* --font-source */
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { scroll-snap-type: y mandatory; scroll-behavior: smooth; }
+  html { scroll-snap-type: y proximity; scroll-behavior: smooth; }
   body {
     background: var(--n8);
     color: var(--n1);
@@ -171,6 +171,113 @@
   .files div { padding: .32rem 0; color: var(--n4); break-inside: avoid; }
   .files span { color: var(--green); }
 
+
+  /* two-actor demo: a message travels from alice to bob, then the assertion lands */
+  .actors { max-width: 880px; width: 100%; margin: .4rem 0 1rem; }
+  .actors text { font-family: var(--font-mono); font-size: 11.5px; fill: var(--n4); }
+  .actors .name { fill: var(--n1); font-size: 13px; font-weight: 600; }
+  .actors rect.win { fill: var(--shade5); stroke: var(--shade1); rx: 8; }
+  .actors rect.tb { fill: var(--shade7); }
+  .actors circle.led { fill: var(--n5); }
+  .actors .wire { stroke: var(--shade1); stroke-width: 1.4; fill: none; }
+  section.on .actors .msg { animation: msgTravel 4.5s ease-in-out infinite; }
+  @keyframes msgTravel {
+    0%, 8%   { transform: translateX(0); opacity: 0; }
+    12%      { opacity: 1; }
+    48%      { transform: translateX(340px); opacity: 1; }
+    56%, 100%{ transform: translateX(340px); opacity: 0; }
+  }
+  section.on .actors .assert { animation: assertPop 4.5s ease-in-out infinite; }
+  @keyframes assertPop {
+    0%, 50%  { opacity: 0; }
+    58%, 88% { opacity: 1; }
+    96%,100% { opacity: 0; }
+  }
+
+  /* level ladder */
+  .ladder { display: grid; gap: .5rem; max-width: 760px; margin: 1.2rem 0 .8rem; }
+  .rung { display: flex; align-items: center; gap: 1rem; }
+  .rung .lv { font-family: var(--font-mono); color: var(--green); width: 2.2rem; flex: none; }
+  .rung .bar {
+    height: 30px; border-radius: 6px;
+    background: linear-gradient(180deg, var(--shade5), var(--shade7));
+    border: 1px solid var(--shade1);
+    display: flex; align-items: center; padding: 0 .9rem;
+    font-size: .85rem; color: var(--n3); white-space: nowrap;
+    width: 0; opacity: 0; overflow: hidden;
+    transition: width .7s cubic-bezier(.2,.7,.2,1), opacity .4s ease;
+  }
+  section.on .rung .bar { opacity: 1; }
+  section.on .rung:nth-child(1) .bar { width: 46%; transition-delay: .15s; }
+  section.on .rung:nth-child(2) .bar { width: 57%; transition-delay: .3s; }
+  section.on .rung:nth-child(3) .bar { width: 68%; transition-delay: .45s; }
+  section.on .rung:nth-child(4) .bar { width: 79%; transition-delay: .6s; }
+  section.on .rung:nth-child(5) .bar { width: 90%; transition-delay: .75s; }
+  .rung.todo .lv { color: var(--n4); }
+  .rung.todo .bar { border-style: dashed; color: var(--n4); }
+  .vbadge {
+    font-family: var(--font-mono); font-size: .72rem; color: var(--green);
+    border: 1px solid var(--green-25); border-radius: 999px; padding: .18rem .6rem;
+    margin-left: .8rem; flex: none;
+  }
+
+  /* mutation demo: one injected defect, exactly one criterion flips */
+  .mut { display: flex; flex-direction: column; gap: .9rem; max-width: 760px; margin: 1rem 0 1.2rem; }
+  .mutrow { display: flex; align-items: center; gap: 1rem; }
+  .mutlabel { font-family: var(--font-mono); font-size: .78rem; color: var(--n4); width: 11rem; flex: none; }
+  .dots { display: flex; gap: .55rem; }
+  .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--green); opacity: .85; }
+  .dot.hollow { background: none; border: 1.5px solid var(--n5); }
+  section.on .dot.hit { animation: defect 4s ease-in-out infinite; }
+  @keyframes defect {
+    0%, 30%  { background: var(--green); transform: scale(1); }
+    40%, 85% { background: var(--red); transform: scale(1.25); }
+    95%,100% { background: var(--green); transform: scale(1); }
+  }
+  section.on .mutnote { animation: assertPop 4s ease-in-out infinite; }
+  .mutnote { font-family: var(--font-mono); font-size: .78rem; color: var(--red); opacity: 0; }
+
+  /* preflight checklist ticks */
+  ul.checks { list-style: none; display: grid; gap: .6rem; max-width: 62ch; margin: .4rem 0 1.2rem; }
+  ul.checks li { padding-left: 1.7rem; position: relative; color: var(--n3); }
+  ul.checks li::before {
+    content: '\2713'; position: absolute; left: 0; color: var(--green);
+    font-family: var(--font-mono); font-weight: 700;
+    opacity: 0; transform: scale(.4);
+    transition: opacity .3s ease, transform .3s cubic-bezier(.2,1.6,.4,1);
+  }
+  section.on ul.checks li::before { opacity: 1; transform: scale(1); }
+  section.on ul.checks li:nth-child(1)::before { transition-delay: .2s; }
+  section.on ul.checks li:nth-child(2)::before { transition-delay: .45s; }
+  section.on ul.checks li:nth-child(3)::before { transition-delay: .7s; }
+  section.on ul.checks li:nth-child(4)::before { transition-delay: .95s; }
+  section.on ul.checks li:nth-child(5)::before { transition-delay: 1.2s; }
+
+  /* video banner demo */
+  .banners { display: grid; gap: .6rem; max-width: 720px; margin: .6rem 0 1.2rem; }
+  .banner {
+    font-family: var(--font-mono); font-size: .8rem;
+    border-radius: 8px; padding: .55rem .9rem;
+    display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+  }
+  .banner.pass { background: var(--green-10); border: 1px solid var(--green-25); color: var(--green); }
+  .banner.fail { background: #ff4c4c12; border: 1px solid #ff4c4c40; color: var(--red); }
+  section.on .banner.pass { animation: bannerIn .5s ease .3s backwards; }
+  section.on .banner.fail { animation: bannerIn .5s ease .55s backwards; }
+  @keyframes bannerIn { from { opacity: 0; transform: translateY(10px); } }
+  .files div { opacity: 0; transform: translateY(8px); transition: opacity .45s ease, transform .45s ease; }
+  section.on .files div { opacity: 1; transform: none; }
+  section.on .files div:nth-child(1) { transition-delay: 0.62s; }
+  section.on .files div:nth-child(2) { transition-delay: 0.69s; }
+  section.on .files div:nth-child(3) { transition-delay: 0.76s; }
+  section.on .files div:nth-child(4) { transition-delay: 0.83s; }
+  section.on .files div:nth-child(5) { transition-delay: 0.90s; }
+  section.on .files div:nth-child(6) { transition-delay: 0.97s; }
+  section.on .files div:nth-child(7) { transition-delay: 1.04s; }
+  section.on .files div:nth-child(8) { transition-delay: 1.11s; }
+  section.on .files div:nth-child(9) { transition-delay: 1.18s; }
+  section.on .files div:nth-child(10) { transition-delay: 1.25s; }
+
   @media (max-width: 720px) {
     .files { columns: 1; }
     #dots { display: none; }
@@ -259,17 +366,32 @@
 <section>
   <div class="kicker r">verification</div>
   <h2 class="r d1">Grading drives real clients</h2>
-  <ul class="plain">
-    <li class="r d1">Apps differ in structure, so the harness locates elements only through a contract of <code>data-testid</code> hooks the prompt requires.</li>
-    <li class="r d2">Scenarios drive real browser clients and assert on what a user would observe. Each actor gets its own isolated browser context, so identities are genuinely separate.</li>
-    <li class="r d2">Scenarios are written in a 49-action language. Every action is validated at startup, so a malformed scenario fails before a browser opens.</li>
-  </ul>
+  <svg class="actors r d2" viewBox="0 0 880 190" role="img" aria-label="two isolated browser clients">
+    <rect class="win" x="20" y="30" width="300" height="130"/>
+    <rect class="tb" x="21" y="31" width="298" height="26" rx="8"/>
+    <circle class="led" cx="38" cy="44" r="4"/><circle class="led" cx="52" cy="44" r="4"/>
+    <text class="name" x="70" y="48">alice</text>
+    <text x="40" y="86">isolated browser context</text>
+    <text x="40" y="104">acts through the real UI</text>
+    <rect class="win" x="560" y="30" width="300" height="130"/>
+    <rect class="tb" x="561" y="31" width="298" height="26" rx="8"/>
+    <circle class="led" cx="578" cy="44" r="4"/><circle class="led" cx="592" cy="44" r="4"/>
+    <text class="name" x="610" y="48">bob</text>
+    <text x="580" y="86">separate identity</text>
+    <text x="580" y="104">separate storage</text>
+    <path class="wire" d="M320 95 H560"/>
+    <circle class="msg" cx="350" cy="95" r="6" fill="var(--green)"/>
+    <g class="assert">
+      <text class="name" x="580" y="140" fill="var(--green)">&#10003; observed here, within its deadline</text>
+    </g>
+    <text x="20" y="182">alice acts &middot; the criterion passes only when bob's browser shows the result</text>
+  </svg>
+  <p class="r d3">Scenarios drive one real browser per actor and assert on what a user would observe. Elements are found only through the <code>data-testid</code> contract the prompt requires, and every scenario is validated before a browser opens.</p>
   <div class="cards">
     <div class="card r d3"><h3>features</h3><p>does each described feature work</p></div>
     <div class="card pu r d4"><h3>invariants</h3><p>identity, isolation, durability, write-path integrity</p></div>
     <div class="card bl r d5"><h3>delivery</h3><p>no loss, no duplication, consistent ordering, reconnect recovery</p></div>
   </div>
-  <p class="r d4">The three axes are scored separately because a feature list cannot see cross-cutting properties. An app can implement every feature and still let one user take over another's account.</p>
   <div class="caps r d5">
     <div><span>console error during a feature</span><b>cap 2 / 3</b></div>
     <div><span>works only after a page reload</span><b>cap 1 / 3</b></div>
@@ -283,32 +405,46 @@
   <h2 class="r d1">Two applications, one ladder</h2>
   <div class="cards" style="max-width:760px">
     <div class="card r d2"><h3>chat</h3><p>rooms, messages, presence. The original track; human grades exist for it.</p></div>
-    <div class="card ye r d3"><h3>ecommerce</h3><p>storefront, cart, warehouses. Built after chat stopped separating backends; contention and live derived numbers still do.</p></div>
+    <div class="card ye r d2"><h3>ecommerce</h3><p>storefront, cart, warehouses. Built for contention and live derived numbers.</p></div>
   </div>
-  <table class="r d3">
-    <tr><th>level</th><th>makes verifiable</th></tr>
-    <tr><td>L1</td><td>identity, durable state, real-time</td></tr>
-    <tr><td>L2</td><td>authorization, per-user derivation</td></tr>
-    <tr><td>L3</td><td>atomicity and isolation</td></tr>
-    <tr><td>L4</td><td>durability of deferred work</td></tr>
-    <tr><td>L5</td><td>throughput, latency, efficiency</td></tr>
-  </table>
-  <ul class="plain">
-    <li class="r d4">Levels are cumulative: an app at L3 is still checked against L1 and L2, so a regression is caught rather than scored around.</li>
-    <li class="r d5">Both tracks are currently validated through <strong>L2</strong>. A level with no declared suite fails instead of falling back.</li>
-  </ul>
+  <div class="ladder">
+    <div class="rung"><span class="lv">L1</span><div class="bar">identity &middot; durable state &middot; real-time</div><span class="vbadge">validated</span></div>
+    <div class="rung"><span class="lv">L2</span><div class="bar">authorization &middot; per-user derivation</div><span class="vbadge">validated</span></div>
+    <div class="rung todo"><span class="lv">L3</span><div class="bar">atomicity &middot; isolation</div></div>
+    <div class="rung todo"><span class="lv">L4</span><div class="bar">durability of deferred work</div></div>
+    <div class="rung todo"><span class="lv">L5</span><div class="bar">throughput &middot; latency &middot; efficiency</div></div>
+  </div>
+  <p class="r d4">Levels are cumulative. An app graded at L3 is still checked against L1 and L2, so a regression is caught rather than scored around.</p>
 </section>
 
 <!-- 6 - keeping it honest -->
 <section>
   <div class="kicker r">keeping it honest</div>
   <h2 class="r d1">The grader is tested harder than the apps</h2>
+  <div class="mut r d2">
+    <div class="mutrow">
+      <span class="mutlabel">reference app</span>
+      <div class="dots">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <div class="dot hit"></div>
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      </div>
+      <span class="mutnote">defect injected &rarr; exactly this criterion fails</span>
+    </div>
+    <div class="mutrow">
+      <span class="mutlabel">blank app</span>
+      <div class="dots">
+        <div class="dot hollow"></div><div class="dot hollow"></div><div class="dot hollow"></div>
+        <div class="dot hollow"></div><div class="dot hollow"></div><div class="dot hollow"></div>
+        <div class="dot hollow"></div>
+      </div>
+      <span class="mutlabel">scores zero everywhere</span>
+    </div>
+  </div>
   <ul class="plain">
-    <li class="r d1"><strong>Mutation testing.</strong> Inject a known defect into a fully passing reference app; the exact declared criterion must fail, with no collateral. A defect the grader misses is a hole in the oracle.</li>
-    <li class="r d2"><strong>Null control.</strong> A blank app is graded by the full real suite and scores zero on every point-bearing criterion.</li>
-    <li class="r d3"><strong>Cross-backend checks.</strong> When every backend fails a criterion the same way, the harness investigates itself before anything scores.</li>
-    <li class="r d4"><strong>Never patch prompts, guidance or tests to make a failing check pass.</strong> Fix the product, or report the failure.</li>
-    <li class="r d5"><strong>Every finding is recorded</strong>, whichever way it points. That is what makes the favourable ones credible.</li>
+    <li class="r d3"><strong>Mutation testing.</strong> A known defect goes into a fully passing reference app; the exact declared criterion must fail, with no collateral.</li>
+    <li class="r d4"><strong>Cross-backend checks.</strong> When every backend fails a criterion the same way, the harness investigates itself before anything scores.</li>
+    <li class="r d5"><strong>Prompts, guidance and tests are never patched to make a failing check pass.</strong> Every finding is recorded, whichever way it points.</li>
   </ul>
 </section>
 
@@ -316,12 +452,16 @@
 <section>
   <div class="kicker r">reproducibility</div>
   <h2 class="r d1">A run owns what it starts, and proves it</h2>
+  <ul class="checks r d2">
+    <li>Docker, digest-pinned images, ports, credentials, clock and storage verified before any model call</li>
+    <li>smoke test boots the real build image, without a model</li>
+    <li>build sessions sealed in a container with no host access</li>
+    <li>sandbox probe gates every run; a leak audit reviews every transcript</li>
+    <li>databases started per run through a token-authenticated lease</li>
+  </ul>
   <ul class="plain">
-    <li class="r d1"><strong>Preflight before spend.</strong> Docker, digest-pinned images, ports, credentials, clock and storage are checked before any model call. The smoke test starts the real build image without a model.</li>
-    <li class="r d2"><strong>Leases.</strong> Reset, restart and teardown go only through a token-authenticated backend lease. Each run starts its own database services; anything already running on the machine is never touched.</li>
-    <li class="r d3"><strong>Typed verdicts.</strong> Every check records exactly one state: passed, failed, inconclusive or harness_failure. One shared status table drives scoring, controls, comparisons and repair. Prose cannot change a verdict.</li>
-    <li class="r d4"><strong>Sealed sessions.</strong> Builds run in a container with no host access. A sandbox probe gates every run, a leak audit reviews every transcript, and transcripts are archived with the results.</li>
-    <li class="r d5"><strong>Strict artifacts.</strong> Results use schema v2 with identity and parent-attempt chains. 678 pre-schema artifacts sit in a checksummed inert archive and are never read as evidence.</li>
+    <li class="r d4"><strong>Typed verdicts.</strong> Every check records exactly one state: passed, failed, inconclusive or harness_failure. Prose cannot change a verdict.</li>
+    <li class="r d5"><strong>Strict artifacts.</strong> Every result carries its identity and parent-attempt chain, so any number can be traced to the exact run that produced it.</li>
   </ul>
 </section>
 
@@ -329,7 +469,12 @@
 <section>
   <div class="kicker r">evidence</div>
   <h2 class="r d1">Every verdict comes with its receipts</h2>
-  <div class="files r d2">
+  <div class="banners r d2">
+    <div class="banner pass"><span>alice &middot; pending-visible-to-author &middot; step 4/4</span><span>PASS</span></div>
+    <div class="banner fail"><span>bob &middot; cart-total-exact &middot; expected 3, found 2</span><span>FAIL</span></div>
+  </div>
+  <p class="r d2" style="font-size:.9rem">Every recording carries this banner: the actor being driven, the criterion under test, and the verdict at the moment it lands. A video explains itself.</p>
+  <div class="files r d3">
     <div><span>.prompt-*.md</span> &middot; the exact prompt the agent received</div>
     <div><span>.session-*.json</span> &middot; cost, tokens, duration, final message</div>
     <div><span>grading-*.json</span> &middot; every criterion's typed verdict and evidence</div>
@@ -341,7 +486,6 @@
     <div><span>run.json</span> &middot; stack, model, recipe, image, budget, outcome</div>
     <div><span>level-l&lt;N&gt;-source/</span> &middot; hash-bound source checkpoint per level</div>
   </div>
-  <p class="r d3" style="margin-top:1.4rem">Videos carry an annotation banner showing the actor, the criterion and the current step. It turns green on a pass and red on a failure, so a recording explains itself. Watching the failing actor's video is the fastest way to confirm a verdict is real.</p>
 </section>
 
 <!-- 10 - results -->
@@ -383,17 +527,34 @@
   }, { threshold: 0.55 });
   sections.forEach(s => io.observe(s));
 
+  // Sections can be taller than the viewport, so the slide we are "on" is the
+  // one nearest the top of the window, measured at the moment a key is pressed.
+  const nearest = () => {
+    const y = scrollY;
+    let best = 0, dist = Infinity;
+    sections.forEach((sec, i) => {
+      const d = Math.abs(sec.offsetTop - y);
+      if (d < dist) { dist = d; best = i; }
+    });
+    return best;
+  };
+  // While a programmatic scroll is in flight, base the next step on where we
+  // are headed rather than where scrollY still is, so quick presses stack.
+  let target = null, targetTimer = null;
+  const goTo = i => {
+    target = Math.max(0, Math.min(i, sections.length - 1));
+    sections[target].scrollIntoView();
+    clearTimeout(targetTimer);
+    targetTimer = setTimeout(() => { target = null; }, 1200);
+  };
+  const base = () => (target !== null ? target : nearest());
   addEventListener('keydown', e => {
     if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) {
-      e.preventDefault();
-      current = Math.min(current + 1, sections.length - 1);
-      sections[current].scrollIntoView();
+      e.preventDefault(); goTo(base() + 1);
     } else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) {
-      e.preventDefault();
-      current = Math.max(current - 1, 0);
-      sections[current].scrollIntoView();
-    } else if (e.key === 'Home') { sections[0].scrollIntoView(); }
-    else if (e.key === 'End') { sections[sections.length - 1].scrollIntoView(); }
+      e.preventDefault(); goTo(base() - 1);
+    } else if (e.key === 'Home') { goTo(0); }
+    else if (e.key === 'End') { goTo(sections.length - 1); }
   });
 </script>
 </body>
