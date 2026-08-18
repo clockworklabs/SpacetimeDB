@@ -348,49 +348,22 @@
   section.on .rail u.rB { animation: mtB 10s linear infinite; }
   section.on .rail u.rC { animation: mtC 10s linear infinite; }
 
-  /* where the guarantee lives: one grid, so the two sides line up row for row */
-  .guar { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem 1.6rem; width: 100%; max-width: 940px; }
-  @media (max-width: 800px) { .guar { grid-template-columns: 1fr; } }
-  .gcap { font-family: var(--font-mono); font-size: .8rem; letter-spacing: .04em; color: var(--n4); }
-  .gcap.win { color: var(--green); }
-  .gwrap {
-    border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10;
-    padding: .85rem; display: grid; gap: .4rem; align-content: start;
+  /* the race, settled two ways; the panels reuse the attack format */
+  .race { width: 100%; max-width: 1000px; display: grid; gap: .7rem; }
+  .race-tabs { display: flex; gap: .4rem; flex-wrap: wrap; }
+  .race-tab {
+    background: none; cursor: pointer; text-align: left;
+    font-family: var(--font-mono); font-size: .82rem; color: var(--n4);
+    border: 1px solid var(--shade1); border-radius: 8px; padding: .55rem .9rem;
   }
-  .gwrap.win { border-color: var(--green-25); }
-  .glbl { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .08em; color: var(--n5); }
-  .gstep {
-    font-family: var(--font-mono); font-size: .78rem; color: var(--n3); background: #0d1418;
-    border: 1px solid var(--shade1); border-radius: 6px; padding: .5rem .7rem;
+  .race-tab:hover { color: var(--n3); background: #0d1418; }
+  .race-tab.on { color: var(--green); border-color: var(--green-25); background: var(--green-10); }
+  .atk-bill {
+    display: flex; justify-content: space-between; gap: 1rem;
+    padding: .55rem .9rem; border-top: 1px solid var(--shade1);
+    font-family: var(--font-mono); font-size: .78rem; color: var(--n4);
   }
-  .gwrap.win .gstep { color: var(--green); background: var(--green-10); border-color: var(--green-25); }
-  .gnote { font-family: var(--font-mono); font-size: .72rem; color: var(--n4); padding-top: .1rem; }
-  /* one piece goes missing, and the outcome on that side moves with it */
-  section.on .gstep.drop { animation: gDrop 7s ease-in-out infinite; }
-  @keyframes gDrop {
-    0%, 48%   { opacity: 1; color: var(--n3); border-color: var(--shade1); }
-    55%, 92%  { opacity: .3; color: #fc6897; border-color: #fc689766; }
-    99%, 100% { opacity: 1; color: var(--n3); border-color: var(--shade1); }
-  }
-  .gres {
-    font-family: var(--font-mono); font-size: .84rem; text-align: center;
-    padding: .55rem; border-radius: 6px; position: relative; min-height: 2.5em;
-    display: grid; place-items: center;
-  }
-  .gres.ok { color: var(--green); background: var(--green-10); border: 1px solid var(--green-25); }
-  .gres.flip { border: 1px solid var(--shade1); }
-  .gres.flip span { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; }
-  .gres.flip .f-ok { color: var(--n3); }
-  .gres.flip .f-no { color: #fc6897; }
-  .gbill {
-    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
-    font-family: var(--font-mono); font-size: .8rem; color: var(--n4); padding: .1rem .25rem;
-  }
-  .gbill b { color: var(--n1); font-weight: 500; font-size: .95rem; }
-  section.on .gres.flip .f-ok { animation: gOk 7s ease-in-out infinite; }
-  section.on .gres.flip .f-no { animation: gNo 7s ease-in-out infinite; }
-  @keyframes gOk { 0%, 48% { opacity: 1 } 55%, 92% { opacity: 0 } 99%, 100% { opacity: 1 } }
-  @keyframes gNo { 0%, 48% { opacity: 0 } 55%, 92% { opacity: 1 } 99%, 100% { opacity: 0 } }
+  .atk-bill b { color: var(--n1); font-weight: 500; }
 
   /* proving the grader: three planted inputs, three verdicts that have to come back */
   .proof { display: grid; gap: .5rem; width: 100%; max-width: 940px; }
@@ -601,6 +574,7 @@
   .atk-panel.on .step:nth-child(2) { animation-delay: .5s; }
   .atk-panel.on .step:nth-child(3) { animation-delay: .9s; }
   .atk-panel.on .step:nth-child(4) { animation-delay: 1.3s; }
+  .atk-verdict.fail { color: #fc6897; border-top-color: #fc689733; background: #fc689710; }
   .atk-verdict {
     margin: .2rem .9rem .9rem; padding: .5rem .8rem; border-radius: 6px;
     font-family: var(--font-mono); font-size: .78rem;
@@ -1089,34 +1063,38 @@
 <!-- 5b why it differs -->
 <section>
   <div class="kicker r">why the bill differs</div>
-  <h2 class="r d1">Every rule the agent writes itself can go wrong</h2>
-  <div class="guar r d2" role="img" aria-label="one side writes one call, the other writes four steps, and the rounds and the bill follow">
-    <div class="gcap win">the database enforces the rule</div>
-    <div class="gcap">the agent enforces the rule</div>
-
-    <div class="gwrap win">
-      <div class="glbl">to sell the last unit once, the agent writes</div>
-      <div class="gstep">one call</div>
-      <div class="gnote">the database settles the race itself</div>
+  <h2 class="r d1">Two shoppers, one unit, and someone has to settle it</h2>
+  <div class="race r d2">
+    <div class="race-tabs">
+      <button class="race-tab on" data-race="r1" role="tab">the database settles it</button>
+      <button class="race-tab" data-race="r2" role="tab">the agent settles it</button>
     </div>
-    <div class="gwrap">
-      <div class="glbl">to sell the last unit once, the agent writes</div>
-      <div class="gstep">open a transaction</div>
-      <div class="gstep drop">lock the row</div>
-      <div class="gstep">re-check the stock</div>
-      <div class="gstep">commit, or retry</div>
+    <div class="atk-stage">
+      <div class="atk-panel on" id="r1">
+        <div class="atk-head">both checkouts arrive in the same millisecond</div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">alice</span><span class="what">presses buy</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what">presses buy, same instant</span></div>
+          <div class="step"><span class="actor">database</span><span class="what hold">takes the two of them one at a time</span></div>
+          <div class="step"><span class="actor">store</span><span class="what hold">alice ordered &middot; bob sold out &middot; stock 0</span></div>
+        </div>
+        <div class="atk-verdict">&#10003; one order for one unit</div>
+        <div class="atk-bill"><span>the agent wrote <b>one call</b></span><span><b>1</b> fix round &middot; <b>$4.73</b></span></div>
+      </div>
+      <div class="atk-panel" id="r2">
+        <div class="atk-head">the same instant, with the rule left to the agent</div>
+        <div class="atk-body">
+          <div class="step"><span class="actor">alice</span><span class="what">reads stock &middot; 1 left</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what hit">reads stock &middot; 1 left, before alice writes</span></div>
+          <div class="step"><span class="actor">alice</span><span class="what">writes stock 0, order confirmed</span></div>
+          <div class="step"><span class="actor">bob</span><span class="what">writes stock 0, order confirmed</span></div>
+        </div>
+        <div class="atk-verdict fail">&#10007; two orders for one unit</div>
+        <div class="atk-bill"><span>the agent wrote <b>a transaction, a lock, a re-check and a retry</b></span><span><b>3</b> fix rounds &middot; <b>$11.28</b></span></div>
+      </div>
     </div>
-
-    <div class="gres ok">&#10003; one order &middot; stock 0</div>
-    <div class="gres flip">
-      <span class="f-ok">&#10003; one order &middot; stock 0</span>
-      <span class="f-no">&#10007; two orders &middot; stock &minus;1</span>
-    </div>
-
-    <div class="gbill"><span>1 fix round</span><b>$4.73</b></div>
-    <div class="gbill"><span>3 fix rounds</span><b>$11.28</b></div>
   </div>
-  <p class="supp r d3" style="margin-top:1.3rem">Two shoppers reach for the last unit at the same instant. On one side the database settles that race itself, and the agent gets it right whatever it writes. On the other the agent writes the rule out of four steps, and missing any one of them sells the unit twice. Each miss comes back as a failed criterion, and the rounds it takes to find them land on the bill.</p>
+  <p class="supp r d3" style="margin-top:1.2rem">The second reader is the whole problem. A database that settles the race itself never lets it happen, so the agent gets this right whatever it writes. A database that leaves the race to the agent makes correctness something the agent has to build, out of four steps, and the rounds it takes to get all four right land on the bill.</p>
 </section>
 
 <!-- 6 proving the grader -->
@@ -1274,6 +1252,15 @@
     };
     requestAnimationFrame(tick);
   }
+
+  // the race, settled two ways
+  document.querySelectorAll('.race-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const stage = btn.closest('.race');
+      stage.querySelectorAll('.race-tab').forEach(b => b.classList.toggle('on', b === btn));
+      stage.querySelectorAll('.atk-panel').forEach(p => p.classList.toggle('on', p.id === btn.dataset.race));
+    });
+  });
 
   // attack picker
   document.querySelectorAll('.atk-item').forEach(btn => {
