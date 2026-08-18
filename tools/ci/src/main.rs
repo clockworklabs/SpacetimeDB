@@ -29,6 +29,10 @@ const COMMANDS: &[Command] = &[
         package: "ci-smoketests",
     },
     Command {
+        path: &["smoketests", "check-mod-list"],
+        package: "ci-smoketest-checks",
+    },
+    Command {
         path: &["keynote-bench"],
         package: "ci-keynote-bench",
     },

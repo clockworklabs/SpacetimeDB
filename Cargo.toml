@@ -72,6 +72,7 @@ members = [
   "tools/ci/commands/lint",
   "tools/ci/commands/wasm-bindings",
   "tools/ci/commands/smoketests",
+  "tools/ci/commands/smoketest-checks",
   "tools/ci/commands/keynote-bench",
   "tools/ci/commands/update-flow",
   "tools/ci/commands/cli-docs",

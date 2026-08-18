@@ -1438,10 +1438,7 @@ jobs:
     permissions:
       contents: read
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-      TARGET_TRIPLE: x86_64-unknown-linux-gnu
-      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - name: Find Git ref
         env:
@@ -1462,21 +1459,10 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
-      - *restore-rusty-v8-debug
-      - *restore-openssl
-      - *configure-cached-openssl
 
-      - name: Verify crates/smoketests/tests/smoketests/mod.rs lists all entries
+      - name: Verify smoketest module lists and suite constraints
         run: |
-          cargo ci smoketests check-mod-list
-
-      - name: Upload timing reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cargo-timings-smoketests-mod-rs-complete
-          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
-          retention-days: 14
+          cargo run -p ci-smoketest-checks
 
   docs-build:
     needs: [merge_queue_noop]

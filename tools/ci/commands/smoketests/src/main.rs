@@ -1,13 +1,11 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, ensure, Context, Result};
-use ci_common::ensure_repo_root;
 use clap::{Parser, Subcommand, ValueEnum};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
-use std::ffi::OsStr;
+use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::{env, fs};
 use tempfile::TempDir;
 
 #[derive(Parser)]
@@ -79,7 +77,6 @@ enum SmoketestCmd {
     ///
     /// Use this before running `cargo test --all` to ensure binaries are built.
     Prepare,
-    CheckModList,
 
     /// CI build job: build dependencies and archive the smoketest binaries.
     Archive {
@@ -107,12 +104,6 @@ fn main() -> Result<()> {
             build_cli()?;
             build_standalone()?;
             eprintln!("Binaries ready. You can now run `cargo test --all`.");
-            Ok(())
-        }
-        Some(SmoketestCmd::CheckModList) => {
-            check_smoketests_mod_rs_complete()?;
-            check_no_require_local_server_cluster_tests()?;
-            eprintln!("smoketest module lists and suite constraints are up to date.");
             Ok(())
         }
         Some(SmoketestCmd::Archive { archive_file }) => archive_smoketests(&archive_file, args.suite),
@@ -405,96 +396,4 @@ fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, auth_host: b
     cmd.env("SPACETIME_SMOKETEST_BASE_CONFIG_PATH", base_config_path);
     cmd.env("SPACETIME_USE_AUTH_HOST", if auth_host { "1" } else { "0" });
     cmd.env("SMOKETESTS_DOTNET", if dotnet { "1" } else { "0" });
-}
-
-fn check_smoketests_mod_rs_complete() -> Result<()> {
-    ensure_repo_root()?;
-
-    let out = cmd!("cargo", "test", "-p", "spacetimedb-smoketests", "--", "--list",).read()?;
-
-    for suite in ["cluster", "standalone"] {
-        let expected_dir = Path::new("crates/smoketests/tests").join(suite);
-        let mut expected = std::collections::BTreeSet::<String>::new();
-        for entry in fs::read_dir(&expected_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if name == "mod.rs" || name.starts_with('.') {
-                continue;
-            }
-
-            let file_type = entry.file_type()?;
-            if file_type.is_dir() {
-                expected.insert(name.to_string());
-            } else if file_type.is_file()
-                && path.extension() == Some(OsStr::new("rs"))
-                && let Some(stem) = path.file_stem()
-            {
-                expected.insert(stem.to_string_lossy().to_string());
-            }
-        }
-
-        let present = out
-            .lines()
-            .filter_map(|line| {
-                let mut parts = line.trim().split("::");
-                (parts.next() == Some(suite)).then(|| parts.next()).flatten()
-            })
-            .collect::<std::collections::BTreeSet<_>>();
-        let missing = expected
-            .into_iter()
-            .filter(|module| !present.contains(module.as_str()))
-            .collect::<Vec<_>>();
-
-        ensure!(
-            missing.is_empty(),
-            "crates/smoketests/tests/{suite}.rs appears incomplete; missing modules (not present in `cargo test -- --list`):\n{}",
-            missing
-                .iter()
-                .map(|module| format!("- mod {module};"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-    }
-
-    Ok(())
-}
-
-fn check_no_require_local_server_cluster_tests() -> Result<()> {
-    let mut misplaced_guards = Vec::new();
-    let mut cluster_sources = collect_rust_sources(Path::new("crates/smoketests/tests/cluster"))?;
-    cluster_sources.push(PathBuf::from("crates/smoketests/tests/cluster.rs"));
-    for source in cluster_sources {
-        let contents = fs::read_to_string(&source)?;
-        if contents.contains("require_local_server!") {
-            misplaced_guards.push(source);
-        }
-    }
-
-    ensure!(
-        misplaced_guards.is_empty(),
-        "require_local_server!() may not be used in cluster smoketests:\n{}",
-        misplaced_guards
-            .iter()
-            .map(|path| format!("- {}", path.display()))
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-
-    Ok(())
-}
-
-fn collect_rust_sources(dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut sources = Vec::new();
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if entry.file_type()?.is_dir() {
-            sources.extend(collect_rust_sources(&path)?);
-        } else if path.extension() == Some(OsStr::new("rs")) {
-            sources.push(path);
-        }
-    }
-    Ok(sources)
 }
