@@ -78,15 +78,6 @@
     color: var(--green);
     margin-bottom: 1.1rem;
   }
-  .cite {
-    position: absolute;
-    bottom: 1.4rem;
-    left: clamp(1.5rem, 8vw, 9rem);
-    font-family: var(--font-mono);
-    font-size: .72rem;
-    color: var(--n4);
-  }
-  .cite b { color: var(--n4); font-weight: 400; }
   code, .mono { font-family: var(--font-mono); }
   code { color: var(--green); font-size: .92em; }
   .quote { border-left: 2px solid var(--green); padding-left: 1.1rem; color: var(--n1); font-size: 1.15em; max-width: 58ch; }
@@ -173,7 +164,9 @@
     font-size: .95rem;
     margin-bottom: 1.4rem;
   }
+  @keyframes breathe { 0%,100% { border-color: var(--n5); } 50% { border-color: var(--green-25); } }
   .empty {
+    animation: breathe 4s ease-in-out infinite;
     border: 1px dashed var(--n5);
     border-radius: 12px;
     padding: 2.2rem 2rem;
@@ -194,7 +187,6 @@
     .files { columns: 1; }
     #dots { display: none; }
     section { padding-left: 1.4rem; padding-right: 1.4rem; }
-    .cite { left: 1.4rem; }
   }
 </style>
 </head>
@@ -216,22 +208,20 @@
   </div>
   <h1 class="r d1">Stack Bench</h1>
   <p class="lead r d2" style="margin-top:1.4rem">A machine-verified benchmark for LLM agents building real-time backend applications.</p>
-  <p class="r d3" style="margin-top:1rem">The agent builds an app from a fixed prompt. The harness verifies it by driving real clients, hands back what failed, and lets the agent fix it. Score, cost, tokens, fix rounds and wall time are all recorded.</p>
-  <p class="r d4" style="margin-top:1rem">Backends are interchangeable, so the model can be held fixed while the backend varies: SpacetimeDB, PostgreSQL, MongoDB.</p>
-  <div class="cite">source: <b>tools/stack-bench/README.md</b></div>
+  <p class="r d3" style="margin-top:1rem">The agent builds an app from a fixed prompt. The harness verifies it by driving real clients, hands back what failed, and lets the agent fix it. Score, cost, tokens, fix rounds and wall time are recorded.</p>
+  <p class="r d4" style="margin-top:1rem">Backends are interchangeable, so the model can be held fixed while the backend varies. Each backend plugs in as an adapter, and any stack can be measured the same way.</p>
 </section>
 
 <!-- 2 - the question -->
 <section>
   <div class="kicker r">the question</div>
-  <h2 class="r d1">What does each database cost an agent?</h2>
-  <p class="quote r d2">The thesis under test: as a task approaches real production conditions, SpacetimeDB pulls ahead structurally. The database does the hard parts, so correctness arrives by construction and the model spends less getting there.</p>
+  <h2 class="r d1">How much does it cost an AI to build a production-quality app?</h2>
+  <p class="lead r d2">Same app, same model, same requirements, measured on every backend under test. The answer is a bill: dollars and correction rounds from first attempt to passing every stated requirement.</p>
+  <p class="quote r d3" style="margin-top:1.6rem">The thesis under test: as a task approaches real production conditions, SpacetimeDB pulls ahead structurally. The database does the hard parts, so correctness arrives by construction and the model spends less getting there.</p>
   <ul class="plain" style="margin-top:1.6rem">
-    <li class="r d3">This is a thesis the harness is built to test. It can come out false, and that result would also be published.</li>
-    <li class="r d4"><strong>Fairness rule:</strong> every criterion must be winnable by an expert human on every stack, using that stack's own real tools.</li>
-    <li class="r d5"><strong>The benchmark's product is the bill:</strong> dollars and correction rounds from first attempt to passing every stated requirement.</li>
+    <li class="r d4">The harness is built to test that thesis. If it comes out false, that gets published too.</li>
+    <li class="r d5"><strong>Fairness rule:</strong> every criterion must be winnable by an expert human on every stack, using that stack's own real tools.</li>
   </ul>
-  <div class="cite">source: <b>ROADMAP.md</b> (opening statement)</div>
 </section>
 
 <!-- 3 - the loop -->
@@ -258,7 +248,7 @@
 
     <rect class="node pulse" x="640" y="60" width="150" height="64" style="animation-delay:1.8s"/>
     <text class="t" x="660" y="88">bug report</text>
-    <text class="sub" x="660" y="106">behavioural only</text>
+    <text class="sub" x="660" y="106">what a user saw fail</text>
 
     <rect class="node pulse" x="840" y="60" width="110" height="64" style="animation-delay:2.4s"/>
     <text class="t" x="860" y="88">record</text>
@@ -272,10 +262,9 @@
     <text class="sub" x="445" y="192">fix rounds are limited by a declared budget</text>
   </svg>
   <ul class="plain">
-    <li class="r d3">Correction rounds are a declared budget. Changes that lose evidence or make the score worse are rolled back.</li>
-    <li class="r d4">The run records whether correction was unnecessary, succeeded, or ran out of budget. Successful and unresolved correction spend are reported separately.</li>
+    <li class="r d3">Fix rounds that lose evidence or make the score worse are rolled back.</li>
+    <li class="r d4">Each run records whether correction was unnecessary, succeeded, or ran out of budget, and reports successful and unresolved correction spend separately.</li>
   </ul>
-  <div class="cite">source: <b>README.md</b> &middot; <b>agent.mjs</b> &middot; <b>report-bugs.mjs</b></div>
 </section>
 
 <!-- 4 - how grading works -->
@@ -285,7 +274,7 @@
   <ul class="plain">
     <li class="r d1">Apps differ in structure, so the harness locates elements only through a contract of <code>data-testid</code> hooks the prompt requires.</li>
     <li class="r d2">Scenarios drive real browser clients and assert on what a user would observe. Each actor gets its own isolated browser context, so identities are genuinely separate.</li>
-    <li class="r d2">49 scenario actions, each with a registered, capability-scoped executor. Malformed scenario content fails before a browser ever starts.</li>
+    <li class="r d2">Scenarios are written in a 49-action language. Every action is validated at startup, so a malformed scenario fails before a browser opens.</li>
   </ul>
   <div class="cards">
     <div class="card r d3"><h3>features</h3><p>does each described feature work</p></div>
@@ -298,7 +287,6 @@
     <div><span>works only after a page reload</span><b>cap 1 / 3</b></div>
     <div><span>feature unreachable</span><b>0</b></div>
   </div>
-  <div class="cite">source: <b>README.md</b> &middot; <b>grader/grade.mjs</b> &middot; <b>action-catalog.mjs</b> &middot; <b>tracks/&lt;t&gt;/contracts/</b></div>
 </section>
 
 <!-- 5 - tracks and levels -->
@@ -306,8 +294,8 @@
   <div class="kicker r">tracks &amp; levels</div>
   <h2 class="r d1">Two applications, one ladder</h2>
   <div class="cards" style="max-width:760px">
-    <div class="card r d2"><h3>chat</h3><p>rooms, messages, presence. The original; history and human grades exist for it.</p></div>
-    <div class="card ye r d3"><h3>ecommerce</h3><p>storefront, cart, warehouses. Live derived numbers and contention, which chat saturated on.</p></div>
+    <div class="card r d2"><h3>chat</h3><p>rooms, messages, presence. The original track; human grades exist for it.</p></div>
+    <div class="card ye r d3"><h3>ecommerce</h3><p>storefront, cart, warehouses. Built after chat stopped separating backends; contention and live derived numbers still do.</p></div>
   </div>
   <table class="r d3">
     <tr><th>level</th><th>makes verifiable</th></tr>
@@ -321,7 +309,6 @@
     <li class="r d4">Levels are cumulative: an app at L3 is still checked against L1 and L2, so a regression is caught rather than scored around.</li>
     <li class="r d5">Both tracks are currently validated through <strong>L2</strong>. A level with no declared suite fails instead of falling back.</li>
   </ul>
-  <div class="cite">source: <b>README.md</b> &middot; <b>tracks/chat/LEVELS.md</b> &middot; <b>tracks/ecommerce/LEVELS.md</b></div>
 </section>
 
 <!-- 6 - keeping it honest -->
@@ -331,11 +318,10 @@
   <ul class="plain">
     <li class="r d1"><strong>Mutation testing.</strong> Inject a known defect into a fully passing reference app; the exact declared criterion must fail, with no collateral. A defect the grader misses is a hole in the oracle.</li>
     <li class="r d2"><strong>Null control.</strong> A blank app is graded by the full real suite; if any point-bearing criterion passes, the harness is broken.</li>
-    <li class="r d3"><strong>The 5/5 heuristic.</strong> When every backend fails a criterion identically, suspect the oracle. This tell has caught five false positives; none were real defects.</li>
+    <li class="r d3"><strong>The 5/5 heuristic.</strong> When every backend fails a criterion identically, suspect the oracle. This rule has caught five false positives; every one was a harness bug.</li>
     <li class="r d4"><strong>Never patch prompts, guidance or tests to make a failing check pass.</strong> Fix the product, or report the failure.</li>
     <li class="r d5"><strong>Negative results are results.</strong> Several predicted advantages did not survive contact with a stronger model. All of them are recorded.</li>
   </ul>
-  <div class="cite">source: <b>README.md</b> &middot; <b>grader/mutation-test.mjs</b> &middot; <b>null-control.mjs</b> &middot; <b>HISTORY.md</b></div>
 </section>
 
 <!-- 7 - the incident -->
@@ -349,7 +335,6 @@
     <li class="r d4">Transcripts are archived against the CLI's 30-day prune. An audit that fails to run marks its run as <em>not usable</em>.</li>
     <li class="r d5">Builds moved into isolated, stamped work directories, and later into a mandatory container with no host access at all.</li>
   </ul>
-  <div class="cite">source: <b>HISTORY.md</b> &middot; <b>probe-sandbox.mjs</b> &middot; <b>leak-audit.mjs</b></div>
 </section>
 
 <!-- 8 - isolation & reproducibility -->
@@ -358,11 +343,10 @@
   <h2 class="r d1">A run owns what it starts, and proves it</h2>
   <ul class="plain">
     <li class="r d1"><strong>Preflight before spend.</strong> Docker, digest-pinned images, ports, credentials, clock and storage are checked before any model call. The smoke test starts the real build image without a model.</li>
-    <li class="r d2"><strong>Leases.</strong> Reset, restart and teardown go only through a token-authenticated backend lease. A dedicated SpacetimeDB host is started per run; a pre-existing host is never reused.</li>
+    <li class="r d2"><strong>Leases.</strong> Reset, restart and teardown go only through a token-authenticated backend lease. Each run starts its own database services; anything already running on the machine is never touched.</li>
     <li class="r d3"><strong>Typed verdicts.</strong> Every check records exactly one state: passed, failed, inconclusive or harness_failure. One shared status table drives scoring, controls, comparisons and repair. Prose cannot change a verdict.</li>
     <li class="r d4"><strong>Strict artifacts.</strong> Results use schema v2 with identity and parent-attempt chains. 678 pre-schema artifacts sit in a checksummed inert archive and are never read as evidence.</li>
   </ul>
-  <div class="cite">source: <b>preflight.mjs</b> &middot; <b>backend-lease.mjs</b> &middot; <b>outcomes.mjs</b> &middot; <b>HISTORY.md</b> &middot; <b>ROADMAP.md</b></div>
 </section>
 
 <!-- 9 - evidence -->
@@ -382,7 +366,6 @@
     <div><span>level-l&lt;N&gt;-source/</span> &middot; hash-bound source checkpoint per level</div>
   </div>
   <p class="r d3" style="margin-top:1.4rem">Videos carry an annotation banner showing the actor, the criterion and the current step. It turns green on a pass and red on a failure, so a recording explains itself. Watching the failing actor's video is the fastest way to confirm a verdict is real.</p>
-  <div class="cite">source: <b>README.md</b> (what a run records)</div>
 </section>
 
 <!-- 10 - results -->
@@ -391,17 +374,16 @@
   <h2 class="r d1">No results yet</h2>
   <div class="empty r d2">
     <b>Qualified comparison pending</b>
-    scores &middot; costs &middot; fix rounds &middot; dispersion
+    scores &middot; costs &middot; fix rounds &middot; spread
   </div>
   <ul class="plain">
     <li class="r d3">Every score before 2026-08-06 is void because of the contamination above.</li>
     <li class="r d4">Exploratory runs since then predate fixes that changed what is being measured, so they only serve as baselines to redo.</li>
-    <li class="r d5">Numbers get published when the predeclared repeated-run design reports dispersion. A single matched pair is an anecdote.</li>
+    <li class="r d5">Numbers get published once runs are repeated enough to show spread. A single matched pair is an anecdote.</li>
   </ul>
   <p class="r d5" style="margin-top:1.6rem; font-family:var(--font-mono); font-size:.82rem; color:var(--n4)">
     tools/stack-bench &middot; README.md &middot; HISTORY.md &middot; FINDINGS.md &middot; ROADMAP.md
   </p>
-  <div class="cite">source: <b>HISTORY.md</b> (2026-08-06) &middot; <b>ROADMAP.md</b> (phase 2, repeated-run design)</div>
 </section>
 
 <script>
