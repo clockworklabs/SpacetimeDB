@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { compileCampaignFile } from '../campaign-compiler.mjs';
 import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../artifacts.mjs';
-import { attemptArgv, campaignExecutionEnvironment, executeCampaign,
+import { attemptArgv, campaignExecutionEnvironment, campaignSlotEnvironment, executeCampaign,
   reconcileCampaign, runCampaignAdmission, validateCampaignRun } from '../campaign-runner.mjs';
 import { sha256 } from '../provenance.mjs';
 import { claimNextAttempt, initializeCampaignDirectory,
@@ -15,6 +15,18 @@ import { claimNextAttempt, initializeCampaignDirectory,
 const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.json');
 const productBrief = join(import.meta.dirname, '..', 'appliance',
   'campaign.product-brief-reference.json');
+
+test('parallel SpacetimeDB slots receive distinct dedicated host ports', () => {
+  assert.equal(campaignSlotEnvironment({}, 'spacetime', 0).STACK_BENCH_STDB_URI,
+    'http://127.0.0.1:3210');
+  assert.equal(campaignSlotEnvironment({}, 'spacetime', 7).STACK_BENCH_STDB_URI,
+    'http://127.0.0.1:3217');
+  assert.equal(campaignSlotEnvironment({ STACK_BENCH_STDB_URI: 'http://localhost:4100' },
+    'spacetime', 2).STACK_BENCH_STDB_URI, 'http://localhost:4102');
+  assert.equal(campaignSlotEnvironment({ KEEP: 'yes' }, 'postgres', 2).KEEP, 'yes');
+  assert.throws(() => campaignSlotEnvironment({ STACK_BENCH_STDB_URI: 'https://example.com' },
+    'spacetime', 1), /explicit loopback port/);
+});
 
 function frozenRuntime(root) {
   const digests = {
@@ -63,7 +75,7 @@ function frozenRuntime(root) {
 
 test('attempt argv is derived completely from the compiled campaign plan', () => {
   const plan = compileCampaignFile(example);
-  const argv = attemptArgv(plan, plan.attempts[0], '/campaign/attempt');
+  const argv = attemptArgv(plan, plan.attempts[0], '/campaign/attempt', 0);
   assert.deepEqual(argv.slice(1), [
     '--backend', plan.attempts[0].stack,
     '--track', 'ecommerce', '--levels', '1-1', '--run-index', '0',
@@ -79,7 +91,8 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
   assert.throws(() => attemptArgv(plan, { ...plan.attempts[0], condition: {
     ...plan.attempts[0].condition, guidance: { ...plan.attempts[0].condition.guidance,
       documents: {} },
-  } }, '/campaign/attempt'), /has no guidance document/);
+  } }, '/campaign/attempt', 0), /has no guidance document/);
+  assert.throws(() => attemptArgv(plan, plan.attempts[0], '/campaign/attempt'), /requires a run slot/);
 });
 
 test('campaign validation retains a failed level prefix without accepting partial application results', () => {
@@ -435,10 +448,78 @@ test('model-free campaign execution checkpoints a retry and every completed atte
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('interrupted work advances only after exact supervisor cleanup is proven', () => {
+test('one campaign runs multiple attempts of the same stack concurrently in isolated slots', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-parallel-'));
+  try {
+    const definition = JSON.parse(readFileSync(example, 'utf8'));
+    definition.id = 'postgres-parallel-proof';
+    definition.repetitions = 1;
+    definition.parallelism = 3;
+    definition.stacks = [definition.stacks.find(stack => stack.id === 'postgres')];
+    definition.stacks[0].repetitions = 3;
+    const campaignPath = join(root, 'campaign.json');
+    const results = join(root, 'results');
+    writeFileSync(campaignPath, `${JSON.stringify(definition, null, 2)}\n`);
+    const planned = compileCampaignFile(campaignPath);
+    let active = 0;
+    let maxActive = 0;
+    const started = [];
+    let releaseFirstWave;
+    const firstWave = new Promise(resolve => { releaseFirstWave = resolve; });
+    const state = await executeCampaign(campaignPath, results, { mode: 'model-free-trial',
+      admit: () => ({ id: 'parallel-admission', payload: { ok: true } }),
+      execute: async (command, argv, options) => {
+        const runIndex = Number(argv[argv.indexOf('--run-index') + 1]);
+        const parent = argv[argv.indexOf('--parent-attempt-id') + 1];
+        const output = argv[argv.indexOf('--out') + 1];
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        started.push({ parent, runIndex });
+        if (started.length === 3) releaseFirstWave();
+        await firstWave;
+        const attempt = planned.attempts.find(item => item.id === parent);
+        const agent = planned.agents.find(item => item.adapter === attempt.agentAdapter);
+        const stack = planned.stacks.find(item => item.id === attempt.stack);
+        const completedAt = new Date().toISOString();
+        const { writeRunJson } = await import('../artifacts.mjs');
+        writeRunJson(join(output, 'run.json'), { id: `parallel-${runIndex}`,
+          parentAttemptId: parent, startedAt: completedAt, completedAt,
+          identities: emptyArtifactIdentities({ agentAdapter: agent.identity,
+            stackAdapter: stack }),
+          track: planned.definition.track, backend: attempt.stack, model: attempt.model,
+          guidance: attempt.guidance, condition: attempt.condition,
+          selectionRequest: planned.definition.selection, skills: attempt.skills,
+          runtime: { buildImage: options.env.STACK_BENCH_IMAGE }, totals: { costUsd: 0 },
+          levels: attempt.levels.map(level => {
+            const max = attempt.condition.requested.levels
+              .find(item => item.level === level).selection.scoredPoints;
+            const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
+            return { level, score: max, max, fixRounds: 0,
+              firstBuild: { score: max, max, outcome },
+              repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
+              outcome };
+          }), outcome: { kind: 'passed' } });
+        active -= 1;
+        return { code: 0, timedOut: false };
+      } });
+    assert.equal(maxActive, 3);
+    assert.deepEqual(started.map(item => item.runIndex).sort((a, b) => a - b), [0, 1, 2]);
+    assert.equal(new Set(started.map(item => item.parent)).size, 3);
+    assert(state.attempts.every(attempt => attempt.status === 'completed'));
+    assert(state.attempts.every(attempt => attempt.executions[0].runIndex >= 0
+      && attempt.executions[0].runIndex < 3));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('interrupted parallel work advances only after every exact cleanup is proven', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-reconcile-'));
   try {
-    const plan = compileCampaignFile(example);
+    const definition = JSON.parse(readFileSync(example, 'utf8'));
+    definition.parallelism = 2;
+    definition.repetitions = 1;
+    const campaignPath = join(root, 'parallel.json');
+    writeFileSync(campaignPath, `${JSON.stringify(definition, null, 2)}\n`);
+    const plan = compileCampaignFile(campaignPath);
     const initialized = initializeCampaignDirectory(plan, root,
       { now: '2026-08-12T00:00:00.000Z' });
     const admission = runCampaignAdmission(plan, root, {
@@ -450,20 +531,27 @@ test('interrupted work advances only after exact supervisor cleanup is proven', 
           resultsDir: request.resultsDir, smoke: request.smoke },
         ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] }),
     });
-    const running = claimNextAttempt(initialized.state, { now: '2026-08-12T00:01:00.000Z',
+    let running = claimNextAttempt(initialized.state, { now: '2026-08-12T00:01:00.000Z',
+      admissionId: admission.id }).state;
+    running = claimNextAttempt(running, { now: '2026-08-12T00:01:01.000Z',
       admissionId: admission.id }).state;
     writeCampaignState(initialized.paths.state, plan, running);
-    assert.throws(() => reconcileCampaign(example, root, { rescue: () => {} }),
+    assert.throws(() => reconcileCampaign(campaignPath, root, { rescue: () => {} }),
       /neither private supervisor authority nor public clean recovery proof/);
-    const execution = running.attempts[0].executions[0];
     const privateDir = join(root, '.private');
     mkdirSync(privateDir);
-    writeFileSync(join(privateDir, `${execution.id}.supervisor.json`), '{}');
-    let rescued = false;
-    const state = reconcileCampaign(example, root, { rescue: () => { rescued = true; } });
-    assert.equal(rescued, true);
-    assert.equal(state.attempts[0].status, 'invalid');
-    assert.equal(state.attempts[0].executions[0].outcome, 'scheduler_interrupted');
+    const executions = running.attempts.filter(attempt => attempt.status === 'running')
+      .map(attempt => attempt.executions.at(-1));
+    for (const execution of executions) {
+      writeFileSync(join(privateDir, `${execution.id}.supervisor.json`), '{}');
+    }
+    const rescued = [];
+    const state = reconcileCampaign(campaignPath, root,
+      { rescue: supervisor => { rescued.push(supervisor); } });
+    assert.equal(rescued.length, 2);
+    assert.equal(state.summary.invalid, 2);
+    assert(state.attempts.filter(attempt => attempt.status === 'invalid')
+      .every(attempt => attempt.executions[0].outcome === 'scheduler_interrupted'));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

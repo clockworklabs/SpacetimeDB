@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -15,7 +15,18 @@ const prepared = () => createCampaignState(plan(), { now: '2026-08-12T00:00:00.0
 const claimed = () => claimNextAttempt(prepared(), { now: '2026-08-12T00:01:00.000Z',
   admissionId: 'admission-1' });
 
-test('campaign state materializes every attempt and claims one exact slot at a time', () => {
+function parallelPlan(parallelism = 3, repetitions = 1) {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-parallel-plan-'));
+  const path = join(root, 'campaign.json');
+  const definition = JSON.parse(readFileSync(example, 'utf8'));
+  definition.parallelism = parallelism;
+  definition.repetitions = repetitions;
+  writeFileSync(path, `${JSON.stringify(definition, null, 2)}\n`);
+  try { return compileCampaignFile(path); }
+  finally { rmSync(root, { recursive: true, force: true }); }
+}
+
+test('serial campaign state materializes every attempt and enforces its one-slot capacity', () => {
   const campaign = plan();
   const initial = createCampaignState(campaign, { now: '2026-08-12T00:00:00.000Z' });
   assert.deepEqual(initial.summary, { completed: 0, executions: 0, invalid: 0, pending: 9,
@@ -25,7 +36,31 @@ test('campaign state materializes every attempt and claims one exact slot at a t
   assert.equal(claimed.claim.attempt.id, campaign.attempts[0].id);
   assert.equal(claimed.claim.executionId, `${campaign.attempts[0].id}-execution1`);
   assert.equal(claimed.state.summary.running, 1);
-  assert.throws(() => claimNextAttempt(claimed.state), /already has a running attempt/);
+  const full = claimNextAttempt(claimed.state, { admissionId: 'admission-1' });
+  assert.equal(full.claim, null);
+  assert.equal(full.capacityFull, true);
+});
+
+test('parallel campaign claims unique slots and reuses a slot only after completion', () => {
+  const campaign = parallelPlan(3, 2);
+  let state = createCampaignState(campaign, { now: '2026-08-12T00:00:00.000Z' });
+  const claims = [];
+  for (let index = 0; index < 3; index += 1) {
+    const next = claimNextAttempt(state, { now: `2026-08-12T00:0${index + 1}:00.000Z`,
+      admissionId: 'admission-1' });
+    state = next.state;
+    claims.push(next.claim);
+  }
+  assert.deepEqual(claims.map(claim => claim.runIndex), [0, 1, 2]);
+  assert.equal(state.summary.running, 3);
+  assert.equal(claimNextAttempt(state, { admissionId: 'admission-1' }).capacityFull, true);
+  state = finishCampaignExecution(state, claims[1].executionId,
+    { exitCode: 0, run: { outcome: { kind: 'passed' } } },
+    { now: '2026-08-12T00:05:00.000Z' });
+  const reused = claimNextAttempt(state, { now: '2026-08-12T00:06:00.000Z',
+    admissionId: 'admission-1' });
+  assert.equal(reused.claim.runIndex, 1);
+  assert.equal(reused.capacityFull, false);
 });
 
 test('invalid executions remain visible and retries append rather than overwrite', () => {
@@ -119,7 +154,7 @@ test('malformed state and inconsistent summaries never become resumable', () => 
   running.attempts[1].executions.push({ ...running.attempts[0].executions[0],
     id: `${running.attempts[1].plan.id}-execution1`,
     output: `attempts/${running.attempts[1].plan.id}/execution-1` });
-  assert.throws(() => validateCampaignState(running), /more than one execution/);
+  assert.throws(() => validateCampaignState(running), /runIndex is already in use/);
   const wrongPath = claimNextAttempt(createCampaignState(plan()), { admissionId: 'admission-1' }).state;
   wrongPath.attempts[0].executions[0].output = '../../outside';
   assert.throws(() => validateCampaignState(wrongPath), /exact execution directory/);

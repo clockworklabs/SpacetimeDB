@@ -13,6 +13,7 @@ import { canonicalDefinitionJson } from './definition-plan.mjs';
 import { runPreflight } from './preflight.mjs';
 import { sha256 } from './provenance.mjs';
 import { validateReleaseManifest } from './release-manifest.mjs';
+import { RUN_INDEX_CAP } from './tracks.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const BENCH = join(ROOT, 'bench.mjs');
@@ -27,7 +28,10 @@ function contained(root, path, label) {
   return absolute;
 }
 
-export function attemptArgv(plan, attempt, output) {
+export function attemptArgv(plan, attempt, output, runIndex) {
+  if (!Number.isInteger(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
+    throw new Error(`attempt ${attempt.id} requires a run slot from 0 through ${RUN_INDEX_CAP}`);
+  }
   const levels = `${Math.min(...attempt.levels)}-${Math.max(...attempt.levels)}`;
   const guidanceDocument = attempt.condition?.guidance?.documents?.[attempt.stack];
   if (!guidanceDocument) {
@@ -37,7 +41,7 @@ export function attemptArgv(plan, attempt, output) {
     '--backend', attempt.stack,
     '--track', plan.definition.track,
     '--levels', levels,
-    '--run-index', '0',
+    '--run-index', String(runIndex),
     '--out', output,
     '--agent-adapter', attempt.agentAdapter,
     '--model', attempt.model,
@@ -309,6 +313,24 @@ export function campaignExecutionEnvironment(plan, env = process.env) {
   return executionEnv;
 }
 
+export function campaignSlotEnvironment(env, stack, runIndex) {
+  const executionEnv = { ...env };
+  if (stack !== 'spacetime') return executionEnv;
+  const base = new URL(executionEnv.STACK_BENCH_STDB_URI ?? 'http://127.0.0.1:3210');
+  if (base.protocol !== 'http:'
+    || !['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname)
+    || !base.port) {
+    throw new Error(`STACK_BENCH_STDB_URI must be an explicit loopback port, got ${base}`);
+  }
+  const port = Number(base.port) + runIndex;
+  if (!Number.isInteger(runIndex) || runIndex < 0 || port > 65535) {
+    throw new Error(`campaign run slot ${runIndex} cannot allocate a SpacetimeDB host port`);
+  }
+  base.port = String(port);
+  executionEnv.STACK_BENCH_STDB_URI = base.toString().replace(/\/$/, '');
+  return executionEnv;
+}
+
 function validateCampaignAdmission(input, plan, directory) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('campaign admission payload must be an object');
@@ -333,38 +355,45 @@ function validateCampaignAdmission(input, plan, directory) {
   }
   if (!Array.isArray(input.reports)) throw new Error('campaign admission reports must be an array');
   const adapters = [...new Set(plan.agents.map(agent => agent.adapter))].sort();
-  if (input.reports.length !== adapters.length) throw new Error('campaign admission reports are incomplete');
+  if (input.reports.length !== adapters.length * plan.summary.parallelism) {
+    throw new Error('campaign admission reports are incomplete');
+  }
   const expectedBackends = plan.stacks.map(stack => stack.id);
   const expectedResultsDir = resolve(directory);
   for (const adapter of adapters) {
-    const matches = input.reports.filter(report => report?.request?.agentAdapter === adapter);
-    if (matches.length !== 1) throw new Error(`campaign admission must contain one ${adapter} report`);
-    const report = matches[0];
-    if (report.schemaVersion !== 1 || typeof report.ok !== 'boolean' || !Array.isArray(report.checks)
-      || !report.summary || typeof report.summary !== 'object'
-      || !report.checks.every(check => check && typeof check === 'object'
-        && typeof check.id === 'string' && ['pass', 'warn', 'fail'].includes(check.status)
-        && typeof check.summary === 'string')
-      || report.summary.passed !== report.checks.filter(check => check.status === 'pass').length
-      || report.summary.failed !== report.checks.filter(check => check.status === 'fail').length
-      || report.summary.warnings !== report.checks.filter(check => check.status === 'warn').length
-      || report.ok !== !report.checks.some(check => check.status === 'fail')) {
-      throw new Error(`campaign admission report for ${adapter} is malformed`);
-    }
-    const request = report.request;
-    if (canonicalDefinitionJson(request.backends) !== canonicalDefinitionJson(expectedBackends)
-      || request.track !== plan.definition.track
-      || canonicalDefinitionJson(request.levels) !== canonicalDefinitionJson(plan.definition.levels)
-      || request.runIndex !== 0
-      || canonicalDefinitionJson(request.packs)
-        !== canonicalDefinitionJson(plan.definition.selection.packs ?? [])
-      || canonicalDefinitionJson(request.checks)
-        !== canonicalDefinitionJson(plan.definition.selection.checks ?? [])
-      || request.smoke !== true
-      || (plan.definition.runtime.buildImage !== null
-        && request.image !== plan.definition.runtime.buildImage)
-      || resolve(request.resultsDir) !== expectedResultsDir) {
-      throw new Error(`campaign admission report for ${adapter} does not match the compiled scope`);
+    for (let runIndex = 0; runIndex < plan.summary.parallelism; runIndex += 1) {
+      const matches = input.reports.filter(report => report?.request?.agentAdapter === adapter
+        && report?.request?.runIndex === runIndex);
+      if (matches.length !== 1) {
+        throw new Error(`campaign admission must contain one ${adapter} report for run slot ${runIndex}`);
+      }
+      const report = matches[0];
+      if (report.schemaVersion !== 1 || typeof report.ok !== 'boolean' || !Array.isArray(report.checks)
+        || !report.summary || typeof report.summary !== 'object'
+        || !report.checks.every(check => check && typeof check === 'object'
+          && typeof check.id === 'string' && ['pass', 'warn', 'fail'].includes(check.status)
+          && typeof check.summary === 'string')
+        || report.summary.passed !== report.checks.filter(check => check.status === 'pass').length
+        || report.summary.failed !== report.checks.filter(check => check.status === 'fail').length
+        || report.summary.warnings !== report.checks.filter(check => check.status === 'warn').length
+        || report.ok !== !report.checks.some(check => check.status === 'fail')) {
+        throw new Error(`campaign admission report for ${adapter} is malformed`);
+      }
+      const request = report.request;
+      if (canonicalDefinitionJson(request.backends) !== canonicalDefinitionJson(expectedBackends)
+        || request.track !== plan.definition.track
+        || canonicalDefinitionJson(request.levels) !== canonicalDefinitionJson(plan.definition.levels)
+        || request.runIndex !== runIndex
+        || canonicalDefinitionJson(request.packs)
+          !== canonicalDefinitionJson(plan.definition.selection.packs ?? [])
+        || canonicalDefinitionJson(request.checks)
+          !== canonicalDefinitionJson(plan.definition.selection.checks ?? [])
+        || request.smoke !== true
+        || (plan.definition.runtime.buildImage !== null
+          && request.image !== plan.definition.runtime.buildImage)
+        || resolve(request.resultsDir) !== expectedResultsDir) {
+        throw new Error(`campaign admission report for ${adapter} does not match the compiled scope`);
+      }
     }
   }
   if (input.ok !== input.reports.every(report => report.ok)) {
@@ -418,20 +447,23 @@ export function runCampaignAdmission(plan, directory,
   const executionEnv = campaignExecutionEnvironment(plan, env);
   const reports = [];
   for (const adapter of [...new Set(plan.agents.map(agent => agent.adapter))].sort()) {
-    reports.push(preflight({
-      backends: plan.stacks.map(stack => stack.id),
-      track: plan.definition.track,
-      levels: `${Math.min(...plan.definition.levels)}-${Math.max(...plan.definition.levels)}`,
-      levelList: plan.definition.levels,
-      runIndex: 0,
-      agentAdapter: adapter,
-      packIds: plan.definition.selection.packs ?? [],
-      checkKeys: plan.definition.selection.checks ?? [],
-      requestedScopes: plan.conditions.map(condition => condition.requested),
-      smoke: true,
-      image: plan.definition.runtime.buildImage ?? executionEnv.STACK_BENCH_IMAGE,
-      resultsDir: resolve(directory),
-    }, { env: executionEnv }));
+    for (let runIndex = 0; runIndex < plan.summary.parallelism; runIndex += 1) {
+      reports.push(preflight({
+        backends: plan.stacks.map(stack => stack.id),
+        track: plan.definition.track,
+        levels: `${Math.min(...plan.definition.levels)}-${Math.max(...plan.definition.levels)}`,
+        levelList: plan.definition.levels,
+        runIndex,
+        agentAdapter: adapter,
+        packIds: plan.definition.selection.packs ?? [],
+        checkKeys: plan.definition.selection.checks ?? [],
+        requestedScopes: plan.conditions.map(condition => condition.requested),
+        smoke: true,
+        image: plan.definition.runtime.buildImage ?? executionEnv.STACK_BENCH_IMAGE,
+        resultsDir: resolve(directory),
+      }, { env: campaignSlotEnvironment(executionEnv,
+        plan.stacks.some(stack => stack.id === 'spacetime') ? 'spacetime' : null, runIndex) }));
+    }
   }
   const id = `${plan.id}-admission-${now.replace(/[-:.TZ]/g, '').slice(0, 14)}-${uuid()}`;
   const payload = validateCampaignAdmission({ schemaVersion: 1, campaignId: plan.id,
@@ -464,20 +496,25 @@ export function reconcileCampaign(campaignFile, directory,
   try {
     const initialized = initializeCampaignDirectory(plan, directory);
     const { state } = inspectCampaign(initialized.paths.root);
-    const attempt = state.attempts.find(item => item.status === 'running');
-    if (!attempt) throw new Error('campaign has no running attempt to reconcile');
-    const execution = attempt.executions.at(-1);
-    const output = contained(initialized.paths.root, execution.output, 'attempt output');
-    const supervisorState = contained(initialized.paths.root,
-      join('.private', `${execution.id}.supervisor.json`), 'supervisor state');
-    if (existsSync(supervisorState)) {
-      rescue(supervisorState, output);
-    } else if (!publicRecoveryProvesCleanup(output, attempt.plan.stack)) {
-      throw new Error('running attempt has neither private supervisor authority nor public clean recovery proof');
+    const running = state.attempts.filter(item => item.status === 'running');
+    if (!running.length) throw new Error('campaign has no running attempt to reconcile');
+    for (const attempt of running) {
+      const execution = attempt.executions.at(-1);
+      const output = contained(initialized.paths.root, execution.output, 'attempt output');
+      const supervisorState = contained(initialized.paths.root,
+        join('.private', `${execution.id}.supervisor.json`), 'supervisor state');
+      if (existsSync(supervisorState)) {
+        rescue(supervisorState, output);
+      } else if (!publicRecoveryProvesCleanup(output, attempt.plan.stack)) {
+        throw new Error('running attempt has neither private supervisor authority nor public clean recovery proof');
+      }
     }
-    const reconciled = markInterruptedExecution(state, execution.id, {
-      reason: 'controller ended before recording completion; exact-owned cleanup was proven',
-    });
+    let reconciled = state;
+    for (const attempt of running) {
+      reconciled = markInterruptedExecution(reconciled, attempt.executions.at(-1).id, {
+        reason: 'controller ended before recording completion; exact-owned cleanup was proven',
+      });
+    }
     writeCampaignState(initialized.paths.state, plan, reconciled);
     return reconciled;
   } finally { releaseCampaignLock(lock); }
@@ -522,40 +559,57 @@ export async function executeCampaign(campaignFile, directory,
     if (!admission?.payload?.ok || typeof admission.id !== 'string' || !admission.id) {
       throw new Error('campaign-wide preflight admission failed; no attempt was claimed');
     }
-    const invalidAtStart = state.summary.invalid;
-    while (true) {
-      const next = claimNextAttempt(state, { admissionId: admission.id });
-      if (!next.claim) return next.state;
-      state = next.state;
-      writeCampaignState(initialized.paths.state, plan, state);
-      const output = contained(initialized.paths.root, next.claim.output, 'attempt output');
+    const runClaim = async claim => {
+      const output = contained(initialized.paths.root, claim.output, 'attempt output');
       // Preflight bind-mounts the exact attempt output to prove that evidence is
       // durable. The first execution's parent may already exist, while a retry's
       // execution-N directory never does; create both by the same rule before
       // starting the child so retries cannot fail for a different topology.
       mkdirSync(output, { recursive: true });
       const supervisorState = contained(initialized.paths.root,
-        join('.private', `${next.claim.executionId}.supervisor.json`), 'supervisor state');
-      const processResult = await execute(process.execPath,
-        attemptArgv(plan, next.claim.attempt, output), {
+        join('.private', `${claim.executionId}.supervisor.json`), 'supervisor state');
+      let processResult;
+      try {
+        processResult = await execute(process.execPath,
+        attemptArgv(plan, claim.attempt, output, claim.runIndex), {
           cwd: ROOT,
-          env: { ...executionEnv, STACK_BENCH_SUPERVISOR_STATE: supervisorState },
+          env: { ...campaignSlotEnvironment(executionEnv, claim.attempt.stack, claim.runIndex),
+            STACK_BENCH_SUPERVISOR_STATE: supervisorState },
           stdio: 'inherit',
           logs: { stdout: join(output, 'process.stdout.log'), stderr: join(output, 'process.stderr.log') },
           timeoutMs: plan.definition.budgets.attemptTimeoutMinutes * 60_000,
         });
-      processResult.buildImage = executionEnv.STACK_BENCH_IMAGE;
-      writeArtifact(join(output, 'process.json'), { kind: 'campaign_process',
-        id: `${next.claim.executionId}-process`,
-        attempt: { id: next.claim.executionId, parentId: next.claim.attempt.id },
-        identities: emptyArtifactIdentities({ experiment: {
-          id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state,
-        } }),
-        payload: { schemaVersion: 1, executionId: next.claim.executionId,
-          exitCode: processResult.code ?? null, signal: processResult.signal ?? null,
-          timedOut: processResult.timedOut === true,
-          streams: processResult.logs ? Object.fromEntries(Object.entries(processResult.logs)
-            .map(([name, log]) => [name, { ...log, path: `process.${name}.log` }])) : null } });
+        processResult.buildImage = executionEnv.STACK_BENCH_IMAGE;
+      } catch (error) {
+        let reason = `attempt launcher failed: ${error.message}`;
+        if (existsSync(supervisorState)) {
+          try { rescueSupervisedLease(supervisorState, output); }
+          catch (cleanupError) { reason += `; cleanup failed: ${cleanupError.message}`; }
+        }
+        return { exitCode: null, timedOut: false,
+          run: { outcome: { kind: 'harness_failure', reason } } };
+      }
+      try {
+        writeArtifact(join(output, 'process.json'), { kind: 'campaign_process',
+          id: `${claim.executionId}-process`,
+          attempt: { id: claim.executionId, parentId: claim.attempt.id },
+          identities: emptyArtifactIdentities({ experiment: {
+            id: plan.id, version: plan.version, sha256: plan.contentSha256, state: plan.state,
+          } }),
+          payload: { schemaVersion: 1, executionId: claim.executionId, runIndex: claim.runIndex,
+            exitCode: processResult.code ?? null, signal: processResult.signal ?? null,
+            timedOut: processResult.timedOut === true,
+            streams: processResult.logs ? Object.fromEntries(Object.entries(processResult.logs)
+              .map(([name, log]) => [name, { ...log, path: `process.${name}.log` }])) : null } });
+      } catch (error) {
+        let reason = `could not record campaign process evidence: ${error.message}`;
+        if (existsSync(supervisorState)) {
+          try { rescueSupervisedLease(supervisorState, output); }
+          catch (cleanupError) { reason += `; cleanup failed: ${cleanupError.message}`; }
+        }
+        return { exitCode: processResult.code ?? null, timedOut: false,
+          run: { outcome: { kind: 'harness_failure', reason } } };
+      }
       let cleanupError = null;
       if (!processResult.ok && existsSync(supervisorState)) {
         try { rescueSupervisedLease(supervisorState, output); }
@@ -564,14 +618,34 @@ export async function executeCampaign(campaignFile, directory,
       const result = cleanupError
         ? { exitCode: processResult.code, timedOut: false, run: { outcome: {
           kind: 'harness_failure', reason: `attempt cleanup failed: ${cleanupError.message}` } } }
-        : readAttemptResult(plan, next.claim.attempt, output, processResult);
-      state = finishCampaignExecution(state, next.claim.executionId,
-        result, {
+        : readAttemptResult(plan, claim.attempt, output, processResult);
+      return result;
+    };
+    const active = new Map();
+    const invalidAtStart = state.summary.invalid;
+    let stopLaunching = false;
+    while (true) {
+      while (!stopLaunching && active.size < plan.summary.parallelism) {
+        const next = claimNextAttempt(state, { admissionId: admission.id });
+        state = next.state;
+        if (!next.claim) break;
+        writeCampaignState(initialized.paths.state, plan, state);
+        const promise = runClaim(next.claim).then(result => ({ claim: next.claim, result }),
+          error => ({ claim: next.claim, result: { exitCode: null, timedOut: false,
+            run: { outcome: { kind: 'harness_failure',
+              reason: `campaign worker failed: ${error.message}` } } } }));
+        active.set(next.claim.executionId, promise);
+      }
+      if (!active.size) return state;
+      const completed = await Promise.race(active.values());
+      active.delete(completed.claim.executionId);
+      state = finishCampaignExecution(state, completed.claim.executionId,
+        completed.result, {
           retries: plan.definition.attemptPolicy.retries,
           retryOn: plan.definition.attemptPolicy.retryOn,
         });
       writeCampaignState(initialized.paths.state, plan, state);
-      if (state.summary.invalid > invalidAtStart) return state;
+      if (state.summary.invalid > invalidAtStart) stopLaunching = true;
     }
   } finally {
     releaseCampaignLock(lock);

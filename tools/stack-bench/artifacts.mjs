@@ -55,7 +55,7 @@ const PAYLOAD_FIELDS = Object.freeze({
   bug_report_quality: new Set(['bugs', 'vague', 'vaguePct']),
   campaign_admission: new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'createdAt',
     'ok', 'runtime', 'agents', 'conditions', 'reports']),
-  campaign_process: new Set(['schemaVersion', 'executionId', 'exitCode', 'signal', 'timedOut',
+  campaign_process: new Set(['schemaVersion', 'executionId', 'runIndex', 'exitCode', 'signal', 'timedOut',
     'streams']),
   campaign_plan: new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
     'contentSha256', 'definition', 'identities', 'bindings', 'stacks', 'agents', 'conditions',
@@ -63,7 +63,7 @@ const PAYLOAD_FIELDS = Object.freeze({
   campaign_report: new Set(['reportSchemaVersion', 'campaign', 'scope', 'policy', 'attempts',
     'conditions', 'summary', 'limitations', 'contentSha256']),
   campaign_state: new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'status',
-    'createdAt', 'updatedAt', 'attempts', 'summary']),
+    'createdAt', 'updatedAt', 'maxParallel', 'attempts', 'summary']),
   contract_lint: new Set(['label', 'url', 'level', 'pass', 'counts', 'results']),
   grade: new Set(['definitionSchemaVersion', 'recipeRelease', 'label', 'url', 'level', 'runId',
     'total', 'max', 'features', 'environment', 'inconclusive', 'selection', 'packRuntime']),
@@ -300,6 +300,10 @@ function validatePayload(kind, payload) {
     if (payload.schemaVersion !== 1) fail('campaign_process payload.schemaVersion must be 1');
     if (typeof payload.executionId !== 'string' || !payload.executionId) {
       fail('campaign_process payload.executionId is required');
+    }
+    if (payload.runIndex !== undefined
+      && (!Number.isInteger(payload.runIndex) || payload.runIndex < 0)) {
+      fail('campaign_process payload.runIndex must be a non-negative integer');
     }
     if (payload.exitCode !== null && !Number.isInteger(payload.exitCode)) {
       fail('campaign_process payload.exitCode must be an integer or null');

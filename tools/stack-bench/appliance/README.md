@@ -136,6 +136,32 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
 draft orchestration and evidence without model spend; its output is not
 comparative benchmark data. `campaign run` remains restricted to frozen plans.
 
+Run counts and concurrency are explicit campaign inputs. `repetitions` is the
+default for every selected stack; a stack can override it independently.
+`parallelism` is the maximum number of attempts allowed to run at once:
+
+```json
+{
+  "stacks": [
+    { "id": "spacetime", "adapterVersion": "1.0.0", "repetitions": 5 },
+    { "id": "postgres", "adapterVersion": "1.1.0", "repetitions": 8 },
+    { "id": "mongodb", "adapterVersion": "1.1.0", "repetitions": 3 }
+  ],
+  "repetitions": 1,
+  "parallelism": 8
+}
+```
+
+This plan contains 16 attempts and may run any eight simultaneously, including
+multiple attempts of the same stack. The scheduler assigns each live attempt a
+different run slot, which isolates its app ports, database/module name, work
+directory, resource locks, and evidence directory. SpacetimeDB slots also get
+separate benchmark-owned host ports. A campaign can request at most 21-way
+parallelism because slots 0 through 20 are the collision-tested local port
+range. Set a smaller value when CPU, memory, provider limits, or database
+capacity are the practical constraint. Both the counts and the concurrency
+limit are included in the frozen campaign identity.
+
 Prepare durable state without launching an attempt, then run that exact frozen
 plan (or resume its remaining attempts) from the same persistent directory:
 
@@ -154,8 +180,10 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
 `campaign status /var/lib/stack-bench/results/campaign-001` reads the durable
 state. Two controllers cannot own the directory at once. Failed harness or
 inconclusive measurement attempts remain visible and retries append new
-execution records. A comparison attempt is completed only when every selected
-check produced pass-or-fail evidence on both the first and final build and each
+execution records. Multiple running attempts are checkpointed independently;
+after an interrupted controller, reconciliation proves cleanup for every live
+slot before changing any of their records. A comparison attempt is completed
+only when every selected check produced pass-or-fail evidence on both the first and final build and each
 score denominator equals the campaign's declared points. An inconclusive check
 never shrinks the denominator or contributes comparison metrics. If a
 controller ends while an attempt is still marked running, automatic resume

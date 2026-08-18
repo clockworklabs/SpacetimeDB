@@ -10,7 +10,7 @@ import { sha256 } from './provenance.mjs';
 import { recipeReleaseIdentity, resolveRecipeRelease } from './recipe-release.mjs';
 import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from './recipe-selection.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
-import { listTracks, loadTrack } from './tracks.mjs';
+import { listTracks, loadTrack, RUN_INDEX_CAP } from './tracks.mjs';
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.mjs';
 
 export const CAMPAIGN_SCHEMA_VERSION = 2;
@@ -20,12 +20,12 @@ const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
 const ROOT_FIELDS = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'title',
   'track', 'levels', 'selection', 'stacks', 'agents', 'conditions', 'repetitions', 'ordering',
-  'budgets', 'attemptPolicy', 'pricing', 'analysis']);
+  'parallelism', 'budgets', 'attemptPolicy', 'pricing', 'analysis']);
 ROOT_FIELDS.add('runtime');
 const LEGACY_SELECTION_FIELDS = new Set(['packs', 'checks']);
 const MODULAR_SELECTION_FIELDS = new Set(['levels']);
 const MODULAR_LEVEL_FIELDS = new Set(['level', 'recipe', 'features', 'checks']);
-const STACK_FIELDS = new Set(['id', 'adapterVersion']);
+const STACK_FIELDS = new Set(['id', 'adapterVersion', 'repetitions']);
 const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model']);
 const ORDERING_FIELDS = new Set(['method', 'seed']);
 const BUDGET_FIELDS = new Set(['fixRounds', 'attemptTimeoutMinutes', 'maxCostUsdPerAttempt']);
@@ -136,6 +136,9 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     strict(stack, at, STACK_FIELDS);
     identifier(stack.id, `${at}.id`);
     version(stack.adapterVersion, `${at}.adapterVersion`);
+    if (stack.repetitions !== undefined) {
+      integer(stack.repetitions, `${at}.repetitions`, { min: 1, max: 100 });
+    }
     return stack;
   }, { nonEmpty: true, sort: true });
   if (new Set(value.stacks.map(stack => stack.id)).size !== value.stacks.length) {
@@ -153,6 +156,9 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
   value.conditions = exactArray(value.conditions, `${source}.conditions`, (condition, at) =>
     validateConditionReference(condition, at), { nonEmpty: true, sort: true });
   integer(value.repetitions, `${source}.repetitions`, { min: 1, max: 100 });
+  value.parallelism ??= 1;
+  integer(value.parallelism, `${source}.parallelism`, { min: 1, max: RUN_INDEX_CAP + 1 });
+  for (const stack of value.stacks) stack.repetitions ??= value.repetitions;
 
   strict(value.ordering, `${source}.ordering`, ORDERING_FIELDS);
   if (value.ordering.method !== 'balanced-rotation') fail(`${source}.ordering.method`, 'must be balanced-rotation');
@@ -271,6 +277,8 @@ function campaignIdentityDocument(definition, engine, bindings, stacks, agents, 
 }
 
 function expandAttempts(definition, requestedLevels, stacks, agents, studyConditions) {
+  const repetitionsByStack = new Map(definition.stacks.map(stack =>
+    [stack.id, stack.repetitions ?? definition.repetitions]));
   const conditions = agents.flatMap((agent, agentIndex) => studyConditions.flatMap(
     (condition, conditionIndex) => stacks.map(stack => ({
       agent, agentIndex, condition, conditionIndex, stack,
@@ -282,8 +290,10 @@ function expandAttempts(definition, requestedLevels, stacks, agents, studyCondit
     return leftHash.localeCompare(rightHash) || left.key.localeCompare(right.key);
   });
   const attempts = [];
-  for (let repetition = 1; repetition <= definition.repetitions; repetition += 1) {
+  const repetitions = Math.max(...repetitionsByStack.values());
+  for (let repetition = 1; repetition <= repetitions; repetition += 1) {
     rotate(conditions, (repetition - 1) % conditions.length)
+      .filter(({ stack }) => repetition <= repetitionsByStack.get(stack.id))
       .forEach(({ agent, agentIndex, condition, conditionIndex, stack }, order) => attempts.push({
         id: `${definition.id}-r${repetition}-c${conditionIndex + 1}-a${agentIndex + 1}-${stack.id}`,
         repetition,
@@ -459,6 +469,9 @@ export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
   const identityDocument = campaignIdentityDocument(definition, engine, bindings, stacks, agents, conditions);
   const contentSha256 = sha256(canonicalDefinitionJson(identityDocument));
   const attempts = expandAttempts(definition, requestedLevels, stacks, agents, conditions);
+  const repetitionsByStack = Object.fromEntries(definition.stacks.map(stack =>
+    [stack.id, stack.repetitions ?? definition.repetitions]).sort(([left], [right]) =>
+    left.localeCompare(right)));
   return canonicalizeDefinition({
     campaignSchemaVersion: CAMPAIGN_SCHEMA_VERSION,
     id: definition.id,
@@ -475,8 +488,8 @@ export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
     conditions,
     attempts,
     summary: { attempts: attempts.length, stacks: stacks.length, agents: agents.length,
-      conditions: conditions.length,
-      repetitions: definition.repetitions },
+      conditions: conditions.length, repetitions: definition.repetitions,
+      repetitionsByStack, parallelism: definition.parallelism ?? 1 },
   });
 }
 
@@ -522,8 +535,13 @@ export function validateCompiledCampaignPlan(input) {
   if (canonicalDefinitionJson(plan.attempts) !== canonicalDefinitionJson(expectedAttempts)) {
     throw new Error('compiled campaign attempt schedule does not match its inputs');
   }
+  const repetitionsByStack = Object.fromEntries(definition.stacks.map(stack =>
+    [stack.id, stack.repetitions ?? definition.repetitions]).sort(([left], [right]) =>
+    left.localeCompare(right)));
   const expectedSummary = { attempts: expectedAttempts.length, stacks: plan.stacks.length,
-    agents: plan.agents.length, conditions: plan.conditions.length, repetitions: definition.repetitions };
+    agents: plan.agents.length, conditions: plan.conditions.length,
+    repetitions: definition.repetitions, repetitionsByStack,
+    parallelism: definition.parallelism ?? 1 };
   if (canonicalDefinitionJson(plan.summary) !== canonicalDefinitionJson(expectedSummary)) {
     throw new Error('compiled campaign summary does not match its inputs');
   }

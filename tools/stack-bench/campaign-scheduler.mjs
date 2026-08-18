@@ -4,8 +4,9 @@ import { join, resolve } from 'node:path';
 import { emptyArtifactIdentities, readArtifact, writeArtifact } from './artifacts.mjs';
 import { campaignIdentity, validateCompiledCampaignPlan } from './campaign-compiler.mjs';
 import { canonicalDefinitionJson } from './definition-plan.mjs';
+import { RUN_INDEX_CAP } from './tracks.mjs';
 
-export const CAMPAIGN_STATE_SCHEMA_VERSION = 1;
+export const CAMPAIGN_STATE_SCHEMA_VERSION = 2;
 const ATTEMPT_STATUSES = new Set(['pending', 'running', 'completed', 'invalid']);
 const EXECUTION_STATUSES = new Set(['running', 'completed', 'invalid']);
 const CAMPAIGN_STATUSES = new Set(['prepared', 'running', 'completed', 'attention-required']);
@@ -43,7 +44,7 @@ export function validateCampaignState(input) {
   if (!object(input)) fail('document must be an object');
   const state = structuredClone(input);
   const fields = new Set(['schemaVersion', 'campaignId', 'campaignSha256', 'status',
-    'createdAt', 'updatedAt', 'attempts', 'summary']);
+    'createdAt', 'updatedAt', 'maxParallel', 'attempts', 'summary']);
   for (const key of Object.keys(state)) if (!fields.has(key)) fail(`${key} is unknown`);
   if (state.schemaVersion !== CAMPAIGN_STATE_SCHEMA_VERSION) fail('schemaVersion is unsupported');
   string(state.campaignId, 'campaignId');
@@ -51,10 +52,15 @@ export function validateCampaignState(input) {
   if (!CAMPAIGN_STATUSES.has(state.status)) fail(`status ${state.status} is invalid`);
   timestamp(state.createdAt, 'createdAt');
   timestamp(state.updatedAt, 'updatedAt');
+  if (!Number.isInteger(state.maxParallel) || state.maxParallel < 1
+    || state.maxParallel > RUN_INDEX_CAP + 1) {
+    fail(`maxParallel must be an integer from 1 through ${RUN_INDEX_CAP + 1}`);
+  }
   if (Date.parse(state.updatedAt) < Date.parse(state.createdAt)) fail('updatedAt precedes createdAt');
   if (!Array.isArray(state.attempts) || state.attempts.length === 0) fail('attempts must be non-empty');
   const ids = new Set();
   let running = 0;
+  const runningSlots = new Set();
   for (const [index, attempt] of state.attempts.entries()) {
     const at = `attempts[${index}]`;
     if (!object(attempt)) fail(`${at} must be an object`);
@@ -71,11 +77,13 @@ export function validateCampaignState(input) {
     for (const [executionIndex, execution] of attempt.executions.entries()) {
       const executionAt = `${at}.executions[${executionIndex}]`;
       const executionFields = new Set(['id', 'ordinal', 'status', 'output', 'startedAt',
-        'completedAt', 'exitCode', 'outcome', 'reason', 'admissionId']);
+        'completedAt', 'exitCode', 'outcome', 'reason', 'admissionId', 'runIndex']);
       if (!object(execution)) fail(`${executionAt} must be an object`);
       for (const key of Object.keys(execution)) if (!executionFields.has(key)) fail(`${executionAt}.${key} is unknown`);
       string(execution.id, `${executionAt}.id`);
       string(execution.admissionId, `${executionAt}.admissionId`);
+      if (!Number.isInteger(execution.runIndex) || execution.runIndex < 0
+        || execution.runIndex >= state.maxParallel) fail(`${executionAt}.runIndex is invalid`);
       if (execution.ordinal !== executionIndex + 1) fail(`${executionAt}.ordinal is not contiguous`);
       if (execution.id !== `${attempt.plan.id}-execution${execution.ordinal}`) {
         fail(`${executionAt}.id does not match its attempt and ordinal`);
@@ -97,6 +105,8 @@ export function validateCampaignState(input) {
       }
       if (execution.status === 'running') {
         running += 1;
+        if (runningSlots.has(execution.runIndex)) fail(`${executionAt}.runIndex is already in use`);
+        runningSlots.add(execution.runIndex);
         if (execution.completedAt !== null || execution.exitCode !== null
           || execution.outcome !== null || execution.reason !== null) fail(`${executionAt} running fields are inconsistent`);
       } else {
@@ -128,7 +138,7 @@ export function validateCampaignState(input) {
     if (attempt.status === 'completed' && latest?.status !== 'completed') fail(`${at} has no completed execution`);
     if (attempt.status === 'invalid' && latest?.status !== 'invalid') fail(`${at} has no invalid execution`);
   }
-  if (running > 1) fail('more than one execution is running');
+  if (running > state.maxParallel) fail('running executions exceed maxParallel');
   if (!object(state.summary)) fail('summary must be an object');
   const expected = recalculate(structuredClone(state), state.updatedAt);
   if (JSON.stringify(expected.summary) !== JSON.stringify(state.summary) || expected.status !== state.status) {
@@ -147,6 +157,7 @@ export function createCampaignState(plan, { now = new Date().toISOString() } = {
     status: 'prepared',
     createdAt: now,
     updatedAt: now,
+    maxParallel: plan.summary.parallelism,
     attempts: plan.attempts.map(attempt => ({ plan: structuredClone(attempt),
       status: 'pending', executions: [] })),
     summary: {},
@@ -156,20 +167,23 @@ export function createCampaignState(plan, { now = new Date().toISOString() } = {
 
 export function claimNextAttempt(input, { now = new Date().toISOString(), admissionId } = {}) {
   const state = validateCampaignState(input);
-  if (state.attempts.some(attempt => attempt.status === 'running')) {
-    throw new Error('campaign already has a running attempt');
-  }
   string(admissionId, 'admissionId');
+  const usedSlots = new Set(state.attempts.flatMap(attempt => attempt.executions
+    .filter(execution => execution.status === 'running').map(execution => execution.runIndex)));
+  const runIndex = Array.from({ length: state.maxParallel }, (_, index) => index)
+    .find(index => !usedSlots.has(index));
+  if (runIndex === undefined) return { state, claim: null, capacityFull: true };
   const attempt = state.attempts.find(candidate => candidate.status === 'pending');
-  if (!attempt) return { state, claim: null };
+  if (!attempt) return { state, claim: null, capacityFull: false };
   const ordinal = attempt.executions.length + 1;
   const id = `${attempt.plan.id}-execution${ordinal}`;
   const output = `attempts/${attempt.plan.id}/execution-${ordinal}`;
   attempt.status = 'running';
   attempt.executions.push({ id, ordinal, status: 'running', output, startedAt: now,
-    completedAt: null, exitCode: null, outcome: null, reason: null, admissionId });
+    completedAt: null, exitCode: null, outcome: null, reason: null, admissionId, runIndex });
   return { state: validateCampaignState(recalculate(state, now)),
-    claim: { attempt: structuredClone(attempt.plan), executionId: id, output } };
+    claim: { attempt: structuredClone(attempt.plan), executionId: id, output, runIndex },
+    capacityFull: false };
 }
 
 export function classifyCampaignExecution({ exitCode = null, timedOut = false, run = null } = {}) {

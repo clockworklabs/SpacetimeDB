@@ -32,6 +32,7 @@
     }
   ],
   "repetitions": 3,
+  "parallelism": 1,
   "ordering": {
     "method": "balanced-rotation",
     "seed": "replace-before-measurement"

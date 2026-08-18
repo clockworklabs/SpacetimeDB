@@ -98,6 +98,9 @@ test('campaign identity ignores JSON formatting but changes with study semantics
   reordered.selection = { checks: [], packs: [] };
   const same = compile(reordered);
   assert.equal(same.contentSha256, first.contentSha256);
+  const explicitDefaults = definition({ parallelism: 1,
+    stacks: definition().stacks.map(stack => ({ ...stack, repetitions: 3 })) });
+  assert.equal(compile(explicitDefaults).contentSha256, first.contentSha256);
   const changed = compile(definition({ repetitions: 4 }));
   assert.notEqual(changed.contentSha256, first.contentSha256);
   const partial = compile(definition({ selection: { packs: [],
@@ -193,6 +196,22 @@ test('a one-repetition pilot is allowed and reports its exact sample size', () =
   assert.equal(plan.summary.attempts, 3);
 });
 
+test('campaigns freeze independent stack counts and bounded parallel capacity', () => {
+  const stacks = definition().stacks.map(stack => ({ ...stack,
+    repetitions: stack.id === 'postgres' ? 4 : stack.id === 'mongodb' ? 2 : 3 }));
+  const plan = compile(definition({ stacks, repetitions: 1, parallelism: 6 }));
+  assert.deepEqual(plan.summary.repetitionsByStack,
+    { mongodb: 2, postgres: 4, spacetime: 3 });
+  assert.equal(plan.summary.parallelism, 6);
+  assert.equal(plan.summary.attempts, 9);
+  assert.deepEqual(Object.fromEntries(['mongodb', 'postgres', 'spacetime'].map(stack =>
+    [stack, plan.attempts.filter(attempt => attempt.stack === stack).length])),
+  { mongodb: 2, postgres: 4, spacetime: 3 });
+  assert.notEqual(plan.contentSha256, compile(definition({ stacks, repetitions: 1,
+    parallelism: 5 })).contentSha256);
+  assert.throws(() => validateCampaignDefinition(definition({ parallelism: 22 })), /parallelism/);
+});
+
 test('campaign validation rejects ambiguity, silent fallback, and incomplete analysis policy', () => {
   assert.throws(() => validateCampaignDefinition({ ...definition(), surprise: true }), /surprise.*unknown/);
   assert.throws(() => validateCampaignDefinition(definition({ levels: [1, 3] })), /ascending and contiguous/);
@@ -257,7 +276,8 @@ test('the packaged model-free campaign example compiles without starting work', 
   const plan = compileCampaignFile(join(import.meta.dirname, '..', 'appliance', 'campaign.example.json'));
   assert.equal(plan.state, 'draft');
   assert.deepEqual(plan.summary, { agents: 1, attempts: 9, conditions: 1,
-    repetitions: 3, stacks: 3 });
+    parallelism: 1, repetitions: 3,
+    repetitionsByStack: { mongodb: 3, postgres: 3, spacetime: 3 }, stacks: 3 });
 });
 
 test('the packaged modular reference gate scores quality specifications without prompting them', () => {
@@ -265,7 +285,8 @@ test('the packaged modular reference gate scores quality specifications without 
     'campaign.product-brief-reference.json'));
   assert.equal(plan.state, 'draft');
   assert.deepEqual(plan.summary, { agents: 1, attempts: 6, conditions: 1,
-    repetitions: 2, stacks: 3 });
+    parallelism: 1, repetitions: 2,
+    repetitionsByStack: { mongodb: 2, postgres: 2, spacetime: 2 }, stacks: 3 });
   assert.equal(plan.agents[0].adapter, 'reference-fixture');
   const expected = plan.conditions.find(condition => condition.id === 'product-brief-quality');
   assert.deepEqual(expected.requested.levels[0].selection.specifications,
