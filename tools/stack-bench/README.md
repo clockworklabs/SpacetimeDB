@@ -38,7 +38,6 @@ and dashboard-started work remains fully operable from the CLI. See
 
 - `SETUP.md` — local prerequisites and first-run setup
 - `APPLIANCE-DESIGN.md` — appliance boundaries and execution model
-- `CONTAINER-DESIGN.md` — container topology and isolation model
 - `appliance/README.md` — Docker appliance operation
 - `dashboard/README.md` — optional web control room
 - `grader/README.md` — grader architecture and evidence model
@@ -229,8 +228,8 @@ a union. Run, bundle, and grade artifacts record the request, the exact checks
 it resolved to, which checks were attempted, and any checks not run with their
 reason. A subset can be an intentional benchmark run. `npm run compare` refuses
 different recipe or selection identities and refuses any run whose scope cannot
-be proven. Pre-v1 results are preserved under `archive/pre-v1/` for historical
-inspection only; active readers do not infer or migrate their meaning.
+be proven. Working notes and superseded local artifacts are not part of the
+public source tree and must not be presented as benchmark results.
 
 Packs own ordered public requirement fragments, testing-hook fragments, and
 their checks; recipes retain global framing and choose exact pack versions.

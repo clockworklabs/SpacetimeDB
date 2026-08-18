@@ -1,203 +1,143 @@
-# What produced a number
+# Reproducible run setup
 
-Every figure this benchmark reports depends on a configuration. This is that
-configuration, what is pinned, what is deliberately not, and where each value is
-recorded so a result can be traced back to it.
+Stack Bench records the inputs needed to explain and compare a result. A run is
+usable only when its requested scope passes preflight and its artifact identities
+remain consistent through build, grading, repair, and reporting.
 
-Everything below lands in `results/<run>/run.json` under `setup`. If a value is
-not in that file, it is not part of the record and a number that depends on it
-cannot be defended.
+For a distributable deployment, use the dedicated Linux appliance described in
+[`APPLIANCE-DESIGN.md`](APPLIANCE-DESIGN.md) and
+[`appliance/README.md`](appliance/README.md). The commands below are also useful
+for local development.
 
-## The model and how hard it thinks
+## Prerequisites
 
-| | value | where it comes from |
-|---|---|---|
-| model | `claude-sonnet-5` | `--model`, default in `commands/bench.mjs` |
-| reasoning effort | **`high`** | `--effort`, pinned in `commands/agent.mjs`; `STACK_BENCH_EFFORT` overrides |
-| thinking budget | **unset — CLI default** | deliberately not pinned; see below |
-| reasoning produced | measured per run | `levels[].thinking` — blocks and signature bytes |
+- Node.js 22 or newer
+- Docker Engine and Docker Compose v2
+- enough CPU, memory, disk, and free ports to pass exact-scope preflight
+- Chromium installed through the pinned Playwright dependency
+- a credential accepted by the selected coding-agent adapter
+- for SpacetimeDB, the repository's Linux CLI and TypeScript bindings
 
-**Effort is pinned to `high`.** It was not pinned for most of this project's
-life: the harness forwarded the whole environment and this machine carries
-`CLAUDE_EFFORT=high`, so every earlier run took that value by accident. The
-comparisons were still fair — both stacks got the same level — but nothing
-recorded which level produced a number, and another machine would have produced
-different ones silently. Pinned to `high` so results collected before and after
-remain comparable.
-
-**The thinking budget is deliberately NOT pinned.** Customers do not set
-`MAX_THINKING_TOKENS`, so pinning it measures a configuration nobody runs. A pin
-at 10000 was tried and changed nothing measurable. Instead each run records the
-reasoning it actually produced, so a change in the CLI default shows up in the
-data rather than being absorbed into every score.
-
-## Cost-affecting settings
-
-| | value | why it is pinned |
-|---|---|---|
-| prompt cache tier | `5m` (`FORCE_PROMPT_CACHING_5M=1`) | Cache reads are 97–98% of every bill. On the unpinned 1-hour tier a second run of the same backend reads a prefix the first paid to create and looks cheaper for reasons unrelated to the database. |
-| auto-updater | disabled (`DISABLE_AUTOUPDATER=1`) | A CLI that updates itself mid-series changes the thing under test between one backend and the next. |
-| permission mode | `acceptEdits` | Not `--dangerously-skip-permissions`, which is bypassPermissions and disables the deny rules entirely. |
-
-## What is actually under test
-
-Recorded per run, because a benchmark of SpacetimeDB that does not say which
-SpacetimeDB is not reproducible:
-
-- `setup.spacetime` — CLI version, commit and binary SHA-256 of the Linux binary
-  built from this repo
-- `setup.spacetimeBindings` — package version and source-tree SHA-256 of the
-  local `file:` package
-- `setup.database` — readable image reference and the database container's
-  immutable image content ID
-- `setup.cliVersion` — Claude Code version (the driver, not the subject)
-- `setup.node` — separate orchestrator and coding-container Node versions
-- `setup.platform`
-
-## Guidance, and the asymmetry in it
-
-`setup.skills` records which reference documents were inlined. SpacetimeDB
-builds get `typescript-server` and `typescript-client`; PostgreSQL and MongoDB
-get none, because their equivalent knowledge is already in the model's training
-data.
-
-**This is a real asymmetry, and it is smaller than it looks.** It makes the
-SpacetimeDB prompt roughly 2.2x larger (42,551 bytes against 19,337 in one
-measured pair), and prompt bytes are re-paid on every turn. Multiplied out:
-about 5,800 tokens per turn over 103 turns is 0.60M tokens, roughly **18 cents**
-at cache-read rates. Against a $4.00 gap that is **4.5% of the gap and 1.6% of
-the bill**.
-
-State the denominator whenever this is quoted. It was once written here as
-"12%", which was 12% of the extra cache-read TOKENS — a denominator no reader
-would assume, and about seven times the share of cost it actually represents.
-The asymmetry is worth disclosing for fairness, not because it explains the
-cost difference. It does not: the compiler errors do.
-
-## Where the build runs
-
-Builds are **container-only**. The container
-(`container/Dockerfile`) exists because the
-harness is not on its filesystem — a fix round once read the scenario file
-defining the criteria it was failing and then ran the grader, using nothing but
-`grep` and `node`. Denying those paths is a blocklist; absence is not.
-
-| flag | effect |
-|---|---|
-| *(default)* | container or refuse; model sessions have no host execution path |
-| `CLAUDE_CODE_OAUTH_TOKEN_FILE` | bill to the Claude subscription using a dedicated long-lived token file |
-| `--api-key <key>`, `ANTHROPIC_API_KEY` | bill to a key instead of the plan credential |
-| `STACK_BENCH_IMAGE` | image reference (default `stack-bench-build:2.1.226`) |
-
-Build the image first, and — for SpacetimeDB — a Linux build of this
-repository's CLI, since `target/release` holds a Windows binary a container
-cannot execute:
+Install the JavaScript dependencies and browser:
 
 ```bash
-docker build -t stack-bench-build:2.1.226 tools/stack-bench/container
+cd tools/stack-bench
+npm ci
+npm run bootstrap:browsers
 ```
 
+Build the local coding image:
+
 ```bash
-bash tools/stack-bench/container/build-linux-cli.sh
+docker build -t stack-bench-build:2.1.226 container
 ```
 
-Verify the model-free container lifecycle before spending a coding session:
+On a Windows checkout, build the repository's Linux SpacetimeDB CLI before a
+SpacetimeDB run:
 
 ```bash
-npm run preflight -- --backend spacetime,postgres,mongodb --track ecommerce --levels 1-2 --smoke
+bash container/build-linux-cli.sh
+```
+
+The supported appliance uses digest-pinned images from its release manifest.
+The local image tag above is for development; preflight resolves the image that
+will actually execute and records its immutable content ID.
+
+## Coding-agent credentials
+
+The selected agent adapter declares its accepted credential sources. The
+current Claude Code adapter supports three mutually exclusive modes:
+
+- a long-lived subscription token through `CLAUDE_CODE_OAUTH_TOKEN_FILE`;
+- an API key through `ANTHROPIC_API_KEY` or the appliance secret-file mapping;
+- the explicit local recovery mode at `~/.claude/.credentials.json`.
+
+Select one mode. Conflicting sources fail closed. Secret values are not written
+to run artifacts or Docker command arguments. The coding container can read the
+credential selected for it, so production runs belong on a dedicated runner
+without unrelated data or credentials.
+
+## Validate before model spend
+
+Run preflight for the exact stacks, track, levels, recipe, and image you intend
+to execute. Include `--smoke` for the model-free container and network checks:
+
+```bash
+npm run preflight -- \
+  --backend spacetime,postgres,mongodb \
+  --track ecommerce \
+  --levels 1-2 \
+  --smoke
+```
+
+Preflight checks the selected recipe scope, Docker and platform support,
+resources, ports, credentials, image identity, dependency availability,
+outbound access, persistent result writes, and stack-specific runtime paths.
+The benchmark command repeats admission checks and refuses before a coding
+session when the requested environment is not ready.
+
+Run the model-free container regression separately when changing container,
+network, credential, or SpacetimeDB CLI behavior:
+
+```bash
 npm run test:container
 ```
 
-The first command is the operator admission check: exact requested scope,
-Docker/Compose and architecture, CPU/memory/disk floors, clock, digest-matched
-services, free run ports, credentials, provider-declared outbound access, Linux
-CLI architecture, and persistent result-volume writes. `commands/bench.mjs` repeats the
-full no-model smoke automatically and refuses before any model call if a check
-fails. Its typed `preflight.json` is attached to the run; secrets are never
-included.
+## Configuration recorded with each run
 
-This starts a dedicated host on an ephemeral port, stages the repository SDK
-with its runtime dependencies, runs `spacetime dev` inside the real build image,
-publishes a fixture, checks it through SQL, verifies the integrated log stream
-is authorized, and verifies cleanup. Log authorization is a hard assertion: a
-publish-only success cannot make this smoke green.
+`run.json` binds the result to the configuration that produced it, including:
 
-The Dockerfile pins its Node base by manifest digest. PostgreSQL and MongoDB are
-also pinned by manifest digest in `docker-compose.yaml`. At session start the
-harness resolves `STACK_BENCH_IMAGE` to a `sha256:...` content ID and passes
-that ID—not the possibly movable tag—to `docker run`.
+- track, stack, recipe, selected packs/checks, level, and run index;
+- agent adapter, model, effort, prompt treatment, and repair budget;
+- engine, prompt, contract, scenario, recipe, and calibration identities;
+- coding image reference and immutable image ID;
+- stack adapter, database image, platform, and Node versions;
+- SpacetimeDB CLI and TypeScript binding identities when selected;
+- build and repair sessions, token usage, cost, turns, and model duration;
+- grading evidence, media, lifecycle events, cleanup, and contamination status.
 
-`run.json` records `setup.isolation` (`mode`, readable `image`, immutable
-`imageId`, and `hostAlias`) and
-`setup.auth` (`subscription-token`, `api-key`, or `credentials`). Two numbers
-are comparable only when the recorded image IDs and host-alias topology match.
+Campaign plans additionally freeze the attempt matrix, parallelism, pricing,
+runtime images, and per-level gate policy. Dashboard and CLI execution consume
+the same compiled plan.
 
-**Isolation is pinned per run.** The first round writes `container` to
-`.stack-bench-isolation` beside the app; later rounds require it. An app with
-prior benchmark state and no valid pin is refused as ambiguous rather than
-silently adopted.
+## Isolation rules
 
-If the image or Linux CLI is missing, the run refuses before model spend.
-`run.json` reports the Linux CLI's own version, since the Windows and Linux
-builds go stale independently. See `CONTAINER-DESIGN.md`.
+Coding sessions run only in the build container. They receive the generated app
+workspace, the dependencies declared by the stack adapter, their transcript
+directory, and the selected credential. They do not receive the controller,
+grader, scenarios, recipes, calibration, results, or source checkout.
 
-The appliance defaults to subscription billing through a dedicated long-lived
-setup-token file. It is mounted read-only and its value is absent from Docker
-command arguments. The older `~/.claude/.credentials.json` path is still
-supported as an explicit recovery mode and remains read-write because the CLI
-rotates it. A build can read the selected subscription credential; that is an
-unavoidable property of allowing the coding CLI to authenticate, so the runner
-must contain no unrelated workloads or credentials.
+The harness authenticates backend and container operations through the exact
+run lease. It removes only resources whose recorded identities still match and
+quarantines a run when cleanup ownership cannot be proven.
 
-## The environment
+## Run and inspect
 
-The removed host path forwarded `process.env`, which is how `CLAUDE_EFFORT`
-influenced earlier runs before anyone noticed. A container inherits only
-`DISABLE_AUTOUPDATER`, `FORCE_PROMPT_CACHING_5M`,
-`MAX_THINKING_TOKENS` and the API key (when used) are passed in, which closes
-this hole for containerised runs rather than only recording it. Ambient variables matching
-`CLAUDE*`, `ANTHROPIC*`, `MAX_THINKING*`, `DISABLE_AUTOUPDATER` and
-`FORCE_PROMPT*` are now recorded in `setup.env`, with anything key-shaped
-redacted to its presence.
+The common CLI flows are documented in [`README.md`](README.md). Use package
+commands instead of importing internal module paths:
 
-This records the problem rather than removing it. The child also inherits the
-parent session's identifiers (`CLAUDE_CODE_SESSION_ID`, `CLAUDE_CODE_ENTRYPOINT`
-and similar). Whether any of those change model behaviour is untested; they are
-in the record so the question can be answered rather than guessed at.
+```bash
+npm run bench -- --backend spacetime --track ecommerce --levels 1
+npm run campaign -- status <campaign-directory>
+npm run dashboard
+```
 
-## Run parameters
+The dashboard is an optional view and controller for the same campaign engine;
+it does not replace the CLI or define a second run format.
 
-Recorded at the top level of `run.json`: `track`, `backend`, `model`,
-`guidance`/`stack` (prescribed or free), level, run index, and `--fix-rounds`.
+## Comparing results
 
-Cost is broken out per phase — `buildCostUsd` and `fixCostUsd` — because a total
-alone cannot distinguish an expensive first attempt from an expensive repair,
-and those are different claims about a stack.
+Compare runs with:
 
-Every level keeps one `buildSession` and an ordered `fixSessions` array. Each
-session records its prompt, selected skills, contract, track manifest, scenarios
-and rubric hashes; fix sessions also hash the exact bug report they received.
-`sessionTotals` aggregates cost, tokens, output tokens, usage classes, turns,
-prompt bytes, reasoning volume and model duration across those sessions. The
-run totals aggregate sessions, tokens, output tokens, turns and model duration
-across every level; wall-clock `durationSec` remains separate.
+```bash
+npm run compare -- <run-directory> <run-directory>
+```
 
-## Comparing runs
+Only compare results that identify compatible engine, recipe, selection,
+grader, image, model, effort, and prompt treatment. The comparison command
+reports the common measured check set separately from checks that were not
+measured in every run. Never treat a missing, inconclusive, contaminated, or
+harness-failed check as a pass.
 
-Use `npm run compare -- <run-dir> <run-dir>`. A criterion the grader could not evaluate is subtracted
-from that run's denominator, which is right per run and a trap across runs — it
-is how one stack was scored out of 48 while another was scored out of 50 for the
-same level. The tool scores every run on the intersection and reports the rest
-separately.
-
-## Contamination
-
-`run.json` carries `contaminated` and the evidence behind it. That covers the
-file tools. **Bash is ungoverned by design**; `leak-audit.mjs` is the control for
-that channel and must be run separately — a run without it has only had half its
-contamination question answered.
-
-The audit still applies to containerised runs: their transcripts are mounted out
-to the host folder it already looks in, and it uses `/app` as the boundary when
-the transcript says the session ran there. Verified on a container run that read
-both its own file and `/etc/hostname` — the first passed, the second was flagged.
+Raw artifacts are the source of truth. Generated summaries and dashboard views
+must remain reproducible from those retained artifacts.

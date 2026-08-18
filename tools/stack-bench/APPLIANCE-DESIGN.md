@@ -130,25 +130,9 @@ manifest digest. A mutable tag alone can never satisfy preflight.
 8. Copy results off-runner, verify their manifest, then destroy the runner.
 ```
 
-## Implementation order
+## Release requirements
 
-1. Add a strict release-manifest schema and checksum verifier.
-2. Teach build-container plans to mount release dependencies from a named
-   volume while retaining the current local-development path mode.
-3. Build the controller image and one-shot dependency initializer.
-4. Add the dedicated-runner Compose file, secret templates, and fixed state
-   directory.
-5. Generate digest-bound SBOM/checksum/signature inputs and validate them in CI.
-6. Run preflight and the full model-free Docker smoke from a clean Linux runner.
-7. Exercise interruption handling and deterministic authenticated recovery
-   before calling the bundle production-ready.
-
-The first five steps are SB-402. Interruption recovery is SB-403; the frozen
-multi-stack campaign and deterministic static report are SB-501 through SB-503.
-
-## Acceptance gates
-
-SB-402 is complete only when a clean dedicated runner can, from the delivered
+A clean dedicated runner must be able to do the following from the delivered
 bundle alone:
 
 - verify every file and image identity before execution;
