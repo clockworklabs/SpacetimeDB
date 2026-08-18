@@ -694,7 +694,47 @@
     padding: .8rem .85rem; display: grid; gap: .28rem; align-content: start;
     transition: border-color .2s, background .2s;
   }
+  .rcpt { text-align: left; cursor: pointer; font: inherit; }
   .rcpt:hover { border-color: var(--green-25); background: #0b1512; }
+  .rcpt.on { border-color: var(--green); background: var(--green-10); }
+  .rcpt.on b { color: var(--green); }
+
+  /* what is inside the tile you picked */
+  .pack-open {
+    width: 100%; max-width: 1000px; margin-top: .7rem;
+    border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10; overflow: hidden;
+  }
+  .po { display: none; }
+  .po.on { display: block; }
+  .po-head {
+    display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;
+    padding: .55rem .9rem; border-bottom: 1px solid var(--shade1);
+    font-family: var(--font-mono); font-size: .76rem; color: var(--n4);
+  }
+  .po-head b { color: var(--green); font-weight: 500; }
+  .po-body { padding: .7rem .9rem; display: grid; gap: .05rem; }
+  .po-row {
+    display: grid; grid-template-columns: 13rem 1fr; gap: 1rem;
+    padding: .3rem 0; font-family: var(--font-mono); font-size: .78rem;
+    border-bottom: 1px solid #131b20;
+    opacity: 0; animation: lineIn .28s ease forwards;
+  }
+  .po-row:last-of-type { border-bottom: none; }
+  @media (max-width: 640px) { .po-row { grid-template-columns: 1fr; gap: 0; } }
+  .po-row span:first-child { color: var(--n4); }
+  .po-row span:last-child { color: var(--n1); }
+  .po.on .po-row:nth-of-type(1) { animation-delay: .04s; }
+  .po.on .po-row:nth-of-type(2) { animation-delay: .10s; }
+  .po.on .po-row:nth-of-type(3) { animation-delay: .16s; }
+  .po.on .po-row:nth-of-type(4) { animation-delay: .22s; }
+  .po.on .po-row:nth-of-type(5) { animation-delay: .28s; }
+  .po.on .po-row:nth-of-type(6) { animation-delay: .34s; }
+  .po.on .po-row:nth-of-type(7) { animation-delay: .40s; }
+  .po.on .po-row:nth-of-type(8) { animation-delay: .46s; }
+  .po-note {
+    padding: .5rem .9rem .7rem; font-family: var(--font-mono); font-size: .72rem;
+    color: var(--n4); border-top: 1px solid #131b20;
+  }
   .rcpt svg {
     width: 20px; height: 20px; fill: none; stroke: var(--green);
     stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; margin-bottom: .2rem;
@@ -1151,57 +1191,186 @@
 <section>
   <div class="kicker r">receipts</div>
   <h2 class="r d1">What a run leaves behind</h2>
-  <div class="pack r d2">
-      <div class="rcpt">
+  <div class="pack r d2" role="tablist">
+      <button class="rcpt on" data-pack="p1" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M8 12l3 3 5-6"/></svg>
         <b>typed verdicts</b><i>one per criterion, with its actor and its deadline</i>
-      </div>
-      <div class="rcpt">
+      </button>
+      <button class="rcpt" data-pack="p2" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 20h20"/><path d="M5 20V10M11 20V4M17 20v-6"/></svg>
         <b>the run record</b><i>score, spend, tokens, wall clock, session id</i>
-      </div>
-      <div class="rcpt">
+      </button>
+      <button class="rcpt" data-pack="p3" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h8M9 15h8M9 18h5"/></svg>
         <b>the prompt</b><i>the exact text the agent was handed</i>
-      </div>
-      <div class="rcpt">
+      </button>
+      <button class="rcpt" data-pack="p4" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M12 8v4M12 14h.01"/></svg>
         <b>the bug reports</b><i>what the agent was told, scored for vagueness</i>
-      </div>
-      <div class="rcpt">
+      </button>
+      <button class="rcpt" data-pack="p5" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h13v12H3z"/><path d="M16 10l5-3v10l-5-3z"/></svg>
         <b>video</b><i>one recording per actor, 1280 by 800</i>
-      </div>
-      <div class="rcpt">
+      </button>
+      <button class="rcpt" data-pack="p6" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3z"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="8.5" cy="9.5" r="1.3"/></svg>
         <b>screenshots</b><i>one per criterion, and one per failure</i>
-      </div>
-      <div class="rcpt">
+      </button>
+      <button class="rcpt" data-pack="p7" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-7 4 14 3-7h6"/></svg>
         <b>traces</b><i>a Playwright trace per actor, snapshots included</i>
-      </div>
-      <div class="rcpt">
+      </button>
+      <button class="rcpt" data-pack="p8" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4"/><path d="M12 11v10"/></svg>
         <b>the source</b><i>a hash-bound copy of what produced the score</i>
-      </div>
-      <div class="rcpt">
+      </button>
+      <button class="rcpt" data-pack="p9" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4L4 12l5 8M15 4l5 8-5 8"/></svg>
         <b>the contract lint</b><i>the testid contract, checked before grading</i>
-      </div>
-      <div class="rcpt">
+      </button>
+      <button class="rcpt" data-pack="p10" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v18"/><path d="M5 4h13l-3 4 3 4H5z"/></svg>
         <b>the preflight</b><i>the checks that had to pass before any spend</i>
-      </div>
-      <div class="rcpt">
+      </button>
+      <button class="rcpt" data-pack="p11" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg>
         <b>the mutation control</b><i>the planted defect this suite had to catch</i>
-      </div>
-      <div class="rcpt">
+      </button>
+      <button class="rcpt" data-pack="p12" role="tab">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M6.7 17.3L17.3 6.7"/></svg>
         <b>the null control</b><i>the empty build this suite had to score zero</i>
+      </button>
+  </div>
+  <div class="pack-open r d3">
+      <div class="po on" id="p1">
+        <div class="po-head"><b>grading-l1.json</b><span>one record per criterion</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>criterion</span><span>201a</span></div>
+        <div class="po-row"><span>state</span><span>failed</span></div>
+        <div class="po-row"><span>observed</span><span>stock reached -1 with 2 orders standing</span></div>
+        <div class="po-row"><span>actor</span><span>bob</span></div>
+        <div class="po-row"><span>deadlineMs</span><span>5000</span></div>
+        <div class="po-row"><span>evidence</span><span>video &middot; screenshot &middot; trace</span></div>
+        <div class="po-row"><span>gradedUnder</span><span>ecommerce.l1-standard@1.1.0</span></div>
+        </div>
+        <div class="po-note">states: passed | failed | inconclusive | harness_failure</div>
+      </div>
+      <div class="po" id="p2">
+        <div class="po-head"><b>run.json</b><span>kind: benchmark_run</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>track / backend / level</span><span>ecommerce &middot; database-a &middot; 1</span></div>
+        <div class="po-row"><span>model / guidance</span><span>pinned &middot; versioned pack</span></div>
+        <div class="po-row"><span>setup.sessionId</span><span>01J8&hellip;7QP</span></div>
+        <div class="po-row"><span>setup.costUsd</span><span>4.73</span></div>
+        <div class="po-row"><span>setup.durationMs</span><span>2 460 000</span></div>
+        <div class="po-row"><span>setup.sourceVerified</span><span>true</span></div>
+        <div class="po-row"><span>totals</span><span>34 / 34</span></div>
+        <div class="po-row"><span>outcome.kind</span><span>scored</span></div>
+        </div>
+        <div class="po-note">contamination and backendDiagnostics ride along in the same record</div>
+      </div>
+      <div class="po" id="p3">
+        <div class="po-head"><b>prompt.md</b><span>exactly what the agent read</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>requirements</span><span>the level’s features and invariants, verbatim</span></div>
+        <div class="po-row"><span>contract</span><span>the data-testid hooks the grader will drive</span></div>
+        <div class="po-row"><span>guidance pack</span><span>the backend’s own skills, versioned</span></div>
+        <div class="po-row"><span>sha256</span><span>a1c4&hellip;8e02</span></div>
+        </div>
+        <div class="po-note">the same bytes for every backend, apart from the guidance pack</div>
+      </div>
+      <div class="po" id="p4">
+        <div class="po-head"><b>bug-report-round-1.md</b><span>kind: bug_report_quality</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>bugs</span><span>3</span></div>
+        <div class="po-row"><span>vague</span><span>0</span></div>
+        <div class="po-row"><span>vaguePct</span><span>0</span></div>
+        <div class="po-row"><span>report</span><span>&ldquo;Two shoppers bought the same last unit. Stock showed -1.&rdquo;</span></div>
+        </div>
+        <div class="po-note">a report never names the check that caught it, so the agent cannot write to the test</div>
+      </div>
+      <div class="po" id="p5">
+        <div class="po-head"><b>video/l1-bob.webm</b><span>one context per actor</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>size</span><span>1280 &times; 800</span></div>
+        <div class="po-row"><span>actors</span><span>a &middot; b &middot; c &middot; d &middot; e &middot; f</span></div>
+        <div class="po-row"><span>naming</span><span>&lt;suite&gt;-&lt;actor&gt;.webm</span></div>
+        </div>
+        <div class="po-note">every actor is a separate browser context, so nothing is shared by accident</div>
+      </div>
+      <div class="po" id="p6">
+        <div class="po-head"><b>media/l1-201a.png</b><span>full page, on every criterion</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>per criterion</span><span>&lt;suite&gt;-&lt;criterion&gt;.png</span></div>
+        <div class="po-row"><span>per failure</span><span>&lt;suite&gt;-&lt;label&gt;-&lt;actor&gt;.png</span></div>
+        <div class="po-row"><span>fullPage</span><span>true</span></div>
+        </div>
+        <div class="po-note">a failure gets its own frame as well as the criterion frame</div>
+      </div>
+      <div class="po" id="p7">
+        <div class="po-head"><b>video/l1-bob.trace.zip</b><span>Playwright tracing</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>screenshots</span><span>true</span></div>
+        <div class="po-row"><span>snapshots</span><span>true</span></div>
+        <div class="po-row"><span>opens in</span><span>npx playwright show-trace</span></div>
+        </div>
+        <div class="po-note">the DOM at every step, replayable long after the run</div>
+      </div>
+      <div class="po" id="p8">
+        <div class="po-head"><b>source.tar.gz</b><span>kind: source_checkpoint</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>track / backend / level</span><span>ecommerce &middot; database-a &middot; 1</span></div>
+        <div class="po-row"><span>source.sha256</span><span>4f2a&hellip;9c31</span></div>
+        <div class="po-row"><span>selectionSha256</span><span>77bd&hellip;10ae</span></div>
+        <div class="po-row"><span>repair</span><span>round 2 of 2</span></div>
+        <div class="po-row"><span>outcome</span><span>scored</span></div>
+        </div>
+        <div class="po-note">the score is bound to this hash, so a rerun proves it came from this code</div>
+      </div>
+      <div class="po" id="p9">
+        <div class="po-head"><b>contract-lint.json</b><span>kind: contract_lint</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>level</span><span>1</span></div>
+        <div class="po-row"><span>pass</span><span>true</span></div>
+        <div class="po-row"><span>counts</span><span>required 41 &middot; found 41 &middot; missing 0</span></div>
+        <div class="po-row"><span>results</span><span>one row per testid the grader will reach for</span></div>
+        </div>
+        <div class="po-note">grading does not start until this passes</div>
+      </div>
+      <div class="po" id="p10">
+        <div class="po-head"><b>preflight.json</b><span>kind: preflight</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>schemaVersion</span><span>1</span></div>
+        <div class="po-row"><span>ok</span><span>true</span></div>
+        <div class="po-row"><span>summary</span><span>passed 24 &middot; failed 0</span></div>
+        <div class="po-row"><span>checks</span><span>ports, images, leases, keys, disk, clock</span></div>
+        </div>
+        <div class="po-note">the admission gate; a failure here means no tokens are spent</div>
+      </div>
+      <div class="po" id="p11">
+        <div class="po-head"><b>mutation-control.json</b><span>kind: mutation_control</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>fixtureSha256</span><span>9d0c&hellip;5b77</span></div>
+        <div class="po-row"><span>mutations</span><span>one planted defect per criterion under test</span></div>
+        <div class="po-row"><span>baseline</span><span>34 / 34 before the defect</span></div>
+        <div class="po-row"><span>results</span><span>the declared criterion failed, the other 33 held</span></div>
+        <div class="po-row"><span>ok</span><span>true</span></div>
+        </div>
+        <div class="po-note">a mutation that survives sends its criterion back for repair</div>
+      </div>
+      <div class="po" id="p12">
+        <div class="po-head"><b>null-control.json</b><span>kind: null_control</span></div>
+        <div class="po-body">
+        <div class="po-row"><span>runner</span><span>the same grader, an empty build</span></div>
+        <div class="po-row"><span>tracks</span><span>ecommerce</span></div>
+        <div class="po-row"><span>summary</span><span>scored 0 of 34</span></div>
+        <div class="po-row"><span>criteria</span><span>every one held at zero</span></div>
+        <div class="po-row"><span>ok</span><span>true</span></div>
+        </div>
+        <div class="po-note">anything that scores against nothing is scoring itself</div>
       </div>
   </div>
-  <p class="supp r d3" style="margin-top:1.3rem">Every published score traces back through this pack to the frame where a customer saw the problem. Nothing in it is written by hand.</p>
+  <p class="supp r d4" style="margin-top:1.3rem">Every published score traces back through this pack to the frame where a customer saw the problem. Nothing in it is written by hand.</p>
 </section>
 
 <!-- 8 scoreboard -->
@@ -1315,6 +1484,20 @@
     };
     requestAnimationFrame(tick);
   }
+
+  // evidence pack: open a tile
+  document.querySelectorAll('.rcpt').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.rcpt').forEach(b => b.classList.toggle('on', b === btn));
+      document.querySelectorAll('.po').forEach(p => {
+        const on = p.id === btn.dataset.pack;
+        if (on && !p.classList.contains('on')) {
+          p.classList.remove('on'); void p.offsetWidth;
+        }
+        p.classList.toggle('on', on);
+      });
+    });
+  });
 
   // attack picker
   document.querySelectorAll('.atk-item').forEach(btn => {
