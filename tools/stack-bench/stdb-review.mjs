@@ -32,7 +32,7 @@
 //                        [--compare postgres-ecom-run0,mongodb-ecom-run0]
 //                        [--source <dir>] [--model claude-sonnet-5] [--print]
 
-import { readFileSync, readdirSync, existsSync, appendFileSync, statSync, openSync as fsOpenSync, closeSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, appendFileSync, statSync, openSync as fsOpenSync, closeSync, rmSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,7 +67,8 @@ const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d :
 
 const label = arg('--label');
 if (!label) { console.error('need --label <transcripts folder>'); process.exit(2); }
-const OUT = resolve(OPERATIONAL_ROOT, arg('--out', 'STDB-FRICTION.md'));
+const OUT = resolve(OPERATIONAL_ROOT, arg('--out', 'local-notes/STDB-FRICTION.md'));
+mkdirSync(dirname(OUT), { recursive: true });
 
 function findClaude() {
   const appData = process.env.APPDATA ?? join(process.env.HOME ?? '', 'AppData', 'Roaming');

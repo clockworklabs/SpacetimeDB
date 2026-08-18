@@ -18,9 +18,9 @@
 // Usage:
 //   node stdb-report.mjs --label spacetime-ecom-run0 [--track ecommerce]
 //                        [--level 1] [--score 47/49] [--cost 7.04]
-//                        [--out STDB-FRICTION.md] [--print]
+//                        [--out local-notes/STDB-FRICTION.md] [--print]
 
-import { readFileSync, readdirSync, existsSync, appendFileSync, writeFileSync, statSync, openSync as fsOpenSync, closeSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, appendFileSync, writeFileSync, statSync, openSync as fsOpenSync, closeSync, rmSync, mkdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { operationalOutputRoot } from './operational-paths.mjs';
@@ -54,7 +54,8 @@ const arg = (n, d) => { const i = process.argv.indexOf(n); return i === -1 ? d :
 
 const label = arg('--label');
 if (!label) { console.error('need --label <transcripts folder>'); process.exit(2); }
-const OUT = resolve(OPERATIONAL_ROOT, arg('--out', 'STDB-FRICTION.md'));
+const OUT = resolve(OPERATIONAL_ROOT, arg('--out', 'local-notes/STDB-FRICTION.md'));
+mkdirSync(dirname(OUT), { recursive: true });
 const dir = join(OPERATIONAL_ROOT, 'transcripts', label);
 if (!existsSync(dir)) { console.error(`no archived transcripts at ${dir}`); process.exit(2); }
 

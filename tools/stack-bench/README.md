@@ -34,13 +34,18 @@ submits the same bounded commands, so CLI-started work appears in the browser
 and dashboard-started work remains fully operable from the CLI. See
 `dashboard/README.md` for the Docker service.
 
-## Documents
+## Documentation
 
-- `HISTORY.md` — what the benchmark has learned, newest first (start here)
-- `FINDINGS.md` — product bugs with reproductions
-- `STDB-FRICTION.md` — per-run SpacetimeDB friction, appended automatically
-  beside local results (under the durable results directory in the appliance)
-- `ROADMAP.md` — what is still to build, in priority order
+- `SETUP.md` — local prerequisites and first-run setup
+- `APPLIANCE-DESIGN.md` — appliance boundaries and execution model
+- `CONTAINER-DESIGN.md` — container topology and isolation model
+- `appliance/README.md` — Docker appliance operation
+- `dashboard/README.md` — optional web control room
+- `grader/README.md` — grader architecture and evidence model
+- `tracks/ecommerce/composition/README.md` — packs, recipes, and release composition
+
+Working notes, generated reports, presentations, and run artifacts are local
+operator material and are intentionally not tracked in the repository.
 
 The optional model-based SpacetimeDB behavioral review is separate from the
 measured coding sessions. Run it deliberately with `--behavioral-review`; it is
@@ -85,9 +90,9 @@ not fixture reports. Every public track is included by default and the complete
 criterion evidence is written under `results/`.
 
 ```bash
-node bench.mjs --backend spacetime --levels 1-5
-node bench.mjs --backend postgres  --levels 1-5 --run-index 1
-node bench.mjs --backend mongodb   --levels 1-5 --run-index 2
+node bench.mjs --backend spacetime --levels 1-2
+node bench.mjs --backend postgres  --levels 1-2 --run-index 1
+node bench.mjs --backend mongodb   --levels 1-2 --run-index 2
 node bench.mjs --backend postgres --track ecommerce --levels 1 \
   --pack ecommerce.identity-access --check <stable-check-key>
 node bench.mjs --backend postgres --track ecommerce --levels 1 \
@@ -149,13 +154,12 @@ Diagnostic wording is only rendered or redacted for people; changing that prose
 cannot turn missing evidence into a product failure or send a harness defect to
 the repair agent.
 
-The scenario action language is also startup-validated. All 47 compatibility
-actions declare a versioned input compiler, required capabilities, hard
+The scenario action language is also startup-validated. Every registered action
+declares a versioned input compiler, required capabilities, hard
 deadline, evidence type, redaction tags, renderer metadata, and a narrow
-executor boundary. All 49 actions now run only through independent registered
-executors with capability-scoped access. The central compatibility dispatcher
-is gone; concurrency, browser lifecycle, backend/app control, and direct database
-writes use the same typed action contract as ordinary browser observations.
+executor boundary. Actions run through independent registered executors with
+capability-scoped access; concurrency, browser lifecycle, backend/app control,
+and direct database writes use the same typed contract as browser observations.
 
 Bring up the databases first; the SpacetimeDB backend needs `spacetime start`
 instead:
@@ -219,8 +223,8 @@ show` displays that exact composed task and its independent hash.
 
 | Track | Application | Why it exists |
 |---|---|---|
-| `chat` | rooms, messages, presence | the original; history and human grades exist for it |
-| `ecommerce` | storefront, cart, warehouses | live derived numbers and contention, which chat saturated on |
+| `chat` | rooms, messages, presence | baseline real-time collaboration workload |
+| `ecommerce` | storefront, cart, warehouses | numeric shared state and contention workload |
 
 Tracks are isolated by a port offset and a name slug, so two can run at the same
 `--run-index` without colliding on ports, databases or result directories.
@@ -243,9 +247,9 @@ track's `LEVELS.md`.
 | Level | Chat adds | Ecommerce adds | Makes verifiable |
 |---|---|---|---|
 | 1 | accounts + basic chat | storefront, cart, warehouses | identity, durable state, real-time |
-| 2 | private rooms, membership | personalisation, catalogue queries | authorization / per-user derivation |
-| 3 | reactions, polls, capacity | warehouse transfers | atomicity and isolation |
-| 4 | scheduling, expiry | order lifecycle, expiry | durability of deferred work |
+| 2 | private rooms, membership | fulfilment, transfers, returns, pricing | authorization / multi-view consistency |
+| 3 | reactions, polls, capacity | reservations and scheduled work | atomicity, isolation, deferred-work durability |
+| 4 | scheduling, expiry | per-customer ranking and catalogue search | per-viewer derivation at catalogue scale |
 | 5 | volume | volume | throughput, latency, efficiency |
 
 Levels are cumulative: an app at L3 is still checked against L1 and L2, so a
@@ -288,27 +292,19 @@ The grader never reloads except to probe for that, so "real-time" means real-tim
 | `tracks.mjs` | resolves a track: its paths, suites, ports and names |
 | `tracks/<name>/` | one application: prompts, contracts, scenarios, lint walk |
 | `backends/` | per-backend setup and deploy instructions given to the agent |
-| `FINDINGS.md` | product issues the benchmark has surfaced |
+## Validation safeguards
 
-## Keeping the harness honest
-
-A benchmark that only produces flattering numbers is worthless. Practices that
-earned their place, mostly by catching this harness being wrong:
-
-- **Identical failures across backends mean the grader is wrong.** Architectures
-  this different do not break identically. This tell has caught five false
-  positives; none were real defects.
-- **Mutation testing.** `grader/mutation-test.mjs` injects known defects into a
-  fully passing reference app and requires the exact declared criterion to fail
-  conclusively, without collateral regressions. A defect it misses is a hole in
-  the oracle; setup and infrastructure failures are not kills.
-- **Reset before every suite.** Dirty state lowers scores silently.
-- **Verify the app is using the benchmark's own database.** A generated app once
-  connected to an unrelated instance and graded normally.
-- **Never patch prompts, guidance or tests to make a failing check pass.** Fix
-  the product, or report the failure.
-- **Negative results are results.** Several predicted advantages did not survive
-  contact with a stronger model. Those are recorded, not buried.
+- **Reference qualification.** Every scored recipe must pass against its exact,
+  source-bound reference implementation before promotion.
+- **Mutation testing.** `grader/mutation-test.mjs` injects declared defects and
+  requires the intended criterion to fail conclusively without unrelated
+  regressions. Setup and infrastructure failures do not count as detections.
+- **Null controls.** A blank application must not earn points or produce
+  inconclusive scored evidence.
+- **State isolation.** The database is reset before each suite, and each run
+  receives distinct ports, database names, leases, and result paths.
+- **Fail-closed evidence.** Missing, malformed, mismatched, or inconclusive
+  evidence cannot become a passing score.
 
 ## What a run records
 
