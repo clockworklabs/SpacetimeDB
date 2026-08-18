@@ -1,6 +1,6 @@
-// Single test binary entry point - includes all smoketests
-// We put the tests in a single submodule because if they are at the toplevel then
-// they all build and link independently, which takes a lot of linker time.
-// This has the unfortunate side effect of requiring that they are all listed in a mod.rs,
-// but what can you do ¯\_(ツ)_/¯.
+// Portable test binary entry point. These smoketests can run against either a
+// local standalone server or a remote server.
+//
+// We group the tests into one binary to avoid linking every source file as an
+// independent integration test target.
 mod smoketests;

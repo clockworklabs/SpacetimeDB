@@ -226,6 +226,7 @@ jobs:
       EXE_SUFFIX: ""
       TARGET_TRIPLE: x86_64-unknown-linux-gnu
       OPENSSL_CACHE_SUFFIX: ""
+      SMOKETEST_SUITE: standalone
     steps: &smoketest-build-steps
       - *find-git-ref
 
@@ -256,7 +257,7 @@ jobs:
       - name: Build smoketest dependencies and archive test binaries
         shell: bash
         run: |
-          cargo ci smoketests archive --archive-file smoketest-nextest.tar.zst
+          cargo ci smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
           shopt -s nullglob
           precompiled_modules=(target/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
@@ -303,15 +304,16 @@ jobs:
       TARGET_TRIPLE: x86_64-pc-windows-msvc
       OPENSSL_CACHE_SUFFIX: -nasm
       OPENSSL_RUST_USE_NASM: "1"
+      SMOKETEST_SUITE: all
     steps: *smoketest-build-steps
 
   smoketest_partitions_linux:
     needs: [smoketest_build_linux]
-    name: Smoketests (Linux ${{ matrix.partition }}/2)
+    name: Smoketests (Linux ${{ matrix.partition }}/1)
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2]
+        partition: [1]
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
     env:
@@ -319,7 +321,7 @@ jobs:
       RUST_BACKTRACE: full
       SPACETIMEDB_CPP_DIR: ${{ github.workspace }}/crates/bindings-cpp
       ARTIFACT_SUFFIX: linux
-      PARTITION_COUNT: 2
+      PARTITION_COUNT: 1
     steps: &smoketest-partition-steps
       - *find-git-ref
 
@@ -490,8 +492,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: Linux 1/2
-          - name: Linux 2/2
+          - name: Linux 1/1
           - name: Windows 1/4
           - name: Windows 2/4
           - name: Windows 3/4

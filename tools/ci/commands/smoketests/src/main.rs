@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, ensure, Context, Result};
 use ci_common::ensure_repo_root;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
 use std::ffi::OsStr;
@@ -43,9 +43,34 @@ struct SmoketestsArgs {
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     dotnet: bool,
 
+    /// Select which smoketest suite to run or archive.
+    #[arg(long, value_enum, default_value_t = SmoketestSuite::All)]
+    suite: SmoketestSuite,
+
     /// Additional arguments to pass to the test runner
     #[arg(trailing_var_arg = true)]
     args: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+enum SmoketestSuite {
+    /// Run both portable and standalone-only smoketests.
+    #[default]
+    All,
+    /// Run tests that can target either a local or remote server.
+    Portable,
+    /// Run tests that require control of a local standalone server.
+    Standalone,
+}
+
+impl SmoketestSuite {
+    fn cargo_args(self) -> &'static [&'static str] {
+        match self {
+            Self::All => &[],
+            Self::Portable => &["--test", "integration"],
+            Self::Standalone => &["--test", "standalone"],
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -86,12 +111,19 @@ fn main() -> Result<()> {
         }
         Some(SmoketestCmd::CheckModList) => {
             check_smoketests_mod_rs_complete()?;
-            eprintln!("smoketests/mod.rs is up to date.");
+            check_smoketest_suite_labels()?;
+            eprintln!("smoketests/mod.rs and suite labels are up to date.");
             Ok(())
         }
-        Some(SmoketestCmd::Archive { archive_file }) => archive_smoketests(&archive_file),
+        Some(SmoketestCmd::Archive { archive_file }) => archive_smoketests(&archive_file, args.suite),
         Some(SmoketestCmd::RunArchive { archive_file, args }) => run_smoketest_archive(&archive_file, args),
-        None => run_smoketest(args.server, args.dotnet, args.auth_host.as_deref(), args.args),
+        None => run_smoketest(
+            args.server,
+            args.dotnet,
+            args.auth_host.as_deref(),
+            args.suite,
+            args.args,
+        ),
     }
 }
 
@@ -167,7 +199,7 @@ fn build_precompiled_modules() -> Result<()> {
     Ok(())
 }
 
-fn archive_smoketests(archive_file: &Path) -> Result<()> {
+fn archive_smoketests(archive_file: &Path, suite: SmoketestSuite) -> Result<()> {
     build_precompiled_modules()?;
 
     let status = Command::new("cargo")
@@ -178,8 +210,9 @@ fn archive_smoketests(archive_file: &Path) -> Result<()> {
             "--timings",
             "-p",
             "spacetimedb-smoketests",
-            "--archive-file",
         ])
+        .args(suite.cargo_args())
+        .arg("--archive-file")
         .arg(archive_file)
         .status()?;
     ensure!(status.success(), "Failed to archive smoketests");
@@ -223,7 +256,17 @@ fn run_smoketest_archive(archive_file: &Path, args: Vec<String>) -> Result<()> {
 /// 16 was found to be optimal - higher values cause OS scheduler overhead.
 const DEFAULT_PARALLELISM: &str = "16";
 
-fn run_smoketest(server: Option<String>, dotnet: bool, auth_host: Option<&str>, args: Vec<String>) -> Result<()> {
+fn run_smoketest(
+    server: Option<String>,
+    dotnet: bool,
+    auth_host: Option<&str>,
+    suite: SmoketestSuite,
+    args: Vec<String>,
+) -> Result<()> {
+    if server.is_some() && suite == SmoketestSuite::Standalone {
+        bail!("the standalone smoketest suite cannot be run with --server");
+    }
+
     // 1. Build binaries first (single process, no race). Remote tests only need the CLI;
     // local tests also need standalone to spawn their test servers.
     build_cli()?;
@@ -258,14 +301,9 @@ fn run_smoketest(server: Option<String>, dotnet: bool, auth_host: Option<&str>, 
         eprintln!("Running smoketests with cargo nextest...\n");
         let mut cmd = Command::new("cargo");
         set_env(&mut cmd, server, dotnet, auth_host.is_some(), &base_config_path);
-        cmd.args([
-            "nextest",
-            "run",
-            "--release",
-            "-p",
-            "spacetimedb-smoketests",
-            "--no-fail-fast",
-        ]);
+        cmd.args(["nextest", "run", "--release", "-p", "spacetimedb-smoketests"])
+            .args(suite.cargo_args())
+            .arg("--no-fail-fast");
 
         // Set default parallelism if user didn't specify -j
         if !args
@@ -280,7 +318,8 @@ fn run_smoketest(server: Option<String>, dotnet: bool, auth_host: Option<&str>, 
         eprintln!("Running smoketests with cargo test...\n");
         let mut cmd = Command::new("cargo");
         set_env(&mut cmd, server, dotnet, auth_host.is_some(), &base_config_path);
-        cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"]);
+        cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"])
+            .args(suite.cargo_args());
         cmd
     };
     let status = cmd.args(&args).status()?;
@@ -428,4 +467,97 @@ fn check_smoketests_mod_rs_complete() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn check_smoketest_suite_labels() -> Result<()> {
+    let tests_dir = Path::new("crates/smoketests/tests");
+    let standalone_dir = tests_dir.join("standalone");
+    let standalone_module_sources = collect_rust_sources(&standalone_dir)?;
+    let mut standalone_sources = standalone_module_sources.clone();
+    standalone_sources.retain(|path| path.file_name() != Some(OsStr::new("mod.rs")));
+    standalone_sources.push(tests_dir.join("standalone.rs"));
+
+    for module_source in standalone_module_sources
+        .iter()
+        .filter(|path| path.file_name() == Some(OsStr::new("mod.rs")))
+    {
+        let module = fs::read_to_string(module_source)?;
+        for line in module.lines() {
+            let line = line.trim();
+            let Some(relative_path) = line
+                .strip_prefix("#[path = \"")
+                .and_then(|line| line.strip_suffix("\"]"))
+            else {
+                continue;
+            };
+            standalone_sources.push(
+                module_source
+                    .parent()
+                    .context("standalone module source has no parent")?
+                    .join(relative_path),
+            );
+        }
+    }
+
+    let standalone_sources = standalone_sources
+        .into_iter()
+        .map(fs::canonicalize)
+        .collect::<std::io::Result<std::collections::BTreeSet<_>>>()?;
+
+    let mut misplaced_guards = Vec::new();
+    for source in collect_rust_sources(tests_dir)? {
+        let contents = fs::read_to_string(&source)?;
+        if contents.contains("require_local_server!();") && !standalone_sources.contains(&fs::canonicalize(&source)?) {
+            misplaced_guards.push(source);
+        }
+    }
+
+    ensure!(
+        misplaced_guards.is_empty(),
+        "require_local_server!() may only be used in the standalone smoketest target:\n{}",
+        misplaced_guards
+            .iter()
+            .map(|path| format!("- {}", path.display()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+
+    let mut unguarded_standalone_sources = Vec::new();
+    for source in standalone_sources {
+        let contents = fs::read_to_string(&source)?;
+        let test_count = contents.matches("#[test]").count();
+        let guard_count = contents.matches("require_local_server!();").count();
+        if test_count != guard_count {
+            unguarded_standalone_sources.push((source, test_count, guard_count));
+        }
+    }
+
+    ensure!(
+        unguarded_standalone_sources.is_empty(),
+        "each test in the standalone target must call require_local_server!():\n{}",
+        unguarded_standalone_sources
+            .iter()
+            .map(|(path, tests, guards)| format!(
+                "- {} has {tests} #[test] functions and {guards} require_local_server!() calls",
+                path.display()
+            ))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+
+    Ok(())
+}
+
+fn collect_rust_sources(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut sources = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            sources.extend(collect_rust_sources(&path)?);
+        } else if path.extension() == Some(OsStr::new("rs")) {
+            sources.push(path);
+        }
+    }
+    Ok(sources)
 }

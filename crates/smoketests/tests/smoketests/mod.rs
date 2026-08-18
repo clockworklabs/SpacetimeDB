@@ -1,9 +1,8 @@
-// All smoketest modules
+// Smoketest modules that can run against either a local or remote server.
 mod add_remove_index;
 mod auto_inc;
 mod auto_migration;
 mod call;
-mod change_host_type;
 mod cli;
 mod client_connection_errors;
 mod column_defaults;
@@ -30,10 +29,8 @@ mod namespaces;
 mod new_user_flow;
 mod panic;
 mod permissions;
-mod pg_wire;
 mod publish_upgrade_prompt;
 mod quickstart;
-mod restart;
 mod rls;
 mod schedule_reducer;
 mod servers;
@@ -41,5 +38,4 @@ mod sql;
 mod sql_connect_hook;
 mod templates;
 mod timestamp_route;
-mod typescript_index_source_name;
 mod views;
