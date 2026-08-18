@@ -176,6 +176,8 @@ To schedule an action, insert a row into the schedule table with a `scheduled_at
 - **At intervals** - Execute repeatedly at fixed time intervals (e.g., every 5 seconds)
 - **At specific times** - Execute once at an absolute timestamp
 
+Interval schedules are anchored to their intended execution times. If the database is busy or offline long enough to miss one or more interval ticks, SpacetimeDB schedules the next future tick rather than running missed ticks back-to-back or drifting the schedule from the delayed execution time.
+
 ### Scheduling at Intervals
 
 Use intervals for periodic tasks like game ticks, heartbeats, or recurring maintenance:
@@ -404,6 +406,8 @@ ctx.db[reminder].insert(Reminder{
 2. **SpacetimeDB monitors** the schedule table
 3. **When the time arrives**, the specified reducer/procedure is automatically called with the row as a parameter
 4. **The row is typically deleted** or updated by the reducer after processing
+
+For interval schedules, the next run is calculated from the previous intended run time. Missed interval ticks are skipped, so a delayed scheduled reducer or procedure resumes on the next future interval boundary.
 
 ### Row Lifecycle
 
