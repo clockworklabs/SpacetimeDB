@@ -47,6 +47,7 @@ pub struct PublishParams<'a> {
     pub source_text: &'a str,
     pub db_name: String,
     pub host: Option<String>,
+    pub clear_database: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

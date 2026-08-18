@@ -35,7 +35,7 @@ import type {
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import { type UntypedRemoteModule } from './spacetime_module.ts';
-import { makeQueryBuilder } from '../lib/query';
+import { makeFromBuilder, type NamespacedQueryBuilder } from '../lib/query';
 import {
   type TableCache,
   type Operation,
@@ -57,6 +57,7 @@ import type {
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { RowType, UntypedTableDef } from '../lib/table.ts';
+import type { UntypedSchemaDef } from '../lib/schema';
 import type { ProceduresView } from './procedures.ts';
 import type { Values } from '../lib/type_util.ts';
 import type { TransactionUpdate } from './client_api/types.ts';
@@ -151,6 +152,11 @@ const CLIENT_MESSAGE_CALL_PROCEDURE_TAG =
 // path or create very large websocket writes.
 const MAX_V3_OUTBOUND_FRAME_BYTES = 256 * 1024;
 
+// WebSocket `readyState` values from the WHATWG spec. Uses literals rather than
+// the `WebSocket` global, which is not defined on earlier Node versions we
+const WS_READY_STATE_CLOSING = 2;
+const WS_READY_STATE_CLOSED = 3;
+
 export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   implements DbContext<RemoteModule>
 {
@@ -166,6 +172,27 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
    * after an intentional disconnect.
    */
   isDisconnectRequested = false;
+
+  /**
+   * Whether the underlying websocket has entered `CLOSING` (2) or `CLOSED`
+   * (3). This becomes true even when the browser never delivered an
+   * `onclose` event, for example if the socket was torn down while the tab was
+   * frozen or the machine was asleep. The `ConnectionManager` uses this to detect
+   * such "zombie" connections when the page resumes and to force a reconnect.
+   *
+   * Returns false while the socket is still `CONNECTING`/`OPEN`, or before
+   * the socket has been created.
+   */
+  get isSocketClosed(): boolean {
+    const ws = this.ws;
+    if (!ws) {
+      return false;
+    }
+    return (
+      ws.readyState === WS_READY_STATE_CLOSING ||
+      ws.readyState === WS_READY_STATE_CLOSED
+    );
+  }
 
   /**
    * This connection's public identity.
@@ -484,8 +511,12 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     return new SubscriptionBuilderImpl(this);
   };
 
-  getTablesMap(): any {
-    return makeQueryBuilder({ tables: this.#remoteModule.tables } as any);
+  getFromBuilder<
+    SchemaDef extends UntypedSchemaDef,
+  >(): NamespacedQueryBuilder<SchemaDef> {
+    return makeFromBuilder<SchemaDef>(
+      this.#remoteModule.tables as SchemaDef['tables']
+    );
   }
 
   registerSubscription(

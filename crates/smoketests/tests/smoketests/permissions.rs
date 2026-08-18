@@ -1,14 +1,4 @@
-use spacetimedb_smoketests::Smoketest;
-use std::path::PathBuf;
-
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
+use spacetimedb_smoketests::{workspace_root, Smoketest};
 
 /// Ensure that anyone has the permission to call any standard reducer
 #[test]
@@ -189,7 +179,7 @@ fn test_private_table() {
 /// Ensure that you cannot delete a database that you do not own
 #[test]
 fn test_cannot_delete_others_database() {
-    let test = Smoketest::builder().build();
+    let test = Smoketest::builder().precompiled_module("noop").build();
 
     let identity = test.database_identity.as_ref().unwrap().clone();
 

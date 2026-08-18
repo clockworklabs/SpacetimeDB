@@ -1,5 +1,9 @@
 use crate::NodeDelegate;
 
+mod task_dump;
+
+pub use task_dump::TaskDumpRegistry;
+
 #[cfg(not(target_env = "msvc"))]
 mod jemalloc_profiling {
     use axum::body::Body;
@@ -158,5 +162,7 @@ pub fn router<S>() -> axum::Router<S>
 where
     S: NodeDelegate + Clone + 'static,
 {
-    axum::Router::new().nest("/heap", jemalloc_profiling::jemalloc_router())
+    axum::Router::new()
+        .nest("/heap", jemalloc_profiling::jemalloc_router())
+        .nest("/task-dump", task_dump::router())
 }

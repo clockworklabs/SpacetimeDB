@@ -16,7 +16,7 @@ use spacetimedb_datastore::locking_tx_datastore::MutTxId;
 use spacetimedb_datastore::system_tables::{StScheduledFields, ST_SCHEDULED_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::scheduler::ScheduleAt;
-use spacetimedb_lib::Timestamp;
+use spacetimedb_lib::{TimeDuration, Timestamp};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::bsatn::ToBsatn as _;
 use spacetimedb_sats::AlgebraicValue;
@@ -190,6 +190,9 @@ const MAX_SCHEDULE_DELAY: Duration = Duration::from_millis(
     (1 << (6 * 6)) - 1,
 );
 
+/// Warn when a scheduled function starts more than this long after it was due.
+const SCHEDULED_FUNCTION_DELAY_WARNING_THRESHOLD: Duration = Duration::from_millis(30);
+
 #[derive(thiserror::Error, Debug)]
 pub enum ScheduleError {
     #[error("Unable to schedule with long delay at {0:?}")]
@@ -306,7 +309,7 @@ impl ScheduledFunctionParams {
     }
 
     fn kind(&self, module: &ModuleInfo) -> ScheduledFunctionKind {
-        if module.module_def.procedure_full(self.function_name()).is_some() {
+        if module.module_def.procedure_by_name(self.function_name()).is_some() {
             ScheduledFunctionKind::Procedure
         } else {
             ScheduledFunctionKind::Reducer
@@ -444,11 +447,18 @@ struct Reschedule {
     at_real: Instant,
 }
 
+#[derive(Clone)]
+struct ScheduledInvocation {
+    function_name: Arc<str>,
+    intended_at: Timestamp,
+}
+
 enum ScheduledProcedureStep {
     Done(CallScheduledFunctionResult, bool),
     Procedure {
-        params: CallProcedureParams,
+        params: Box<CallProcedureParams>,
         reschedule: Option<Reschedule>,
+        delay: Option<(Arc<str>, Duration)>,
     },
 }
 
@@ -465,9 +475,17 @@ pub(super) async fn call_scheduled_procedure(
     // even though it has been already moved during `delete_scheduled_function_row` call.
     match next_step {
         ScheduledProcedureStep::Done(result, trapped) => (result, trapped),
-        ScheduledProcedureStep::Procedure { params, reschedule } => {
+        ScheduledProcedureStep::Procedure {
+            params,
+            reschedule,
+            delay,
+        } => {
+            if let Some((function_name, delay)) = delay.as_ref() {
+                record_scheduled_function_delay(module_info, function_name, *delay);
+            }
+
             // Execute the procedure. See above for commentary on `catch_unwind()`.
-            let result = panic::AssertUnwindSafe(inst_common.call_procedure(params, inst))
+            let result = panic::AssertUnwindSafe(inst_common.call_procedure(*params, inst))
                 .catch_unwind()
                 .await;
 
@@ -504,12 +522,13 @@ fn prepare_scheduled_procedure_call(
     inst: &mut impl WasmInstance,
 ) -> ScheduledProcedureStep {
     let ScheduledFunctionParams(item) = params;
+    let timing = scheduled_invocation_for_item(&item);
     let id = scheduled_item_id(&item);
     let db = &**module_info.relational_db();
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
     let params = procedure_call_params_for_queued_item(module_info, db, &tx, item);
-    let (timestamp, instant, params) = match params {
+    let (timestamp, _instant, params) = match params {
         // If the function was already deleted, leave the `ScheduledFunction`
         // in the database for when the module restarts.
         Ok(None) => return ScheduledProcedureStep::Done(CallScheduledFunctionResult { reschedule: None }, false),
@@ -517,23 +536,29 @@ fn prepare_scheduled_procedure_call(
         Err(err) => {
             // All we can do here is log an error.
             log::error!("could not determine scheduled procedure or its parameters: {err:#}");
-            let reschedule = delete_scheduled_function_row(module_info, db, id, Some(tx), None, inst_common, inst);
+            let reschedule = id.and_then(|id| {
+                let reschedule_from = timing
+                    .as_ref()
+                    .map(|timing| timing.intended_at)
+                    .unwrap_or_else(Timestamp::now);
+                delete_scheduled_function_row(module_info, db, id, Some(tx), reschedule_from, inst_common, inst)
+            });
             return ScheduledProcedureStep::Done(CallScheduledFunctionResult { reschedule }, false);
         }
     };
 
+    let intended_at = timing.as_ref().map_or(timestamp, |timing| timing.intended_at);
+
     // For scheduled procedures, it's incorrect to retry them if execution aborts midway,
     // so we must remove the schedule row before executing.
-    let reschedule = delete_scheduled_function_row(
-        module_info,
-        db,
-        id,
-        Some(tx),
-        Some((timestamp, instant)),
-        inst_common,
-        inst,
-    );
-    ScheduledProcedureStep::Procedure { params, reschedule }
+    let reschedule =
+        id.and_then(|id| delete_scheduled_function_row(module_info, db, id, Some(tx), intended_at, inst_common, inst));
+    let delay = timing.map(|timing| (timing.function_name, scheduled_function_delay(timestamp, intended_at)));
+    ScheduledProcedureStep::Procedure {
+        params: Box::new(params),
+        reschedule,
+        delay,
+    }
 }
 
 fn call_scheduled_reducer_until_done(
@@ -543,25 +568,39 @@ fn call_scheduled_reducer_until_done(
     inst: &mut impl WasmInstance,
 ) -> (CallScheduledFunctionResult, bool) {
     let ScheduledFunctionParams(item) = params;
+    let timing = scheduled_invocation_for_item(&item);
     let id = scheduled_item_id(&item);
     let db = &**module_info.relational_db();
     let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
     let params = reducer_call_params_for_queued_item(module_info, db, &tx, item);
-    let params = match params {
+    let (timestamp, _instant, params) = match params {
         // If the function was already deleted, leave the `ScheduledFunction`
         // in the database for when the module restarts.
         Ok(None) => return (CallScheduledFunctionResult { reschedule: None }, false),
-        Ok(Some((_timestamp, _instant, params))) => params,
+        Ok(Some(params)) => params,
         Err(err) => {
             // All we can do here is log an error.
             log::error!("could not determine scheduled reducer or its parameters: {err:#}");
-            let reschedule = delete_scheduled_function_row(module_info, db, id, Some(tx), None, inst_common, inst);
+            let reschedule = id.and_then(|id| {
+                // Prefer to reschedule interval schedules from the requested time, ignoring any delays or jitter.
+                // If you reschedule from `Timestamp::now`, delays will accumulate.
+                let reschedule_from = timing
+                    .as_ref()
+                    .map(|timing| timing.intended_at)
+                    .unwrap_or_else(Timestamp::now);
+                delete_scheduled_function_row(module_info, db, id, Some(tx), reschedule_from, inst_common, inst)
+            });
             return (CallScheduledFunctionResult { reschedule }, false);
         }
     };
 
-    call_scheduled_reducer_with_tx(module_info, db, id, tx, params, inst_common, inst)
+    let intended_at = timing.as_ref().map_or(timestamp, |timing| timing.intended_at);
+    if let Some(timing) = timing.as_ref() {
+        let delay = scheduled_function_delay(timestamp, intended_at);
+        record_scheduled_function_delay(module_info, &timing.function_name, delay);
+    }
+    call_scheduled_reducer_with_tx(module_info, db, id, tx, intended_at, params, inst_common, inst)
 }
 
 fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
@@ -571,11 +610,45 @@ fn scheduled_item_id(item: &QueueItem) -> Option<ScheduledFunctionId> {
     }
 }
 
+fn scheduled_invocation_for_item(item: &QueueItem) -> Option<ScheduledInvocation> {
+    match item {
+        QueueItem::Id { function_name, at, .. } => Some(ScheduledInvocation {
+            function_name: function_name.clone(),
+            intended_at: *at,
+        }),
+        QueueItem::VolatileNonatomicImmediate { .. } => None,
+    }
+}
+
+fn record_scheduled_function_delay(module_info: &ModuleInfo, function_name: &str, delay: Duration) {
+    module_info
+        .metrics
+        .observe_scheduled_function_delay(function_name, delay);
+
+    if delay <= SCHEDULED_FUNCTION_DELAY_WARNING_THRESHOLD {
+        return;
+    }
+
+    log::warn!(
+        "scheduled function `{}` for database {} is delayed by {:.3}s, exceeding the {:.3}s threshold",
+        function_name,
+        module_info.database_identity,
+        delay.as_secs_f64(),
+        SCHEDULED_FUNCTION_DELAY_WARNING_THRESHOLD.as_secs_f64(),
+    );
+}
+
+fn scheduled_function_delay(actual: Timestamp, requested: Timestamp) -> Duration {
+    actual.duration_since(requested).unwrap_or(Duration::ZERO)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn call_scheduled_reducer_with_tx(
     module_info: &ModuleInfo,
     db: &RelationalDB,
     id: Option<ScheduledFunctionId>,
     mut tx: MutTxId,
+    reschedule_from: Timestamp,
     params: CallReducerParams,
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
@@ -605,7 +678,8 @@ fn call_scheduled_reducer_with_tx(
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         inst_common.call_reducer_with_tx(Some(tx), params, inst)
     }));
-    let reschedule = delete_scheduled_function_row(module_info, db, id, None, None, inst_common, inst);
+    let reschedule =
+        id.and_then(|id| delete_scheduled_function_row(module_info, db, id, None, reschedule_from, inst_common, inst));
     // Currently, we drop the return value from the function call. In the future,
     // we might want to handle it somehow.
     let trapped = match result {
@@ -624,24 +698,53 @@ fn call_scheduled_reducer_with_tx(
 fn delete_scheduled_function_row(
     module_info: &ModuleInfo,
     db: &RelationalDB,
-    id: Option<ScheduledFunctionId>,
+    id: ScheduledFunctionId,
     tx: Option<MutTxId>,
-    timestamp: Option<(Timestamp, Instant)>,
+    reschedule_from: Timestamp,
     inst_common: &mut InstanceCommon,
     inst: &mut impl WasmInstance,
 ) -> Option<Reschedule> {
-    id.and_then(|id| {
-        let (timestamp, instant) = timestamp.unwrap_or_else(|| (Timestamp::now(), Instant::now()));
-        let tx = tx.unwrap_or_else(|| db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
-        let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id, inst_common, inst)?;
-        let ScheduleAt::Interval(dur) = schedule_at else {
-            return None;
-        };
-        Some(Reschedule {
-            at_ts: schedule_at.to_timestamp_from(timestamp),
-            at_real: instant + dur.to_duration_abs(),
-        })
-    })
+    let tx = tx.unwrap_or_else(|| db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal));
+    let schedule_at = delete_scheduled_function_row_with_tx(module_info, db, tx, id, inst_common, inst)?;
+    let ScheduleAt::Interval(dur) = schedule_at else {
+        return None;
+    };
+    Some(next_interval_reschedule(reschedule_from, dur))
+}
+
+fn next_interval_reschedule(last_intended_at: Timestamp, interval: TimeDuration) -> Reschedule {
+    let now_ts = Timestamp::now();
+    let at_ts = next_interval_tick_after(last_intended_at, interval, now_ts);
+    let delay = at_ts.duration_since(now_ts).unwrap_or(Duration::ZERO);
+    Reschedule {
+        at_ts,
+        at_real: Instant::now() + delay,
+    }
+}
+
+/// Returns the first interval tick after `now`, anchored at `last_intended_at`,
+/// skipping any ticks that have already been missed.
+fn next_interval_tick_after(last_intended_at: Timestamp, interval: TimeDuration, now: Timestamp) -> Timestamp {
+    let interval = interval.abs();
+    let interval_micros = interval.to_micros();
+    if interval_micros == 0 {
+        return last_intended_at + interval;
+    }
+
+    let elapsed_micros = now
+        .time_duration_since(last_intended_at)
+        .map(|duration| duration.to_micros())
+        .unwrap_or(0);
+    let ticks = if elapsed_micros <= 0 {
+        1
+    } else {
+        (elapsed_micros / interval_micros).saturating_add(1)
+    };
+    let offset = interval_micros.checked_mul(ticks).unwrap_or(i64::MAX);
+    last_intended_at
+        .checked_add(TimeDuration::from_micros(offset))
+        .or_else(|| now.checked_add(interval))
+        .unwrap_or(now)
 }
 
 /// Deletes a scheduled-row entry inside an existing mutable transaction.
@@ -754,7 +857,9 @@ fn call_params_for_queued_item<T>(
     ) -> anyhow::Result<(Timestamp, Instant, T)>,
 ) -> anyhow::Result<Option<(Timestamp, Instant, T)>> {
     Ok(Some(match item {
-        QueueItem::Id { id, function_name, at } => {
+        QueueItem::Id {
+            id, function_name, at, ..
+        } => {
             let Some(schedule_row) = get_schedule_row_mut(tx, db, id)? else {
                 // If the row is not found, it means the schedule is cancelled by the user.
                 return Ok(None);
@@ -776,11 +881,14 @@ fn function_to_reducer_call_params(
 ) -> anyhow::Result<(Timestamp, Instant, CallReducerParams)> {
     let identity = module.database_identity;
 
+    // Find the reducer and deserialize the arguments.
+    // Use the owning module's typespace (not necessarily the root's) so that type-index
+    // references inside the def are resolved correctly for submodules.
     let module = &module.module_def;
-    let Some((id, def)) = module.reducer_full(name) else {
+    let Some((id, def, owning)) = module.reducer_by_name_with_module(name) else {
         return Err(anyhow!("Reducer `{name}` not found"));
     };
-    let args = args.into_tuple_for_def(module, def).map_err(InvalidReducerArguments)?;
+    let args = args.into_tuple_for_def(owning, def).map_err(InvalidReducerArguments)?;
 
     let (ts, instant) = scheduled_call_time(at);
     Ok((ts, instant, CallReducerParams::from_system(ts, identity, id, args)))
@@ -795,11 +903,11 @@ fn function_to_procedure_call_params(
     let identity = module.database_identity;
 
     let module = &module.module_def;
-    let Some((id, def)) = module.procedure_full(name) else {
+    let Some((id, def, owning)) = module.procedure_by_name_with_module(name) else {
         return Err(anyhow!("Procedure `{name}` not found"));
     };
     let args = args
-        .into_tuple_for_def(module, def)
+        .into_tuple_for_def(owning, def)
         .map_err(InvalidProcedureArguments)?;
 
     let (ts, instant) = scheduled_call_time(at);
@@ -842,4 +950,31 @@ pub fn get_schedule_from_row(
 fn read_schedule_at(row: &RowRef<'_>, at_column: ColId) -> anyhow::Result<ScheduleAt> {
     let schedule_at_av: AlgebraicValue = row.read_col(at_column)?;
     ScheduleAt::try_from(schedule_at_av).map_err(|e| anyhow!("Failed to convert 'scheduled_at' to ScheduleAt: {e:?}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ts(micros: i64) -> Timestamp {
+        Timestamp::from_micros_since_unix_epoch(micros)
+    }
+
+    #[test]
+    fn next_interval_tick_uses_last_intended_tick_when_current() {
+        let next = next_interval_tick_after(ts(1_000), TimeDuration::from_micros(100), ts(1_000));
+        assert_eq!(next, ts(1_100));
+    }
+
+    #[test]
+    fn next_interval_tick_skips_missed_ticks() {
+        let next = next_interval_tick_after(ts(1_000), TimeDuration::from_micros(100), ts(1_350));
+        assert_eq!(next, ts(1_400));
+    }
+
+    #[test]
+    fn next_interval_tick_is_strictly_after_now_on_boundary() {
+        let next = next_interval_tick_after(ts(1_000), TimeDuration::from_micros(100), ts(1_300));
+        assert_eq!(next, ts(1_400));
+    }
 }

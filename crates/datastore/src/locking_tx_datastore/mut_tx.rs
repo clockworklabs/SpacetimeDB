@@ -34,7 +34,7 @@ use crate::{
     locking_tx_datastore::state_view::ScanOrIndex,
     traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags},
 };
-use core::{cell::RefCell, iter, mem, ops::RangeBounds};
+use core::{cell::RefCell, iter, ops::RangeBounds};
 use itertools::Either;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
@@ -51,12 +51,15 @@ use spacetimedb_primitives::{
     col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
 };
 use spacetimedb_sats::{
-    bsatn::to_writer, memory_usage::MemoryUsage, raw_identifier::RawIdentifier, ser::Serialize, AlgebraicValue,
-    ProductType, ProductValue,
+    bsatn::to_writer,
+    memory_usage::MemoryUsage,
+    raw_identifier::{RawIdentifier, RawNamespacedIdentifier},
+    ser::Serialize,
+    AlgebraicValue, ProductType, ProductValue,
 };
 use spacetimedb_schema::{
     def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
-    identifier::Identifier,
+    identifier::{Identifier, NamespacePath, NamespacedIdentifier},
     reducer_name::ReducerName,
     schema::{
         ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema,
@@ -454,7 +457,10 @@ pub struct MutTxId {
     pub(crate) _not_send: PhantomData<std::rc::Rc<()>>,
 }
 
-static_assert_size!(MutTxId, 560);
+// Grew by one word when `ReducerName` became fully qualified: it now holds a
+// `NamespacedIdentifier` (segments + joined rendering) rather than a single `Identifier`.
+// One per transaction, not per row.
+static_assert_size!(MutTxId, 576);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -779,7 +785,7 @@ impl MutTxId {
             ..
         } = view_def;
 
-        let view_name: RawIdentifier = name.clone().into();
+        let view_name: RawNamespacedIdentifier = RawIdentifier::from(name.clone()).into();
 
         // `create_table` inserts into `st_view` and updates the table schema.
         let view_id = self
@@ -788,6 +794,52 @@ impl MutTxId {
 
         self.insert_into_st_view_param(view_id, param_columns)?;
         self.insert_into_st_view_column(view_id, return_columns)?;
+
+        self.committed_state_write_lock.ephemeral_tables.insert(table_id);
+
+        Ok((view_id, table_id))
+    }
+
+    /// Like [`create_view`] but registers the view under `name_prefix + view_def.name`
+    /// (e.g. `"lib.library_view"`), using `owning_def` for type resolution.
+    ///
+    /// The canonical `view_def.name` is used (not `accessor_name`) so that submodule views
+    /// follow the same convention as root views ([`Self::create_view`]) and match the keys
+    /// used by `ModuleDef::view_by_name_with_global_fn_ptr` and the auto-migrate plan.
+    ///
+    /// Used for submodule views whose canonical names are dot-namespaced.
+    pub fn create_view_with_prefix(
+        &mut self,
+        owning_def: &ModuleDef,
+        view_def: &ViewDef,
+        name_prefix: &NamespacePath,
+    ) -> Result<(ViewId, TableId)> {
+        let mut table_schema = TableSchema::from_view_def_for_datastore(owning_def, view_def);
+        let full_view_name = name_prefix.join(view_def.name.clone());
+        table_schema.table_name = TableName::from(full_view_name.clone());
+
+        // Namespace the alias rather than dropping it: a bare accessor name would collide
+        // when two mounts have views with the same local name, but discarding it loses the
+        // mapping codegen needs.
+        table_schema.alias = table_schema.alias.map(|alias| name_prefix.join_namespaced(&alias));
+
+        // Prefix index and constraint names so they remain globally unique across mounts.
+        for index in &mut table_schema.indexes {
+            index.index_name = name_prefix.join_raw(&index.index_name);
+        }
+        for constraint in &mut table_schema.constraints {
+            constraint.constraint_name = name_prefix.join_raw(&constraint.constraint_name);
+        }
+
+        let table_id = self.create_table(table_schema)?;
+
+        let view_name = RawNamespacedIdentifier::from(full_view_name);
+        let view_id = self
+            .view_id_from_name(&view_name)?
+            .ok_or(ViewError::NotFound(view_name))?;
+
+        self.insert_into_st_view_param(view_id, &view_def.param_columns)?;
+        self.insert_into_st_view_column(view_id, &view_def.return_columns)?;
 
         self.committed_state_write_lock.ephemeral_tables.insert(table_id);
 
@@ -943,7 +995,7 @@ impl MutTxId {
     }
 
     /// Insert a row into `st_table_accessor` for `table_name`, if an alias is present.
-    fn insert_st_table_accessor(&mut self, table_name: &TableName, alias: Option<&Identifier>) -> Result<()> {
+    fn insert_st_table_accessor(&mut self, table_name: &TableName, alias: Option<&NamespacedIdentifier>) -> Result<()> {
         let Some(accessor_name) = alias.cloned() else {
             return Ok(());
         };
@@ -975,7 +1027,11 @@ impl MutTxId {
     }
 
     /// Insert a row into `st_index_accessor` for `index_name`, if an alias is present.
-    fn insert_st_index_accessor(&mut self, index_name: &RawIdentifier, alias: Option<&RawIdentifier>) -> Result<()> {
+    fn insert_st_index_accessor(
+        &mut self,
+        index_name: &RawNamespacedIdentifier,
+        alias: Option<&RawNamespacedIdentifier>,
+    ) -> Result<()> {
         let Some(accessor_name) = alias.cloned() else {
             return Ok(());
         };
@@ -1136,7 +1192,7 @@ impl MutTxId {
     }
 
     /// Drops rows in `st_index_accessor` for this canonical `index_name`.
-    fn drop_st_index_accessor(&mut self, index_name: &RawIdentifier) -> Result<()> {
+    fn drop_st_index_accessor(&mut self, index_name: &RawNamespacedIdentifier) -> Result<()> {
         let value = index_name.as_ref().into();
         self.delete_col_eq(ST_INDEX_ACCESSOR_ID, StIndexAccessorFields::IndexName.col_id(), &value)
     }
@@ -1316,15 +1372,17 @@ impl MutTxId {
 impl MutTxId {
     /// Set the table access of `table_id` to `access`.
     pub(crate) fn alter_table_access(&mut self, table_id: TableId, access: StAccess) -> Result<()> {
+        let old_access = self.find_st_table_row(table_id)?.table_access;
+
         // Write to the table in the tx state.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.table_access = access);
 
-        // Update system tables.
-        let old_access = self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_access, access))?;
-
-        // Remember the pending change so we can undo if necessary.
+        // Remember the pending change so we can undo it if a later system-table update fails.
         self.push_schema_change(PendingSchemaChange::TableAlterAccess(table_id, old_access));
+
+        // Update system tables.
+        self.update_st_table_row(table_id, |st| st.table_access = access)?;
 
         Ok(())
     }
@@ -1334,17 +1392,141 @@ impl MutTxId {
     /// Updates both the in-memory schema and the `st_table` system table.
     /// See: <https://github.com/clockworklabs/SpacetimeDB/issues/3934>
     pub(crate) fn alter_table_primary_key(&mut self, table_id: TableId, new_primary_key: Option<ColId>) -> Result<()> {
+        let old_pk = self.find_st_table_row(table_id)?.table_primary_key;
+
         // Write to the table in the tx state.
         let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
         tx_table.with_mut_schema_and_clone(commit_table, |s| s.primary_key = new_primary_key);
 
-        // Update system tables.
+        // Remember the pending change so we can undo it if a later system-table update fails.
         let new_pk_col_list = new_primary_key.map(|col| col.into());
-        let old_pk =
-            self.update_st_table_row(table_id, |st| mem::replace(&mut st.table_primary_key, new_pk_col_list))?;
-
-        // Remember the pending change so we can undo if necessary.
         self.push_schema_change(PendingSchemaChange::TableAlterPrimaryKey(table_id, old_pk));
+
+        // Update system tables.
+        self.update_st_table_row(table_id, |st| st.table_primary_key = new_pk_col_list)?;
+
+        Ok(())
+    }
+
+    /// Change the source-name alias of the index identified by `index_id`.
+    pub(crate) fn alter_index_source_name(
+        &mut self,
+        index_id: IndexId,
+        source_name: RawNamespacedIdentifier,
+    ) -> Result<()> {
+        let st_index_ref = self
+            .iter_by_col_eq(ST_INDEX_ID, StIndexFields::IndexId, &index_id.into())?
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_index, index_id.into()))?;
+        let st_index_row = StIndexRow::try_from(st_index_ref)?;
+        let table_id = st_index_row.table_id;
+
+        let old_alias = self
+            .find_st_index_accessor_row_by_index_name(st_index_row.index_name.as_ref())?
+            .map(|row| row.accessor_name);
+
+        if old_alias.as_ref() == Some(&source_name) {
+            return Ok(());
+        }
+
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        let mut index_schema = tx_table
+            .get_schema()
+            .indexes
+            .iter()
+            .find(|index| index.index_id == index_id)
+            .cloned()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_index, index_id.into()))?;
+        index_schema.alias = Some(source_name.clone());
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.update_index(index_schema));
+        self.push_schema_change(PendingSchemaChange::IndexAlterSourceName(table_id, index_id, old_alias));
+
+        self.drop_st_index_accessor(&st_index_row.index_name)?;
+        self.insert_st_index_accessor(&st_index_row.index_name, Some(&source_name))?;
+
+        Ok(())
+    }
+
+    /// Change the accessor name alias of the table identified by `table_id`.
+    pub(crate) fn alter_table_accessor_name(
+        &mut self,
+        table_id: TableId,
+        new_alias: NamespacedIdentifier,
+    ) -> Result<()> {
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+
+        let old_alias = self
+            .iter_by_col_eq(
+                ST_TABLE_ACCESSOR_ID,
+                StTableAccessorFields::TableName,
+                &table_name.as_ref().into(),
+            )?
+            .next()
+            .and_then(|row| StTableAccessorRow::try_from(row).ok())
+            .map(|row| row.accessor_name);
+
+        if old_alias.as_ref() == Some(&new_alias) {
+            return Ok(());
+        }
+
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.alias = Some(new_alias.clone()));
+        self.push_schema_change(PendingSchemaChange::TableAlterAccessorName(table_id, old_alias));
+
+        self.drop_st_table_accessor(&table_name)?;
+        self.insert_st_table_accessor(&table_name, Some(&new_alias))?;
+
+        Ok(())
+    }
+
+    /// Change the accessor name alias of the column identified by `table_id` and `col_id`.
+    pub(crate) fn alter_column_accessor_name(
+        &mut self,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: Identifier,
+    ) -> Result<()> {
+        let table_name = self.find_st_table_row(table_id)?.table_name;
+
+        // Read old column info from the current schema
+        let col_info: Vec<(Identifier, Option<Identifier>, ColId)> = self
+            .schema_for_table(table_id)?
+            .columns
+            .iter()
+            .map(|c| (c.col_name.clone(), c.alias.clone(), c.col_pos))
+            .collect();
+
+        let old_alias = col_info
+            .iter()
+            .find(|(_, _, pos)| *pos == col_id)
+            .and_then(|(_, alias, _)| alias.clone());
+
+        if old_alias.as_ref() == Some(&new_alias) {
+            return Ok(());
+        }
+
+        // Update system tables: drop and re-insert all column accessor rows for this table
+        self.drop_st_column_accessor(&table_name)?;
+        for (col_name, alias, pos) in &col_info {
+            let name = if *pos == col_id {
+                &new_alias
+            } else {
+                alias.as_ref().unwrap_or(col_name)
+            };
+            self.insert_st_column_accessor(&table_name, col_name, Some(name))?;
+        }
+
+        // Update in-memory schema
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        tx_table.with_mut_schema_and_clone(commit_table, |s| {
+            if let Some(col) = s.columns.iter_mut().find(|c| c.col_pos == col_id) {
+                col.alias = Some(new_alias);
+            }
+        });
+
+        self.push_schema_change(PendingSchemaChange::ColumnAlterAccessorName(
+            table_id, col_id, old_alias,
+        ));
 
         Ok(())
     }
@@ -1381,6 +1563,8 @@ impl MutTxId {
         // SAFETY: `commit_table` should have a schema identical to that of `tx_table`
         // prior to changing it just now.
         unsafe { commit_table.set_layout_and_schema_to(tx_table) };
+        // Remember the pending change so we can undo it if a later system-table update fails.
+        self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
 
         // Update system tables.
         // We'll simply remove all rows in `st_columns` and then add the new ones.
@@ -1389,9 +1573,6 @@ impl MutTxId {
         self.drop_st_column(table_id)?;
         self.drop_st_column_accessor(&table_name)?;
         self.insert_st_column(&table_name, &column_schemas)?;
-
-        // Remember the pending change so we can undo if necessary.
-        self.push_schema_change(PendingSchemaChange::TableAlterRowType(table_id, old_column_schemas));
 
         Ok(())
     }
@@ -1421,6 +1602,8 @@ impl MutTxId {
         commit_table
             .change_columns_of_empty_table_to(column_schemas.clone())
             .map_err(|_| TableError::EventTableNotEmpty(table_id))?;
+        // Remember the pending change so we can undo it if a later system-table update fails.
+        self.push_schema_change(PendingSchemaChange::ReschemaEventTable(table_id, old_column_schemas));
 
         // Update system tables.
         // We'll simply remove all rows in `st_columns` and then add the new ones.
@@ -1429,9 +1612,6 @@ impl MutTxId {
         self.drop_st_column(table_id)?;
         self.drop_st_column_accessor(&table_name)?;
         self.insert_st_column(&table_name, &column_schemas)?;
-
-        // Remember the pending change so we can undo if necessary.
-        self.push_schema_change(PendingSchemaChange::ReschemaEventTable(table_id, old_column_schemas));
 
         Ok(())
     }
@@ -1550,7 +1730,7 @@ impl MutTxId {
     fn create_table_and_update_seq(
         &mut self,
         table_schema: TableSchema,
-        seq_values: HashMap<RawIdentifier, (i128, i128)>,
+        seq_values: HashMap<RawNamespacedIdentifier, (i128, i128)>,
     ) -> Result<TableId> {
         let table_id = self.create_table(table_schema)?;
         let table_schema = self.schema_for_table(table_id)?;

@@ -2,6 +2,7 @@ namespace SpacetimeDB;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -57,7 +58,7 @@ public readonly record struct HttpHeader(string Name, byte[] Value, bool IsSensi
 /// </remarks>
 public readonly record struct HttpBody(byte[] Bytes)
 {
-    public static HttpBody Empty => new(Array.Empty<byte>());
+    public static HttpBody Empty => new([]);
 
     public byte[] ToBytes() => Bytes;
 
@@ -82,7 +83,7 @@ public sealed class HttpRequest
     public HttpMethod Method { get; init; } = HttpMethod.Get;
 
     /// <summary>HTTP headers to include with the request.</summary>
-    public List<HttpHeader> Headers { get; init; } = new();
+    public List<HttpHeader> Headers { get; init; } = [];
 
     /// <summary>Request body bytes.</summary>
     public HttpBody Body { get; init; } = HttpBody.Empty;
@@ -94,7 +95,7 @@ public sealed class HttpRequest
     /// Optional timeout for the request.
     /// </summary>
     /// <remarks>
-    /// The SpacetimeDB host clamps all timeouts to a maximum of 500ms.
+    /// The SpacetimeDB host clamps all timeouts to a maximum of 180 seconds.
     /// </remarks>
     public TimeSpan? Timeout { get; init; }
 }
@@ -142,7 +143,7 @@ public sealed class HttpError(string message) : Exception(message)
 /// </para>
 ///
 /// <para>
-/// <b>Timeouts:</b> The host clamps all HTTP timeouts to a maximum of 500ms.
+/// <b>Timeouts:</b> The host clamps all HTTP timeouts to a maximum of 180 seconds.
 /// </para>
 ///
 /// <para>
@@ -153,14 +154,17 @@ public sealed class HttpError(string message) : Exception(message)
 /// </remarks>
 public sealed class HttpClient
 {
-    private static readonly TimeSpan MaxTimeout = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan MaxTimeout = TimeSpan.FromSeconds(180);
+    private static byte[] responseWireBuffer = new byte[0x10_000];
+    private static byte[] responseBodyBuffer = new byte[0x10_000];
+    private static byte[] errorWireBuffer = new byte[0x10_000];
 
     /// <summary>
     /// Send a simple <c>GET</c> request to <paramref name="uri"/> with no headers.
     /// </summary>
     /// <param name="uri">The request URI.</param>
     /// <param name="timeout">
-    /// Optional timeout for the request. The host clamps timeouts to a maximum of 500ms.
+    /// Optional timeout for the request. The host clamps timeouts to a maximum of 180 seconds.
     /// </param>
     /// <returns>
     /// <c>Ok(HttpResponse)</c> when a response was received (regardless of HTTP status code),
@@ -271,6 +275,11 @@ public sealed class HttpClient
     /// }
     /// </code>
     /// </example>
+    [SuppressMessage(
+        "Performance",
+        "CA1822",
+        Justification = "Public instance API exposed through ProcedureContext.Http."
+    )]
     public Result<HttpResponse, HttpError> Send(HttpRequest request)
     {
         // The host syscall expects BSATN-encoded spacetimedb_lib::http::Request bytes.
@@ -285,7 +294,7 @@ public sealed class HttpClient
                 );
             }
 
-            // The host clamps all HTTP timeouts to a maximum of 500ms.
+            // The host clamps all HTTP timeouts to a maximum of 180 seconds.
             // Clamp here as well to keep C# behavior aligned with the Rust docs and to reduce surprises.
             var timeout = request.Timeout;
             if (timeout is not null)
@@ -308,7 +317,7 @@ public sealed class HttpClient
                 Method = ToWireMethod(request.Method),
                 Headers = new HttpHeadersWire
                 {
-                    Entries = request.Headers.Select(ToWireHeader).ToArray(),
+                    Entries = [.. request.Headers.Select(ToWireHeader)],
                 },
                 Timeout = timeout is null
                     ? null
@@ -325,9 +334,9 @@ public sealed class HttpClient
 
             var status = FFI.procedure_http_request(
                 requestBytes,
-                (uint)requestBytes.Length,
+                requestBytes.Length,
                 bodyBytes,
-                (uint)bodyBytes.Length,
+                bodyBytes.Length,
                 out var out_
             );
 
@@ -335,10 +344,11 @@ public sealed class HttpClient
             {
                 case Errno.OK:
                 {
-                    var responseWireBytes = out_.A.Consume();
-                    var responseWire = FromBytes(new HttpResponseWire.BSATN(), responseWireBytes);
+                    using var responseWireStream = out_.A.Consume(ref responseWireBuffer);
+                    var responseWire = FromBytes(new HttpResponseWire.BSATN(), responseWireStream);
 
-                    var body = new HttpBody(out_.B.Consume());
+                    using var responseBodyStream = out_.B.Consume(ref responseBodyBuffer);
+                    var body = new HttpBody(responseBodyStream.ToArray());
                     var (statusCode, version, headers) = FromWireResponse(responseWire);
 
                     return Result<HttpResponse, HttpError>.Ok(
@@ -347,8 +357,8 @@ public sealed class HttpClient
                 }
                 case Errno.HTTP_ERROR:
                 {
-                    var errorWireBytes = out_.A.Consume();
-                    var err = FromBytes(new SpacetimeDB.BSATN.String(), errorWireBytes);
+                    using var errorWireStream = out_.A.Consume(ref errorWireBuffer);
+                    var err = FromBytes(new SpacetimeDB.BSATN.String(), errorWireStream);
                     return Result<HttpResponse, HttpError>.Err(new HttpError(err));
                 }
                 case Errno.WOULD_BLOCK_TRANSACTION:
@@ -372,9 +382,8 @@ public sealed class HttpClient
         }
     }
 
-    private static T FromBytes<T>(IReadWrite<T> rw, byte[] bytes)
+    private static T FromBytes<T>(IReadWrite<T> rw, MemoryStream ms)
     {
-        using var ms = new MemoryStream(bytes);
         using var reader = new BinaryReader(ms);
         var value = rw.Read(reader);
         if (ms.Position != ms.Length)
@@ -423,9 +432,10 @@ public sealed class HttpClient
         {
             Uri = requestWire.Uri,
             Method = FromWireMethod(requestWire.Method),
-            Headers = requestWire
-                .Headers.Entries.Select(h => new HttpHeader(h.Name, h.Value, false))
-                .ToList(),
+            Headers =
+            [
+                .. requestWire.Headers.Entries.Select(h => new HttpHeader(h.Name, h.Value, false)),
+            ],
             Body = new HttpBody(body),
             Version = FromWireVersion(requestWire.Version),
         };
@@ -436,7 +446,7 @@ public sealed class HttpClient
             {
                 Headers = new HttpHeadersWire
                 {
-                    Entries = response.Headers.Select(ToWireHeader).ToArray(),
+                    Entries = [.. response.Headers.Select(ToWireHeader)],
                 },
                 Version = ToWireVersion(response.Version),
                 Code = response.StatusCode,

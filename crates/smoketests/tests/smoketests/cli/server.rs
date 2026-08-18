@@ -1,6 +1,7 @@
 //! CLI server command tests
 
-use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
+use spacetimedb_guard::ensure_binaries_built;
+use spacetimedb_smoketests::{require_local_server, Smoketest};
 use std::fs;
 use std::io::Read;
 use std::net::TcpListener;
@@ -98,10 +99,10 @@ fn stop_child(mut child: Child) {
 }
 
 #[test]
-fn cli_can_ping_spacetimedb_on_disk() {
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
+fn cli_can_ping_spacetimedb_server() {
+    let spacetime = Smoketest::builder().autopublish(false).build();
     let output = cli_cmd()
-        .args(["server", "ping", &spacetime.host_url.to_string()])
+        .args(["server", "ping", &spacetime.server_url])
         .output()
         .expect("failed to execute");
     assert!(
@@ -113,6 +114,8 @@ fn cli_can_ping_spacetimedb_on_disk() {
 
 #[test]
 fn cli_start_uses_listen_addr_from_cli_toml() {
+    require_local_server!();
+
     let root = tempfile::tempdir().expect("failed to create tempdir");
     let port = free_local_port();
     let listen_addr = format!("127.0.0.1:{port}");
@@ -129,6 +132,8 @@ fn cli_start_uses_listen_addr_from_cli_toml() {
 
 #[test]
 fn cli_start_explicit_listen_addr_overrides_cli_toml() {
+    require_local_server!();
+
     let root = tempfile::tempdir().expect("failed to create tempdir");
     let config_port = free_local_port();
     let mut explicit_port = free_local_port();

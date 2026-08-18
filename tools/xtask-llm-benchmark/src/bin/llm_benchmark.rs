@@ -13,8 +13,8 @@ use tokio::runtime::Runtime;
 use xtask_llm_benchmark::api::ApiClient;
 use xtask_llm_benchmark::bench::bench_route_concurrency;
 use xtask_llm_benchmark::bench::runner::{
-    build_goldens_only_for_lang, delete_databases, ensure_goldens_built_once,
-    run_selected_or_all_for_model_async_for_lang,
+    delete_databases, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
+    validate_goldens_for_lang,
 };
 use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig, RunOutcome};
 use xtask_llm_benchmark::context::constants::ALL_MODES;
@@ -101,7 +101,7 @@ struct RunArgs {
     #[arg(long, conflicts_with = "goldens_only")]
     hash_only: bool,
 
-    /// Build/publish goldens only (skip LLM calls)
+    /// Build/publish and self-score goldens (skip LLM calls)
     #[arg(long, conflicts_with = "hash_only")]
     goldens_only: bool,
 
@@ -231,7 +231,14 @@ fn cmd_run(args: RunArgs) -> Result<()> {
 fn run_benchmarks(args: RunArgs) -> Result<()> {
     let dry_run = args.dry_run;
     let local_analysis = args.local_analysis;
-    let dry_run_id = dry_run.then(|| chrono::Utc::now().format("%Y-%m-%d_%H%M%S").to_string());
+    let dry_run_id = dry_run.then(|| {
+        format!(
+            "{}-{}-{}",
+            chrono::Utc::now().format("%Y-%m-%d_%H%M%S_%3f"),
+            args.lang.as_str(),
+            std::process::id()
+        )
+    });
     let should_fetch_remote_routes = should_fetch_remote_routes(&args);
 
     let needs_api_client = should_fetch_remote_routes || !dry_run;
@@ -296,53 +303,24 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
 
     if config.goldens_only {
         let rt = runtime.as_ref().expect("runtime required for --goldens-only");
-        let result = rt.block_on(build_goldens_only_for_lang(
+        rt.block_on(validate_goldens_for_lang(
             config.host.clone(),
             &bench_root,
             config.lang,
             selectors_ref,
-        ));
-        let databases = match result {
-            Ok(databases) => databases,
-            Err(error) => {
-                report_server_status(guard.as_mut());
-                return Err(error);
-            }
-        };
-        if let Err(error) = rt.block_on(delete_databases(databases)) {
-            report_server_status(guard.as_mut());
-            return Err(error);
-        }
-        println!("[{}] goldens-only build complete", config.lang.as_str());
+        ))?;
+        println!("[{}] goldens-only validation complete", config.lang.as_str());
         return Ok(());
     }
 
-    // Goldens are live parity fixtures: scorers describe them, call their
-    // reducers, and compare their data with generated modules. Keep them
-    // published through every model and mode, then delete them at teardown.
-    let (llm_provider, golden_databases) = if !config.goldens_only && !config.hash_only {
-        let rt = runtime.as_ref().expect("failed to initialize runtime for goldens");
-        let result = rt.block_on(ensure_goldens_built_once(
-            config.host.clone(),
-            &bench_root,
-            config.lang,
-            selectors_ref,
-        ));
-        let databases = match result {
-            Ok(databases) => databases,
-            Err(error) => {
-                report_server_status(guard.as_mut());
-                return Err(error);
-            }
-        };
-
+    let llm_provider = if !config.goldens_only && !config.hash_only {
         let provider = make_provider_from_env()?;
         let rt = runtime.as_ref().expect("failed to initialize runtime for preflight");
         let routes = filter_routes(&config);
         preflight_llm_routes(rt, provider.as_ref(), &routes, &modes)?;
-        (Some(provider), databases)
+        Some(provider)
     } else {
-        (None, Vec::new())
+        None
     };
 
     let mut all_outcomes: Vec<RunOutcome> = Vec::new();
@@ -359,23 +337,11 @@ fn run_benchmarks(args: RunArgs) -> Result<()> {
         let outcomes = match result {
             Ok(outcomes) => outcomes,
             Err(error) => {
-                if let Some(rt) = runtime.as_ref()
-                    && let Err(cleanup_error) = rt.block_on(delete_databases(golden_databases))
-                {
-                    eprintln!("[cleanup] failed to delete golden databases after benchmark failure: {cleanup_error:#}");
-                }
                 report_server_status(guard.as_mut());
                 return Err(error);
             }
         };
         all_outcomes.extend(outcomes);
-    }
-
-    if let Some(rt) = runtime.as_ref()
-        && let Err(error) = rt.block_on(delete_databases(golden_databases))
-    {
-        report_server_status(guard.as_mut());
-        return Err(error);
     }
 
     // Write local run log on --dry-run so results aren't lost
@@ -808,6 +774,10 @@ async fn run_many_routes_for_mode(
         async move {
             println!("\u{2192} running {}", route.display_name);
 
+            let golden_scope = xtask_llm_benchmark::bench::run_scope_tag(mode, route.vendor.slug(), &route.api_model);
+            let golden_databases =
+                ensure_goldens_built_once(host.clone(), bench_root, lang, selectors, &golden_scope).await?;
+
             let per = BenchRunContext {
                 bench_root,
                 mode,
@@ -824,7 +794,16 @@ async fn run_many_routes_for_mode(
                 dry_run_id,
             };
 
-            let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
+            let run_result = run_selected_or_all_for_model_async_for_lang(&per).await;
+            let cleanup_result = delete_databases(golden_databases).await;
+            let outcomes = match (run_result, cleanup_result) {
+                (Ok(outcomes), Ok(())) => outcomes,
+                (Err(error), Ok(())) => return Err(error),
+                (Ok(_), Err(error)) => return Err(error.context("failed to delete golden databases")),
+                (Err(error), Err(cleanup_error)) => {
+                    return Err(error.context(format!("also failed to delete golden databases: {cleanup_error:#}")))
+                }
+            };
 
             Ok::<_, anyhow::Error>(RouteRun {
                 route_name: route.display_name.to_string(),

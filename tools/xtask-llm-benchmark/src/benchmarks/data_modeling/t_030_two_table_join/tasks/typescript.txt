@@ -1,19 +1,19 @@
 Write a SpacetimeDB backend module in TypeScript that defines a customer table, an order table with a foreign key to customer, and a denormalized result table. Include a reducer that joins the two tables and writes results.
 
 TABLES
-- customer
+- customer (private)
   - Fields:
     - id: number (u64, primary key, autoInc)
     - name: string
 
-- order
+- order (private)
   - Fields:
     - id: number (u64, primary key, autoInc)
     - customerId: number (u64, index btree)
     - product: string
     - amount: number (u32)
 
-- order_detail
+- order_detail (private)
   - Fields:
     - orderId: number (u64, primary key)
     - customerName: string

@@ -20,7 +20,6 @@ use crate::host::{self, ModuleHost};
 use crate::subscription::query::is_subscribe_to_all_tables;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::{collect_table_update, collect_table_update_for_view, execute_plans};
-use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use core::panic;
 use parking_lot::RwLock;
@@ -41,6 +40,7 @@ use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, identity::AuthCtx};
+use spacetimedb_metrics::utils::IntGaugeExt;
 use spacetimedb_physical_plan::plan::ProjectPlan;
 use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_table::static_assert_size;
@@ -794,14 +794,16 @@ impl ModuleSubscriptions {
             )
         };
 
-        let mut subscriptions = self.subscriptions.write();
+        let queries = {
+            let mut subscriptions = self.subscriptions.write();
+            return_on_err!(
+                subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id),
+                // Apparently we ignore errors sending messages.
+                send_err_msg,
+                None
+            )
+        };
 
-        let queries = return_on_err!(
-            subscriptions.remove_subscription((sender.id.identity, sender.id.connection_id), request.query_id),
-            // Apparently we ignore errors sending messages.
-            send_err_msg,
-            None
-        );
         // This is technically a bug, since this could be empty if the client has another duplicate subscription.
         // This whole function should be removed soon, so I don't think we need to fix it.
         let [query] = &*queries else {

@@ -14,9 +14,10 @@ use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneErro
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
 use crate::bench::utils::{
     bench_concurrency, bench_csharp_concurrency, bench_rust_concurrency, category_slug, debug_llm, fmt_dur,
-    print_llm_output, sanitize_db_name, task_slug, work_server_dir_scoped,
+    golden_db_name, print_llm_output, run_scope_tag, sanitize_db_name, task_slug, work_server_dir_scoped,
 };
 use crate::bench::Publisher;
+use crate::eval::scorers::call_reducer_json_out;
 use crate::eval::{Lang, ScoreDetails};
 use crate::generated::resolve_by_path;
 use crate::llm::model_routes::ModelRoute;
@@ -63,8 +64,9 @@ pub async fn ensure_goldens_built_once(
     bench_root: &Path,
     lang: Lang,
     selectors: Option<&[String]>,
+    golden_scope: &str,
 ) -> Result<Vec<PublishedDatabase>> {
-    build_goldens_only_for_lang(host, bench_root, lang, selectors).await
+    build_goldens_only_for_lang(host, bench_root, lang, selectors, golden_scope).await
 }
 
 async fn publish_rust_async(
@@ -72,24 +74,27 @@ async fn publish_rust_async(
     host_url: String,
     wdir: PathBuf,
     db: String,
+    clear_database: bool,
 ) -> Result<PublishedDatabase> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await?
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db, clear_database)).await?
 }
 async fn publish_cs_async(
     publisher: DotnetPublisher,
     host_url: String,
     wdir: PathBuf,
     db: String,
+    clear_database: bool,
 ) -> Result<PublishedDatabase> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await?
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db, clear_database)).await?
 }
 async fn publish_ts_async(
     publisher: TypeScriptPublisher,
     host_url: String,
     wdir: PathBuf,
     db: String,
+    clear_database: bool,
 ) -> Result<PublishedDatabase> {
-    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await?
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db, clear_database)).await?
 }
 
 async fn delete_database_async(database: PublishedDatabase) -> Result<()> {
@@ -141,28 +146,8 @@ impl TaskRunner {
         }
     }
 
-    pub async fn publish_golden_only(
-        &self,
-        lang: Lang,
-        category: &str,
-        task_id: &str,
-        golden_src_text: &str,
-        golden_db: String,
-        host: Option<String>,
-    ) -> Result<PublishedDatabase> {
-        self.publish(
-            PublishParams {
-                lang,
-                category,
-                task_id,
-                route_tag: "",
-                source_text: golden_src_text,
-                db_name: golden_db,
-                host,
-            },
-            "golden",
-        )
-        .await
+    pub async fn publish_golden_only(&self, params: PublishParams<'_>) -> Result<PublishedDatabase> {
+        self.publish(params, "golden").await
     }
 
     async fn publish_llm(&self, params: PublishParams<'_>) -> Result<PublishedDatabase> {
@@ -191,9 +176,22 @@ impl TaskRunner {
 
         let host_url = params.host.unwrap_or_else(|| "local".to_owned());
         let database = match params.lang {
-            Lang::Rust => publish_rust_async(self.rust_publisher, host_url, wdir, params.db_name).await?,
-            Lang::CSharp => publish_cs_async(self.cs_publisher, host_url, wdir, params.db_name).await?,
-            Lang::TypeScript => publish_ts_async(self.ts_publisher, host_url, wdir, params.db_name).await?,
+            Lang::Rust => {
+                publish_rust_async(
+                    self.rust_publisher,
+                    host_url,
+                    wdir,
+                    params.db_name,
+                    params.clear_database,
+                )
+                .await?
+            }
+            Lang::CSharp => {
+                publish_cs_async(self.cs_publisher, host_url, wdir, params.db_name, params.clear_database).await?
+            }
+            Lang::TypeScript => {
+                publish_ts_async(self.ts_publisher, host_url, wdir, params.db_name, params.clear_database).await?
+            }
         };
 
         Ok(database)
@@ -205,8 +203,8 @@ impl TaskRunner {
 
         let category = category_slug(&task.root);
         let task_id = task_slug(&task.root);
-        let route_tag = sanitize_db_name(&cfg.route.display_name);
-        let golden_db = sanitize_db_name(&format!("{}-{}-golden", category, task_id));
+        let route_tag = run_scope_tag(cfg.mode, cfg.route.vendor.slug(), &cfg.route.api_model);
+        let golden_db = golden_db_name(&category, &task_id, &route_tag);
         let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", category, task_id, route_tag));
 
         let ctor = resolve_by_path(&task.root)?;
@@ -289,29 +287,70 @@ impl TaskRunner {
         let output_tokens = llm_result.output_tokens;
         let llm_output = llm_result.text;
 
+        let migration_setup = load_migration_setup_source(task, cfg.lang)?;
+
         if debug_llm() {
             print_llm_output(&cfg.route.display_name, &task_id, &llm_output);
         }
 
-        let publish_result = self
-            .publish_llm(PublishParams {
-                lang: cfg.lang,
-                category: &category,
-                task_id: &task_id,
-                route_tag: &route_tag,
-                source_text: &llm_output,
-                db_name: llm_db.clone(),
-                host: cfg.host.clone(),
-            })
-            .await;
-        let (published_database, publish_error) = match publish_result {
-            Ok(database) => (Some(database), None),
-            Err(error) => {
-                eprintln!(
-                    "⚠️ publish failed for {}/{}/{}: {error:#}",
-                    category, task_id, cfg.route.display_name
-                );
-                (None, Some(format!("{error:#}")))
+        let setup_database: Result<Option<PublishedDatabase>> = if let Some(setup_source) = migration_setup.as_deref() {
+            let setup_result = self
+                .publish(
+                    PublishParams {
+                        lang: cfg.lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag: &route_tag,
+                        source_text: setup_source,
+                        db_name: llm_db.clone(),
+                        host: cfg.host.clone(),
+                        clear_database: true,
+                    },
+                    "llm-setup",
+                )
+                .await;
+            match setup_result {
+                Ok(database) => {
+                    call_reducer_json_out(&llm_db, "seed", &[], Some(cfg.host.as_deref().unwrap_or("local")))
+                        .map_err(anyhow::Error::msg)?;
+                    Ok(Some(database))
+                }
+                Err(error) => Err(error),
+            }
+        } else {
+            Ok(None)
+        };
+
+        let (published_database, publish_error) = match setup_database {
+            Err(error) => (None, Some(format!("migration setup failed: {error:#}"))),
+            Ok(mut setup_database) => {
+                let publish_result = self
+                    .publish_llm(PublishParams {
+                        lang: cfg.lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag: &route_tag,
+                        source_text: &llm_output,
+                        db_name: llm_db.clone(),
+                        host: cfg.host.clone(),
+                        clear_database: migration_setup.is_none(),
+                    })
+                    .await;
+                match publish_result {
+                    Ok(database) => {
+                        if let Some(setup_database) = setup_database.take() {
+                            setup_database.relinquish();
+                        }
+                        (Some(database), None)
+                    }
+                    Err(error) => {
+                        eprintln!(
+                            "⚠️ publish failed for {}/{}/{}: {error:#}",
+                            category, task_id, cfg.route.display_name
+                        );
+                        (None, Some(format!("{error:#}")))
+                    }
+                }
             }
         };
 
@@ -400,7 +439,7 @@ impl TaskRunner {
             golden_db: Some(golden_db),
             llm_db: Some(llm_db),
             work_dir_golden: Some(
-                work_server_dir_scoped(&category, &task_id, cfg.lang_name, "golden", "")
+                work_server_dir_scoped(&category, &task_id, cfg.lang_name, "golden", &route_tag)
                     .to_string_lossy()
                     .into_owned(),
             ),
@@ -921,6 +960,7 @@ pub async fn build_goldens_only_for_lang(
     bench_root: &Path,
     lang: Lang,
     selectors: Option<&[String]>,
+    golden_scope: &str,
 ) -> Result<Vec<PublishedDatabase>> {
     let tasks = if let Some(sels) = selectors {
         let wanted: HashSet<String> = sels.iter().map(|s| normalize_task_selector(s)).collect::<Result<_>>()?;
@@ -963,12 +1003,53 @@ pub async fn build_goldens_only_for_lang(
         async move {
             let category = category_slug(&task.root);
             let task_id = task_slug(&task.root);
-            let golden_db = sanitize_db_name(&format!("{}-{}-golden", category, task_id));
+            let golden_db = golden_db_name(&category, &task_id, golden_scope);
             let golden_src_text = load_golden_source(&task, lang)?;
+            let migration_setup = load_migration_setup_source(&task, lang)?;
             println!("→ [{}] build golden {} {}", lang_name, category, task_id);
-            runner
-                .publish_golden_only(lang, &category, &task_id, &golden_src_text, golden_db, host_clone)
-                .await
+            if let Some(setup_source) = migration_setup {
+                let setup_database = runner
+                    .publish_golden_only(PublishParams {
+                        lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag: golden_scope,
+                        source_text: &setup_source,
+                        db_name: golden_db.clone(),
+                        host: host_clone.clone(),
+                        clear_database: true,
+                    })
+                    .await?;
+                call_reducer_json_out(&golden_db, "seed", &[], Some(host_clone.as_deref().unwrap_or("local")))
+                    .map_err(anyhow::Error::msg)?;
+                let database = runner
+                    .publish_golden_only(PublishParams {
+                        lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag: golden_scope,
+                        source_text: &golden_src_text,
+                        db_name: golden_db,
+                        host: host_clone,
+                        clear_database: false,
+                    })
+                    .await?;
+                setup_database.relinquish();
+                Ok(database)
+            } else {
+                runner
+                    .publish_golden_only(PublishParams {
+                        lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag: golden_scope,
+                        source_text: &golden_src_text,
+                        db_name: golden_db,
+                        host: host_clone,
+                        clear_database: true,
+                    })
+                    .await
+            }
         }
     }))
     .buffer_unordered(buf)
@@ -979,6 +1060,140 @@ pub async fn build_goldens_only_for_lang(
 
     println!("✓ [{}] goldens build/publish: complete", lang_name);
     Ok(databases)
+}
+
+/// Build each selected golden, publish the same source as a stand-in candidate,
+/// and run the task's complete scorer set against the pair. This proves more
+/// than compilation: the golden must also satisfy every behavior and parity
+/// assertion used to grade model output.
+pub async fn validate_goldens_for_lang(
+    host: Option<String>,
+    bench_root: &Path,
+    lang: Lang,
+    selectors: Option<&[String]>,
+) -> Result<()> {
+    let route_tag = "golden-validation";
+    let golden_databases = build_goldens_only_for_lang(host.clone(), bench_root, lang, selectors, route_tag).await?;
+
+    let tasks = if let Some(sels) = selectors {
+        let wanted: HashSet<String> = sels.iter().map(|s| normalize_task_selector(s)).collect::<Result<_>>()?;
+        let filtered: Vec<TaskPaths> = discover_tasks(bench_root)?
+            .into_iter()
+            .filter(|task| {
+                let name = task.root.file_name().and_then(|name| name.to_str()).unwrap_or("");
+                wanted.iter().any(|wanted| name.starts_with(wanted))
+            })
+            .collect();
+        if filtered.is_empty() {
+            bail!("no tasks matched {:?}", wanted);
+        }
+        filtered
+    } else {
+        discover_tasks(bench_root)?
+    };
+
+    let runner = TaskRunner::new(
+        PathBuf::from(bench_root),
+        SpacetimeRustPublisher,
+        DotnetPublisher,
+        TypeScriptPublisher,
+    );
+    let lang_name = lang.as_str();
+    let host_url = host.as_deref().unwrap_or("local");
+    let mut failures = Vec::new();
+
+    // Scorers can mutate both databases, so validate one task at a time and
+    // preserve the scorer ordering declared by its spec.
+    for task in tasks {
+        let category = category_slug(&task.root);
+        let task_id = task_slug(&task.root);
+        let candidate_db = sanitize_db_name(&format!("{}-{}-{}-llm", category, task_id, route_tag));
+        let golden_src_text = load_golden_source(&task, lang)?;
+        let migration_setup = load_migration_setup_source(&task, lang)?;
+
+        println!("→ [{}] validate golden {} {}", lang_name, category, task_id);
+        let candidate_database = if let Some(setup_source) = migration_setup {
+            let setup_database = runner
+                .publish(
+                    PublishParams {
+                        lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag,
+                        source_text: &setup_source,
+                        db_name: candidate_db.clone(),
+                        host: host.clone(),
+                        clear_database: true,
+                    },
+                    "golden-validation-setup",
+                )
+                .await?;
+            call_reducer_json_out(&candidate_db, "seed", &[], Some(host_url)).map_err(anyhow::Error::msg)?;
+            let database = runner
+                .publish(
+                    PublishParams {
+                        lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag,
+                        source_text: &golden_src_text,
+                        db_name: candidate_db,
+                        host: host.clone(),
+                        clear_database: false,
+                    },
+                    "golden-validation",
+                )
+                .await?;
+            setup_database.relinquish();
+            database
+        } else {
+            runner
+                .publish(
+                    PublishParams {
+                        lang,
+                        category: &category,
+                        task_id: &task_id,
+                        route_tag,
+                        source_text: &golden_src_text,
+                        db_name: candidate_db,
+                        host: host.clone(),
+                        clear_database: true,
+                    },
+                    "golden-validation",
+                )
+                .await?
+        };
+
+        let ctor = resolve_by_path(&task.root)?;
+        let spec = ctor();
+        for scorer in spec.scorers_for(lang, route_tag, host_url) {
+            let details = scorer.score(&golden_src_text);
+            if !details.pass {
+                failures.push(format!(
+                    "{}/{} [{}]: {}",
+                    category,
+                    task_id,
+                    scorer.id(),
+                    serde_json::to_string(&details.notes).unwrap_or_else(|_| "<unprintable details>".to_string())
+                ));
+            }
+        }
+        delete_database_async(candidate_database).await?;
+    }
+
+    delete_databases(golden_databases).await?;
+
+    if !failures.is_empty() {
+        bail!(
+            "[{}] golden validation failed ({} scorer failures):\n{}",
+            lang_name,
+            failures.len(),
+            failures.join("\n")
+        );
+    }
+
+    println!("✓ [{}] goldens behavior/scorer validation: complete", lang_name);
+    Ok(())
 }
 
 fn discover_tasks(benchmarks_root: &Path) -> Result<Vec<TaskPaths>> {
@@ -1077,6 +1292,21 @@ fn load_golden_source(task: &TaskPaths, lang: Lang) -> Result<String> {
             fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))
         }
     }
+}
+
+fn load_migration_setup_source(task: &TaskPaths, lang: Lang) -> Result<Option<String>> {
+    let file = match lang {
+        Lang::Rust => "rust.rs",
+        Lang::CSharp => "csharp.cs",
+        Lang::TypeScript => "typescript.ts",
+    };
+    let path = task.root.join("setup").join(file);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    fs::read_to_string(&path)
+        .with_context(|| format!("read {}", path.display()))
+        .map(Some)
 }
 
 // "1" | "01" | "001" | "t_001" -> "t_001"

@@ -1,15 +1,6 @@
-use spacetimedb_smoketests::Smoketest;
+use spacetimedb_smoketests::{workspace_root, Smoketest};
 use std::fs;
-use std::path::{Path, PathBuf};
-
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
+use std::path::Path;
 
 /// Count occurrences of a needle string in all .cs files under a directory
 fn count_matches(dir: &Path, needle: &str) -> usize {
