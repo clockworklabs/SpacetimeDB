@@ -60,6 +60,10 @@ export function loadTrack(name = DEFAULT_TRACK) {
     // database also wipes the seed, so the server has to be restarted before
     // grading can assume it is there.
     reseedOnReset: m.reseedOnReset ?? false,
+    // Optional proof that the restarted app recreated its required fixture.
+    // Readiness alone is insufficient: a healthy server can still expose an
+    // empty application after reset.
+    reseedProbeExpectation: m.reseedProbeExpectation ?? null,
     suites: m.suites ?? {},
     actions: m.actions ?? [],
     prompts: join(dir, 'prompts'),

@@ -361,10 +361,11 @@ export function compileScenarioDefinition(input, { source = '<scenario>', expect
 
 const TRACK_FIELDS = new Set([
   'schemaVersion', 'actions', 'internal', 'plannedThrough', 'portOffset', 'reseedOnReset',
-  'restartProbe', 'slug', 'suites', 'title', 'validatedThrough',
+  'reseedProbeExpectation', 'restartProbe', 'slug', 'suites', 'title', 'validatedThrough',
 ]);
 const SUITE_FIELDS = new Set(['id', 'inherit', 'spec']);
 const NAMED_ACTION_FIELDS = new Set(['args', 'id', 'params', 'path', 'reducer']);
+const RESEED_PROBE_EXPECTATION_FIELDS = new Set(['jsonPath', 'minCount']);
 // Legacy v0 inferred persistence from these suite names. Keep that inference
 // in exactly one compatibility boundary; schema-v1 manifests must say what
 // persists so a new suite name cannot silently change level semantics.
@@ -388,6 +389,20 @@ export function compileTrackManifest(input, { source = '<track>' } = {}) {
   if (manifest.internal !== undefined && !boolean(manifest.internal)) fail(`${source}.internal`, 'must be boolean');
   if (manifest.reseedOnReset !== undefined && !boolean(manifest.reseedOnReset)) {
     fail(`${source}.reseedOnReset`, 'must be boolean');
+  }
+  if (manifest.reseedProbeExpectation !== undefined) {
+    strictObject(manifest.reseedProbeExpectation, `${source}.reseedProbeExpectation`,
+      RESEED_PROBE_EXPECTATION_FIELDS);
+    if (!nonEmptyString(manifest.reseedProbeExpectation.jsonPath)) {
+      fail(`${source}.reseedProbeExpectation.jsonPath`, 'must be a non-empty string');
+    }
+    if (!integer(manifest.reseedProbeExpectation.minCount)
+      || manifest.reseedProbeExpectation.minCount < 1) {
+      fail(`${source}.reseedProbeExpectation.minCount`, 'must be a positive integer');
+    }
+    if (manifest.reseedOnReset !== true) {
+      fail(`${source}.reseedProbeExpectation`, 'requires reseedOnReset: true');
+    }
   }
   if (!object(manifest.suites) || Object.keys(manifest.suites).length === 0) {
     fail(`${source}.suites`, 'must be a non-empty level map');

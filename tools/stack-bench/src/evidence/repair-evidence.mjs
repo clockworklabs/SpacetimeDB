@@ -1,7 +1,7 @@
 import { compareCriterionEvidence } from './scoring.mjs';
 
 const APPLICATION_SETUP_PHASES = new Set([
-  'database-provenance', 'application-layout', 'application-restart',
+  'database-provenance', 'application-layout', 'application-restart', 'application-seed',
 ]);
 
 export function repairEvidenceDecision(beforeBundle, afterBundle) {

@@ -7,7 +7,8 @@ import test from 'node:test';
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
-  applicationFailureTotals, resetFailureOutcome, suitesForRecipe } from '../commands/run-suite.mjs';
+  applicationFailureTotals, resetFailureOutcome, suitesForRecipe,
+  verifyReseedProbe } from '../commands/run-suite.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 
@@ -62,6 +63,18 @@ test('generated layout and restart defects are repairable app failures, not harn
   assert.deepEqual(resetFailureOutcome({ status: GENERATED_APP_LAYOUT_EXIT_CODE }),
     { kind: 'app_failure', phase: 'application-layout',
       appFailures: ['application-layout'] });
+});
+
+test('reseed proof distinguishes a healthy empty app from restored startup data', async () => {
+  const expectation = { jsonPath: 'items', minCount: 1 };
+  const response = payload => ({ ok: true, status: 200, json: async () => payload });
+  assert.deepEqual(await verifyReseedProbe('http://app/api/items', expectation,
+    { fetchImpl: async () => response({ items: [{ id: 1 }] }) }),
+  { ok: true, detail: null, count: 1 });
+  assert.deepEqual(await verifyReseedProbe('http://app/api/items', expectation,
+    { fetchImpl: async () => response({ items: [] }) }),
+  { ok: false, count: 0,
+    detail: 'startup data is missing: items contains 0 entries, expected at least 1' });
 });
 
 test('an application setup failure receives the exact current and inherited denominators', () => {

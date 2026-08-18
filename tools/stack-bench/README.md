@@ -212,6 +212,11 @@ the golden path the linter walks — lives under `tracks/<name>/`, declared by a
 `track.json`. Adding an application is a matter of dropping in a directory; the
 harness needs no change. Pick one with `--track` (default `chat`).
 
+Tracks whose fixture must be recreated after a database reset set
+`reseedOnReset` and may bind `reseedProbeExpectation` to an array in the restart
+probe's JSON response. A healthy but empty app is then reported as an application
+startup-seeding failure instead of producing a cascade of missing-UI failures.
+
 Composition authoring is read-only and does not require Docker:
 
 ```bash

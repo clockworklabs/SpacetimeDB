@@ -124,6 +124,10 @@
     "plannedThrough": 5,
     "portOffset": 300,
     "reseedOnReset": true,
+    "reseedProbeExpectation": {
+      "jsonPath": "items",
+      "minCount": 1
+    },
     "restartProbe": "/api/items",
     "schemaVersion": 1,
     "slug": "ecom",

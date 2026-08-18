@@ -104,6 +104,7 @@ function parseArgs(argv) {
       case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--check': a.checkKeys.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--reseed-probe': a.reseedProbe = argv[++i]; break;
+      case '--reseed-probe-expectation-json': a.reseedProbeExpectation = JSON.parse(argv[++i]); break;
       case '--restart-cmd': a.restartCmd = argv[++i]; break;
       case '--restart-spec': a.restartSpec = JSON.parse(argv[++i]); break;
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
@@ -124,6 +125,9 @@ function parseArgs(argv) {
   }
   if (a.observation === 'scored' && a.sourceSha256 !== undefined) {
     throw new Error('--source-sha256 is reserved for observed specifications');
+  }
+  if (a.reseedProbeExpectation && !a.reseedProbe) {
+    throw new Error('--reseed-probe-expectation-json requires --reseed-probe');
   }
   a.out ??= join(a.app, 'stack-bench');
   return a;
@@ -161,6 +165,39 @@ async function answers(url, attempts = 3) {
     await sleep(2000);
   }
   return false;
+}
+
+export async function verifyReseedProbe(url, expectation, { fetchImpl = fetch } = {}) {
+  if (!expectation) return { ok: true, detail: null, count: null };
+  let response;
+  try {
+    response = await fetchImpl(url, { signal: AbortSignal.timeout(5000) });
+  } catch (error) {
+    return { ok: false, count: null,
+      detail: `startup data probe could not be read: ${error.message}` };
+  }
+  if (!response.ok) {
+    return { ok: false, count: null,
+      detail: `startup data probe returned HTTP ${response.status}` };
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    return { ok: false, count: null, detail: 'startup data probe did not return JSON' };
+  }
+  const value = expectation.jsonPath.split('.').reduce((current, segment) =>
+    current !== null && typeof current === 'object' ? current[segment] : undefined, payload);
+  if (!Array.isArray(value)) {
+    return { ok: false, count: null,
+      detail: `startup data probe JSON path ${expectation.jsonPath} is not an array` };
+  }
+  if (value.length < expectation.minCount) {
+    return { ok: false, count: value.length,
+      detail: `startup data is missing: ${expectation.jsonPath} contains ${value.length} entries, `
+        + `expected at least ${expectation.minCount}` };
+  }
+  return { ok: true, detail: null, count: value.length };
 }
 
 // The benchmark's own database containers. A generated app that connects
@@ -487,6 +524,9 @@ async function main() {
   const recordApplicationAbort = () => {
     bundle.totals = applicationFailureTotals(selection, declaredSuites);
   };
+  const freshenFailureMessage = () => lastResetOutcome?.phase === 'application-seed'
+    ? `application startup seeding failed after database reset${lastResetFailure ? `: ${lastResetFailure}` : ''}`
+    : `database reset failed — scores would not be comparable${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
   const markRemainingNotRun = reason => {
     if (!bundle.selection) return;
     const accounted = new Set([
@@ -532,25 +572,38 @@ async function main() {
         // does this for exactly the same command — see restartBackend.
         if (args.restartSpec) await controlBackend(args.restartSpec, 'restart');
         else run('bash', ['-c', args.restartCmd], { stdio: 'ignore', timeout: 200_000 });
-        console.log('ok');
       } catch (err) {
         lastResetOutcome = resetFailureOutcome(err);
         if (args.reseedProbe && await answers(args.reseedProbe)) {
-          console.log('ok (server answering; restart command did not return)');
-          await sleep(2000);
-          return true;
+          // A background server can keep the restart command's stdio open.
+          // The live probe is authoritative, but seed validation below still
+          // has to pass before grading may use the application.
         }
-        // Say what actually went wrong. A bare "did not come back" sent the
-        // first investigation looking at the application, when the fault was
-        // the command line the harness built.
-        const detail = ((err.stderr || '') + (err.stdout || '') + (err.message || ''))
-          .toString().trim().split('\n').slice(-3).join(' | ').slice(0, 300);
-        lastResetFailure = detail || null;
-        console.log('FAILED (server did not come back)');
-        console.log(`    control: ${args.restartSpec ? JSON.stringify(args.restartSpec) : args.restartCmd}`);
-        console.log(`    ${detail}`);
+        else {
+          // Say what actually went wrong. A bare "did not come back" sent the
+          // first investigation looking at the application, when the fault was
+          // the command line the harness built.
+          const detail = ((err.stderr || '') + (err.stdout || '') + (err.message || ''))
+            .toString().trim().split('\n').slice(-3).join(' | ').slice(0, 300);
+          lastResetFailure = detail || null;
+          console.log('FAILED (server did not come back)');
+          console.log(`    control: ${args.restartSpec ? JSON.stringify(args.restartSpec) : args.restartCmd}`);
+          console.log(`    ${detail}`);
+          return false;
+        }
+      }
+
+      await sleep(8000);                    // let startup seeding finish
+      const seeded = await verifyReseedProbe(args.reseedProbe, args.reseedProbeExpectation);
+      if (!seeded.ok) {
+        lastResetFailure = seeded.detail;
+        lastResetOutcome = { kind: 'app_failure', phase: 'application-seed',
+          appFailures: ['application-seed'] };
+        console.log(`FAILED (${seeded.detail})`);
         return false;
       }
+      console.log(seeded.count === null ? 'ok' : `ok (${seeded.count} entries observed)`);
+      return true;
     }
     await sleep(8000);                       // let the app reconnect / republish
     return true;
@@ -589,12 +642,12 @@ async function main() {
 
   if (args.observation === 'scored') {
     if (!(await freshen())) {
-      bundle.error = `database reset failed — scores would not be comparable${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
+      bundle.error = freshenFailureMessage();
       bundle.outcome = { ...lastResetOutcome, reason: bundle.error };
       if (bundle.outcome.kind === 'app_failure') recordApplicationAbort();
-      markRemainingNotRun('run aborted after database reset failed');
+      markRemainingNotRun(`run aborted: ${bundle.error}`);
       writeBundle();
-      console.log('\nABORTED: could not reset database.');
+      console.log(`\nABORTED: ${bundle.error}`);
       process.exit(1);
     }
     bundle.suites.lint = lint(args);
@@ -613,9 +666,9 @@ async function main() {
       continue;
     }
     if (!(await freshen())) {
-      console.log(`  ${suite.id}: SKIPPED (reset failed)`);
-      markRemainingNotRun('run aborted after database reset failed');
-      bundle.error = `database reset failed — remaining selected checks did not run${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
+      bundle.error = freshenFailureMessage();
+      console.log(`  ${suite.id}: SKIPPED (${bundle.error})`);
+      markRemainingNotRun(`run aborted: ${bundle.error}`);
       bundle.outcome = { ...lastResetOutcome, reason: bundle.error };
       if (bundle.outcome.kind === 'app_failure') recordApplicationAbort();
       writeBundle();

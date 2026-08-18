@@ -7,6 +7,10 @@
   "portOffset": 300,
   "restartProbe": "/api/items",
   "reseedOnReset": true,
+  "reseedProbeExpectation": {
+    "jsonPath": "items",
+    "minCount": 1
+  },
   "suites": {
     "1": [
       {

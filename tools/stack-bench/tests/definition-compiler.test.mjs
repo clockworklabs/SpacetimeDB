@@ -173,6 +173,14 @@ test('track manifests reject unknown fields and malformed named actions', () => 
   assert.throws(() => compileTrackManifest({ ...base, actions: [{ id: 'buy', path: '/api/buy',
     reducer: 'buy', args: [0], params: [{ name: 'itemId', in: 'path', placeholder: ':id' }] }] }),
   /placeholder: does not appear in path/);
+  assert.throws(() => compileTrackManifest({ ...base,
+    reseedProbeExpectation: { jsonPath: 'items', minCount: 1 } }),
+  /requires reseedOnReset: true/);
+  assert.doesNotThrow(() => compileTrackManifest({ ...base, reseedOnReset: true,
+    reseedProbeExpectation: { jsonPath: 'items', minCount: 1 } }));
+  assert.throws(() => compileTrackManifest({ ...base, reseedOnReset: true,
+    reseedProbeExpectation: { jsonPath: 'items', minCount: 0 } }),
+  /minCount: must be a positive integer/);
 });
 
 test('the live grader rejects malformed definitions before launching a browser', () => {

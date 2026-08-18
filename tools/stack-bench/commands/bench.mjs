@@ -236,14 +236,16 @@ function runAgent(args, adapter, mode, level, appDir) {
   });
 }
 
-function grade(args, appDir, url, label, level, track, parentAttemptId,
+export function gradeArgv(args, appDir, url, label, level, track, parentAttemptId,
   { observation = 'scored', out = null, sourceSha256 = null } = {}) {
   const restartSpec = restartSpecFor(args, appDir, track);
   const expressPort = restartSpec.port ?? '';
-  const argv = [join(ROOT, 'commands', 'run-suite.mjs'), '--app', appDir, '--url', url,
+  return [join(ROOT, 'commands', 'run-suite.mjs'), '--app', appDir, '--url', url,
     '--backend', args.backend, '--label', label, '--level', String(level),
     '--track', args.track,
     '--reseed-probe', `http://localhost:${expressPort}${track.restartProbe}`,
+    ...(track.reseedProbeExpectation
+      ? ['--reseed-probe-expectation-json', JSON.stringify(track.reseedProbeExpectation)] : []),
     '--run-index', String(args.runIndex),
     '--parent-attempt-id', parentAttemptId,
     '--observation', observation,
@@ -257,6 +259,12 @@ function grade(args, appDir, url, label, level, track, parentAttemptId,
       'run-policy', 'reset-enabled')
       ? ['--no-reset']
       : ['--restart-spec', JSON.stringify(restartSpec)])];
+}
+
+function grade(args, appDir, url, label, level, track, parentAttemptId,
+  options = {}) {
+  const { out = null } = options;
+  const argv = gradeArgv(args, appDir, url, label, level, track, parentAttemptId, options);
   const bundle = join(out ?? join(appDir, 'stack-bench'), 'bundle.json');
   rmSync(bundle, { force: true });
   try { sh('node', argv, { stdio: 'inherit' }); } catch { /* a current bundle may still explain a scored failure */ }
