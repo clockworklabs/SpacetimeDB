@@ -685,56 +685,35 @@
   @keyframes forkB { 0%, 62% { opacity: 0; transform: translateY(8px); } 68%, 92% { opacity: 1; transform: none; } 97%, 100% { opacity: 0; } }
 
   /* verdict as an opened file */
-  /* receipts: a published number, walked down to the recording behind it */
-  .trace { width: 100%; max-width: 1000px; display: grid; gap: .9rem; }
-  .chain {
-    display: grid; grid-template-columns: 1fr 2rem 1.25fr 2rem 1.15fr;
-    align-items: stretch; gap: 0;
-  }
-  @media (max-width: 800px) { .chain { grid-template-columns: 1fr; } .chain .link { display: none; } }
-  .chain .link { display: grid; place-items: center; color: var(--n5); font-family: var(--font-mono); }
-  section.on .chain .link { animation: linkOn 9s ease-in-out infinite; }
-  @keyframes linkOn { 0%, 8% { color: var(--n5) } 14%, 84% { color: var(--green) } 92%, 100% { color: var(--n5) } }
-  section.on .chain .link.l2 { animation-delay: 1.5s; }
-
-  .node {
+  /* receipts: the evidence pack, one tile per thing a run leaves behind */
+  .pack { display: grid; grid-template-columns: repeat(4, 1fr); gap: .6rem; width: 100%; max-width: 1000px; }
+  @media (max-width: 900px) { .pack { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 620px) { .pack { grid-template-columns: repeat(2, 1fr); } }
+  .rcpt {
     border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10;
-    padding: .85rem .95rem; display: grid; gap: .3rem; align-content: start;
+    padding: .8rem .85rem; display: grid; gap: .28rem; align-content: start;
+    transition: border-color .2s, background .2s;
   }
-  section.on .node { animation: nodeOn 9s ease-in-out infinite; }
-  section.on .node.n2 { animation-delay: .9s; }
-  section.on .node.n3 { animation-delay: 1.8s; }
-  @keyframes nodeOn {
-    0%, 6%    { border-color: var(--shade1); background: #0a0d10; }
-    12%, 86%  { border-color: var(--green-25); background: #0b1512; }
-    94%, 100% { border-color: var(--shade1); background: #0a0d10; }
+  .rcpt:hover { border-color: var(--green-25); background: #0b1512; }
+  .rcpt svg {
+    width: 20px; height: 20px; fill: none; stroke: var(--green);
+    stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; margin-bottom: .2rem;
   }
-  .node .top { display: flex; justify-content: space-between; align-items: baseline; gap: .8rem; }
-  .node .big { font-family: var(--font-mono); font-size: clamp(1rem, 2vw, 1.3rem); color: var(--n1); }
-  .node .tag { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; color: var(--n4); }
-  .node .tag.bad { color: #fc6897; }
-  .node .det { font-family: var(--font-mono); font-size: .76rem; color: var(--n4); }
-  .node .file { font-family: var(--font-mono); font-size: .72rem; color: var(--green); }
-
-  /* the recording, with the moment the grader marked */
-  .scrub { display: grid; gap: .3rem; margin-top: .1rem; }
-  .scrub .bar { position: relative; height: 6px; border-radius: 3px; background: var(--shade4); overflow: hidden; }
-  .scrub .bar u { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--green-25); }
-  section.on .scrub .bar u { animation: scrubRun 9s ease-in-out infinite; }
-  @keyframes scrubRun { 0%, 18% { width: 0 } 46%, 86% { width: 68% } 94%, 100% { width: 0 } }
-  .scrub .bar i { position: absolute; top: -3px; bottom: -3px; left: 68%; width: 2px; background: #fc6897; }
-  .scrub .ticks { position: relative; height: 1.1em; font-family: var(--font-mono); font-size: .68rem; color: var(--n5); }
-  .scrub .ticks span { position: absolute; left: 0; top: 0; }
-  .scrub .ticks b { position: absolute; left: 68%; top: 0; transform: translateX(-50%); color: #fc6897; font-weight: 400; white-space: nowrap; }
-
-  .under {
-    display: grid; grid-template-columns: 1fr 2rem 1.25fr 2rem 1.15fr;
-    font-family: var(--font-mono); font-size: .72rem; color: var(--n4); line-height: 1.5;
-  }
-  @media (max-width: 800px) { .under { display: none; } }
-  .under span:nth-child(even) { visibility: hidden; }
-  .rest { font-family: var(--font-mono); font-size: .74rem; color: var(--n4); margin-top: .3rem; }
-  .rest b { color: var(--n3); font-weight: 400; }
+  .rcpt b { font-family: var(--font-mono); font-size: .78rem; color: var(--n1); font-weight: 500; }
+  .rcpt i { font-family: var(--font-mono); font-size: .68rem; color: var(--n4); font-style: normal; line-height: 1.45; }
+  section.on .rcpt { opacity: 0; animation: lineIn .35s ease forwards; }
+  section.on .rcpt:nth-child(1) { animation-delay: 0.23s; }
+  section.on .rcpt:nth-child(2) { animation-delay: 0.28s; }
+  section.on .rcpt:nth-child(3) { animation-delay: 0.33s; }
+  section.on .rcpt:nth-child(4) { animation-delay: 0.38s; }
+  section.on .rcpt:nth-child(5) { animation-delay: 0.43s; }
+  section.on .rcpt:nth-child(6) { animation-delay: 0.48s; }
+  section.on .rcpt:nth-child(7) { animation-delay: 0.53s; }
+  section.on .rcpt:nth-child(8) { animation-delay: 0.58s; }
+  section.on .rcpt:nth-child(9) { animation-delay: 0.63s; }
+  section.on .rcpt:nth-child(10) { animation-delay: 0.68s; }
+  section.on .rcpt:nth-child(11) { animation-delay: 0.73s; }
+  section.on .rcpt:nth-child(12) { animation-delay: 0.78s; }
 
   @media (max-width: 720px) { .live { grid-template-columns: 1fr; } .lane { height: 40px; } }
 
@@ -1171,38 +1150,58 @@
 <!-- 7 receipts -->
 <section>
   <div class="kicker r">receipts</div>
-  <h2 class="r d1">Every number traces back to a recording</h2>
-  <div class="trace r d2" role="img" aria-label="a published score traced to its verdict and to the recording behind it">
-    <div class="chain">
-      <div class="node n1">
-        <div class="top"><span class="big">34 / 34</span><span class="tag">database a</span></div>
-        <div class="det">$4.73 &middot; 2 rounds</div>
-        <div class="file">results/&lt;run-id&gt;/</div>
+  <h2 class="r d1">What a run leaves behind</h2>
+  <div class="pack r d2">
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M8 12l3 3 5-6"/></svg>
+        <b>typed verdicts</b><i>one per criterion, with its actor and its deadline</i>
       </div>
-      <div class="link l1">&rarr;</div>
-      <div class="node n2">
-        <div class="top"><span class="big">no-oversell</span><span class="tag bad">FAILED</span></div>
-        <div class="det">2 orders for 1 unit &middot; actor bob &middot; 5000 ms</div>
-        <div class="file">grading-l1.json</div>
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 20h20"/><path d="M5 20V10M11 20V4M17 20v-6"/></svg>
+        <b>the run record</b><i>score, spend, tokens, wall clock, session id</i>
       </div>
-      <div class="link l2">&rarr;</div>
-      <div class="node n3">
-        <div class="top"><span class="big">bob.webm</span><span class="tag">01:12</span></div>
-        <div class="scrub">
-          <div class="bar"><u></u><i></i></div>
-          <div class="ticks"><span>00:00</span><b>00:49 second order</b></div>
-        </div>
-        <div class="file">video/ &middot; screenshot &middot; trace</div>
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h8M9 15h8M9 18h5"/></svg>
+        <b>the prompt</b><i>the exact text the agent was handed</i>
       </div>
-    </div>
-    <div class="under">
-      <span>the number we publish</span><span></span>
-      <span>one typed record per criterion</span><span></span>
-      <span>what the browser actually saw</span>
-    </div>
-    <div class="rest">also in the directory: <b>prompt.md</b> &middot; <b>session-cost.json</b> &middot; <b>bug-report-round-1.md</b> &middot; <b>source.tar.gz</b>, sha256 4f2a&hellip;9c31</div>
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M12 8v4M12 14h.01"/></svg>
+        <b>the bug reports</b><i>what the agent was told, scored for vagueness</i>
+      </div>
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h13v12H3z"/><path d="M16 10l5-3v10l-5-3z"/></svg>
+        <b>video</b><i>one recording per actor, 1280 by 800</i>
+      </div>
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3z"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="8.5" cy="9.5" r="1.3"/></svg>
+        <b>screenshots</b><i>one per criterion, and one per failure</i>
+      </div>
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-7 4 14 3-7h6"/></svg>
+        <b>traces</b><i>a Playwright trace per actor, snapshots included</i>
+      </div>
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4"/><path d="M12 11v10"/></svg>
+        <b>the source</b><i>a hash-bound copy of what produced the score</i>
+      </div>
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4L4 12l5 8M15 4l5 8-5 8"/></svg>
+        <b>the contract lint</b><i>the testid contract, checked before grading</i>
+      </div>
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v18"/><path d="M5 4h13l-3 4 3 4H5z"/></svg>
+        <b>the preflight</b><i>the checks that had to pass before any spend</i>
+      </div>
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg>
+        <b>the mutation control</b><i>the planted defect this suite had to catch</i>
+      </div>
+      <div class="rcpt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M6.7 17.3L17.3 6.7"/></svg>
+        <b>the null control</b><i>the empty build this suite had to score zero</i>
+      </div>
   </div>
-  <p class="supp r d3" style="margin-top:1.2rem">Pick any score in the deck and you can walk it down to the frame where a customer saw the problem. Nothing along the way is written by hand.</p>
+  <p class="supp r d3" style="margin-top:1.3rem">Every published score traces back through this pack to the frame where a customer saw the problem. Nothing in it is written by hand.</p>
 </section>
 
 <!-- 8 scoreboard -->
