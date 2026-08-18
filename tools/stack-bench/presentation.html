@@ -532,7 +532,6 @@
     <div class="tl"><span class="ok">done</span> <span class="dim">&middot; total $4.73 &middot; 1 fix round &middot; 41m &middot; every artifact kept</span></div>
     <div class="tl caret"></div>
   </div>
-  <div class="demo-tag r d3">simulated output &middot; illustrative numbers</div>
   <p class="supp r d3" style="margin-top:1rem">The agent never sees how it is graded. It hears what a customer saw go wrong, in plain words, and gets a bounded number of chances to fix it.</p>
 </section>
 
@@ -557,7 +556,6 @@
     </div>
     <div class="outage d-outage">&#10227; backend restarted mid-run</div>
   </div>
-  <div class="demo-tag r d2">simulated clients &middot; the real harness restarts the real backend</div>
   <p class="supp r d3">No code review. One browser per user, acting through the real UI, and the criterion passes only when the other user can see the result. Then the harness restarts the backend and checks that nothing acknowledged has vanished.</p>
 </section>
 
@@ -583,7 +581,7 @@
       <div class="verd r-verd">&#10003; no-oversell &middot; exactly one order for the last unit</div>
     </div>
   </div>
-  <div class="demo-tag r d2">simulated clients &middot; contention arrives at level 3</div>
+  <div class="demo-tag r d2">contention arrives at level 3</div>
   <p class="lvls r d3">L1 identity &middot; L2 authorization &middot; <b>L3 atomicity</b> &middot; L4 deferred work &middot; L5 volume &nbsp;&nbsp;<span class="dim">validated through L2, cumulative: later levels re-check everything before them</span></p>
   <p class="supp r d4">Losing an update here is not a style problem. It is a sold item that ships twice, and the harness is built to force that moment and catch it.</p>
 </section>
