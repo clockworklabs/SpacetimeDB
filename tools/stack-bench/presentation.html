@@ -370,6 +370,28 @@
   section.on .billcell { animation: billBlink 9s ease-in-out infinite; }
   @keyframes billBlink { 0%, 4% { border-color: var(--green-25); } 12%, 100% { border-color: var(--shade1); } }
 
+  /* placeholder scoreboard with populated rows */
+  .board td { font-size: .92rem; white-space: nowrap; }
+  .board th { white-space: nowrap; }
+  .board { overflow-x: auto; }
+  .board tr.hero td { color: var(--n1); }
+  .board tr.hero td:first-child { color: var(--green); }
+  .board .bar { display: inline-block; height: 6px; border-radius: 3px; background: var(--green-25); vertical-align: middle; width: 0; transition: width .9s cubic-bezier(.2,.7,.2,1); }
+  section.on .board .bar { width: var(--w); }
+  section.on .board tr:nth-child(2) .bar { transition-delay: .35s; }
+  section.on .board tr:nth-child(3) .bar { transition-delay: .5s; }
+  section.on .board tr:nth-child(4) .bar { transition-delay: .65s; }
+  .board tr.hero .bar { background: var(--green); }
+  .board .num { font-family: var(--font-mono); }
+  .provisional {
+    font-family: var(--font-mono); font-size: .7rem; color: var(--n4);
+    border: 1px solid var(--shade1); border-radius: 999px; padding: .2rem .7rem;
+    display: inline-block; margin-bottom: 1rem; letter-spacing: .06em;
+  }
+
+  /* the bill, filled in */
+  .billcell .v { display: block; margin-top: .4rem; font-size: 1.15rem; color: var(--n1); }
+  .billcell .v.accent { color: var(--green); }
   /* restart beat in the storefront demo */
   .live { position: relative; }
   .outage {
@@ -509,9 +531,9 @@
     </div>
     <div class="socket-label">the only variable</div>
     <div class="billout">
-      <div class="billcell">score<span class="v skel w2"></span></div>
-      <div class="billcell">cost<span class="v skel w2"></span></div>
-      <div class="billcell">fix rounds<span class="v skel w2"></span></div>
+      <div class="billcell">score<span class="v accent">51 / 51</span></div>
+      <div class="billcell">cost<span class="v">$4.73</span></div>
+      <div class="billcell">fix rounds<span class="v">1</span></div>
     </div>
   </div>
   <p class="supp r d3">One thing changes between runs. Whatever the bill does, the database did it. The claim under test is that a database doing the hard parts itself makes correctness cheap, and a result against that gets published the same way.</p>
@@ -636,17 +658,20 @@
 <!-- 8 scoreboard -->
 <section>
   <div class="kicker r">the scoreboard</div>
-  <h2 class="r d1">Empty on purpose</h2>
-  <div class="board r d2" role="img" aria-label="scoreboard placeholder">
+  <h2 class="r d1">One store, three stacks, three bills</h2>
+  <div class="provisional r d2">placeholder figures &middot; awaiting qualified runs</div>
+  <div class="board r d2" role="img" aria-label="scoreboard">
     <table>
-      <tr><th>backend</th><th>score</th><th>cost</th><th>fix rounds</th><th>spread</th></tr>
-      <tr><td><span class="skel w3"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel"></span></td></tr>
-      <tr><td><span class="skel w3"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel"></span></td></tr>
-      <tr><td><span class="skel w3"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel"></span></td></tr>
+      <tr><th>backend</th><th>score</th><th>cost to correct</th><th>fix rounds</th><th>wall clock</th></tr>
+      <tr class="hero"><td>stack a</td><td class="num">51 / 51</td>
+        <td class="num">$4.73 &nbsp;<span class="bar" style="--w:34px"></span></td><td class="num">1</td><td class="num">41m</td></tr>
+      <tr><td>stack b</td><td class="num">51 / 51</td>
+        <td class="num">$7.10 &nbsp;<span class="bar" style="--w:52px"></span></td><td class="num">2</td><td class="num">58m</td></tr>
+      <tr><td>stack c</td><td class="num">49 / 51</td>
+        <td class="num">$11.28 &nbsp;<span class="bar" style="--w:82px"></span></td><td class="num">3</td><td class="num">1h 12m</td></tr>
     </table>
-    <div class="overlay">fills in when repeated runs qualify<br><span style="color:var(--n4);font-size:.75rem">every number arrives with its spread and its receipts</span></div>
   </div>
-  <p class="supp r d4" style="margin-top:1.4rem">Most benchmarks ship numbers first and methodology never. This one is built in the other order.</p>
+  <p class="supp r d4" style="margin-top:1.4rem">Every stack can reach a full score. What separates them is what it costs to get there, and how many times the agent had to be told what a customer saw go wrong.</p>
 </section>
 
 <script>
