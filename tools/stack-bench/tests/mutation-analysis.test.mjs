@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import test from 'node:test';
 import { classifyMutationResult, groupMutationsByScenario, mutationScenario,
-  validateMutationBaseline, releaseScenarioCheckKeys, resolveMutationFile,
+  mutationFileEdits, validateMutationBaseline, releaseScenarioCheckKeys, resolveMutationFile,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
@@ -34,6 +34,30 @@ test('mutation definitions name exact criteria and contain real edits', () => {
   assert.equal(invalid.ok, false);
   assert.deepEqual([...new Set(invalid.issues.map(issue => issue.kind))],
     ['bad_file', 'bad_feature', 'bad_kills', 'bad_edit', 'duplicate_id', 'missing_edits']);
+});
+
+test('one mutation may atomically edit multiple application files', () => {
+  const multiFile = {
+    ...mutation,
+    edits: [
+      { file: 'server/schema.sql', find: 'UNIQUE (item_id, account_id)', replace: '-- removed' },
+      { file: 'server/src/index.ts', find: 'ON CONFLICT', replace: '/* no conflict guard */' },
+    ],
+  };
+  assert.equal(validateMutationDefinitions([multiFile]).ok, true);
+  assert.deepEqual(mutationFileEdits(multiFile).map(edit => edit.file),
+    ['server/schema.sql', 'server/src/index.ts']);
+
+  const inheritedFile = {
+    ...mutation,
+    file: 'client/src/App.tsx',
+    edits: [{ find: 'first', replace: 'broken first' },
+      { file: 'server/src/index.ts', find: 'second', replace: 'broken second' }],
+  };
+  assert.deepEqual(mutationFileEdits(inheritedFile).map(edit => edit.file),
+    ['client/src/App.tsx', 'server/src/index.ts']);
+  assert.equal(validateMutationDefinitions([{ ...multiFile,
+    edits: [{ file: '', find: 'x', replace: 'y' }] }]).ok, false);
 });
 
 test('mutation scenarios may override a manifest default and are required for execution', () => {

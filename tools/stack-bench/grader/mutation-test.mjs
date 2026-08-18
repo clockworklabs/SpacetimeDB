@@ -35,7 +35,7 @@ import { controlBackend } from "../src/runtime/backend-control.mjs";
 import {
   classifyMutationResult,
   groupMutationsByScenario,
-  mutationEdits,
+  mutationFileEdits,
   mutationTargetKeys,
   releaseScenarioCheckKeys,
   resolveMutationFile,
@@ -298,11 +298,13 @@ async function main() {
   // three-way comparison. Check BEFORE the baseline, which is the first thing a
   // stale mutation corrupts.
   for (const m of spec.mutations) {
-    const stale = resolveMutationFile(args.app, m.file) + ".mutation-backup";
-    if (existsSync(stale)) {
-      throw new Error(
-        `${stale} exists; restore the interrupted mutation backup before running again`,
-      );
+    for (const file of new Set(mutationFileEdits(m).map(edit => edit.file))) {
+      const stale = resolveMutationFile(args.app, file) + ".mutation-backup";
+      if (existsSync(stale)) {
+        throw new Error(
+          `${stale} exists; restore the interrupted mutation backup before running again`,
+        );
+      }
     }
   }
 
@@ -310,12 +312,12 @@ async function main() {
   // standalone checker remains useful, but correctness cannot depend on callers
   // remembering to run it first.
   for (const m of spec.mutations) {
-    const source = readFileSync(resolveMutationFile(args.app, m.file), "utf8");
-    for (const edit of mutationEdits(m)) {
+    for (const edit of mutationFileEdits(m)) {
+      const source = readFileSync(resolveMutationFile(args.app, edit.file), "utf8");
       const matches = source.split(edit.find).length - 1;
       if (matches !== 1) {
         throw new Error(
-          `${m.id} anchor matched ${matches} times in ${m.file}; expected exactly once`,
+          `${m.id} anchor matched ${matches} times in ${edit.file}; expected exactly once`,
         );
       }
     }
@@ -347,23 +349,48 @@ async function main() {
     baselines.push({ scenario: scenarioPath, total: baseline.total, max: baseline.max });
 
     for (const m of mutations) {
-      const target = resolveMutationFile(args.app, m.file);
-      const backup = `${target}.mutation-backup`;
-      const original = readFileSync(target, "utf8");
-      const edits = mutationEdits(m);
-
-      copyFileSync(target, backup);
+      const byFile = new Map();
+      for (const edit of mutationFileEdits(m)) {
+        const target = resolveMutationFile(args.app, edit.file);
+        if (!byFile.has(target)) {
+          byFile.set(target, {
+            target,
+            backup: `${target}.mutation-backup`,
+            original: readFileSync(target, "utf8"),
+            edits: [],
+          });
+        }
+        byFile.get(target).edits.push(edit);
+      }
+      const files = [...byFile.values()];
+      const backedUp = [];
       let r;
       try {
-        writeFileSync(
-          target,
-          edits.reduce((src, e) => src.replace(e.find, e.replace), original),
-        );
+        for (const file of files) {
+          copyFileSync(file.target, file.backup);
+          backedUp.push(file);
+        }
+        for (const file of files) {
+          writeFileSync(file.target,
+            file.edits.reduce((src, edit) => src.replace(edit.find, edit.replace),
+              file.original));
+        }
         await sleep(m.settleMs ?? 4000); // let the watcher notice the edit
         r = await grade(args, reportPath);
       } finally {
-        copyFileSync(backup, target);
-        unlinkSync(backup);
+        const restoreFailures = [];
+        for (const file of backedUp) {
+          try {
+            copyFileSync(file.backup, file.target);
+            unlinkSync(file.backup);
+          } catch (error) {
+            restoreFailures.push(`${file.target}: ${error.message}`);
+          }
+        }
+        if (restoreFailures.length) {
+          throw new Error(`mutation restore failed; do not reuse this app source: ${
+            restoreFailures.join('; ')}`);
+        }
         await sleep(m.settleMs ?? 4000);
         await reset(args);
         await waitForApp(args); // healthy again before the next probe

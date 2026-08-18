@@ -714,9 +714,8 @@ async function gradeFeature(browser, feature, args, runCtx) {
     for (const e of actor.consoleErrors) result.consoleErrors.push(`[${actor.name}] ${e}`);
   }
 
-  // What the server-side checks could and could not actually test. A criterion
-  // whose replay was unverified passed on its interface behaviour only; that is
-  // a weaker claim and the report has to say so out loud.
+  // Retain diagnostics for server-side checks that could not execute. The
+  // action executor marks those criteria inconclusive, so they cannot score.
   if (ctx.unverified.length) result.unverified = ctx.unverified;
   if (ctx.verified.length) result.verified = ctx.verified;
 

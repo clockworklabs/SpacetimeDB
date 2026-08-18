@@ -18,6 +18,11 @@ zero. An unavailable measurement is recorded separately and never changes the de
 Setup failures are copied onto every affected check, while browser console errors remain
 diagnostic evidence rather than silently changing unrelated scores.
 
+Server-side authorization and replay checks earn points only when the requested call was
+actually issued and produced verifiable evidence. If the harness cannot perform the call,
+the check is inconclusive and scores zero; visible interface behavior cannot substitute for
+the missing server proof.
+
 ## Scenario format
 
 Scenario files contain features with isolated `actors`, unscored `setup` steps,
@@ -77,6 +82,11 @@ It writes an atomic criterion-level artifact for both completed controls and
 harness failures. A mutation that SURVIVES is an oracle hole, although an
 equivalent mutant can also survive; confirm the edit changes observable
 behaviour before diagnosing the grader.
+
+A defect may edit one file with the manifest-level `file`, or several files by
+putting `file` on each entry in `edits`. Multi-file defects are applied and
+restored as one control; every file is backed up before any edit is written,
+and a failed restore stops the run from reusing that source tree.
 
 ## Clean state is a precondition, not a nicety
 

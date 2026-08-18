@@ -282,6 +282,19 @@ test('an unreplayable WebSocket write records structural evidence, not a fabrica
   assert.deepEqual(provided.verification.map(([kind]) => kind), ['structural']);
 });
 
+test('missing transport evidence cannot earn server-side forgery credit', async () => {
+  const actor = { name: 'a', lastWrite: null, lastWsWrite: null };
+  const provided = services(new Map([['a', actor], ['victim', {}]]));
+  const forged = await run({ do: 'forgeWrite', actor: 'a', fromActor: 'victim', settleMs: 0 },
+    provided);
+  assert.equal(forged.status, 'passed');
+  assert.equal(forged.observation.classification, 'unverified');
+
+  const checked = await run({ do: 'expectForgeryRejected', actor: 'a' }, provided);
+  assert.equal(checked.status, 'inconclusive');
+  assert.match(checked.summary, /could not verify the server-side forgery refusal/);
+});
+
 test('replay retargeting maps nested entity ids by field and relationship depth', async () => {
   const requests = [];
   const actor = (name, received, writes) => ({
@@ -425,7 +438,7 @@ test('a redirect, transport failure, or undeclared server error is not authoriza
   }
 });
 
-test('a missing numeric literal is not fabricated into an entity-id retarget', async () => {
+test('a missing numeric literal makes the server-side replay check inconclusive', async () => {
   const requests = [];
   const buyer = {
     name: 'buyer',
@@ -439,14 +452,9 @@ test('a missing numeric literal is not fabricated into an entity-id retarget', a
   const provided = services(new Map([['buyer', buyer]]));
   const replayed = await run({ do: 'replayAs', actor: 'buyer', from: 'buyer', match: 'buy',
     swap: { find: '449', with: '1' }, settleMs: 0 }, provided);
-  assert.equal(replayed.status, 'passed');
-  assert.deepEqual(replayed.observation, { attempted: false });
+  assert.equal(replayed.status, 'inconclusive');
+  assert.match(replayed.summary, /could not issue the server-side replay/);
   assert.equal(requests.length, 0);
-
-  const checked = await run({ do: 'expectReplayRejected', actor: 'buyer' }, provided);
-  assert.equal(checked.status, 'passed');
-  assert.equal(checked.observation.classification, 'unverified');
-  assert.match(provided.verification[0][1], /request has no value to edit/);
 });
 
 test('named calls preserve actor credentials, result state, and application assertions', async () => {

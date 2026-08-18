@@ -57,7 +57,7 @@ function context(implementation, overrides = {}) {
     implementations: { fakeAction: implementation }, attempt: { id: 'attempt-a' }, ...overrides });
 }
 
-test('all 49 scenario actions have complete versioned runtime contracts', () => {
+test('every scenario action has a complete versioned runtime contract', () => {
   assert.deepEqual(ACTION_REGISTRY.ids, ACTION_IDS);
   const representative = new Map(steps(fixture).map(step => [step.do, step]));
   for (const id of ACTION_IDS) {

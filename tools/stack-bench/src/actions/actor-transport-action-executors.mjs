@@ -43,6 +43,10 @@ const ID_KEY = /"(_?id|[A-Za-z][A-Za-z0-9_]*_?id)"\s*:\s*"?([A-Za-z0-9_-]{1,64})
 
 const fail = message => { throw new ActionApplicationFailure(message); };
 const inconclusive = message => { throw new ActionInconclusive(message); };
+const replayUnavailable = (actor, reason) => {
+  actor.replay = { inconclusive: true, reason };
+  inconclusive(`could not issue the server-side replay: ${reason}`);
+};
 const pad = (index, count) => String(index).padStart(String(count).length, '0');
 
 function actorFor(capabilities, name) {
@@ -405,7 +409,7 @@ async function expectForgeryRejected({ input, capabilities }) {
   if (!forge) fail('no forgeWrite ran before this assertion');
   if (forge.inconclusive) {
     transport.verification.unverified(`${actor.name}: ${forge.reason}`);
-    return { classification: 'unverified' };
+    inconclusive(`could not verify the server-side forgery refusal: ${forge.reason}`);
   }
   if (forge.structurallySafe) {
     transport.verification.structural(`${actor.name}: ${forge.reason}`);
@@ -435,55 +439,49 @@ async function replayAs({ input, capabilities, signal }) {
       await target.waitFor({ state: 'visible', timeout: transport.defaultWithin });
       const rawValue = await target.getAttribute(input.namedTarget.attribute);
       if (rawValue === null || rawValue === '') {
-        actor.replay = { inconclusive: true,
-          reason: `${input.namedTarget.testid} exposes no ${input.namedTarget.attribute} value for the named replay` };
-        return { attempted: false };
+        replayUnavailable(actor,
+          `${input.namedTarget.testid} exposes no ${input.namedTarget.attribute} value for the named replay`);
       }
       let value = rawValue;
       if (input.namedTarget.valueType === 'number') {
         value = Number(rawValue);
         if (!Number.isSafeInteger(value)) {
-          actor.replay = { inconclusive: true,
-            reason: `${input.namedTarget.attribute} is not a safe integer for named action "${action.id}"` };
-          return { attempted: false };
+          replayUnavailable(actor,
+            `${input.namedTarget.attribute} is not a safe integer for named action "${action.id}"`);
         }
       }
       const mine = authFor(actor) ?? await browserCredentials(actor);
       if (!mine) {
-        actor.replay = { inconclusive: true,
-          reason: `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused` };
-        return { attempted: false };
+        replayUnavailable(actor,
+          `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused`);
       }
       const request = namedActionRequest(named, action,
         { ...input, args: [value, ...(action.args ?? []).slice(1)] });
       if (!request?.url) {
-        actor.replay = { inconclusive: true,
-          reason: `could not resolve where to send named action "${action.id}" for this backend` };
-        return { attempted: false };
+        replayUnavailable(actor,
+          `could not resolve where to send named action "${action.id}" for this backend`);
       }
       const response = await named.fetch(request.url, {
-        method: 'POST',
+        method: request.method ?? 'POST',
         headers: { 'Content-Type': 'application/json', ...mine },
         body: request.body,
         signal,
       }).catch(error => ({ status: 0, ok: false, error: error.message }));
       actor.replay = { accepted: response.ok, status: response.status, url: request.url,
-        method: 'POST', namedAction: action.id,
+        method: request.method ?? 'POST', namedAction: action.id,
         applicationRejected: (request.applicationRejectionStatuses ?? []).includes(response.status) };
       await transport.sleep(input.settleMs ?? 2000, signal);
       return { attempted: true, accepted: actor.replay.accepted, status: actor.replay.status,
         namedAction: action.id };
     }
-    actor.replay = { inconclusive: true, reason: source.lastWsWrite
+    replayUnavailable(actor, source.lastWsWrite
       ? `${input.from} writes over WebSocket ("${source.lastWsWrite.event}") — identity comes from the connection, replay not attempted`
-      : `no HTTP write from ${input.from} matching "${input.match}"` };
-    return { attempted: false };
+      : `no HTTP write from ${input.from} matching "${input.match}"`);
   }
   const mine = authFor(actor) ?? await browserCredentials(actor);
   if (!mine) {
-    actor.replay = { inconclusive: true,
-      reason: `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused` };
-    return { attempted: false };
+    replayUnavailable(actor,
+      `no credentials found for ${actor.name} — an anonymous replay only shows that unauthenticated requests are refused`);
   }
   const credentials = { ...mine };
   for (const key of Object.keys(write.headers)) {
@@ -498,9 +496,8 @@ async function replayAs({ input, capabilities, signal }) {
     let toToken = to;
     if (!mentions(url, fromToken) && !mentions(data ?? '', fromToken)) {
       if (numericLiteral(find) || numericLiteral(to)) {
-        actor.replay = { inconclusive: true,
-          reason: `literal "${find}" does not appear in ${write.method} ${write.url} — the request has no value to edit` };
-        return { attempted: false };
+        replayUnavailable(actor,
+          `literal "${find}" does not appear in ${write.method} ${write.url} — the request has no value to edit`);
       }
       const candidates = [...discoverIds(source, find), ...discoverIds(actor, find)];
       const resolvedFrom = candidates.find(candidate =>
@@ -513,9 +510,8 @@ async function replayAs({ input, capabilities, signal }) {
           && candidate.key === resolvedFrom?.key)
         ?? targets.find(candidate => candidate.value !== resolvedFrom?.value);
       if (!resolvedFrom || !resolvedTo) {
-        actor.replay = { inconclusive: true,
-          reason: `neither "${find}" nor an id resolved for it appears in ${write.method} ${write.url} — cannot retarget the replay` };
-        return { attempted: false };
+        replayUnavailable(actor,
+          `neither "${find}" nor an id resolved for it appears in ${write.method} ${write.url} — cannot retarget the replay`);
       }
       fromToken = resolvedFrom.value;
       toToken = resolvedTo.value;
@@ -540,7 +536,7 @@ async function expectReplayRejected({ input, capabilities }) {
   if (!replay) fail('no replayAs ran before this assertion');
   if (replay.inconclusive) {
     transport.verification.unverified(`${actor.name}: ${replay.reason}`);
-    return { classification: 'unverified' };
+    inconclusive(`could not verify the server-side replay refusal: ${replay.reason}`);
   }
   if (replay.accepted) {
     fail(`server ACCEPTED ${replay.method} ${replay.url} from ${actor.name}, who is not allowed to do it (HTTP ${replay.status}) — the check is in the interface, not the server`);
@@ -616,7 +612,7 @@ async function callAction({ input, capabilities, signal }) {
   const request = namedActionRequest(named, action, { values });
   if (!request?.url) inconclusive(`could not resolve where to send action "${input.action}" for this backend`);
   const response = await named.fetch(request.url, {
-    method: 'POST',
+    method: request.method ?? 'POST',
     headers: { 'Content-Type': 'application/json', ...credentials },
     body: request.body,
     signal,
@@ -626,6 +622,7 @@ async function callAction({ input, capabilities, signal }) {
     accepted: response.ok,
     status: response.status,
     url: request.url,
+    method: request.method ?? 'POST',
     applicationRejected: (request.applicationRejectionStatuses ?? []).includes(response.status),
   };
   await transport.sleep(input.settleMs ?? 2000, signal);
@@ -685,7 +682,7 @@ async function callConcurrently({ input, capabilities, signal }) {
   const started = named.now();
   const outcomes = await Promise.all(prepared.map(preparedActor =>
     named.fetch(request.url, {
-      method: 'POST',
+      method: request.method ?? 'POST',
       headers: { 'Content-Type': 'application/json', ...preparedActor.credentials },
       body: request.body,
       signal,

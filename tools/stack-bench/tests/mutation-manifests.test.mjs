@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { mutationEdits, mutationScenario, mutationTargetKeys,
+import { mutationFileEdits, mutationScenario, mutationTargetKeys,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
 import { loadReferenceRegistry, prepareReferenceFixtureSource } from '../src/references/reference-fixtures.mjs';
 
@@ -59,11 +59,11 @@ test('current mutation anchors match their hash-bound canonical fixture exactly 
         assert.equal(manifest.fixtureSha256, fixture.imported.sourceSha256,
           `${fixture.id} manifest is bound to different source bytes`);
         for (const mutation of manifest.mutations) {
-          const source = readFileSync(join(sourceRoot, mutation.file), 'utf8');
-          for (const edit of mutationEdits(mutation)) {
+          for (const edit of mutationFileEdits(mutation)) {
+            const source = readFileSync(join(sourceRoot, edit.file), 'utf8');
             const matches = source.split(edit.find).length - 1;
             assert.equal(matches, 1,
-              `${fixture.id}/${mutation.id} anchor matched ${matches} times in ${mutation.file}`);
+              `${fixture.id}/${mutation.id} anchor matched ${matches} times in ${edit.file}`);
           }
         }
       }

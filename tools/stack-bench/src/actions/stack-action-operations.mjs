@@ -35,6 +35,7 @@ export function spacetimeNamedActionRequest({ action, input = {}, spacetime }) {
     : (action.params ?? []).map(param => input.values[param.name]);
   return {
     url: spacetime && `${spacetime.uri}/v1/database/${spacetime.mod}/call/${action.reducer}`,
+    method: 'POST',
     body: spacetimeReducerBody(action, args),
     missingNote: `no reducer named "${action.reducer}"`,
     // The reducer-call HTTP endpoint maps a reducer's deliberate application
@@ -60,6 +61,7 @@ export function httpNamedActionRequest({ action, input = {}, url }) {
   }
   return {
     url: base ? `${base}${path}` : null,
+    method: action.method ?? 'POST',
     body: JSON.stringify(body),
     missingNote: `no route at ${action.path}`,
   };

@@ -11,7 +11,7 @@
 //   node commands/check-mutations.mjs --app <dir> --mutations <file.json> --quiet
 
 import { readFileSync, existsSync } from 'node:fs';
-import { mutationEdits, resolveMutationFile, validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
+import { mutationFileEdits, resolveMutationFile, validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
 
 function parseArgs(argv) {
   const a = {};
@@ -44,25 +44,25 @@ for (const issue of definitions.issues) {
   bad++;
 }
 for (const m of spec.mutations ?? []) {
-  let file;
-  try { file = resolveMutationFile(args.app, m.file); }
-  catch {
-    console.log(`  UNSAFE FILE ${m.id} -> ${m.file} escapes the app directory`);
-    bad++;
-    continue;
-  }
-  if (!existsSync(file)) {
-    console.log(`  DEAD FILE   ${m.id} -> ${m.file} does not exist in this app`);
-    bad++;
-    continue;
-  }
-  const src = readFileSync(file, 'utf8');
-  for (const e of mutationEdits(m)) {
+  for (const e of mutationFileEdits(m)) {
+    let file;
+    try { file = resolveMutationFile(args.app, e.file); }
+    catch {
+      console.log(`  UNSAFE FILE ${m.id} -> ${e.file} escapes the app directory`);
+      bad++;
+      continue;
+    }
+    if (!existsSync(file)) {
+      console.log(`  DEAD FILE   ${m.id} -> ${e.file} does not exist in this app`);
+      bad++;
+      continue;
+    }
+    const src = readFileSync(file, 'utf8');
     const n = src.split(e.find).length - 1;
-    if (n === 1) { say(`  ok          ${m.id} -> ${m.file}`); continue; }
+    if (n === 1) { say(`  ok          ${m.id} -> ${e.file}`); continue; }
     console.log(n === 0
-      ? `  DEAD ANCHOR ${m.id} -> not found in ${m.file}`
-      : `  AMBIGUOUS   ${m.id} -> matches ${n}x in ${m.file}; the edit would land in more than one place`);
+      ? `  DEAD ANCHOR ${m.id} -> not found in ${e.file}`
+      : `  AMBIGUOUS   ${m.id} -> matches ${n}x in ${e.file}; the edit would land in more than one place`);
     bad++;
   }
 }

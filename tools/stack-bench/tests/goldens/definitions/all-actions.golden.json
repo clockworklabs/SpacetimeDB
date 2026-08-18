@@ -164,10 +164,24 @@
             },
             {
               "actor": "a",
+              "do": "expectSequence",
+              "equals": [
+                "one",
+                "two"
+              ],
+              "testid": "row"
+            },
+            {
+              "actor": "a",
               "do": "expectStable",
               "intervalMs": 1,
               "samples": 2,
               "testid": "count"
+            },
+            {
+              "actor": "a",
+              "do": "expectUnavailable",
+              "testid": "admin"
             },
             {
               "actor": "a",

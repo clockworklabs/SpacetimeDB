@@ -14,6 +14,14 @@ export function mutationEdits(mutation) {
     ? [{ find: mutation.find, replace: mutation.replace }] : []);
 }
 
+export function mutationFileEdits(mutation) {
+  return mutationEdits(mutation).map(edit => ({
+    file: edit.file ?? mutation.file,
+    find: edit.find,
+    replace: edit.replace,
+  }));
+}
+
 export function mutationTargetKeys(mutation) {
   if (Array.isArray(mutation.targets)) {
     return mutation.targets.map(target => criterionKey(target.feature, target.criterion));
@@ -68,7 +76,14 @@ export function validateMutationDefinitions(mutations,
     if (typeof mutation.id !== 'string' || !mutation.id) issues.push({ kind: 'bad_id', mutation: mutation.id });
     else if (ids.has(mutation.id)) issues.push({ kind: 'duplicate_id', mutation: mutation.id });
     else ids.add(mutation.id);
-    if (typeof mutation.file !== 'string' || !mutation.file) issues.push({ kind: 'bad_file', mutation: mutation.id });
+    const edits = mutationEdits(mutation);
+    const hasDefaultFile = typeof mutation.file === 'string' && Boolean(mutation.file);
+    if (!hasDefaultFile && !edits.every(edit => typeof edit?.file === 'string' && edit.file)) {
+      issues.push({ kind: 'bad_file', mutation: mutation.id });
+    }
+    if (mutation.file !== undefined && !hasDefaultFile) {
+      issues.push({ kind: 'bad_file', mutation: mutation.id });
+    }
     if (mutation.scenario !== undefined
       && (typeof mutation.scenario !== 'string' || !mutation.scenario.trim())) {
       issues.push({ kind: 'bad_scenario', mutation: mutation.id });
@@ -99,9 +114,11 @@ export function validateMutationDefinitions(mutations,
         issues.push({ kind: 'bad_kills', mutation: mutation.id });
       }
     }
-    const edits = mutationEdits(mutation);
     if (edits.length === 0) issues.push({ kind: 'missing_edits', mutation: mutation.id });
     for (const edit of edits) {
+      if (edit.file !== undefined && (typeof edit.file !== 'string' || !edit.file)) {
+        issues.push({ kind: 'bad_file', mutation: mutation.id });
+      }
       if (typeof edit.find !== 'string' || !edit.find || typeof edit.replace !== 'string' ||
         edit.find === edit.replace) issues.push({ kind: 'bad_edit', mutation: mutation.id });
     }

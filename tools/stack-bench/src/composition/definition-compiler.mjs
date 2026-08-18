@@ -173,11 +173,15 @@ function validateNamedActionParams(value, at) {
 }
 
 function validateInlineNamedAction(value, at) {
-  strictObject(value, at, new Set(['id', 'path', 'reducer', 'args', 'params']));
+  strictObject(value, at, new Set(['id', 'path', 'method', 'reducer', 'args', 'params']));
   for (const key of ['id', 'path', 'reducer']) {
     if (!nonEmptyString(value[key])) fail(`${at}.${key}`, 'must be a non-empty string');
   }
   if (!value.path.startsWith('/')) fail(`${at}.path`, 'must be an absolute HTTP path');
+  if (value.method !== undefined
+      && !['DELETE', 'PATCH', 'POST', 'PUT'].includes(value.method)) {
+    fail(`${at}.method`, 'must be "DELETE", "PATCH", "POST", or "PUT"');
+  }
   if (!anyArray(value.args)) fail(`${at}.args`, 'must be an array');
   if (value.params !== undefined) {
     validateNamedActionParams(value.params, `${at}.params`);
