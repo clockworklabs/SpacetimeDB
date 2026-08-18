@@ -8345,6 +8345,7 @@ dependencies = [
  "async-task",
  "futures-channel",
  "spin",
+ "thiserror 2.0.17",
  "zerocopy",
 ]
 

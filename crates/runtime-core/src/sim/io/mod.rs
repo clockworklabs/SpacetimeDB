@@ -18,24 +18,20 @@ use op::{Completion, Submission};
 pub use crate::io::SECTOR_SIZE;
 pub use fs::File;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    FileNotFound {
-        path: Box<str>,
-    },
-    FileAlreadyExists {
-        path: Box<str>,
-    },
-    ShortWrite {
-        expected: usize,
-        written: usize,
-    },
-    UnexpectedEof {
-        expected: usize,
-        read: usize,
-    },
+    #[error("file not found")]
+    FileNotFound { path: Box<str> },
+    #[error("file already exists")]
+    FileAlreadyExists { path: Box<str> },
+    #[error("failed to write expected number of bytes")]
+    ShortWrite { expected: usize, written: usize },
+    #[error("unexpected eof")]
+    UnexpectedEof { expected: usize, read: usize },
+    #[error(transparent)]
     Fs(fs::Error),
     /// Injected by the I/O driver.
+    #[error("operation cancelled")]
     Cancelled,
 }
 

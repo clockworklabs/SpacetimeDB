@@ -17,4 +17,5 @@ sim = ["dep:async-task", "dep:futures-channel", "dep:spin"]
 async-task = { version = "4.4", default-features = false, optional = true }
 futures-channel = { version = "0.3", default-features = false, features = ["alloc"], optional = true }
 spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"], optional = true }
+thiserror = { version = "2.0", default-features = false }
 zerocopy = "0.8"
