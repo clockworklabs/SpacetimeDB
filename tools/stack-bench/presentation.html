@@ -834,7 +834,7 @@
 <!-- 2 the bet -->
 <section>
   <div class="kicker r">what is measured</div>
-  <h2 class="r d1">Same app, same model. Only the database changes.</h2>
+  <h2 class="r d1">Same app. Same model. Different database.</h2>
   <div class="rig r d2" role="img" aria-label="the same prompt, model and app run against each backend in turn">
     <div class="fixed-part">
       <div class="fh"><span>same prompt &middot; same model &middot; same store to build</span><span>held fixed</span></div>
@@ -850,7 +850,7 @@
       <div class="card sc2">database b</div>
       <div class="card sc3">database c</div>
     </div>
-    <div class="socket-label">the only variable &middot; watch the bill change with it</div>
+    <div class="socket-label">the only variable &middot; the bill moves with it</div>
     <div class="billout">
       <div class="billcell">score<span class="v">
         <span class="b-a accent">51 / 51</span><span class="b-b accent">51 / 51</span><span class="b-c">49 / 51</span></span></div>
@@ -992,14 +992,14 @@
     <div class="branch good"><span class="tagl">stack serialises the write</span> &#10003; one order stands &middot; stock 0 &middot; the other shopper is told sold out</div>
     <div class="branch bad"><span class="tagl">guard was missed</span> &#10007; two orders, one unit &middot; stock &minus;1 &middot; one customer is owed a refund</div>
   </div>
-  <p class="supp r d3" style="margin-top:1.2rem">Which way this lands is decided entirely by the stack underneath, and it stays invisible until a real customer hits it. The harness forces the collision on purpose and asserts that exactly one order survives.</p>
+  <p class="supp r d3" style="margin-top:1.2rem">The database underneath decides which way this lands, and it stays invisible until a real customer hits it. The harness forces the collision on purpose and asserts that exactly one order survives.</p>
   <p class="lvls r d4">L1 identity &middot; L2 authorization &middot; <b>L3 atomicity</b> &middot; L4 deferred work &middot; L5 volume &nbsp; <span class="dim">levels are cumulative</span></p>
 </section>
 
 <!-- 5b why it differs -->
 <section>
   <div class="kicker r">why the bill differs</div>
-  <h2 class="r d1">Either the database keeps the count, or your code has to</h2>
+  <h2 class="r d1">Either the database keeps the count, or your code keeps it</h2>
   <div class="guar r d2">
     <div class="col win">
       <div class="appbox">
@@ -1076,20 +1076,20 @@
 <!-- 8 scoreboard -->
 <section>
   <div class="kicker r">the scoreboard</div>
-  <h2 class="r d1">One store, three stacks, three bills</h2>
+  <h2 class="r d1">One store. Three databases. Three bills.</h2>
   <div class="provisional r d2">placeholder figures &middot; awaiting qualified runs</div>
   <div class="board r d2" role="img" aria-label="scoreboard">
     <table>
-      <tr><th>backend</th><th>score</th><th>cost to correct</th><th>fix rounds</th><th>wall clock</th></tr>
-      <tr class="hero"><td>stack a</td><td class="num">51 / 51</td>
+      <tr><th>database</th><th>score</th><th>cost to correct</th><th>fix rounds</th><th>wall clock</th></tr>
+      <tr class="hero"><td>database a</td><td class="num">51 / 51</td>
         <td class="num">$4.73 &nbsp;<span class="bar" style="--w:34px"></span></td><td class="num">1</td><td class="num">41m</td></tr>
-      <tr><td>stack b</td><td class="num">51 / 51</td>
+      <tr><td>database b</td><td class="num">51 / 51</td>
         <td class="num">$7.10 &nbsp;<span class="bar" style="--w:52px"></span></td><td class="num">2</td><td class="num">58m</td></tr>
-      <tr><td>stack c</td><td class="num">49 / 51</td>
+      <tr><td>database c</td><td class="num">49 / 51</td>
         <td class="num">$11.28 &nbsp;<span class="bar" style="--w:82px"></span></td><td class="num">3</td><td class="num">1h 12m</td></tr>
     </table>
   </div>
-  <p class="supp r d4" style="margin-top:1.4rem">Every stack can reach a full score. What separates them is what it costs to get there, and how many times the agent had to be told what a customer saw go wrong.</p>
+  <p class="supp r d4" style="margin-top:1.4rem">Every database reaches a full score. What separates them is what it costs to get there, and how many times the agent needs to hear what a customer saw go wrong.</p>
 </section>
 
 <script>
