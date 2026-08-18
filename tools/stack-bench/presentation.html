@@ -143,13 +143,6 @@
   }
   #hero .brand { display: flex; align-items: center; gap: .7rem; margin-bottom: 1.6rem; }
   #hero .brand span { font-family: var(--font-mono); color: #d7d8d9; font-size: .95rem; letter-spacing: .12em; }
-  #hero .backends { display: flex; gap: .6rem; margin-top: 2rem; flex-wrap: wrap; }
-  .chip {
-    font-family: var(--font-mono); font-size: .78rem;
-    border: 1px solid var(--shade1); border-radius: 999px;
-    padding: .35rem .85rem; color: var(--n3);
-  }
-  .chip.g { border-color: var(--green-25); color: var(--green); }
 
   /* loop diagram */
   .loop { max-width: 980px; width: 100%; margin: .6rem 0 1rem; }
@@ -224,12 +217,7 @@
   <h1 class="r d1">Stack Bench</h1>
   <p class="lead r d2" style="margin-top:1.4rem">A machine-verified benchmark for LLM agents building real-time backend applications.</p>
   <p class="r d3" style="margin-top:1rem">The agent builds an app from a fixed prompt. The harness verifies it by driving real clients, hands back what failed, and lets the agent fix it. Score, cost, tokens, fix rounds and wall time are all recorded.</p>
-  <div class="backends r d4">
-    <span class="chip g">spacetimedb</span>
-    <span class="chip">postgresql</span>
-    <span class="chip">mongodb</span>
-    <span class="chip">model held fixed &middot; backend varies</span>
-  </div>
+  <p class="r d4" style="margin-top:1rem">Backends are interchangeable, so the model can be held fixed while the backend varies: SpacetimeDB, PostgreSQL, MongoDB.</p>
   <div class="cite">source: <b>tools/stack-bench/README.md</b></div>
 </section>
 
