@@ -159,13 +159,13 @@
 
 
   /* mutation demo: one injected defect, exactly one criterion flips */
-  .mut { display: flex; flex-direction: column; gap: .9rem; max-width: 760px; margin: 1rem 0 1.2rem; }
+  .mut { display: flex; flex-direction: column; gap: 1.5rem; max-width: 900px; margin: 1.6rem 0 1.8rem; width: 100%; }
   .mutrow { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
   .mutrow .mutlabel:last-child { width: auto; }
-  .mutlabel { font-family: var(--font-mono); font-size: .78rem; color: var(--n4); width: 11rem; flex: none; }
-  .dots { display: flex; gap: .45rem; }
+  .mutlabel { font-family: var(--font-mono); font-size: .92rem; color: var(--n4); width: 10rem; flex: none; }
+  .dots { display: flex; gap: .5rem; flex-wrap: wrap; }
   .dot {
-    width: 30px; height: 8px; border-radius: 999px;
+    width: clamp(46px, 6vw, 74px); height: 14px; border-radius: 999px;
     background: var(--green-10); border: 1px solid var(--green-25);
   }
   .dot.hollow { background: none; border: 1px dashed var(--n5); }
@@ -222,9 +222,9 @@
   /* terminal */
   .term {
     background: #0a0d10; border: 1px solid var(--shade1); border-radius: 10px;
-    font-family: var(--font-mono); font-size: clamp(.72rem, 1.5vw, .88rem);
-    padding: 1rem 1.2rem; max-width: 840px; width: 100%;
-    display: grid; gap: .45rem; line-height: 1.5;
+    font-family: var(--font-mono); font-size: clamp(.78rem, 1.7vw, 1.02rem);
+    padding: 1.4rem 1.6rem; max-width: 940px; width: 100%;
+    display: grid; gap: .6rem; line-height: 1.55;
   }
   .term .tbar { display: flex; gap: .4rem; margin-bottom: .5rem; }
   .term .tbar i { width: 9px; height: 9px; border-radius: 50%; background: var(--n5); }
@@ -248,25 +248,18 @@
   @keyframes blink { 50% { opacity: 0; } }
 
   /* live two-client chat demo */
-  .live { display: grid; grid-template-columns: 1fr 90px 1fr; align-items: stretch; max-width: 900px; width: 100%; gap: 0; }
+  .live { display: grid; grid-template-columns: 1fr 90px 1fr; align-items: stretch; max-width: 1000px; width: 100%; gap: 0; }
   .client {
     background: var(--shade5); border: 1px solid var(--shade1); border-radius: 10px;
-    min-height: 200px; display: flex; flex-direction: column; overflow: hidden;
+    display: flex; flex-direction: column; overflow: hidden;
   }
   .client .chead {
     background: var(--shade7); padding: .45rem .8rem; font-family: var(--font-mono);
-    font-size: .75rem; color: var(--n1); display: flex; gap: .5rem; align-items: center;
+    font-size: .85rem; color: var(--n1); display: flex; gap: .5rem; align-items: center;
     border-bottom: 1px solid var(--shade1);
   }
   .client .chead i { width: 8px; height: 8px; border-radius: 50%; background: var(--n5); }
   .client .chead .who { margin-left: .3rem; }
-  .client .cbody { flex: 1; padding: .8rem; display: flex; flex-direction: column; gap: .5rem; }
-  .bub {
-    max-width: 75%; padding: .4rem .7rem; border-radius: 10px; font-size: .82rem;
-    background: var(--shade1); color: var(--n1); border: 1px solid #1d3a48;
-    align-self: flex-start; opacity: 0;
-  }
-  .bub.mine { align-self: flex-end; background: var(--green-10); border-color: var(--green-25); }
   .lane { position: relative; }
   .lane::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; border-top: 1px dashed var(--shade1); }
   .lane .zip { position: absolute; top: 50%; left: 0; width: 10px; height: 10px; margin-top: -5px;
@@ -276,9 +269,7 @@
     color: var(--green); opacity: 0;
   }
   /* one shared 7s timeline */
-  section.on .d-bub-a  { animation: dBubA 7s infinite; }
   section.on .d-zip    { animation: dZip 7s infinite; }
-  section.on .d-bub-b  { animation: dBubB 7s infinite; }
   section.on .d-verd   { animation: dVerd 7s infinite; }
   @keyframes dType { 0%,4% { width: 0; } 22% { width: 7.2ch; } 26%,88% { width: 7.2ch; } 92%,100% { width: 0; } }
   @keyframes dBubA { 0%,26% { opacity: 0; transform: scale(.7); } 30%,88% { opacity: 1; transform: scale(1); } 94%,100% { opacity: 0; } }
@@ -289,9 +280,9 @@
 
   /* storefront live demo */
   .bigprod {
-    margin: .8rem; border: 1px solid var(--shade1); border-radius: 8px;
-    padding: .7rem .9rem; font-family: var(--font-mono); font-size: .8rem; color: var(--n3);
-    display: grid; gap: .3rem;
+    margin: .55rem .6rem; border: 1px solid var(--shade1); border-radius: 8px;
+    padding: .7rem .95rem; font-family: var(--font-mono); font-size: .95rem; color: var(--n3);
+    display: grid; gap: .22rem;
   }
   .bigprod b { color: var(--n1); font-weight: 600; }
   .stockline { position: relative; height: 1.3em; }
@@ -303,14 +294,14 @@
   @keyframes dSOld { 0%, 44% { opacity: 1; } 48%, 90% { opacity: 0; } 96%, 100% { opacity: 1; } }
   @keyframes dSNew { 0%, 44% { opacity: 0; } 48%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
   .buy {
-    justify-self: start; font-family: var(--font-mono); font-size: .74rem;
+    justify-self: start; font-family: var(--font-mono); font-size: .85rem;
     color: var(--green); border: 1px solid var(--green-25); border-radius: 6px;
     padding: .3rem .8rem; background: var(--green-10);
   }
   section.on .d-buy { animation: dBuy 7s infinite; }
   @keyframes dBuy { 0%, 6% { transform: none; } 9% { transform: scale(.94); background: var(--green-25); } 12%, 100% { transform: none; } }
   .toast {
-    margin: 0 .8rem .8rem; font-family: var(--font-mono); font-size: .74rem;
+    margin: 0 .6rem .55rem; font-family: var(--font-mono); font-size: .85rem;
     color: var(--n1); border: 1px solid var(--shade1); border-radius: 6px;
     padding: .35rem .7rem; background: var(--shade7); opacity: 0; justify-self: start;
   }
@@ -319,9 +310,9 @@
 
 
   /* fan-out: one prompt, N stacks, N bills */
-  .fan { display: grid; gap: 1.1rem; max-width: 860px; justify-items: center; margin: .4rem 0 1rem; width: 100%; }
+  .fan { display: grid; gap: 1.4rem; max-width: 940px; justify-items: center; margin: .4rem 0 1rem; width: 100%; }
   .promptcard {
-    font-family: var(--font-mono); font-size: .82rem; color: var(--n1);
+    font-family: var(--font-mono); font-size: .98rem; color: var(--n1);
     border: 1px solid var(--shade1); border-radius: 8px; background: var(--shade5);
     padding: .6rem 1.1rem;
   }
@@ -330,7 +321,7 @@
   @media (max-width: 720px) { .stubs { grid-template-columns: 1fr; } }
   .stub {
     border: 1px solid var(--shade1); border-radius: 10px; background: var(--shade7);
-    padding: .9rem 1rem; font-family: var(--font-mono); font-size: .76rem; color: var(--n4);
+    padding: 1.2rem 1.3rem; font-family: var(--font-mono); font-size: .9rem; color: var(--n4);
     display: grid; gap: .55rem;
     opacity: 0; transform: translateY(10px); transition: opacity .5s ease, transform .5s ease;
   }
@@ -345,12 +336,12 @@
   .live { position: relative; }
   .outage {
     position: absolute; inset: 0; display: grid; place-items: center; z-index: 2;
-    font-family: var(--font-mono); font-size: .85rem; color: var(--n1);
-    background: #060606d9; border-radius: 10px; opacity: 0; pointer-events: none;
+    font-family: var(--font-mono); font-size: clamp(1rem, 2.2vw, 1.35rem); color: var(--n1);
+    background: #060606e6; border-radius: 10px; opacity: 0; pointer-events: none; letter-spacing: .04em;
   }
   section.on .d-outage { animation: dOutage 13s infinite; }
   @keyframes dOutage { 0%, 46% { opacity: 0; } 50%, 60% { opacity: 1; } 64%, 100% { opacity: 0; } }
-  .verd2 { margin: 0 .8rem .8rem; font-family: var(--font-mono); font-size: .74rem; color: var(--green); opacity: 0; }
+  .verd2 { margin: 0 .6rem .55rem; font-family: var(--font-mono); font-size: .85rem; color: var(--green); opacity: 0; }
   section.on .d-verd2 { animation: dVerd2 13s infinite; }
   @keyframes dVerd2 { 0%, 68% { opacity: 0; } 74%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
   /* retimed 13s cycle for the storefront demo */
@@ -370,10 +361,10 @@
   /* the race for the last unit (own 11s timeline) */
   section.on .r-buy   { animation: dBuy 11s infinite; }
   section.on .r-buy2  { animation: dBuy 11s infinite; }
-  .win-toast { margin: 0 .8rem .8rem; font-family: var(--font-mono); font-size: .74rem;
+  .win-toast { margin: 0 .6rem .55rem; font-family: var(--font-mono); font-size: .85rem;
     border: 1px solid var(--green-25); background: var(--green-10); color: var(--green);
     border-radius: 6px; padding: .35rem .7rem; opacity: 0; justify-self: start; }
-  .lose-toast { margin: 0 .8rem .8rem; font-family: var(--font-mono); font-size: .74rem;
+  .lose-toast { margin: 0 .6rem .55rem; font-family: var(--font-mono); font-size: .85rem;
     border: 1px solid var(--shade1); background: var(--shade7); color: var(--n4);
     border-radius: 6px; padding: .35rem .7rem; opacity: 0; justify-self: start; }
   section.on .r-win  { animation: rToast 11s infinite; }
@@ -396,22 +387,22 @@
   @keyframes stockTick { 0%, 55% { opacity: 1; } 60%, 78% { opacity: .45; } 80%, 100% { opacity: 1; } }
 
   /* staged mutation captions */
-  .mutcap { font-family: var(--font-mono); font-size: .78rem; min-height: 1.4em; position: relative; max-width: 760px; }
-  .mutcap span { position: absolute; left: 0; top: 0; opacity: 0; white-space: nowrap; }
+  .mutcap { font-family: var(--font-mono); font-size: clamp(.8rem, 1.6vw, .92rem); min-height: 2.8em; position: relative; max-width: 900px; }
+  .mutcap span { position: absolute; left: 0; top: 0; opacity: 0; }
   section.on .mc1 { animation: mc1 4s ease-in-out infinite; color: var(--n4); }
   section.on .mc2 { animation: mc2 4s ease-in-out infinite; color: #fc6897; }
   @keyframes mc1 { 0%, 28% { opacity: 1; } 36%, 90% { opacity: 0; } 98%, 100% { opacity: 1; } }
   @keyframes mc2 { 0%, 32% { opacity: 0; } 40%, 86% { opacity: 1; } 94%, 100% { opacity: 0; } }
 
   /* video player mock */
-  .player { max-width: 720px; width: 100%; border: 1px solid var(--shade1); border-radius: 10px; overflow: hidden; background: #0a0d10; }
+  .player { max-width: 820px; width: 100%; border: 1px solid var(--shade1); border-radius: 10px; overflow: hidden; background: #0a0d10; }
   .pbanner { position: relative; height: 2.2rem; }
   .pbanner .banner { position: absolute; inset: 0; border-radius: 0; align-items: center; border-left: none; border-right: none; border-top: none; }
   section.on .pbanner .pass { animation: bswap 8s steps(1) infinite; }
   section.on .pbanner .fail { animation: bswap2 8s steps(1) infinite; }
   @keyframes bswap  { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
   @keyframes bswap2 { 0%, 49% { opacity: 0; } 50%, 100% { opacity: 1; } }
-  .pscreen { height: 170px; display: grid; place-items: center; color: var(--n5); position: relative; }
+  .pscreen { height: 150px; display: grid; place-items: center; color: var(--n5); position: relative; }
   .pscreen svg { opacity: .6; }
   .pbar { height: 4px; background: var(--shade4); position: relative; }
   .pbar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--green); }
@@ -419,17 +410,17 @@
   @keyframes pplay { to { width: 100%; } }
 
   /* skeleton scoreboard */
-  .board { max-width: 760px; width: 100%; border: 1px solid var(--shade1); border-radius: 10px; overflow: hidden; position: relative; }
+  .board { max-width: 900px; width: 100%; border: 1px solid var(--shade1); border-radius: 10px; overflow: hidden; position: relative; }
   .board table { margin: 0; max-width: none; }
-  .board th { padding: .6rem .9rem; background: var(--shade7); }
-  .skel { display: inline-block; width: 4.5rem; height: .8rem; border-radius: 4px; background: var(--shade4); position: relative; overflow: hidden; vertical-align: middle; }
+  .board th { padding: .85rem 1.1rem; background: var(--shade7); }
+  .skel { display: inline-block; width: 5.4rem; height: 1rem; border-radius: 4px; background: var(--shade4); position: relative; overflow: hidden; vertical-align: middle; }
   .skel.w2 { width: 2.8rem; } .skel.w3 { width: 6rem; }
   .skel::after { content: ''; position: absolute; inset: 0;
     background: linear-gradient(90deg, transparent, #4cf49022, transparent);
     transform: translateX(-100%); animation: shimmer 2s infinite; }
   @keyframes shimmer { to { transform: translateX(100%); } }
   .board .overlay { position: absolute; inset: 0; display: grid; place-items: center;
-    background: #06060699; font-family: var(--font-mono); font-size: .85rem; color: var(--n1); text-align: center; padding: 1rem; }
+    background: #06060699; font-family: var(--font-mono); font-size: 1rem; color: var(--n1); text-align: center; padding: 1rem; }
 
   @media (max-width: 720px) {
     .files { columns: 1; }
