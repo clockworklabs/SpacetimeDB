@@ -346,14 +346,17 @@
     white-space: nowrap; opacity: 0;
   }
   .socket .card em { font-style: normal; color: var(--n4); font-size: .8rem; margin-left: .6rem; }
-  section.on .sc1 { animation: swapCard 9s ease-in-out infinite; }
-  section.on .sc2 { animation: swapCard 9s ease-in-out infinite -3s; }
-  section.on .sc3 { animation: swapCard 9s ease-in-out infinite -6s; }
-  @keyframes swapCard {
-    0%      { opacity: 0; transform: translateY(28px); }
-    6%, 28% { opacity: 1; transform: none; }
-    34%,100%{ opacity: 0; transform: translateY(-28px); }
-  }
+  section.on .sc1 { animation: cardA 9s infinite; }
+  section.on .sc2 { animation: cardB 9s infinite; }
+  section.on .sc3 { animation: cardC 9s infinite; }
+  @keyframes cardA { 0%,30% { opacity: 1; transform: none; }
+                     34%,96% { opacity: 0; transform: translateY(-20px); }
+                     100% { opacity: 1; transform: none; } }
+  @keyframes cardB { 0%,29% { opacity: 0; transform: translateY(20px); }
+                     33%,63% { opacity: 1; transform: none; }
+                     67%,100% { opacity: 0; transform: translateY(-20px); } }
+  @keyframes cardC { 0%,62% { opacity: 0; transform: translateY(20px); }
+                     66%,100% { opacity: 1; transform: none; } }
   .socket-label {
     font-family: var(--font-mono); font-size: .72rem; color: var(--n4);
     margin-top: .5rem; letter-spacing: .06em;
@@ -440,43 +443,128 @@
   .tree pre b { color: var(--n3); font-weight: 400; }
   .tree pre em { color: var(--green); font-style: normal; }
 
-  /* operation chains: what each stack makes the agent get right */
-  .reqbar {
-    width: 100%; max-width: 1000px; border: 1px solid var(--green-25); border-radius: 8px;
-    background: var(--shade5); padding: .65rem 1rem; font-family: var(--font-mono);
-    font-size: clamp(.78rem, 1.5vw, .92rem); color: var(--n1); margin-bottom: 1.3rem;
-  }
-  .reqbar b { color: var(--green); font-weight: 600; }
-  .chains { display: grid; gap: 1.15rem; width: 100%; max-width: 1000px; }
-  .chain { display: grid; grid-template-columns: 5.5rem 1fr; gap: 1rem; align-items: center; }
-  @media (max-width: 700px) { .chain { grid-template-columns: 1fr; gap: .5rem; } }
-  .chain .who { font-family: var(--font-mono); font-size: .86rem; color: var(--n1); }
-  .ops { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
-  .op-pill {
-    font-family: var(--font-mono); font-size: clamp(.66rem, 1.3vw, .78rem);
-    border: 1px solid var(--shade1); border-radius: 6px; padding: .35rem .7rem;
-    color: var(--n3); background: #0d1418; white-space: nowrap;
-    opacity: 0; transform: translateX(-8px);
-    transition: opacity .35s ease, transform .35s ease;
-  }
-  section.on .op-pill { opacity: 1; transform: none; }
-  .op-pill.solo { border-color: var(--green-25); color: var(--green); background: var(--green-10); }
-  .op-pill.risk { border-color: #fc689766; color: #fc6897; }
-  section.on .op-pill.risk { animation: riskPulse 3.4s ease-in-out infinite 1.2s; }
-  @keyframes riskPulse { 0%,100% { box-shadow: none; } 50% { box-shadow: 0 0 12px #fc689733; } }
-  .ops .sep { color: var(--n5); font-family: var(--font-mono); font-size: .8rem; }
-  .cost-note { font-family: var(--font-mono); font-size: .74rem; color: var(--n4); margin-left: .3rem; white-space: nowrap; }
-  .cost-note b { color: var(--n1); font-weight: 600; }
-  .cost-note.warn b { color: #fc6897; }
 
-  section.on .ops .op-pill:nth-child(1) { transition-delay: 0.12s; }
-  section.on .ops .op-pill:nth-child(2) { transition-delay: 0.24s; }
-  section.on .ops .op-pill:nth-child(3) { transition-delay: 0.36s; }
-  section.on .ops .op-pill:nth-child(4) { transition-delay: 0.48s; }
-  section.on .ops .op-pill:nth-child(5) { transition-delay: 0.60s; }
-  section.on .ops .op-pill:nth-child(6) { transition-delay: 0.72s; }
-  section.on .ops .op-pill:nth-child(7) { transition-delay: 0.84s; }
-  section.on .ops .op-pill:nth-child(8) { transition-delay: 0.96s; }
+
+  /* the bill tracks whichever database is in the socket */
+  .billcell .v { position: relative; height: 1.5em; }
+  .billcell .v > span { position: absolute; left: 0; right: 0; top: 0; opacity: 0; }
+  section.on .billcell .v > span { animation-duration: 9s; animation-iteration-count: infinite; }
+  section.on .b-a { animation-name: billA; }
+  section.on .b-b { animation-name: billB; }
+  section.on .b-c { animation-name: billC; }
+  @keyframes billA { 0%,30% { opacity: 1; } 33%,100% { opacity: 0; } }
+  @keyframes billB { 0%,30% { opacity: 0; } 33%,63% { opacity: 1; } 66%,100% { opacity: 0; } }
+  @keyframes billC { 0%,63% { opacity: 0; } 66%,100% { opacity: 1; } }
+  /* the correction loop, running twice then exiting */
+  .cyc { width: 100%; max-width: 1000px; }
+  .cyc text { font-family: var(--font-mono); fill: var(--n4); font-size: 11.5px; }
+  .cyc .nl { fill: var(--n1); font-size: 13px; }
+  .cyc rect.n, .cyc polygon.n { fill: #0d1418; stroke: #1e2c33; stroke-width: 1.2; }
+  .cyc rect.n { rx: 7; }
+  .cyc .edge2 { stroke: #253239; stroke-width: 1.4; fill: none; marker-end: url(#a3); }
+  .cyc .edge2.ret { stroke-dasharray: 5 5; }
+
+  /* each node lights when the run reaches it; 14s cycle */
+  section.on .cyc .n, section.on .cyc .nl { animation-duration: 14s; animation-iteration-count: infinite; animation-timing-function: ease-in-out; }
+  section.on .cyc .n  { animation-name: nOn; }
+  section.on .cyc .nl { animation-name: nTxt; }
+  @keyframes nOn  { 0%,100% { stroke: #1e2c33; fill: #0d1418; } 3%,10% { stroke: var(--green); fill: #10201c; } }
+  @keyframes nTxt { 0%,100% { fill: var(--n1); } 3%,10% { fill: var(--green); } }
+
+  /* phase offsets: build, grade, decide, report, fix, grade again, done */
+  section.on .p-build   { animation-delay: 0s; }
+  section.on .p-grade1  { animation-delay: 2.1s; }
+  section.on .p-dec1    { animation-delay: 4.2s; }
+  section.on .p-report  { animation-delay: 5.6s; }
+  section.on .p-fix     { animation-delay: 7.4s; }
+  section.on .p-grade2  { animation-delay: 9.5s; }
+  section.on .p-dec2    { animation-delay: 11.2s; }
+  section.on .p-done    { animation-delay: 12.4s; }
+
+  section.on .cyc .pulse-edge { stroke: var(--green); stroke-width: 1.8; stroke-dasharray: 5 9;
+    animation: dashRun 1s linear infinite; opacity: .8; }
+
+  /* live state readout beside the loop */
+  .state { display: grid; grid-template-columns: repeat(4, 1fr); gap: .8rem; width: 100%; max-width: 1000px; margin-top: 1.1rem; }
+  @media (max-width: 700px) { .state { grid-template-columns: repeat(2, 1fr); } }
+  .st {
+    border: 1px solid var(--shade1); border-radius: 8px; background: #0a0d10;
+    padding: .7rem .85rem; font-family: var(--font-mono); font-size: .74rem; color: var(--n4);
+  }
+  .st .sv { display: block; margin-top: .35rem; font-size: 1.05rem; color: var(--n1); position: relative; height: 1.3em; }
+  .st .sv span { position: absolute; left: 0; top: 0; opacity: 0; white-space: nowrap; }
+  /* explicit window per value so nothing overlaps or wraps across the 14s cycle:
+     build 0-15% | grade 15-30% | decide 30-40% | report 40-53%
+     fix 53-68% | grade 68-80% | decide 80-88% | done 88-100% */
+  section.on .st .sv span { animation-duration: 14s; animation-iteration-count: infinite; }
+  section.on .v-r1 { animation-name: wR1; } section.on .v-r2 { animation-name: wR2; }
+  section.on .v-s1 { animation-name: wS1; } section.on .v-s2 { animation-name: wS2; }
+  section.on .v-c1 { animation-name: wC1; } section.on .v-c2 { animation-name: wC2; }
+  section.on .v-o1 { animation-name: wO1; } section.on .v-o2 { animation-name: wO2; }
+  @keyframes wR1 { 0%,52% { opacity: 1; } 54%,100% { opacity: 0; } }
+  @keyframes wR2 { 0%,52% { opacity: 0; } 54%,100% { opacity: 1; } }
+  @keyframes wS1 { 0%,28% { opacity: 0; } 31%,66% { opacity: 1; } 69%,100% { opacity: 0; } }
+  @keyframes wS2 { 0%,66% { opacity: 0; } 69%,100% { opacity: 1; } }
+  @keyframes wC1 { 0%,13% { opacity: 0; } 16%,52% { opacity: 1; } 54%,100% { opacity: 0; } }
+  @keyframes wC2 { 0%,52% { opacity: 0; } 54%,100% { opacity: 1; } }
+  @keyframes wO1 { 0%,38% { opacity: 0; } 41%,78% { opacity: 1; } 81%,100% { opacity: 0; } }
+  @keyframes wO2 { 0%,86% { opacity: 0; } 89%,100% { opacity: 1; } }
+  .st .sv .good { color: var(--green); }
+  .st .sv .bad  { color: #fc6897; }
+
+  /* where the guarantee lives */
+  .guar { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6rem; width: 100%; max-width: 1000px; }
+  @media (max-width: 800px) { .guar { grid-template-columns: 1fr; gap: 1.2rem; } }
+  .col { display: grid; gap: .5rem; align-content: start; }
+  .col > .caption {
+    font-family: var(--font-mono); font-size: .8rem; color: var(--n4); text-align: center;
+  }
+  .appbox, .dbbox {
+    border-radius: 10px; padding: .8rem; font-family: var(--font-mono);
+    position: relative; min-height: 92px;
+  }
+  .appbox { border: 1px dashed var(--n5); background: #0a0d10; }
+  .dbbox  { border: 1px solid var(--shade1); background: linear-gradient(180deg, #0e161b, #0a0d10); }
+  .boxlbl { font-size: .72rem; color: var(--n4); letter-spacing: .08em; margin-bottom: .55rem; }
+  .col.win .dbbox { border-color: var(--green-25); }
+
+  .seal {
+    display: grid; place-items: center; height: 46px; border-radius: 8px;
+    background: var(--green-10); border: 1px solid var(--green-25); color: var(--green);
+    font-size: .86rem;
+  }
+  section.on .seal { animation: sealGlow 4.5s ease-in-out infinite; }
+  @keyframes sealGlow { 0%,100% { box-shadow: none; } 50% { box-shadow: 0 0 18px #4cf49022; } }
+
+  .parts { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; }
+  .part {
+    border: 1px solid var(--shade1); border-radius: 6px; padding: .4rem .55rem;
+    font-size: .72rem; color: var(--n3); background: #0d1418; text-align: center;
+  }
+  section.on .part.drop { animation: partDrop 4.5s ease-in-out infinite; }
+  @keyframes partDrop {
+    0%, 42%  { opacity: 1; border-color: var(--shade1); color: var(--n3); transform: none; }
+    52%, 88% { opacity: .2; border-color: #fc689766; color: #fc6897; transform: translateY(6px); }
+    96%,100% { opacity: 1; border-color: var(--shade1); color: var(--n3); transform: none; }
+  }
+  .emptyslot {
+    display: grid; place-items: center; height: 46px; border-radius: 8px;
+    border: 1px dashed var(--n5); color: var(--n5); font-size: .78rem;
+  }
+  .verdictline {
+    font-family: var(--font-mono); font-size: .8rem; text-align: center;
+    padding: .45rem; border-radius: 6px; min-height: 2.2em;
+  }
+  .verdictline.ok { color: var(--green); background: var(--green-10); border: 1px solid var(--green-25); }
+  .verdictline.risk { position: relative; border: 1px solid transparent; }
+  .verdictline.risk span { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; }
+  .verdictline.risk .s-ok { color: var(--n4); }
+  .verdictline.risk .s-no { color: #fc6897; }
+  section.on .verdictline.risk .s-ok { animation: rOk 4.5s ease-in-out infinite; }
+  section.on .verdictline.risk .s-no { animation: rNo 4.5s ease-in-out infinite; }
+  @keyframes rOk { 0%, 40% { opacity: 1; } 48%, 92% { opacity: 0; } 98%,100% { opacity: 1; } }
+  @keyframes rNo { 0%, 44% { opacity: 0; } 52%, 90% { opacity: 1; } 96%,100% { opacity: 0; } }
+  .arrowup { text-align: center; color: var(--n5); font-family: var(--font-mono); font-size: .8rem; line-height: 1; }
 
   /* guard removal */
   .gflow { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; width: 100%; max-width: 900px; margin-bottom: 1rem; }
@@ -745,57 +833,88 @@
 
 <!-- 2 the bet -->
 <section>
-  <div class="kicker r">the bet</div>
-  <h2 class="r d1">One requirement. Whatever the stack makes you get right.</h2>
-  <div class="reqbar r d2">criterion <b>no-oversell</b> &mdash; the last unit sells exactly once, under concurrent checkout</div>
-  <div class="chains r d2">
-    <div class="chain">
-      <span class="who">stack a</span>
-      <div class="ops">
-        <span class="op-pill solo">one transaction</span>
-        <span class="cost-note"><b>1</b> thing to get right</span>
+  <div class="kicker r">what is measured</div>
+  <h2 class="r d1">Same app, same model. Only the database changes.</h2>
+  <div class="rig r d2" role="img" aria-label="the same prompt, model and app run against each backend in turn">
+    <div class="fixed-part">
+      <div class="fh"><span>same prompt &middot; same model &middot; same store to build</span><span>held fixed</span></div>
+      <div class="minishop">
+        <div class="miniprod"><b>headphones</b>$89</div>
+        <div class="miniprod"><b>keyboard</b>$120</div>
+        <div class="miniprod"><b>monitor</b>$310</div>
       </div>
     </div>
-    <div class="chain">
-      <span class="who">stack b</span>
-      <div class="ops">
-        <span class="op-pill">begin</span><span class="sep">&rarr;</span>
-        <span class="op-pill risk">lock the row</span><span class="sep">&rarr;</span>
-        <span class="op-pill">read stock</span><span class="sep">&rarr;</span>
-        <span class="op-pill">write stock</span><span class="sep">&rarr;</span>
-        <span class="op-pill">commit</span>
-        <span class="cost-note warn"><b>5</b> &middot; skip the lock and it oversells</span>
-      </div>
+    <div class="pins"><i></i><i></i><i></i><i></i></div>
+    <div class="socket">
+      <div class="card sc1">database a</div>
+      <div class="card sc2">database b</div>
+      <div class="card sc3">database c</div>
     </div>
-    <div class="chain">
-      <span class="who">stack c</span>
-      <div class="ops">
-        <span class="op-pill risk">guard inside the query</span><span class="sep">&rarr;</span>
-        <span class="op-pill">atomic update</span><span class="sep">&rarr;</span>
-        <span class="op-pill risk">one document only</span>
-        <span class="cost-note warn"><b>3</b> &middot; atomic only if all three hold</span>
-      </div>
+    <div class="socket-label">the only variable &middot; watch the bill change with it</div>
+    <div class="billout">
+      <div class="billcell">score<span class="v">
+        <span class="b-a accent">51 / 51</span><span class="b-b accent">51 / 51</span><span class="b-c">49 / 51</span></span></div>
+      <div class="billcell">cost<span class="v">
+        <span class="b-a">$4.73</span><span class="b-b">$7.10</span><span class="b-c">$11.28</span></span></div>
+      <div class="billcell">fix rounds<span class="v">
+        <span class="b-a">1</span><span class="b-b">2</span><span class="b-c">3</span></span></div>
     </div>
   </div>
-  <p class="supp r d3" style="margin-top:1.4rem">Same criterion, same prompt, same model. What changes is how many things the agent has to remember, and every one of them is a chance to ship a store that sells the last unit twice.</p>
+  <p class="supp r d3">One agent builds the same store over and over, with a different database underneath each time. What comes out is a bill: what it scored, what it cost to get there, and how many times it had to be sent back.</p>
 </section>
 
 <!-- 3 a run -->
 <section>
-  <div class="kicker r">a run</div>
-  <h2 class="r d1">Build. Fail. Hear about it. Fix. Pay.</h2>
-  <div class="term r d2" role="img" aria-label="simulated benchmark run">
-    <div class="tbar"><i></i><i></i><i></i></div>
-    <div class="tl"><span class="cmd">$ bench --backend stack-a --track ecommerce --levels 1-2</span></div>
-    <div class="tl">build session <span class="dim">······</span> complete <span class="dim">&middot; $4.12 &middot; 9m 40s</span></div>
-    <div class="tl">grading <span class="dim">············</span> 48 of 51 criteria pass</div>
-    <div class="tl">bug report <span class="dim">·········</span> <span class="warn">"the cart total ignores the discount"</span></div>
-    <div class="tl">fix round 1 <span class="dim">········</span> complete <span class="dim">&middot; $0.61 &middot; 2m 05s</span></div>
-    <div class="tl">grading <span class="dim">············</span> <span class="ok">51 of 51 &#10003;</span></div>
-    <div class="tl"><span class="ok">done</span> <span class="dim">&middot; total $4.73 &middot; 1 fix round &middot; 41m &middot; every artifact kept</span></div>
-    <div class="tl caret"></div>
+  <div class="kicker r">the loop</div>
+  <h2 class="r d1">It does not stop at the first attempt</h2>
+  <svg class="cyc r d2" viewBox="0 0 960 250" role="img" aria-label="build, grade, report, fix, grade again, done">
+    <defs>
+      <marker id="a3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+        <path d="M0 0 L8 4 L0 8 z" fill="#253239"/>
+      </marker>
+    </defs>
+
+    <rect class="n p-build" x="30" y="40" width="150" height="52"/>
+    <text class="nl p-build" x="52" y="64">build</text>
+    <text x="52" y="80">agent writes the store</text>
+
+    <rect class="n p-grade1" x="250" y="40" width="150" height="52"/>
+    <text class="nl p-grade1" x="272" y="64">grade</text>
+    <text x="272" y="80">drive real clients</text>
+
+    <polygon class="n p-dec1" points="500,66 570,32 640,66 570,100"/>
+    <text class="nl p-dec1" x="545" y="70">all pass?</text>
+
+    <rect class="n p-done" x="760" y="40" width="170" height="52"/>
+    <text class="nl p-done" x="782" y="64">done</text>
+    <text x="782" y="80">score, cost, evidence</text>
+
+    <rect class="n p-report" x="500" y="170" width="150" height="52"/>
+    <text class="nl p-report" x="522" y="194">bug report</text>
+    <text x="522" y="210">what a user saw</text>
+
+    <rect class="n p-fix" x="250" y="170" width="150" height="52"/>
+    <text class="nl p-fix" x="272" y="194">fix</text>
+    <text x="272" y="210">bounded rounds</text>
+
+    <path class="edge2 pulse-edge" d="M180 66 H246"/>
+    <path class="edge2 pulse-edge" d="M400 66 H496"/>
+    <path class="edge2" d="M640 66 H756"/>
+    <text x="668" y="58" style="fill:#4cf490">yes</text>
+
+    <path class="edge2 ret" d="M570 100 V166"/>
+    <text x="580" y="132">no</text>
+    <path class="edge2 ret" d="M500 196 H404"/>
+    <path class="edge2 ret" d="M325 170 V100" marker-end="url(#a3)"/>
+    <text x="150" y="140">re-graded from scratch, every level below it too</text>
+  </svg>
+  <div class="state r d3">
+    <div class="st">round<span class="sv"><span class="v-r1">1</span><span class="v-r2">2</span></span></div>
+    <div class="st">score<span class="sv"><span class="v-s1">48 / 51</span><span class="v-s2 good">51 / 51</span></span></div>
+    <div class="st">spend<span class="sv"><span class="v-c1">$4.12</span><span class="v-c2">$4.73</span></span></div>
+    <div class="st">outcome<span class="sv"><span class="v-o1 bad">3 failed</span><span class="v-o2 good">accepted</span></span></div>
   </div>
-  <p class="supp r d3" style="margin-top:1rem">The agent never sees how it is graded. It hears what a customer saw go wrong, in plain words, and gets a bounded number of chances to fix it.</p>
+  <p class="supp r d4" style="margin-top:1.1rem">A failed criterion comes back as a sentence about what a customer saw, never as the check that caught it. The agent gets a bounded number of rounds; the counter keeps running whether or not they help.</p>
 </section>
 
 <!-- 4 graded like a customer -->
@@ -875,6 +994,47 @@
   </div>
   <p class="supp r d3" style="margin-top:1.2rem">Which way this lands is decided entirely by the stack underneath, and it stays invisible until a real customer hits it. The harness forces the collision on purpose and asserts that exactly one order survives.</p>
   <p class="lvls r d4">L1 identity &middot; L2 authorization &middot; <b>L3 atomicity</b> &middot; L4 deferred work &middot; L5 volume &nbsp; <span class="dim">levels are cumulative</span></p>
+</section>
+
+<!-- 5b why it differs -->
+<section>
+  <div class="kicker r">why the bill differs</div>
+  <h2 class="r d1">Either the database refuses to sell it twice, or your code has to</h2>
+  <div class="guar r d2">
+    <div class="col win">
+      <div class="appbox">
+        <div class="boxlbl">what the agent writes</div>
+        <div class="emptyslot">nothing to assemble</div>
+      </div>
+      <div class="arrowup">&#9650;</div>
+      <div class="dbbox">
+        <div class="boxlbl">database</div>
+        <div class="seal">will not let the write overlap</div>
+      </div>
+      <div class="verdictline ok">&#10003; correct however the agent writes it</div>
+    </div>
+    <div class="col">
+      <div class="appbox">
+        <div class="boxlbl">what the agent writes</div>
+        <div class="parts">
+          <div class="part">open a transaction</div>
+          <div class="part drop">lock the row</div>
+          <div class="part">re-check the stock</div>
+          <div class="part">commit, or retry</div>
+        </div>
+      </div>
+      <div class="arrowup">&#9650;</div>
+      <div class="dbbox">
+        <div class="boxlbl">database</div>
+        <div class="emptyslot">offers the pieces, enforces nothing</div>
+      </div>
+      <div class="verdictline risk">
+        <span class="s-ok">correct only while every piece is right</span>
+        <span class="s-no">&#10007; one piece forgotten &rarr; sold twice</span>
+      </div>
+    </div>
+  </div>
+  <p class="supp r d3" style="margin-top:1.3rem">That is the whole bet. On one side the database will not let the agent get it wrong. On the other the agent has to build the guarantee itself, and every piece it has to remember is a piece it can forget, at a cost that shows up in the bill.</p>
 </section>
 
 <!-- 6 you can't game it -->
