@@ -2,21 +2,13 @@
 // Verify that a mutation file can actually apply to the app it claims to
 // target, WITHOUT running a graded pass.
 //
-// This exists because the failure it catches is silent and total. The
-// ecommerce PostgreSQL mutations pointed at `server/src/index.ts` and a table
-// called `item_stock`; the reference build has `server/src/stockOps.js` and a
-// table called `stock`. Not one anchor matched, so every mutation failed to
-// apply, every mutant read as unbroken, and no contention criterion could ever
-// clear the promotion gate. Nothing in the pipeline said so.
-//
 // An anchor must match EXACTLY ONCE. Zero means the mutation is dead. More than
 // one means the edit lands somewhere unintended, and a mutant that breaks the
-// wrong thing is worse than none — it promotes a criterion for catching a
-// defect it was not written to catch.
+// wrong location cannot provide qualification evidence for its declared check.
 //
 // Usage:
-//   node check-mutations.mjs --app <reference-app-dir> --mutations mutations/<file>.json
-//   node check-mutations.mjs --app <dir> --mutations <file> --quiet   (exit code only)
+//   node commands/check-mutations.mjs --app <reference-app-dir> --mutations <file.json>
+//   node commands/check-mutations.mjs --app <dir> --mutations <file.json> --quiet
 
 import { readFileSync, existsSync } from 'node:fs';
 import { mutationEdits, resolveMutationFile, validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';

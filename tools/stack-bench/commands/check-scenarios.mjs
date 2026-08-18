@@ -4,7 +4,7 @@
 // every testid it touches is a hook the contract actually requires, and every
 // actor it names is declared. None of this needs an app.
 //
-// Usage: node check-scenarios.mjs
+// Usage: node commands/check-scenarios.mjs
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';

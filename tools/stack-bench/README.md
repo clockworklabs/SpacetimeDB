@@ -315,6 +315,8 @@ The grader never reloads except to probe for that, so "real-time" means real-tim
 - **Mutation testing.** `grader/mutation-test.mjs` injects declared defects and
   requires the intended criterion to fail conclusively without unrelated
   regressions. Setup and infrastructure failures do not count as detections.
+  `npm run check:mutations -- --app <reference-app> --mutations <manifest>`
+  verifies every source edit is present exactly once before a Docker run.
 - **Null controls.** A blank application must not earn points or produce
   inconclusive scored evidence.
 - **State isolation.** The database is reset before each suite, and each run
