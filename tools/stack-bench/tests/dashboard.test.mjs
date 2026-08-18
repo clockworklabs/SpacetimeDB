@@ -189,7 +189,9 @@ test('dashboard serves real state and protects campaign launch with its local se
   const pageHtml = await page.text();
   assert.match(pageHtml, /StackBench Control Room/);
   assert.match(pageHtml, /id="history-prev"/);
+  assert.match(pageHtml, /class="primary topbar-run"/);
   assert.doesNotMatch(pageHtml, /Controller activity/);
+  assert.doesNotMatch(pageHtml, /See every run/);
   const brand = await fetch(`${origin}/spacetimedb-mark.svg`);
   assert.equal(brand.status, 200);
   assert.equal(brand.headers.get('content-type'), 'image/svg+xml');

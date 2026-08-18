@@ -35,19 +35,17 @@ button { cursor: pointer; }
 .brand strong { font-family: var(--font-source); font-size: 12px; font-weight: 600; }
 .brand small { color: var(--muted); font-size: 9px; margin-top: 2px; letter-spacing: .18em; }
 .brand-mark { width: 29px; height: auto; display: block; }
+.topbar-actions { display: flex; align-items: center; gap: 18px; }
+.topbar-run { min-height: 30px; padding-inline: 12px; }
 .live-state { display: flex; gap: 9px; align-items: center; color: var(--muted); font: 12px var(--font-source); }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 12px var(--green); }
 .live-dot.offline { background: var(--red); box-shadow: 0 0 12px var(--red); }
 
-main { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding-bottom: 80px; }
-.hero { min-height: 330px; padding: 68px 0 48px; display: flex; gap: 40px; align-items: end; justify-content: space-between; }
+main { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 34px 0 80px; }
 .eyebrow { color: var(--green); font: 600 12px/1.2 var(--font-source); letter-spacing: .08em; margin: 0 0 12px; }
-h1, h2, h3 { color: var(--ink); margin: 0; letter-spacing: -.035em; }
-h1 { font-size: clamp(42px, 5vw, 61px); line-height: 1.08; font-weight: 400; max-width: 820px; }
-h1 span { color: var(--green); }
+h2, h3 { color: var(--ink); margin: 0; letter-spacing: -.035em; }
 h2 { font-size: clamp(25px, 3vw, 35px); font-weight: 400; }
 h3 { font-size: 18px; font-weight: 500; }
-.hero-copy { max-width: 670px; font-size: 17px; line-height: 1.55; margin: 24px 0 0; }
 .primary, .secondary { min-height: 36px; border-radius: 4px; padding: 0 16px; font: 600 12px/1 var(--font-source); letter-spacing: .08em; text-transform: uppercase; border: 1px solid var(--green); }
 .primary { color: var(--black); background: var(--copy); border-color: var(--copy); }
 .primary:hover { color: var(--black); background: var(--ink); border-color: var(--ink); }
@@ -160,9 +158,8 @@ pre { max-height: 310px; overflow: auto; background: var(--black); color: var(--
 @media (max-width: 640px) {
   main { width: min(100% - 24px, 1440px); }
   .topbar { padding: 0 14px; }
-  .hero { min-height: auto; padding: 60px 0 36px; align-items: stretch; flex-direction: column; }
-  h1 { font-size: 48px; }
-  .hero-copy { font-size: 16px; }
+  .topbar-actions { gap: 10px; }
+  .live-state #refresh-state { display: none; }
   .summary-grid, .run-grid { grid-template-columns: 1fr; }
   .summary-card { border-right: 0; border-bottom: 1px solid var(--line); }
   .summary-card:last-child { border-bottom: 0; }

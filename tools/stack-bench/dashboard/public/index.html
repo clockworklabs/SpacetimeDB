@@ -16,19 +16,13 @@
         <img class="brand-mark" src="/spacetimedb-mark.svg" alt="" width="35" height="32">
         <span><strong>STACKBENCH</strong><small>CONTROL ROOM</small></span>
       </a>
-      <div class="live-state"><span class="live-dot" aria-hidden="true"></span><span id="refresh-state">Connecting</span></div>
+      <div class="topbar-actions">
+        <button class="primary topbar-run" id="open-run" type="button">Start a run</button>
+        <div class="live-state"><span class="live-dot" aria-hidden="true"></span><span id="refresh-state">Connecting</span></div>
+      </div>
     </header>
 
     <main>
-      <section class="hero" id="overview">
-        <div>
-          <p class="eyebrow">REPRODUCIBLE STACK TESTING</p>
-          <h1>See every run.<br><span>Know what happened.</span></h1>
-          <p class="hero-copy">Start a frozen test plan, watch each stack move through building, grading, and repair, then inspect the exact result.</p>
-        </div>
-        <button class="primary" id="open-run" type="button">Start a run</button>
-      </section>
-
       <section class="summary-grid" aria-label="Campaign summary">
         <article class="summary-card active"><span>Running now</span><strong id="count-running">—</strong><small>campaigns</small></article>
         <article class="summary-card"><span>Completed</span><strong id="count-completed">—</strong><small>campaigns</small></article>
