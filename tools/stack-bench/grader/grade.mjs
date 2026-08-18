@@ -651,7 +651,6 @@ async function gradeFeature(browser, feature, args, runCtx) {
       const recorded = { id: c.id, desc: c.desc, points, evidence };
       result.criteria.push(recorded);
       if (!evidenceIsMeasured(evidence)) {
-        result.max -= points;
         result.inconclusive = [...(result.inconclusive ?? []),
           { id: c.id, points, status: evidence.status, code: evidence.code,
             phase: evidence.phase, summary: evidence.summary }];
@@ -723,7 +722,6 @@ async function gradeFeature(browser, feature, args, runCtx) {
       ...(ctx.serverCheck ? { serverCheck: ctx.serverCheck } : {}) });
     if (evidencePassed(evidence)) result.score += criterion.points;
     else if (!evidenceIsMeasured(evidence)) {
-      result.max -= criterion.points;
       result.inconclusive = [...(result.inconclusive ?? []),
         { id: criterion.id, points: criterion.points, status: evidence.status, code: evidence.code,
           phase: evidence.phase, summary: evidence.summary }];
@@ -874,11 +872,10 @@ async function main() {
     }
     report.features.push(r);
     report.total += r.score;
-    // Criteria the harness could not run are removed from the denominator by
-    // gradeFeature; carry that up so the run's total is out of what was
-    // actually testable against THIS backend.
+    // The recipe owns the denominator. An unmeasured criterion earns zero and
+    // remains explicitly inconclusive; it must never make a 58-point contract
+    // look like a different 57-point benchmark.
     if (r.inconclusive?.length) {
-      report.max -= r.inconclusive.reduce((n, c) => n + c.points, 0);
       report.inconclusive = [...(report.inconclusive ?? []),
         ...r.inconclusive.map(c => ({ feature: r.id, ...c }))];
     }

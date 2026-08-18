@@ -1060,20 +1060,11 @@ async function main() {
       const afterMax = bundle?.totals?.max ?? 0;
       // Compare the SAME criteria in both rounds, not the totals.
       //
-      // `max` moves between passes whenever a criterion becomes measurable or
-      // stops being: an inconclusive criterion is subtracted from the
-      // denominator, and whether a contention test concludes is genuinely
-      // flaky ("2 of 6 concurrent clicks landed", "Page crashed").
-      //
-      // Rates were the previous attempt at this and are also wrong. A round
-      // scored 49/50 and then 49/51 — the same 49 criteria passing, with one
-      // extra criterion becoming measurable and failing. The rate fell from
-      // 0.980 to 0.961, so it was called a regression, the app was rolled back,
-      // and the level was lost. Nothing had got worse.
-      //
       // Compare criteria that were conclusive in both rounds, but never let a
       // previous observation disappear: conclusive -> inconclusive is lost
       // evidence and rolls the source back instead of hiding a regression.
+      // The declared denominator is fixed; typed evidence still matters here
+      // because an unmeasured check is not interchangeable with a real failure.
       const shared = compareCriterionEvidence(beforeBundle, bundle);
       if (shared.count === 0 && shared.lostEvidence.length === 0 && shared.definitionChanges.length === 0) {
         console.log('    no criteria were conclusively scored in both rounds; rolling back this fix');

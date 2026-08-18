@@ -474,6 +474,35 @@ test('named calls preserve actor credentials, result state, and application asse
   assert.match(mismatch.summary, /expected exactly 1/);
 });
 
+test('named calls accept opaque bearer tokens stored under an explicit token key', async () => {
+  const requests = [];
+  const storage = entries => ({
+    length: entries.length,
+    key: index => entries[index]?.[0] ?? null,
+    getItem: key => entries.find(([candidate]) => candidate === key)?.[1] ?? null,
+  });
+  const actor = name => ({
+    name,
+    context: { cookies: async () => [] },
+    page: { evaluate: async browserFunction => Function('localStorage', 'sessionStorage',
+      `return (${browserFunction.toString()})()`)(
+      storage([['theme', 'dark'], ['pgshop_token', `${name}-opaque-session-token-value`]]),
+      storage([])) },
+  });
+  const provided = services(new Map([['a', actor('a')], ['b', actor('b')]]), {
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return { status: 200, ok: true, text: async () => '' };
+    },
+  });
+  const called = await run({ do: 'callConcurrently', actors: ['a', 'b'],
+    action: 'checkout', settleMs: 0 }, provided);
+  assert.equal(called.status, 'passed');
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].options.headers.Authorization, 'Bearer a-opaque-session-token-value');
+  assert.equal(requests[1].options.headers.Authorization, 'Bearer b-opaque-session-token-value');
+});
+
 test('missing named actions and application roots stay inconclusive', async () => {
   const actor = { context: { cookies: async () => [{ name: 'sid', value: 'a' }] },
     page: { evaluate: async () => null } };

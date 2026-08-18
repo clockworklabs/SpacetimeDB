@@ -96,7 +96,11 @@ export async function controlHosted({ adapterId: backend, lease, app, port, prob
   const serverRelative = existsSync(join(app, 'server', 'package.json')) ? 'server' : '.';
   const packageJson = JSON.parse(readFileSync(join(app, serverRelative, 'package.json'), 'utf8'));
   const script = packageJson.scripts?.dev ? 'dev' : packageJson.scripts?.start ? 'start' : null;
-  if (!script) throw new Error(`${serverRelative}/package.json has no dev or start script`);
+  if (!script) {
+    const error = new Error(`${serverRelative}/package.json has no dev or start script`);
+    error.code = 'generated_app_not_restartable';
+    throw error;
+  }
   exec('docker', ['exec', '-d', '-w', serverRelative === '.' ? '/app' : `/app/${serverRelative}`,
     '-e', `PORT=${Number(port)}`, container.name, 'sh', '-lc',
     `exec npm run ${script} > /tmp/restart-${backend}-${Number(port)}.log 2>&1`],

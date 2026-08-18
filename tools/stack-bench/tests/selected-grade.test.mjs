@@ -127,3 +127,38 @@ test('the live grader executes account setup through the registered actor execut
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('an inconclusive check keeps the recipe denominator fixed', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-fixed-denominator-'));
+  const app = join(root, 'app');
+  const out = join(root, 'grade.json');
+  const spec = join(root, 'scenario.json');
+  mkdirSync(app, { recursive: true });
+  writeFileSync(spec, JSON.stringify({
+    level: 1,
+    features: [{
+      id: 1,
+      name: 'unsupported action',
+      actors: ['a'],
+      setup: [],
+      criteria: [{ id: '1a', desc: 'the declared point remains in the contract', points: 3,
+        steps: [{ do: 'callAction', actor: 'a', action: 'not-declared',
+          input: { testid: 'action-input', attribute: 'data-input' } }] }],
+    }],
+  }));
+  const server = startBlankApp('<!doctype html><div data-testid="action-input" data-input="{}"></div>');
+  try {
+    const port = await server.port;
+    await run(GRADER, ['--url', `http://127.0.0.1:${port}`, '--level', '1',
+      '--backend', 'postgres', '--app', app, '--spec', spec, '--out', out]);
+    const report = readArtifactPayload(out, { expectedKind: 'grade' });
+    assert.equal(report.total, 0);
+    assert.equal(report.max, 3);
+    assert.equal(report.features[0].max, 3);
+    assert.equal(report.features[0].criteria[0].evidence.status, 'inconclusive');
+    assert.equal(report.inconclusive[0].points, 3);
+  } finally {
+    server.child.kill('SIGTERM');
+    rmSync(root, { recursive: true, force: true });
+  }
+});

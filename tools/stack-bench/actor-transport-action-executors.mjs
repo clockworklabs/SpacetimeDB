@@ -172,15 +172,24 @@ async function browserCredentials(actor) {
   if (cookies.length) headers.Cookie = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
   const token = await actor.page.evaluate(() => {
     const jwt = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\./;
+    const credentialKey = /(?:^|[_-])(auth|jwt|session|token)(?:$|[_-])|(?:auth|jwt|session|token)$/i;
+    const usable = value => typeof value === 'string' && value.trim().length >= 8;
+    const fromObject = value => {
+      if (!value || typeof value !== 'object') return null;
+      for (const [key, nested] of Object.entries(value)) {
+        if (credentialKey.test(key) && usable(nested)) return nested.trim();
+      }
+      return null;
+    };
     for (const storage of [localStorage, sessionStorage]) {
       for (let index = 0; index < storage.length; index++) {
-        const value = storage.getItem(storage.key(index)) ?? '';
-        if (jwt.test(value)) return value;
+        const key = storage.key(index) ?? '';
+        const value = storage.getItem(key) ?? '';
+        if (jwt.test(value) || (credentialKey.test(key) && usable(value))) return value.trim();
         try {
           const object = JSON.parse(value);
-          for (const nested of Object.values(object ?? {})) {
-            if (typeof nested === 'string' && jwt.test(nested)) return nested;
-          }
+          const nested = fromObject(object);
+          if (nested) return nested;
         } catch { /* not JSON */ }
       }
     }

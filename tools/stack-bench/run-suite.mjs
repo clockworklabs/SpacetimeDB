@@ -55,6 +55,12 @@ export function childFailureDetail(failure = null, stdout = '', limit = 600) {
   return selected.join(' | ').slice(0, limit);
 }
 
+export function resetFailureOutcome(error) {
+  return error?.code === 'generated_app_not_restartable'
+    ? { kind: 'ungraded', phase: 'application-restart' }
+    : { kind: 'harness_failure', phase: 'database-reset' };
+}
+
 function parseArgs(argv) {
   const a = { level: '1', reset: true, media: true, runIndex: 0, track: DEFAULT_TRACK,
     packIds: [], checkKeys: [], observation: 'scored' };
@@ -467,10 +473,12 @@ async function main() {
   // state of their own, so a single up-front reset leaves later suites grading
   // dirty state — which silently lowers scores.
   let lastResetFailure = null;
+  let lastResetOutcome = { kind: 'harness_failure', phase: 'database-reset' };
   const freshen = async () => {
     if (!args.reset) return true;
     const reset = resetDatabase(args);
     lastResetFailure = reset.detail;
+    lastResetOutcome = { kind: 'harness_failure', phase: 'database-reset' };
     if (!reset.ok) return false;
     // An app whose fixture data is created at startup has just had it wiped, so
     // the server has to come back before the state it seeds exists again.
@@ -497,6 +505,7 @@ async function main() {
         else run('bash', ['-c', args.restartCmd], { stdio: 'ignore', timeout: 200_000 });
         console.log('ok');
       } catch (err) {
+        lastResetOutcome = resetFailureOutcome(err);
         if (args.reseedProbe && await answers(args.reseedProbe)) {
           console.log('ok (server answering; restart command did not return)');
           await sleep(2000);
@@ -507,6 +516,7 @@ async function main() {
         // the command line the harness built.
         const detail = ((err.stderr || '') + (err.stdout || '') + (err.message || ''))
           .toString().trim().split('\n').slice(-3).join(' | ').slice(0, 300);
+        lastResetFailure = detail || null;
         console.log('FAILED (server did not come back)');
         console.log(`    control: ${args.restartSpec ? JSON.stringify(args.restartSpec) : args.restartCmd}`);
         console.log(`    ${detail}`);
@@ -550,7 +560,7 @@ async function main() {
   if (args.observation === 'scored') {
     if (!(await freshen())) {
       bundle.error = `database reset failed — scores would not be comparable${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
-      bundle.outcome = { kind: 'harness_failure', phase: 'database-reset', reason: bundle.error };
+      bundle.outcome = { ...lastResetOutcome, reason: bundle.error };
       markRemainingNotRun('run aborted after database reset failed');
       writeBundle();
       console.log('\nABORTED: could not reset database.');
@@ -575,7 +585,7 @@ async function main() {
       console.log(`  ${suite.id}: SKIPPED (reset failed)`);
       markRemainingNotRun('run aborted after database reset failed');
       bundle.error = `database reset failed — remaining selected checks did not run${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
-      bundle.outcome = { kind: 'harness_failure', phase: 'database-reset', reason: bundle.error };
+      bundle.outcome = { ...lastResetOutcome, reason: bundle.error };
       writeBundle();
       console.log(`\nABORTED: ${bundle.error}`);
       process.exit(1);
