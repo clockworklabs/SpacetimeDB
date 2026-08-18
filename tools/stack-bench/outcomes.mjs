@@ -71,6 +71,15 @@ export function ladderMayContinue(outcome) {
   return !['harness_failure', 'ungraded'].includes(outcome?.kind);
 }
 
+// Building and repairing a level can continue while its failures are ordinary
+// application failures. Advancing to the next level is stricter: the next
+// upgrade must start from a level that actually passed, otherwise later work
+// hides unresolved lower-level defects and has to be thrown away when that
+// lower level is repaired.
+export function ladderMayAdvance(outcome) {
+  return outcome?.kind === 'passed';
+}
+
 export function mutationControlEligible(outcome) {
   return outcome?.kind === 'passed';
 }

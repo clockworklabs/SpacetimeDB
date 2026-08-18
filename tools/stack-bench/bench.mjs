@@ -8,7 +8,7 @@
 //
 // Usage:
 //   node bench.mjs --backend spacetime --levels 1-5 [--model claude-sonnet-5]
-//                  [--fix-rounds 3] [--run-index 0] [--out <dir>]
+//                  [--fix-rounds 10] [--run-index 0] [--out <dir>]
 //                  [--retain-backend] [--no-media]
 //
 // The benchmark runs its own SpacetimeDB host (STACK_BENCH_STDB_URI, default
@@ -27,8 +27,8 @@ import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
 import { killTree } from './platform.mjs';
 import { compareCriterionEvidence, formatRepairProgress } from './scoring.mjs';
 import { emptyArtifactIdentities, readArtifactPayload, writeArtifact, writeRunJson } from './artifacts.mjs';
-import { aggregateRunOutcome, classifyBundle, ladderMayContinue, mutationControlEligible,
-  runExitCode } from './outcomes.mjs';
+import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
+  mutationControlEligible, runExitCode } from './outcomes.mjs';
 import { summarizeSessions } from './session-metrics.mjs';
 import { hashDirectory } from './provenance.mjs';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
@@ -58,9 +58,9 @@ const COMMAND_TIMEOUT_MS = 20 * 60_000;
 const MUTATION_BASE_TIMEOUT_MS = 5 * 60_000;
 const MUTATION_PROBE_TIMEOUT_MS = 75_000;
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const a = { model: null, agentAdapter: 'claude-code',
-    fixRounds: 3, runIndex: 0, levels: '1', media: true,
+    fixRounds: 10, runIndex: 0, levels: '1', media: true,
     guidance: 'prescribed', track: DEFAULT_TRACK, packIds: [], checkKeys: [],
     featureIds: [], requestedSpecifications: [], expectedSpecifications: [],
     observedSpecifications: [],
@@ -113,7 +113,7 @@ function parseArgs(argv) {
     }
   }
   if (!a.backend && !a.repairFrom) {
-    console.error('Usage: node bench.mjs --backend <b> --levels 1-3 [--fix-rounds 3] [--run-index N]');
+    console.error('Usage: node bench.mjs --backend <b> --levels 1-3 [--fix-rounds 10] [--run-index N]');
     process.exit(2);
   }
   if (a.repairFrom && (!Number.isSafeInteger(a.repairLevel) || a.repairLevel < 1)) {
@@ -792,7 +792,9 @@ async function main() {
     selectionRequest: args.selectionRequest,
     backendLease: publicBackendLease(readBackendLease(leasePath,
       { token: initialLease.ownershipToken, backend: args.backend, runId })),
-    validation: { validatedThrough: track.validatedThrough, beyondValidatedLevels }, levels: [] };
+    validation: { validatedThrough: track.validatedThrough, beyondValidatedLevels,
+      ladder: { policy: 'pass-before-next-level', requestedLevels: [...args.levelList],
+        completedLevels: [], stoppedAfterLevel: null, blockedLevels: [] } }, levels: [] };
   activeRun = run;
 
   // A contaminated session ends the run at the session that did it. Continuing
@@ -1193,9 +1195,16 @@ async function main() {
       outcome: finalBundleOutcome,
       durationSec: Math.round((Date.now() - t0) / 1000),
     });
+    run.validation.ladder.completedLevels.push(level);
     writeRunJson(join(args.out, 'run.json'), run);
-    if (!ladderMayContinue(finalBundleOutcome)) {
-      console.log(`  ladder stopped after L${level}: later levels require a usable L${level} baseline`);
+    const blockedLevels = args.levelList.filter(candidate => candidate > level);
+    if (blockedLevels.length && !ladderMayAdvance(finalBundleOutcome)) {
+      run.validation.ladder.stoppedAfterLevel = level;
+      run.validation.ladder.blockedLevels = blockedLevels;
+      writeRunJson(join(args.out, 'run.json'), run);
+      console.log(`  ladder paused after L${level}: L${level} must pass before `
+        + `${blockedLevels.map(candidate => `L${candidate}`).join(', ')} can start`);
+      console.log('  inspect the failures, then explicitly grant more repair rounds or correct the benchmark');
       break;
     }
   }

@@ -68,6 +68,19 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
   const expectedLevels = [...attempt.levels].sort((a, b) => a - b);
   const actualLevels = (run.levels ?? []).map(level => level.level).sort((a, b) => a - b);
   const exactLevels = canonicalDefinitionJson(actualLevels) === canonicalDefinitionJson(expectedLevels);
+  const ladder = run.validation?.ladder;
+  const lastActualLevel = actualLevels.at(-1) ?? null;
+  const blockedLevels = expectedLevels.slice(actualLevels.length);
+  const gatedPrefix = actualLevels.length > 0 && actualLevels.length < expectedLevels.length
+    && actualLevels.every((level, index) => level === expectedLevels[index])
+    && run.outcome?.kind === 'app_failure'
+    && ladder?.policy === 'pass-before-next-level'
+    && canonicalDefinitionJson(ladder.requestedLevels) === canonicalDefinitionJson(expectedLevels)
+    && canonicalDefinitionJson(ladder.completedLevels) === canonicalDefinitionJson(actualLevels)
+    && ladder.stoppedAfterLevel === lastActualLevel
+    && canonicalDefinitionJson(ladder.blockedLevels) === canonicalDefinitionJson(blockedLevels)
+    && run.levels?.at(-1)?.outcome?.kind === 'app_failure'
+    && run.levels.at(-1)?.repair?.status === 'budget-exhausted';
   const interruptedPrefix = actualLevels.length < expectedLevels.length
     && actualLevels.every((level, index) => level === expectedLevels[index])
     && ['harness_failure', 'ungraded'].includes(run.outcome?.kind);
@@ -83,7 +96,7 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
   mismatch(canonicalDefinitionJson(run.selectionRequest)
     !== canonicalDefinitionJson(plan.definition.selection), 'selectionRequest');
   mismatch(canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills), 'skills');
-  mismatch(!exactLevels && !interruptedPrefix, 'levels');
+  mismatch(!exactLevels && !interruptedPrefix && !gatedPrefix, 'levels');
   mismatch(run.artifactEnvelope?.identities?.agentAdapter?.sha256 !== agent?.identity.sha256,
     'identities.agentAdapter.sha256');
   mismatch(run.artifactEnvelope?.identities?.engine?.sha256 !== plan.identities.engine.sha256,
@@ -167,7 +180,7 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
     mismatch(observation.artifact === null && numericEvidence, `${at}.artifact`);
     mismatch(observation.artifact !== null && !numericEvidence, `${at}.artifact`);
   }
-  if (exactLevels && ['passed', 'app_failure'].includes(run.outcome?.kind)) {
+  if ((exactLevels || gatedPrefix) && ['passed', 'app_failure'].includes(run.outcome?.kind)) {
     const levelOutcomes = (run.levels ?? []).map(level => level.outcome?.kind);
     mismatch(run.outcome.kind === 'passed' && levelOutcomes.some(kind => kind !== 'passed'),
       'outcome.kind');

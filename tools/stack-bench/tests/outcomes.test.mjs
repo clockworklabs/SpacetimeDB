@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { aggregateRunOutcome, classifyBundle, ladderMayContinue, mutationControlEligible,
-  runExitCode } from '../outcomes.mjs';
+import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
+  mutationControlEligible, runExitCode } from '../outcomes.mjs';
 import { createCheckEvidence } from '../check-evidence.mjs';
 
 const bundle = criteria => ({ totals: { score: 1, max: 2 }, suites: {
@@ -33,6 +33,14 @@ test('a ladder stops after an ungraded or harness-failed level', () => {
   assert.equal(ladderMayContinue({ kind: 'passed' }), true);
   assert.equal(ladderMayContinue({ kind: 'harness_failure' }), false);
   assert.equal(ladderMayContinue({ kind: 'ungraded' }), false);
+});
+
+test('a ladder advances only from a level that actually passed', () => {
+  assert.equal(ladderMayAdvance({ kind: 'passed' }), true);
+  assert.equal(ladderMayAdvance({ kind: 'app_failure' }), false);
+  assert.equal(ladderMayAdvance({ kind: 'inconclusive' }), false);
+  assert.equal(ladderMayAdvance({ kind: 'harness_failure' }), false);
+  assert.equal(ladderMayAdvance({ kind: 'ungraded' }), false);
 });
 
 test('app failures and inconclusive evidence remain separately visible', () => {

@@ -12,6 +12,13 @@ or make the score worse. Results record whether correction was unnecessary,
 succeeded, or exhausted its budget. Successful correction cost and unresolved
 correction spend are reported separately.
 
+Direct runs default to ten correction rounds; campaign manifests bind their own
+explicit budget. A multi-level run advances only after the current level passes.
+If L1 still fails after its budget, the run preserves its checkpoint, records L2
+as blocked, and stops for operator review. The operator can then grant a finite
+additional repair budget, correct a benchmark or environment defect, or start a
+fresh run. An unresolved lower level is never silently carried into the next one.
+
 The accepted source at the end of every level is also preserved and hash-bound
 to the run. After a level conclusively fails and uses its declared correction
 budget, an operator can grant a finite number of additional rounds from that

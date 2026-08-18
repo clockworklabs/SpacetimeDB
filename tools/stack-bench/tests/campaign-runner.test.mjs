@@ -95,7 +95,7 @@ test('attempt argv is derived completely from the compiled campaign plan', () =>
   assert.throws(() => attemptArgv(plan, plan.attempts[0], '/campaign/attempt'), /requires a run slot/);
 });
 
-test('campaign validation retains a failed level prefix without accepting partial application results', () => {
+test('campaign validation accepts only an explicit pass-before-next-level application gate', () => {
   const plan = compileCampaignFile(example);
   const attempt = plan.attempts.find(item => item.levels.length > 1) ?? { ...plan.attempts[0], levels: [1, 2] };
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
@@ -112,6 +112,21 @@ test('campaign validation retains a failed level prefix without accepting partia
   assert.throws(() => validateCampaignRun(plan, attempt,
     { ...run, outcome: { kind: 'app_failure' } }, { buildImage: 'test-build-image' }),
   /does not match.*levels/);
+  const appFailure = { kind: 'app_failure', phase: 'grading', reason: null,
+    appFailures: ['restock-race/202/202a'], inconclusive: [], harnessFailures: [] };
+  const gated = { ...run,
+    validation: { ladder: { policy: 'pass-before-next-level', requestedLevels: [1, 2],
+      completedLevels: [1], stoppedAfterLevel: 1, blockedLevels: [2] } },
+    levels: [{ level: 1, graded: true, score: 57, max: 58, fixRounds: 3,
+      firstBuild: { score: 31, max: 58, outcome: appFailure },
+      repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3,
+        stopReason: 'budget-exhausted' }, outcome: appFailure }],
+    outcome: { kind: 'app_failure', levels: { 1: appFailure } } };
+  assert.equal(validateCampaignRun(plan, attempt, gated,
+    { buildImage: 'test-build-image' }), gated);
+  assert.throws(() => validateCampaignRun(plan, attempt, { ...gated,
+    validation: { ladder: { ...gated.validation.ladder, blockedLevels: [] } } },
+  { buildImage: 'test-build-image' }), /does not match.*levels/);
 });
 
 test('campaign validation accepts a zero-level interrupted run without invented cost totals', () => {
