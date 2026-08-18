@@ -1,7 +1,8 @@
-// Standalone-only test binary entry point.
+// Standalone test binary entry point.
 //
-// Tests in this target require control of a local SpacetimeDB server. They keep
-// `require_local_server!()` as a defensive check even though CI selects this
-// target only for standalone runs.
+// These smoketests are assigned to standalone coverage. Some require control
+// of a local SpacetimeDB server; others simply provide no additional value when
+// repeated against a cluster. Tests that require local server control keep
+// `require_local_server!()` as a defensive check.
 #[path = "standalone/mod.rs"]
 mod smoketests;

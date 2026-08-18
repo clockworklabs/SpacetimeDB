@@ -54,12 +54,12 @@ struct SmoketestsArgs {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
 enum SmoketestSuite {
-    /// Run both portable and standalone-only smoketests.
+    /// Run both cluster and standalone smoketests.
     #[default]
     All,
-    /// Run tests that can target either a local or remote server.
-    Portable,
-    /// Run tests that require control of a local standalone server.
+    /// Run tests that provide useful coverage against a cluster.
+    Cluster,
+    /// Run tests assigned to standalone coverage.
     Standalone,
 }
 
@@ -67,7 +67,7 @@ impl SmoketestSuite {
     fn cargo_args(self) -> &'static [&'static str] {
         match self {
             Self::All => &[],
-            Self::Portable => &["--test", "integration"],
+            Self::Cluster => &["--test", "cluster"],
             Self::Standalone => &["--test", "standalone"],
         }
     }
