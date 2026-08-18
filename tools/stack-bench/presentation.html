@@ -678,55 +678,56 @@
   @keyframes forkB { 0%, 62% { opacity: 0; transform: translateY(8px); } 68%, 92% { opacity: 1; transform: none; } 97%, 100% { opacity: 0; } }
 
   /* verdict as an opened file */
-  /* receipts: the run directory, with the verdict opened where it sits */
-  .dir { width: 100%; max-width: 760px; font-family: var(--font-mono); }
-  .dir-head {
-    display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;
-    padding: .55rem .9rem; font-size: .78rem; color: var(--n4);
-    background: #0d1418; border: 1px solid var(--shade1); border-radius: 10px 10px 0 0;
+  /* receipts: a published number, walked down to the recording behind it */
+  .trace { width: 100%; max-width: 1000px; display: grid; gap: .9rem; }
+  .chain {
+    display: grid; grid-template-columns: 1fr 2rem 1.25fr 2rem 1.15fr;
+    align-items: stretch; gap: 0;
   }
-  .dir-head b { color: var(--n3); font-weight: 400; }
-  .dir-body {
-    background: #0a0d10; border: 1px solid var(--shade1); border-top: none;
-    border-radius: 0 0 10px 10px; padding: .45rem 0 .7rem;
-  }
-  .frow {
-    display: grid; grid-template-columns: 14rem 1fr; gap: 1rem;
-    padding: .34rem .9rem; font-size: .8rem;
-  }
-  @media (max-width: 640px) { .frow { grid-template-columns: 1fr; gap: 0; } }
-  .frow .fn { color: var(--n3); }
-  .frow .fd { color: var(--n4); }
-  .frow.open .fn { color: var(--green); }
-  .frow.open .fd { color: var(--n3); }
-  section.on .frow { opacity: 0; animation: lineIn .3s ease forwards; }
-  section.on .frow:nth-of-type(1) { animation-delay: .30s; }
-  section.on .frow:nth-of-type(2) { animation-delay: .42s; }
-  section.on .frow:nth-of-type(3) { animation-delay: .54s; }
-  section.on .frow:nth-of-type(4) { animation-delay: .66s; }
-  section.on .frow:nth-of-type(5) { animation-delay: .78s; }
-  section.on .frow:nth-of-type(6) { animation-delay: .90s; }
+  @media (max-width: 800px) { .chain { grid-template-columns: 1fr; } .chain .link { display: none; } }
+  .chain .link { display: grid; place-items: center; color: var(--n5); font-family: var(--font-mono); }
+  section.on .chain .link { animation: linkOn 9s ease-in-out infinite; }
+  @keyframes linkOn { 0%, 8% { color: var(--n5) } 14%, 84% { color: var(--green) } 92%, 100% { color: var(--n5) } }
+  section.on .chain .link.l2 { animation-delay: 1.5s; }
 
-  /* the opened record, inset under the row that names it */
-  .vrec {
-    margin: .55rem .9rem .1rem; border: 1px solid var(--green-25);
-    border-radius: 8px; overflow: hidden; background: #0b1114;
+  .node {
+    border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10;
+    padding: .85rem .95rem; display: grid; gap: .3rem; align-content: start;
   }
-  section.on .vrec { opacity: 0; animation: lineIn .35s ease forwards; animation-delay: 1.05s; }
-  .vrec .vh {
-    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
-    padding: .55rem .85rem; border-bottom: 1px solid var(--shade1); background: #fc689714;
+  section.on .node { animation: nodeOn 9s ease-in-out infinite; }
+  section.on .node.n2 { animation-delay: .9s; }
+  section.on .node.n3 { animation-delay: 1.8s; }
+  @keyframes nodeOn {
+    0%, 6%    { border-color: var(--shade1); background: #0a0d10; }
+    12%, 86%  { border-color: var(--green-25); background: #0b1512; }
+    94%, 100% { border-color: var(--shade1); background: #0a0d10; }
   }
-  .vrec .vh b { color: var(--n1); font-size: .9rem; font-weight: 600; }
-  .vrec .vh span { color: #fc6897; font-size: .74rem; letter-spacing: .1em; }
-  .vrec .vrow {
-    display: flex; justify-content: space-between; gap: 1rem;
-    padding: .4rem .85rem; font-size: .78rem; color: var(--n3);
-    border-bottom: 1px solid #131b20;
+  .node .top { display: flex; justify-content: space-between; align-items: baseline; gap: .8rem; }
+  .node .big { font-family: var(--font-mono); font-size: clamp(1rem, 2vw, 1.3rem); color: var(--n1); }
+  .node .tag { font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; color: var(--n4); }
+  .node .tag.bad { color: #fc6897; }
+  .node .det { font-family: var(--font-mono); font-size: .76rem; color: var(--n4); }
+  .node .file { font-family: var(--font-mono); font-size: .72rem; color: var(--green); }
+
+  /* the recording, with the moment the grader marked */
+  .scrub { display: grid; gap: .3rem; margin-top: .1rem; }
+  .scrub .bar { position: relative; height: 6px; border-radius: 3px; background: var(--shade4); overflow: hidden; }
+  .scrub .bar u { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--green-25); }
+  section.on .scrub .bar u { animation: scrubRun 9s ease-in-out infinite; }
+  @keyframes scrubRun { 0%, 18% { width: 0 } 46%, 86% { width: 68% } 94%, 100% { width: 0 } }
+  .scrub .bar i { position: absolute; top: -3px; bottom: -3px; left: 68%; width: 2px; background: #fc6897; }
+  .scrub .ticks { position: relative; height: 1.1em; font-family: var(--font-mono); font-size: .68rem; color: var(--n5); }
+  .scrub .ticks span { position: absolute; left: 0; top: 0; }
+  .scrub .ticks b { position: absolute; left: 68%; top: 0; transform: translateX(-50%); color: #fc6897; font-weight: 400; white-space: nowrap; }
+
+  .under {
+    display: grid; grid-template-columns: 1fr 2rem 1.25fr 2rem 1.15fr;
+    font-family: var(--font-mono); font-size: .72rem; color: var(--n4); line-height: 1.5;
   }
-  .vrec .vrow:last-child { border-bottom: none; }
-  .vrec .vrow span:first-child { color: var(--n4); }
-  .vrec .vrow.ev span:last-child { color: var(--green); }
+  @media (max-width: 800px) { .under { display: none; } }
+  .under span:nth-child(even) { visibility: hidden; }
+  .rest { font-family: var(--font-mono); font-size: .74rem; color: var(--n4); margin-top: .3rem; }
+  .rest b { color: var(--n3); font-weight: 400; }
 
   @media (max-width: 720px) { .live { grid-template-columns: 1fr; } .lane { height: 40px; } }
 
@@ -1054,27 +1055,38 @@
 <!-- 7 receipts -->
 <section>
   <div class="kicker r">receipts</div>
-  <h2 class="r d1">Every verdict is a file you can open</h2>
-  <div class="dir r d2" role="img" aria-label="the directory a run leaves behind, with one verdict file opened">
-    <div class="dir-head"><span>results/<b>&lt;run-id&gt;</b>/</span><span>51 criteria &middot; 2 rounds</span></div>
-    <div class="dir-body">
-      <div class="frow"><span class="fn">prompt.md</span><span class="fd">the exact prompt the agent received</span></div>
-      <div class="frow"><span class="fn">session-cost.json</span><span class="fd">$4.73, every call in the run</span></div>
-      <div class="frow"><span class="fn">bug-report-round-1.md</span><span class="fd">3 failures, written as a customer saw them</span></div>
-      <div class="frow"><span class="fn">video/</span><span class="fd">one recording per actor</span></div>
-      <div class="frow"><span class="fn">source.tar.gz</span><span class="fd">hash-bound copy of what produced this score</span></div>
-      <div class="frow open"><span class="fn">grading-l1.json</span><span class="fd">one typed verdict per criterion</span></div>
-      <div class="vrec">
-        <div class="vh"><b>no-oversell</b><span>FAILED</span></div>
-        <div class="vrow"><span>observed</span><span>2 orders for 1 unit</span></div>
-        <div class="vrow"><span>actor</span><span>bob</span></div>
-        <div class="vrow"><span>deadline</span><span>5000 ms</span></div>
-        <div class="vrow ev"><span>evidence</span><span>video &middot; screenshot &middot; trace</span></div>
-        <div class="vrow"><span>graded under</span><span>ecommerce.l1-standard@1.1.0</span></div>
+  <h2 class="r d1">Every number traces back to a recording</h2>
+  <div class="trace r d2" role="img" aria-label="a published score traced to its verdict and to the recording behind it">
+    <div class="chain">
+      <div class="node n1">
+        <div class="top"><span class="big">51 / 51</span><span class="tag">database a</span></div>
+        <div class="det">$4.73 &middot; 2 rounds</div>
+        <div class="file">results/&lt;run-id&gt;/</div>
+      </div>
+      <div class="link l1">&rarr;</div>
+      <div class="node n2">
+        <div class="top"><span class="big">no-oversell</span><span class="tag bad">FAILED</span></div>
+        <div class="det">2 orders for 1 unit &middot; actor bob &middot; 5000 ms</div>
+        <div class="file">grading-l1.json</div>
+      </div>
+      <div class="link l2">&rarr;</div>
+      <div class="node n3">
+        <div class="top"><span class="big">bob.webm</span><span class="tag">01:12</span></div>
+        <div class="scrub">
+          <div class="bar"><u></u><i></i></div>
+          <div class="ticks"><span>00:00</span><b>00:49 second order</b></div>
+        </div>
+        <div class="file">video/ &middot; screenshot &middot; trace</div>
       </div>
     </div>
+    <div class="under">
+      <span>the number we publish</span><span></span>
+      <span>one typed record per criterion</span><span></span>
+      <span>what the browser actually saw</span>
+    </div>
+    <div class="rest">also in the directory: <b>prompt.md</b> &middot; <b>session-cost.json</b> &middot; <b>bug-report-round-1.md</b> &middot; <b>source.tar.gz</b>, sha256 4f2a&hellip;9c31</div>
   </div>
-  <p class="supp r d3" style="margin-top:1.2rem">Every published score traces back to this directory. Nothing in it is written by hand.</p>
+  <p class="supp r d3" style="margin-top:1.2rem">Pick any score in the deck and you can walk it down to the frame where a customer saw the problem. Nothing along the way is written by hand.</p>
 </section>
 
 <!-- 8 scoreboard -->
