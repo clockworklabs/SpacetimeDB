@@ -278,6 +278,74 @@
   section.on .files div:nth-child(9) { transition-delay: 1.18s; }
   section.on .files div:nth-child(10) { transition-delay: 1.25s; }
 
+
+  /* visual-first layout */
+  .loop, .actors { max-width: 1080px; }
+  .supp { font-size: .95rem; color: var(--n4); max-width: 66ch; }
+
+  /* hover reveals: pointer devices get them on hover, touch gets them inline */
+  .more { font-size: .85rem; color: var(--n4); }
+  @media (hover: hover) {
+    .more { max-height: 0; opacity: 0; overflow: hidden; margin: 0;
+            transition: max-height .35s ease, opacity .35s ease, margin .35s ease; }
+    .card:hover .more, .card:focus-within .more,
+    .rung:hover .more, .tile:hover .more, .tile:focus-within .more
+      { max-height: 6em; opacity: 1; margin-top: .45rem; }
+  }
+
+  /* the bill, as a receipt */
+  .split { display: grid; grid-template-columns: minmax(280px, 400px) 1fr; gap: 3.5rem; align-items: center; max-width: 1040px; }
+  @media (max-width: 860px) { .split { grid-template-columns: 1fr; gap: 1.6rem; } }
+  .receipt {
+    background: linear-gradient(180deg, var(--shade5), var(--shade7));
+    border: 1px solid var(--shade1); border-radius: 10px;
+    font-family: var(--font-mono); font-size: .85rem;
+    padding: 1.4rem 1.3rem; display: grid; gap: .65rem;
+  }
+  .receipt .rl { display: flex; justify-content: space-between; gap: 1rem; color: var(--n3);
+                 opacity: 0; transform: translateY(8px); transition: opacity .45s ease, transform .45s ease; }
+  section.on .receipt .rl { opacity: 1; transform: none; }
+  .receipt .rl span:last-child { color: var(--n4); text-align: right; }
+  .receipt .rl.total { border-top: 1px dashed var(--shade1); padding-top: .8rem; }
+  .receipt .rl.total span { color: var(--green); }
+
+  /* loop hover tips */
+  .loop .hn { cursor: default; }
+  .loop .tip { opacity: 0; transition: opacity .25s ease; }
+  .loop .hn:hover .tip { opacity: 1; }
+  .loop .tip text { fill: var(--green); }
+  .loop .hn:hover rect.node { stroke: var(--green-25); }
+  .loop .caption { transition: opacity .25s ease; }
+  .loop:hover .caption { opacity: 0; }
+
+  /* honesty tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; max-width: 980px; margin-top: 1.4rem; }
+  .tile {
+    background: linear-gradient(180deg, var(--shade5), var(--shade7));
+    border: 1px solid var(--shade4); border-radius: 10px; padding: 1rem 1.1rem;
+  }
+  .tile h3 { font-size: .95rem; color: var(--n1); font-weight: 600; margin-bottom: .3rem; }
+  .tile p { font-size: .85rem; }
+  .tile:hover { border-color: var(--shade1); }
+
+  /* ladder hover detail */
+  .rung { flex-wrap: wrap; }
+  .rung .more { flex-basis: 100%; padding-left: 3.2rem; font-family: var(--font-mono); font-size: .76rem; }
+
+  /* checklist hover detail */
+  ul.checks li .more { display: block; font-size: .8rem; }
+  ul.checks { font-size: 1.02rem; }
+
+  /* evidence rows highlight */
+  .files div { border-left: 2px solid transparent; padding-left: .5rem; transition: border-color .2s ease, color .2s ease; }
+  .files div:hover { border-left-color: var(--green); color: var(--n3); }
+
+  section.on .receipt .rl:nth-child(1) { transition-delay: 0.27s; }
+  section.on .receipt .rl:nth-child(2) { transition-delay: 0.39s; }
+  section.on .receipt .rl:nth-child(3) { transition-delay: 0.51s; }
+  section.on .receipt .rl:nth-child(4) { transition-delay: 0.63s; }
+  section.on .receipt .rl:nth-child(5) { transition-delay: 0.75s; }
+  section.on .receipt .rl:nth-child(6) { transition-delay: 0.87s; }
   @media (max-width: 720px) {
     .files { columns: 1; }
     #dots { display: none; }
@@ -311,55 +379,71 @@
 <section>
   <div class="kicker r">the question</div>
   <h2 class="r d1">How much does it cost an AI to build a production-quality app?</h2>
-  <p class="lead r d2">Same app, same model, same requirements, measured on every backend under test. The answer is a bill: dollars and correction rounds from first attempt to passing every stated requirement.</p>
-  <p class="quote r d3" style="margin-top:1.6rem">The thesis under test: as a task approaches real production conditions, SpacetimeDB pulls ahead structurally. The database does the hard parts, so correctness arrives by construction and the model spends less getting there.</p>
-  <ul class="plain" style="margin-top:1.6rem">
-    <li class="r d4">The harness is built to test that thesis. If it comes out false, that gets published too.</li>
-    <li class="r d5"><strong>Fairness rule:</strong> every criterion must be winnable by an expert human on every stack, using that stack's own real tools.</li>
-  </ul>
+  <div class="split">
+    <div class="receipt r d2" aria-label="what a run produces">
+      <div class="rl"><span>app requirements</span><span>fixed prompt</span></div>
+      <div class="rl"><span>model</span><span>held fixed</span></div>
+      <div class="rl"><span>backend</span><span>under test</span></div>
+      <div class="rl"><span>first attempt</span><span>graded</span></div>
+      <div class="rl"><span>fix rounds</span><span>declared budget</span></div>
+      <div class="rl total"><span>the answer</span><span>dollars &middot; rounds &middot; time</span></div>
+    </div>
+    <div>
+      <p class="quote r d3">The thesis under test: as a task approaches real production conditions, SpacetimeDB pulls ahead structurally. The database does the hard parts, so correctness arrives by construction and the model spends less getting there.</p>
+      <p class="supp r d4" style="margin-top:1.2rem">The harness is built to test that thesis, and every criterion must be winnable by an expert human on every stack. If the thesis comes out false, that gets published too.</p>
+    </div>
+  </div>
 </section>
 
 <!-- 3 - the loop -->
 <section>
   <div class="kicker r">the loop</div>
   <h2 class="r d1">Build &rarr; verify &rarr; report &rarr; fix &rarr; record</h2>
-  <svg class="loop r d2" viewBox="0 0 960 210" role="img" aria-label="benchmark loop diagram">
+  <svg class="loop r d2" viewBox="0 0 960 235" role="img" aria-label="benchmark loop diagram">
     <defs>
       <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
         <path d="M0 0 L8 4 L0 8 z" fill="#363840"/>
       </marker>
     </defs>
-    <rect class="node pulse" x="10"  y="60" width="150" height="64"/>
-    <text class="t" x="30" y="88">fixed prompt</text>
-    <text class="sub" x="30" y="106">per track + level</text>
-
-    <rect class="node pulse" x="210" y="60" width="160" height="64" style="animation-delay:.6s"/>
-    <text class="t" x="230" y="88">agent builds</text>
-    <text class="sub" x="230" y="106">isolated container</text>
-
-    <rect class="node pulse" x="420" y="60" width="170" height="64" style="animation-delay:1.2s"/>
-    <text class="t" x="440" y="88">harness grades</text>
-    <text class="sub" x="440" y="106">reset &rarr; lint &rarr; suites</text>
-
-    <rect class="node pulse" x="640" y="60" width="150" height="64" style="animation-delay:1.8s"/>
-    <text class="t" x="660" y="88">bug report</text>
-    <text class="sub" x="660" y="106">what a user saw fail</text>
-
-    <rect class="node pulse" x="840" y="60" width="110" height="64" style="animation-delay:2.4s"/>
-    <text class="t" x="860" y="88">record</text>
-    <text class="sub" x="860" y="106">everything</text>
-
+    <g class="hn">
+      <rect class="node pulse" x="10" y="60" width="150" height="64"/>
+      <text class="t" x="30" y="88">fixed prompt</text>
+      <text class="sub" x="30" y="106">per track + level</text>
+      <g class="tip"><text x="20" y="226">same bytes every run, snapshotted with the results</text></g>
+    </g>
+    <g class="hn">
+      <rect class="node pulse" x="210" y="60" width="160" height="64" style="animation-delay:.6s"/>
+      <text class="t" x="230" y="88">agent builds</text>
+      <text class="sub" x="230" y="106">isolated container</text>
+      <g class="tip"><text x="20" y="226">a sealed session with no host access</text></g>
+    </g>
+    <g class="hn">
+      <rect class="node pulse" x="420" y="60" width="170" height="64" style="animation-delay:1.2s"/>
+      <text class="t" x="440" y="88">harness grades</text>
+      <text class="sub" x="440" y="106">reset &rarr; lint &rarr; suites</text>
+      <g class="tip"><text x="20" y="226">fresh database, contract check, then every scenario suite</text></g>
+    </g>
+    <g class="hn">
+      <rect class="node pulse" x="640" y="60" width="150" height="64" style="animation-delay:1.8s"/>
+      <text class="t" x="660" y="88">bug report</text>
+      <text class="sub" x="660" y="106">what a user saw fail</text>
+      <g class="tip"><text x="20" y="226">behavioural only: the agent hears what failed, never how it is graded</text></g>
+    </g>
+    <g class="hn">
+      <rect class="node pulse" x="840" y="60" width="110" height="64" style="animation-delay:2.4s"/>
+      <text class="t" x="860" y="88">record</text>
+      <text class="sub" x="860" y="106">everything</text>
+      <g class="tip"><text x="20" y="226">prompt, sessions, verdicts, videos, cost and timing</text></g>
+    </g>
     <path class="edge flow" d="M160 92 H206"/>
     <path class="edge flow" d="M370 92 H416"/>
     <path class="edge flow" d="M590 92 H636"/>
     <path class="edge flow" d="M790 92 H836"/>
     <path class="edge flow back" d="M715 128 v46 H290 v-46" marker-end="url(#arr)"/>
     <text class="sub" x="445" y="192">fix rounds are limited by a declared budget</text>
+    <text class="sub caption" x="20" y="226">hover a stage</text>
   </svg>
-  <ul class="plain">
-    <li class="r d3">Fix rounds that lose evidence or make the score worse are rolled back.</li>
-    <li class="r d4">Each run records whether correction was unnecessary, succeeded, or ran out of budget, and reports successful and unresolved correction spend separately.</li>
-  </ul>
+  <p class="supp r d3">Fix rounds that lose evidence or make the score worse are rolled back, and each run reports successful and unresolved correction spend separately.</p>
 </section>
 
 <!-- 4 - how grading works -->
@@ -386,17 +470,20 @@
     </g>
     <text x="20" y="182">alice acts &middot; the criterion passes only when bob's browser shows the result</text>
   </svg>
-  <p class="r d3">Scenarios drive one real browser per actor and assert on what a user would observe. Elements are found only through the <code>data-testid</code> contract the prompt requires, and every scenario is validated before a browser opens.</p>
   <div class="cards">
-    <div class="card r d3"><h3>features</h3><p>does each described feature work</p></div>
-    <div class="card pu r d4"><h3>invariants</h3><p>identity, isolation, durability, write-path integrity</p></div>
-    <div class="card bl r d5"><h3>delivery</h3><p>no loss, no duplication, consistent ordering, reconnect recovery</p></div>
+    <div class="card r d3" tabindex="0"><h3>features</h3><p>does each described feature work</p>
+      <p class="more">each criterion asserts one behaviour a user can observe</p></div>
+    <div class="card pu r d4" tabindex="0"><h3>invariants</h3><p>identity, isolation, durability, write-path integrity</p>
+      <p class="more">properties that must hold no matter which features exist</p></div>
+    <div class="card bl r d5" tabindex="0"><h3>delivery</h3><p>no loss, no duplication, consistent ordering</p>
+      <p class="more">every client sees everything exactly once, in the same order, across reconnects</p></div>
   </div>
   <div class="caps r d5">
     <div><span>console error during a feature</span><b>cap 2 / 3</b></div>
     <div><span>works only after a page reload</span><b>cap 1 / 3</b></div>
     <div><span>feature unreachable</span><b>0</b></div>
   </div>
+  <p class="supp r d5" style="margin-top:1rem">Elements are found only through the <code>data-testid</code> contract the prompt requires.</p>
 </section>
 
 <!-- 5 - tracks and levels -->
@@ -404,17 +491,22 @@
   <div class="kicker r">tracks &amp; levels</div>
   <h2 class="r d1">Two applications, one ladder</h2>
   <div class="cards" style="max-width:760px">
-    <div class="card r d2"><h3>chat</h3><p>rooms, messages, presence. The original track; human grades exist for it.</p></div>
-    <div class="card ye r d2"><h3>ecommerce</h3><p>storefront, cart, warehouses. Built for contention and live derived numbers.</p></div>
+    <div class="card r d2"><h3>chat</h3><p>rooms, messages, presence</p></div>
+    <div class="card ye r d2"><h3>ecommerce</h3><p>storefront, cart, warehouses</p></div>
   </div>
   <div class="ladder">
-    <div class="rung"><span class="lv">L1</span><div class="bar">identity &middot; durable state &middot; real-time</div><span class="vbadge">validated</span></div>
-    <div class="rung"><span class="lv">L2</span><div class="bar">authorization &middot; per-user derivation</div><span class="vbadge">validated</span></div>
-    <div class="rung todo"><span class="lv">L3</span><div class="bar">atomicity &middot; isolation</div></div>
-    <div class="rung todo"><span class="lv">L4</span><div class="bar">durability of deferred work</div></div>
-    <div class="rung todo"><span class="lv">L5</span><div class="bar">throughput &middot; latency &middot; efficiency</div></div>
+    <div class="rung"><span class="lv">L1</span><div class="bar">identity &middot; durable state &middot; real-time</div><span class="vbadge">validated</span>
+      <span class="more">chat: accounts, basic chat &middot; ecommerce: storefront, cart, warehouses</span></div>
+    <div class="rung"><span class="lv">L2</span><div class="bar">authorization &middot; per-user derivation</div><span class="vbadge">validated</span>
+      <span class="more">chat: private rooms, membership &middot; ecommerce: personalisation, catalogue queries</span></div>
+    <div class="rung todo"><span class="lv">L3</span><div class="bar">atomicity &middot; isolation</div>
+      <span class="more">chat: reactions, polls, capacity &middot; ecommerce: warehouse transfers</span></div>
+    <div class="rung todo"><span class="lv">L4</span><div class="bar">durability of deferred work</div>
+      <span class="more">chat: scheduling, expiry &middot; ecommerce: order lifecycle, expiry</span></div>
+    <div class="rung todo"><span class="lv">L5</span><div class="bar">throughput &middot; latency &middot; efficiency</div>
+      <span class="more">both tracks: volume</span></div>
   </div>
-  <p class="r d4">Levels are cumulative. An app graded at L3 is still checked against L1 and L2, so a regression is caught rather than scored around.</p>
+  <p class="supp r d4">Levels are cumulative, so a regression at L1 is caught while grading L3. Hover a level for what each track adds there.</p>
 </section>
 
 <!-- 6 - keeping it honest -->
@@ -441,11 +533,16 @@
       <span class="mutlabel">scores zero everywhere</span>
     </div>
   </div>
-  <ul class="plain">
-    <li class="r d3"><strong>Mutation testing.</strong> A known defect goes into a fully passing reference app; the exact declared criterion must fail, with no collateral.</li>
-    <li class="r d4"><strong>Cross-backend checks.</strong> When every backend fails a criterion the same way, the harness investigates itself before anything scores.</li>
-    <li class="r d5"><strong>Prompts, guidance and tests are never patched to make a failing check pass.</strong> Every finding is recorded, whichever way it points.</li>
-  </ul>
+  <div class="tiles">
+    <div class="tile r d3" tabindex="0"><h3>mutation testing</h3><p>a planted defect must be caught</p>
+      <p class="more">the exact declared criterion fails, with no collateral, or the grader has a hole</p></div>
+    <div class="tile r d3" tabindex="0"><h3>null control</h3><p>a blank app scores zero</p>
+      <p class="more">the full real suite runs against nothing; no point-bearing criterion may pass</p></div>
+    <div class="tile r d4" tabindex="0"><h3>cross-backend checks</h3><p>identical failures get investigated</p>
+      <p class="more">when every backend fails the same way, the harness checks itself before anything scores</p></div>
+    <div class="tile r d4" tabindex="0"><h3>no teaching to the test</h3><p>inputs are never patched to pass</p>
+      <p class="more">every finding is recorded, whichever way it points; that is what makes the favourable ones credible</p></div>
+  </div>
 </section>
 
 <!-- 8 - isolation & reproducibility -->
@@ -453,16 +550,18 @@
   <div class="kicker r">reproducibility</div>
   <h2 class="r d1">A run owns what it starts, and proves it</h2>
   <ul class="checks r d2">
-    <li>Docker, digest-pinned images, ports, credentials, clock and storage verified before any model call</li>
-    <li>smoke test boots the real build image, without a model</li>
-    <li>build sessions sealed in a container with no host access</li>
-    <li>sandbox probe gates every run; a leak audit reviews every transcript</li>
-    <li>databases started per run through a token-authenticated lease</li>
+    <li>environment verified before any model call
+      <span class="more">Docker, digest-pinned images, ports, credentials, clock, storage; the smoke test boots the real build image without a model</span></li>
+    <li>build sessions sealed in a container
+      <span class="more">no host access; a sandbox probe gates every run and a leak audit reviews every transcript</span></li>
+    <li>databases started per run, through a lease
+      <span class="more">reset, restart and teardown go only through a token-authenticated backend lease; nothing already on the machine is touched</span></li>
+    <li>every check lands in one typed state
+      <span class="more">passed, failed, inconclusive or harness_failure; prose cannot change a verdict</span></li>
+    <li>every result carries its identity chain
+      <span class="more">any published number can be traced to the exact run, prompt, image and recipe that produced it</span></li>
   </ul>
-  <ul class="plain">
-    <li class="r d4"><strong>Typed verdicts.</strong> Every check records exactly one state: passed, failed, inconclusive or harness_failure. Prose cannot change a verdict.</li>
-    <li class="r d5"><strong>Strict artifacts.</strong> Every result carries its identity and parent-attempt chain, so any number can be traced to the exact run that produced it.</li>
-  </ul>
+  <p class="supp r d4">Hover an item for the mechanism behind it.</p>
 </section>
 
 <!-- 9 - evidence -->
