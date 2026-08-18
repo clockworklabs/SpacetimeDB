@@ -558,6 +558,73 @@
   .outcome.no { color: #fc6897; }
   section.on .outcome { animation: evShow 8s ease-in-out infinite; animation-delay: 2.6s; }
 
+  /* one collision, one outcome bar that resolves */
+  .collide { width: 100%; max-width: 900px; border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10; overflow: hidden; }
+  .collide .ch { padding: .5rem .95rem; border-bottom: 1px solid var(--shade1); font-family: var(--font-mono); font-size: .8rem; color: var(--n4); }
+  .collide .cbody { padding: 1rem .95rem; display: grid; gap: .7rem; font-family: var(--font-mono); font-size: .82rem; }
+  .row2 { display: grid; grid-template-columns: 3.6rem 1fr 5.5rem; gap: .7rem; align-items: center; color: var(--n4); }
+  .rail { height: 28px; border-radius: 6px; background: #0d1418; border: 1px solid var(--shade1); position: relative; overflow: hidden; }
+  .rail .req2 {
+    position: absolute; top: 50%; margin-top: -9px; left: 8px; height: 18px; line-height: 18px;
+    border-radius: 4px; padding: 0 .5rem; font-size: .68rem; white-space: nowrap;
+    background: var(--green-10); border: 1px solid var(--green-25); color: var(--green); opacity: 0;
+  }
+  section.on .req2.q1 { animation: reqRun 9s ease-in-out infinite; }
+  section.on .req2.q2 { animation: reqRun 9s ease-in-out infinite .35s; }
+  @keyframes reqRun {
+    0%       { left: 8px; opacity: 0; }
+    5%       { opacity: 1; }
+    26%      { left: calc(100% - 108px); opacity: 1; }
+    33%,100% { left: calc(100% - 108px); opacity: 0; }
+  }
+  .rowend { font-family: var(--font-mono); font-size: .74rem; color: var(--n4); text-align: right; }
+  .stockrow {
+    display: flex; justify-content: space-between; align-items: center;
+    border-top: 1px solid var(--shade1); padding-top: .75rem; margin-top: .25rem;
+    font-family: var(--font-mono); font-size: .86rem; color: var(--n4);
+  }
+  .stockrow b { color: var(--n1); font-weight: 600; }
+
+  .fork { width: 100%; max-width: 900px; margin-top: 1rem; position: relative; height: 4.4rem; }
+  .fork .branch {
+    position: absolute; inset: 0; display: flex; align-items: center; gap: .8rem;
+    border: 1px solid var(--shade1); border-radius: 8px; padding: .75rem 1rem;
+    font-family: var(--font-mono); font-size: clamp(.74rem, 1.5vw, .86rem); opacity: 0;
+  }
+  .fork .branch .tagl { flex: none; color: var(--n4); }
+  .fork .branch.good { border-color: var(--green-25); background: var(--green-10); color: var(--green); }
+  .fork .branch.bad  { border-color: #fc689766; background: #fc689714; color: #fc6897; }
+  section.on .fork .good { animation: forkA 9s ease-in-out infinite; }
+  section.on .fork .bad  { animation: forkB 9s ease-in-out infinite; }
+  @keyframes forkA { 0%, 34% { opacity: 0; transform: translateY(8px); } 40%, 60% { opacity: 1; transform: none; } 66%, 100% { opacity: 0; } }
+  @keyframes forkB { 0%, 62% { opacity: 0; transform: translateY(8px); } 68%, 92% { opacity: 1; transform: none; } 97%, 100% { opacity: 0; } }
+
+  /* verdict as an opened file */
+  .filecard { width: 100%; max-width: 620px; border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10; overflow: hidden; font-family: var(--font-mono); }
+  .filecard .fpath {
+    padding: .5rem .9rem; border-bottom: 1px solid var(--shade1);
+    font-size: .76rem; color: var(--n4); display: flex; justify-content: space-between; gap: 1rem;
+  }
+  .filecard .fpath em { color: var(--n3); font-style: normal; }
+  .filecard .vh {
+    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    padding: .7rem .9rem; border-bottom: 1px solid var(--shade1); background: #fc689714;
+  }
+  .filecard .vh b { color: var(--n1); font-size: .95rem; font-weight: 600; }
+  .filecard .vh span { color: #fc6897; font-size: .78rem; letter-spacing: .1em; }
+  .filecard .vrow { display: flex; justify-content: space-between; gap: 1rem; padding: .48rem .9rem; font-size: .82rem; color: var(--n3); border-bottom: 1px solid #131b20; }
+  .filecard .vrow:last-child { border-bottom: none; }
+  .filecard .vrow span:first-child { color: var(--n4); }
+  .filecard .vrow.ev span:last-child { color: var(--green); }
+  section.on .filecard .vrow { opacity: 0; animation: lineIn .35s ease forwards; }
+  section.on .filecard .vrow:nth-of-type(1) { animation-delay: .35s; }
+  section.on .filecard .vrow:nth-of-type(2) { animation-delay: .5s; }
+  section.on .filecard .vrow:nth-of-type(3) { animation-delay: .65s; }
+  section.on .filecard .vrow:nth-of-type(4) { animation-delay: .8s; }
+  section.on .filecard .vrow:nth-of-type(5) { animation-delay: .95s; }
+  .alsofiles { font-family: var(--font-mono); font-size: .78rem; color: var(--n4); margin-top: 1.1rem; max-width: 66ch; line-height: 1.9; }
+  .alsofiles b { color: var(--n3); font-weight: 400; }
+
   /* restart beat in the storefront demo */
   .live { position: relative; }
   .outage {
@@ -794,31 +861,19 @@
 <section>
   <div class="kicker r">break it on purpose</div>
   <h2 class="r d1">Two shoppers hit checkout at the same instant</h2>
-  <div class="sims r d2" role="img" aria-label="the same collision run against two stacks, with different outcomes">
-    <div class="sim good">
-      <div class="sh"><span>stack that serialises writes</span><em>holds</em></div>
-      <div class="simbody">
-        <div class="lane2"><span>alice</span><div class="track"><i class="pkt a1">checkout</i></div></div>
-        <div class="lane2"><span>bob</span><div class="track"><i class="pkt b1">checkout</i></div></div>
-        <div class="stockbox"><span>stock</span>
-          <span class="val"><span class="sv1">1 &middot; available</span><span class="sv2" style="color:var(--green)">0 &middot; sold once</span></span>
-        </div>
-      </div>
-      <div class="outcome ok">&#10003; one order stands, the other is told sold out</div>
-    </div>
-    <div class="sim bad">
-      <div class="sh"><span>stack where the guard was missed</span><em>oversells</em></div>
-      <div class="simbody">
-        <div class="lane2"><span>alice</span><div class="track"><i class="pkt a1">checkout</i></div></div>
-        <div class="lane2"><span>bob</span><div class="track"><i class="pkt b1">checkout</i></div></div>
-        <div class="stockbox"><span>stock</span>
-          <span class="val"><span class="sv1">1 &middot; available</span><span class="sv2" style="color:#fc6897">-1 &middot; sold twice</span></span>
-        </div>
-      </div>
-      <div class="outcome no">&#10007; two orders, one unit &middot; the second customer never gets it</div>
+  <div class="collide r d2" role="img" aria-label="two concurrent checkouts against one unit of stock">
+    <div class="ch">one unit left &middot; both requests arrive before either write lands</div>
+    <div class="cbody">
+      <div class="row2"><span>alice</span><div class="rail"><i class="req2 q1">checkout</i></div><span class="rowend">reads 1</span></div>
+      <div class="row2"><span>bob</span><div class="rail"><i class="req2 q2">checkout</i></div><span class="rowend">reads 1</span></div>
+      <div class="stockrow"><span>stock before</span><b>1</b></div>
     </div>
   </div>
-  <p class="supp r d3" style="margin-top:1.2rem">Both requests read the same stock before either writes. Whether that ends in one order or two is decided entirely by the stack underneath, and it is invisible until a real customer hits it. The harness forces the collision on purpose and checks which way it lands.</p>
+  <div class="fork r d2">
+    <div class="branch good"><span class="tagl">stack serialises the write</span> &#10003; one order stands &middot; stock 0 &middot; the other shopper is told sold out</div>
+    <div class="branch bad"><span class="tagl">guard was missed</span> &#10007; two orders, one unit &middot; stock &minus;1 &middot; a customer never gets what they paid for</div>
+  </div>
+  <p class="supp r d3" style="margin-top:1.2rem">Which way this lands is decided entirely by the stack underneath, and it stays invisible until a real customer hits it. The harness forces the collision on purpose and asserts that exactly one order survives.</p>
   <p class="lvls r d4">L1 identity &middot; L2 authorization &middot; <b>L3 atomicity</b> &middot; L4 deferred work &middot; L5 volume &nbsp; <span class="dim">levels are cumulative</span></p>
 </section>
 
@@ -845,31 +900,17 @@
 <section>
   <div class="kicker r">receipts</div>
   <h2 class="r d1">Every verdict is a file you can open</h2>
-  <div class="tree r d2">
-<pre>results/<em>&lt;run-id&gt;</em>/
-├── run.json          <b>stack, model, budget</b>
-├── preflight.json    <b>24 admission checks</b>
-├── .prompt-build.md  <b>exact bytes sent</b>
-├── .session-build.json
-│                     <b>cost, tokens, turns</b>
-├── grading-l1.json   <b>every verdict</b>
-├── records/
-│   └── bug-report-l1-round1.md
-├── media/
-│   ├── alice-no-oversell.webm
-│   ├── bob-no-oversell.png
-│   └── bob-no-oversell.trace.zip
-└── level-l1-source/  <b>hash-bound</b></pre>
-    <div class="vcard">
-      <div class="vh"><b>no-oversell</b><span>FAILED</span></div>
-      <div class="vrow"><span>observed</span><span>2 orders for 1 unit</span></div>
-      <div class="vrow"><span>actor</span><span>bob</span></div>
-      <div class="vrow"><span>deadline</span><span>5000 ms</span></div>
-      <div class="vrow ev"><span>evidence</span><span>video &middot; screenshot &middot; trace</span></div>
-      <div class="vrow"><span>recipe</span><span>ecommerce.l1-standard@1.1.0</span></div>
-    </div>
+  <div class="filecard r d2">
+    <div class="fpath"><span>results/<em>&lt;run-id&gt;</em>/grading-l1.json</span><span>1 of 51 criteria</span></div>
+    <div class="vh"><b>no-oversell</b><span>FAILED</span></div>
+    <div class="vrow"><span>observed</span><span>2 orders for 1 unit</span></div>
+    <div class="vrow"><span>actor</span><span>bob</span></div>
+    <div class="vrow"><span>deadline</span><span>5000 ms</span></div>
+    <div class="vrow ev"><span>evidence</span><span>video &middot; screenshot &middot; trace</span></div>
+    <div class="vrow"><span>graded under</span><span>ecommerce.l1-standard@1.1.0</span></div>
   </div>
-  <p class="supp r d3" style="margin-top:1.2rem">One typed state per check, the evidence that produced it, and the exact recipe it was graded under. A score that cannot be traced back to these files does not ship.</p>
+  <p class="alsofiles r d3">Beside it in the same directory: <b>the exact prompt the agent received</b>, its <b>session cost and token count</b>, the <b>bug report</b> it was given, a <b>video per actor</b>, and a <b>hash-bound copy of the source</b> that produced this score.</p>
+  <p class="supp r d4" style="margin-top:1rem">One typed state per check, the evidence that produced it, and the recipe it was graded under. A score that cannot be traced back to these files does not ship.</p>
 </section>
 
 <!-- 8 scoreboard -->
