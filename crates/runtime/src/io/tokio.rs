@@ -13,7 +13,6 @@ use tokio::{runtime, task::spawn_blocking};
 
 /// Implementation of [SpacetimeIO] that runs on a tokio runtime.
 pub struct TokioIO {
-    // TODO: Should this be [runtime::Runtime]?
     rt: runtime::Handle,
     // Ensure I/O stays on a single thread.
     _not_send: PhantomData<Rc<()>>,

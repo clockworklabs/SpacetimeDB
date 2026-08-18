@@ -7,10 +7,13 @@ use core::{
 pub const PAGE_SIZE: usize = 4096;
 const PAGE_SIZE_U64: u64 = PAGE_SIZE as u64;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum Error {
+    #[error("unaligned offset")]
     UnalignedOffset,
+    #[error("unaligned buffer")]
     UnalignedBuffer,
+    #[error("offset overflow")]
     OffsetOverflow,
 }
 
