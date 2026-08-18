@@ -172,22 +172,6 @@
   .files span { color: var(--green); }
 
 
-  /* two-actor demo: a message travels from alice to bob, then the assertion lands */
-  .actors { max-width: 880px; width: 100%; margin: .4rem 0 1rem; }
-  .actors text { font-family: var(--font-mono); font-size: 11.5px; fill: var(--n4); }
-  .actors .name { fill: var(--n1); font-size: 13px; font-weight: 600; }
-  .actors rect.win { fill: var(--shade5); stroke: var(--shade1); rx: 8; }
-  .actors rect.tb { fill: var(--shade7); }
-  .actors circle.led { fill: var(--n5); }
-  .actors .wire { stroke: var(--shade1); stroke-width: 1.4; fill: none; }
-  section.on .actors .msg { animation: msgTravel 4.5s ease-in-out infinite; }
-  @keyframes msgTravel {
-    0%, 8%   { transform: translateX(0); opacity: 0; }
-    12%      { opacity: 1; }
-    48%      { transform: translateX(340px); opacity: 1; }
-    56%, 100%{ transform: translateX(340px); opacity: 0; }
-  }
-  section.on .actors .assert { animation: assertPop 4.5s ease-in-out infinite; }
   @keyframes assertPop {
     0%, 50%  { opacity: 0; }
     58%, 88% { opacity: 1; }
@@ -280,7 +264,6 @@
 
 
   /* visual-first layout */
-  .loop, .actors { max-width: 1080px; }
   .supp { font-size: .95rem; color: var(--n4); max-width: 66ch; }
 
   /* hover reveals: pointer devices get them on hover, touch gets them inline */
@@ -309,14 +292,6 @@
   .receipt .rl.total { border-top: 1px dashed var(--shade1); padding-top: .8rem; }
   .receipt .rl.total span { color: var(--green); }
 
-  /* loop hover tips */
-  .loop .hn { cursor: default; }
-  .loop .tip { opacity: 0; transition: opacity .25s ease; }
-  .loop .hn:hover .tip { opacity: 1; }
-  .loop .tip text { fill: var(--green); }
-  .loop .hn:hover rect.node { stroke: var(--green-25); }
-  .loop .caption { transition: opacity .25s ease; }
-  .loop:hover .caption { opacity: 0; }
 
   /* honesty tiles */
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; max-width: 980px; margin-top: 1.4rem; }
@@ -346,6 +321,145 @@
   section.on .receipt .rl:nth-child(4) { transition-delay: 0.63s; }
   section.on .receipt .rl:nth-child(5) { transition-delay: 0.75s; }
   section.on .receipt .rl:nth-child(6) { transition-delay: 0.87s; }
+
+  /* ---- simulated run demos ---- */
+  .demo-tag { font-family: var(--font-mono); font-size: .68rem; color: var(--n4); letter-spacing: .08em; margin-top: .6rem; }
+
+  /* terminal */
+  .term {
+    background: #0a0d10; border: 1px solid var(--shade1); border-radius: 10px;
+    font-family: var(--font-mono); font-size: clamp(.72rem, 1.5vw, .88rem);
+    padding: 1rem 1.2rem; max-width: 840px; width: 100%;
+    display: grid; gap: .45rem; line-height: 1.5;
+  }
+  .term .tbar { display: flex; gap: .4rem; margin-bottom: .5rem; }
+  .term .tbar i { width: 9px; height: 9px; border-radius: 50%; background: var(--n5); }
+  .term .tl { opacity: 0; color: var(--n3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  section.on .term .tl { animation: lineIn .3s ease forwards; }
+  @keyframes lineIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .term .cmd { color: var(--n1); }
+  .term .ok { color: var(--green); }
+  .term .warn { color: var(--yellow); }
+  .term .dim { color: var(--n4); }
+  section.on .term .tl:nth-child(2)  { animation-delay: .3s; }
+  section.on .term .tl:nth-child(3)  { animation-delay: .9s; }
+  section.on .term .tl:nth-child(4)  { animation-delay: 1.7s; }
+  section.on .term .tl:nth-child(5)  { animation-delay: 2.6s; }
+  section.on .term .tl:nth-child(6)  { animation-delay: 3.4s; }
+  section.on .term .tl:nth-child(7)  { animation-delay: 4.2s; }
+  section.on .term .tl:nth-child(8)  { animation-delay: 5.0s; }
+  section.on .term .tl:nth-child(9)  { animation-delay: 5.8s; }
+  section.on .term .tl:nth-child(10) { animation-delay: 6.6s; }
+  .caret::after { content: '\258B'; color: var(--green); animation: blink 1s steps(1) infinite; margin-left: .15rem; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* live two-client chat demo */
+  .live { display: grid; grid-template-columns: 1fr 90px 1fr; align-items: stretch; max-width: 900px; width: 100%; gap: 0; }
+  .client {
+    background: var(--shade5); border: 1px solid var(--shade1); border-radius: 10px;
+    min-height: 200px; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .client .chead {
+    background: var(--shade7); padding: .45rem .8rem; font-family: var(--font-mono);
+    font-size: .75rem; color: var(--n1); display: flex; gap: .5rem; align-items: center;
+    border-bottom: 1px solid var(--shade1);
+  }
+  .client .chead i { width: 8px; height: 8px; border-radius: 50%; background: var(--n5); }
+  .client .chead .who { margin-left: .3rem; }
+  .client .cbody { flex: 1; padding: .8rem; display: flex; flex-direction: column; gap: .5rem; }
+  .bub {
+    max-width: 75%; padding: .4rem .7rem; border-radius: 10px; font-size: .82rem;
+    background: var(--shade1); color: var(--n1); border: 1px solid #1d3a48;
+    align-self: flex-start; opacity: 0;
+  }
+  .bub.mine { align-self: flex-end; background: var(--green-10); border-color: var(--green-25); }
+  .client .cinput {
+    margin: .6rem; padding: .45rem .7rem; border: 1px solid var(--shade1); border-radius: 8px;
+    font-family: var(--font-mono); font-size: .78rem; color: var(--n3); min-height: 2.1em;
+  }
+  .client .typed { display: inline-block; overflow: hidden; white-space: nowrap; vertical-align: bottom; width: 0; }
+  .lane { position: relative; }
+  .lane::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; border-top: 1px dashed var(--shade1); }
+  .lane .zip { position: absolute; top: 50%; left: 0; width: 10px; height: 10px; margin-top: -5px;
+               border-radius: 50%; background: var(--green); opacity: 0; }
+  .verd {
+    margin: 0 .6rem .6rem; font-family: var(--font-mono); font-size: .74rem;
+    color: var(--green); opacity: 0;
+  }
+  /* one shared 7s timeline */
+  section.on .d-type   { animation: dType 7s infinite; }
+  section.on .d-bub-a  { animation: dBubA 7s infinite; }
+  section.on .d-zip    { animation: dZip 7s infinite; }
+  section.on .d-bub-b  { animation: dBubB 7s infinite; }
+  section.on .d-verd   { animation: dVerd 7s infinite; }
+  @keyframes dType { 0%,4% { width: 0; } 22% { width: 7.2ch; } 26%,88% { width: 7.2ch; } 92%,100% { width: 0; } }
+  @keyframes dBubA { 0%,26% { opacity: 0; transform: scale(.7); } 30%,88% { opacity: 1; transform: scale(1); } 94%,100% { opacity: 0; } }
+  @keyframes dZip  { 0%,30% { opacity: 0; left: 0; } 34% { opacity: 1; } 46% { opacity: 1; left: calc(100% - 10px); } 50%,100% { opacity: 0; left: calc(100% - 10px); } }
+  @keyframes dBubB { 0%,46% { opacity: 0; transform: scale(.7); } 50%,88% { opacity: 1; transform: scale(1); } 94%,100% { opacity: 0; } }
+  @keyframes dVerd { 0%,54% { opacity: 0; } 60%,88% { opacity: 1; } 94%,100% { opacity: 0; } }
+  @media (max-width: 720px) { .live { grid-template-columns: 1fr; } .lane { height: 40px; } }
+
+  /* track thumbnails */
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 340px)); gap: 1.2rem; margin: .4rem 0 1.2rem; }
+  .thumb { border: 1px solid var(--shade1); border-radius: 10px; overflow: hidden; background: var(--shade7); }
+  .thumb .th { font-family: var(--font-mono); font-size: .74rem; color: var(--n1);
+               padding: .4rem .7rem; background: var(--shade5); border-bottom: 1px solid var(--shade1); }
+  .thumb .th b { color: var(--green); font-weight: 600; }
+  .thumb.shop .th b { color: var(--yellow); }
+  .tgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; padding: .7rem; }
+  .prod { border: 1px solid var(--shade1); border-radius: 6px; padding: .45rem .5rem; font-family: var(--font-mono); font-size: .66rem; color: var(--n4); }
+  .prod b { display: block; color: var(--n3); font-weight: 500; margin-bottom: .15rem; }
+  .prod .stock { color: var(--green); }
+  section.on .prod .tick { animation: stockTick 5s steps(1) infinite; }
+  @keyframes stockTick { 0%, 55% { color: var(--green); } 60%, 78% { color: var(--yellow); } 80%, 100% { color: var(--green); } }
+  .chatmini { display: grid; grid-template-columns: 84px 1fr; min-height: 118px; }
+  .rooms { border-right: 1px solid var(--shade1); padding: .55rem .5rem; display: grid; gap: .4rem; align-content: start;
+           font-family: var(--font-mono); font-size: .64rem; color: var(--n4); }
+  .rooms .cur { color: var(--green); }
+  .msgs { padding: .55rem .6rem; display: flex; flex-direction: column; gap: .4rem; }
+  .mline { height: 10px; border-radius: 5px; background: var(--shade1); width: 70%; }
+  .mline.mine { align-self: flex-end; background: var(--green-10); border: 1px solid var(--green-25); width: 46%; }
+  section.on .mline.new { animation: dBubA 5s infinite; }
+
+  /* staged mutation captions */
+  .mutcap { font-family: var(--font-mono); font-size: .78rem; min-height: 1.4em; position: relative; max-width: 760px; }
+  .mutcap span { position: absolute; left: 0; top: 0; opacity: 0; white-space: nowrap; }
+  section.on .mc1 { animation: mc1 4s ease-in-out infinite; color: var(--n4); }
+  section.on .mc2 { animation: mc2 4s ease-in-out infinite; color: var(--red); }
+  @keyframes mc1 { 0%, 28% { opacity: 1; } 36%, 90% { opacity: 0; } 98%, 100% { opacity: 1; } }
+  @keyframes mc2 { 0%, 32% { opacity: 0; } 40%, 86% { opacity: 1; } 94%, 100% { opacity: 0; } }
+  section.on .ring { animation: ringIn 4s ease-in-out infinite; }
+  .ring { position: absolute; inset: -6px; border: 1.5px solid var(--red); border-radius: 50%; opacity: 0; }
+  .dotwrap { position: relative; }
+
+  /* video player mock */
+  .player { max-width: 720px; width: 100%; border: 1px solid var(--shade1); border-radius: 10px; overflow: hidden; background: #0a0d10; }
+  .pbanner { position: relative; height: 2.2rem; }
+  .pbanner .banner { position: absolute; inset: 0; border-radius: 0; align-items: center; border-left: none; border-right: none; border-top: none; }
+  section.on .pbanner .pass { animation: bswap 8s steps(1) infinite; }
+  section.on .pbanner .fail { animation: bswap2 8s steps(1) infinite; }
+  @keyframes bswap  { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  @keyframes bswap2 { 0%, 49% { opacity: 0; } 50%, 100% { opacity: 1; } }
+  .pscreen { height: 170px; display: grid; place-items: center; color: var(--n5); position: relative; }
+  .pscreen svg { opacity: .6; }
+  .pbar { height: 4px; background: var(--shade4); position: relative; }
+  .pbar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--green); }
+  section.on .pbar i { animation: pplay 8s linear infinite; }
+  @keyframes pplay { to { width: 100%; } }
+
+  /* skeleton scoreboard */
+  .board { max-width: 760px; width: 100%; border: 1px solid var(--shade1); border-radius: 10px; overflow: hidden; position: relative; }
+  .board table { margin: 0; max-width: none; }
+  .board th { padding: .6rem .9rem; background: var(--shade7); }
+  .skel { display: inline-block; width: 4.5rem; height: .8rem; border-radius: 4px; background: var(--shade4); position: relative; overflow: hidden; vertical-align: middle; }
+  .skel.w2 { width: 2.8rem; } .skel.w3 { width: 6rem; }
+  .skel::after { content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, #4cf49022, transparent);
+    transform: translateX(-100%); animation: shimmer 2s infinite; }
+  @keyframes shimmer { to { transform: translateX(100%); } }
+  .board .overlay { position: absolute; inset: 0; display: grid; place-items: center;
+    background: #06060699; font-family: var(--font-mono); font-size: .85rem; color: var(--n1); text-align: center; padding: 1rem; }
+
   @media (max-width: 720px) {
     .files { columns: 1; }
     #dots { display: none; }
@@ -399,77 +513,46 @@
 <section>
   <div class="kicker r">the loop</div>
   <h2 class="r d1">Build &rarr; verify &rarr; report &rarr; fix &rarr; record</h2>
-  <svg class="loop r d2" viewBox="0 0 960 235" role="img" aria-label="benchmark loop diagram">
-    <defs>
-      <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-        <path d="M0 0 L8 4 L0 8 z" fill="#363840"/>
-      </marker>
-    </defs>
-    <g class="hn">
-      <rect class="node pulse" x="10" y="60" width="150" height="64"/>
-      <text class="t" x="30" y="88">fixed prompt</text>
-      <text class="sub" x="30" y="106">per track + level</text>
-      <g class="tip"><text x="20" y="226">same bytes every run, snapshotted with the results</text></g>
-    </g>
-    <g class="hn">
-      <rect class="node pulse" x="210" y="60" width="160" height="64" style="animation-delay:.6s"/>
-      <text class="t" x="230" y="88">agent builds</text>
-      <text class="sub" x="230" y="106">isolated container</text>
-      <g class="tip"><text x="20" y="226">a sealed session with no host access</text></g>
-    </g>
-    <g class="hn">
-      <rect class="node pulse" x="420" y="60" width="170" height="64" style="animation-delay:1.2s"/>
-      <text class="t" x="440" y="88">harness grades</text>
-      <text class="sub" x="440" y="106">reset &rarr; lint &rarr; suites</text>
-      <g class="tip"><text x="20" y="226">fresh database, contract check, then every scenario suite</text></g>
-    </g>
-    <g class="hn">
-      <rect class="node pulse" x="640" y="60" width="150" height="64" style="animation-delay:1.8s"/>
-      <text class="t" x="660" y="88">bug report</text>
-      <text class="sub" x="660" y="106">what a user saw fail</text>
-      <g class="tip"><text x="20" y="226">behavioural only: the agent hears what failed, never how it is graded</text></g>
-    </g>
-    <g class="hn">
-      <rect class="node pulse" x="840" y="60" width="110" height="64" style="animation-delay:2.4s"/>
-      <text class="t" x="860" y="88">record</text>
-      <text class="sub" x="860" y="106">everything</text>
-      <g class="tip"><text x="20" y="226">prompt, sessions, verdicts, videos, cost and timing</text></g>
-    </g>
-    <path class="edge flow" d="M160 92 H206"/>
-    <path class="edge flow" d="M370 92 H416"/>
-    <path class="edge flow" d="M590 92 H636"/>
-    <path class="edge flow" d="M790 92 H836"/>
-    <path class="edge flow back" d="M715 128 v46 H290 v-46" marker-end="url(#arr)"/>
-    <text class="sub" x="445" y="192">fix rounds are limited by a declared budget</text>
-    <text class="sub caption" x="20" y="226">hover a stage</text>
-  </svg>
-  <p class="supp r d3">Fix rounds that lose evidence or make the score worse are rolled back, and each run reports successful and unresolved correction spend separately.</p>
+  <div class="term r d2" role="img" aria-label="simulated benchmark run">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="tl"><span class="cmd">$ bench --backend stack-a --track ecommerce --levels 1-2</span></div>
+    <div class="tl">preflight <span class="dim">···························</span> <span class="ok">24/24 &#10003;</span></div>
+    <div class="tl">build session <span class="dim">······</span> complete <span class="dim">&middot; $4.12 &middot; 9m 40s</span></div>
+    <div class="tl">grade L1 <span class="dim">···········</span> features 16/18 &middot; invariants 7/8 &middot; delivery 5/5</div>
+    <div class="tl">bug report <span class="dim">·········</span> <span class="warn">3 findings</span> &rarr; fix round 1 <span class="dim">(budget: 2)</span></div>
+    <div class="tl">fix round 1 <span class="dim">········</span> complete <span class="dim">&middot; $0.61 &middot; 2m 05s</span></div>
+    <div class="tl">grade L1 <span class="dim">···········</span> <span class="ok">all criteria pass &#10003;</span> <span class="dim">checkpoint saved</span></div>
+    <div class="tl">record <span class="dim">·············</span> prompt &middot; sessions &middot; verdicts &middot; videos &middot; cost</div>
+    <div class="tl caret"><span class="cmd">$</span> <span class="dim">next: L2, same budget rules</span></div>
+  </div>
+  <div class="demo-tag r d3">simulated output &middot; illustrative numbers</div>
+  <p class="supp r d3" style="margin-top:1rem">Fix rounds draw from a declared budget, and rounds that lose evidence or lower the score are rolled back. The agent hears what failed, never how it is graded.</p>
 </section>
 
 <!-- 4 - how grading works -->
 <section>
   <div class="kicker r">verification</div>
   <h2 class="r d1">Grading drives real clients</h2>
-  <svg class="actors r d2" viewBox="0 0 880 190" role="img" aria-label="two isolated browser clients">
-    <rect class="win" x="20" y="30" width="300" height="130"/>
-    <rect class="tb" x="21" y="31" width="298" height="26" rx="8"/>
-    <circle class="led" cx="38" cy="44" r="4"/><circle class="led" cx="52" cy="44" r="4"/>
-    <text class="name" x="70" y="48">alice</text>
-    <text x="40" y="86">isolated browser context</text>
-    <text x="40" y="104">acts through the real UI</text>
-    <rect class="win" x="560" y="30" width="300" height="130"/>
-    <rect class="tb" x="561" y="31" width="298" height="26" rx="8"/>
-    <circle class="led" cx="578" cy="44" r="4"/><circle class="led" cx="592" cy="44" r="4"/>
-    <text class="name" x="610" y="48">bob</text>
-    <text x="580" y="86">separate identity</text>
-    <text x="580" y="104">separate storage</text>
-    <path class="wire" d="M320 95 H560"/>
-    <circle class="msg" cx="350" cy="95" r="6" fill="var(--green)"/>
-    <g class="assert">
-      <text class="name" x="580" y="140" fill="var(--green)">&#10003; observed here, within its deadline</text>
-    </g>
-    <text x="20" y="182">alice acts &middot; the criterion passes only when bob's browser shows the result</text>
-  </svg>
+  <div class="live r d2" role="img" aria-label="a message sent by one client is asserted in the other client's browser">
+    <div class="client">
+      <div class="chead"><i></i><i></i><span class="who">alice &middot; isolated browser</span></div>
+      <div class="cbody">
+        <div class="bub" style="opacity:1">morning!</div>
+        <div class="bub mine d-bub-a">hey bob</div>
+      </div>
+      <div class="cinput"><span class="typed d-type">hey bob</span></div>
+    </div>
+    <div class="lane"><i class="zip d-zip"></i></div>
+    <div class="client">
+      <div class="chead"><i></i><i></i><span class="who">bob &middot; separate identity</span></div>
+      <div class="cbody">
+        <div class="bub mine" style="opacity:1">morning!</div>
+        <div class="bub d-bub-b">hey bob</div>
+      </div>
+      <div class="verd d-verd">&#10003; delivery-live &middot; observed in 213ms, no reload</div>
+    </div>
+  </div>
+  <div class="demo-tag r d2">simulated clients &middot; illustrative latency</div>
   <div class="cards">
     <div class="card r d3" tabindex="0"><h3>features</h3><p>does each described feature work</p>
       <p class="more">each criterion asserts one behaviour a user can observe</p></div>
@@ -483,16 +566,31 @@
     <div><span>works only after a page reload</span><b>cap 1 / 3</b></div>
     <div><span>feature unreachable</span><b>0</b></div>
   </div>
-  <p class="supp r d5" style="margin-top:1rem">Elements are found only through the <code>data-testid</code> contract the prompt requires.</p>
 </section>
 
 <!-- 5 - tracks and levels -->
 <section>
   <div class="kicker r">tracks &amp; levels</div>
   <h2 class="r d1">Two applications, one ladder</h2>
-  <div class="cards" style="max-width:760px">
-    <div class="card r d2"><h3>chat</h3><p>rooms, messages, presence</p></div>
-    <div class="card ye r d2"><h3>ecommerce</h3><p>storefront, cart, warehouses</p></div>
+  <div class="thumbs r d2">
+    <div class="thumb">
+      <div class="th"><b>chat</b> &middot; rooms, messages, presence</div>
+      <div class="chatmini">
+        <div class="rooms"><span class="cur"># general</span><span># design</span><span># launch</span></div>
+        <div class="msgs"><div class="mline"></div><div class="mline mine"></div><div class="mline" style="width:55%"></div><div class="mline mine new" style="width:38%"></div></div>
+      </div>
+    </div>
+    <div class="thumb shop">
+      <div class="th"><b>ecommerce</b> &middot; storefront, cart, warehouses</div>
+      <div class="tgrid">
+        <div class="prod"><b>headphones</b>$89 <span class="stock tick">&middot; 3 left</span></div>
+        <div class="prod"><b>keyboard</b>$120 <span class="stock">&middot; 14 left</span></div>
+        <div class="prod"><b>webcam</b>$45 <span class="stock">&middot; 8 left</span></div>
+        <div class="prod"><b>monitor</b>$310 <span class="stock">&middot; 2 left</span></div>
+        <div class="prod"><b>dock</b>$150 <span class="stock">&middot; 6 left</span></div>
+        <div class="prod"><b>mouse</b>$39 <span class="stock">&middot; 22 left</span></div>
+      </div>
+    </div>
   </div>
   <div class="ladder">
     <div class="rung"><span class="lv">L1</span><div class="bar">identity &middot; durable state &middot; real-time</div><span class="vbadge">validated</span>
@@ -506,7 +604,7 @@
     <div class="rung todo"><span class="lv">L5</span><div class="bar">throughput &middot; latency &middot; efficiency</div>
       <span class="more">both tracks: volume</span></div>
   </div>
-  <p class="supp r d4">Levels are cumulative, so a regression at L1 is caught while grading L3. Hover a level for what each track adds there.</p>
+  <p class="supp r d4">Levels are cumulative, so a regression at L1 is caught while grading L3. Hover a level for what each track adds.</p>
 </section>
 
 <!-- 6 - keeping it honest -->
@@ -518,12 +616,15 @@
       <span class="mutlabel">reference app</span>
       <div class="dots">
         <div class="dot"></div><div class="dot"></div><div class="dot"></div>
-        <div class="dot hit"></div>
+        <div class="dotwrap"><div class="dot hit"></div><div class="ring"></div></div>
         <div class="dot"></div><div class="dot"></div><div class="dot"></div>
       </div>
-      <span class="mutnote">defect injected &rarr; exactly this criterion fails</span>
     </div>
-    <div class="mutrow">
+    <div class="mutcap">
+      <span class="mc1">a fully passing reference app, graded by the real suites</span>
+      <span class="mc2">defect planted &rarr; exactly the declared criterion fails &middot; kill confirmed</span>
+    </div>
+    <div class="mutrow" style="margin-top:.6rem">
       <span class="mutlabel">blank app</span>
       <div class="dots">
         <div class="dot hollow"></div><div class="dot hollow"></div><div class="dot hollow"></div>
@@ -549,30 +650,40 @@
 <section>
   <div class="kicker r">reproducibility</div>
   <h2 class="r d1">A run owns what it starts, and proves it</h2>
-  <ul class="checks r d2">
-    <li>environment verified before any model call
-      <span class="more">Docker, digest-pinned images, ports, credentials, clock, storage; the smoke test boots the real build image without a model</span></li>
-    <li>build sessions sealed in a container
-      <span class="more">no host access; a sandbox probe gates every run and a leak audit reviews every transcript</span></li>
-    <li>databases started per run, through a lease
-      <span class="more">reset, restart and teardown go only through a token-authenticated backend lease; nothing already on the machine is touched</span></li>
-    <li>every check lands in one typed state
-      <span class="more">passed, failed, inconclusive or harness_failure; prose cannot change a verdict</span></li>
-    <li>every result carries its identity chain
-      <span class="more">any published number can be traced to the exact run, prompt, image and recipe that produced it</span></li>
-  </ul>
-  <p class="supp r d4">Hover an item for the mechanism behind it.</p>
+  <div class="term r d2" role="img" aria-label="simulated preflight">
+    <div class="tbar"><i></i><i></i><i></i></div>
+    <div class="tl"><span class="cmd">$ bench preflight --backend all --levels 1-2</span></div>
+    <div class="tl">docker &middot; compose <span class="dim">·······</span> <span class="ok">&#10003;</span> <span class="dim">images digest-pinned</span></div>
+    <div class="tl">ports &middot; credentials <span class="dim">····</span> <span class="ok">&#10003;</span> <span class="dim">clock skew 12ms &middot; disk ok</span></div>
+    <div class="tl">build container <span class="dim">········</span> <span class="ok">&#10003;</span> <span class="dim">sealed, no host access</span></div>
+    <div class="tl">sandbox probe <span class="dim">··········</span> <span class="ok">&#10003;</span> <span class="dim">leak audit armed</span></div>
+    <div class="tl">database lease <span class="dim">·········</span> <span class="ok">&#10003;</span> <span class="dim">services owned by this run only</span></div>
+    <div class="tl"><span class="ok">24/24 &#8212; cleared before any model spend</span></div>
+  </div>
+  <div class="demo-tag r d3">simulated output &middot; the real gate runs before every paid session</div>
+  <div class="tiles" style="max-width:760px">
+    <div class="tile r d4" tabindex="0"><h3>typed verdicts</h3><p>passed &middot; failed &middot; inconclusive &middot; harness_failure</p>
+      <p class="more">one shared status table drives scoring, controls and comparisons; prose cannot change a verdict</p></div>
+    <div class="tile r d4" tabindex="0"><h3>identity chains</h3><p>every result names its exact inputs</p>
+      <p class="more">any published number traces to the run, prompt, image and recipe that produced it</p></div>
+  </div>
 </section>
 
 <!-- 9 - evidence -->
 <section>
   <div class="kicker r">evidence</div>
   <h2 class="r d1">Every verdict comes with its receipts</h2>
-  <div class="banners r d2">
-    <div class="banner pass"><span>alice &middot; pending-visible-to-author &middot; step 4/4</span><span>PASS</span></div>
-    <div class="banner fail"><span>bob &middot; cart-total-exact &middot; expected 3, found 2</span><span>FAIL</span></div>
+  <div class="player r d2" role="img" aria-label="annotated run recording">
+    <div class="pbanner">
+      <div class="banner pass"><span>alice &middot; pending-visible-to-author &middot; step 4/4</span><span>PASS</span></div>
+      <div class="banner fail"><span>bob &middot; cart-total-exact &middot; expected 3, found 2</span><span>FAIL</span></div>
+    </div>
+    <div class="pscreen">
+      <svg width="46" height="46" viewBox="0 0 24 24" fill="none"><path d="M8 5v14l11-7z" fill="#363840"/></svg>
+    </div>
+    <div class="pbar"><i></i></div>
   </div>
-  <p class="r d2" style="font-size:.9rem">Every recording carries this banner: the actor being driven, the criterion under test, and the verdict at the moment it lands. A video explains itself.</p>
+  <div class="demo-tag r d2">every recording carries this banner: actor, criterion, verdict at the moment it lands</div>
   <div class="files r d3">
     <div><span>.prompt-*.md</span> &middot; the exact prompt the agent received</div>
     <div><span>.session-*.json</span> &middot; cost, tokens, duration, final message</div>
@@ -591,15 +702,16 @@
 <section>
   <div class="kicker r">results</div>
   <h2 class="r d1">Numbers ship with proof, or not at all</h2>
-  <div class="empty r d2">
-    <b>First qualified comparison in preparation</b>
-    scores &middot; costs &middot; fix rounds &middot; spread
+  <div class="board r d2" role="img" aria-label="scoreboard placeholder">
+    <table>
+      <tr><th>backend</th><th>score</th><th>cost</th><th>fix rounds</th><th>spread</th></tr>
+      <tr><td><span class="skel w3"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel"></span></td></tr>
+      <tr><td><span class="skel w3"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel"></span></td></tr>
+      <tr><td><span class="skel w3"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel"></span></td></tr>
+    </table>
+    <div class="overlay">this table fills in when repeated runs qualify<br><span style="color:var(--n4);font-size:.75rem">every number will arrive with its spread and its full evidence bundle</span></div>
   </div>
-  <ul class="plain">
-    <li class="r d3">Publication is gated on repeated runs, so every number arrives with its spread.</li>
-    <li class="r d4">Every published score carries its full evidence bundle: prompts, sessions, per-criterion verdicts, videos and traces.</li>
-    <li class="r d5">Until that bar is met, this page stays number-free.</li>
-  </ul>
+  <p class="supp r d4" style="margin-top:1.4rem">Publication is gated on repeated runs. Until that bar is met, this page stays number-free.</p>
 </section>
 
 <script>
