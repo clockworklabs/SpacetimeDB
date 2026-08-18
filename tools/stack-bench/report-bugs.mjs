@@ -81,6 +81,25 @@ if (existsSync(lintPath)) {
   }
 }
 
+const bundlePath = join(resultsDir, 'bundle.json');
+if (existsSync(bundlePath)) {
+  const bundle = readArtifactPayload(bundlePath, { expectedKind: 'grade_bundle' });
+  if (bundle.outcome?.kind === 'app_failure' && bundle.outcome.reason) {
+    const expected = {
+      'database-provenance': `The app must use the ${bundle.backend} database and connection supplied for this run.`,
+      'application-layout': 'The app must use a project layout that can be built, started, and reset repeatedly.',
+      'application-restart': 'The app must provide a repeatable command that starts its server after a clean database reset.',
+    }[bundle.outcome.phase] ?? 'The app must start successfully in the supplied benchmark environment.';
+    bugs.unshift({
+      area: 'Application setup',
+      expected,
+      observed: sanitiseDiagnostic(bundle.outcome.reason, 500),
+      consoleErrors: [],
+      contract: false,
+    });
+  }
+}
+
 if (bugs.length === 0) {
   console.log('No failures — no bug report written.');
   process.exit(3);
@@ -129,7 +148,6 @@ if (vaguePct >= 50) {
 }
 
 try {
-  const bundlePath = join(resultsDir, 'bundle.json');
   const bundle = existsSync(bundlePath) ? readArtifact(bundlePath, { expectedKind: 'grade_bundle' }) : null;
   const parentId = bundle?.attempt.id ?? null;
   writeArtifact(join(dirname(args.out), 'bug-report-quality.json'), {

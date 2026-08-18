@@ -58,10 +58,30 @@ export function childFailureDetail(failure = null, stdout = '', limit = 600) {
 
 export function resetFailureOutcome(error) {
   return error?.status === GENERATED_APP_LAYOUT_EXIT_CODE
-    ? { kind: 'ungraded', phase: 'application-layout' }
+    ? { kind: 'app_failure', phase: 'application-layout',
+      appFailures: ['application-layout'] }
     : error?.code === 'generated_app_not_restartable'
-    ? { kind: 'ungraded', phase: 'application-restart' }
+    ? { kind: 'app_failure', phase: 'application-restart',
+      appFailures: ['application-restart'] }
     : { kind: 'harness_failure', phase: 'database-reset' };
+}
+
+export function applicationFailureTotals(selection, declaredSuites) {
+  if (!selection?.checks?.length) return {};
+  const inherited = new Set(declaredSuites.filter(suite => suite.inherited).map(suite => suite.id));
+  const currentMax = selection.checks.filter(check => !inherited.has(check.executionId))
+    .reduce((total, check) => total + Number(check.points ?? 0), 0);
+  const regressionMax = selection.checks.filter(check => inherited.has(check.executionId))
+    .reduce((total, check) => total + Number(check.points ?? 0), 0);
+  return { score: 0, max: currentMax, dirty: false, contractPass: null,
+    regression: regressionMax ? { score: 0, max: regressionMax } : null };
+}
+
+export function clearPreviousGradeOutputs(output, declaredSuites) {
+  for (const name of ['bundle.json', 'contract-lint.json', 'actions.json', 'media', 'failure-media',
+    ...declaredSuites.map(suite => `grading-${suite.id}.json`)]) {
+    rmSync(join(output, name), { recursive: true, force: true });
+  }
 }
 
 function parseArgs(argv) {
@@ -417,7 +437,10 @@ async function main() {
   const bundleArtifactId = `${args.parentAttemptId ?? args.label}-grade-bundle-l${args.level}${observationSuffix}`;
   args.bundleArtifactId = bundleArtifactId;
   mkdirSync(args.out, { recursive: true });
-  rmSync(join(args.out, 'bundle.json'), { force: true });
+  // A structural abort can happen before any suite overwrites its old result.
+  // Remove only the exact outputs this grading pass owns so repair feedback
+  // cannot mix a current startup failure with criteria from the prior round.
+  clearPreviousGradeOutputs(args.out, declaredSuites);
 
   console.log(`\n=== ${args.label} (${args.backend}) ===`);
   console.log(`  app: ${args.app}`);
@@ -461,6 +484,9 @@ async function main() {
     }),
     payload: bundle,
   });
+  const recordApplicationAbort = () => {
+    bundle.totals = applicationFailureTotals(selection, declaredSuites);
+  };
   const markRemainingNotRun = reason => {
     if (!bundle.selection) return;
     const accounted = new Set([
@@ -554,6 +580,7 @@ async function main() {
     bundle.error = `app is not using the benchmark database: ${prov.reason}`;
     bundle.outcome = { kind: 'app_failure', phase: 'database-provenance', reason: bundle.error,
       appFailures: ['database-provenance'] };
+    recordApplicationAbort();
     markRemainingNotRun('run aborted because database provenance was invalid');
     writeBundle();
     console.log('\nABORTED: results would not describe the benchmark environment.');
@@ -564,6 +591,7 @@ async function main() {
     if (!(await freshen())) {
       bundle.error = `database reset failed — scores would not be comparable${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
       bundle.outcome = { ...lastResetOutcome, reason: bundle.error };
+      if (bundle.outcome.kind === 'app_failure') recordApplicationAbort();
       markRemainingNotRun('run aborted after database reset failed');
       writeBundle();
       console.log('\nABORTED: could not reset database.');
@@ -589,6 +617,7 @@ async function main() {
       markRemainingNotRun('run aborted after database reset failed');
       bundle.error = `database reset failed — remaining selected checks did not run${lastResetFailure ? `: ${lastResetFailure}` : ''}`;
       bundle.outcome = { ...lastResetOutcome, reason: bundle.error };
+      if (bundle.outcome.kind === 'app_failure') recordApplicationAbort();
       writeBundle();
       console.log(`\nABORTED: ${bundle.error}`);
       process.exit(1);

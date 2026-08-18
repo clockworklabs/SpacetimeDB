@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { createBoundRecipeTaskRequest } from '../recipe-selection.mjs';
 import { resolveRecipeRelease } from '../recipe-release.mjs';
-import { childFailureDetail, findMutationBackups, selectObservationScope,
-  resetFailureOutcome, suitesForRecipe } from '../run-suite.mjs';
+import { childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
+  applicationFailureTotals, resetFailureOutcome, suitesForRecipe } from '../run-suite.mjs';
 import { loadTrack } from '../tracks.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../reset-backend.mjs';
 
@@ -51,15 +51,44 @@ test('grader child diagnostics retain the cause instead of only trailing stack f
   assert.doesNotMatch(detail, /validateCheckEvidence/);
 });
 
-test('a generated app without a restart command is ungraded, not blamed on the harness', () => {
+test('generated layout and restart defects are repairable app failures, not harness failures', () => {
   const application = Object.assign(new Error('server/package.json has no dev or start script'),
     { code: 'generated_app_not_restartable' });
   assert.deepEqual(resetFailureOutcome(application),
-    { kind: 'ungraded', phase: 'application-restart' });
+    { kind: 'app_failure', phase: 'application-restart',
+      appFailures: ['application-restart'] });
   assert.deepEqual(resetFailureOutcome(new Error('database container disappeared')),
     { kind: 'harness_failure', phase: 'database-reset' });
   assert.deepEqual(resetFailureOutcome({ status: GENERATED_APP_LAYOUT_EXIT_CODE }),
-    { kind: 'ungraded', phase: 'application-layout' });
+    { kind: 'app_failure', phase: 'application-layout',
+      appFailures: ['application-layout'] });
+});
+
+test('an application setup failure receives the exact current and inherited denominators', () => {
+  const selection = { checks: [
+    { executionId: 'current', points: 3 },
+    { executionId: 'inherited', points: 2 },
+    { executionId: 'control', points: 0 },
+  ] };
+  assert.deepEqual(applicationFailureTotals(selection, [
+    { id: 'current' }, { id: 'inherited', inherited: true }, { id: 'control' },
+  ]), { score: 0, max: 3, dirty: false, contractPass: null,
+    regression: { score: 0, max: 2 } });
+});
+
+test('a new grade removes only prior outputs that it owns', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-grade-cleanup-'));
+  try {
+    mkdirSync(join(root, 'failure-media'), { recursive: true });
+    writeFileSync(join(root, 'bundle.json'), 'old');
+    writeFileSync(join(root, 'grading-features.json'), 'old');
+    writeFileSync(join(root, 'operator-notes.txt'), 'keep');
+    clearPreviousGradeOutputs(root, [{ id: 'features' }]);
+    assert.equal(existsSync(join(root, 'bundle.json')), false);
+    assert.equal(existsSync(join(root, 'grading-features.json')), false);
+    assert.equal(existsSync(join(root, 'failure-media')), false);
+    assert.equal(readFileSync(join(root, 'operator-notes.txt'), 'utf8'), 'keep');
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('observed-only scope is modular, disjoint, and contributes no score', () => {

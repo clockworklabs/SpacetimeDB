@@ -164,6 +164,24 @@ function auditContamination(appDir) {
   }
 }
 
+const APPLICATION_SETUP_PHASES = new Set([
+  'database-provenance', 'application-layout', 'application-restart',
+]);
+
+export function repairEvidenceDecision(beforeBundle, afterBundle) {
+  const shared = compareCriterionEvidence(beforeBundle, afterBundle);
+  const startedFromApplicationSetup = beforeBundle?.outcome?.kind === 'app_failure'
+    && APPLICATION_SETUP_PHASES.has(beforeBundle.outcome.phase);
+  if (shared.count === 0 && shared.lostEvidence.length === 0
+    && shared.definitionChanges.length === 0) {
+    return { action: startedFromApplicationSetup ? 'keep-setup-repair' : 'rollback-no-comparison',
+      shared };
+  }
+  const evidenceRegressed = shared.lostEvidence.length > 0 || shared.definitionChanges.length > 0;
+  return { action: evidenceRegressed || shared.after < shared.before ? 'rollback-regression' : 'keep',
+    shared };
+}
+
 function containerIdentity(name) {
   try {
     const id = execFileSync('docker', ['inspect', '--format', '{{.Id}}', name],
@@ -1004,7 +1022,7 @@ async function main() {
     }
 
     // Hand back findings and let the agent fix, until clean or out of rounds.
-    while (initialGradeUsable && fixRounds < args.fixRounds) {
+    while (ladderMayContinue(classifyBundle(bundle)) && fixRounds < args.fixRounds) {
       let wroteReport = true;
       try {
         sh('node', [join(ROOT, 'report-bugs.mjs'), '--app', appDir,
@@ -1067,8 +1085,15 @@ async function main() {
       // evidence and rolls the source back instead of hiding a regression.
       // The declared denominator is fixed; typed evidence still matters here
       // because an unmeasured check is not interchangeable with a real failure.
-      const shared = compareCriterionEvidence(beforeBundle, bundle);
-      if (shared.count === 0 && shared.lostEvidence.length === 0 && shared.definitionChanges.length === 0) {
+      const decision = repairEvidenceDecision(beforeBundle, bundle);
+      const shared = decision.shared;
+      if (decision.action === 'keep-setup-repair') {
+        console.log(afterMax > 0
+          ? `    application setup is now gradeable (${after}/${afterMax}); keeping this repair`
+          : '    application setup is still failing; keeping the attempted repair for the next round');
+        continue;
+      }
+      if (decision.action === 'rollback-no-comparison') {
         console.log('    no criteria were conclusively scored in both rounds; rolling back this fix');
         restoreSource(snapshot, appDir);
         bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback${fixRounds}`, level, track, runId);
@@ -1078,8 +1103,7 @@ async function main() {
         console.log(`    comparing ${shared.points} point(s) across ${shared.count} criteria scored in both rounds`
           + ` (${before}/${beforeMax} -> ${after}/${afterMax} overall)`);
       }
-      const evidenceRegressed = shared.lostEvidence.length > 0 || shared.definitionChanges.length > 0;
-      if (evidenceRegressed || shared.after < shared.before) {
+      if (decision.action === 'rollback-regression') {
         if (shared.lostEvidence.length) {
           console.log(`    lost conclusive evidence for ${shared.lostEvidence.length} criterion/criteria; rolling back this fix`);
         } else if (shared.definitionChanges.length) {
