@@ -95,14 +95,14 @@
 <ul>
   <li><b>Concurrent checkout.</b> Two shoppers buy the last unit at the same instant. Exactly one order stands.</li>
   <li><b>Backend restart.</b> An order is confirmed, the backend restarts mid-run, and the order is still there afterwards.</li>
-  <li><b>Client disconnect.</b> A shopper drops, the catalogue changes while they are away, and they catch up with no gaps and no repeats.</li>
+  <li><b>Client disconnect.</b> A shopper drops, the catalog changes while they are away, and they catch up with no gaps and no repeats.</li>
   <li><b>Cart isolation.</b> One shopper's cart stays their own.</li>
   <li><b>Forged write.</b> A request altered to look like another shopper is refused.</li>
-  <li><b>Event order.</b> Two writers change the catalogue at once and every client agrees on the order.</li>
+  <li><b>Event order.</b> Two writers change the catalog at once and every client agrees on the order.</li>
 </ul>
 
 <h2>Either the database keeps the count, or your code keeps it</h2>
-<p>Selling the last unit exactly once is one line of intent and several lines of care. A database that serialises the write owns that rule itself, and the agent gets it right whatever it writes. A database that offers the pieces leaves the rule to the agent: open a transaction, lock the row, re-check the stock, commit or retry.</p>
+<p>Selling the last unit exactly once is one line of intent and several lines of care. A database that serializes the write owns that rule itself, and the agent gets it right whatever it writes. A database that offers the pieces leaves the rule to the agent: open a transaction, lock the row, re-check the stock, commit or retry.</p>
 <p>Every piece the agent has to remember is a piece that can go missing, and that shows up in the bill.</p>
 
 <h2>The grader earns the right to score</h2>
