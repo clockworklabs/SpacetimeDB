@@ -103,3 +103,18 @@ test('package command entrypoints exist', () => {
       `${name} points to missing entrypoint ${match[1]}`);
   }
 });
+
+test('local and appliance compose files pin the same database images and volumes', () => {
+  const local = readFileSync(join(ROOT, 'docker-compose.yaml'), 'utf8');
+  const appliance = readFileSync(join(ROOT, 'appliance', 'docker-compose.yaml'), 'utf8');
+  const image = (source, service) => source.match(new RegExp(
+    `^  ${service}:\\r?\\n(?:    .*\\r?\\n)*?    image: (\\S+)$`, 'm'))?.[1] ?? null;
+  for (const service of ['postgres', 'mongodb']) {
+    assert.match(image(local, service) ?? '', /@sha256:[a-f0-9]{64}$/);
+    assert.equal(image(local, service), image(appliance, service));
+  }
+  for (const volume of ['stack-bench-appliance-pgdata', 'stack-bench-appliance-mongodata']) {
+    assert.match(local, new RegExp(`name: ${volume}`));
+    assert.match(appliance, new RegExp(`name: ${volume}`));
+  }
+});

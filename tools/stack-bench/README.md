@@ -108,13 +108,14 @@ not fixture reports. Every public track is included by default and the complete
 criterion evidence is written under `results/`.
 
 ```bash
-npm run bench -- --backend spacetime --levels 1-2
-npm run bench -- --backend postgres  --levels 1-2 --run-index 1
-npm run bench -- --backend mongodb   --levels 1-2 --run-index 2
+npm run bench -- --backend spacetime --track ecommerce --levels 1-2
+npm run bench -- --backend postgres  --track ecommerce --levels 1-2 --run-index 1
+npm run bench -- --backend mongodb   --track ecommerce --levels 1-2 --run-index 2
 npm run bench -- --backend postgres --track ecommerce --levels 1 \
-  --pack ecommerce.identity-access --check <stable-check-key>
+  --pack ecommerce.feature.accounts \
+  --check ecommerce.feature.accounts.accounts.1a
 npm run bench -- --backend postgres --track ecommerce --levels 1 \
-  --recipe ecommerce.l1-standard@1.1.0
+  --recipe ecommerce.l1-modular@2.3.0
 
 # Inspect an exhausted level, then grant at most four more correction rounds.
 npm run repair -- status <run-directory> --level 1
@@ -162,8 +163,9 @@ completion times, and every applicable engine, recipe, pack, fixture,
 calibration, experiment, agent-adapter, and stack-adapter identity. Evidence
 payload fields are checked by kind and files are replaced atomically. Active
 readers accept only schema v2 and reject unknown fields, kinds, versions,
-malformed hashes, and secret-bearing keys. Pre-v1 result bytes are preserved in
-a checksummed inert archive, not interpreted as current evidence.
+malformed hashes, and secret-bearing keys. Files outside the current artifact
+schema are not interpreted as benchmark evidence. Operators may retain them
+separately as local archival material.
 
 Every check records exactly one typed state: `passed`, `failed`, `inconclusive`,
 or `harness_failure`. One shared status table drives scoring, run outcomes,
@@ -246,10 +248,6 @@ show` displays that exact composed task and its independent hash.
 
 Tracks are isolated by a port offset and a name slug, so two can run at the same
 `--run-index` without colliding on ports, databases or result directories.
-
-`tracks/ecommerce/overview.html` is a self-contained explainer of that track —
-what gets built, how it is graded, and how the benchmark is kept honest — written
-for a reader who does not work on the harness.
 
 ## Levels
 

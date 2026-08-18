@@ -10,7 +10,7 @@ name: stack-bench
 
 services:
   postgres:
-    image: postgres:16@sha256:803ea6da631eab4a350da4ba87541e4737197b8c26ec0feb23ff6f9714212d1d
+    image: postgres:16@sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7
     container_name: stack-bench-postgres
     ports:
       - "6532:5432"
@@ -24,13 +24,13 @@ services:
       test: ["CMD-SHELL", "pg_isready -U stackbench"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 12
 
   # Single node, no replica set: change streams would give MongoDB a push
   # mechanism the Postgres backend does not have, and the comparison is about
   # what an agent builds on a standard stack.
   mongodb:
-    image: mongo:7@sha256:8ecb514b00bdcc0bde67ef4e6c330385377a9dc68e24ee94e28c07c891647348
+    image: mongo:7@sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082
     container_name: stack-bench-mongodb
     ports:
       - "6537:27017"
@@ -40,8 +40,10 @@ services:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1})"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 12
 
 volumes:
   pgdata:
+    name: stack-bench-appliance-pgdata
   mongodata:
+    name: stack-bench-appliance-mongodata
