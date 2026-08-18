@@ -61,6 +61,7 @@ test('packaged neutral guidance exists symmetrically without architecture advice
     repairPolicy: 'scored-only@1.0.0' };
   const [condition] = resolveStudyConditions([neutral], ['mongodb', 'postgres', 'spacetime'],
     { requested });
+  assert.equal(condition.guidance.state, 'qualified');
   assert.equal(condition.guidance.mode, 'neutral');
   assert.equal(condition.guidance.material.designAdvice, false);
   assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);

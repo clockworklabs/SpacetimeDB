@@ -3,7 +3,7 @@
   "kind": "backend-guidance-profile",
   "id": "neutral",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "mode": "neutral",
   "material": {
     "accessFacts": true,
