@@ -4,8 +4,9 @@ import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, rea
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 
 import { readArtifact, readArtifactPayload } from '../artifacts.mjs';
-import { compileCampaignFile } from '../campaign-compiler.mjs';
-import { readCampaignState } from '../campaign-scheduler.mjs';
+import { compileCampaignFile, validateCompiledCampaignPlan } from '../campaign-compiler.mjs';
+import { canonicalDefinitionJson } from '../definition-plan.mjs';
+import { readCampaignState, validateCampaignState } from '../campaign-scheduler.mjs';
 
 const MAX_LOG_BYTES = 96 * 1024;
 const MAX_PUBLIC_TEXT_BYTES = 8 * 1024 * 1024;
@@ -239,7 +240,19 @@ function readRun(path) {
 function readDashboardCampaignState(directory) {
   const statePath = join(directory, 'state.json');
   const rawState = readArtifact(statePath, { expectedKind: 'campaign_state' }).payload;
-  if (rawState.schemaVersion !== 1) return readCampaignState(directory);
+  if (rawState.schemaVersion !== 1) {
+    const plan = validateCompiledCampaignPlan(
+      readArtifact(join(directory, 'plan.json'), { expectedKind: 'campaign_plan' }).payload,
+      { requireCurrentInputs: false });
+    const state = validateCampaignState(rawState);
+    if (state.campaignId !== plan.id || state.campaignSha256 !== plan.contentSha256
+      || state.maxParallel !== plan.summary.parallelism
+      || canonicalDefinitionJson(state.attempts.map(attempt => attempt.plan))
+        !== canonicalDefinitionJson(plan.attempts)) {
+      throw new Error('stored campaign state does not match its compiled plan');
+    }
+    return { plan, state };
+  }
 
   // Schema 1 was the active campaign format when the dashboard was introduced.
   // Keep this read-only projection here rather than weakening the scheduler's

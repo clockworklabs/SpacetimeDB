@@ -65,7 +65,9 @@ h3 { font-size: 18px; font-weight: 500; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 28px; margin-bottom: 24px; }
 .section-heading > p { margin: 0; color: var(--muted); }
 .section-heading.compact { margin-bottom: 18px; }
-.run-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.run-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;
+  max-height: 610px; overflow-y: auto; overscroll-behavior: contain; padding-right: 6px;
+  scrollbar-color: var(--line-bright) var(--base); }
 .run-card, .campaign-row, .operation-row { background: rgba(14,22,26,.94); border: 1px solid var(--line); }
 .run-card { border-radius: var(--radius); padding: 22px; min-height: 270px; display: flex; flex-direction: column; transition: border-color .18s, background-color .18s; }
 .run-card:hover { border-color: var(--line-bright); background: var(--panel-2); }

@@ -6,6 +6,8 @@ import test from 'node:test';
 
 import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
   validateCompiledCampaignPlan } from '../campaign-compiler.mjs';
+import { canonicalDefinitionJson } from '../definition-plan.mjs';
+import { sha256 } from '../provenance.mjs';
 
 function definition(overrides = {}) {
   return {
@@ -317,4 +319,30 @@ test('compiled campaign validation rejects a rewritten identity, schedule, or su
   assert.throws(() => validateCompiledCampaignPlan(resolved), /bindings.*current resolved inputs/);
   assert.throws(() => validateCompiledCampaignPlan({ ...plan,
     summary: { ...plan.summary, attempts: 99 } }), /summary/);
+});
+
+test('stored plans remain readable across engine upgrades but cannot execute there', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-history-'));
+  try {
+    const path = join(root, 'campaign.json');
+    writeFileSync(path, `${JSON.stringify(definition(), null, 2)}\n`);
+    const historical = structuredClone(compileCampaignFile(path));
+    historical.identities.engine.sha256 = 'f'.repeat(64);
+    historical.contentSha256 = sha256(canonicalDefinitionJson({
+      campaignSchemaVersion: historical.campaignSchemaVersion,
+      definition: historical.definition,
+      engine: historical.identities.engine,
+      bindings: historical.bindings,
+      stacks: historical.stacks,
+      agents: historical.agents,
+      conditions: historical.conditions,
+    }));
+    assert.throws(() => validateCompiledCampaignPlan(historical), /engine identity/);
+    assert.equal(validateCompiledCampaignPlan(historical,
+      { requireCurrentInputs: false }).contentSha256, historical.contentSha256);
+    const tampered = structuredClone(historical);
+    tampered.attempts[0].model = 'rewritten-model';
+    assert.throws(() => validateCompiledCampaignPlan(tampered,
+      { requireCurrentInputs: false }), /attempt schedule/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

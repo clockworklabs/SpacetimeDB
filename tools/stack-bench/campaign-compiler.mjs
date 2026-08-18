@@ -493,7 +493,7 @@ export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
   });
 }
 
-export function validateCompiledCampaignPlan(input) {
+export function validateCompiledCampaignPlan(input, { requireCurrentInputs = true } = {}) {
   if (!object(input)) throw new Error('compiled campaign plan must be an object');
   const plan = canonicalizeDefinition(input);
   const fields = new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
@@ -517,14 +517,16 @@ export function validateCompiledCampaignPlan(input) {
     || !Array.isArray(plan.conditions) || plan.conditions.length !== definition.conditions.length) {
     throw new Error('compiled campaign resolved inputs are incomplete');
   }
-  const currentEngine = currentEngineIdentity();
-  if (canonicalDefinitionJson(plan.identities.engine) !== canonicalDefinitionJson(currentEngine)) {
-    throw new Error('compiled campaign engine identity does not match this executable');
-  }
-  const resolved = resolveCampaignInputs(definition);
-  for (const field of ['bindings', 'stacks', 'agents', 'conditions']) {
-    if (canonicalDefinitionJson(plan[field]) !== canonicalDefinitionJson(resolved[field])) {
-      throw new Error(`compiled campaign ${field} do not match current resolved inputs`);
+  if (requireCurrentInputs) {
+    const currentEngine = currentEngineIdentity();
+    if (canonicalDefinitionJson(plan.identities.engine) !== canonicalDefinitionJson(currentEngine)) {
+      throw new Error('compiled campaign engine identity does not match this executable');
+    }
+    const resolved = resolveCampaignInputs(definition);
+    for (const field of ['bindings', 'stacks', 'agents', 'conditions']) {
+      if (canonicalDefinitionJson(plan[field]) !== canonicalDefinitionJson(resolved[field])) {
+        throw new Error(`compiled campaign ${field} do not match current resolved inputs`);
+      }
     }
   }
   const expectedSha256 = sha256(canonicalDefinitionJson(campaignIdentityDocument(
