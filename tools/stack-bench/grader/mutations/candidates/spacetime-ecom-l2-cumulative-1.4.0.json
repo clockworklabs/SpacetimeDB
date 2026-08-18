@@ -498,12 +498,20 @@
           "criterion": "4b"
         }
       ],
-      "desc": "The search result memo ignores reactive item-table updates and keeps its pre-change price.",
-      "file": "client/src/App.tsx",
+      "desc": "The search result renderer caches each item's first visible price and ignores later live price updates.",
+      "file": "client/src/components/ItemCard.tsx",
       "edits": [
         {
-          "find": "    return items.filter((i) => i.name.toLowerCase().includes(q));\n  }, [items, searchQuery]);",
-          "replace": "    // mutant: cache detached result rows and ignore later item-table updates\n    return items.filter((i) => i.name.toLowerCase().includes(q)).map((i) => ({ ...i }));\n  }, [searchQuery]);"
+          "find": "import { ItemRow } from '../types';",
+          "replace": "import { useRef } from 'react';\nimport { ItemRow } from '../types';"
+        },
+        {
+          "find": "  const outOfStock = stock <= 0;\n  const lowStock = !outOfStock && stock <= 5;",
+          "replace": "  const outOfStock = stock <= 0;\n  const lowStock = !outOfStock && stock <= 5;\n  // mutant: the card retains the first price it renders\n  const firstPrice = useRef(item.price);"
+        },
+        {
+          "find": "          {formatMoney(item.price)}",
+          "replace": "          {formatMoney(firstPrice.current)}"
         }
       ]
     },

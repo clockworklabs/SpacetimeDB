@@ -43,7 +43,7 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/candidates/mongodb-ecom-l2-cumulative-1.4.0.json",
-      "sha256": "c8927db5a1b5c0305cc3d33f9c37fa2d4014a408f3406d548a78bc385b4a7410",
+      "sha256": "59245b0a79b04e2c0571a3924b85ae517b3745211b760f3987ffe4eb05aa4d5e",
       "referenceId": "ecommerce-l2-server-actions-mongodb"
     },
     {
@@ -55,7 +55,7 @@
     {
       "backend": "spacetime",
       "path": "grader/mutations/candidates/spacetime-ecom-l2-cumulative-1.4.0.json",
-      "sha256": "15561a9188a192245cf30279d1c9f3e1c01d41469c1ede055d913dca78143b0a",
+      "sha256": "f63c7cf0cf63269cc8b221459de30ddf8d0885b8a7ee0b9e85554836da431106",
       "referenceId": "ecommerce-l2-server-actions-spacetime"
     }
   ],

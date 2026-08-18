@@ -494,12 +494,12 @@
           "criterion": "4b"
         }
       ],
-      "desc": "The price is persisted but the catalog update is omitted from the price route's broadcasts.",
-      "file": "server/src/index.ts",
+      "desc": "The signed-out search result caches detached rows and ignores later catalog updates.",
+      "file": "client/src/App.tsx",
       "edits": [
         {
-          "find": "  await Promise.all([\n    broadcastItems(),\n    broadcastAdmin(),\n    broadcastRecommendedForAll(),",
-          "replace": "  await Promise.all([\n    broadcastAdmin(),\n    broadcastRecommendedForAll(),"
+          "find": "    return items.filter((it) => it.name.toLowerCase().includes(q));\n  }, [items, searchQuery]);",
+          "replace": "    // mutant: cache detached result rows and ignore later catalog updates\n    return items.filter((it) => it.name.toLowerCase().includes(q)).map((it) => ({ ...it }));\n  }, [searchQuery]);"
         }
       ]
     },
