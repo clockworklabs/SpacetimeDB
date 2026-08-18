@@ -1,18 +1,13 @@
 #!/usr/bin/env node
-// Copy each run's session transcript out of the CLI's store and into durable
-// operational storage. A source checkout keeps the historical repo-local
-// layout; the read-only appliance uses STACK_BENCH_RESULTS_DIR.
+// Copy each run's session transcript out of the CLI's temporary store and into
+// durable operational storage. A source checkout keeps the repo-local layout;
+// the read-only appliance uses STACK_BENCH_RESULTS_DIR.
 //
 // The transcripts are the only record of what a build actually read, so they
 // are the whole evidence base for the contamination audit — a score is only
 // trustworthy because leak-audit.mjs could examine them. They live under
-// ~/.claude/projects, which the CLI prunes on a timer (cleanupPeriodDays,
-// 30 by default), and nothing else keeps a copy.
-//
-// That has already cost us a set: the June sequential runs kept their OTel
-// telemetry but not their transcripts, the CLI deleted its own copies around
-// mid-July, and those runs are now permanently unauditable. Telemetry is no
-// substitute — it records that a Read happened and never what was read.
+// ~/.claude/projects, which the CLI may prune. Telemetry is not a substitute:
+// it records that a read occurred, not what was read.
 //
 // Usage: node commands/archive-transcripts.mjs [--results <dir>] [--out <dir>]
 
@@ -81,9 +76,8 @@ for (const [name, appDir] of jobs) {
   const dest = join(OUT, run.name);
   mkdirSync(dest, { recursive: true });
   // Subagent transcripts live at <store>/<sessionId>/subagents/agent-*.jsonl.
-  // Copying only the top level left them behind, and with them their cost: a
-  // SpacetimeDB run reconciled $1.44 short until they were found by hand. A
-  // session that spawns help is not cheaper for it.
+  // Include nested agents so the archive and cost ledger cover the full coding
+  // session rather than only its top-level transcript.
   const collect = (dir, out = []) => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {
       const p = join(dir, e.name);

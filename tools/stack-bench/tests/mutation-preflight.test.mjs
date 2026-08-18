@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { mutationControlArgv, mutationControlTimeoutMs } from '../commands/bench.mjs';
+import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/mutation-control.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');

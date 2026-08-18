@@ -4,10 +4,8 @@
 // This is the containerised replacement for agent.mjs spawning the CLI with
 // `cwd: appDir`. The difference that matters is what is NOT here: no mount of
 // tools/stack-bench, so the grader, the scenario files, the contracts and the
-// prompts are not on the filesystem the build can reach. A fix round once read
-// the scenario file defining the criteria it was failing and then ran
-// grade.mjs; denying those paths is a blocklist against an agent that only
-// needed grep and sed, so they are absent instead.
+// prompts are not on the filesystem the build can reach. Those files are
+// structurally absent rather than protected by a command blocklist.
 //
 // The prompt arrives on stdin and the CLI's JSON result goes to stdout, exactly
 // as the host path does, so callers do not care which one ran.
@@ -119,26 +117,12 @@ if (projects) mkdirSync(projects, { recursive: true });
 
 for (const directory of containerPlan.ensureDirectories) mkdirSync(directory, { recursive: true });
 
-// The container OUTLIVES the build session, and that is the whole point.
-//
-// The first version used `docker run --rm`, so the container died the moment the
-// coding session returned — taking the app's dev servers with it. The grader
-// runs afterwards and had nothing to talk to: "reseed FAILED (server did not
-// come back)", then "ABORTED: could not reset database", after a sweep spent
-// $9.46 and graded nothing.
-//
-// Running the app from the host instead is not an option either: a container
-// install produces linux-x64 esbuild and rollup binaries, so a Windows host
-// cannot execute the app's node_modules at all (checked, not assumed).
-//
-// So the container is long-lived and the session is exec'd into it. The build
-// starts its own dev servers exactly as it does on the host, and they keep
-// running afterwards for exactly the same reason — the process that owns them
-// is still alive.
+// The container outlives the coding process because grading and repair reuse
+// the app's dev servers and Linux dependencies. Sessions execute inside one
+// leased long-lived container; teardown removes that exact container later.
 //
 // The name is derived from the run's work directory, which already carries a
-// timestamp, so it is unique per run and reconstructible from the app path alone
-// — restart-backend.sh needs the same name and is given only the app dir.
+// timestamp, so it is unique per run and reconstructible from the app path.
 const containerName = `stack-bench-${basename(dirname(resolve(appDir)))}`;
 const dockerEnv = { ...process.env, MSYS_NO_PATHCONV: '1' };
 

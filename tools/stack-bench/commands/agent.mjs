@@ -32,144 +32,13 @@ import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.mjs';
+import { codingSessionFailure, runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const REPO = resolve(ROOT, '..', '..');
 const CONTROL_COMMAND_TIMEOUT_MS = 120_000;
 const BUILD_SESSION_TIMEOUT_MS = 58 * 60_000;
 const DEFAULT_CODING_INTERRUPTION_RETRIES = 2;
-
-function text(value) {
-  return Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? '');
-}
-
-export function parseCodingSessionResult(raw) {
-  const value = text(raw).trim();
-  if (!value) return null;
-  try { return JSON.parse(value); } catch { /* try the last JSON line */ }
-  for (const line of value.split(/\r?\n/).reverse()) {
-    try { return JSON.parse(line); } catch { /* keep looking */ }
-  }
-  return null;
-}
-
-function codingProcessDiagnostic(error) {
-  const line = text(error?.stderr).split(/\r?\n/)
-    .find(item => item.startsWith('STACK_BENCH_CODING_PROCESS_DIAGNOSTIC '));
-  if (!line) return null;
-  try { return JSON.parse(line.slice('STACK_BENCH_CODING_PROCESS_DIAGNOSTIC '.length)); }
-  catch { return null; }
-}
-
-export function codingSessionInterruption(error, result) {
-  if (result?.terminal_reason === 'api_error' && typeof result.session_id === 'string'
-    && result.session_id) {
-    return { kind: 'provider-api-error', resumeSession: result.session_id,
-      recoverStoppedContainer: false, terminalReason: 'api_error',
-      providerStatus: result.api_error_status ?? null };
-  }
-  if (error?.status !== 137) return null;
-  const diagnostic = codingProcessDiagnostic(error);
-  const memory = String(diagnostic?.cgroupMemory ?? '');
-  const oomEvent = /(?:^|\n)oom(?:_kill)?\s+[1-9]\d*(?:\n|$)/m.test(memory);
-  if (diagnostic?.container?.OOMKilled === true || oomEvent) return null;
-  return { kind: 'coding-process-killed', resumeSession: null,
-    recoverStoppedContainer: true, terminalReason: null, providerStatus: null,
-    diagnostic: diagnostic ? {
-      status: diagnostic.status ?? null,
-      signal: diagnostic.signal ?? null,
-      containerExitCode: diagnostic.container?.ExitCode ?? null,
-      oomKilled: diagnostic.container?.OOMKilled ?? null,
-    } : null };
-}
-
-export function aggregateCodingSessionResults(results) {
-  const sessions = results.filter(Boolean);
-  const last = sessions.at(-1) ?? {};
-  const usage = { input_tokens: 0, output_tokens: 0,
-    cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
-  for (const result of sessions) {
-    for (const key of Object.keys(usage)) usage[key] += Number(result.usage?.[key] ?? 0);
-  }
-  return {
-    ...last,
-    total_cost_usd: sessions.reduce((sum, item) => sum + Number(item.total_cost_usd ?? 0), 0),
-    num_turns: sessions.reduce((sum, item) => sum + Number(item.num_turns ?? 0), 0),
-    usage,
-  };
-}
-
-export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBudgetUsd = null }) {
-  if (typeof invoke !== 'function') throw new Error('coding session invoke function is required');
-  if (!Number.isInteger(retryLimit) || retryLimit < 0 || retryLimit > 3) {
-    throw new Error('coding interruption retry limit must be an integer from 0 to 3');
-  }
-  let raw = '';
-  let spawnError = null;
-  const sessionResults = [];
-  const interruptions = [];
-  let resumeSession = null;
-  let recoverStoppedContainer = false;
-  for (let invocation = 0; invocation <= retryLimit; invocation++) {
-    const priorCost = sessionResults.reduce((sum, item) =>
-      sum + Number(item.total_cost_usd ?? 0), 0);
-    const invocationBudget = maxBudgetUsd == null ? null
-      : Number((maxBudgetUsd - priorCost).toFixed(6));
-    if (invocationBudget !== null && invocationBudget <= 0) {
-      spawnError = `coding session exhausted its $${maxBudgetUsd} cost cap before recovery`;
-      break;
-    }
-    const input = resumeSession
-      ? 'The provider interrupted the previous response. Continue the same task from the existing files. '
-        + 'Verify the application is running and finish with the completion marker requested earlier.'
-      : invocation === 0 ? prompt
-        : 'A prior coding process was terminated. Continue this task from the existing files; do not start over.\n\n'
-          + prompt;
-    let error = null;
-    try {
-      raw = text(invoke({ input, maxBudgetUsd: invocationBudget, resumeSession,
-        recoverStoppedContainer, invocation }));
-    } catch (err) {
-      error = err;
-      raw = text(err.stdout);
-    }
-    const result = parseCodingSessionResult(raw);
-    if (result) sessionResults.push(result);
-    if (!error && result?.is_error === false) break;
-    const interruption = codingSessionInterruption(error, result);
-    if (!interruption || invocation === retryLimit) {
-      spawnError = codingSessionFailure(error ?? {
-        status: 1, stdout: raw, stderr: result?.result ?? 'coding session reported failure',
-      });
-      break;
-    }
-    interruptions.push({ ...interruption, invocation: invocation + 1,
-      sessionId: result?.session_id ?? null,
-      costUsd: Number((result?.total_cost_usd ?? 0).toFixed(6)) });
-    resumeSession = interruption.resumeSession;
-    recoverStoppedContainer = interruption.recoverStoppedContainer;
-  }
-  return { raw, spawnError, sessionResults, interruptions,
-    result: aggregateCodingSessionResults(sessionResults) };
-}
-
-export function codingSessionFailure(error) {
-  const status = Number.isInteger(error?.status) ? `exit ${error.status}` : null;
-  const code = typeof error?.code === 'string' && error.code ? error.code : null;
-  const reason = code ?? status ?? 'nonzero exit';
-  const stderr = Buffer.isBuffer(error?.stderr)
-    ? error.stderr.toString('utf8') : String(error?.stderr ?? '');
-  const stdout = Buffer.isBuffer(error?.stdout)
-    ? error.stdout.toString('utf8') : String(error?.stdout ?? '');
-  const stdoutTail = stdout.trim().slice(-2000);
-  const stderrTail = stderr.trim().slice(-4000);
-  const killed = error?.status === 137
-    ? ' — process was forcibly killed; use the retained coding-process diagnostic to distinguish memory pressure from another kill'
-    : '';
-  return `coding session failed (${reason})${killed}`
-    + `${stdoutTail ? `\ninner stdout tail:\n${stdoutTail}` : ''}`
-    + `${stderrTail ? `\ninner stderr tail:\n${stderrTail}` : ''}`;
-}
 
 // The benchmark runs its own SpacetimeDB host so that measurements describe the
 // module under test rather than whatever else is published on a shared machine,
@@ -187,47 +56,17 @@ const LOCAL_PKG = process.env.STDB_PACKAGE ?? join(REPO, 'crates', 'bindings-typ
 // the model are written the one way every tool agrees on.
 const fwd = p => p.split('\\').join('/');
 
-// The thinking budget is deliberately NOT set. Customers do not set
-// MAX_THINKING_TOKENS, so pinning it measures a configuration nobody runs --
-// and it is the single largest cost component here (43% more reasoning volume
-// on SpacetimeDB than postgres), which makes an arbitrary value the worst
-// possible thing to guess at. A pin of 10000 was tried and changed nothing
-// measurable: signature volume ranged 2.4-6.0KB per block both before and
-// after, driven by the task rather than the setting.
-//
-// Reproducibility is preserved by MEASURING instead: run.json records the
-// thinking blocks and bytes each run actually produced, so a CLI default that
-// moves shows up in the data rather than silently shifting every score.
-// STACK_BENCH_THINKING still forces a value for a deliberate experiment.
+// Keep the provider's default thinking budget unless an experiment selects one
+// explicitly. The run records observed reasoning volume so default changes are
+// visible in the evidence.
 const THINKING_TOKENS = process.env.STACK_BENCH_THINKING ?? null;
 
-// Reasoning effort, pinned and recorded rather than inherited.
-//
-// The CLI takes --effort low|medium|high|xhigh|max. The harness never passed it,
-// so every run so far took whatever the environment happened to carry — and
-// this machine has CLAUDE_EFFORT=high, which agent.mjs forwards with the rest
-// of process.env. The comparisons stayed fair because both stacks got the same
-// level, but nothing recorded which level produced a number, and anyone else
-// running this would silently get different ones.
-//
-// Pinned to high to match every result collected so far. STACK_BENCH_EFFORT
-// changes it deliberately.
+// Pin and record effort instead of inheriting an ambient CLI setting.
 const EFFORT = process.env.STACK_BENCH_EFFORT ?? 'high';
 
-// Coding sessions always run in Docker; there is no host execution path.
-//
-// The container gives a property the sandbox never had — the harness is not on
-// the filesystem the build can see — and the post-build half now works: an app
-// was stood up in one and graded end to end, restart/stop/start really restart,
-// and `spacetime dev` now publishes and streams logs with one retained identity.
-//
-// Historical ledger: containerisation cost a day, a
-// $9.46 sweep that graded nothing, and an hour-long hang. Those failures have
-// since been resolved and remain here as the reason isolation is a hard gate.
-// The contamination it
-// prevents has happened once, was CAUGHT by leak-audit, and cost one voided run.
-// Reproduce the complete boundary with `npm run test:container`; no model spend
-// is needed.
+// Coding sessions always run in Docker; there is no host execution path. The
+// build container cannot see benchmark definitions, and the model-free
+// container test verifies its lifecycle and SpacetimeDB publish/log path.
 const IMAGE = process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE;
 
 // Set once in main(), because the addresses a build is TOLD to use depend on
@@ -247,8 +86,7 @@ const HOST_ADDR = hostServiceAddress();
 const hostUrl = u => u.replace(/127\.0\.0\.1|localhost/g, HOST_ADDR);
 
 // Where the two artifacts under test are mounted. Container paths also keep the
-// repository root out of the prompt, which is what the contaminated run followed
-// to reach the grader.
+// repository root out of the prompt.
 const C_PKG = '/deps/bindings-typescript';
 const C_BIN = '/deps/spacetimedb-cli';
 
@@ -258,14 +96,8 @@ const C_BIN = '/deps/spacetimedb-cli';
 const LINUX_CLI = process.env.STACK_BENCH_LINUX_CLI
   ?? join(ROOT, 'container', 'bin', 'spacetimedb-cli');
 
-// What the session ACTUALLY thought, read back from its own transcript.
-//
-// This is the measurement that replaces the pin. Reasoning volume is the
-// largest single component of the cost gap between backends, so leaving the
-// budget at the CLI default is only defensible if a shift in that default is
-// visible afterwards rather than silently absorbed into every score.
-//
-// The text of a thinking block is redacted at the wire level -- `thinking` is
+// Measure observed reasoning from the session transcript. The text of a
+// thinking block is redacted at the wire level -- `thinking` is
 // an empty string and the content survives only as an opaque signature -- so
 // this counts blocks and signature bytes. Neither is a token count, but both
 // move with reasoning volume, and they are what the transcript actually has.
@@ -309,11 +141,8 @@ function combinedThinkingVolume(appDir, sessionIds) {
 }
 
 
-// The version of the CLI a container actually ran, which is a Linux binary the
-// host cannot execute. Reporting the Windows build's version instead would
-// attribute the run to whatever happens to be sitting in target/release — and
-// the two go stale independently, which is exactly how a stale CLI produced a
-// retracted finding here before.
+// Record the Linux CLI executed by the container. The host and container
+// binaries can change independently and must not share an identity.
 function linuxSpacetimeVersion(image) {
   try {
     const releaseVolume = process.env.STACK_BENCH_RELEASE_DEPS_VOLUME?.trim() || null;
@@ -930,9 +759,8 @@ async function main() {
   killTree(lintServer.pid);
 
   const { raw, spawnError, sessionResults, interruptions, result } = coding;
-  // A session that never started produced no code, and grading an empty
-  // directory reports a real-looking 0 for the backend. Say so instead: this
-  // failure mode cost a run once already, silently.
+  // A session that never started produced no code. Reject it instead of grading
+  // an empty directory as a real backend result.
   if (spawnError || (!result.session_id && !raw.trim())) {
     console.error(`\nAGENT DID NOT RUN — ${spawnError ?? 'the session produced no output'}`);
     process.exitCode = 1;

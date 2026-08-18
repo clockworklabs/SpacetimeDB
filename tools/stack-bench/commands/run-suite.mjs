@@ -644,14 +644,14 @@ async function main() {
         selectedPackDefinitions);
       const exceeded = exceededPackBudgets(bundle.packRuntime);
       if (exceeded.length) {
-        const reason = `pack runtime budget exceeded: ${exceeded.map(pack =>
-          `${pack.id} ${pack.measuredRuntimeMs}ms > ${pack.budget.maxRuntimeMs}ms`).join(', ')}`;
-        markRemainingNotRun(reason);
-        bundle.error = reason;
-        bundle.outcome = { kind: 'harness_failure', phase: 'pack-runtime-budget', reason };
-        writeBundle();
-        console.log(`\nABORTED: ${reason}`);
-        process.exit(1);
+        // Runtime budgets qualify the benchmark's known-good references; they
+        // are not a deadline for generated applications. A broken app can
+        // legitimately consume several assertion timeouts in one pack. Keep
+        // grading so it receives a complete repair report, while retaining the
+        // exceeded measurement for diagnostics and qualification policy.
+        console.log(`  runtime    ... ${exceeded.map(pack =>
+          `${pack.id} ${pack.measuredRuntimeMs}ms > ${pack.budget.maxRuntimeMs}ms`)
+          .join(', ')} [recorded; grading continues]`);
       }
     }
     if (suite.inherited) { regTotal += r.total; regMax += r.max; }

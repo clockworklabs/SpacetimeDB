@@ -33,6 +33,23 @@ test('dashboard run progress reports only completed grades while the next repair
   assert.equal(progress.phase, 'Grading L1 after repair 2 of 3');
 });
 
+test('dashboard follows the actual level when a completed L1 advances to the first L2 grade', () => {
+  const progress = parseRunProgress(`
+=== spacetime-l1 (spacetime) ===
+  TOTAL      ... 52/58
+--- fix round 1/10 ---
+=== spacetime-l1-fix1 (spacetime) ===
+  TOTAL      ... 58/58
+=== spacetime-l2 (spacetime) ===
+  TOTAL      ... 52/59
+--- fix round 1/10 ---
+`, { fixRounds: 10 });
+  assert.equal(progress.level, 2);
+  assert.equal(progress.phase, 'Repairing L2 · round 1 of 10');
+  assert.deepEqual(progress.firstScore, { score: 52, max: 58 });
+  assert.deepEqual(progress.latestScore, { score: 52, max: 59 });
+});
+
 test('a prepared attempt is waiting rather than finished', () => {
   const progress = parseRunProgress('', { fixRounds: 10, running: false, status: 'pending' });
   assert.equal(progress.phase, 'Waiting to start');

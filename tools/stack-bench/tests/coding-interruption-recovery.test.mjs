@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { aggregateCodingSessionResults, codingSessionInterruption,
-  parseCodingSessionResult, runCodingSessionWithRecovery } from '../commands/agent.mjs';
+  parseCodingSessionResult, runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { recoverStoppedBuildContainer } from '../container/recover-build-container.mjs';
 
@@ -29,6 +29,25 @@ test('only a non-OOM forced exit is eligible for container recovery', () => {
   assert.equal(killed.recoverStoppedContainer, true);
   assert.equal(codingSessionInterruption(failure({ status: 137,
     container: { ExitCode: 137, OOMKilled: true }, cgroupMemory: 'oom 1\noom_kill 1\n' }), null), null);
+});
+
+test('a bounded coding-session timeout continues from the existing app', () => {
+  const timeout = Object.assign(new Error('spawnSync docker ETIMEDOUT'), { code: 'ETIMEDOUT' });
+  assert.deepEqual(codingSessionInterruption(timeout, null), {
+    kind: 'coding-session-timeout', resumeSession: null, recoverStoppedContainer: false,
+    terminalReason: null, providerStatus: null,
+  });
+  const calls = [];
+  const coding = runCodingSessionWithRecovery({ prompt: 'build the app', retryLimit: 1,
+    invoke(request) {
+      calls.push(request);
+      if (calls.length === 1) throw timeout;
+      return JSON.stringify({ is_error: false, session_id: 'replacement', total_cost_usd: 1,
+        num_turns: 1, usage: {} });
+    } });
+  assert.equal(coding.spawnError, null);
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].input, /Continue this task from the existing files/);
 });
 
 test('retry accounting includes every paid invocation', () => {

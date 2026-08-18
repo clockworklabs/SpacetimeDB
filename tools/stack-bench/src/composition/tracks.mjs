@@ -75,12 +75,9 @@ export function isDeclaredLevel(track, level) {
 
 // ─── Ports ───────────────────────────────────────────────────────────────────
 //
-// The single source of truth. These used to live separately in agent.mjs and
-// bench.mjs, and both Express backends sat on one base — which twice produced a
-// client quietly proxying into the OTHER backend's server, and confident scores
-// for the wrong database. Bases are spaced per backend, tracks are offset from
-// one another, and assertNoPortCollisions() proves the whole grid disjoint
-// rather than trusting anyone's arithmetic.
+// Keep these values in one source of truth. Bases are spaced per backend,
+// tracks are offset from one another, and assertNoPortCollisions() proves the
+// whole grid is disjoint.
 
 export const PORT_BASES = Object.freeze(stackPortAllocations());
 

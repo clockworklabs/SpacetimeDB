@@ -1,18 +1,9 @@
 #!/usr/bin/env node
 // Did a generated build read anything it was not supposed to?
 //
-// Two earlier attempts at this got the answer wrong in opposite directions, so
-// the failure modes are worth naming:
-//
-//   1. Counting only Read/Grep/Glob tool calls. A session that shells out to
-//      `cat` or `grep` reads just as much and shows up as "0 reads" — which
-//      reads as CLEAN when it means UNMEASURED.
-//   2. Reconstructing the app directory from the transcript's folder name.
-//      Hyphens in a run name become path separators, the boundary is nonsense,
-//      and inside/outside is decided by a broken comparison.
-//
-// So: parse Bash commands as well as file tools, and take the app directory
-// from the session's own cwd. Anything outside it is reported, whatever it is.
+// Parse Bash commands as well as file tools and take the app boundary from the
+// session's recorded cwd. Reconstructing paths from transcript folder names is
+// ambiguous and is never used as authority.
 //
 // Usage: node commands/leak-audit.mjs [--dir <transcript-root>] [--json]
 

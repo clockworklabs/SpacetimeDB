@@ -27,6 +27,14 @@ export const LIFECYCLE_CONCURRENCY_ACTION_IDS = Object.freeze([
 const fail = message => { throw new ActionApplicationFailure(message); };
 const inconclusive = message => { throw new ActionInconclusive(message); };
 
+export function databaseWriteFailureDetail(error) {
+  const details = [error?.message, error?.stdout, error?.stderr]
+    .map(value => Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? ''))
+    .map(value => value.trim()).filter(Boolean)
+    .filter((value, index, all) => all.indexOf(value) === index);
+  return details.join(' | ').slice(-600) || 'unknown database-write failure';
+}
+
 async function dispatchNested(concurrency, step, signal) {
   try {
     return await concurrency.dispatch(step, signal);
@@ -160,8 +168,7 @@ async function dbSetStock({ input, capabilities, signal }) {
     result = await capabilities['database-write'].setStock(input);
   } catch (error) {
     if (error?.classification || harnessProcessFailure(error)) throw error;
-    fail(`dbSetStock failed: ${((error.stdout ?? '') + (error.stderr ?? '')).trim().slice(-200)
-      || error.message}`);
+    fail(`dbSetStock failed: ${databaseWriteFailureDetail(error)}`);
   }
   await capabilities.clock.sleep(input.settleMs, signal);
   return result;

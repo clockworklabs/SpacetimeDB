@@ -29,7 +29,7 @@ IMAGE="${STACK_BENCH_RUST_IMAGE:-rust:1.93-slim-bookworm}"
 # Cargo's target directory is a named volume, not a path in the repo. A Rust
 # build against a Windows bind mount is many times slower, and it would also sit
 # next to the Windows artifacts in target/ where the wrong one is easy to pick up
-# — this project has already been burned by a stale CLI binary.
+# so container runs cannot silently execute a stale or host-platform binary.
 VOLUME="${STACK_BENCH_CARGO_VOLUME:-stack-bench-cargo-target}"
 
 mkdir -p "$OUT"

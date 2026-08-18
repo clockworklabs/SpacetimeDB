@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { parseArgs, repairEvidenceDecision } from '../commands/bench.mjs';
+import { parseArgs } from '../commands/bench.mjs';
+import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
 
 test('direct runs default to ten repair rounds while an explicit budget still wins', () => {
   assert.equal(parseArgs(['node', 'bench', '--backend', 'postgres']).fixRounds, 10);

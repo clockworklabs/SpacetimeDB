@@ -253,7 +253,7 @@ class Actor {
 const expand = (s, ctx) =>
   typeof s === 'string'
     ? s.replace(/\{room:([^}]+)\}/g, (_, b) => ctx.roomName(b))
-       // Scoped account names are alphanumeric ON PURPOSE. This used to join
+       // Scoped account names are alphanumeric so the delimiter cannot join
        // the name and the scope with a hyphen, so the harness signed up as
        // "Alice-l1features". The level spec never states which characters a
        // username must accept, so an app validating them as letters, digits and

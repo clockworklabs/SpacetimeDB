@@ -179,9 +179,9 @@ export function parseRunProgress(log, { fixRounds = 0, running = true, status = 
     .map(match => ({ index: match.index, score: Number(match[1]), max: Number(match[2]) }));
   const roundMarkers = matches(log, /^--- fix round (\d+)\/(\d+) ---$/gm)
     .map(match => ({ index: match.index, round: Number(match[1]), budget: Number(match[2]) }));
-  const grading = matches(log, /^===\s+[^\n]*?-l(\d+)-(first|fix(\d+))\b.*$/gm)
+  const grading = matches(log, /^===\s+[^\n]*?-l(\d+)(?:-(?:first|fix(\d+)))?\s+\([^\n]+\)\s*===$/gm)
     .map(match => ({ index: match.index, level: Number(match[1]),
-      round: match[3] ? Number(match[3]) : 0 }));
+      round: match[2] ? Number(match[2]) : 0 }));
   const latestTotal = totals.at(-1) ?? null;
   const latestRound = roundMarkers.at(-1) ?? null;
   const latestGrading = grading.at(-1) ?? null;

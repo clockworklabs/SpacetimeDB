@@ -6,6 +6,7 @@ import { createActionRunContext, executeAction } from '../src/actions/action-con
 import {
   createDatabaseWriteCapability,
   createLifecycleCapability,
+  databaseWriteFailureDetail,
   LIFECYCLE_CONCURRENCY_ACTION_IDS,
   LIFECYCLE_CONCURRENCY_ACTION_IMPLEMENTATIONS,
 } from '../src/actions/lifecycle-concurrency-action-executors.mjs';
@@ -141,6 +142,21 @@ test('direct PostgreSQL stock writes quote names and require exactly one updated
     quantity: 7, settleMs: 0 }, services(new Map(), { databaseWrite: missed }));
   assert.equal(failed.status, 'failed');
   assert.match(failed.summary, /was not updated/);
+});
+
+test('database-write feedback preserves the actionable schema error ahead of terse process output', async () => {
+  const error = Object.assign(new Error('direct stock correction requires singular collections '
+    + '`item`, `warehouse`, and `stock`'), { stdout: 'MISSING\n' });
+  assert.match(databaseWriteFailureDetail(error), /singular collections/);
+  assert.match(databaseWriteFailureDetail(error), /MISSING/);
+
+  const capability = createDatabaseWriteCapability({ backend: 'mongodb', dbName: 'bench',
+    expand: value => value, exec: () => { throw error; } });
+  const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
+    quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+  assert.equal(result.status, 'failed');
+  assert.match(result.summary, /singular collections `item`, `warehouse`, and `stock`/);
+  assert.match(result.summary, /MISSING/);
 });
 
 test('offline lifecycle preserves settling time and verifies browser network state', async () => {

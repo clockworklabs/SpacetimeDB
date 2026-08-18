@@ -2,13 +2,8 @@
 // The complete token bill for one benchmark run — every session, not just the
 // one that built the app.
 //
-// Two classes of spend were invisible for a while, and each was found by
-// accident: subagent transcripts (nested under <session>/subagents/, $1.44 on
-// one run) and the harness's own model calls — the sandbox probe (~$0.10 every
-// run) and the SpacetimeDB behavioural review (~$0.54, and only on spacetime
-// runs, so it silently taxes one side of the comparison). This enumerates all
-// of them, prices each from its transcript, reconciles what can be reconciled,
-// and states the residual instead of rounding it away.
+// Includes nested agent transcripts and explicit harness model calls, prices
+// each transcript, and reports any unreconciled residual.
 //
 // Usage: node commands/cost-ledger.mjs --workdir <stack-bench-runs/NAME-STAMP> [--reported <usd>]
 

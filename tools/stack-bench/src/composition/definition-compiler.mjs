@@ -1,10 +1,7 @@
 // Compile human-authored benchmark definitions into a strict, normalized plan.
 //
-// The legacy grader used to define its own language implicitly: the scenario
-// checker regex-parsed switch cases out of grade.mjs, while each action assumed
-// whatever fields its implementation happened to read. This module is the
-// first explicit contract for that language. It intentionally preserves the
-// current JSON shape while rejecting unknown or malformed input before a run
+// This module is the explicit contract for the scenario language. It preserves
+// the public JSON shape while rejecting unknown or malformed input before a run
 // can acquire backend resources.
 
 export const DEFINITION_SCHEMA_VERSION = 1;

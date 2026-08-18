@@ -61,9 +61,17 @@ export function setPostgresStock({ item, warehouse, quantity, dbName, exec = exe
   const sql = `UPDATE stock SET quantity = ${quantity} WHERE item_id = `
     + `(SELECT id FROM item WHERE name = ${sqlString(item)}) AND warehouse_id = `
     + `(SELECT id FROM warehouse WHERE name = ${sqlString(warehouse)})`;
-  const output = exec('docker', ['exec', container,
-    'psql', '-U', 'stackbench', '-d', dbName, '-c', sql],
-  { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+  let output;
+  try {
+    output = exec('docker', ['exec', container,
+      'psql', '-U', 'stackbench', '-d', dbName, '-c', sql],
+    { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+  } catch (error) {
+    const detail = `${error.stderr ?? ''}${error.stdout ?? ''}`.trim().slice(-240);
+    throw new Error('direct stock correction requires singular tables '
+      + '`item(id, name)`, `warehouse(id, name)`, and '
+      + `\`stock(item_id, warehouse_id, quantity)\`: ${detail || error.message}`, { cause: error });
+  }
   if (!/UPDATE 1\b/.test(output)) {
     throw new Error(`stock row for ${item} / ${warehouse} was not updated (${output.trim().slice(-120)})`);
   }
@@ -83,9 +91,17 @@ export function setMongoDbStock({ item, warehouse, quantity, dbName, exec = exec
       { $set: { quantity: ${quantity} } });
     print(r.matchedCount === 1 ? 'OK' : 'NOMATCH');
   `;
-  const output = exec('docker', ['exec', container,
-    'mongosh', dbName, '--quiet', '--eval', script],
-  { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+  let output;
+  try {
+    output = exec('docker', ['exec', container,
+      'mongosh', dbName, '--quiet', '--eval', script],
+    { encoding: 'utf8', stdio: 'pipe', timeout: WRITE_TIMEOUT_MS });
+  } catch (error) {
+    const detail = `${error.stdout ?? ''}${error.stderr ?? ''}`.trim().slice(-160);
+    throw new Error('direct stock correction requires singular collections '
+      + '`item`, `warehouse`, and `stock`; stock rows must use '
+      + `item_id/warehouse_id or itemId/warehouseId: ${detail || error.message}`, { cause: error });
+  }
   if (!/OK/.test(output)) {
     throw new Error(`could not find ${item} / ${warehouse} in the required collections `
       + `(${output.trim().slice(0, 80)})`);

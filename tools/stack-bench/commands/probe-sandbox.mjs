@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 // Does the deny list actually stop a build reading the marking scheme?
 //
-// The rules were checked by hand once and a comment claimed a probe proved
-// them, but no such test existed — so a rule that silently stopped matching
-// would go unnoticed until it showed up as another void baseline. This asks a
-// real session to read the very files past runs were caught reading, and fails
-// if any of them comes back.
+// Ask a real session to read protected files and fail if any content is
+// returned. This verifies the current deny rules rather than relying on a
+// static inspection.
 //
 // It imports the deny list from sandbox.mjs rather than restating it. A probe
 // with its own copy keeps passing after the real list drifts, which is worse

@@ -25,7 +25,7 @@ import { pathToFileURL } from 'node:url';
 import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
   moduleName, dbName, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { killTree } from '../src/runtime/platform.mjs';
-import { compareCriterionEvidence, formatRepairProgress } from '../src/evidence/scoring.mjs';
+import { formatRepairProgress } from '../src/evidence/scoring.mjs';
 import { emptyArtifactIdentities, readArtifactPayload, writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
   mutationControlEligible, runExitCode } from '../src/evidence/outcomes.mjs';
@@ -52,11 +52,11 @@ import { hashAppSource, restoreAppSource, seedAppSource, snapshotAppSource } fro
 import { preserveLevelCheckpoint } from '../src/runtime/source-checkpoint.mjs';
 import { compareRepairBaseline, createRepairGrant } from '../src/runtime/repair-grant.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
+import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/mutation-control.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
-const MUTATION_BASE_TIMEOUT_MS = 5 * 60_000;
-const MUTATION_PROBE_TIMEOUT_MS = 75_000;
 
 export function parseArgs(argv) {
   const a = { model: null, agentAdapter: 'claude-code',
@@ -143,12 +143,8 @@ function restoreSource(from, appDir) {
   restoreAppSource(from, appDir);
 }
 
-// Did this build read the thing that grades it? Prevention has holes we know
-// about — permission rules do not govern a bash `cat` — so this is checked
-// after EVERY session rather than once at the end. A fix round that read the
-// scenario file and ran grade.mjs was caught only in the closing summary, by
-// which point the rollback grade had already been paid for and the level was
-// unusable anyway. Catching it at the session that did it stops the spend.
+// Check contamination after every coding session. File-tool permissions do not
+// govern shell reads, so the transcript audit remains a separate hard gate.
 function auditContamination(appDir) {
   try {
     const audit = sh('node', [join(ROOT, 'commands', 'leak-audit.mjs'), '--app', appDir, '--json'], { stdio: 'pipe' });
@@ -162,24 +158,6 @@ function auditContamination(appDir) {
     return { evidence: [`audit did not run: ${String(e.message).split(/\r?\n/)[0]}`],
       verdict: 'SCORES NOT USABLE — nothing verified this build stayed inside its directory.' };
   }
-}
-
-const APPLICATION_SETUP_PHASES = new Set([
-  'database-provenance', 'application-layout', 'application-restart',
-]);
-
-export function repairEvidenceDecision(beforeBundle, afterBundle) {
-  const shared = compareCriterionEvidence(beforeBundle, afterBundle);
-  const startedFromApplicationSetup = beforeBundle?.outcome?.kind === 'app_failure'
-    && APPLICATION_SETUP_PHASES.has(beforeBundle.outcome.phase);
-  if (shared.count === 0 && shared.lostEvidence.length === 0
-    && shared.definitionChanges.length === 0) {
-    return { action: startedFromApplicationSetup ? 'keep-setup-repair' : 'rollback-no-comparison',
-      shared };
-  }
-  const evidenceRegressed = shared.lostEvidence.length > 0 || shared.definitionChanges.length > 0;
-  return { action: evidenceRegressed || shared.after < shared.before ? 'rollback-regression' : 'keep',
-    shared };
 }
 
 function containerIdentity(name) {
@@ -246,10 +224,8 @@ function runAgent(args, adapter, mode, level, appDir) {
           resolveRun(result);
         }
         catch (parseError) {
-          // Empty/malformed agent output used to discard stderr, turning a
-          // failed deploy into the content-free claim "invalid JSON". Preserve
-          // bounded tails from both pipes; they are the only evidence left once
-          // teardown removes the build container.
+          // Preserve bounded output tails when the agent result is malformed;
+          // teardown may remove the container that produced them.
           const stdoutTail = stdout.trim().slice(-2000) || '<empty>';
           const stderrTail = stderr.trim().slice(-4000) || '<empty>';
           rejectRun(new Error(`agent returned invalid JSON: ${parseError.message}\n`
@@ -291,27 +267,6 @@ function restartSpecFor(args, appDir, track) {
   const port = portsFor(track, args.backend, args.runIndex).express ?? null;
   return { backend: args.backend, app: appDir, port: port == null ? null : Number(port),
     probe: track.restartProbe };
-}
-
-export function mutationControlArgv(args, appDir, url, track) {
-  const output = join(args.out, 'mutation-control.json');
-  const manifest = JSON.parse(readFileSync(args.mutations, 'utf8'));
-  const recipeTask = args.recipeTasks?.get(Number(manifest.level))?.agentRequest
-    ?? args.recipeTasks?.get(Number(manifest.level))?.request ?? null;
-  const recipe = agentRecipeIdentity(args.recipe, recipeTask);
-  return [join(ROOT, 'grader', 'mutation-test.mjs'), '--app', appDir,
-    '--url', url, '--mutations', args.mutations, '--backend', args.backend,
-    '--track', args.track, '--run-index', String(args.runIndex), '--out', output,
-    '--restart-spec', JSON.stringify(restartSpecFor(args, appDir, track)),
-    '--parent-attempt-id', args.parentAttemptId,
-    ...(recipe ? ['--recipe', recipe] : [])];
-}
-
-export function mutationControlTimeoutMs(manifest) {
-  const mutations = Array.isArray(manifest?.mutations) ? manifest.mutations : [];
-  const measured = MUTATION_BASE_TIMEOUT_MS + mutations.reduce((total, mutation) =>
-    total + MUTATION_PROBE_TIMEOUT_MS + 2 * Number(mutation.settleMs ?? 4000), 0);
-  return Math.max(COMMAND_TIMEOUT_MS, measured);
 }
 
 function runMutationControl(args, appDir, url, track) {
@@ -508,16 +463,9 @@ async function main() {
       + `this run also requests L${beyondValidatedLevels.join(', L')}. The result will record those exact levels.`);
   }
 
-  // In the single-host topology, prove the sandbox before spending a run on it.
-  // The rules have already been
-  // wrong twice in ways that read as fine: a deny list shipped under
-  // --dangerously-skip-permissions enforced nothing at all, and the first probe
-  // to check it reported a pass by matching the word "denied" inside the file it
-  // had just read. Neither showed up as an error — both would have produced a
-  // full set of confident, void scores. In the appliance, the stronger boundary
-  // is structural: the model runs in a separate container where the controller,
-  // grader, scenarios, prior results, and Docker socket do not exist. Running
-  // this probe in the controller would test the wrong image and trust zone.
+  // In a single-host topology, prove the file-tool sandbox before model spend.
+  // The appliance instead relies on structural isolation: the coding container
+  // has no controller, grader, scenarios, prior results, or Docker socket.
   // The stub backend is the offline test loop: no model, no cost, nothing to
   // protect. Spending a real CLI session probing it would make the one test
   // that is supposed to run for free stop being free.
@@ -558,21 +506,16 @@ async function main() {
     payload: preflight,
   });
 
-  // Resolve and validate caller-owned source before acquiring a backend slot.
-  // A failed pristine-hash check used to happen after lease creation but before
-  // teardown handlers existed, leaving a dead-owner lock and private lease.
+  // Validate caller-owned source before acquiring a backend slot so a bad
+  // fixture cannot leave leased resources behind.
   const ownWorkDir = !args.app;
   const appDir = args.app ?? join(workDirFor(track, args.backend, args.runIndex, runId), 'app');
   if (args.repairGrant && url.startsWith('file:')) {
     url = pathToFileURL(join(appDir, 'index.html')).href;
   }
 
-  // Every destructive or lifecycle operation is tied to this record. A boolean
-  // "owned" flag could say yes without identifying what was owned, and after a
-  // restart it could not prove the listener being killed was the one this run
-  // started. The token prevents a stale sibling process from presenting a
-  // different lease accidentally; the targets themselves come only from the
-  // lease, never from generated application files.
+  // Bind destructive and lifecycle operations to exact resource identities and
+  // an ownership token. Targets come only from the lease, never generated code.
   const runtimeRoot = resolve(process.env.STACK_BENCH_RUNTIME_DIR
     ?? join(tmpdir(), 'stack-bench-runtime'));
   const runtimeDir = join(runtimeRoot, runId);
@@ -623,27 +566,17 @@ async function main() {
   process.env.STACK_BENCH_LEASE = leasePath;
   process.env.STACK_BENCH_LEASE_TOKEN = initialLease.ownershipToken;
   if (process.platform === 'win32') {
-    // `bash` resolves to WSL on this host. WSL drops ordinary Windows
-    // environment additions unless WSLENV names them, and path-valued entries
-    // need /p translation. Without this bridge the lifecycle script sees no
-    // lease and correctly refuses every reset/restart.
+    // When Windows resolves `bash` through WSL, WSLENV must carry lease paths
+    // and tokens into lifecycle scripts with path translation.
     const bridge = ['STACK_BENCH_LEASE/p', 'STACK_BENCH_LEASE_TOKEN',
       'STACK_BENCH_NODE_BIN', ...stackRuntime.windowsEnvironmentBridge];
     const existing = (process.env.WSLENV ?? '').split(':').filter(Boolean);
     process.env.WSLENV = [...new Set([...existing, ...bridge])].join(':');
   }
 
-  // The app used to live at results/<run>/app and now builds outside the
-  // results tree, so anything still sitting there belongs to an older run under
-  // the old layout. It is not harmless clutter: it looks exactly like this
-  // run's application, sits directly beside `source/` which IS this run's
-  // application, and answers questions about the wrong build without saying so.
-  // One investigation compared a two-day-old app against a correctly-published
-  // current module, concluded the schemas had drifted, and filed a defect
-  // against SpacetimeDB that did not exist. Delete it on the way in.
-  // Deleting is only safe where source/ already holds that run's code. Some
-  // older runs have an app/ and no source/, and there app/ is the only copy
-  // there is — those get renamed out of the way instead of destroyed.
+  // Current runs build outside results/. Keep a legacy app/ from masquerading
+  // as current source: remove it only when source/ already preserves the same
+  // run, otherwise park it under an explicit legacy name.
   const staleApp = join(args.out, 'app');
   if (existsSync(staleApp)) {
     const supersededBySource = existsSync(join(args.out, 'source'));
@@ -742,22 +675,9 @@ async function main() {
     throw error;
   }
 
-  // One app, grown level by level — the same app the earlier levels built.
-  // Built OUTSIDE the harness. While the app lived at results/<run>/app it sat
-  // underneath the thing grading it: two directories up are the scenario files
-  // and grade.mjs, and transcripts show builds taking exactly that walk. An
-  // isolated root removes the class rather than forbidding instances of it.
-  // Artifacts are copied back to results/ when the run finishes.
-  // This run removes its own directory on normal teardown. It deliberately does
-  // not sweep other run directories on startup: recursive deletion of an old
-  // node_modules tree can monopolize Windows I/O, and age alone is not ownership
-  // evidence when another agent is working in parallel.
-  // Stamped, so this run cannot inherit a directory another one is still
-  // holding. Every level shares it: L2 upgrades the app L1 built.
-  //
-  // An EXPLICIT --app belongs to the caller — the test loop passes one, and
-  // deleting its parent on the way out deleted the loop's own run.json. Only a
-  // directory this run created is this run's to remove.
+  // Grow one isolated app across levels, outside the harness and results tree.
+  // Copy artifacts back at completion and remove only a work directory created
+  // by this run; an explicit --app remains caller-owned.
   // Leave nothing running once the run is over, however it ends — but only stop
   // what this run brought up.
   // This run's work path is unique. There is no legitimate pre-existing build
@@ -815,11 +735,8 @@ async function main() {
         completedLevels: [], stoppedAfterLevel: null, blockedLevels: [] } }, levels: [] };
   activeRun = run;
 
-  // A contaminated session ends the run at the session that did it. Continuing
-  // spends money on a level whose score may not be quoted, and the previous
-  // occurrence paid for a fix round, a grade, a rollback and a second grade
-  // before the closing summary mentioned it. Exit 4 so a sweep records it as a
-  // failure rather than a quiet zero.
+  // Stop at the session that becomes contaminated. Exit 4 so campaign tooling
+  // records an unusable run rather than a valid zero.
   const abortContaminated = (whichSession, contamination) => {
     run.contaminated = true;
     run.contamination = { ...contamination, detectedAt: whichSession };
@@ -977,23 +894,8 @@ async function main() {
       };
     }
 
-    // Keep the first attempt before a fix round overwrites it.
-    //
-    // Until now a finished run kept only the FINAL source and the LAST grading
-    // pass, so `firstBuild` above survived as a score and a list of criterion
-    // ids and nothing else. That is the wrong thing to throw away: cost-to-
-    // correct is mostly decided at the first attempt — SpacetimeDB opened at
-    // 42/50 where PostgreSQL opened at 48/50 and MongoDB at 51/51 — so the
-    // artifact that explains the headline number was the one being deleted.
-    //
-    // It has already blocked two diagnoses: whether SpacetimeDB's lost identity
-    // points came from the SDK's reconnect defect or from the app never saving
-    // its token, and what the TS2344 errors looked like in context. Both answers
-    // were in a `main.tsx` that no longer existed.
-    //
-    // The source snapshot was captured before either scored or observed grading.
-    // Preserve the scored grading here without media; observed evidence already
-    // lives in its separate source-bound result directory.
+    // Preserve the first source and scored grading before repair overwrites the
+    // app. Observed evidence remains in its own source-bound result directory.
     try {
       const gradingFrom = join(appDir, 'stack-bench');
       if (existsSync(gradingFrom)) {
@@ -1248,11 +1150,7 @@ async function main() {
     writeRunJson(join(args.out, 'run.json'), run);
   }
 
-  // Did the builds read the thing that grades them? Prevention has holes we
-  // know about — permission rules do not govern a bash `cat` — so every run
-  // audits its own transcripts and says so. A score nobody checked for this is
-  // worth less than one that carries the check, and six runs were quoted for a
-  // day before anyone looked.
+  // Record a final transcript audit in addition to the per-session hard gates.
   try {
     const audit = sh('node', [join(ROOT, 'commands', 'leak-audit.mjs'), '--app', appDir, '--json'], { stdio: 'pipe' });
     const escapes = JSON.parse(audit).flatMap(r => r.hits ?? []);
@@ -1268,17 +1166,14 @@ async function main() {
       console.log('     Scores from this run must not be quoted.');
     }
   } catch (e) {
-    // An audit that could not run is not a pass. Treating "unknown" as usable is
-    // how six contaminated runs got quoted for a day, so the unchecked case now
-    // lands on the same side as the failed one.
+    // An audit that cannot run is not a pass.
     run.contaminated = true;
     run.contamination = { evidence: `audit did not run: ${String(e.message).split('\n')[0]}`,
       verdict: 'SCORES NOT USABLE — nothing verified this build stayed inside its directory.' };
     console.log('\n  !! AUDIT DID NOT RUN — scores from this run must not be quoted.');
   }
 
-  // Keep the evidence. The transcripts the audit just read are pruned by the CLI
-  // after 30 days, and that has already destroyed one benchmark's audit trail.
+  // Keep the transcript evidence outside the provider CLI's prunable store.
   try {
     sh('node', [join(ROOT, 'commands', 'archive-transcripts.mjs'), '--app', appDir, '--label', artifactLabel],
       { stdio: 'pipe' });
@@ -1319,10 +1214,7 @@ async function main() {
   }
   writeRunJson(join(args.out, 'run.json'), run);
 
-  // What the model fought with is the part SpacetimeDB can act on, and it is
-  // only in the transcript — the score cannot say it. Appended to a running
-  // file after every SpacetimeDB run so the pattern across runs is visible
-  // rather than rediscovered each time.
+  // Produce a model-free friction report from the transcript when available.
   if (executeStackCapability(stackAdapter, 'run-policy', 'product-review-enabled')
     && run.setup?.session !== 'model-free-reference') {
     try {
@@ -1368,10 +1260,7 @@ async function main() {
     `$${run.totals.costUsd}  ${run.totals.fixRounds} fix round(s)  ${run.totals.durationSec}s`);
   console.log(`  ${join(args.out, 'run.json')}`);
 
-  // The built source is the evidence behind the score, and it only ever existed
-  // in the work directory — results/ held run.json and nothing else. Copy it
-  // back BEFORE the work directory goes away, or cleaning up destroys the thing
-  // the run was for.
+  // Preserve the scored source before removing the work directory.
   try {
     snapshotSource(appDir, join(args.out, 'source'));
     console.log(`  source kept at ${join(args.out, 'source')}`);
@@ -1379,11 +1268,8 @@ async function main() {
     console.log(`  !! could not keep the source: ${String(e.message).split('\n')[0]}`);
   }
 
-  // bundle.json and the per-suite grading files say WHY each criterion failed,
-  // and they lived only in the work directory — so cleaning up destroyed the
-  // evidence behind the score. Asked why a contention criterion failed, the
-  // answer was "the detail was deleted", which is no answer at all. Media is
-  // skipped: traces and video are large and reproducible.
+  // Preserve grading bundles and per-suite details. Media is omitted here
+  // because traces and video are large and reproducible.
   try {
     const from = join(appDir, 'stack-bench');
     if (existsSync(from)) {
