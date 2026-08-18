@@ -310,91 +310,6 @@
 
 
 
-  /* controlled swap: everything above the socket is fixed, the backend cycles */
-  .rig { display: grid; justify-items: center; gap: 0; width: 100%; max-width: 620px; margin: .6rem 0 1.2rem; }
-  .fixed-part {
-    width: 100%; border: 1px solid var(--green-25); border-radius: 10px;
-    background: linear-gradient(180deg, var(--shade5), var(--shade7)); overflow: hidden;
-  }
-  .fixed-part .fh {
-    font-family: var(--font-mono); font-size: .8rem; color: var(--green);
-    padding: .5rem .9rem; border-bottom: 1px solid var(--shade1);
-    display: flex; justify-content: space-between; gap: 1rem;
-  }
-  .fixed-part .fh span:last-child { color: var(--n4); }
-  .minishop { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; padding: .7rem; }
-  .miniprod {
-    border: 1px solid var(--shade1); border-radius: 6px; padding: .45rem .55rem;
-    font-family: var(--font-mono); font-size: .72rem; color: var(--n4);
-  }
-  .miniprod b { display: block; color: var(--n3); font-weight: 500; }
-  .pins { display: flex; gap: .5rem; height: 26px; align-items: stretch; }
-  .pins i { width: 2px; background: linear-gradient(180deg, var(--green-25), var(--shade1)); }
-  section.on .pins i { animation: pinFlow 2.4s ease-in-out infinite; }
-  @keyframes pinFlow { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
-  .pins i:nth-child(2) { animation-delay: .2s; }
-  .pins i:nth-child(3) { animation-delay: .4s; }
-  .pins i:nth-child(4) { animation-delay: .6s; }
-
-  .socket {
-    width: 100%; border: 1px dashed var(--n5); border-radius: 10px;
-    height: 66px; position: relative; overflow: hidden; background: #080a0c;
-  }
-  .socket .card {
-    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    font-family: var(--font-mono); font-size: .95rem; color: var(--n1);
-    white-space: nowrap; opacity: 0;
-  }
-  .socket .card em { font-style: normal; color: var(--n4); font-size: .8rem; margin-left: .6rem; }
-  section.on .sc1 { animation: cardA 9s infinite; }
-  section.on .sc2 { animation: cardB 9s infinite; }
-  section.on .sc3 { animation: cardC 9s infinite; }
-  @keyframes cardA { 0%,30% { opacity: 1; transform: none; }
-                     34%,96% { opacity: 0; transform: translateY(-20px); }
-                     100% { opacity: 1; transform: none; } }
-  @keyframes cardB { 0%,29% { opacity: 0; transform: translateY(20px); }
-                     33%,63% { opacity: 1; transform: none; }
-                     67%,100% { opacity: 0; transform: translateY(-20px); } }
-  @keyframes cardC { 0%,62% { opacity: 0; transform: translateY(20px); }
-                     66%,100% { opacity: 1; transform: none; } }
-  .socket-label {
-    font-family: var(--font-mono); font-size: .72rem; color: var(--n4);
-    margin-top: .5rem; letter-spacing: .06em;
-  }
-
-  .billout {
-    width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; margin-top: 1rem;
-  }
-  .billcell {
-    border: 1px solid var(--shade1); border-radius: 8px; padding: .7rem .8rem; text-align: center;
-    font-family: var(--font-mono); font-size: .74rem; color: var(--n4); background: var(--shade7);
-  }
-  .billcell .v { display: block; margin-top: .4rem; }
-  section.on .billcell { animation: billBlink 9s ease-in-out infinite; }
-  @keyframes billBlink { 0%, 4% { border-color: var(--green-25); } 12%, 100% { border-color: var(--shade1); } }
-
-  /* placeholder scoreboard with populated rows */
-  .board td { font-size: .92rem; white-space: nowrap; }
-  .board th { white-space: nowrap; }
-  .board { overflow-x: auto; }
-  .board tr.hero td { color: var(--n1); }
-  .board tr.hero td:first-child { color: var(--green); }
-  .board .bar { display: inline-block; height: 6px; border-radius: 3px; background: var(--green-25); vertical-align: middle; width: 0; transition: width .9s cubic-bezier(.2,.7,.2,1); }
-  section.on .board .bar { width: var(--w); }
-  section.on .board tr:nth-child(2) .bar { transition-delay: .35s; }
-  section.on .board tr:nth-child(3) .bar { transition-delay: .5s; }
-  section.on .board tr:nth-child(4) .bar { transition-delay: .65s; }
-  .board tr.hero .bar { background: var(--green); }
-  .board .num { font-family: var(--font-mono); }
-  .provisional {
-    font-family: var(--font-mono); font-size: .7rem; color: var(--n4);
-    border: 1px solid var(--shade1); border-radius: 999px; padding: .2rem .7rem;
-    display: inline-block; margin-bottom: 1rem; letter-spacing: .06em;
-  }
-
-  /* the bill, filled in */
-  .billcell .v { display: block; margin-top: .4rem; font-size: 1.15rem; color: var(--n1); }
-  .billcell .v.accent { color: var(--green); }
   /* technical diagrams */
   .dia { width: 100%; max-width: 1000px; margin: .4rem 0 1rem; }
   .dia text { font-family: var(--font-mono); fill: var(--n3); font-size: 12px; }
@@ -442,19 +357,6 @@
   }
   .tree pre b { color: var(--n3); font-weight: 400; }
   .tree pre em { color: var(--green); font-style: normal; }
-
-
-
-  /* the bill tracks whichever database is in the socket */
-  .billcell .v { position: relative; height: 1.5em; }
-  .billcell .v > span { position: absolute; left: 0; right: 0; top: 0; opacity: 0; }
-  section.on .billcell .v > span { animation-duration: 9s; animation-iteration-count: infinite; }
-  section.on .b-a { animation-name: billA; }
-  section.on .b-b { animation-name: billB; }
-  section.on .b-c { animation-name: billC; }
-  @keyframes billA { 0%,30% { opacity: 1; } 33%,100% { opacity: 0; } }
-  @keyframes billB { 0%,30% { opacity: 0; } 33%,63% { opacity: 1; } 66%,100% { opacity: 0; } }
-  @keyframes billC { 0%,63% { opacity: 0; } 66%,100% { opacity: 1; } }
   /* the correction loop, running twice then exiting */
   .cyc { width: 100%; max-width: 1000px; }
   .cyc text { font-family: var(--font-mono); fill: var(--n4); font-size: 11.5px; }
@@ -881,7 +783,7 @@
     <span>SpacetimeDB</span>
   </div>
   <h1 class="r d1">Stack Bench</h1>
-  <p class="lead r d2" style="margin-top:1.4rem">AI agents write backends now. Stack Bench measures whether what they ship actually works.</p>
+  <p class="lead r d2" style="margin-top:1.4rem">Stack Bench measures whether the backend an AI agent ships actually works.</p>
   <p class="r d3" style="margin-top:1rem">Stack Bench has an agent build a real-time store, then attacks the result the way production would. Every failure is found by using the app, and every fix lands on the bill.</p>
 </section>
 
@@ -889,32 +791,8 @@
 <section>
   <div class="kicker r">what is measured</div>
   <h2 class="r d1">Same app. Same model. Different database.</h2>
-  <div class="rig r d2" role="img" aria-label="the same prompt, model and app run against each backend in turn">
-    <div class="fixed-part">
-      <div class="fh"><span>same prompt &middot; same model &middot; same store to build</span><span>held fixed</span></div>
-      <div class="minishop">
-        <div class="miniprod"><b>headphones</b>$89</div>
-        <div class="miniprod"><b>keyboard</b>$120</div>
-        <div class="miniprod"><b>monitor</b>$310</div>
-      </div>
-    </div>
-    <div class="pins"><i></i><i></i><i></i><i></i></div>
-    <div class="socket">
-      <div class="card sc1">database a</div>
-      <div class="card sc2">database b</div>
-      <div class="card sc3">database c</div>
-    </div>
-    <div class="socket-label">the only variable &middot; the bill moves with it</div>
-    <div class="billout">
-      <div class="billcell">score<span class="v">
-        <span class="b-a accent">51 / 51</span><span class="b-b accent">51 / 51</span><span class="b-c">49 / 51</span></span></div>
-      <div class="billcell">cost<span class="v">
-        <span class="b-a">$4.73</span><span class="b-b">$7.10</span><span class="b-c">$11.28</span></span></div>
-      <div class="billcell">fix rounds<span class="v">
-        <span class="b-a">1</span><span class="b-b">2</span><span class="b-c">3</span></span></div>
-    </div>
-  </div>
-  <p class="supp r d3">One agent builds the same store over and over, with a different database underneath each time. What comes out is a bill: what it scored, what it cost to get there, and how many times it had to be sent back.</p>
+  <p class="lead r d2" style="margin-top:.6rem">One agent builds the same storefront over and over. The prompt, the requirements and the model stay pinned; the database underneath is the only thing that changes.</p>
+  <p class="supp r d3" style="margin-top:1.2rem">The loop runs until every criterion passes, so each run ends at the same score. What it cost to get there, and how many rounds it took, is the measurement.</p>
 </section>
 
 <!-- 3 a run -->
@@ -1199,11 +1077,11 @@
         <td class="num">$4.73 &nbsp;<span class="bar" style="--w:34px"></span></td><td class="num">1</td><td class="num">41m</td></tr>
       <tr><td>database b</td><td class="num">51 / 51</td>
         <td class="num">$7.10 &nbsp;<span class="bar" style="--w:52px"></span></td><td class="num">2</td><td class="num">58m</td></tr>
-      <tr><td>database c</td><td class="num">49 / 51</td>
+      <tr><td>database c</td><td class="num">51 / 51</td>
         <td class="num">$11.28 &nbsp;<span class="bar" style="--w:82px"></span></td><td class="num">3</td><td class="num">1h 12m</td></tr>
     </table>
   </div>
-  <p class="supp r d4" style="margin-top:1.4rem">Every database reaches a full score. What separates them is what it costs to get there, and how many times the agent needs to hear what a customer saw go wrong.</p>
+  <p class="supp r d4" style="margin-top:1.4rem">The loop runs until every criterion passes, so the score is the same everywhere. What separates them is the spend and the number of rounds it took to get there.</p>
 </section>
 
 <script>
