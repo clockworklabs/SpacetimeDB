@@ -377,11 +377,6 @@
     align-self: flex-start; opacity: 0;
   }
   .bub.mine { align-self: flex-end; background: var(--green-10); border-color: var(--green-25); }
-  .client .cinput {
-    margin: .6rem; padding: .45rem .7rem; border: 1px solid var(--shade1); border-radius: 8px;
-    font-family: var(--font-mono); font-size: .78rem; color: var(--n3); min-height: 2.1em;
-  }
-  .client .typed { display: inline-block; overflow: hidden; white-space: nowrap; vertical-align: bottom; width: 0; }
   .lane { position: relative; }
   .lane::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; border-top: 1px dashed var(--shade1); }
   .lane .zip { position: absolute; top: 50%; left: 0; width: 10px; height: 10px; margin-top: -5px;
@@ -391,7 +386,6 @@
     color: var(--green); opacity: 0;
   }
   /* one shared 7s timeline */
-  section.on .d-type   { animation: dType 7s infinite; }
   section.on .d-bub-a  { animation: dBubA 7s infinite; }
   section.on .d-zip    { animation: dZip 7s infinite; }
   section.on .d-bub-b  { animation: dBubB 7s infinite; }
@@ -401,6 +395,47 @@
   @keyframes dZip  { 0%,30% { opacity: 0; left: 0; } 34% { opacity: 1; } 46% { opacity: 1; left: calc(100% - 10px); } 50%,100% { opacity: 0; left: calc(100% - 10px); } }
   @keyframes dBubB { 0%,46% { opacity: 0; transform: scale(.7); } 50%,88% { opacity: 1; transform: scale(1); } 94%,100% { opacity: 0; } }
   @keyframes dVerd { 0%,54% { opacity: 0; } 60%,88% { opacity: 1; } 94%,100% { opacity: 0; } }
+
+  /* three scored axes, shown as example criteria from the demo above */
+  .axes { display: grid; gap: .55rem; max-width: 840px; margin: 1.2rem 0; font-size: .88rem; }
+  .axrow { display: grid; grid-template-columns: 6.6rem 1fr; gap: 1rem; align-items: baseline;
+           border-bottom: 1px dashed var(--shade1); padding-bottom: .5rem; color: var(--n3); }
+  .axrow .ax { font-family: var(--font-mono); font-size: .78rem; color: var(--green); }
+  .axrow.pu .ax { color: var(--purple); }
+  .axrow.bl .ax { color: var(--blue); }
+  .axrow i.ok { font-style: normal; color: var(--green); }
+  .axrow code { color: var(--n1); }
+
+  /* storefront live demo */
+  .bigprod {
+    margin: .8rem; border: 1px solid var(--shade1); border-radius: 8px;
+    padding: .7rem .9rem; font-family: var(--font-mono); font-size: .8rem; color: var(--n3);
+    display: grid; gap: .3rem;
+  }
+  .bigprod b { color: var(--n1); font-weight: 600; }
+  .stockline { position: relative; height: 1.3em; }
+  .stockline span { position: absolute; left: 0; top: 0; }
+  .s-old { color: var(--green); }
+  .s-new { color: var(--yellow); opacity: 0; }
+  section.on .d-sold { animation: dSOld 7s infinite; }
+  section.on .d-snew { animation: dSNew 7s infinite; }
+  @keyframes dSOld { 0%, 44% { opacity: 1; } 48%, 90% { opacity: 0; } 96%, 100% { opacity: 1; } }
+  @keyframes dSNew { 0%, 44% { opacity: 0; } 48%, 62% { opacity: 1; color: var(--yellow); } 66%, 90% { opacity: 1; color: var(--green); } 96%, 100% { opacity: 0; } }
+  .buy {
+    justify-self: start; font-family: var(--font-mono); font-size: .74rem;
+    color: var(--green); border: 1px solid var(--green-25); border-radius: 6px;
+    padding: .3rem .8rem; background: var(--green-10);
+  }
+  section.on .d-buy { animation: dBuy 7s infinite; }
+  @keyframes dBuy { 0%, 6% { transform: none; } 9% { transform: scale(.94); background: var(--green-25); } 12%, 100% { transform: none; } }
+  .toast {
+    margin: 0 .8rem .8rem; font-family: var(--font-mono); font-size: .74rem;
+    color: var(--n1); border: 1px solid var(--shade1); border-radius: 6px;
+    padding: .35rem .7rem; background: var(--shade7); opacity: 0; justify-self: start;
+  }
+  section.on .d-toast { animation: dToast 7s infinite; }
+  @keyframes dToast { 0%, 12% { opacity: 0; transform: translateY(6px); } 16%, 88% { opacity: 1; transform: none; } 94%, 100% { opacity: 0; } }
+
   @media (max-width: 720px) { .live { grid-template-columns: 1fr; } .lane { height: 40px; } }
 
   /* track thumbnails */
@@ -416,14 +451,6 @@
   .prod .stock { color: var(--green); }
   section.on .prod .tick { animation: stockTick 5s steps(1) infinite; }
   @keyframes stockTick { 0%, 55% { color: var(--green); } 60%, 78% { color: var(--yellow); } 80%, 100% { color: var(--green); } }
-  .chatmini { display: grid; grid-template-columns: 84px 1fr; min-height: 118px; }
-  .rooms { border-right: 1px solid var(--shade1); padding: .55rem .5rem; display: grid; gap: .4rem; align-content: start;
-           font-family: var(--font-mono); font-size: .64rem; color: var(--n4); }
-  .rooms .cur { color: var(--green); }
-  .msgs { padding: .55rem .6rem; display: flex; flex-direction: column; gap: .4rem; }
-  .mline { height: 10px; border-radius: 5px; background: var(--shade1); width: 70%; }
-  .mline.mine { align-self: flex-end; background: var(--green-10); border: 1px solid var(--green-25); width: 46%; }
-  section.on .mline.new { animation: dBubA 5s infinite; }
 
   /* staged mutation captions */
   .mutcap { font-family: var(--font-mono); font-size: .78rem; min-height: 1.4em; position: relative; max-width: 760px; }
@@ -534,33 +561,26 @@
 <section>
   <div class="kicker r">verification</div>
   <h2 class="r d1">Grading drives real clients</h2>
-  <div class="live r d2" role="img" aria-label="a message sent by one client is asserted in the other client's browser">
+  <div class="live r d2" role="img" aria-label="a purchase in one client updates stock in the other client's browser">
     <div class="client">
       <div class="chead"><i></i><i></i><span class="who">alice &middot; isolated browser</span></div>
-      <div class="cbody">
-        <div class="bub" style="opacity:1">morning!</div>
-        <div class="bub mine d-bub-a">hey bob</div>
-      </div>
-      <div class="cinput"><span class="typed d-type">hey bob</span></div>
+      <div class="bigprod"><b>headphones</b><span>$89</span><span class="buy d-buy">buy now</span></div>
+      <div class="toast d-toast">order placed &#10003;</div>
     </div>
     <div class="lane"><i class="zip d-zip"></i></div>
     <div class="client">
       <div class="chead"><i></i><i></i><span class="who">bob &middot; separate identity</span></div>
-      <div class="cbody">
-        <div class="bub mine" style="opacity:1">morning!</div>
-        <div class="bub d-bub-b">hey bob</div>
+      <div class="bigprod"><b>headphones</b><span>$89</span>
+        <span class="stockline"><span class="s-old d-sold">3 left</span><span class="s-new d-snew">2 left</span></span>
       </div>
-      <div class="verd d-verd">&#10003; delivery-live &middot; observed in 213ms, no reload</div>
+      <div class="verd d-verd">&#10003; stock-live &middot; observed in 213ms, no reload</div>
     </div>
   </div>
   <div class="demo-tag r d2">simulated clients &middot; illustrative latency</div>
-  <div class="cards">
-    <div class="card r d3" tabindex="0"><h3>features</h3><p>does each described feature work</p>
-      <p class="more">each criterion asserts one behaviour a user can observe</p></div>
-    <div class="card pu r d4" tabindex="0"><h3>invariants</h3><p>identity, isolation, durability, write-path integrity</p>
-      <p class="more">properties that must hold no matter which features exist</p></div>
-    <div class="card bl r d5" tabindex="0"><h3>delivery</h3><p>no loss, no duplication, consistent ordering</p>
-      <p class="more">every client sees everything exactly once, in the same order, across reconnects</p></div>
+  <div class="axes r d3">
+    <div class="axrow"><span class="ax">features</span><span><i class="ok">&#10003;</i> <code>add-to-cart</code> every described feature, asserted from the shopper's side</span></div>
+    <div class="axrow pu"><span class="ax">invariants</span><span><i class="ok">&#10003;</i> <code>cart-isolated-per-user</code> bob can never see alice's cart, whatever features exist</span></div>
+    <div class="axrow bl"><span class="ax">delivery</span><span><i class="ok">&#10003;</i> <code>stock-live</code> every client, exactly once, in the same order, across reconnects</span></div>
   </div>
   <div class="caps r d5">
     <div><span>console error during a feature</span><b>cap 2 / 3</b></div>
@@ -571,17 +591,10 @@
 
 <!-- 5 - tracks and levels -->
 <section>
-  <div class="kicker r">tracks &amp; levels</div>
-  <h2 class="r d1">Two applications, one ladder</h2>
+  <div class="kicker r">the application</div>
+  <h2 class="r d1">One storefront, five levels</h2>
   <div class="thumbs r d2">
-    <div class="thumb">
-      <div class="th"><b>chat</b> &middot; rooms, messages, presence</div>
-      <div class="chatmini">
-        <div class="rooms"><span class="cur"># general</span><span># design</span><span># launch</span></div>
-        <div class="msgs"><div class="mline"></div><div class="mline mine"></div><div class="mline" style="width:55%"></div><div class="mline mine new" style="width:38%"></div></div>
-      </div>
-    </div>
-    <div class="thumb shop">
+    <div class="thumb shop" style="max-width:420px">
       <div class="th"><b>ecommerce</b> &middot; storefront, cart, warehouses</div>
       <div class="tgrid">
         <div class="prod"><b>headphones</b>$89 <span class="stock tick">&middot; 3 left</span></div>
@@ -595,17 +608,17 @@
   </div>
   <div class="ladder">
     <div class="rung"><span class="lv">L1</span><div class="bar">identity &middot; durable state &middot; real-time</div><span class="vbadge">validated</span>
-      <span class="more">chat: accounts, basic chat &middot; ecommerce: storefront, cart, warehouses</span></div>
+      <span class="more">storefront, cart and warehouses, with stock moving live under every shopper</span></div>
     <div class="rung"><span class="lv">L2</span><div class="bar">authorization &middot; per-user derivation</div><span class="vbadge">validated</span>
-      <span class="more">chat: private rooms, membership &middot; ecommerce: personalisation, catalogue queries</span></div>
+      <span class="more">personalisation and catalogue queries: each shopper sees their own derived view</span></div>
     <div class="rung todo"><span class="lv">L3</span><div class="bar">atomicity &middot; isolation</div>
-      <span class="more">chat: reactions, polls, capacity &middot; ecommerce: warehouse transfers</span></div>
+      <span class="more">warehouse transfers: stock moves between locations without ever double-counting</span></div>
     <div class="rung todo"><span class="lv">L4</span><div class="bar">durability of deferred work</div>
-      <span class="more">chat: scheduling, expiry &middot; ecommerce: order lifecycle, expiry</span></div>
+      <span class="more">order lifecycle and expiry: deferred steps survive restarts</span></div>
     <div class="rung todo"><span class="lv">L5</span><div class="bar">throughput &middot; latency &middot; efficiency</div>
-      <span class="more">both tracks: volume</span></div>
+      <span class="more">volume: the same guarantees under load</span></div>
   </div>
-  <p class="supp r d4">Levels are cumulative, so a regression at L1 is caught while grading L3. Hover a level for what each track adds.</p>
+  <p class="supp r d4">Levels are cumulative, so a regression at L1 is caught while grading L3. Hover a level for what it adds.</p>
 </section>
 
 <!-- 6 - keeping it honest -->
