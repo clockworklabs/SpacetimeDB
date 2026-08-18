@@ -247,7 +247,7 @@ test('dashboard serves real state and protects campaign launch with its local se
   assert.equal(page.status, 200);
   const pageHtml = await page.text();
   assert.match(pageHtml, /StackBench Control Room/);
-  assert.match(pageHtml, /id="history-prev"/);
+  assert.match(pageHtml, /id="campaign-list"/);
   assert.match(pageHtml, /class="primary topbar-run"/);
   assert.doesNotMatch(pageHtml, /Controller activity/);
   assert.doesNotMatch(pageHtml, /See every run/);

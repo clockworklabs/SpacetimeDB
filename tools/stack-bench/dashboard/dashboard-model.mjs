@@ -229,6 +229,11 @@ function readRun(path) {
         roundsUsed: level.repair?.roundsUsed ?? 0,
         repairStatus: level.repair?.status ?? null,
         outcome: level.outcome?.kind ?? null,
+        // Level records carry spend as it is incurred, while run.totals only
+        // appears once an attempt finishes. Reporting both lets a view show
+        // what a still-running attempt has already cost.
+        costUsd: level.buildCostUsd == null && level.fixCostUsd == null
+          ? null : (level.buildCostUsd ?? 0) + (level.fixCostUsd ?? 0),
         failures: (level.missed ?? level.firstBuild?.missed ?? []).map(item =>
           typeof item === 'string' ? item : item?.stableKey ?? item?.description ?? 'Failed check'),
       })),

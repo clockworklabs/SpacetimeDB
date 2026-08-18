@@ -22,6 +22,11 @@ const STATIC = new Map([
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/styles.css', ['styles.css', 'text/css; charset=utf-8']],
   ['/spacetimedb-mark.svg', ['spacetimedb-mark.svg', 'image/svg+xml']],
+  // The brand faces are served from here rather than a CDN: the dashboard's own
+  // content-security-policy allows 'self' only, and the appliance has no
+  // outbound access to fetch them at view time.
+  ['/fonts/inter-latin-variable.woff2', ['fonts/inter-latin-variable.woff2', 'font/woff2']],
+  ['/fonts/source-code-pro-latin-variable.woff2', ['fonts/source-code-pro-latin-variable.woff2', 'font/woff2']],
 ]);
 
 function loopbackHost(value) {

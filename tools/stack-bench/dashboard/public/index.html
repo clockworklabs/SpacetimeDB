@@ -7,6 +7,8 @@
     <meta name="theme-color" content="#0b1114">
     <title>StackBench Control Room</title>
     <meta name="description" content="Run and inspect reproducible StackBench comparisons.">
+    <link rel="preload" href="/fonts/inter-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/source-code-pro-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/styles.css">
     <script type="module" src="/app.js"></script>
   </head>
@@ -17,47 +19,38 @@
         <span><strong>STACKBENCH</strong><small>CONTROL ROOM</small></span>
       </a>
       <div class="topbar-actions">
+        <span class="offline" id="refresh-state" role="status"></span>
+        <span class="mode-tag" id="mode-tag" hidden>Read only</span>
         <button class="primary topbar-run" id="open-run" type="button">Start a run</button>
-        <div class="live-state"><span class="live-dot" aria-hidden="true"></span><span id="refresh-state">Connecting</span></div>
       </div>
     </header>
 
-    <main>
-      <section class="summary-grid" aria-label="Campaign summary">
-        <article class="summary-card active"><span>Running now</span><strong id="count-running">—</strong><small>campaigns</small></article>
-        <article class="summary-card"><span>Completed</span><strong id="count-completed">—</strong><small>campaigns</small></article>
-        <article class="summary-card attention"><span>Needs attention</span><strong id="count-attention">—</strong><small>campaigns</small></article>
-        <article class="summary-card"><span>Ready to start</span><strong id="count-prepared">—</strong><small>campaigns</small></article>
-      </section>
-
-      <section class="section" id="active-runs">
-        <div class="section-heading">
-          <div><p class="eyebrow">LIVE</p><h2>Active runs</h2></div>
-          <p>Latest completed score while the next step runs.</p>
-        </div>
-        <div class="run-grid" id="run-grid"><div class="empty">Loading active runs…</div></div>
-      </section>
-
-      <section class="section" id="campaigns">
-        <div class="section-heading compact">
-          <div><p class="eyebrow">HISTORY</p><h2>Campaigns</h2></div>
-          <p>Newest runs first. Open any campaign to inspect its full evidence package.</p>
-        </div>
-        <div class="history-panel">
-          <div class="campaign-list" id="campaign-list"></div>
-          <nav class="history-pages" aria-label="Campaign history pages">
-            <button class="secondary" id="history-prev" type="button">Previous</button>
-            <span id="history-page" aria-live="polite">Page 1 of 1</span>
-            <button class="secondary" id="history-next" type="button">Next</button>
-          </nav>
-        </div>
-      </section>
+    <main id="overview">
+      <div class="table-frame"><table class="campaigns">
+        <thead>
+          <tr class="group-row">
+            <td></td>
+            <th scope="colgroup" colspan="3" class="group">Cost to correct</th>
+            <td colspan="2"></td>
+          </tr>
+          <tr>
+            <th scope="col">Campaign</th>
+            <th scope="col" class="num">SpacetimeDB</th>
+            <th scope="col" class="num">PostgreSQL</th>
+            <th scope="col" class="num">MongoDB</th>
+            <th scope="col">Status</th>
+            <th scope="col" class="num">Updated</th>
+          </tr>
+        </thead>
+        <tbody id="campaign-list"></tbody>
+      </table></div>
+      <p class="table-foot"><span id="campaign-count"></span></p>
     </main>
 
     <dialog id="run-dialog" class="run-dialog">
       <form method="dialog" class="dialog-shell">
         <div class="dialog-heading">
-          <div><p class="eyebrow">NEW CAMPAIGN</p><h2>Start a frozen plan</h2></div>
+          <h2>Start a frozen plan</h2>
           <button class="icon-button" value="cancel" aria-label="Close">×</button>
         </div>
         <p class="dialog-copy">The plan already defines the stacks, levels, checks, model, repair budget, and parallelism. Starting it does not change those choices.</p>
@@ -74,8 +67,8 @@
 
     <dialog id="detail-dialog" class="detail-dialog">
       <div class="dialog-shell detail-shell">
-        <div class="dialog-heading">
-          <div><p class="eyebrow">CAMPAIGN DETAIL</p><h2 id="detail-title">Run detail</h2></div>
+        <div class="dialog-heading sticky-heading">
+          <h2 id="detail-title">Run detail</h2>
           <button class="icon-button" id="close-detail" aria-label="Close">×</button>
         </div>
         <div id="detail-content"></div>
