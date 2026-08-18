@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "The price is the store's to set",
+  "note": "Refusal checks first prove the same valid route and input with an authorized actor. A missing or malformed endpoint therefore cannot earn authorization credit merely by returning an error.",
+  "features": [
+    {
+      "id": 104,
+      "name": "The price is the store's to set",
+      "actors": ["buyer"],
+      "setup": [{"do":"signUp","actor":"buyer","name":"oli"}],
+      "criteria": [
+        {
+          "id": "104a",
+          "desc": "the direct purchase operation creates exactly one order at the store's current price",
+          "points": 2,
+          "steps": [
+            {
+              "do": "callAction",
+              "actor": "buyer",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [0],
+                "params": [{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]
+              },
+              "input": {"testid":"item-card","contains":"Espresso Machine","attribute":"data-buy-input"},
+              "settleMs": 2000
+            },
+            {"do":"expectActionOutcome","actor":"buyer","outcome":"accepted"},
+            {"do":"click","actor":"buyer","testid":"orders-toggle"},
+            {"do":"expect","actor":"buyer","testid":"order-item","contains":"Espresso Machine","count":1},
+            {
+              "do": "expectNumber",
+              "actor": "buyer",
+              "testid": "order-total",
+              "in": {"testid":"order-item","contains":"Espresso Machine"},
+              "equals": 449
+            }
+          ],
+          "statedBy": "the server uses the current stored price when it creates an order"
+        }
+      ]
+    }
+  ]
+}

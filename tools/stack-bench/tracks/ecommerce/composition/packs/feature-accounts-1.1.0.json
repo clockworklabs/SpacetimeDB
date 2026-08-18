@@ -21,6 +21,9 @@
     ]
   },
   "checks": [
-    { "id": "accounts", "source": "scenarios/01-core-2.4.0.json", "feature": 1, "criteria": ["1a", "1b", "1c", "1d"], "role": "feature" }
+    { "id": "account-create", "stableId": "accounts", "source": "scenarios/01-account-create-2.4.0.json", "feature": 1, "criteria": ["1a"], "role": "feature" },
+    { "id": "account-duplicate", "stableId": "accounts", "source": "scenarios/01-account-duplicate-2.4.0.json", "feature": 1, "criteria": ["1b"], "role": "feature" },
+    { "id": "account-password", "stableId": "accounts", "source": "scenarios/01-account-password-2.4.0.json", "feature": 1, "criteria": ["1c"], "role": "feature" },
+    { "id": "account-signout", "stableId": "accounts", "source": "scenarios/01-account-signout-2.4.0.json", "feature": 1, "criteria": ["1d"], "role": "feature" }
   ]
 }

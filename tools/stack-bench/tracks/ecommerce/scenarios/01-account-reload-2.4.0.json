@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Session reload",
+  "features": [
+    {
+      "id": 1,
+      "name": "Accounts",
+      "actors": ["shopper"],
+      "setup": [{"do":"signUp","actor":"shopper","name":"ann"}],
+      "criteria": [
+        {
+          "id": "1e",
+          "desc": "the session survives a reload",
+          "points": 1,
+          "steps": [
+            {"do":"reload","actor":"shopper","settleMs":4000},
+            {"do":"expect","actor":"shopper","testid":"current-user","contains":"ann","within":6000}
+          ],
+          "statedBy": "a signed-in session persists across a page reload"
+        }
+      ]
+    }
+  ]
+}

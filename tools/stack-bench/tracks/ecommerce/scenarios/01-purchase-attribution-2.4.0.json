@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Purchases are attributed to whoever made them",
+  "note": "Refusal checks first prove the same valid route and input with an authorized actor. A missing or malformed endpoint therefore cannot earn authorization credit merely by returning an error.",
+  "features": [
+    {
+      "id": 102,
+      "name": "Purchases are attributed to whoever made them",
+      "actors": ["victim","attacker"],
+      "setup": [{"do":"signUp","actor":"victim","name":"lee"},{"do":"signUp","actor":"attacker","name":"mel"}],
+      "criteria": [
+        {
+          "id": "102a",
+          "desc": "a direct purchase is attributed to the authenticated caller, not another account",
+          "points": 2,
+          "steps": [
+            {
+              "do": "callAction",
+              "actor": "attacker",
+              "action": "buy",
+              "namedAction": {
+                "id": "buy",
+                "path": "/api/items/:id/buy",
+                "reducer": "buy_now",
+                "args": [0],
+                "params": [{"name":"itemId","in":"path","placeholder":":id","wireType":"u64"}]
+              },
+              "input": {"testid":"item-card","contains":"Desk Lamp","attribute":"data-buy-input"},
+              "settleMs": 2000
+            },
+            {"do":"expectActionOutcome","actor":"attacker","outcome":"accepted"},
+            {"do":"click","actor":"victim","testid":"orders-toggle"},
+            {"do":"expect","actor":"victim","testid":"order-item","contains":"Desk Lamp","absent":true},
+            {"do":"click","actor":"attacker","testid":"orders-toggle"},
+            {"do":"expect","actor":"attacker","testid":"order-item","contains":"Desk Lamp","count":1}
+          ],
+          "statedBy": "the authenticated caller, not a client-supplied identity, owns the order"
+        }
+      ]
+    }
+  ]
+}

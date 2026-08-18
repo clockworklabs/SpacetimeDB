@@ -115,7 +115,7 @@ test('server-side L1 guarantees use server-side defects', () => {
 
 test('cart-boundary mutants exercise the named server actions', () => {
   const scenario = JSON.parse(readFileSync(join(TRACK, 'scenarios',
-    '01-invariants-2.4.0.json'), 'utf8'));
+    '01-cart-boundary-2.4.0.json'), 'utf8'));
   const cart = scenario.features.find(feature => feature.id === 109);
   const ownership = cart.criteria.find(criterion => criterion.id === '109a');
   const quantity = cart.criteria.find(criterion => criterion.id === '109b');

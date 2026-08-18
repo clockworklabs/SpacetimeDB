@@ -24,11 +24,11 @@
   "checks": [
     { "id": "signed-out-purchase", "source": "scenarios/01-buying-2.4.0.json", "feature": 3, "criteria": ["3a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
     { "id": "admin-ui", "source": "scenarios/01-warehouse-admin-2.4.0.json", "feature": 7, "criteria": ["7a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.warehouse-admin"] },
-    { "id": "purchase-session", "source": "scenarios/01-server-actions-2.4.0.json", "feature": 101, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
-    { "id": "purchase-attribution", "source": "scenarios/01-server-actions-2.4.0.json", "feature": 102, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
-    { "id": "admin-write", "source": "scenarios/01-server-actions-2.4.0.json", "feature": 103, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.warehouse-admin"] },
-    { "id": "order-ownership", "source": "scenarios/01-invariants-2.4.0.json", "feature": 106, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
-    { "id": "review-eligibility", "source": "scenarios/01-invariants-2.4.0.json", "feature": 108, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.reviews"] },
-    { "id": "cart-boundary", "source": "scenarios/01-invariants-2.4.0.json", "feature": 109, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] }
+    { "id": "purchase-session", "source": "scenarios/01-purchase-session-2.4.0.json", "feature": 101, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+    { "id": "purchase-attribution", "source": "scenarios/01-purchase-attribution-2.4.0.json", "feature": 102, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+    { "id": "admin-write", "source": "scenarios/01-admin-write-2.4.0.json", "feature": 103, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.warehouse-admin"] },
+    { "id": "order-ownership", "source": "scenarios/01-order-ownership-2.4.0.json", "feature": 106, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.purchasing"] },
+    { "id": "review-eligibility", "source": "scenarios/01-review-eligibility-2.4.0.json", "feature": 108, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.reviews"] },
+    { "id": "cart-boundary", "source": "scenarios/01-cart-boundary-2.4.0.json", "feature": 109, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] }
   ]
 }

@@ -46,6 +46,27 @@ test('each review check has an independent executable scenario', () => {
   }
 });
 
+test('each account check has an independent executable scenario', () => {
+  const release = buildRecipeRelease(recipe('2.4.0'), { trackRoot: root });
+  const selectionRelease = { checks: release.checkCatalog };
+  const checks = release.checkCatalog.filter(check => String(check.featureId) === '1');
+  assert.equal(checks.length, 5);
+  assert.equal(new Set(checks.map(check => check.source)).size, 5);
+  for (const check of checks) {
+    const spec = compileScenarioDefinition(readJson(join(root, check.source)), {
+      source: check.source,
+    });
+    const selected = selectScenarioChecks(spec, selectionRelease, [check.stableKey]);
+    assert.equal(selected.features.length, 1, check.stableKey);
+    assert.deepEqual(selected.features[0].criteria.map(criterion => criterion.id),
+      [check.criterionId], check.stableKey);
+  }
+  const creation = compileScenarioDefinition(readJson(join(root,
+    'scenarios', '01-account-create-2.4.0.json')));
+  assert.equal(creation.features[0].setup.length, 0);
+  assert.equal(creation.features[0].criteria[0].steps[0].do, 'signUp');
+});
+
 test('review uniqueness grades the invariant without choosing reject or update', () => {
   const candidate = compileRecipeFile(recipe('2.4.0'), { trackRoot: root });
   const requirement = candidate.recipe.task.requirements.find(fragment =>
@@ -169,26 +190,35 @@ test('catalog, order, warehouse, and direct-action claims use exact evidence', (
   assert(warehouse.features[0].criteria.find(criterion => criterion.id === '7b').steps
     .some(step => step.testid === 'admin-location-row' && step.count === 24));
 
-  const direct = compileScenarioDefinition(readJson(join(root, 'scenarios',
-    '01-server-actions-2.4.0.json')));
-  for (const featureId of [101, 103]) {
+  for (const [featureId, source] of [[101, '01-purchase-session-2.4.0.json'],
+    [103, '01-admin-write-2.4.0.json']]) {
+    const direct = compileScenarioDefinition(readJson(join(root, 'scenarios', source)));
     const actions = direct.features.find(feature => feature.id === featureId).criteria[0].steps;
     assert(actions.some(step => step.do === 'expectActionOutcome' && step.outcome === 'accepted'));
     assert(actions.some(step => step.do === 'expectActionOutcome' && step.outcome === 'refused'));
   }
-  const price = direct.features.find(feature => feature.id === 104).criteria[0].steps;
+  const price = compileScenarioDefinition(readJson(join(root, 'scenarios',
+    '01-server-price-2.4.0.json'))).features[0].criteria[0].steps;
   assert(price.some(step => step.testid === 'order-total' && step.equals === 449));
 });
 
-test('sibling checks no longer provide account, accounting, or cart state', () => {
-  const spec = compileScenarioDefinition(readJson(join(root, 'scenarios',
-    '01-invariants-2.4.0.json')));
-  const byId = new Map(spec.features.map(feature => [feature.id, feature]));
-  assert(byId.get(105).setup.some(step => step.testid === 'add-to-cart'));
-  assert(byId.get(107).setup.some(step => step.as === 'revenue-before'));
-  assert(byId.get(107).setup.some(step => step.as === 'stand-before'));
-  assert(byId.get(109).setup.some(step => step.testid === 'add-to-cart'));
-  const invalidQuantity = byId.get(109).criteria.find(criterion => criterion.id === '109b').steps;
+test('invariant checks own their setup and server actions', () => {
+  const reload = compileScenarioDefinition(readJson(join(root, 'scenarios',
+    '01-account-state-reload-2.4.0.json'))).features[0];
+  const reconnect = compileScenarioDefinition(readJson(join(root, 'scenarios',
+    '01-account-state-reconnect-2.4.0.json'))).features[0];
+  assert(reload.setup.some(step => step.testid === 'add-to-cart'));
+  assert(reconnect.setup.some(step => step.testid === 'add-to-cart'));
+
+  const accounting = compileScenarioDefinition(readJson(join(root, 'scenarios',
+    '01-books-balance-2.4.0.json'))).features[0];
+  assert(accounting.setup.some(step => step.as === 'revenue-before'));
+  assert(accounting.setup.some(step => step.as === 'stand-before'));
+
+  const cart = compileScenarioDefinition(readJson(join(root, 'scenarios',
+    '01-cart-boundary-2.4.0.json'))).features[0];
+  assert(cart.setup.some(step => step.testid === 'add-to-cart'));
+  const invalidQuantity = cart.criteria.find(criterion => criterion.id === '109b').steps;
   assert(invalidQuantity.some(step => step.do === 'callAction'
     && step.action === 'cart-set-quantity' && step.namedAction.method === 'PATCH'));
   assert(invalidQuantity.some(step => step.do === 'expectActionOutcome'

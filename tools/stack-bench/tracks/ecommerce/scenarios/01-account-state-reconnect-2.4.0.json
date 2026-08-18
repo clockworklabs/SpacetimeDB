@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "An account keeps what belongs to it",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "Every criterion receives all state it relies on from its feature setup. Security assertions include a working positive path where an empty or broken view could otherwise look secure.",
+  "features": [
+    {
+      "id": 105,
+      "name": "An account keeps what belongs to it",
+      "actors": ["shopper"],
+      "setup": [
+        {"do":"signUp","actor":"shopper","name":"pat"},
+        {
+          "do": "click",
+          "actor": "shopper",
+          "testid": "add-to-cart",
+          "in": {"testid":"item-card","contains":"Keyboard"}
+        }
+      ],
+      "criteria": [
+        {
+          "id": "105b",
+          "desc": "the same account and cart survive the connection dropping and coming back",
+          "points": 1,
+          "steps": [
+            {"do":"setOffline","actor":"shopper","settleMs":3000},
+            {"do":"setOffline","actor":"shopper","offline":false,"settleMs":6000},
+            {"do":"expect","actor":"shopper","testid":"current-user","contains":"pat"},
+            {"do":"click","actor":"shopper","testid":"cart-toggle"},
+            {"do":"expect","actor":"shopper","testid":"cart-item","contains":"Keyboard"}
+          ],
+          "statedBy": "the signed-in account and its data remain available after reconnecting"
+        }
+      ]
+    }
+  ]
+}

@@ -9,7 +9,7 @@
   "mutations": [
     {
       "id": "signup-does-not-expose-created-account",
-      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-account-create-2.4.0.json",
       "targets": [{ "feature": 1, "criterion": "1a" }],
       "desc": "Signup succeeds but the client discards the created account identity from its current session view.",
       "file": "client/src/App.tsx",
@@ -20,7 +20,7 @@
     },
     {
       "id": "duplicate-signup-reports-success",
-      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-account-duplicate-2.4.0.json",
       "targets": [{ "feature": 1, "criterion": "1b" }],
       "desc": "A duplicate username is reported as a successful empty signup response instead of a refusal.",
       "file": "server/src/index.ts",
@@ -31,7 +31,7 @@
     },
     {
       "id": "signin-skips-password-verification",
-      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-account-password-2.4.0.json",
       "targets": [{ "feature": 1, "criterion": "1c" }],
       "desc": "Signin accepts an existing account without requiring its password to match.",
       "file": "server/src/index.ts",
@@ -42,7 +42,7 @@
     },
     {
       "id": "signout-keeps-current-account",
-      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-account-signout-2.4.0.json",
       "targets": [{ "feature": 1, "criterion": "1d" }],
       "desc": "Signout disconnects the token state but leaves the current account and persisted credential in place.",
       "file": "client/src/App.tsx",
@@ -53,7 +53,7 @@
     },
     {
       "id": "session-token-not-persisted",
-      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-account-reload-2.4.0.json",
       "targets": [{ "feature": 1, "criterion": "1e" }],
       "desc": "The active session is kept only in React state and is unavailable after a page reload.",
       "file": "client/src/App.tsx",
@@ -262,7 +262,7 @@
     },
     {
       "id": "unauthenticated-purchase-defaults-to-admin",
-      "scenario": "tracks/ecommerce/scenarios/01-server-actions-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session-2.4.0.json",
       "targets": [{ "feature": 101, "criterion": "101a" }],
       "desc": "The purchase endpoint drops authentication and assigns sessionless purchases to the seeded administrator.",
       "file": "server/src/index.ts",
@@ -279,7 +279,7 @@
     },
     {
       "id": "desk-lamp-purchase-is-attributed-to-another-account",
-      "scenario": "tracks/ecommerce/scenarios/01-server-actions-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-attribution-2.4.0.json",
       "targets": [{ "feature": 102, "criterion": "102a" }],
       "desc": "The Desk Lamp purchase path stores the order under another existing customer instead of its authenticated caller.",
       "file": "server/src/index.ts",
@@ -290,7 +290,7 @@
     },
     {
       "id": "customer-can-restock-directly",
-      "scenario": "tracks/ecommerce/scenarios/01-server-actions-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-2.4.0.json",
       "targets": [{ "feature": 103, "criterion": "103a" }],
       "desc": "The direct restock route retains authentication but drops its administrator role gate.",
       "file": "server/src/index.ts",
@@ -301,7 +301,7 @@
     },
     {
       "id": "direct-purchase-total-ignores-store-price",
-      "scenario": "tracks/ecommerce/scenarios/01-server-actions-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price-2.4.0.json",
       "targets": [{ "feature": 104, "criterion": "104a" }],
       "desc": "The direct purchase creates one order but records a zero total rather than the store's current price.",
       "file": "server/src/index.ts",
@@ -312,12 +312,20 @@
     },
     {
       "id": "cart-hydration-loses-account-state",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
-      "targets": [
-        { "feature": 105, "criterion": "105a" },
-        { "feature": 105, "criterion": "105b" }
-      ],
-      "desc": "Reload and reconnect hydration both discard the account's persisted cart response.",
+      "scenario": "tracks/ecommerce/scenarios/01-account-state-reload-2.4.0.json",
+      "targets": [{ "feature": 105, "criterion": "105a" }],
+      "desc": "Reload hydration discards the account's persisted cart response.",
+      "file": "client/src/App.tsx",
+      "edits": [{
+        "find": "  const refreshCart = useCallback(async (tok: string) => {\n    const data = await apiFetch(\"/api/cart\", tok);\n    setCart(data);\n  }, []);",
+        "replace": "  const refreshCart = useCallback(async (tok: string) => {\n    await apiFetch(\"/api/cart\", tok);\n    setCart({ items: [], total: 0 }); // mutant: account state is discarded on hydration\n  }, []);"
+      }]
+    },
+    {
+      "id": "reconnect-hydration-loses-account-state",
+      "scenario": "tracks/ecommerce/scenarios/01-account-state-reconnect-2.4.0.json",
+      "targets": [{ "feature": 105, "criterion": "105b" }],
+      "desc": "Reconnect hydration discards the account's persisted cart response.",
       "file": "client/src/App.tsx",
       "edits": [{
         "find": "  const refreshCart = useCallback(async (tok: string) => {\n    const data = await apiFetch(\"/api/cart\", tok);\n    setCart(data);\n  }, []);",
@@ -326,7 +334,7 @@
     },
     {
       "id": "order-history-is-not-owner-scoped",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-order-ownership-2.4.0.json",
       "targets": [{ "feature": 106, "criterion": "106a" }],
       "desc": "The order-history query returns every customer's orders instead of filtering by the authenticated owner.",
       "file": "server/src/index.ts",
@@ -337,7 +345,7 @@
     },
     {
       "id": "revenue-aggregation-ignores-order-totals",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-books-balance-2.4.0.json",
       "targets": [{ "feature": 107, "criterion": "107a" }],
       "desc": "The admin revenue aggregation counts every order as zero regardless of its stored total.",
       "file": "server/src/index.ts",
@@ -348,7 +356,7 @@
     },
     {
       "id": "sales-do-not-decrement-warehouse-stock",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-books-balance-2.4.0.json",
       "targets": [{ "feature": 107, "criterion": "107b" }],
       "desc": "Direct purchases still create priced orders but change warehouse stock by zero.",
       "file": "server/src/index.ts",
@@ -359,7 +367,7 @@
     },
     {
       "id": "unpurchased-review-is-accepted",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility-2.4.0.json",
       "targets": [{ "feature": 108, "criterion": "108a" }],
       "desc": "The review endpoint bypasses its completed-purchase eligibility check.",
       "file": "server/src/index.ts",
@@ -370,7 +378,7 @@
     },
     {
       "id": "purchased-review-eligibility-query-never-matches",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility-2.4.0.json",
       "targets": [{ "feature": 108, "criterion": "108b" }],
       "desc": "The eligibility query requires an impossible negative order total, rejecting even a customer who bought the item.",
       "file": "server/src/index.ts",
@@ -381,7 +389,7 @@
     },
     {
       "id": "cart-add-is-scoped-by-item-instead-of-owner",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary-2.4.0.json",
       "targets": [{ "feature": 109, "criterion": "109a" }],
       "desc": "Adding an item chooses an existing cart by item contents before falling back to the authenticated owner, allowing a replay to change another account's cart.",
       "file": "server/src/index.ts",
@@ -392,7 +400,7 @@
     },
     {
       "id": "negative-cart-quantity-is-accepted",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary-2.4.0.json",
       "targets": [{ "feature": 109, "criterion": "109b" }],
       "desc": "The named cart quantity operation accepts a negative integer and persists it without schema validation.",
       "file": "server/src/index.ts",

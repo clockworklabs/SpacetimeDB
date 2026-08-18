@@ -3,72 +3,9 @@
   "status": "candidate",
   "track": "ecommerce",
   "level": 1,
-  "name": "Accounts and catalog",
-  "note": "Account checks retain their independent actors. Catalog checks assert the exact seeded values and visible ranking order rather than treating mere presence as ordering evidence.",
+  "name": "Catalog",
+  "note": "Catalog checks assert the exact seeded values and visible ranking order rather than treating mere presence as ordering evidence.",
   "features": [
-    {
-      "id": 1,
-      "name": "Accounts",
-      "actors": ["shopper", "impostor"],
-      "setup": [
-        { "do": "signUp", "actor": "shopper", "name": "ann" }
-      ],
-      "criteria": [
-        {
-          "id": "1a",
-          "desc": "a visitor can create an account and is signed in as it",
-          "points": 1,
-          "steps": [
-            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "ann", "within": 6000 }
-          ],
-          "statedBy": "a visitor can create an account with a username and password"
-        },
-        {
-          "id": "1b",
-          "desc": "a taken username is refused and does not sign the visitor in as the existing account",
-          "points": 1,
-          "steps": [
-            { "do": "signUp", "actor": "impostor", "name": "ann", "password": "different-pw", "expectFailure": true },
-            { "do": "expect", "actor": "impostor", "testid": "auth-error", "within": 6000 },
-            { "do": "expect", "actor": "impostor", "testid": "current-user", "absent": true }
-          ],
-          "statedBy": "signing up with a taken username fails with a visible error and must never sign the visitor in as the existing account"
-        },
-        {
-          "id": "1c",
-          "desc": "a wrong password is refused",
-          "points": 1,
-          "steps": [
-            { "do": "signIn", "actor": "impostor", "name": "ann", "password": "wrong-pw", "expectFailure": true },
-            { "do": "expect", "actor": "impostor", "testid": "auth-error", "within": 6000 },
-            { "do": "expect", "actor": "impostor", "testid": "current-user", "absent": true }
-          ],
-          "statedBy": "signing in with a wrong password fails with a visible error"
-        },
-        {
-          "id": "1d",
-          "desc": "signing out and back in returns the same account",
-          "points": 1,
-          "steps": [
-            { "do": "click", "actor": "shopper", "testid": "signout" },
-            { "do": "expect", "actor": "shopper", "testid": "signup-username", "within": 6000 },
-            { "do": "signIn", "actor": "shopper", "name": "ann" },
-            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "ann", "within": 6000 }
-          ],
-          "statedBy": "a signed-in user can sign out, returning to the signed-out state"
-        },
-        {
-          "id": "1e",
-          "desc": "the session survives a reload",
-          "points": 1,
-          "steps": [
-            { "do": "reload", "actor": "shopper", "settleMs": 4000 },
-            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "ann", "within": 6000 }
-          ],
-          "statedBy": "a signed-in session persists across a page reload"
-        }
-      ]
-    },
     {
       "id": 2,
       "name": "Storefront is public and live",

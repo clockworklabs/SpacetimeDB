@@ -9,7 +9,7 @@
   "mutations": [
     {
       "id": "signup-ui-does-not-enter-created-account",
-      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-account-create-2.4.0.json",
       "targets": [{ "feature": 1, "criterion": "1a" }],
       "desc": "Create the account successfully but discard the returned signed-in identity in the client.",
       "file": "client/src/App.tsx",
@@ -20,7 +20,7 @@
     },
     {
       "id": "duplicate-signup-authenticates-existing-account",
-      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-account-duplicate-2.4.0.json",
       "targets": [{ "feature": 1, "criterion": "1b" }],
       "desc": "Treat a duplicate signup as a successful session for the pre-existing account.",
       "file": "server/src/index.ts",
@@ -31,12 +31,9 @@
     },
     {
       "id": "password-verification-is-inverted",
-      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
-      "targets": [
-        { "feature": 1, "criterion": "1c" },
-        { "feature": 1, "criterion": "1d" }
-      ],
-      "desc": "Accept a wrong password and reject the correct password, breaking both refusal and sign-back-in behavior.",
+      "scenario": "tracks/ecommerce/scenarios/01-account-password-2.4.0.json",
+      "targets": [{ "feature": 1, "criterion": "1c" }],
+      "desc": "Accept a wrong password instead of enforcing password verification.",
       "file": "server/src/index.ts",
       "edits": [{
         "find": "    if (rows.length === 0 || !verifyPassword(password, rows[0].passwordHash)) {",
@@ -44,8 +41,19 @@
       }]
     },
     {
+      "id": "correct-signin-is-refused",
+      "scenario": "tracks/ecommerce/scenarios/01-account-signout-2.4.0.json",
+      "targets": [{ "feature": 1, "criterion": "1d" }],
+      "desc": "Preserve wrong-password refusal but reject an otherwise valid sign-in, preventing a signed-out account from returning.",
+      "file": "server/src/index.ts",
+      "edits": [{
+        "find": "    const acc = rows[0];\n    const token = newToken();",
+        "replace": "    const acc = rows[0];\n    if (username === acc.username) {\n      res.status(401).json({ error: \"sign in is unavailable\" });\n      return;\n    }\n    const token = newToken();"
+      }]
+    },
+    {
       "id": "reload-discards-session-identity",
-      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-account-reload-2.4.0.json",
       "targets": [{ "feature": 1, "criterion": "1e" }],
       "desc": "Ignore the authenticated identity returned during initial page hydration.",
       "file": "client/src/App.tsx",
@@ -109,8 +117,11 @@
     {
       "id": "purchase-stock-change-is-not-broadcast",
       "scenario": "tracks/ecommerce/scenarios/01-buying-2.4.0.json",
-      "targets": [{ "feature": 3, "criterion": "3b" }],
-      "desc": "Commit a purchase without broadcasting its stock change to other open clients.",
+      "targets": [
+        { "feature": 3, "criterion": "3b" },
+        { "feature": 3, "criterion": "3d" }
+      ],
+      "desc": "Commit purchases without broadcasting their stock changes, breaking live stock and sold-out visibility.",
       "file": "server/src/index.ts",
       "edits": [{
         "find": "    lastCatalogJson = json;\n    io.emit(\"items:update\", { items: catalog });",
@@ -154,12 +165,18 @@
       "id": "reload-hydrates-an-empty-cart",
       "scenario": "tracks/ecommerce/scenarios/01-cart-2.4.0.json",
       "targets": [{ "feature": 4, "criterion": "4b" }],
-      "desc": "Discard the persisted cart returned during account hydration after reload.",
-      "file": "client/src/App.tsx",
-      "edits": [{
-        "find": "    api<CartState>(\"/api/cart\").then(state => applyCartResponse(state, observedAtRequest)).catch(() => {});",
-        "replace": "    api<CartState>(\"/api/cart\").then(() => applyCartResponse({ items: [], total: 0 }, observedAtRequest)).catch(() => {});"
-      }]
+      "desc": "Return an empty cart from both reload hydration paths while preserving later live cart broadcasts.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    const state = await buildCartState(req.account!.id);\n    res.json(state);",
+          "replace": "    await buildCartState(req.account!.id);\n    res.json({ items: [], total: 0 });"
+        },
+        {
+          "find": "      const cartState = await buildCartState(acc.id);\n      socket.emit(\"cart:update\", cartState);",
+          "replace": "      await buildCartState(acc.id);\n      socket.emit(\"cart:update\", { items: [], total: 0 });"
+        }
+      ]
     },
     {
       "id": "cart-add-does-not-broadcast-to-other-sessions",
@@ -195,22 +212,15 @@
       }]
     },
     {
-      "id": "review-uniqueness-constraint-and-upsert-removed",
+      "id": "repeat-review-duplicates-by-reassigning-the-first-row",
       "scenario": "tracks/ecommerce/scenarios/01-review-uniqueness-2.4.0.json",
       "targets": [{ "feature": 6, "criterion": "6b" }],
-      "desc": "Atomically remove the database uniqueness constraint and change review submission from an upsert to an insert, so a second submission persists a duplicate row.",
-      "edits": [
-        {
-          "file": "server/src/schema.ts",
-          "find": "  },\n  (t) => ({\n    reviewUnique: unique().on(t.itemId, t.accountId),\n  })\n);",
-          "replace": "  }\n);"
-        },
-        {
-          "file": "server/src/index.ts",
-          "find": "      `INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)\n       ON CONFLICT (item_id, account_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment`,",
-          "replace": "      `INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)`,"
-        }
-      ]
+      "desc": "A repeat submission reassigns the first row before inserting the replacement, leaving two visible reviews from one account workflow without changing the installed schema.",
+      "file": "server/src/index.ts",
+      "edits": [{
+        "find": "      `INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)\n       ON CONFLICT (item_id, account_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment`,",
+        "replace": "      `WITH moved AS (\n         UPDATE review SET account_id = (SELECT id FROM account WHERE id <> $2 ORDER BY id LIMIT 1)\n         WHERE item_id = $1 AND account_id = $2\n       )\n       INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)`,"
+      }]
     },
     {
       "id": "review-average-update-is-not-broadcast",
@@ -258,7 +268,7 @@
     },
     {
       "id": "unauthenticated-direct-purchase-uses-default-account",
-      "scenario": "tracks/ecommerce/scenarios/01-server-actions-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session-2.4.0.json",
       "targets": [{ "feature": 101, "criterion": "101a" }],
       "desc": "Remove purchase authentication and attribute unauthenticated requests to a default account.",
       "file": "server/src/index.ts",
@@ -272,7 +282,7 @@
     },
     {
       "id": "direct-purchase-is-attributed-to-previous-account",
-      "scenario": "tracks/ecommerce/scenarios/01-server-actions-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-attribution-2.4.0.json",
       "targets": [{ "feature": 102, "criterion": "102a" }],
       "desc": "Create the direct-purchase order for the preceding account id rather than the authenticated caller.",
       "file": "server/src/index.ts",
@@ -283,7 +293,7 @@
     },
     {
       "id": "customer-can-call-admin-restock",
-      "scenario": "tracks/ecommerce/scenarios/01-server-actions-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-2.4.0.json",
       "targets": [{ "feature": 103, "criterion": "103a" }],
       "desc": "Remove the administrator guard from the direct restock route.",
       "file": "server/src/index.ts",
@@ -294,7 +304,7 @@
     },
     {
       "id": "direct-purchase-uses-constant-price",
-      "scenario": "tracks/ecommerce/scenarios/01-server-actions-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price-2.4.0.json",
       "targets": [{ "feature": 104, "criterion": "104a" }],
       "desc": "Create a direct-purchase order at a hard-coded price instead of the current stored price.",
       "file": "server/src/index.ts",
@@ -305,7 +315,7 @@
     },
     {
       "id": "account-state-reload-discards-session",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-account-state-reload-2.4.0.json",
       "targets": [{ "feature": 105, "criterion": "105a" }],
       "desc": "Discard the authenticated account during reload hydration, making its cart and orders unavailable.",
       "file": "client/src/App.tsx",
@@ -313,7 +323,7 @@
     },
     {
       "id": "offline-event-clears-account-state",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-account-state-reconnect-2.4.0.json",
       "targets": [{ "feature": 105, "criterion": "105b" }],
       "desc": "Treat a temporary offline event as a sign-out and clear the account and cart state.",
       "file": "client/src/App.tsx",
@@ -324,7 +334,7 @@
     },
     {
       "id": "order-history-ignores-account-owner",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-order-ownership-2.4.0.json",
       "targets": [{ "feature": 106, "criterion": "106a" }],
       "desc": "Return every order from the order-history query instead of filtering by account.",
       "file": "server/src/index.ts",
@@ -335,7 +345,7 @@
     },
     {
       "id": "admin-revenue-double-counts-orders",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-books-balance-2.4.0.json",
       "targets": [{ "feature": 107, "criterion": "107a" }],
       "desc": "Double every non-cancelled order total in the administration revenue calculation.",
       "file": "server/src/index.ts",
@@ -346,7 +356,7 @@
     },
     {
       "id": "purchase-does-not-decrement-warehouse-stock",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-books-balance-2.4.0.json",
       "targets": [{ "feature": 107, "criterion": "107b" }],
       "desc": "Create purchase orders without decrementing their selected warehouse stock row.",
       "file": "server/src/index.ts",
@@ -357,7 +367,7 @@
     },
     {
       "id": "review-route-skips-purchase-eligibility",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility-2.4.0.json",
       "targets": [{ "feature": 108, "criterion": "108a" }],
       "desc": "Allow review creation even when the caller has never purchased the item.",
       "file": "server/src/index.ts",
@@ -368,7 +378,7 @@
     },
     {
       "id": "only-shipped-orders-earn-review-eligibility",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility-2.4.0.json",
       "targets": [{ "feature": 108, "criterion": "108b" }],
       "desc": "Incorrectly require an order to be shipped before its buyer may review the item.",
       "file": "server/src/index.ts",
@@ -378,25 +388,19 @@
       }]
     },
     {
-      "id": "cart-add-reuses-another-account-cart",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "id": "cart-add-is-forced-into-another-account",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary-2.4.0.json",
       "targets": [{ "feature": 109, "criterion": "109a" }],
-      "desc": "Reuse the first cart already containing the requested item and broadcast that cart globally, allowing the same named action under another session to modify the owner's cart.",
+      "desc": "Ignore the authenticated caller and force every cart addition into the scenario owner's account.",
       "file": "server/src/index.ts",
-      "edits": [
-        {
-          "find": "      const cartRow = await client.query(\n        `INSERT INTO cart (account_id) VALUES ($1)\n         ON CONFLICT (account_id) DO UPDATE SET account_id = excluded.account_id\n         RETURNING id`,\n        [accountId]\n      );",
-          "replace": "      const cartRow = await client.query(\n        `SELECT c.id FROM cart c\n         LEFT JOIN cart_item ci ON ci.cart_id = c.id\n         WHERE c.account_id = $1 OR ci.item_id = $2\n         ORDER BY (ci.item_id = $2) DESC\n         LIMIT 1`,\n        [accountId, itemId]\n      );"
-        },
-        {
-          "find": "    } finally {\n      client.release();\n    }\n    io.to(`account:${accountId}`).emit(\"cart:update\", state);\n    await broadcastRecommended(accountId);\n    res.json(state);",
-          "replace": "    } finally {\n      client.release();\n    }\n    io.emit(\"cart:update\", state);\n    await broadcastRecommended(accountId);\n    res.json(state);"
-        }
-      ]
+      "edits": [{
+        "find": "    const accountId = req.account!.id;\n    const client = await pool.connect();\n    let state;",
+        "replace": "    const owner = await pool.query(`SELECT id FROM account WHERE username = 'vic'`);\n    const accountId = owner.rows[0].id; // mutant: ignore the authenticated caller\n    const client = await pool.connect();\n    let state;"
+      }]
     },
     {
       "id": "cart-update-accepts-negative-quantity",
-      "scenario": "tracks/ecommerce/scenarios/01-invariants-2.4.0.json",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary-2.4.0.json",
       "targets": [{ "feature": 109, "criterion": "109b" }],
       "desc": "Accept a negative cart quantity update and persist it instead of refusing the named action.",
       "file": "server/src/index.ts",
