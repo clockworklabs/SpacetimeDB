@@ -31,8 +31,14 @@ test('dashboard CLI is deliberately loopback-only', () => {
   const parsed = parseDashboardArgs(['node', 'dashboard', '--port', '7444', '--host', 'localhost'], {});
   assert.equal(parsed.port, 7444);
   assert.equal(parsed.host, 'localhost');
+  const container = parseDashboardArgs(['node', 'dashboard', '--host', '0.0.0.0',
+    '--allow-container-bind'], { STACK_BENCH_APPLIANCE: '1' });
+  assert.equal(container.host, '0.0.0.0');
+  assert.equal(container.allowContainerBind, true);
   assert.throws(() => parseDashboardArgs(['node', 'dashboard', '--host', '0.0.0.0'], {}),
     /loopback/);
+  assert.throws(() => parseDashboardArgs(['node', 'dashboard', '--host', '0.0.0.0',
+    '--allow-container-bind'], {}), /loopback/);
   assert.throws(() => parseDashboardArgs(['node', 'dashboard', '--port', '70000'], {}),
     /port/);
 });

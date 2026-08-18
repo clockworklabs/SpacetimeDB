@@ -13,7 +13,8 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
   -f appliance/docker-compose.yaml --profile dashboard up -d dashboard
 ```
 
-Open `http://127.0.0.1:7331`. Stop it with:
+Open `http://127.0.0.1:7331`. Docker publishes that port only on the host's
+loopback interface. Stop it with:
 
 ```sh
 docker compose --env-file /var/lib/stack-bench/operator.env \

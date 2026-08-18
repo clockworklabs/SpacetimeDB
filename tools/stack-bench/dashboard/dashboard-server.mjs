@@ -29,17 +29,22 @@ function loopbackHost(value) {
 export function parseDashboardArgs(argv, env = process.env) {
   const args = { host: '127.0.0.1', port: 7331,
     resultsRoot: resolve(env.STACK_BENCH_RESULTS_DIR ?? join(STACK_BENCH_ROOT, 'results')),
-    plansRoot: null };
+    plansRoot: null, allowContainerBind: false };
   for (let index = 2; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === '--host') args.host = argv[++index];
     else if (value === '--port') args.port = Number(argv[++index]);
     else if (value === '--results') args.resultsRoot = resolve(argv[++index]);
     else if (value === '--plans') args.plansRoot = resolve(argv[++index]);
+    else if (value === '--allow-container-bind') args.allowContainerBind = true;
     else throw new Error(`unknown dashboard option ${JSON.stringify(value)}`);
   }
   args.plansRoot ??= join(args.resultsRoot, 'plans');
-  if (!LOOPBACK.has(args.host)) throw new Error('dashboard must bind to localhost or a loopback address');
+  const applianceContainerBind = args.allowContainerBind
+    && env.STACK_BENCH_APPLIANCE === '1' && args.host === '0.0.0.0';
+  if (!LOOPBACK.has(args.host) && !applianceContainerBind) {
+    throw new Error('dashboard must bind to localhost or a loopback address');
+  }
   if (!Number.isInteger(args.port) || args.port < 1 || args.port > 65535) {
     throw new Error('dashboard port must be an integer from 1 through 65535');
   }
