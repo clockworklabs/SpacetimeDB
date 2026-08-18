@@ -42,14 +42,13 @@ function hooksByLevel(track) {
   return byLevel;
 }
 
-// A point-carrying criterion must be licensed by an explicit statement in the
-// level prompt, and `statedBy` is the machine-checkable form of that rule: the
-// quote has to actually appear there. This exists because scoring an invariant
-// the spec never stated is a gotcha - an app is failed for a requirement it was
-// never given - and the only way the rule survives L2/L3 authoring is if a
-// checker holds it rather than a convention. A wrong quote FAILS; a missing
-// quote on a point-carrier warns, so older tracks keep validating while new
-// levels are annotated.
+// `statedBy` predates modular prompt treatments. It remains useful provenance,
+// but it is no longer a universal launch invariant: a specification can be
+// intentionally graded in an unmentioned treatment, and requested treatments
+// are assembled from pack-owned prompt fragments rather than only the legacy
+// level prompt. Keep stale legacy quotes visible without confusing them with an
+// executable scenario error. Pack composition and prompt snapshots validate the
+// actual requested/unmentioned treatment bindings.
 import { existsSync } from 'node:fs';
 const norm = t => t.replace(/\*\*/g, '').replace(/—/g, '-').toLowerCase().replace(/\s+/g, ' ').trim();
 function promptFor(track, level) {
@@ -60,6 +59,7 @@ function promptFor(track, level) {
 }
 
 let unstatedWarnings = 0;
+let staleStatementWarnings = 0;
 
 for (const name of trackNames) {
  const track = loadTrack(name);
@@ -84,7 +84,8 @@ for (const name of trackNames) {
     for (const c of f.criteria ?? []) {
       if (c.statedBy) {
         if (prompt && !prompt.includes(norm(c.statedBy))) {
-          fail(`F${f.id} ${c.id}`, `statedBy quote is not in the level ${level} prompt: "${String(c.statedBy).slice(0, 60)}..."`);
+          staleStatementWarnings++;
+          console.log(`  warn F${f.id} ${c.id}: statedBy text is not in the legacy level ${level} prompt - the criterion may use modular prompt treatment`);
         }
       } else if ((c.points ?? 0) > 0) {
         unstatedWarnings++;
@@ -116,5 +117,7 @@ for (const name of trackNames) {
 }
 
 console.log(problems ? `\n${problems} problem(s)`
-  : `\nno problems${unstatedWarnings ? ` (${unstatedWarnings} point-carrying criteria still lack statedBy)` : ''}`);
+  : `\nno problems${unstatedWarnings || staleStatementWarnings
+    ? ` (${unstatedWarnings} point-carrying criteria lack statedBy; ${staleStatementWarnings} statedBy references are outside legacy prompts)`
+    : ''}`);
 process.exit(problems ? 1 : 0);
