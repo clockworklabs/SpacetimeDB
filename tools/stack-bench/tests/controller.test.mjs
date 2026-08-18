@@ -20,6 +20,9 @@ test('controller exposes a small explicit operator command surface', () => {
     '--out', '/results/campaign-001']);
   assert.deepEqual(campaignRun.args.slice(1), ['run', '/plans/campaign.json',
     '--out', '/results/campaign-001']);
+  const dashboard = resolveControllerCommand(['dashboard', '--port', '7331']);
+  assert.match(dashboard.args[0], /dashboard[\\/]dashboard-server\.mjs$/);
+  assert.deepEqual(dashboard.args.slice(1), ['--port', '7331']);
   const reference = resolveControllerCommand(['qualify-reference', '--backend', 'postgres',
     '--track', 'ecommerce', '--level', '1']);
   assert.match(reference.args[0], /reference-live\.mjs$/);

@@ -15,6 +15,7 @@ const COMMANDS = Object.freeze({
   'qualification': [join(ROOT, 'qualification-cli.mjs')],
   'pack-budget': [join(ROOT, 'pack-budget.mjs')],
   'campaign': [join(ROOT, 'campaign-cli.mjs')],
+  'dashboard': [join(ROOT, 'dashboard', 'dashboard-server.mjs')],
   'repair': [join(ROOT, 'repair-cli.mjs')],
   'run': [join(ROOT, 'bench.mjs')],
   'verify-release': [join(ROOT, 'release-manifest.mjs'), 'verify'],
@@ -67,6 +68,7 @@ function help() {
     + '  campaign reconcile <file> --out <dir>  prove cleanup for interrupted work\n'
     + '  campaign status <dir>         inspect exact durable campaign state\n'
     + '  campaign report <dir>         regenerate deterministic JSON and static HTML\n'
+    + '  dashboard [--port N]          serve the local operator dashboard\n'
     + '  repair status <run> --level N inspect whether a failed level can continue\n'
     + '  repair grant <run> --level N --rounds N  add one finite repair budget\n'
     + '  run <exact run options>        execute and retain one requested run\n'

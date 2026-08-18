@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#0b1114">
+    <title>StackBench Control Room</title>
+    <meta name="description" content="Run and inspect reproducible StackBench comparisons.">
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#overview" aria-label="StackBench overview">
+        <span class="brand-mark" aria-hidden="true"><span></span></span>
+        <span><strong>STACKBENCH</strong><small>CONTROL ROOM</small></span>
+      </a>
+      <div class="live-state"><span class="live-dot" aria-hidden="true"></span><span id="refresh-state">Connecting</span></div>
+    </header>
+
+    <main>
+      <section class="hero" id="overview">
+        <div>
+          <p class="eyebrow">REPRODUCIBLE STACK TESTING</p>
+          <h1>See every run.<br><span>Know what happened.</span></h1>
+          <p class="hero-copy">Start a frozen test plan, watch each stack move through building, grading, and repair, then inspect the exact result.</p>
+        </div>
+        <button class="primary" id="open-run" type="button">Start a run</button>
+      </section>
+
+      <section class="summary-grid" aria-label="Campaign summary">
+        <article class="summary-card active"><span>Running now</span><strong id="count-running">—</strong><small>campaigns</small></article>
+        <article class="summary-card"><span>Completed</span><strong id="count-completed">—</strong><small>campaigns</small></article>
+        <article class="summary-card attention"><span>Needs attention</span><strong id="count-attention">—</strong><small>campaigns</small></article>
+        <article class="summary-card"><span>Ready to start</span><strong id="count-prepared">—</strong><small>campaigns</small></article>
+      </section>
+
+      <section class="section" id="active-runs">
+        <div class="section-heading">
+          <div><p class="eyebrow">LIVE</p><h2>Active runs</h2></div>
+          <p>Latest completed score while the next step runs.</p>
+        </div>
+        <div class="run-grid" id="run-grid"><div class="empty">Loading active runs…</div></div>
+      </section>
+
+      <section class="section split" id="campaigns">
+        <div>
+          <div class="section-heading compact"><div><p class="eyebrow">HISTORY</p><h2>Campaigns</h2></div></div>
+          <div class="campaign-list" id="campaign-list"></div>
+        </div>
+        <aside>
+          <div class="section-heading compact"><div><p class="eyebrow">RECENT</p><h2>Controller activity</h2></div></div>
+          <div class="operation-list" id="operation-list"></div>
+        </aside>
+      </section>
+    </main>
+
+    <dialog id="run-dialog" class="run-dialog">
+      <form method="dialog" class="dialog-shell">
+        <div class="dialog-heading">
+          <div><p class="eyebrow">NEW CAMPAIGN</p><h2>Start a frozen plan</h2></div>
+          <button class="icon-button" value="cancel" aria-label="Close">×</button>
+        </div>
+        <p class="dialog-copy">The plan already defines the stacks, levels, checks, model, repair budget, and parallelism. Starting it does not change those choices.</p>
+        <label>Test plan<select id="plan-select" required></select></label>
+        <div id="plan-summary" class="plan-summary"></div>
+        <label>Run name<input id="output-name" required minlength="3" maxlength="120" pattern="[a-z0-9][a-z0-9.-]+" autocomplete="off"></label>
+        <p class="form-message" id="run-message" role="status"></p>
+        <div class="dialog-actions">
+          <button class="secondary" value="cancel">Cancel</button>
+          <button class="primary" id="start-run" value="default" type="button">Start campaign</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="detail-dialog" class="detail-dialog">
+      <div class="dialog-shell detail-shell">
+        <div class="dialog-heading">
+          <div><p class="eyebrow">CAMPAIGN DETAIL</p><h2 id="detail-title">Run detail</h2></div>
+          <button class="icon-button" id="close-detail" aria-label="Close">×</button>
+        </div>
+        <div id="detail-content"></div>
+      </div>
+    </dialog>
+  </body>
+</html>

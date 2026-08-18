@@ -21,6 +21,12 @@ result is never rewritten. Campaign `retry` still means a fresh execution.
 Backends are interchangeable, so the model can be held fixed while the backend
 varies.
 
+The optional local dashboard is another client of the same controller, not a
+replacement for the CLI. It reads the same durable campaign artifacts and
+submits the same bounded commands, so CLI-started work appears in the browser
+and dashboard-started work remains fully operable from the CLI. See
+`dashboard/README.md` for the Docker service.
+
 ## Documents
 
 - `HISTORY.md` — what the benchmark has learned, newest first (start here)

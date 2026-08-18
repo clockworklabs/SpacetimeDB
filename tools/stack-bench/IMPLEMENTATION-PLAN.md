@@ -890,6 +890,17 @@ and private transcripts, and begin as a local-only appliance UI. Authentication,
 remote multi-user coordination, and hosted operation are later capabilities,
 not prerequisites for the local v1.
 
+**Status 2026-08-18 — first slice complete.** The opt-in Docker service now
+shows durable campaigns and attempts, the latest completed first/final grade,
+current build/grade/repair phase, bounded redacted logs, plans, and controller
+activity. It can start a new output from a catalogued frozen plan through the
+unchanged `campaign run` CLI, with loopback-only serving, same-origin session
+protection, and an append-only operation record. Host development is read-only.
+Next slices add continuation-chain detail and the already-designed bounded
+repair/re-grade/selected-test/diagnostic actions; cancellation waits for an
+explicit controller cancellation contract rather than killing arbitrary child
+processes from browser code.
+
 ## Parallel-safe ownership lanes
 
 - Composition lane: SB-001 and SB-101 through SB-106.

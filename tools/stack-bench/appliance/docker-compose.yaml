@@ -63,6 +63,12 @@ services:
       - /tmp:size=1g,mode=1777
     command: ["--help"]
 
+  dashboard:
+    extends:
+      service: controller
+    profiles: ["dashboard"]
+    command: ["dashboard", "--host", "127.0.0.1", "--port", "7331"]
+
   postgres:
     image: postgres:16@sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7
     platform: linux/amd64

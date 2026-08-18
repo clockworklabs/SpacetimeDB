@@ -191,6 +191,19 @@ refuses. Run `campaign reconcile <campaign.json> --out <campaign-directory>`;
 it advances the record only if the private supervisor evidence proves exact-
 owned cleanup. It never invents a result or silently starts a duplicate.
 
+The same plans and durable state are available through the optional local
+dashboard. It is a client of these commands, not a second scheduler:
+
+```sh
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml --profile dashboard up -d dashboard
+```
+
+Open `http://127.0.0.1:7331`. CLI-started campaigns appear there, and a
+dashboard-started campaign remains an ordinary directory for `campaign status`,
+`campaign report`, and reconciliation. See `../dashboard/README.md` for the exact
+boundary and stop command.
+
 After any completed or stopped campaign, regenerate the report only from its
 stored evidence:
 

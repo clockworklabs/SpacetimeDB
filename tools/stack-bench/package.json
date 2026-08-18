@@ -21,6 +21,7 @@
     "pack": "node composition-cli.mjs pack",
     "recipe": "node composition-cli.mjs recipe",
     "campaign": "node campaign-cli.mjs",
+    "dashboard": "node dashboard/dashboard-server.mjs",
     "repair": "node repair-cli.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:container": "node container-smoke.mjs",
