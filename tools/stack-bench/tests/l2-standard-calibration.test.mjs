@@ -10,7 +10,7 @@ const TRACK = join(ROOT, 'tracks', 'ecommerce');
 const RECIPE = join(TRACK, 'composition', 'recipes', 'l2-standard-1.4.0.json');
 const CALIBRATION = join(TRACK, 'composition', 'calibrations', 'l2-standard-1.4.0.json');
 
-test('L2 1.4 has a source-bound draft calibration for the complete modular recipe', () => {
+test('L2 1.4 is qualified by the complete source-bound evidence set', () => {
   const release = buildRecipeRelease(RECIPE, { trackRoot: TRACK });
   const plan = compileCalibrationFile(CALIBRATION, {
     trackRoot: TRACK,
@@ -20,16 +20,16 @@ test('L2 1.4 has a source-bound draft calibration for the complete modular recip
 
   assert.deepEqual({ id: release.id, version: release.version, state: release.state,
     checks: release.checkCatalog.length, points: release.scoring.points }, {
-    id: 'ecommerce.l2-standard', version: '1.4.0', state: 'draft', checks: 76, points: 117,
+    id: 'ecommerce.l2-standard', version: '1.4.0', state: 'qualified', checks: 76, points: 117,
   });
-  assert.equal(plan.state, 'draft');
+  assert.equal(plan.state, 'qualified');
   assert.equal(plan.recipe.contentSha256, release.contentSha256);
   assert.equal(plan.fixture.sourceSha256, release.components.fixture.sha256);
   assert.deepEqual(plan.references.entries.map(entry => [entry.backend, entry.status]), [
-    ['mongodb', 'candidate'], ['postgres', 'candidate'], ['spacetime', 'candidate'],
+    ['mongodb', 'active'], ['postgres', 'active'], ['spacetime', 'active'],
   ]);
   assert.deepEqual(plan.mutations.map(entry => [entry.backend, entry.status, entry.targets.length]), [
-    ['mongodb', 'candidate', 35], ['postgres', 'candidate', 35], ['spacetime', 'candidate', 35],
+    ['mongodb', 'active', 35], ['postgres', 'active', 35], ['spacetime', 'active', 35],
   ]);
   for (const mutation of plan.mutations) {
     const targets = new Map(mutation.targets.map(target => [target.id, target.stableKeys]));
@@ -53,13 +53,15 @@ test('L2 1.4 has a source-bound draft calibration for the complete modular recip
     ['ecommerce.spec.concurrency-safety.restock-race.202-control', 'precondition'],
     ['ecommerce.spec.external-data-sync.external-stock.901b', 'precondition'],
   ]);
-  assert.equal(plan.qualification.evidence.length, 0);
+  assert.equal(plan.qualification.evidence.length, 7);
+  assert.equal(new Set(plan.qualification.evidence.map(entry => entry.path)).size, 7);
   assert.deepEqual({
     referenceRepetitions: plan.qualification.referenceRepetitions,
     mutationRepetitions: plan.qualification.mutationRepetitions,
   }, { referenceRepetitions: 1, mutationRepetitions: 1 });
   assert.deepEqual(plan.qualification.stacks.map(stack => stack.status),
-    ['candidate', 'candidate', 'candidate']);
+    ['qualified', 'qualified', 'qualified']);
+  assert.equal(plan.promotion.status, 'promoted');
   assert.match(plan.qualificationSha256, /^[a-f0-9]{64}$/);
   assert.match(plan.contentSha256, /^[a-f0-9]{64}$/);
 });

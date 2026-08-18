@@ -4,7 +4,7 @@
   "id": "ecommerce.inventory-operations-specifications",
   "stableId": "ecommerce.inventory-operations",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "specification",
   "title": "Inventory conservation",
   "description": "Stock remains exact across transfers, cancellations, clients, and overlapping writes.",

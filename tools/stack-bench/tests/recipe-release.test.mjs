@@ -117,14 +117,14 @@ test('requirement edits change meaning while selector and fixture edits only cha
   } finally { rmSync(fixtureBox.temp, { recursive: true, force: true }); }
 });
 
-test('legacy runner binding fails closed on drift and emits only the suite check catalog', () => {
+test('promoted runner binding fails closed on drift and emits only the selected execution catalog', () => {
   const track = loadTrack('ecommerce');
   const binding = resolveRecipeRelease(track, 2);
   assert.equal(binding.alias, 'L2');
   assert.equal(binding.status, 'promoted');
-  const reportRelease = gradeRecipeRelease(binding, 'features');
+  const reportRelease = gradeRecipeRelease(binding, 'features-existing@L2');
   assert(reportRelease.checks.length > 0);
-  assert(reportRelease.checks.every(check => check.executionId === 'features'));
+  assert(reportRelease.checks.every(check => check.executionId === 'features-existing@L2'));
   assert.equal(reportRelease.contentSha256, binding.release.contentSha256);
   const resolvedReport = resolveGradeRecipeRelease(track, 2,
     join(track.dir, 'scenarios', '02-features.json'));
@@ -137,18 +137,18 @@ test('legacy runner binding fails closed on drift and emits only the suite check
   assert(artifactBinding.sourceRelease.components.packs.every(pack => /^[a-f0-9]{64}$/.test(pack.sha256)));
   const bundled = bundleRecipeRelease(binding);
   assert.equal(bundled.selection.alias, 'L2');
-  assert.equal(bundled.checkCatalog.length, 53);
+  assert.equal(bundled.checkCatalog.length, 76);
   assert(!JSON.stringify(bundled).includes('stackbench-staff-2026'));
   assert.throws(() => resolveGradeRecipeRelease(track, 2,
     join(track.dir, 'scenarios', '03-features.json')), /does not select scenario/);
 
   const box = copyTrack();
   try {
-    editJson(join(box.root, 'composition', 'recipes', 'l2-standard-1.2.0.json'),
-      value => { value.execution.reverse(); });
+    editJson(join(box.root, 'composition', 'recipes', 'l2-standard-1.4.0.json'),
+      value => { value.execution[0].source = 'scenarios/does-not-exist.json'; });
     const copiedTrack = { ...track, dir: box.root,
       suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
-    assert.throws(() => resolveRecipeRelease(copiedTrack, 2), /does not exactly match/);
+    assert.throws(() => resolveRecipeRelease(copiedTrack, 2), /does-not-exist|ENOENT/);
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
@@ -185,20 +185,23 @@ test('the qualified modular release is the promoted default and retired releases
   }), /unknown field/);
 });
 
-test('the catalogued L2 candidate binds modular L1 exactly and keeps all L2-only checks', () => {
+test('the promoted L2 release binds modular L1 exactly and keeps all L2-only checks', () => {
   const track = loadTrack('ecommerce');
   const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.4.0');
   const l1 = buildRecipeRelease(
     join(ECOMMERCE, 'composition', 'recipes', 'l1-modular-2.3.0.json'),
     { trackRoot: ECOMMERCE },
   );
-  const previous = resolveRecipeRelease(track, 2).release;
+  const previous = buildRecipeRelease(
+    join(ECOMMERCE, 'composition', 'recipes', 'l2-standard-1.2.0.json'),
+    { trackRoot: ECOMMERCE },
+  );
   const l2Prefixes = [
     'ecommerce.operations-access.',
     'ecommerce.inventory-operations.',
     'ecommerce.returns-pricing.',
   ];
-  assert.equal(binding.status, 'candidate');
+  assert.equal(binding.status, 'promoted');
   assert.equal(binding.release.task.baseRecipe.contentSha256, l1.contentSha256);
   assert.equal(binding.release.task.baseRecipe.meaningSha256, l1.meaningSha256);
   assert.equal(binding.release.task.baseRecipe.executionSha256, l1.executionSha256);
@@ -259,20 +262,26 @@ test('the first cumulative level bootstraps only from the exact promoted lower l
   try {
     const recipe = join(box.root, 'composition', 'recipes', 'l3-bootstrap-1.0.0.json');
     const source = JSON.parse(readFileSync(
-      join(box.root, 'composition', 'recipes', 'l2-standard-1.2.0.json'), 'utf8'));
+      join(box.root, 'composition', 'recipes', 'l2-standard-1.4.0.json'), 'utf8'));
     source.id = 'ecommerce.l3-bootstrap';
     source.version = '1.0.0';
     source.state = 'draft';
     source.title = 'L3 bootstrap fixture';
     source.compatibility = { legacyLevel: 3, mode: 'cumulative' };
-    source.task.baseRecipe = { path: 'l2-standard-1.2.0.json',
-      id: 'ecommerce.l2-standard', version: '1.2.0' };
+    source.task.baseRecipe = { path: 'l2-standard-1.4.0.json',
+      id: 'ecommerce.l2-standard', version: '1.4.0' };
     writeFileSync(recipe, `${JSON.stringify(source, null, 2)}\n`);
-    editJson(join(box.root, 'composition', 'candidates.json'), value => {
-      value.entries.push({ alias: 'L3', status: 'candidate', recipe: {
+    writeFileSync(join(box.root, 'composition', 'candidates.json'), `${JSON.stringify({
+      schemaVersion: 1,
+      kind: 'promotion-catalog',
+      id: 'ecommerce.candidates',
+      version: '1.0.0',
+      state: 'draft',
+      title: 'Test candidates',
+      entries: [{ alias: 'L3', status: 'candidate', recipe: {
         path: 'recipes/l3-bootstrap-1.0.0.json', id: source.id, version: source.version,
-      } });
-    });
+      } }],
+    }, null, 2)}\n`);
     const track = loadTrack('ecommerce');
     const copiedTrack = { ...track, dir: box.root,
       suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
@@ -288,12 +297,12 @@ test('the first cumulative level bootstraps only from the exact promoted lower l
         id: 'ecommerce.l2-standard', version: '1.1.0' };
     });
     assert.throws(() => resolveRecipeRelease(copiedTrack, 3,
-      'ecommerce.l3-bootstrap@1.0.0'), /is not promoted L2/);
+      'ecommerce.l3-bootstrap@1.0.0'), /does not carry base check|is not promoted L2/);
 
     editJson(recipe, value => {
       value.state = 'qualified';
-      value.task.baseRecipe = { path: 'l2-standard-1.2.0.json',
-        id: 'ecommerce.l2-standard', version: '1.2.0' };
+      value.task.baseRecipe = { path: 'l2-standard-1.4.0.json',
+        id: 'ecommerce.l2-standard', version: '1.4.0' };
     });
     editJson(join(box.root, 'composition', 'promotions.json'), value => {
       value.entries.push({ alias: 'L3', status: 'promoted', recipe: {
@@ -302,7 +311,7 @@ test('the first cumulative level bootstraps only from the exact promoted lower l
     });
     const promoted = resolveRecipeRelease(copiedTrack, 3);
     assert.equal(promoted.status, 'promoted');
-    assert.equal(promoted.release.task.baseRecipe.version, '1.2.0');
+    assert.equal(promoted.release.task.baseRecipe.version, '1.4.0');
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 

@@ -4,7 +4,7 @@
   "id": "ecommerce.operations-access-specifications",
   "stableId": "ecommerce.operations-access",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "specification",
   "title": "Operator authorization",
   "description": "Server-enforced operator permissions and customer order ownership.",

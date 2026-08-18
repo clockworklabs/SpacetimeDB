@@ -20,7 +20,7 @@ const fixtures = new Map(loadReferenceRegistry().fixtures
   .map(fixture => [fixture.backend, fixture]));
 const cases = ['mongodb', 'postgres', 'spacetime'];
 const loadJson = path => JSON.parse(readFileSync(path, 'utf8'));
-const candidateManifest = backend => loadJson(join(ROOT, 'grader', 'mutations', 'candidates',
+const activeManifest = backend => loadJson(join(ROOT, 'grader', 'mutations',
   `${backend}-ecom-l2-cumulative-1.4.0.json`));
 const activeL1Manifest = backend => loadJson(join(ROOT, 'grader', 'mutations',
   `${backend}-ecom-l1-modular-2.3.0.json`));
@@ -34,11 +34,11 @@ for (const backend of cases) {
   test(`${backend} cumulative L2 1.4 mutations are production-bound`, t => {
     const root = mkdtempSync(join(tmpdir(), `stack-bench-l2-mutations-${backend}-`));
     try {
-      const manifest = candidateManifest(backend);
+      const manifest = activeManifest(backend);
       const qualifiedL1 = activeL1Manifest(backend);
       assert.deepEqual({ schemaVersion: manifest.schemaVersion, status: manifest.status,
         backend: manifest.backend, track: manifest.track, level: manifest.level }, {
-        schemaVersion: 1, status: 'candidate', backend, track: 'ecommerce', level: 2,
+        schemaVersion: 1, status: 'active', backend, track: 'ecommerce', level: 2,
       });
       assert.equal(Object.hasOwn(manifest, 'scenario'), false,
         'combined manifests must not rely on a fallback scenario');

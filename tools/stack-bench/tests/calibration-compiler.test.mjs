@@ -33,7 +33,7 @@ test('runtime calibration resolution binds the qualified L1 and L2 releases', ()
   assert.equal(qualified.state, 'qualified');
   assert.deepEqual(qualified.qualification.stacks.map(stack => stack.status),
     ['qualified', 'qualified', 'qualified']);
-  assert.equal(qualified.qualification.evidence.length, 13);
+  assert.equal(qualified.qualification.evidence.length, 7);
   assert.deepEqual(qualified.qualification.runner, {
     schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
   });
@@ -81,7 +81,7 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
     'ecommerce.l1-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.2.0:qualified',
-    'ecommerce.l2-standard-calibration@1.4.0:draft',
+    'ecommerce.l2-standard-calibration@1.4.0:qualified',
   ]);
 });
 
@@ -142,14 +142,14 @@ test('qualification evidence is semantically bound and tampering fails closed', 
 test('the qualified L2 release keeps its score contract and binds fresh qualification evidence', () => {
   const binding = resolveRecipeRelease(TRACK, 2);
   const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
-    'l2-standard-1.2.0.json'), {
+    'l2-standard-1.4.0.json'), {
     trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release,
   });
-  assert.equal(binding.release.scoring.points, 75);
+  assert.equal(binding.release.scoring.points, 117);
   assert.equal(binding.alias, 'L2');
   assert.equal(binding.status, 'promoted');
   assert.equal(plan.state, 'qualified');
-  assert.equal(plan.qualification.evidence.length, 13);
+  assert.equal(plan.qualification.evidence.length, 7);
   assert.equal(new Set(plan.qualification.evidence.map(entry => entry.path)).size, 7);
   const entry = plan.qualification.evidence.find(evidence => evidence.kind === 'reference'
     && evidence.stack === 'mongodb' && evidence.repetition === 1);
@@ -167,9 +167,9 @@ test('qualification uses typed ownership when inherited execution ids are rename
   for (const entry of execution) entry.id = rename(entry.id);
   for (const check of release.checkCatalog) check.executionId = rename(check.executionId);
 
-  assert.equal(currentLevelPoints(release, execution), 55);
+  assert.equal(currentLevelPoints(release, execution), 59);
   const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
-    'l2-standard-1.2.0.json'), {
+    'l2-standard-1.4.0.json'), {
     trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release,
   });
   const entry = plan.qualification.evidence.find(evidence => evidence.kind === 'reference'

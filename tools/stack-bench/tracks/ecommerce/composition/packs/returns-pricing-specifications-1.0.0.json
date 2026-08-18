@@ -4,7 +4,7 @@
   "id": "ecommerce.returns-pricing-specifications",
   "stableId": "ecommerce.returns-pricing",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "specification",
   "title": "Refund accounting",
   "description": "Revenue remains exact through cancellations, returns, and later price changes.",

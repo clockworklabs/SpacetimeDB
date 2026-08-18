@@ -13,8 +13,8 @@ test('the reference registry binds active, blocked, and historical provenance li
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 9);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 3);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 12);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 0);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
   escaped.fixtures[0].archivedEvidence = ['results/unbound-grade.json'];
@@ -22,7 +22,7 @@ test('the reference registry binds active, blocked, and historical provenance li
   assert(validateReferenceRegistry(escaped).issues.some(issue => issue.includes('must stay inside')));
 });
 
-test('reference selection uses an exact recipe candidate and otherwise keeps the active default', () => {
+test('reference selection uses an exact recipe release and otherwise keeps the unscoped active fixture', () => {
   const registry = loadReferenceRegistry();
   assert.equal(selectReferenceFixture(registry, { backend: 'mongodb', track: 'ecommerce', level: 1 }).id,
     'ecommerce-l1-mongodb');
@@ -45,13 +45,20 @@ test('default reference tooling follows the promoted recipe instead of an unscop
   assert.equal(promoted.binding.status, 'promoted');
   assert.equal(promoted.fixture.id, 'ecommerce-l1-direct-actions-mongodb');
 
+  const promotedL2 = resolveReferenceSelection(registry, {
+    backend: 'mongodb', track: 'ecommerce', level: 2,
+  });
+  assert.equal(promotedL2.recipe, 'ecommerce.l2-standard@1.4.0');
+  assert.equal(promotedL2.binding.status, 'promoted');
+  assert.equal(promotedL2.fixture.id, 'ecommerce-l2-server-actions-mongodb');
+
   assert.throws(() => resolveReferenceSelection(registry, {
     backend: 'mongodb', track: 'ecommerce', level: 1,
     recipe: 'ecommerce.l1-standard@1.1.0',
   }), /no recipe release|retired|requires exactly one catalogued/);
 });
 
-test('the L2 hardening recipe selects one derived fixture per backend without replacing defaults', () => {
+test('the promoted L2 recipe selects one derived fixture per backend without replacing legacy fixtures', () => {
   const registry = loadReferenceRegistry();
   for (const backend of ['mongodb', 'postgres', 'spacetime']) {
     assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2 }).id,

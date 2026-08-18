@@ -4,7 +4,7 @@
   "id": "ecommerce.returns-pricing-features",
   "stableId": "ecommerce.returns-pricing",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "feature",
   "title": "Returns and pricing",
   "description": "Cancellation, returns, live catalog prices, and immutable receipts.",

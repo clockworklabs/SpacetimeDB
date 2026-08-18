@@ -27,16 +27,17 @@ function releaseCatalog(recipe) {
 
 test('meeting brief enumerates the exact promoted L1 and L2 checks', () => {
   const catalog = embeddedCatalog();
-  assert.deepEqual(catalog['1'], releaseCatalog('l1-standard-1.1.0.json'));
-  assert.deepEqual(catalog['2'], releaseCatalog('l2-standard-1.2.0.json'));
+  assert.deepEqual(catalog['1'], releaseCatalog('l1-modular-2.3.0.json'));
+  assert.deepEqual(catalog['2'], releaseCatalog('l2-standard-1.4.0.json'));
 });
 
 test('meeting brief keeps retired framing and obsolete comparison data out of view', () => {
   assert.doesNotMatch(html, /unmentioned|unprescribed|withheld|hidden|undisclosed/i);
   assert.doesNotMatch(html, /104\/106|\$65\.1764|\$22\.1678/);
-  assert.match(html, /39 scored checks/);
-  assert.match(html, /41 scored checks/);
-  assert.match(html, /Browse all 39 scored L1 checks/);
-  assert.match(html, /10 candidates · 2 supporting controls/);
+  assert.match(html, /46 scored checks/);
+  assert.match(html, /74 scored checks/);
+  assert.match(html, /Browse all 46 scored L1 checks/);
+  assert.match(html, /2 checks · included in every run/);
+  assert.match(html, /105\/105 defects caught/);
   assert.doesNotMatch(html, /<th>Status<\/th>|additional checks run but do not affect the score/);
 });

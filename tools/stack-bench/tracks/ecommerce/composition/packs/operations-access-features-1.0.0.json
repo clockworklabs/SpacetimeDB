@@ -4,7 +4,7 @@
   "id": "ecommerce.operations-access-features",
   "stableId": "ecommerce.operations-access",
   "version": "1.0.0",
-  "state": "draft",
+  "state": "qualified",
   "moduleType": "feature",
   "title": "Fulfilment operations",
   "description": "Customer, staff, and administrator fulfilment workflows.",

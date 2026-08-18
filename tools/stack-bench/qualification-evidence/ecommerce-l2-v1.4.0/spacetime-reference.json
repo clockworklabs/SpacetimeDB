@@ -1,0 +1,314 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-spacetime-20260818020829-14",
+  "attempt": {
+    "id": "reference-live-spacetime-20260818020829-14",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-08-18T02:08:29.297Z",
+    "completedAt": "2026-08-18T02:19:17.665Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "version": null,
+      "sha256": "b46e4545d2b89484843046f15dc7e59298472f1e2a8e28837e19ff51e5b8f40f",
+      "state": null
+    },
+    "recipe": {
+      "id": "ecommerce.l2-standard",
+      "version": "1.4.0",
+      "sha256": "0d943d2a40c1441cc394ecdeec839126590865ea83b918d8c8eedee7000e3aab",
+      "state": "draft"
+    },
+    "fixture": {
+      "id": "ecommerce-l2-server-actions-spacetime",
+      "version": null,
+      "sha256": "359ed185c5d9dff2754f806c1169314985baeb2bca90a09f2ab52a5ee056b8fc",
+      "state": "candidate"
+    },
+    "calibration": {
+      "id": "ecommerce.l2-standard-calibration",
+      "version": "1.4.0",
+      "sha256": "83b76bd1d48ab96adcca970f51e2ad00c83aef2716e1b6fa991ff7706da96eb7",
+      "state": "draft"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "version": null,
+      "sha256": null,
+      "state": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-l2-server-actions-spacetime",
+    "fixtureSha256": "359ed185c5d9dff2754f806c1169314985baeb2bca90a09f2ab52a5ee056b8fc",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232842752
+    },
+    "mutationControl": false,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "spacetime-reference.runs/r1",
+        "durationMs": 648260,
+        "processError": null,
+        "harnessSha256Before": "4ab69fb43c5ae968e60527ef20e35a5b10425c57338624acb6852676a3dc955b",
+        "harnessSha256After": "4ab69fb43c5ae968e60527ef20e35a5b10425c57338624acb6852676a3dc955b",
+        "ok": true,
+        "failures": [],
+        "runId": "ecommerce-spacetime-run0-20260818020830-54d3ffe9",
+        "score": "59/59",
+        "imageId": "sha256:b404d26138ea16be07a672389981e7e8b89d7740570f9baa3ddd4d0e96336c10",
+        "criteria": 76,
+        "zeroPointCriteria": 2,
+        "fingerprint": "ce5b7a3e38cef0faa429465374cdb171d4527aea4040d1f0bb1778585e61c971",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.accounts",
+              "checkCount": 4,
+              "setupRuntimeMs": 87,
+              "criterionRuntimeMs": 4313,
+              "measuredRuntimeMs": 4400,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 18000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.cart-checkout",
+              "checkCount": 2,
+              "setupRuntimeMs": 87,
+              "criterionRuntimeMs": 6091,
+              "measuredRuntimeMs": 6178,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 42000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.catalog",
+              "checkCount": 3,
+              "setupRuntimeMs": 89,
+              "criterionRuntimeMs": 1567,
+              "measuredRuntimeMs": 1656,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.purchasing",
+              "checkCount": 1,
+              "setupRuntimeMs": 173,
+              "criterionRuntimeMs": 900,
+              "measuredRuntimeMs": 1073,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 24000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.reviews",
+              "checkCount": 1,
+              "setupRuntimeMs": 1808,
+              "criterionRuntimeMs": 1729,
+              "measuredRuntimeMs": 3537,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 22000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.warehouse-admin",
+              "checkCount": 1,
+              "setupRuntimeMs": 197,
+              "criterionRuntimeMs": 84,
+              "measuredRuntimeMs": 281,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.inventory-operations-features",
+              "checkCount": 7,
+              "setupRuntimeMs": 2697,
+              "criterionRuntimeMs": 15523,
+              "measuredRuntimeMs": 18220,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 86000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.inventory-operations-specifications",
+              "checkCount": 4,
+              "setupRuntimeMs": 3717,
+              "criterionRuntimeMs": 21739,
+              "measuredRuntimeMs": 25456,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 52000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.operations-access-features",
+              "checkCount": 5,
+              "setupRuntimeMs": 807,
+              "criterionRuntimeMs": 13196,
+              "measuredRuntimeMs": 14003,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 76000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.operations-access-specifications",
+              "checkCount": 4,
+              "setupRuntimeMs": 11198,
+              "criterionRuntimeMs": 13267,
+              "measuredRuntimeMs": 24465,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 44000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.returns-pricing-features",
+              "checkCount": 6,
+              "setupRuntimeMs": 3133,
+              "criterionRuntimeMs": 26666,
+              "measuredRuntimeMs": 29799,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 94000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.returns-pricing-specifications",
+              "checkCount": 2,
+              "setupRuntimeMs": 278,
+              "criterionRuntimeMs": 14651,
+              "measuredRuntimeMs": 14929,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 36000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 10,
+              "setupRuntimeMs": 1339,
+              "criterionRuntimeMs": 15249,
+              "measuredRuntimeMs": 16588,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 90000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.concurrency-safety",
+              "checkCount": 8,
+              "setupRuntimeMs": 22096,
+              "criterionRuntimeMs": 42989,
+              "measuredRuntimeMs": 65085,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 125000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.external-data-sync",
+              "checkCount": 4,
+              "setupRuntimeMs": 302,
+              "criterionRuntimeMs": 29968,
+              "measuredRuntimeMs": 30270,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 105000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.live-state",
+              "checkCount": 6,
+              "setupRuntimeMs": 2678,
+              "criterionRuntimeMs": 8947,
+              "measuredRuntimeMs": 11625,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 85000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.state-durability",
+              "checkCount": 4,
+              "setupRuntimeMs": 306,
+              "criterionRuntimeMs": 23813,
+              "measuredRuntimeMs": 24119,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 48000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 4,
+              "setupRuntimeMs": 2130,
+              "criterionRuntimeMs": 8263,
+              "measuredRuntimeMs": 10393,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 75000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": null
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "4ab69fb43c5ae968e60527ef20e35a5b10425c57338624acb6852676a3dc955b",
+    "ok": true
+  }
+}

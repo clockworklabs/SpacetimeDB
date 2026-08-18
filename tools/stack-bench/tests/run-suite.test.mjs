@@ -92,14 +92,13 @@ test('hardened modular grading isolates the four direct server checks', () => {
 
 test('recipe execution keeps inherited suites out of the current-level score', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.2.0');
+  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.4.0');
   const suites = suitesForRecipe(track, binding);
 
-  assert.deepEqual(suites.filter(suite => suite.inherited)
-    .map(suite => ({ id: suite.id, fromLevel: suite.fromLevel })), [
-    { id: 'invariants@L1', fromLevel: 1 },
-    { id: 'systems@L1', fromLevel: 1 },
-  ]);
+  const inherited = suites.filter(suite => suite.inherited);
+  assert.equal(inherited.length, 11);
+  assert(inherited.every(suite => suite.fromLevel === 1));
+  assert.equal(suites.filter(suite => !suite.inherited).length, 10);
 });
 
 test('cumulative ownership survives inherited execution id renames', () => {

@@ -59,16 +59,18 @@ test('qualification resolves the promoted modular L1 release exactly and by defa
     /no recipe release|retired|requires exactly one catalogued/);
 });
 
-test('qualification resolves the promoted framework-neutral L2 release exactly and by default', () => {
-  const status = qualificationReadiness('ecommerce', 2, 'ecommerce.l2-standard@1.2.0');
-  assert.equal(status.scope.recipe.version, '1.2.0');
-  assert.equal(status.scope.calibration.version, '1.2.0');
+test('qualification resolves the promoted modular L2 release exactly and by default', () => {
+  const status = qualificationReadiness('ecommerce', 2, 'ecommerce.l2-standard@1.4.0');
+  assert.equal(status.scope.recipe.version, '1.4.0');
+  assert.equal(status.scope.calibration.version, '1.4.0');
   assert.equal(status.launch.ok, true);
-  assert.equal(status.requiredEvidence.length, 13);
+  assert.equal(status.requiredEvidence.length, 7);
   assert.equal(status.promotion.ready, true);
   assert.deepEqual(status.promotion.blockers, []);
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
     && item.state === 'promoted' && item.target === 'promoted'));
-  assert(status.commands.every(command => command.includes('--recipe ecommerce.l2-standard@1.2.0')));
-  assert.equal(qualificationReadiness('ecommerce', 2).scope.recipe.version, '1.2.0');
+  assert(status.commands.every(command => command.includes('--recipe ecommerce.l2-standard@1.4.0')));
+  assert.equal(qualificationReadiness('ecommerce', 2).scope.recipe.version, '1.4.0');
+  assert.throws(() => qualificationReadiness('ecommerce', 2, 'ecommerce.l2-standard@1.2.0'),
+    /no recipe release|retired|requires exactly one catalogued/);
 });
