@@ -425,6 +425,72 @@
   .tl-dia .ev.e4 { animation-delay: 1.5s; } .tl-dia .ev.e5 { animation-delay: 2.1s; }
   .tl-dia .ev.e6 { animation-delay: 2.7s; }
 
+  /* one requirement, three implementations */
+  .req {
+    width: 100%; max-width: 980px; border: 1px solid var(--green-25); border-radius: 8px;
+    background: var(--shade5); padding: .7rem 1rem; font-family: var(--font-mono);
+    font-size: .9rem; color: var(--n1); margin-bottom: .3rem;
+  }
+  .req span { color: var(--green); }
+  .impls { display: grid; grid-template-columns: repeat(3, 1fr); gap: .9rem; width: 100%; max-width: 980px; }
+  @media (max-width: 800px) { .impls { grid-template-columns: 1fr; } }
+  .impl {
+    border: 1px solid var(--shade1); border-radius: 8px; background: #0a0d10; overflow: hidden;
+    opacity: 0; transform: translateY(10px); transition: opacity .5s ease, transform .5s ease;
+  }
+  section.on .impl { opacity: 1; transform: none; }
+  section.on .impl:nth-child(2) { transition-delay: .15s; }
+  section.on .impl:nth-child(3) { transition-delay: .3s; }
+  .impl .ih {
+    font-family: var(--font-mono); font-size: .74rem; color: var(--n4);
+    padding: .4rem .7rem; border-bottom: 1px solid var(--shade1);
+    display: flex; justify-content: space-between; gap: .5rem;
+  }
+  .impl pre {
+    margin: 0; padding: .7rem; font-family: var(--font-mono);
+    font-size: clamp(.62rem, 1.15vw, .74rem); line-height: 1.55; color: var(--n3);
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .impl .k { color: var(--green); }
+  .impl .c { color: var(--n5); }
+  .lines { font-family: var(--font-mono); font-size: .72rem; color: var(--n4); }
+
+  /* mutation diff */
+  .diff {
+    width: 100%; max-width: 900px; border: 1px solid var(--shade1); border-radius: 8px;
+    background: #0a0d10; font-family: var(--font-mono); font-size: clamp(.7rem, 1.4vw, .85rem);
+    overflow: hidden;
+  }
+  .diff .dh { padding: .45rem .8rem; border-bottom: 1px solid var(--shade1); color: var(--n4); font-size: .74rem; }
+  .diff .dl { padding: .22rem .8rem; color: var(--n3); white-space: pre-wrap; }
+  .diff .dl.rm { background: #fc689714; color: #fc6897; }
+  .diff .dl.add { background: var(--green-10); color: var(--green); }
+  section.on .diff .dl.rm { animation: diffPulse 4s ease-in-out infinite; }
+  @keyframes diffPulse { 0%, 40% { background: transparent; color: var(--n3); } 50%, 90% { background: #fc689714; color: #fc6897; } }
+  .expect { display: grid; gap: .4rem; margin-top: 1rem; font-family: var(--font-mono); font-size: .82rem; max-width: 900px; width: 100%; }
+  .expect div { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px dashed var(--shade1); padding-bottom: .35rem; color: var(--n4); }
+  .expect b { font-weight: 500; }
+  .expect .must { color: #fc6897; }
+  .expect .rest { color: var(--green); }
+
+  /* artifact tree */
+  .tree {
+    display: grid; grid-template-columns: minmax(240px, 320px) 1fr; gap: 1.4rem;
+    width: 100%; max-width: 980px; align-items: start;
+  }
+  @media (max-width: 800px) { .tree { grid-template-columns: 1fr; } }
+  .tree pre {
+    margin: 0; font-family: var(--font-mono); font-size: clamp(.66rem, 1.3vw, .78rem);
+    line-height: 1.7; color: var(--n4); white-space: pre;
+  }
+  .tree pre b { color: var(--n3); font-weight: 400; }
+  .tree pre em { color: var(--green); font-style: normal; }
+  .jsonbox { border: 1px solid var(--shade1); border-radius: 8px; background: #0a0d10; overflow: hidden; }
+  .jsonbox .jh { padding: .4rem .8rem; border-bottom: 1px solid var(--shade1); font-family: var(--font-mono); font-size: .72rem; color: var(--n4); }
+  .jsonbox pre { padding: .8rem; color: var(--n3); white-space: pre-wrap; }
+  .jsonbox .key { color: var(--n4); }
+  .jsonbox .str { color: var(--green); }
+
   /* restart beat in the storefront demo */
   .live { position: relative; }
   .outage {
@@ -546,30 +612,48 @@
 <!-- 2 the bet -->
 <section>
   <div class="kicker r">the bet</div>
-  <h2 class="r d1">Hold everything fixed. Swap the database. Read the bill.</h2>
-  <div class="rig r d2" role="img" aria-label="the same prompt, model and app run against each backend in turn">
-    <div class="fixed-part">
-      <div class="fh"><span>same prompt &middot; same model &middot; same store</span><span>held fixed</span></div>
-      <div class="minishop">
-        <div class="miniprod"><b>headphones</b>$89</div>
-        <div class="miniprod"><b>keyboard</b>$120</div>
-        <div class="miniprod"><b>monitor</b>$310</div>
-      </div>
+  <h2 class="r d1">One requirement. Whatever the stack makes you write.</h2>
+  <div class="req r d2">criterion <span>no-oversell</span> &mdash; the last unit may be sold exactly once, under concurrent checkout</div>
+  <div class="impls r d2">
+    <div class="impl">
+      <div class="ih"><span>stack a</span><span>4 lines</span></div>
+<pre><span class="k">reducer</span> checkout(ctx, sku) {
+  <span class="k">const</span> p = ctx.db.product
+        .sku.find(sku);
+  <span class="k">if</span> (p.stock &lt; 1) <span class="k">throw</span> ...
+  ctx.db.product.sku.update(
+    {...p, stock: p.stock - 1});
+}
+<span class="c">// one transaction by construction</span></pre>
     </div>
-    <div class="pins"><i></i><i></i><i></i><i></i></div>
-    <div class="socket">
-      <div class="card sc1">stack a <em>swapped in</em></div>
-      <div class="card sc2">stack b <em>swapped in</em></div>
-      <div class="card sc3">stack c <em>swapped in</em></div>
+    <div class="impl">
+      <div class="ih"><span>stack b</span><span>~14 lines</span></div>
+<pre><span class="k">await</span> db.transaction(<span class="k">async</span> tx =&gt; {
+  <span class="k">const</span> [p] = <span class="k">await</span> tx
+    .select().from(product)
+    .where(eq(product.sku, sku))
+    .<span class="k">for</span>(<span class="str">'update'</span>);        <span class="c">// lock</span>
+  <span class="k">if</span> (p.stock &lt; 1) <span class="k">throw</span> ...
+  <span class="k">await</span> tx.update(product)
+    .set({stock: p.stock - 1})
+    .where(eq(product.sku, sku));
+});
+<span class="c">// forget FOR UPDATE = oversell</span></pre>
     </div>
-    <div class="socket-label">the only variable</div>
-    <div class="billout">
-      <div class="billcell">score<span class="v accent">51 / 51</span></div>
-      <div class="billcell">cost<span class="v">$4.73</span></div>
-      <div class="billcell">fix rounds<span class="v">1</span></div>
+    <div class="impl">
+      <div class="ih"><span>stack c</span><span>~12 lines</span></div>
+<pre><span class="k">const</span> r = <span class="k">await</span> Product
+  .findOneAndUpdate(
+    {sku, stock: {$gte: 1}},
+    {$inc: {stock: -1}},
+    {new: <span class="k">true</span>});
+<span class="k">if</span> (!r) <span class="k">throw</span> ...
+<span class="c">// atomic only if the guard is
+// inside the query, and only
+// for a single document</span></pre>
     </div>
   </div>
-  <p class="supp r d3">One thing changes between runs. Whatever the bill does, the database did it. The claim under test is that a database doing the hard parts itself makes correctness cheap, and a result against that gets published the same way.</p>
+  <p class="supp r d3" style="margin-top:1.2rem">Same criterion, same prompt, same model. What differs is how much the agent has to get right, and every extra thing it must remember is a chance to ship an oversell.</p>
 </section>
 
 <!-- 3 a run -->
@@ -705,48 +789,55 @@
 <!-- 6 you can't game it -->
 <section>
   <div class="kicker r">you can't game it</div>
-  <h2 class="r d1">The grader has to prove itself first</h2>
-  <div class="mut r d2">
-    <div class="mutrow">
-      <span class="mutlabel">reference app</span>
-      <div class="dots">
-        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
-        <div class="dot hit"></div>
-        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
-      </div>
-    </div>
-    <div class="mutcap">
-      <span class="mc1">a known-good app passes the full suite</span>
-      <span class="mc2">defect planted &rarr; exactly the declared criterion fails &middot; kill confirmed</span>
-    </div>
-    <div class="mutrow" style="margin-top:.6rem">
-      <span class="mutlabel">blank app</span>
-      <div class="dots">
-        <div class="dot hollow"></div><div class="dot hollow"></div><div class="dot hollow"></div>
-        <div class="dot hollow"></div><div class="dot hollow"></div><div class="dot hollow"></div>
-        <div class="dot hollow"></div>
-      </div>
-      <span class="mutlabel">scores zero everywhere</span>
-    </div>
+  <h2 class="r d1">The grader has to catch a defect we plant</h2>
+  <div class="diff r d2">
+    <div class="dh">reference app &middot; server/checkout.ts &middot; mutation <span style="color:var(--n3)">no-oversell-guard-removed</span></div>
+    <div class="dl">  const p = await load(sku);</div>
+    <div class="dl rm">- if (p.stock &lt; 1) throw new SoldOut();</div>
+    <div class="dl">  await commit({ ...p, stock: p.stock - 1 });</div>
   </div>
-  <p class="supp r d3">Before a criterion is allowed to score anything, it has to catch a defect planted in a passing app and award nothing to an empty one. The agent builds in a sealed container and never sees the marking scheme. Prompts and tests are never adjusted to make a failing check pass.</p>
+  <div class="expect r d3">
+    <div><span>criterion <b style="color:var(--n1)">no-oversell</b></span><span class="must">must fail &middot; kill confirmed</span></div>
+    <div><span>every other criterion</span><span class="rest">must still pass &middot; no collateral</span></div>
+    <div><span>blank app, full suite</span><span class="rest">must score zero everywhere</span></div>
+  </div>
+  <p class="supp r d4">A criterion is not allowed to score anything until it has caught a defect planted in a passing app, hit only the criterion it declared, and awarded nothing to an empty build. If a planted defect survives, the hole is in the grader, not the app.</p>
 </section>
 
 <!-- 7 receipts -->
 <section>
   <div class="kicker r">receipts</div>
-  <h2 class="r d1">Don't trust us. Watch the run.</h2>
-  <div class="player r d2" role="img" aria-label="annotated run recording">
-    <div class="pbanner">
-      <div class="banner pass"><span>alice &middot; stock-live &middot; step 4/4</span><span>PASS</span></div>
-      <div class="banner fail"><span>bob &middot; cart-total-exact &middot; expected 3, found 2</span><span>FAIL</span></div>
+  <h2 class="r d1">Every verdict is a file you can open</h2>
+  <div class="tree r d2">
+<pre>results/<em>&lt;run-id&gt;</em>/
+├── run.json          <b>stack, model, budget</b>
+├── preflight.json    <b>24 admission checks</b>
+├── .prompt-build.md  <b>exact bytes sent</b>
+├── .session-build.json
+│                     <b>cost, tokens, turns</b>
+├── grading-l1.json   <b>every verdict</b>
+├── records/
+│   └── bug-report-l1-round1.md
+├── media/
+│   ├── alice-no-oversell.webm
+│   ├── bob-no-oversell.png
+│   └── bob-no-oversell.trace.zip
+└── level-l1-source/  <b>hash-bound</b></pre>
+    <div class="jsonbox">
+      <div class="jh">grading-l1.json &middot; one criterion</div>
+<pre>{
+  <span class="key">"criterion"</span>: <span class="str">"no-oversell"</span>,
+  <span class="key">"state"</span>: <span class="str">"failed"</span>,
+  <span class="key">"observed"</span>: <span class="str">"2 orders for 1 unit"</span>,
+  <span class="key">"actor"</span>: <span class="str">"bob"</span>,
+  <span class="key">"deadline_ms"</span>: 5000,
+  <span class="key">"evidence"</span>: [<span class="str">"media/bob-no-oversell.webm"</span>,
+               <span class="str">"media/bob-no-oversell.trace.zip"</span>],
+  <span class="key">"recipe"</span>: <span class="str">"ecommerce.l1-standard@1.1.0"</span>
+}</pre>
     </div>
-    <div class="pscreen">
-      <svg width="46" height="46" viewBox="0 0 24 24" fill="none"><path d="M8 5v14l11-7z" fill="#363840"/></svg>
-    </div>
-    <div class="pbar"><i></i></div>
   </div>
-  <p class="supp r d3" style="margin-top:1.2rem">Every criterion is filmed from each user's browser, stamped with the verdict at the moment it lands. A published score ships with <span class="mono" style="color:var(--n3)">the prompt, the session costs, every verdict, the videos and the traces</span>.</p>
+  <p class="supp r d3" style="margin-top:1.2rem">One typed state per check, the evidence that produced it, and the exact recipe it was graded under. A score that cannot be traced back to these files does not ship.</p>
 </section>
 
 <!-- 8 scoreboard -->
