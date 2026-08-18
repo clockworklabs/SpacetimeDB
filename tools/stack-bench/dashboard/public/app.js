@@ -201,15 +201,13 @@ function campaignRow(campaign) {
     if (!row) {
       return partial != null
         ? `<td class="band num partial"><b>${money(partial)}</b></td>`
-        : '<td class="band num vacant"><b>·</b></td>';
+        : '<td class="band num vacant"><b>—</b></td>';
     }
     if (row.spend == null) return '<td class="band num vacant"><b>no cost</b></td>';
     return `<td class="band num${row === cheapest ? ' lead' : ''}"><b>${money(row.spend)}</b></td>`;
   };
   const live = (campaign.attempts ?? []).filter(attempt => attempt.status === 'running').length;
-  const state = campaign.status === 'running' ? 'live'
-    : ['attention-required', 'unreadable'].includes(campaign.status) ? 'flagged' : '';
-  return `<tr class="${state}">
+  return `<tr>
     <td class="campaign-cell">
       <button data-campaign="${escapeHtml(campaign.key)}">${escapeHtml(campaign.title)}</button>
       ${campaign.error ? `<i>${escapeHtml(campaign.error)}</i>` : ''}

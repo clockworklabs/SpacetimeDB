@@ -147,12 +147,8 @@ th.num, td.num { text-align: right; font-family: var(--font-source); font-varian
 td.num i { color: var(--muted); font-style: normal; }
 
 table.campaigns { min-width: 860px; }
-table.campaigns tbody tr { border-left: 2px solid transparent; }
 table.campaigns tbody tr:hover { background: var(--raised); }
-/* State lives on the row's edge instead of in a badge in every row. */
-table.campaigns tbody tr.live { border-left-color: var(--green); }
-table.campaigns tbody tr.flagged { border-left-color: var(--yellow); }
-.group-row > * { padding: 10px var(--row-x) 2px; border-bottom: 0; }
+.group-row > * { padding: 10px var(--row-x) 3px; border-bottom: 0; }
 th.group { color: var(--muted); font: 11px/1.2 var(--font-source); letter-spacing: 0.5px; text-transform: none; text-align: center; }
 
 .campaign-cell { width: 100%; }
@@ -161,12 +157,18 @@ th.group { color: var(--muted); font: 11px/1.2 var(--font-source); letter-spacin
 .campaign-cell button:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; border-radius: 2px; }
 .campaign-cell i { display: block; margin-top: 3px; color: var(--muted); font: 11.5px var(--font-source); font-style: normal; }
 
-/* The three stack columns are one measurement, so they read as one block. */
-td.band, th.band { background: rgba(255, 255, 255, 0.026); }
+/* The three stack columns are one measurement, bracketed by a hairline at each
+ * end so the group has an edge that lands on something. */
+/* :first-of-type would ask for the first cell that is also .band, which is
+ * never true — the campaign name is the first cell. Position is exact. */
+table.campaigns tr > :nth-child(2) { border-left: 1px solid var(--line-bright); }
+table.campaigns tr > :nth-child(4) { border-right: 1px solid var(--line-bright); }
+table.campaigns .group-row > :nth-child(2) { border-right: 1px solid var(--line-bright); }
 td.band b { display: inline-block; min-width: 4.2em; text-align: right; font-weight: inherit; font-size: 15px; }
 td.lead b { color: var(--ink); font-weight: 500; }
 td.partial b { color: var(--muted); }
-td.vacant b { color: var(--muted); font-size: 12px; }
+/* Same size as a figure so the column keeps one optical baseline. */
+td.vacant b { color: var(--muted); font-size: 15px; }
 .state-cell { color: var(--muted); font: 11.7px var(--font-source); white-space: nowrap; }
 .vacant-row { padding: 34px !important; color: var(--muted); text-align: center !important; }
 time { color: var(--muted); font: 11.7px var(--font-source); }
