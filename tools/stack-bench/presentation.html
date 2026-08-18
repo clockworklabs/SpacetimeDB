@@ -102,15 +102,6 @@
   ul.plain li::before { content: '\203A'; position: absolute; left: 0; color: var(--green); font-family: var(--font-mono); }
   ul.plain li strong { color: var(--n1); font-weight: 600; }
 
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; margin: 1.4rem 0; max-width: 900px; }
-  .card {
-    background: linear-gradient(180deg, var(--shade5), var(--shade7));
-    border: 1px solid var(--shade4);
-    border-radius: 10px;
-    padding: 1.15rem 1.25rem;
-  }
-  .card h3 { font-size: 1rem; margin-bottom: .45rem; color: var(--green); font-weight: 600; }
-  .card p { font-size: .9rem; }
 
   table { border-collapse: collapse; margin: 1.2rem 0; font-size: .92rem; max-width: 880px; width: 100%; }
   th, td { text-align: left; padding: .55rem .9rem; border-bottom: 1px solid var(--shade4); color: var(--n3); vertical-align: top; }
@@ -141,9 +132,6 @@
   section.on .pulse { animation: pulse 3.6s ease-in-out infinite; }
   @keyframes pulse { 0%,100% { stroke: #162d38; } 50% { stroke: var(--green-25); } }
 
-  .caps { display: grid; gap: .55rem; font-family: var(--font-mono); font-size: .85rem; max-width: 640px; margin-top: 1rem; }
-  .caps div { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px dashed var(--shade1); padding-bottom: .45rem; color: var(--n3); }
-  .caps b { color: var(--n1); font-weight: 600; white-space: nowrap; }
 
   @keyframes breathe { 0%,100% { border-color: var(--n5); } 50% { border-color: var(--green-25); } }
   .empty {
@@ -160,8 +148,6 @@
   }
   .empty b { color: var(--n1); display: block; font-size: 1.15rem; margin-bottom: .5rem; font-family: var(--font-ui); }
 
-  .files { columns: 2; gap: 2.5rem; max-width: 860px; font-family: var(--font-mono); font-size: .82rem; margin-top: 1rem; }
-  .files div { padding: .32rem 0; color: var(--n4); break-inside: avoid; }
   .files span { color: var(--green); }
 
 
@@ -171,32 +157,6 @@
     96%,100% { opacity: 0; }
   }
 
-  /* level ladder */
-  .ladder { display: grid; gap: .5rem; max-width: 760px; margin: 1.2rem 0 .8rem; }
-  .rung { display: flex; align-items: center; gap: 1rem; }
-  .rung .lv { font-family: var(--font-mono); color: var(--green); width: 2.2rem; flex: none; }
-  .rung .bar {
-    height: 30px; border-radius: 6px;
-    background: linear-gradient(180deg, var(--shade5), var(--shade7));
-    border: 1px solid var(--shade1);
-    display: flex; align-items: center; padding: 0 .9rem;
-    font-size: .85rem; color: var(--n3); white-space: nowrap;
-    width: 0; opacity: 0; overflow: hidden;
-    transition: width .7s cubic-bezier(.2,.7,.2,1), opacity .4s ease;
-  }
-  section.on .rung .bar { opacity: 1; }
-  section.on .rung:nth-child(1) .bar { width: 46%; transition-delay: .15s; }
-  section.on .rung:nth-child(2) .bar { width: 57%; transition-delay: .3s; }
-  section.on .rung:nth-child(3) .bar { width: 68%; transition-delay: .45s; }
-  section.on .rung:nth-child(4) .bar { width: 79%; transition-delay: .6s; }
-  section.on .rung:nth-child(5) .bar { width: 90%; transition-delay: .75s; }
-  .rung.todo .lv { color: var(--n4); }
-  .rung.todo .bar { border-style: dashed; color: var(--n4); }
-  .vbadge {
-    font-family: var(--font-mono); font-size: .72rem; color: var(--green);
-    border: 1px solid var(--green-25); border-radius: 999px; padding: .18rem .6rem;
-    margin-left: .8rem; flex: none;
-  }
 
   /* mutation demo: one injected defect, exactly one criterion flips */
   .mut { display: flex; flex-direction: column; gap: .9rem; max-width: 760px; margin: 1rem 0 1.2rem; }
@@ -218,21 +178,6 @@
   section.on .mutnote { animation: assertPop 4s ease-in-out infinite; }
   .mutnote { font-family: var(--font-mono); font-size: .78rem; color: #fc6897; opacity: 0; }
 
-  /* preflight checklist ticks */
-  ul.checks { list-style: none; display: grid; gap: .6rem; max-width: 62ch; margin: .4rem 0 1.2rem; }
-  ul.checks li { padding-left: 1.7rem; position: relative; color: var(--n3); }
-  ul.checks li::before {
-    content: '\2713'; position: absolute; left: 0; color: var(--green);
-    font-family: var(--font-mono); font-weight: 700;
-    opacity: 0; transform: scale(.4);
-    transition: opacity .3s ease, transform .3s cubic-bezier(.2,1.6,.4,1);
-  }
-  section.on ul.checks li::before { opacity: 1; transform: scale(1); }
-  section.on ul.checks li:nth-child(1)::before { transition-delay: .2s; }
-  section.on ul.checks li:nth-child(2)::before { transition-delay: .45s; }
-  section.on ul.checks li:nth-child(3)::before { transition-delay: .7s; }
-  section.on ul.checks li:nth-child(4)::before { transition-delay: .95s; }
-  section.on ul.checks li:nth-child(5)::before { transition-delay: 1.2s; }
 
   /* video banner demo */
   .banners { display: grid; gap: .6rem; max-width: 720px; margin: .6rem 0 1.2rem; }
@@ -248,16 +193,6 @@
   @keyframes bannerIn { from { opacity: 0; transform: translateY(10px); } }
   .files div { opacity: 0; transform: translateY(8px); transition: opacity .45s ease, transform .45s ease; }
   section.on .files div { opacity: 1; transform: none; }
-  section.on .files div:nth-child(1) { transition-delay: 0.62s; }
-  section.on .files div:nth-child(2) { transition-delay: 0.69s; }
-  section.on .files div:nth-child(3) { transition-delay: 0.76s; }
-  section.on .files div:nth-child(4) { transition-delay: 0.83s; }
-  section.on .files div:nth-child(5) { transition-delay: 0.90s; }
-  section.on .files div:nth-child(6) { transition-delay: 0.97s; }
-  section.on .files div:nth-child(7) { transition-delay: 1.04s; }
-  section.on .files div:nth-child(8) { transition-delay: 1.11s; }
-  section.on .files div:nth-child(9) { transition-delay: 1.18s; }
-  section.on .files div:nth-child(10) { transition-delay: 1.25s; }
 
 
   /* visual-first layout */
@@ -273,51 +208,13 @@
       { max-height: 6em; opacity: 1; margin-top: .45rem; }
   }
 
-  /* the bill, as a receipt */
-  .split { display: grid; grid-template-columns: minmax(280px, 400px) 1fr; gap: 3.5rem; align-items: center; max-width: 1040px; }
-  @media (max-width: 860px) { .split { grid-template-columns: 1fr; gap: 1.6rem; } }
-  .receipt {
-    background: linear-gradient(180deg, var(--shade5), var(--shade7));
-    border: 1px solid var(--shade1); border-radius: 10px;
-    font-family: var(--font-mono); font-size: .85rem;
-    padding: 1.4rem 1.3rem; display: grid; gap: .65rem;
-  }
-  .receipt .rl { display: flex; justify-content: space-between; gap: 1rem; color: var(--n3);
-                 opacity: 0; transform: translateY(8px); transition: opacity .45s ease, transform .45s ease; }
-  section.on .receipt .rl { opacity: 1; transform: none; }
-  .receipt .rl span:last-child { color: var(--n4); text-align: right; }
-  .receipt .rl.total { border-top: 1px dashed var(--shade1); padding-top: .8rem; }
-  .receipt .rl.total span { color: var(--green); }
 
 
-  /* honesty tiles */
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; max-width: 980px; margin-top: 1.4rem; }
-  .tile {
-    background: linear-gradient(180deg, var(--shade5), var(--shade7));
-    border: 1px solid var(--shade4); border-radius: 10px; padding: 1rem 1.1rem;
-  }
-  .tile h3 { font-size: .95rem; color: var(--n1); font-weight: 600; margin-bottom: .3rem; }
-  .tile p { font-size: .85rem; }
-  .tile:hover { border-color: var(--shade1); }
 
-  /* ladder hover detail */
-  .rung { flex-wrap: wrap; }
-  .rung .more { flex-basis: 100%; padding-left: 3.2rem; font-family: var(--font-mono); font-size: .76rem; }
 
-  /* checklist hover detail */
-  ul.checks li .more { display: block; font-size: .8rem; }
-  ul.checks { font-size: 1.02rem; }
 
   /* evidence rows highlight */
-  .files div { border-left: 2px solid transparent; padding-left: .5rem; transition: border-color .2s ease, color .2s ease; }
-  .files div:hover { border-left-color: var(--green); color: var(--n3); }
 
-  section.on .receipt .rl:nth-child(1) { transition-delay: 0.27s; }
-  section.on .receipt .rl:nth-child(2) { transition-delay: 0.39s; }
-  section.on .receipt .rl:nth-child(3) { transition-delay: 0.51s; }
-  section.on .receipt .rl:nth-child(4) { transition-delay: 0.63s; }
-  section.on .receipt .rl:nth-child(5) { transition-delay: 0.75s; }
-  section.on .receipt .rl:nth-child(6) { transition-delay: 0.87s; }
 
   /* ---- simulated run demos ---- */
   .demo-tag { font-family: var(--font-mono); font-size: .68rem; color: var(--n4); letter-spacing: .08em; margin-top: .6rem; }
@@ -389,13 +286,6 @@
   @keyframes dBubB { 0%,46% { opacity: 0; transform: scale(.7); } 50%,88% { opacity: 1; transform: scale(1); } 94%,100% { opacity: 0; } }
   @keyframes dVerd { 0%,54% { opacity: 0; } 60%,88% { opacity: 1; } 94%,100% { opacity: 0; } }
 
-  /* three scored axes, shown as example criteria from the demo above */
-  .axes { display: grid; gap: .55rem; max-width: 840px; margin: 1.2rem 0; font-size: .88rem; }
-  .axrow { display: grid; grid-template-columns: 6.6rem 1fr; gap: 1rem; align-items: baseline;
-           border-bottom: 1px dashed var(--shade1); padding-bottom: .5rem; color: var(--n3); }
-  .axrow .ax { font-family: var(--font-mono); font-size: .78rem; color: var(--green); }
-  .axrow i.ok { font-style: normal; color: var(--green); }
-  .axrow code { color: var(--n1); }
 
   /* storefront live demo */
   .bigprod {
@@ -427,19 +317,82 @@
   section.on .d-toast { animation: dToast 7s infinite; }
   @keyframes dToast { 0%, 12% { opacity: 0; transform: translateY(6px); } 16%, 88% { opacity: 1; transform: none; } 94%, 100% { opacity: 0; } }
 
+
+  /* fan-out: one prompt, N stacks, N bills */
+  .fan { display: grid; gap: 1.1rem; max-width: 860px; justify-items: center; margin: .4rem 0 1rem; width: 100%; }
+  .promptcard {
+    font-family: var(--font-mono); font-size: .82rem; color: var(--n1);
+    border: 1px solid var(--shade1); border-radius: 8px; background: var(--shade5);
+    padding: .6rem 1.1rem;
+  }
+  .fan .down { color: var(--n4); font-family: var(--font-mono); letter-spacing: 1.2em; padding-left: 1.2em; }
+  .stubs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; width: 100%; }
+  @media (max-width: 720px) { .stubs { grid-template-columns: 1fr; } }
+  .stub {
+    border: 1px solid var(--shade1); border-radius: 10px; background: var(--shade7);
+    padding: .9rem 1rem; font-family: var(--font-mono); font-size: .76rem; color: var(--n4);
+    display: grid; gap: .55rem;
+    opacity: 0; transform: translateY(10px); transition: opacity .5s ease, transform .5s ease;
+  }
+  section.on .stub { opacity: 1; transform: none; }
+  section.on .stub:nth-child(1) { transition-delay: .25s; }
+  section.on .stub:nth-child(2) { transition-delay: .45s; }
+  section.on .stub:nth-child(3) { transition-delay: .65s; }
+  .stub b { color: var(--n1); font-weight: 600; letter-spacing: .06em; }
+  .stub .row { display: flex; justify-content: space-between; align-items: center; gap: .6rem; }
+
+  /* restart beat in the storefront demo */
+  .live { position: relative; }
+  .outage {
+    position: absolute; inset: 0; display: grid; place-items: center; z-index: 2;
+    font-family: var(--font-mono); font-size: .85rem; color: var(--n1);
+    background: #060606d9; border-radius: 10px; opacity: 0; pointer-events: none;
+  }
+  section.on .d-outage { animation: dOutage 13s infinite; }
+  @keyframes dOutage { 0%, 46% { opacity: 0; } 50%, 60% { opacity: 1; } 64%, 100% { opacity: 0; } }
+  .verd2 { margin: 0 .8rem .8rem; font-family: var(--font-mono); font-size: .74rem; color: var(--green); opacity: 0; }
+  section.on .d-verd2 { animation: dVerd2 13s infinite; }
+  @keyframes dVerd2 { 0%, 68% { opacity: 0; } 74%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+  /* retimed 13s cycle for the storefront demo */
+  section.on .d-buy   { animation: dBuy 13s infinite; }
+  section.on .d-toast { animation: dToast 13s infinite; }
+  section.on .d-zip   { animation: dZip 13s infinite; }
+  section.on .d-sold  { animation: dSOld 13s infinite; }
+  section.on .d-snew  { animation: dSNew 13s infinite; }
+  section.on .d-verd  { animation: dVerd 13s infinite; }
+  @keyframes dBuy   { 0%, 3% { transform: none; } 5% { transform: scale(.94); background: var(--green-25); } 7%, 100% { transform: none; } }
+  @keyframes dToast { 0%, 7% { opacity: 0; transform: translateY(6px); } 10%, 92% { opacity: 1; transform: none; } 97%, 100% { opacity: 0; } }
+  @keyframes dZip   { 0%, 10% { opacity: 0; left: 0; } 13% { opacity: 1; } 20% { opacity: 1; left: calc(100% - 10px); } 24%, 100% { opacity: 0; left: calc(100% - 10px); } }
+  @keyframes dSOld  { 0%, 22% { opacity: 1; } 26%, 92% { opacity: 0; } 97%, 100% { opacity: 1; } }
+  @keyframes dSNew  { 0%, 22% { opacity: 0; } 26%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+  @keyframes dVerd  { 0%, 28% { opacity: 0; } 33%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+
+  /* the race for the last unit (own 11s timeline) */
+  section.on .r-buy   { animation: dBuy 11s infinite; }
+  section.on .r-buy2  { animation: dBuy 11s infinite; }
+  .win-toast { margin: 0 .8rem .8rem; font-family: var(--font-mono); font-size: .74rem;
+    border: 1px solid var(--green-25); background: var(--green-10); color: var(--green);
+    border-radius: 6px; padding: .35rem .7rem; opacity: 0; justify-self: start; }
+  .lose-toast { margin: 0 .8rem .8rem; font-family: var(--font-mono); font-size: .74rem;
+    border: 1px solid var(--shade1); background: var(--shade7); color: var(--n4);
+    border-radius: 6px; padding: .35rem .7rem; opacity: 0; justify-self: start; }
+  section.on .r-win  { animation: rToast 11s infinite; }
+  section.on .r-lose { animation: rToast 11s infinite; }
+  @keyframes rToast { 0%, 16% { opacity: 0; transform: translateY(6px); } 20%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
+  section.on .r-sold { animation: rSOld 11s infinite; }
+  section.on .r-snew { animation: rSNew 11s infinite; }
+  @keyframes rSOld { 0%, 24% { opacity: 1; } 28%, 90% { opacity: 0; } 96%, 100% { opacity: 1; } }
+  @keyframes rSNew { 0%, 24% { opacity: 0; } 28%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  section.on .r-verd { animation: rVerd 11s infinite; }
+  @keyframes rVerd { 0%, 34% { opacity: 0; } 40%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  .lvls { font-family: var(--font-mono); font-size: .74rem; color: var(--n4); margin-top: 1.1rem; }
+  .lvls b { color: var(--green); font-weight: 600; border: 1px solid var(--green-25); border-radius: 999px; padding: .1rem .55rem; }
+
+  .artifacts { font-family: var(--font-mono); font-size: .8rem; color: var(--n4); margin-top: 1rem; max-width: 66ch; }
+  .artifacts span { color: var(--green); }
+
   @media (max-width: 720px) { .live { grid-template-columns: 1fr; } .lane { height: 40px; } }
 
-  /* track thumbnails */
-  .thumbs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 340px)); gap: 1.2rem; margin: .4rem 0 1.2rem; }
-  .thumb { border: 1px solid var(--shade1); border-radius: 10px; overflow: hidden; background: var(--shade7); }
-  .thumb .th { font-family: var(--font-mono); font-size: .74rem; color: var(--n1);
-               padding: .4rem .7rem; background: var(--shade5); border-bottom: 1px solid var(--shade1); }
-  .thumb .th b { color: var(--green); font-weight: 600; }
-  .tgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; padding: .7rem; }
-  .prod { border: 1px solid var(--shade1); border-radius: 6px; padding: .45rem .5rem; font-family: var(--font-mono); font-size: .66rem; color: var(--n4); }
-  .prod b { display: block; color: var(--n3); font-weight: 500; margin-bottom: .15rem; }
-  .prod .stock { color: var(--green); }
-  section.on .prod .tick { animation: stockTick 5s steps(1) infinite; }
   @keyframes stockTick { 0%, 55% { opacity: 1; } 60%, 78% { opacity: .45; } 80%, 100% { opacity: 1; } }
 
   /* staged mutation captions */
@@ -491,7 +444,7 @@
 <nav id="dots" aria-label="slides"></nav>
 <div class="hint">&#8592; &#8594; or scroll</div>
 
-<!-- 1 - hero -->
+<!-- 1 hero -->
 <section id="hero">
   <div class="brand r">
     <svg width="35" height="32" viewBox="0 0 35 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -502,56 +455,62 @@
     <span>SpacetimeDB</span>
   </div>
   <h1 class="r d1">Stack Bench</h1>
-  <p class="lead r d2" style="margin-top:1.4rem">A machine-verified benchmark for LLM agents building real-time backend applications.</p>
-  <p class="r d3" style="margin-top:1rem">The agent builds an app from a fixed prompt. The harness verifies it by driving real clients, hands back what failed, and lets the agent fix it. Score, cost, tokens, fix rounds and wall time are recorded.</p>
-  <p class="r d4" style="margin-top:1rem">Backends are interchangeable, so the model can be held fixed while the backend varies. Each backend plugs in as an adapter, and any stack can be measured the same way.</p>
+  <p class="lead r d2" style="margin-top:1.4rem">AI agents write backends now. Nobody measures whether what they ship actually works.</p>
+  <p class="r d3" style="margin-top:1rem">Stack Bench has an agent build a real-time store, then attacks the result the way production would. Every failure is found by using the app, and every fix lands on the bill.</p>
 </section>
 
-<!-- 2 - the question -->
+<!-- 2 the bet -->
 <section>
-  <div class="kicker r">the question</div>
-  <h2 class="r d1">How much does it cost an AI to build a production-quality app?</h2>
-  <div class="split">
-    <div class="receipt r d2" aria-label="what a run produces">
-      <div class="rl"><span>app requirements</span><span>fixed prompt</span></div>
-      <div class="rl"><span>model</span><span>held fixed</span></div>
-      <div class="rl"><span>backend</span><span>under test</span></div>
-      <div class="rl"><span>first attempt</span><span>graded</span></div>
-      <div class="rl"><span>fix rounds</span><span>declared budget</span></div>
-      <div class="rl total"><span>the answer</span><span>dollars &middot; rounds &middot; time</span></div>
-    </div>
-    <div>
-      <p class="quote r d3">The thesis under test: as a task approaches real production conditions, SpacetimeDB pulls ahead structurally. The database does the hard parts, so correctness arrives by construction and the model spends less getting there.</p>
-      <p class="supp r d4" style="margin-top:1.2rem">The harness is built to test that thesis, and every criterion must be winnable by an expert human on every stack. If the thesis comes out false, that gets published too.</p>
+  <div class="kicker r">the bet</div>
+  <h2 class="r d1">Same AI, same store. The stack changes the bill.</h2>
+  <div class="fan r d2">
+    <div class="promptcard">one fixed prompt &middot; build the storefront</div>
+    <div class="down">&#8595;&#8595;&#8595;</div>
+    <div class="stubs">
+      <div class="stub"><b>stack a</b>
+        <div class="row"><span>score</span><span class="skel w2"></span></div>
+        <div class="row"><span>cost</span><span class="skel w2"></span></div>
+        <div class="row"><span>fix rounds</span><span class="skel w2"></span></div>
+      </div>
+      <div class="stub"><b>stack b</b>
+        <div class="row"><span>score</span><span class="skel w2"></span></div>
+        <div class="row"><span>cost</span><span class="skel w2"></span></div>
+        <div class="row"><span>fix rounds</span><span class="skel w2"></span></div>
+      </div>
+      <div class="stub"><b>stack c</b>
+        <div class="row"><span>score</span><span class="skel w2"></span></div>
+        <div class="row"><span>cost</span><span class="skel w2"></span></div>
+        <div class="row"><span>fix rounds</span><span class="skel w2"></span></div>
+      </div>
     </div>
   </div>
+  <p class="supp r d3">The model is held fixed and the backend swaps underneath it. The claim being tested: a database that does the hard parts itself makes correctness cheap. If that comes out false, it gets published anyway.</p>
 </section>
 
-<!-- 3 - the loop -->
+<!-- 3 a run -->
 <section>
-  <div class="kicker r">the loop</div>
-  <h2 class="r d1">Build &rarr; verify &rarr; report &rarr; fix &rarr; record</h2>
+  <div class="kicker r">a run</div>
+  <h2 class="r d1">Build. Fail. Hear about it. Fix. Pay.</h2>
   <div class="term r d2" role="img" aria-label="simulated benchmark run">
     <div class="tbar"><i></i><i></i><i></i></div>
     <div class="tl"><span class="cmd">$ bench --backend stack-a --track ecommerce --levels 1-2</span></div>
-    <div class="tl">preflight <span class="dim">···························</span> <span class="ok">24/24 &#10003;</span></div>
     <div class="tl">build session <span class="dim">······</span> complete <span class="dim">&middot; $4.12 &middot; 9m 40s</span></div>
-    <div class="tl">grade L1 <span class="dim">···········</span> features 16/18 &middot; invariants 7/8 &middot; delivery 5/5</div>
-    <div class="tl">bug report <span class="dim">·········</span> <span class="warn">3 findings</span> &rarr; fix round 1 <span class="dim">(budget: 2)</span></div>
+    <div class="tl">grading <span class="dim">············</span> 48 of 51 criteria pass</div>
+    <div class="tl">bug report <span class="dim">·········</span> <span class="warn">"the cart total ignores the discount"</span></div>
     <div class="tl">fix round 1 <span class="dim">········</span> complete <span class="dim">&middot; $0.61 &middot; 2m 05s</span></div>
-    <div class="tl">grade L1 <span class="dim">···········</span> <span class="ok">all criteria pass &#10003;</span> <span class="dim">checkpoint saved</span></div>
-    <div class="tl">record <span class="dim">·············</span> prompt &middot; sessions &middot; verdicts &middot; videos &middot; cost</div>
-    <div class="tl caret"><span class="cmd">$</span> <span class="dim">next: L2, same budget rules</span></div>
+    <div class="tl">grading <span class="dim">············</span> <span class="ok">51 of 51 &#10003;</span></div>
+    <div class="tl"><span class="ok">done</span> <span class="dim">&middot; total $4.73 &middot; 1 fix round &middot; 41m &middot; every artifact kept</span></div>
+    <div class="tl caret"></div>
   </div>
   <div class="demo-tag r d3">simulated output &middot; illustrative numbers</div>
-  <p class="supp r d3" style="margin-top:1rem">Fix rounds draw from a declared budget, and rounds that lose evidence or lower the score are rolled back. The agent hears what failed, never how it is graded.</p>
+  <p class="supp r d3" style="margin-top:1rem">The agent never sees how it is graded. It hears what a customer saw go wrong, in plain words, and gets a bounded number of chances to fix it.</p>
 </section>
 
-<!-- 4 - how grading works -->
+<!-- 4 graded like a customer -->
 <section>
-  <div class="kicker r">verification</div>
-  <h2 class="r d1">Grading drives real clients</h2>
-  <div class="live r d2" role="img" aria-label="a purchase in one client updates stock in the other client's browser">
+  <div class="kicker r">graded like a customer</div>
+  <h2 class="r d1">Two real browsers. Then the backend dies.</h2>
+  <div class="live r d2" role="img" aria-label="a purchase propagates, then the backend restarts and nothing is lost">
     <div class="client">
       <div class="chead"><i></i><i></i><span class="who">alice &middot; isolated browser</span></div>
       <div class="bigprod"><b>headphones</b><span>$89</span><span class="buy d-buy">buy now</span></div>
@@ -563,58 +522,46 @@
       <div class="bigprod"><b>headphones</b><span>$89</span>
         <span class="stockline"><span class="s-old d-sold">3 left</span><span class="s-new d-snew">2 left</span></span>
       </div>
-      <div class="verd d-verd">&#10003; stock-live &middot; observed in 213ms, no reload</div>
+      <div class="verd d-verd">&#10003; stock-live &middot; seen in bob's browser, no reload</div>
+      <div class="verd2 d-verd2">&#10003; nothing lost &middot; alice's order survived the restart</div>
     </div>
+    <div class="outage d-outage">&#10227; backend restarted mid-run</div>
   </div>
-  <div class="demo-tag r d2">simulated clients &middot; illustrative latency</div>
-  <div class="axes r d3">
-    <div class="axrow"><span class="ax">features</span><span><i class="ok">&#10003;</i> <code>add-to-cart</code> every described feature, asserted from the shopper's side</span></div>
-    <div class="axrow"><span class="ax">invariants</span><span><i class="ok">&#10003;</i> <code>cart-isolated-per-user</code> bob can never see alice's cart, whatever features exist</span></div>
-    <div class="axrow"><span class="ax">delivery</span><span><i class="ok">&#10003;</i> <code>stock-live</code> every client, exactly once, in the same order, across reconnects</span></div>
-  </div>
-  <div class="caps r d5">
-    <div><span>console error during a feature</span><b>cap 2 / 3</b></div>
-    <div><span>works only after a page reload</span><b>cap 1 / 3</b></div>
-    <div><span>feature unreachable</span><b>0</b></div>
-  </div>
+  <div class="demo-tag r d2">simulated clients &middot; the real harness restarts the real backend</div>
+  <p class="supp r d3">No code review. One browser per user, acting through the real UI, and the criterion passes only when the other user can see the result. Then the harness restarts the backend and checks that nothing acknowledged has vanished.</p>
 </section>
 
-<!-- 5 - tracks and levels -->
+<!-- 5 break it on purpose -->
 <section>
-  <div class="kicker r">the application</div>
-  <h2 class="r d1">One storefront, five levels</h2>
-  <div class="thumbs r d2">
-    <div class="thumb" style="max-width:420px">
-      <div class="th"><b>ecommerce</b> &middot; storefront, cart, warehouses</div>
-      <div class="tgrid">
-        <div class="prod"><b>headphones</b>$89 <span class="stock tick">&middot; 3 left</span></div>
-        <div class="prod"><b>keyboard</b>$120 <span class="stock">&middot; 14 left</span></div>
-        <div class="prod"><b>webcam</b>$45 <span class="stock">&middot; 8 left</span></div>
-        <div class="prod"><b>monitor</b>$310 <span class="stock">&middot; 2 left</span></div>
-        <div class="prod"><b>dock</b>$150 <span class="stock">&middot; 6 left</span></div>
-        <div class="prod"><b>mouse</b>$39 <span class="stock">&middot; 22 left</span></div>
-      </div>
+  <div class="kicker r">break it on purpose</div>
+  <h2 class="r d1">Two shoppers, one unit left</h2>
+  <div class="live r d2" role="img" aria-label="two clients race for the last unit; exactly one order succeeds">
+    <div class="client">
+      <div class="chead"><i></i><i></i><span class="who">alice</span></div>
+      <div class="bigprod"><b>monitor</b><span>$310</span>
+        <span class="stockline"><span class="s-old r-sold">1 left</span><span class="s-new r-snew">0 left</span></span>
+        <span class="buy r-buy">buy now</span></div>
+      <div class="win-toast r-win">order confirmed &#10003;</div>
+    </div>
+    <div class="lane"></div>
+    <div class="client">
+      <div class="chead"><i></i><i></i><span class="who">bob &middot; same instant</span></div>
+      <div class="bigprod"><b>monitor</b><span>$310</span>
+        <span class="stockline"><span class="s-old r-sold">1 left</span><span class="s-new r-snew">0 left</span></span>
+        <span class="buy r-buy2">buy now</span></div>
+      <div class="lose-toast r-lose">sold out</div>
+      <div class="verd r-verd">&#10003; no-oversell &middot; exactly one order for the last unit</div>
     </div>
   </div>
-  <div class="ladder">
-    <div class="rung"><span class="lv">L1</span><div class="bar">identity &middot; durable state &middot; real-time</div><span class="vbadge">validated</span>
-      <span class="more">storefront, cart and warehouses, with stock moving live under every shopper</span></div>
-    <div class="rung"><span class="lv">L2</span><div class="bar">authorization &middot; per-user derivation</div><span class="vbadge">validated</span>
-      <span class="more">personalisation and catalogue queries: each shopper sees their own derived view</span></div>
-    <div class="rung todo"><span class="lv">L3</span><div class="bar">atomicity &middot; isolation</div>
-      <span class="more">warehouse transfers: stock moves between locations without ever double-counting</span></div>
-    <div class="rung todo"><span class="lv">L4</span><div class="bar">durability of deferred work</div>
-      <span class="more">order lifecycle and expiry: deferred steps survive restarts</span></div>
-    <div class="rung todo"><span class="lv">L5</span><div class="bar">throughput &middot; latency &middot; efficiency</div>
-      <span class="more">volume: the same guarantees under load</span></div>
-  </div>
-  <p class="supp r d4">Levels are cumulative, so a regression at L1 is caught while grading L3. Hover a level for what it adds.</p>
+  <div class="demo-tag r d2">simulated clients &middot; contention arrives at level 3</div>
+  <p class="lvls r d3">L1 identity &middot; L2 authorization &middot; <b>L3 atomicity</b> &middot; L4 deferred work &middot; L5 volume &nbsp;&nbsp;<span class="dim">validated through L2, cumulative: later levels re-check everything before them</span></p>
+  <p class="supp r d4">Losing an update here is not a style problem. It is a sold item that ships twice, and the harness is built to force that moment and catch it.</p>
 </section>
 
-<!-- 6 - keeping it honest -->
+<!-- 6 you can't game it -->
 <section>
-  <div class="kicker r">keeping it honest</div>
-  <h2 class="r d1">The grader is tested harder than the apps</h2>
+  <div class="kicker r">you can't game it</div>
+  <h2 class="r d1">The grader has to prove itself first</h2>
   <div class="mut r d2">
     <div class="mutrow">
       <span class="mutlabel">reference app</span>
@@ -625,7 +572,7 @@
       </div>
     </div>
     <div class="mutcap">
-      <span class="mc1">a fully passing reference app, graded by the real suites</span>
+      <span class="mc1">a known-good app passes the full suite</span>
       <span class="mc2">defect planted &rarr; exactly the declared criterion fails &middot; kill confirmed</span>
     </div>
     <div class="mutrow" style="margin-top:.6rem">
@@ -638,48 +585,16 @@
       <span class="mutlabel">scores zero everywhere</span>
     </div>
   </div>
-  <div class="tiles">
-    <div class="tile r d3" tabindex="0"><h3>mutation testing</h3><p>a planted defect must be caught</p>
-      <p class="more">the exact declared criterion fails, with no collateral, or the grader has a hole</p></div>
-    <div class="tile r d3" tabindex="0"><h3>null control</h3><p>a blank app scores zero</p>
-      <p class="more">the full real suite runs against nothing; no point-bearing criterion may pass</p></div>
-    <div class="tile r d4" tabindex="0"><h3>cross-backend checks</h3><p>identical failures get investigated</p>
-      <p class="more">when every backend fails the same way, the harness checks itself before anything scores</p></div>
-    <div class="tile r d4" tabindex="0"><h3>no teaching to the test</h3><p>inputs are never patched to pass</p>
-      <p class="more">every finding is recorded, whichever way it points; that is what makes the favourable ones credible</p></div>
-  </div>
+  <p class="supp r d3">Before a criterion is allowed to score anything, it has to catch a defect planted in a passing app and award nothing to an empty one. The agent builds in a sealed container and never sees the marking scheme. Prompts and tests are never adjusted to make a failing check pass.</p>
 </section>
 
-<!-- 8 - isolation & reproducibility -->
+<!-- 7 receipts -->
 <section>
-  <div class="kicker r">reproducibility</div>
-  <h2 class="r d1">A run owns what it starts, and proves it</h2>
-  <div class="term r d2" role="img" aria-label="simulated preflight">
-    <div class="tbar"><i></i><i></i><i></i></div>
-    <div class="tl"><span class="cmd">$ bench preflight --backend all --levels 1-2</span></div>
-    <div class="tl">docker &middot; compose <span class="dim">·······</span> <span class="ok">&#10003;</span> <span class="dim">images digest-pinned</span></div>
-    <div class="tl">ports &middot; credentials <span class="dim">····</span> <span class="ok">&#10003;</span> <span class="dim">clock skew 12ms &middot; disk ok</span></div>
-    <div class="tl">build container <span class="dim">········</span> <span class="ok">&#10003;</span> <span class="dim">sealed, no host access</span></div>
-    <div class="tl">sandbox probe <span class="dim">··········</span> <span class="ok">&#10003;</span> <span class="dim">leak audit armed</span></div>
-    <div class="tl">database lease <span class="dim">·········</span> <span class="ok">&#10003;</span> <span class="dim">services owned by this run only</span></div>
-    <div class="tl"><span class="ok">24/24 &#8212; cleared before any model spend</span></div>
-  </div>
-  <div class="demo-tag r d3">simulated output &middot; the real gate runs before every paid session</div>
-  <div class="tiles" style="max-width:760px">
-    <div class="tile r d4" tabindex="0"><h3>typed verdicts</h3><p>passed &middot; failed &middot; inconclusive &middot; harness_failure</p>
-      <p class="more">one shared status table drives scoring, controls and comparisons; prose cannot change a verdict</p></div>
-    <div class="tile r d4" tabindex="0"><h3>identity chains</h3><p>every result names its exact inputs</p>
-      <p class="more">any published number traces to the run, prompt, image and recipe that produced it</p></div>
-  </div>
-</section>
-
-<!-- 9 - evidence -->
-<section>
-  <div class="kicker r">evidence</div>
-  <h2 class="r d1">Every verdict comes with its receipts</h2>
+  <div class="kicker r">receipts</div>
+  <h2 class="r d1">Don't trust us. Watch the run.</h2>
   <div class="player r d2" role="img" aria-label="annotated run recording">
     <div class="pbanner">
-      <div class="banner pass"><span>alice &middot; pending-visible-to-author &middot; step 4/4</span><span>PASS</span></div>
+      <div class="banner pass"><span>alice &middot; stock-live &middot; step 4/4</span><span>PASS</span></div>
       <div class="banner fail"><span>bob &middot; cart-total-exact &middot; expected 3, found 2</span><span>FAIL</span></div>
     </div>
     <div class="pscreen">
@@ -687,25 +602,13 @@
     </div>
     <div class="pbar"><i></i></div>
   </div>
-  <div class="demo-tag r d2">every recording carries this banner: actor, criterion, verdict at the moment it lands</div>
-  <div class="files r d3">
-    <div><span>.prompt-*.md</span> &middot; the exact prompt the agent received</div>
-    <div><span>.session-*.json</span> &middot; cost, tokens, duration, final message</div>
-    <div><span>grading-*.json</span> &middot; every criterion's typed verdict and evidence</div>
-    <div><span>contract-lint.json</span> &middot; which test ids resolved</div>
-    <div><span>media/*.webm</span> &middot; one video per actor per feature</div>
-    <div><span>media/*.png</span> &middot; screenshot at the failing assertion</div>
-    <div><span>media/*.trace.zip</span> &middot; steppable Playwright trace</div>
-    <div><span>records/bug-report-*.md</span> &middot; what the agent was told each round</div>
-    <div><span>run.json</span> &middot; stack, model, recipe, image, budget, outcome</div>
-    <div><span>level-l&lt;N&gt;-source/</span> &middot; hash-bound source checkpoint per level</div>
-  </div>
+  <p class="supp r d3" style="margin-top:1.2rem">Every criterion is filmed from each user's browser, stamped with the verdict at the moment it lands. A published score ships with <span class="mono" style="color:var(--n3)">the prompt, the session costs, every verdict, the videos and the traces</span>.</p>
 </section>
 
-<!-- 10 - results -->
+<!-- 8 scoreboard -->
 <section>
-  <div class="kicker r">results</div>
-  <h2 class="r d1">Numbers ship with proof, or not at all</h2>
+  <div class="kicker r">the scoreboard</div>
+  <h2 class="r d1">Empty on purpose</h2>
   <div class="board r d2" role="img" aria-label="scoreboard placeholder">
     <table>
       <tr><th>backend</th><th>score</th><th>cost</th><th>fix rounds</th><th>spread</th></tr>
@@ -713,9 +616,9 @@
       <tr><td><span class="skel w3"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel"></span></td></tr>
       <tr><td><span class="skel w3"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel w2"></span></td><td><span class="skel"></span></td></tr>
     </table>
-    <div class="overlay">this table fills in when repeated runs qualify<br><span style="color:var(--n4);font-size:.75rem">every number will arrive with its spread and its full evidence bundle</span></div>
+    <div class="overlay">fills in when repeated runs qualify<br><span style="color:var(--n4);font-size:.75rem">every number arrives with its spread and its receipts</span></div>
   </div>
-  <p class="supp r d4" style="margin-top:1.4rem">Publication is gated on repeated runs. Until that bar is met, this page stays number-free.</p>
+  <p class="supp r d4" style="margin-top:1.4rem">Most benchmarks ship numbers first and methodology never. This one is built in the other order.</p>
 </section>
 
 <script>
