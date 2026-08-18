@@ -348,31 +348,52 @@
   section.on .rail u.rB { animation: mtB 10s linear infinite; }
   section.on .rail u.rC { animation: mtC 10s linear infinite; }
 
-  /* proving the grader: three planted inputs, three verdicts that have to come back */
-  .proof { display: grid; gap: .5rem; width: 100%; max-width: 940px; }
-  .prow {
-    display: grid; grid-template-columns: 1fr 1.6rem 1fr 1.6rem; align-items: center; gap: .6rem;
-    border: 1px solid var(--shade1); border-radius: 8px; background: #0a0d10;
-    padding: .75rem .9rem; font-family: var(--font-mono); font-size: .82rem;
+  /* proving the grader: the whole suite on screen, so a clean kill is visible */
+  .kill { width: 100%; max-width: 940px; display: grid; gap: .85rem; }
+  .kill-head {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    font-family: var(--font-mono); font-size: .72rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--n4);
   }
-  .prow .pin  { color: var(--n3); }
-  .prow .parr { color: var(--n5); text-align: center; }
-  .prow .pout { color: var(--n1); }
-  .prow .pok  { color: var(--green); text-align: center; opacity: 0; }
-  @media (max-width: 700px) {
-    .prow { grid-template-columns: 1fr 1.6rem; }
-    .prow .parr { display: none; }
+  .kill-head .tally { position: relative; height: 1.1em; min-width: 15ch; text-align: right; }
+  .kill-head .tally span { position: absolute; right: 0; top: 0; white-space: nowrap; opacity: 0; }
+  .tiles { display: grid; grid-template-columns: repeat(17, 1fr); gap: 7px; }
+  @media (max-width: 760px) { .tiles { grid-template-columns: repeat(9, 1fr); } }
+  .tiles i {
+    height: 26px; border-radius: 3px;
+    background: var(--green-10); border: 1px solid var(--green-25);
   }
-  section.on .prow { animation: pRow 9s ease-in-out infinite; }
-  section.on .prow .pok { animation: pOk 9s ease-in-out infinite; }
-  section.on .prow:nth-child(2), section.on .prow:nth-child(2) .pok { animation-delay: 1.2s; }
-  section.on .prow:nth-child(3), section.on .prow:nth-child(3) .pok { animation-delay: 2.4s; }
-  @keyframes pRow {
-    0%, 4%    { border-color: var(--shade1); background: #0a0d10; }
-    10%, 88%  { border-color: var(--green-25); background: #0b1512; }
-    96%, 100% { border-color: var(--shade1); background: #0a0d10; }
+  .killcap {
+    position: relative; min-height: 2.6em; font-family: var(--font-mono);
+    font-size: clamp(.78rem, 1.5vw, .9rem);
   }
-  @keyframes pOk { 0%, 6% { opacity: 0 } 12%, 88% { opacity: 1 } 96%, 100% { opacity: 0 } }
+  .killcap span { position: absolute; left: 0; top: 0; opacity: 0; }
+
+  /* 13s cycle: the suite passes, one criterion is killed, then an empty build */
+  section.on .tiles i { animation: kHold 13s ease-in-out infinite; }
+  section.on .tiles i.target { animation: kKill 13s ease-in-out infinite; }
+  @keyframes kHold {
+    0%, 62%   { background: var(--green-10); border-color: var(--green-25); }
+    68%, 92%  { background: #0a0d10; border-color: var(--shade4); }
+    98%, 100% { background: var(--green-10); border-color: var(--green-25); }
+  }
+  @keyframes kKill {
+    0%, 26%   { background: var(--green-10); border-color: var(--green-25); box-shadow: none; }
+    32%, 58%  { background: #fc689722; border-color: #fc6897; box-shadow: 0 0 12px 2px #fc689733; }
+    62%       { background: #fc689722; border-color: #fc6897; box-shadow: none; }
+    68%, 92%  { background: #0a0d10; border-color: var(--shade4); box-shadow: none; }
+    98%, 100% { background: var(--green-10); border-color: var(--green-25); box-shadow: none; }
+  }
+  section.on .kc1, section.on .ky1 { animation: kW1 13s ease-in-out infinite; }
+  section.on .kc2, section.on .ky2 { animation: kW2 13s ease-in-out infinite; }
+  section.on .kc3, section.on .ky3 { animation: kW3 13s ease-in-out infinite; }
+  @keyframes kW1 { 0%, 26% { opacity: 1 } 30%, 96% { opacity: 0 } 99%, 100% { opacity: 1 } }
+  @keyframes kW2 { 0%, 28% { opacity: 0 } 32%, 62% { opacity: 1 } 66%, 100% { opacity: 0 } }
+  @keyframes kW3 { 0%, 64% { opacity: 0 } 68%, 94% { opacity: 1 } 97%, 100% { opacity: 0 } }
+  .killcap .kc2 b { color: #fc6897; font-weight: 500; }
+  .killcap .kc1, .killcap .kc3 { color: var(--n3); }
+  .killcap .kc2 { color: var(--n3); }
+  .kill-head .ky2 { color: #fc6897; }
 
   /* technical diagrams */
   .dia { width: 100%; max-width: 1000px; margin: .4rem 0 1rem; }
@@ -409,18 +430,6 @@
 
 
 
-  /* artifact tree */
-  .tree {
-    display: grid; grid-template-columns: minmax(240px, 320px) 1fr; gap: 1.4rem;
-    width: 100%; max-width: 980px; align-items: start;
-  }
-  @media (max-width: 800px) { .tree { grid-template-columns: 1fr; } }
-  .tree pre {
-    margin: 0; font-family: var(--font-mono); font-size: clamp(.66rem, 1.3vw, .78rem);
-    line-height: 1.7; color: var(--n4); white-space: pre;
-  }
-  .tree pre b { color: var(--n3); font-weight: 400; }
-  .tree pre em { color: var(--green); font-style: normal; }
   /* the correction loop, running twice then exiting */
   .cyc { width: 100%; max-width: 1000px; }
   .cyc text { font-family: var(--font-mono); fill: var(--n4); font-size: 11.5px; }
@@ -669,78 +678,55 @@
   @keyframes forkB { 0%, 62% { opacity: 0; transform: translateY(8px); } 68%, 92% { opacity: 1; transform: none; } 97%, 100% { opacity: 0; } }
 
   /* verdict as an opened file */
-  .filecard { width: 100%; max-width: 620px; border: 1px solid var(--shade1); border-radius: 10px; background: #0a0d10; overflow: hidden; font-family: var(--font-mono); }
-  .filecard .fpath {
-    padding: .5rem .9rem; border-bottom: 1px solid var(--shade1);
-    font-size: .76rem; color: var(--n4); display: flex; justify-content: space-between; gap: 1rem;
+  /* receipts: the run directory, with the verdict opened where it sits */
+  .dir { width: 100%; max-width: 760px; font-family: var(--font-mono); }
+  .dir-head {
+    display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;
+    padding: .55rem .9rem; font-size: .78rem; color: var(--n4);
+    background: #0d1418; border: 1px solid var(--shade1); border-radius: 10px 10px 0 0;
   }
-  .filecard .fpath em { color: var(--n3); font-style: normal; }
-  .filecard .vh {
+  .dir-head b { color: var(--n3); font-weight: 400; }
+  .dir-body {
+    background: #0a0d10; border: 1px solid var(--shade1); border-top: none;
+    border-radius: 0 0 10px 10px; padding: .45rem 0 .7rem;
+  }
+  .frow {
+    display: grid; grid-template-columns: 14rem 1fr; gap: 1rem;
+    padding: .34rem .9rem; font-size: .8rem;
+  }
+  @media (max-width: 640px) { .frow { grid-template-columns: 1fr; gap: 0; } }
+  .frow .fn { color: var(--n3); }
+  .frow .fd { color: var(--n4); }
+  .frow.open .fn { color: var(--green); }
+  .frow.open .fd { color: var(--n3); }
+  section.on .frow { opacity: 0; animation: lineIn .3s ease forwards; }
+  section.on .frow:nth-of-type(1) { animation-delay: .30s; }
+  section.on .frow:nth-of-type(2) { animation-delay: .42s; }
+  section.on .frow:nth-of-type(3) { animation-delay: .54s; }
+  section.on .frow:nth-of-type(4) { animation-delay: .66s; }
+  section.on .frow:nth-of-type(5) { animation-delay: .78s; }
+  section.on .frow:nth-of-type(6) { animation-delay: .90s; }
+
+  /* the opened record, inset under the row that names it */
+  .vrec {
+    margin: .55rem .9rem .1rem; border: 1px solid var(--green-25);
+    border-radius: 8px; overflow: hidden; background: #0b1114;
+  }
+  section.on .vrec { opacity: 0; animation: lineIn .35s ease forwards; animation-delay: 1.05s; }
+  .vrec .vh {
     display: flex; justify-content: space-between; align-items: center; gap: 1rem;
-    padding: .7rem .9rem; border-bottom: 1px solid var(--shade1); background: #fc689714;
+    padding: .55rem .85rem; border-bottom: 1px solid var(--shade1); background: #fc689714;
   }
-  .filecard .vh b { color: var(--n1); font-size: .95rem; font-weight: 600; }
-  .filecard .vh span { color: #fc6897; font-size: .78rem; letter-spacing: .1em; }
-  .filecard .vrow { display: flex; justify-content: space-between; gap: 1rem; padding: .48rem .9rem; font-size: .82rem; color: var(--n3); border-bottom: 1px solid #131b20; }
-  .filecard .vrow:last-child { border-bottom: none; }
-  .filecard .vrow span:first-child { color: var(--n4); }
-  .filecard .vrow.ev span:last-child { color: var(--green); }
-  section.on .filecard .vrow { opacity: 0; animation: lineIn .35s ease forwards; }
-  section.on .filecard .vrow:nth-of-type(1) { animation-delay: .35s; }
-  section.on .filecard .vrow:nth-of-type(2) { animation-delay: .5s; }
-  section.on .filecard .vrow:nth-of-type(3) { animation-delay: .65s; }
-  section.on .filecard .vrow:nth-of-type(4) { animation-delay: .8s; }
-  section.on .filecard .vrow:nth-of-type(5) { animation-delay: .95s; }
-  .alsofiles { font-family: var(--font-mono); font-size: .78rem; color: var(--n4); margin-top: 1.1rem; max-width: 66ch; line-height: 1.9; }
-  .alsofiles b { color: var(--n3); font-weight: 400; }
-
-  /* restart beat in the storefront demo */
-  .live { position: relative; }
-  .outage {
-    position: absolute; inset: 0; display: grid; place-items: center; z-index: 2;
-    font-family: var(--font-mono); font-size: clamp(1rem, 2.2vw, 1.35rem); color: var(--n1);
-    background: #060606e6; border-radius: 10px; opacity: 0; pointer-events: none; letter-spacing: .04em;
+  .vrec .vh b { color: var(--n1); font-size: .9rem; font-weight: 600; }
+  .vrec .vh span { color: #fc6897; font-size: .74rem; letter-spacing: .1em; }
+  .vrec .vrow {
+    display: flex; justify-content: space-between; gap: 1rem;
+    padding: .4rem .85rem; font-size: .78rem; color: var(--n3);
+    border-bottom: 1px solid #131b20;
   }
-  section.on .d-outage { animation: dOutage 13s infinite; }
-  @keyframes dOutage { 0%, 46% { opacity: 0; } 50%, 60% { opacity: 1; } 64%, 100% { opacity: 0; } }
-  .verd2 { margin: 0 .6rem .55rem; font-family: var(--font-mono); font-size: .85rem; color: var(--green); opacity: 0; }
-  section.on .d-verd2 { animation: dVerd2 13s infinite; }
-  @keyframes dVerd2 { 0%, 68% { opacity: 0; } 74%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
-  /* retimed 13s cycle for the storefront demo */
-  section.on .d-buy   { animation: dBuy 13s infinite; }
-  section.on .d-toast { animation: dToast 13s infinite; }
-  section.on .d-zip   { animation: dZip 13s infinite; }
-  section.on .d-sold  { animation: dSOld 13s infinite; }
-  section.on .d-snew  { animation: dSNew 13s infinite; }
-  section.on .d-verd  { animation: dVerd 13s infinite; }
-  @keyframes dBuy   { 0%, 3% { transform: none; } 5% { transform: scale(.94); background: var(--green-25); } 7%, 100% { transform: none; } }
-  @keyframes dToast { 0%, 7% { opacity: 0; transform: translateY(6px); } 10%, 92% { opacity: 1; transform: none; } 97%, 100% { opacity: 0; } }
-  @keyframes dZip   { 0%, 10% { opacity: 0; left: 0; } 13% { opacity: 1; } 20% { opacity: 1; left: calc(100% - 10px); } 24%, 100% { opacity: 0; left: calc(100% - 10px); } }
-  @keyframes dSOld  { 0%, 22% { opacity: 1; } 26%, 92% { opacity: 0; } 97%, 100% { opacity: 1; } }
-  @keyframes dSNew  { 0%, 22% { opacity: 0; } 26%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
-  @keyframes dVerd  { 0%, 28% { opacity: 0; } 33%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
-
-  /* the race for the last unit (own 11s timeline) */
-  section.on .r-buy   { animation: dBuy 11s infinite; }
-  section.on .r-buy2  { animation: dBuy 11s infinite; }
-  .win-toast { margin: 0 .6rem .55rem; font-family: var(--font-mono); font-size: .85rem;
-    border: 1px solid var(--green-25); background: var(--green-10); color: var(--green);
-    border-radius: 6px; padding: .35rem .7rem; opacity: 0; justify-self: start; }
-  .lose-toast { margin: 0 .6rem .55rem; font-family: var(--font-mono); font-size: .85rem;
-    border: 1px solid var(--shade1); background: var(--shade7); color: var(--n4);
-    border-radius: 6px; padding: .35rem .7rem; opacity: 0; justify-self: start; }
-  section.on .r-win  { animation: rToast 11s infinite; }
-  section.on .r-lose { animation: rToast 11s infinite; }
-  @keyframes rToast { 0%, 16% { opacity: 0; transform: translateY(6px); } 20%, 90% { opacity: 1; transform: none; } 96%, 100% { opacity: 0; } }
-  section.on .r-sold { animation: rSOld 11s infinite; }
-  section.on .r-snew { animation: rSNew 11s infinite; }
-  @keyframes rSOld { 0%, 24% { opacity: 1; } 28%, 90% { opacity: 0; } 96%, 100% { opacity: 1; } }
-  @keyframes rSNew { 0%, 24% { opacity: 0; } 28%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
-  section.on .r-verd { animation: rVerd 11s infinite; }
-  @keyframes rVerd { 0%, 34% { opacity: 0; } 40%, 90% { opacity: 1; } 96%, 100% { opacity: 0; } }
-
-  .artifacts { font-family: var(--font-mono); font-size: .8rem; color: var(--n4); margin-top: 1rem; max-width: 66ch; }
-  .artifacts span { color: var(--green); }
+  .vrec .vrow:last-child { border-bottom: none; }
+  .vrec .vrow span:first-child { color: var(--n4); }
+  .vrec .vrow.ev span:last-child { color: var(--green); }
 
   @media (max-width: 720px) { .live { grid-template-columns: 1fr; } .lane { height: 40px; } }
 
@@ -1046,44 +1032,49 @@
 <section>
   <div class="kicker r">proving the grader</div>
   <h2 class="r d1">We plant a defect, and the grader has to catch it</h2>
-  <div class="proof r d2" role="img" aria-label="three planted inputs and the verdicts each has to produce">
-    <div class="prow">
-      <span class="pin">a passing store, with its stock guard removed</span>
-      <span class="parr">&rarr;</span>
-      <span class="pout">the no-oversell criterion fails</span>
-      <span class="pok">&#10003;</span>
+  <div class="kill r d2" role="img" aria-label="the whole suite of criteria, with one killed by a planted defect and the whole board blanked by an empty build">
+    <div class="kill-head">
+      <span>51 criteria &middot; one tile each</span>
+      <span class="tally">
+        <span class="ky1">51 pass</span>
+        <span class="ky2">50 pass &middot; 1 fail</span>
+        <span class="ky3">0 pass</span>
+      </span>
     </div>
-    <div class="prow">
-      <span class="pin">that same run, read across the whole suite</span>
-      <span class="parr">&rarr;</span>
-      <span class="pout">every other criterion still passes</span>
-      <span class="pok">&#10003;</span>
-    </div>
-    <div class="prow">
-      <span class="pin">a store with nothing built in it at all</span>
-      <span class="parr">&rarr;</span>
-      <span class="pout">the whole suite holds at zero</span>
-      <span class="pok">&#10003;</span>
+    <div class="tiles"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="target"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="killcap">
+      <span class="kc1">a store that passes every one of them</span>
+      <span class="kc2">its stock guard removed &middot; <b>no-oversell</b> fails, and the other 50 hold</span>
+      <span class="kc3">a store with nothing built in it &middot; the whole board holds at zero</span>
     </div>
   </div>
-  <p class="supp r d4" style="margin-top:1.2rem">A criterion starts scoring once it answers all three on known input. If a planted defect survives, the grader is at fault, so that criterion goes back for repair. Prompts, guidance and tests stay untouched.</p>
+  <p class="supp r d4" style="margin-top:1.2rem">A criterion starts scoring once it passes a working store, fails the planted defect on its own, and holds an empty build at zero. If a planted defect survives, the grader is at fault, so that criterion goes back for repair. Prompts, guidance and tests stay untouched.</p>
 </section>
 
 <!-- 7 receipts -->
 <section>
   <div class="kicker r">receipts</div>
   <h2 class="r d1">Every verdict is a file you can open</h2>
-  <div class="filecard r d2">
-    <div class="fpath"><span>results/<em>&lt;run-id&gt;</em>/grading-l1.json</span><span>1 of 51 criteria</span></div>
-    <div class="vh"><b>no-oversell</b><span>FAILED</span></div>
-    <div class="vrow"><span>observed</span><span>2 orders for 1 unit</span></div>
-    <div class="vrow"><span>actor</span><span>bob</span></div>
-    <div class="vrow"><span>deadline</span><span>5000 ms</span></div>
-    <div class="vrow ev"><span>evidence</span><span>video &middot; screenshot &middot; trace</span></div>
-    <div class="vrow"><span>graded under</span><span>ecommerce.l1-standard@1.1.0</span></div>
+  <div class="dir r d2" role="img" aria-label="the directory a run leaves behind, with one verdict file opened">
+    <div class="dir-head"><span>results/<b>&lt;run-id&gt;</b>/</span><span>51 criteria &middot; 2 rounds</span></div>
+    <div class="dir-body">
+      <div class="frow"><span class="fn">prompt.md</span><span class="fd">the exact prompt the agent received</span></div>
+      <div class="frow"><span class="fn">session-cost.json</span><span class="fd">$4.73, every call in the run</span></div>
+      <div class="frow"><span class="fn">bug-report-round-1.md</span><span class="fd">3 failures, written as a customer saw them</span></div>
+      <div class="frow"><span class="fn">video/</span><span class="fd">one recording per actor</span></div>
+      <div class="frow"><span class="fn">source.tar.gz</span><span class="fd">hash-bound copy of what produced this score</span></div>
+      <div class="frow open"><span class="fn">grading-l1.json</span><span class="fd">one typed verdict per criterion</span></div>
+      <div class="vrec">
+        <div class="vh"><b>no-oversell</b><span>FAILED</span></div>
+        <div class="vrow"><span>observed</span><span>2 orders for 1 unit</span></div>
+        <div class="vrow"><span>actor</span><span>bob</span></div>
+        <div class="vrow"><span>deadline</span><span>5000 ms</span></div>
+        <div class="vrow ev"><span>evidence</span><span>video &middot; screenshot &middot; trace</span></div>
+        <div class="vrow"><span>graded under</span><span>ecommerce.l1-standard@1.1.0</span></div>
+      </div>
+    </div>
   </div>
-  <p class="alsofiles r d3">Beside it in the same directory: <b>the exact prompt the agent received</b>, its <b>session cost and token count</b>, the <b>bug report</b> it was given, a <b>video per actor</b>, and a <b>hash-bound copy of the source</b> that produced this score.</p>
-  <p class="supp r d4" style="margin-top:1rem">Each check leaves one typed state, the evidence that produced it, and the recipe it was graded under. Every published score traces back to these files.</p>
+  <p class="supp r d3" style="margin-top:1.2rem">Every published score traces back to this directory. Nothing in it is written by hand.</p>
 </section>
 
 <!-- 8 scoreboard -->
