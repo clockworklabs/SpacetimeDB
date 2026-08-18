@@ -1,13 +1,21 @@
 import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, readdirSync,
+  lstatSync, realpathSync, statSync,
 } from 'node:fs';
-import { basename, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 
 import { readArtifact, readArtifactPayload } from '../artifacts.mjs';
 import { compileCampaignFile } from '../campaign-compiler.mjs';
 import { readCampaignState } from '../campaign-scheduler.mjs';
 
 const MAX_LOG_BYTES = 96 * 1024;
+const MAX_PUBLIC_TEXT_BYTES = 8 * 1024 * 1024;
+const MAX_ARTIFACTS_PER_EXECUTION = 512;
 const SECRET = /\b(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+\/-]+=*|\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|password)\s*[=:]\s*[^\s,;]+|\b(?:sk|key)-[A-Za-z0-9_-]{16,}\b/gi;
+const IMAGE_TYPES = new Map([
+  ['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.webp', 'image/webp'],
+]);
+const CAMPAIGN_ARTIFACT = /^(?:plan\.json|state\.json|report\/report\.(?:html|json))$/;
+const EXECUTION_ARTIFACT = /^(?:run\.json|preflight\.json|recovery\.json|process\.(?:stdout|stderr)\.log|backend\.log|level-l\d+-checkpoint\.json|(?:first-build-l\d+-grading|l\d+-fix\d+-grading|grading)\/(?:bundle\.json|contract-lint\.json|actions\.json|grading-[^/]+\.json|failure-media\/[^/]+\.(?:png|jpe?g|webp)))$/i;
 
 function contained(root, path, label) {
   const absoluteRoot = resolve(root);
@@ -31,6 +39,134 @@ function readTextTail(path, limit = MAX_LOG_BYTES) {
   } finally {
     closeSync(descriptor);
   }
+}
+
+function artifactId(relativePath) {
+  return Buffer.from(relativePath, 'utf8').toString('base64url');
+}
+
+function artifactLabel(path) {
+  const name = basename(path);
+  if (path === 'plan.json') return 'Frozen plan';
+  if (path === 'state.json') return 'Campaign state';
+  if (path === 'report/report.html') return 'Campaign report';
+  if (path === 'report/report.json') return 'Report data';
+  if (name === 'run.json') return 'Run result';
+  if (name === 'preflight.json') return 'Preflight result';
+  if (name === 'recovery.json') return 'Recovery record';
+  if (name === 'process.stdout.log') return 'Run output';
+  if (name === 'process.stderr.log') return 'Run errors';
+  if (name === 'backend.log') return 'Backend output';
+  if (name === 'bundle.json') return `${basename(dirname(path))} bundle`;
+  if (name === 'actions.json') return `${basename(dirname(path))} actions`;
+  if (name === 'contract-lint.json') return `${basename(dirname(path))} contract check`;
+  return name.replace(/[-_]/g, ' ');
+}
+
+function artifactMetadata(campaignDirectory, path) {
+  const absolute = contained(campaignDirectory, path, 'campaign artifact');
+  const size = statSync(absolute).size;
+  const extension = extname(path).toLowerCase();
+  const kind = IMAGE_TYPES.has(extension) ? 'visual'
+    : path.endsWith('/report.html') ? 'report'
+      : path.endsWith('.log') ? 'log' : 'data';
+  return { id: artifactId(path), path: path.replaceAll('\\', '/'), name: artifactLabel(path),
+    kind, contentType: IMAGE_TYPES.get(extension) ?? (kind === 'report' ? 'text/html' : 'text/plain'),
+    size };
+}
+
+function rejectSymlinkPath(root, path) {
+  const rel = relative(resolve(root), resolve(path));
+  let current = resolve(root);
+  for (const segment of rel.split(sep)) {
+    current = join(current, segment);
+    if (lstatSync(current).isSymbolicLink()) {
+      throw new Error('campaign artifact path contains a symbolic link');
+    }
+  }
+}
+
+function walkPublicExecutionArtifacts(campaignDirectory, executionDirectory) {
+  const found = [];
+  let truncated = false;
+  const visit = directory => {
+    const directoryRelative = relative(executionDirectory, directory).replaceAll('\\', '/');
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (found.length >= MAX_ARTIFACTS_PER_EXECUTION) {
+        truncated = true;
+        return;
+      }
+      if (entry.isSymbolicLink()) continue;
+      const absolute = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        const allowed = directoryRelative === ''
+          ? /^(?:first-build-l\d+-grading|l\d+-fix\d+-grading|grading)$/i.test(entry.name)
+          : /(?:^|\/)(?:first-build-l\d+-grading|l\d+-fix\d+-grading|grading)$/i.test(directoryRelative)
+            && entry.name === 'failure-media';
+        if (allowed) visit(absolute);
+        if (truncated) return;
+      }
+      else if (entry.isFile()) {
+        const executionRelative = relative(executionDirectory, absolute).replaceAll('\\', '/');
+        if (EXECUTION_ARTIFACT.test(executionRelative)) {
+          const campaignRelative = relative(campaignDirectory, absolute).replaceAll('\\', '/');
+          found.push(artifactMetadata(campaignDirectory, campaignRelative));
+        }
+      }
+    }
+  };
+  if (existsSync(executionDirectory)) visit(executionDirectory);
+  return { artifacts: found.sort((left, right) => left.path.localeCompare(right.path)), truncated };
+}
+
+function campaignPackage(campaignDirectory, attempts) {
+  const campaign = ['plan.json', 'state.json', 'report/report.html', 'report/report.json']
+    .filter(path => existsSync(join(campaignDirectory, path)))
+    .map(path => artifactMetadata(campaignDirectory, path));
+  const executions = [];
+  for (const attempt of attempts) {
+    for (const execution of attempt.executions) {
+      const directory = contained(campaignDirectory, execution.output, 'campaign execution');
+      const scanned = walkPublicExecutionArtifacts(campaignDirectory, directory);
+      const artifacts = scanned.artifacts;
+      executions.push({ attemptId: attempt.plan.id, stack: attempt.plan.stack,
+        executionId: execution.id, ordinal: execution.ordinal, status: execution.status,
+        artifacts, visuals: artifacts.filter(artifact => artifact.kind === 'visual'),
+        truncated: scanned.truncated });
+    }
+  }
+  return { campaign, executions };
+}
+
+export function resolveCampaignArtifact(resultsRoot, key, id) {
+  if (!/^[a-z0-9][a-z0-9.-]*$/.test(key)) throw new Error('campaign key is invalid');
+  let path;
+  try { path = Buffer.from(id, 'base64url').toString('utf8'); }
+  catch { throw new Error('campaign artifact id is invalid'); }
+  if (!path || artifactId(path) !== id || path.includes('\\') || path.startsWith('/')) {
+    throw new Error('campaign artifact id is invalid');
+  }
+  const executionMatch = path.match(/^attempts\/([^/]+)\/(execution-\d+)\/(.+)$/);
+  const allowed = CAMPAIGN_ARTIFACT.test(path)
+    || (executionMatch && EXECUTION_ARTIFACT.test(executionMatch[3]));
+  if (!allowed) {
+    throw new Error('campaign artifact is not available in the dashboard');
+  }
+  const campaignsRoot = join(resolve(resultsRoot), 'campaigns');
+  const campaignDirectory = contained(campaignsRoot, key, 'campaign');
+  const absolute = contained(campaignDirectory, path, 'campaign artifact');
+  if (!existsSync(absolute) || !statSync(absolute).isFile()) throw new Error('campaign artifact does not exist');
+  rejectSymlinkPath(campaignsRoot, absolute);
+  const realCampaign = realpathSync(campaignDirectory);
+  const realArtifact = realpathSync(absolute);
+  contained(realCampaign, relative(realCampaign, realArtifact), 'campaign artifact');
+  return { ...artifactMetadata(campaignDirectory, path), absolute };
+}
+
+export function readCampaignArtifactBody(artifact) {
+  if (artifact.kind === 'visual') return readFileSync(artifact.absolute);
+  if (artifact.size > MAX_PUBLIC_TEXT_BYTES) throw new Error('campaign artifact is too large to view');
+  return Buffer.from(readFileSync(artifact.absolute, 'utf8').replace(SECRET, '[redacted credential]'));
 }
 
 function matches(text, pattern) {
@@ -163,7 +299,7 @@ function summarizeAttempt(attempt, campaignDirectory, fixRounds, { includeLog = 
   };
 }
 
-export function summarizeCampaign(directory, { includeLogs = false } = {}) {
+export function summarizeCampaign(directory, { includeLogs = false, includePackage = false } = {}) {
   const { plan, state } = readDashboardCampaignState(directory);
   const attempts = state.attempts.map(attempt => summarizeAttempt(attempt, directory,
     plan.definition.budgets.fixRounds, { includeLog: includeLogs }));
@@ -184,6 +320,7 @@ export function summarizeCampaign(directory, { includeLogs = false } = {}) {
     summary: state.summary,
     budgets: plan.definition.budgets,
     attempts,
+    ...(includePackage ? { package: campaignPackage(directory, state.attempts) } : {}),
   };
 }
 
@@ -243,7 +380,7 @@ export function readDashboardOverview({ resultsRoot, plansRoot, operations = [] 
 export function campaignDetail(resultsRoot, key) {
   if (!/^[a-z0-9][a-z0-9.-]*$/.test(key)) throw new Error('campaign key is invalid');
   return summarizeCampaign(contained(join(resolve(resultsRoot), 'campaigns'), key, 'campaign'),
-    { includeLogs: true });
+    { includeLogs: true, includePackage: true });
 }
 
 export function readJsonLines(path) {

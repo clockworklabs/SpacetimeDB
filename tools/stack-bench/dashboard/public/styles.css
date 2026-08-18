@@ -89,20 +89,23 @@ progress::-moz-progress-bar { background: linear-gradient(90deg, var(--green), v
 .run-meta { margin-top: auto; display: flex; justify-content: space-between; color: var(--muted); font: 11px var(--font-source); }
 .empty { grid-column: 1 / -1; min-height: 170px; border: 1px dashed var(--line-bright); border-radius: var(--radius); display: grid; place-items: center; color: var(--muted); }
 
-.split { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, .8fr); gap: 42px; }
-.campaign-list, .operation-list { border-top: 1px solid var(--line); }
+.history-panel { border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: rgba(14,22,26,.5); }
+.campaign-list { max-height: 520px; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: var(--line-bright) var(--base); }
 .campaign-row { border-width: 0 0 1px; padding: 19px 4px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 18px; background: transparent; }
+.campaign-row { padding-inline: 18px; }
 .campaign-row button { all: unset; color: var(--ink); cursor: pointer; font-weight: 500; }
 .campaign-row button:hover { color: var(--green); }
-.campaign-row small, .operation-row small { display: block; color: var(--muted); margin-top: 5px; }
-.operation-row { border-width: 0 0 1px; padding: 16px 4px; background: transparent; }
-.operation-row strong { color: var(--ink); font-size: 13px; }
+.campaign-row small { display: block; color: var(--muted); margin-top: 5px; }
+.history-pages { min-height: 64px; display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 12px 18px; background: var(--panel); }
+.history-pages span { margin-right: auto; color: var(--muted); font: 11px var(--font-source); text-transform: uppercase; letter-spacing: .04em; }
+.history-pages .secondary { min-width: 100px; }
+.secondary:disabled { opacity: .35; cursor: not-allowed; }
 
 dialog { color: var(--copy); background: var(--panel); border: 1px solid var(--line-bright); border-radius: var(--radius); padding: 0;
   box-shadow: 0 30px 100px rgba(0,0,0,.7); }
 dialog::backdrop { background: rgba(5,5,5,.8); backdrop-filter: blur(8px); }
 .run-dialog { width: min(620px, calc(100% - 32px)); }
-.detail-dialog { width: min(1050px, calc(100% - 32px)); max-height: calc(100vh - 40px); }
+.detail-dialog { width: min(1180px, calc(100% - 32px)); max-height: calc(100vh - 40px); }
 .dialog-shell { padding: 28px; }
 .dialog-heading { display: flex; align-items: start; justify-content: space-between; gap: 24px; }
 .icon-button { width: 38px; height: 38px; border-radius: 50%; color: var(--copy); background: transparent; border: 1px solid var(--line-bright); font-size: 24px; }
@@ -120,6 +123,28 @@ select:focus, input:focus, button:focus-visible { outline: 2px solid var(--green
 .fact { background: var(--base); padding: 12px; border-radius: 7px; }
 .fact span { display: block; color: var(--muted); font: 10px var(--font-source); text-transform: uppercase; }
 .fact strong { display: block; color: var(--ink); margin-top: 7px; }
+.campaign-package { margin-top: 22px; display: grid; grid-template-columns: minmax(220px, .65fr) minmax(0, 1.35fr); gap: 22px; padding: 20px; border: 1px solid var(--line-bright); border-radius: 10px; background: var(--base); }
+.campaign-package p { line-height: 1.55; }
+.evidence-package { margin: 16px 0; border: 1px solid var(--line); border-radius: 8px; background: var(--base); }
+.evidence-package > summary { padding: 14px; color: var(--ink); cursor: pointer; font-weight: 600; }
+.evidence-package > summary span { float: right; color: var(--muted); font: 11px var(--font-source); font-weight: 400; }
+.package-section { padding: 4px 14px 16px; }
+.package-section h4 { margin: 10px 0 12px; color: var(--copy); font-size: 13px; }
+.package-empty { color: var(--muted); font-size: 13px; }
+.package-notice { margin: 0 14px 12px; padding: 10px; color: var(--yellow); background: rgba(251,220,142,.06); border: 1px solid rgba(251,220,142,.18); border-radius: 6px; font-size: 12px; }
+.visual-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.visual-grid a { display: block; overflow: hidden; color: var(--copy); background: var(--panel); border: 1px solid var(--line); border-radius: 7px; text-decoration: none; }
+.visual-grid a:hover { border-color: var(--green); }
+.visual-grid img { width: 100%; aspect-ratio: 16 / 10; display: block; object-fit: cover; object-position: top; background: var(--black); }
+.visual-grid span { display: block; padding: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10px var(--font-source); }
+.artifact-list { border-top: 1px solid var(--line); }
+.artifact-row { min-width: 0; padding: 10px 2px; display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); }
+.artifact-row strong, .artifact-row small { display: block; overflow-wrap: anywhere; }
+.artifact-row strong { color: var(--ink); font-size: 12px; }
+.artifact-row small { margin-top: 4px; color: var(--muted); font: 9px/1.4 var(--font-source); }
+.artifact-actions { display: flex; gap: 10px; flex: 0 0 auto; }
+.artifact-actions a { color: var(--green); font: 10px var(--font-source); text-transform: uppercase; text-decoration: none; }
+.artifact-actions a:hover { text-decoration: underline; }
 pre { max-height: 310px; overflow: auto; background: var(--black); color: var(--copy); border: 1px solid var(--line); border-radius: 8px;
   padding: 16px; font: 11px/1.55 var(--font-source); white-space: pre-wrap; }
 
@@ -128,7 +153,8 @@ pre { max-height: 310px; overflow: auto; background: var(--black); color: var(--
   .summary-card:nth-child(2) { border-right: 0; }
   .summary-card:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
   .run-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .split { grid-template-columns: 1fr; }
+  .campaign-package { grid-template-columns: 1fr; }
+  .visual-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 640px) {
@@ -144,4 +170,8 @@ pre { max-height: 310px; overflow: auto; background: var(--black); color: var(--
   .campaign-row { grid-template-columns: 1fr auto; }
   .campaign-row > :last-child { display: none; }
   .attempt-facts { grid-template-columns: repeat(2, 1fr); }
+  .history-pages { flex-wrap: wrap; }
+  .history-pages span { flex: 1 0 100%; order: -1; }
+  .visual-grid { grid-template-columns: 1fr; }
+  .artifact-row { align-items: start; flex-direction: column; }
 }

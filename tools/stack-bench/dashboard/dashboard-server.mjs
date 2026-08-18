@@ -3,11 +3,13 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { appendFileSync, closeSync, createReadStream, existsSync, mkdirSync, openSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 
-import { campaignDetail, discoverPlans, readDashboardOverview, readJsonLines } from './dashboard-model.mjs';
+import { campaignDetail, discoverPlans, readCampaignArtifactBody, readDashboardOverview,
+  readJsonLines, resolveCampaignArtifact,
+} from './dashboard-model.mjs';
 
 const DASHBOARD_ROOT = dirname(fileURLToPath(import.meta.url));
 const STACK_BENCH_ROOT = dirname(DASHBOARD_ROOT);
@@ -144,6 +146,28 @@ export function createDashboardServer(options) {
         const overview = readDashboardOverview({ resultsRoot, plansRoot, operations: feed.list() });
         return json(response, 200, { ...overview, plans: plans(),
           canStart: allowLaunch, csrfToken: token });
+      }
+      const artifactRoute = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/artifacts\/([^/]+)$/);
+      if (request.method === 'GET' && artifactRoute) {
+        let artifact;
+        try {
+          artifact = resolveCampaignArtifact(resultsRoot, decodeURIComponent(artifactRoute[1]),
+            decodeURIComponent(artifactRoute[2]));
+        } catch {
+          return json(response, 404, { error: 'Campaign artifact not found.' });
+        }
+        const body = readCampaignArtifactBody(artifact);
+        const download = url.searchParams.get('download') === '1';
+        const type = artifact.kind === 'visual' ? artifact.contentType
+          : artifact.kind === 'report' && !download ? 'text/html; charset=utf-8'
+            : 'text/plain; charset=utf-8';
+        if (artifact.kind === 'report' && !download) {
+          response.setHeader('content-security-policy', "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:");
+        }
+        response.writeHead(200, { 'content-type': type, 'content-length': body.length,
+          'cache-control': 'no-store', 'content-disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(basename(artifact.path))}` });
+        response.end(body);
+        return;
       }
       if (request.method === 'GET' && url.pathname.startsWith('/api/campaigns/')) {
         const key = decodeURIComponent(url.pathname.slice('/api/campaigns/'.length));

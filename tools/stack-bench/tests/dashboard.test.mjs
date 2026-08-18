@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { emptyArtifactIdentities, writeArtifact } from '../artifacts.mjs';
-import { parseRunProgress, summarizeCampaign } from '../dashboard/dashboard-model.mjs';
+import { campaignDetail, parseRunProgress, readCampaignArtifactBody, resolveCampaignArtifact,
+  summarizeCampaign,
+} from '../dashboard/dashboard-model.mjs';
 import { createDashboardServer, parseDashboardArgs } from '../dashboard/dashboard-server.mjs';
 
 test('dashboard run progress reports only completed grades while the next repair is underway', () => {
@@ -84,6 +86,76 @@ test('dashboard can display an in-flight schema-1 campaign without reopening it 
   assert.deepEqual(summary.attempts[0].progress.latestScore, { score: 31, max: 58 });
 });
 
+test('campaign detail exposes the evidence package but not arbitrary campaign files', async t => {
+  const resultsRoot = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-package-'));
+  t.after(() => rmSync(resultsRoot, { recursive: true, force: true }));
+  const campaign = join(resultsRoot, 'campaigns', 'evidence-run');
+  const attemptPlan = { id: 'evidence-postgres', stack: 'postgres', model: 'model',
+    guidance: 'neutral', repetition: 1, levels: [1] };
+  const plan = { campaignSchemaVersion: 1, id: 'evidence', version: '1.0.0', state: 'frozen',
+    title: 'Evidence run', source: 'campaign.json', contentSha256: 'b'.repeat(64),
+    definition: { track: 'ecommerce', levels: [1], repetitions: 1,
+      budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 100 } },
+    identities: {}, bindings: [], stacks: [{ id: 'postgres' }], agents: [], conditions: [],
+    attempts: [attemptPlan], summary: { attempts: 1 } };
+  const now = '2026-08-18T12:00:00.000Z';
+  const outputRelative = `attempts/${attemptPlan.id}/execution-1`;
+  const state = { schemaVersion: 1, campaignId: plan.id, campaignSha256: plan.contentSha256,
+    status: 'completed', createdAt: now, updatedAt: now,
+    attempts: [{ plan: attemptPlan, status: 'completed', executions: [{
+      id: `${attemptPlan.id}-execution1`, ordinal: 1, status: 'completed',
+      output: outputRelative, startedAt: now, completedAt: now, exitCode: 0,
+      outcome: 'completed', reason: null, admissionId: 'admission-1',
+    }] }], summary: { total: 1, completed: 1, invalid: 0, pending: 0, running: 0, executions: 1 } };
+  mkdirSync(campaign, { recursive: true });
+  writeArtifact(join(campaign, 'plan.json'), { kind: 'campaign_plan', id: `${plan.id}-plan`,
+    identities: emptyArtifactIdentities(), payload: plan });
+  writeArtifact(join(campaign, 'state.json'), { kind: 'campaign_state', id: `${plan.id}-state`,
+    identities: emptyArtifactIdentities(), payload: state });
+  const output = join(campaign, outputRelative);
+  const media = join(output, 'grading', 'failure-media');
+  mkdirSync(media, { recursive: true });
+  writeFileSync(join(output, 'process.stdout.log'), 'authorization: Bearer secret-token-value\nresult ok\n');
+  writeFileSync(join(output, 'run.json'), '{"result":"ok"}\n');
+  writeFileSync(join(media, 'failed-check.png'), Buffer.from('89504e470d0a1a0a', 'hex'));
+  mkdirSync(join(campaign, 'admissions'), { recursive: true });
+  writeFileSync(join(campaign, 'admissions', 'private.json'), '{"token":"do-not-serve"}\n');
+
+  const detail = campaignDetail(resultsRoot, 'evidence-run');
+  assert.deepEqual(detail.package.campaign.map(item => item.path), ['plan.json', 'state.json']);
+  assert.equal(detail.package.executions.length, 1);
+  assert.equal(detail.package.executions[0].truncated, false);
+  assert.equal(detail.package.executions[0].visuals[0].path,
+    `${outputRelative}/grading/failure-media/failed-check.png`);
+  const log = detail.package.executions[0].artifacts.find(item => item.path.endsWith('process.stdout.log'));
+  assert.match(readCampaignArtifactBody(resolveCampaignArtifact(resultsRoot, 'evidence-run', log.id)).toString(),
+    /\[redacted credential\]/);
+  assert.throws(() => resolveCampaignArtifact(resultsRoot, 'evidence-run',
+    Buffer.from('admissions/private.json').toString('base64url')), /not available/);
+  assert.throws(() => resolveCampaignArtifact(resultsRoot, 'evidence-run',
+    Buffer.from('../outside.json').toString('base64url')), /not available|outside/);
+
+  const feed = { append() {}, list() { return []; } };
+  const { server } = createDashboardServer({ resultsRoot, plansRoot: join(resultsRoot, 'plans'),
+    allowLaunch: false, token: 'package-token', feed, plans: () => [] });
+  await new Promise((resolveListen, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolveListen);
+  });
+  t.after(() => server.close());
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const visual = detail.package.executions[0].visuals[0];
+  const visualResponse = await fetch(`${origin}/api/campaigns/evidence-run/artifacts/${visual.id}`);
+  assert.equal(visualResponse.status, 200);
+  assert.equal(visualResponse.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await visualResponse.arrayBuffer()), Buffer.from('89504e470d0a1a0a', 'hex'));
+  const logResponse = await fetch(`${origin}/api/campaigns/evidence-run/artifacts/${log.id}`);
+  assert.equal(logResponse.status, 200);
+  assert.match(await logResponse.text(), /\[redacted credential\]/);
+  const forbidden = Buffer.from('admissions/private.json').toString('base64url');
+  assert.equal((await fetch(`${origin}/api/campaigns/evidence-run/artifacts/${forbidden}`)).status, 404);
+});
+
 test('dashboard serves real state and protects campaign launch with its local session token', async t => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-dashboard-'));
   const plansRoot = join(root, 'plans');
@@ -114,7 +186,10 @@ test('dashboard serves real state and protects campaign launch with its local se
 
   const page = await fetch(origin);
   assert.equal(page.status, 200);
-  assert.match(await page.text(), /StackBench Control Room/);
+  const pageHtml = await page.text();
+  assert.match(pageHtml, /StackBench Control Room/);
+  assert.match(pageHtml, /id="history-prev"/);
+  assert.doesNotMatch(pageHtml, /Controller activity/);
   const brand = await fetch(`${origin}/spacetimedb-mark.svg`);
   assert.equal(brand.status, 200);
   assert.equal(brand.headers.get('content-type'), 'image/svg+xml');

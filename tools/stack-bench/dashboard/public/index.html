@@ -44,15 +44,19 @@
         <div class="run-grid" id="run-grid"><div class="empty">Loading active runs…</div></div>
       </section>
 
-      <section class="section split" id="campaigns">
-        <div>
-          <div class="section-heading compact"><div><p class="eyebrow">HISTORY</p><h2>Campaigns</h2></div></div>
-          <div class="campaign-list" id="campaign-list"></div>
+      <section class="section" id="campaigns">
+        <div class="section-heading compact">
+          <div><p class="eyebrow">HISTORY</p><h2>Campaigns</h2></div>
+          <p>Newest runs first. Open any campaign to inspect its full evidence package.</p>
         </div>
-        <aside>
-          <div class="section-heading compact"><div><p class="eyebrow">RECENT</p><h2>Controller activity</h2></div></div>
-          <div class="operation-list" id="operation-list"></div>
-        </aside>
+        <div class="history-panel">
+          <div class="campaign-list" id="campaign-list"></div>
+          <nav class="history-pages" aria-label="Campaign history pages">
+            <button class="secondary" id="history-prev" type="button">Previous</button>
+            <span id="history-page" aria-live="polite">Page 1 of 1</span>
+            <button class="secondary" id="history-next" type="button">Next</button>
+          </nav>
+        </div>
       </section>
     </main>
 
