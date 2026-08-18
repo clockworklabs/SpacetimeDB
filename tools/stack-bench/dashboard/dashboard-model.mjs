@@ -37,7 +37,7 @@ function matches(text, pattern) {
   return [...text.matchAll(pattern)].map(match => ({ ...match, index: match.index ?? 0 }));
 }
 
-export function parseRunProgress(log, { fixRounds = 0, running = true } = {}) {
+export function parseRunProgress(log, { fixRounds = 0, running = true, status = null } = {}) {
   const totals = matches(log, /^\s*TOTAL\b.*?(\d+)\/(\d+)\s*$/gm)
     .map(match => ({ index: match.index, score: Number(match[1]), max: Number(match[2]) }));
   const roundMarkers = matches(log, /^--- fix round (\d+)\/(\d+) ---$/gm)
@@ -50,7 +50,8 @@ export function parseRunProgress(log, { fixRounds = 0, running = true } = {}) {
   const latestGrading = grading.at(-1) ?? null;
   const latestIndex = Math.max(latestTotal?.index ?? -1, latestRound?.index ?? -1,
     latestGrading?.index ?? -1);
-  let phase = running ? 'Building the generated app' : 'Finished';
+  let phase = status === 'pending' ? 'Waiting to start'
+    : running ? 'Building the generated app' : 'Finished';
   let level = latestGrading?.level ?? null;
   let round = latestRound?.round ?? latestGrading?.round ?? 0;
   const budget = latestRound?.budget ?? fixRounds;
@@ -135,7 +136,8 @@ function summarizeAttempt(attempt, campaignDirectory, fixRounds, { includeLog = 
     log = readTextTail(join(executionDirectory, 'process.stdout.log'));
     run = readRun(join(executionDirectory, 'run.json'));
   }
-  const progress = parseRunProgress(log, { fixRounds, running: attempt.status === 'running' });
+  const progress = parseRunProgress(log, { fixRounds, running: attempt.status === 'running',
+    status: attempt.status });
   if (run?.score) progress.latestScore = run.score;
   return {
     id: attempt.plan.id,

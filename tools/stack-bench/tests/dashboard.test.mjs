@@ -27,6 +27,13 @@ test('dashboard run progress reports only completed grades while the next repair
   assert.equal(progress.phase, 'Grading L1 after repair 2 of 3');
 });
 
+test('a prepared attempt is waiting rather than finished', () => {
+  const progress = parseRunProgress('', { fixRounds: 10, running: false, status: 'pending' });
+  assert.equal(progress.phase, 'Waiting to start');
+  assert.equal(progress.completedGrades, 0);
+  assert.equal(progress.latestScore, null);
+});
+
 test('dashboard CLI is deliberately loopback-only', () => {
   const parsed = parseDashboardArgs(['node', 'dashboard', '--port', '7444', '--host', 'localhost'], {});
   assert.equal(parsed.port, 7444);
