@@ -90,8 +90,8 @@
 <p>Build, then grade, then hand back what failed as a sentence about what a customer saw, then fix, then grade again. A failed criterion never travels back as the check that caught it, so the agent cannot write to the test.</p>
 <p>Because the loop continues to a full score, the interesting number is the cost of getting there and the number of rounds it took.</p>
 
-<h2>The harness breaks the store seven ways</h2>
-<p>Each one runs against the store the agent built, in real browsers, with one isolated context per shopper.</p>
+<h2>The harness breaks the store 21 ways</h2>
+<p>Twenty-one criteria go at the store on purpose, on top of the thirteen that check it does the job at all. Each runs against the store the agent built, in real browsers, with one isolated context per shopper. Seven of them:</p>
 <ul>
   <li><b>Concurrent checkout.</b> Two shoppers buy the last unit at the same instant. Exactly one order stands.</li>
   <li><b>Backend restart.</b> An order is confirmed, the backend restarts mid-run, and the order is still there afterwards.</li>
@@ -112,9 +112,9 @@
 <h2>One store. Three databases. Three bills.</h2>
 <table>
   <tr><th>database</th><th>score</th><th>cost to correct</th><th>fix rounds</th><th>wall clock</th></tr>
-  <tr><td>database a</td><td class="num">51 / 51</td><td class="num">$4.73</td><td class="num">1</td><td class="num">41m</td></tr>
-  <tr><td>database b</td><td class="num">51 / 51</td><td class="num">$7.10</td><td class="num">2</td><td class="num">58m</td></tr>
-  <tr><td>database c</td><td class="num">51 / 51</td><td class="num">$11.28</td><td class="num">3</td><td class="num">1h 12m</td></tr>
+  <tr><td>database a</td><td class="num">34 / 34</td><td class="num">$4.73</td><td class="num">1</td><td class="num">41m</td></tr>
+  <tr><td>database b</td><td class="num">34 / 34</td><td class="num">$7.10</td><td class="num">2</td><td class="num">58m</td></tr>
+  <tr><td>database c</td><td class="num">34 / 34</td><td class="num">$11.28</td><td class="num">3</td><td class="num">1h 12m</td></tr>
 </table>
 <p class="note">placeholder figures &middot; awaiting qualified runs</p>
 <p style="margin-top:1.2rem">Every run ships with its receipts: the exact prompt the agent received, its session cost, one typed verdict per criterion, a video per shopper, and a hash-bound copy of the source that produced the score.</p>

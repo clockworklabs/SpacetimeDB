@@ -804,7 +804,7 @@
   <p class="lead r d2" style="margin-top:.6rem">One agent builds the same application over and over: a live storefront, plus the warehouses, stock and admin that run it. The prompt, the requirements and the model stay pinned. The database underneath is the only thing that changes.</p>
   <div class="mt r d3" role="img" aria-label="three databases reach the same score after different numbers of fix rounds and different spend">
     <div class="mt-head">
-      <div>database</div><div class="rt fin">51 / 51</div><div class="rt">rounds</div><div class="rt">cost</div>
+      <div>database</div><div class="rt fin">34 / 34</div><div class="rt">rounds</div><div class="rt">cost</div>
     </div>
     <div class="mt-row" data-rounds="1" data-cost="4.73">
       <div class="mt-name">database a</div>
@@ -873,7 +873,7 @@
   </svg>
   <div class="state r d3">
     <div class="st">round<span class="sv"><span class="v-r1">1</span><span class="v-r2">2</span></span></div>
-    <div class="st">score<span class="sv"><span class="v-s0 wait">pending</span><span class="v-s1">48 / 51</span><span class="v-s2 good">51 / 51</span></span></div>
+    <div class="st">score<span class="sv"><span class="v-s0 wait">pending</span><span class="v-s1">31 / 34</span><span class="v-s2 good">34 / 34</span></span></div>
     <div class="st">spend<span class="sv"><span class="v-c0">$1.94</span><span class="v-c1">$4.12</span><span class="v-c2">$4.73</span></span></div>
     <div class="st">outcome<span class="sv"><span class="v-o0 wait">building</span><span class="v-og wait">grading</span><span class="v-o1 bad">3 failed</span><span class="v-o2 good">accepted</span></span></div>
   </div>
@@ -942,7 +942,7 @@
 <!-- 5 break it on purpose -->
 <section>
   <div class="kicker r">break it on purpose</div>
-  <h2 class="r d1">The harness breaks the store seven ways</h2>
+  <h2 class="r d1">The harness breaks the store 21 ways</h2>
   <div class="atk r d2">
     <div class="atk-list" role="tablist">
       <button class="atk-item on" data-atk="a1" role="tab">concurrent checkout<small>two shoppers, one unit</small></button>
@@ -1026,7 +1026,7 @@
       </div>
     </div>
   </div>
-  <p class="supp r d3" style="margin-top:1.2rem">Each one runs in a real browser against the store the agent built. Pick one to see how it plays out.</p>
+  <p class="supp r d3" style="margin-top:1.2rem">Twenty-one criteria go at the store on purpose, on top of the thirteen that check it does the job at all. Seven of them are here. Pick one to see how it plays out.</p>
 </section>
 
 <!-- 6 proving the grader -->
@@ -1035,17 +1035,17 @@
   <h2 class="r d1">We plant a defect, and the grader has to catch it</h2>
   <div class="kill r d2" role="img" aria-label="the whole suite of criteria, with one killed by a planted defect and the whole board blanked by an empty build">
     <div class="kill-head">
-      <span>51 criteria &middot; one tile each</span>
+      <span>34 criteria &middot; one tile each</span>
       <span class="tally">
-        <span class="ky1">51 pass</span>
-        <span class="ky2">50 pass &middot; 1 fail</span>
+        <span class="ky1">34 pass</span>
+        <span class="ky2">33 pass &middot; 1 fail</span>
         <span class="ky3">0 pass</span>
       </span>
     </div>
-    <div class="tiles"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="target"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="tiles"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="target"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <div class="killcap">
       <span class="kc1">a store that passes every one of them</span>
-      <span class="kc2">its stock guard removed &middot; <b>no-oversell</b> fails, and the other 50 hold</span>
+      <span class="kc2">its stock guard removed &middot; <b>no-oversell</b> fails, and the other 33 hold</span>
       <span class="kc3">a store with nothing built in it &middot; the whole board holds at zero</span>
     </div>
   </div>
@@ -1059,7 +1059,7 @@
   <div class="trace r d2" role="img" aria-label="a published score traced to its verdict and to the recording behind it">
     <div class="chain">
       <div class="node n1">
-        <div class="top"><span class="big">51 / 51</span><span class="tag">database a</span></div>
+        <div class="top"><span class="big">34 / 34</span><span class="tag">database a</span></div>
         <div class="det">$4.73 &middot; 2 rounds</div>
         <div class="file">results/&lt;run-id&gt;/</div>
       </div>
@@ -1097,11 +1097,11 @@
   <div class="board r d2" role="img" aria-label="scoreboard">
     <table>
       <tr><th>database</th><th>score</th><th>cost to correct</th><th>fix rounds</th><th>wall clock</th></tr>
-      <tr class="hero"><td>database a</td><td class="num">51 / 51</td>
+      <tr class="hero"><td>database a</td><td class="num">34 / 34</td>
         <td class="num">$4.73 &nbsp;<span class="bar" style="--w:34px"></span></td><td class="num">1</td><td class="num">41m</td></tr>
-      <tr><td>database b</td><td class="num">51 / 51</td>
+      <tr><td>database b</td><td class="num">34 / 34</td>
         <td class="num">$7.10 &nbsp;<span class="bar" style="--w:52px"></span></td><td class="num">2</td><td class="num">58m</td></tr>
-      <tr><td>database c</td><td class="num">51 / 51</td>
+      <tr><td>database c</td><td class="num">34 / 34</td>
         <td class="num">$11.28 &nbsp;<span class="bar" style="--w:82px"></span></td><td class="num">3</td><td class="num">1h 12m</td></tr>
     </table>
   </div>
