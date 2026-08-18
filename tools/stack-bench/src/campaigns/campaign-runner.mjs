@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, relative, resolve, sep } from 'node:path';
+
 
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from '../evidence/artifacts.mjs';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.mjs';

@@ -98,14 +98,14 @@ historical diagnostic evidence and are not comparable to hardened runs.
    is all `restart-backend.sh` is given. Ports are published at create time only,
    which is the other reason the session cannot own the container's lifetime.
 
-   `bench.mjs` removes it at the end of the run, and `stopServers` deliberately
+   `commands/bench.mjs` removes it at the end of the run, and `stopServers` deliberately
    does **not** — that runs mid-run before a rollback grade that still needs the
    app up. `stopServers` also skips its port-killing entirely for a containerised
    run: the host side of a published port is held by Docker's own proxy, and
    killing that takes the daemon's port forwarding down. (It took Docker Desktop
    itself down once, mid-run.)
 
-1. `agent.mjs` spawns `container/run-build.mjs` instead of the CLI, with the same
+1. `commands/agent.mjs` spawns `container/run-build.mjs` instead of the CLI, with the same
    CLI arguments and the prompt still on stdin. `<STDB_PACKAGE>` and `<STDB_BIN>`
    become `/deps/...`, and the app is named as `/app` — which also removes the
    repo-root disclosure the contaminated run followed.

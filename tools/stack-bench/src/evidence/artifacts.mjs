@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+
 
 import { hashDirectory } from './provenance.mjs';
 import { validateCheckEvidence } from './check-evidence.mjs';

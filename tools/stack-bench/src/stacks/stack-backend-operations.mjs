@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+
 
 import { leasedSpacetimeTarget } from '../runtime/spacetime-target.mjs';
 import { resolveSpacetimeModuleLayout } from '../runtime/spacetime-layout.mjs';

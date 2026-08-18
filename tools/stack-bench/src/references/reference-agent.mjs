@@ -7,8 +7,8 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { leaseFromEnv } from '../runtime/backend-lease.mjs';
 import { dbName, loadTrack, moduleName, portsFor } from '../composition/tracks.mjs';
 import { fetchStatus } from '../runtime/readiness.mjs';

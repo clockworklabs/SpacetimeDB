@@ -7,7 +7,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.mjs';
 import { parseImageId } from '../src/runtime/container-image.mjs';
@@ -547,7 +547,7 @@ async function main() {
   try { request = parsePreflightArgs(process.argv); }
   catch (error) {
     console.error(`preflight: ${error.message}`);
-    console.error('Usage: node preflight.mjs --backend spacetime[,postgres,mongodb] [--track ecommerce] [--levels 1-2] [--smoke]');
+    console.error('Usage: node commands/preflight.mjs --backend spacetime[,postgres,mongodb] [--track ecommerce] [--levels 1-2] [--smoke]');
     process.exit(2);
   }
   const report = runPreflight(request);

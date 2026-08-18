@@ -116,8 +116,9 @@ for (const name of trackNames) {
  }
 }
 
-console.log(problems ? `\n${problems} problem(s)`
-  : `\nno problems${unstatedWarnings || staleStatementWarnings
-    ? ` (${unstatedWarnings} point-carrying criteria lack statedBy; ${staleStatementWarnings} statedBy references are outside legacy prompts)`
-    : ''}`);
+const warnings = unstatedWarnings + staleStatementWarnings;
+console.log(problems ? `\n${problems} error(s); ${warnings} warning(s)`
+  : warnings
+    ? `\n0 errors; ${warnings} warning(s) (${unstatedWarnings} point-carrying criteria lack statedBy; ${staleStatementWarnings} statedBy references are outside legacy prompts)`
+    : '\n0 errors; 0 warnings');
 process.exit(problems ? 1 : 0);

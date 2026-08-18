@@ -28,14 +28,14 @@
 // never happened.
 //
 // Usage:
-//   node stdb-review.mjs --label spacetime-ecom-run0
+//   node commands/stdb-review.mjs --label spacetime-ecom-run0
 //                        [--compare postgres-ecom-run0,mongodb-ecom-run0]
 //                        [--source <dir>] [--model claude-sonnet-5] [--print]
 
 import { readFileSync, readdirSync, existsSync, appendFileSync, statSync, openSync as fsOpenSync, closeSync, rmSync, mkdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+
 import { operationalOutputRoot } from '../src/runtime/operational-paths.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';

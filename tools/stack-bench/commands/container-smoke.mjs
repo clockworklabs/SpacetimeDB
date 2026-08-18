@@ -9,9 +9,9 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+
 import { killTree, pidsOnPort } from '../src/runtime/platform.mjs';
 import { createBackendLease, readBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { fetchStatus } from '../src/runtime/readiness.mjs';

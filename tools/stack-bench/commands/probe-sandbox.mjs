@@ -16,13 +16,13 @@
 // remains the control rather than this (prevention). The probe measures what
 // the sandbox claims to do, not the whole exposure.
 //
-// Usage: node probe-sandbox.mjs [--model claude-sonnet-5] [--keep]
+// Usage: node commands/probe-sandbox.mjs [--model claude-sonnet-5] [--keep]
 
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+
 import { randomUUID } from 'node:crypto';
 import { writeSandbox } from '../src/runtime/sandbox.mjs';
 

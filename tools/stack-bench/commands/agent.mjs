@@ -6,9 +6,9 @@
 // telemetry collector to run.
 //
 // Usage:
-//   node agent.mjs --mode build   --backend spacetime --level 1 --app <dir>
-//   node agent.mjs --mode upgrade --backend spacetime --level 2 --app <dir>
-//   node agent.mjs --mode fix     --backend spacetime --app <dir>
+//   node commands/agent.mjs --mode build   --backend spacetime --level 1 --app <dir>
+//   node commands/agent.mjs --mode upgrade --backend spacetime --level 2 --app <dir>
+//   node commands/agent.mjs --mode fix     --backend spacetime --app <dir>
 //
 // Prints a JSON line: { appDir, costUsd, tokens, durationMs, sessionId, ok }
 
@@ -421,7 +421,7 @@ function parseArgs(argv) {
     }
   }
   if (!a.mode || !a.backend || !a.app) {
-    console.error('Usage: node agent.mjs --mode build|upgrade|fix --backend <b> --app <dir> [--level N]');
+    console.error('Usage: node commands/agent.mjs --mode build|upgrade|fix --backend <b> --app <dir> [--level N]');
     process.exit(2);
   }
   if (a.maxBudgetUsd !== undefined && (!Number.isFinite(a.maxBudgetUsd) || a.maxBudgetUsd <= 0)) {

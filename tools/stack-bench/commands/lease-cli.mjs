@@ -46,7 +46,7 @@ try {
     process.stdout.write(String(executeStackCapability(adapter, 'lease', 'capture-listener',
       { path, lease, helpers: { pidsOnPort, updateBackendLease } })));
   } else {
-    throw new Error('usage: lease-cli.mjs validate|field|listener-pid|mark-restarting|capture-listener <backend> [field]');
+    throw new Error('usage: node commands/lease-cli.mjs validate|field|listener-pid|mark-restarting|capture-listener <backend> [field]');
   }
 } catch (error) {
   console.error(error.message);

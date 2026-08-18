@@ -16,13 +16,13 @@
 // file is meant to accumulate across runs.
 //
 // Usage:
-//   node stdb-report.mjs --label spacetime-ecom-run0 [--track ecommerce]
+//   node commands/stdb-report.mjs --label spacetime-ecom-run0 [--track ecommerce]
 //                        [--level 1] [--score 47/49] [--cost 7.04]
 //                        [--out local-notes/STDB-FRICTION.md] [--print]
 
 import { readFileSync, readdirSync, existsSync, appendFileSync, writeFileSync, statSync, openSync as fsOpenSync, closeSync, rmSync, mkdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+
 import { operationalOutputRoot } from '../src/runtime/operational-paths.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';

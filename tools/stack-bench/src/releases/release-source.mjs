@@ -2,8 +2,8 @@
 
 import { execFileSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { hashFiles } from '../evidence/provenance.mjs';
 import { REPOSITORY_ROOT } from '../project-paths.mjs';
@@ -46,7 +46,7 @@ export function releaseSourceIdentity(root = process.cwd(), { runGit = defaultGi
 
 function main() {
   if (process.argv.length > 3 || (process.argv[2] && process.argv[2] !== '--json')) {
-    console.error('Usage: node release-source.mjs [--json]');
+    console.error('Usage: node src/releases/release-source.mjs [--json]');
     process.exit(2);
   }
   const identity = releaseSourceIdentity(releaseSourceRoot());

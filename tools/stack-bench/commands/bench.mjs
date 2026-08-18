@@ -7,7 +7,7 @@
 // level, then writes a summary.
 //
 // Usage:
-//   node bench.mjs --backend spacetime --levels 1-5 [--model claude-sonnet-5]
+//   node commands/bench.mjs --backend spacetime --levels 1-5 [--model claude-sonnet-5]
 //                  [--fix-rounds 10] [--run-index 0] [--out <dir>]
 //                  [--retain-backend] [--no-media]
 //
@@ -21,7 +21,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync, renameSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
   moduleName, dbName, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { killTree } from '../src/runtime/platform.mjs';
@@ -113,7 +113,7 @@ export function parseArgs(argv) {
     }
   }
   if (!a.backend && !a.repairFrom) {
-    console.error('Usage: node bench.mjs --backend <b> --levels 1-3 [--fix-rounds 10] [--run-index N]');
+    console.error('Usage: node commands/bench.mjs --backend <b> --levels 1-3 [--fix-rounds 10] [--run-index N]');
     process.exit(2);
   }
   if (a.repairFrom && (!Number.isSafeInteger(a.repairLevel) || a.repairLevel < 1)) {
@@ -533,7 +533,7 @@ async function main() {
         { stdio: 'inherit' });
     } catch {
       console.error('\nSANDBOX PROBE FAILED — refusing to start a run whose scores could not be trusted.');
-      console.error('Run `node probe-sandbox.mjs --mode acceptEdits` to see which path got through.');
+      console.error('Run `node commands/probe-sandbox.mjs --mode acceptEdits` to see which path got through.');
       process.exit(2);
     }
   }

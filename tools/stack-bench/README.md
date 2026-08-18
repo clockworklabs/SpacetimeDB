@@ -47,6 +47,25 @@ and dashboard-started work remains fully operable from the CLI. See
 Working notes, generated reports, presentations, and run artifacts are local
 operator material and are intentionally not tracked in the repository.
 
+## Source layout
+
+| Path | Purpose |
+|---|---|
+| `commands/` | executable operator and harness commands |
+| `src/actions/` | scenario action contracts and executors |
+| `src/agents/` | coding-agent adapters and credentials |
+| `src/campaigns/` | campaign compilation, scheduling, locking, and reports |
+| `src/composition/` | tracks, packs, recipes, definitions, and calibration |
+| `src/evidence/` | artifacts, scoring, provenance, and evidence states |
+| `src/references/` | reference fixture selection and qualification |
+| `src/releases/` | release source, bundle, and signature verification |
+| `src/runtime/` | leases, containers, snapshots, recovery, and platform control |
+| `src/stacks/` | backend adapter contracts and stack-specific operations |
+
+Use the `npm run` commands documented below instead of depending on internal
+module locations. `src/project-paths.mjs` is the single source of truth for the
+repository and Stack Bench roots.
+
 The optional model-based SpacetimeDB behavioral review is separate from the
 measured coding sessions. Run it deliberately with `--behavioral-review`; it is
 off by default so campaign cost and token accounting never omit an unrecorded model

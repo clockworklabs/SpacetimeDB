@@ -8,9 +8,9 @@
 // backends/, because that axis is what the benchmark measures.
 
 import { readFileSync, readdirSync, existsSync, statSync, rmSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+
 import { compileTrackManifest } from './definition-compiler.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY, stackPortAllocations } from '../stacks/stack-adapters.mjs';

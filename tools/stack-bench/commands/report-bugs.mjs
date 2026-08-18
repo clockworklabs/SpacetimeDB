@@ -19,7 +19,7 @@ function parseArgs(argv) {
     else { console.error(`Unknown argument: ${argv[i]}`); process.exit(2); }
   }
   if (!args.app) {
-    console.error('Usage: node report-bugs.mjs --app <dir> [--out <file>]');
+    console.error('Usage: node commands/report-bugs.mjs --app <dir> [--out <file>]');
     process.exit(2);
   }
   args.out ??= join(args.app, 'BUG_REPORT.md');

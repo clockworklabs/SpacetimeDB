@@ -4,10 +4,10 @@
 
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { basename, join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { readArtifactPayload, writeRunJson } from '../src/evidence/artifacts.mjs';
 import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '../src/composition/calibration-compiler.mjs';
 import { analyseNullReports } from '../src/evidence/null-control-analysis.mjs';

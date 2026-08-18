@@ -9,12 +9,12 @@
 // The grader is validated separately by grader/mutation-test.mjs. This is about
 // the machinery around it.
 //
-// Usage: node test-loop.mjs
+// Usage: node commands/test-loop.mjs
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, existsSync, rmSync, mkdirSync, readdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+
 import { readArtifact, readRunJson } from '../src/evidence/artifacts.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';

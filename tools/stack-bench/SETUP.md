@@ -12,8 +12,8 @@ cannot be defended.
 
 | | value | where it comes from |
 |---|---|---|
-| model | `claude-sonnet-5` | `--model`, default in `bench.mjs` |
-| reasoning effort | **`high`** | `--effort`, pinned in `agent.mjs`; `STACK_BENCH_EFFORT` overrides |
+| model | `claude-sonnet-5` | `--model`, default in `commands/bench.mjs` |
+| reasoning effort | **`high`** | `--effort`, pinned in `commands/agent.mjs`; `STACK_BENCH_EFFORT` overrides |
 | thinking budget | **unset — CLI default** | deliberately not pinned; see below |
 | reasoning produced | measured per run | `levels[].thinking` — blocks and signature bytes |
 
@@ -111,7 +111,7 @@ npm run test:container
 The first command is the operator admission check: exact requested scope,
 Docker/Compose and architecture, CPU/memory/disk floors, clock, digest-matched
 services, free run ports, credentials, provider-declared outbound access, Linux
-CLI architecture, and persistent result-volume writes. `bench.mjs` repeats the
+CLI architecture, and persistent result-volume writes. `commands/bench.mjs` repeats the
 full no-model smoke automatically and refuses before any model call if a check
 fails. Its typed `preflight.json` is attached to the run; secrets are never
 included.
@@ -184,7 +184,7 @@ across every level; wall-clock `durationSec` remains separate.
 
 ## Comparing runs
 
-Use `compare-runs.mjs`. A criterion the grader could not evaluate is subtracted
+Use `npm run compare -- <run-dir> <run-dir>`. A criterion the grader could not evaluate is subtracted
 from that run's denominator, which is right per run and a trap across runs — it
 is how one stack was scored out of 48 while another was scored out of 50 for the
 same level. The tool scores every run on the intersection and reports the rest

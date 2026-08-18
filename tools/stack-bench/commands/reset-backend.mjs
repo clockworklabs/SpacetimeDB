@@ -18,7 +18,7 @@ export function resetBackend({ backend, app, exec }) {
 
 async function main() {
   const [backend, app] = process.argv.slice(2);
-  if (!backend || !app) throw new Error('usage: node reset-backend.mjs <backend> <app-dir>');
+  if (!backend || !app) throw new Error('usage: node commands/reset-backend.mjs <backend> <app-dir>');
   console.log(resetBackend({ backend, app }));
 }
 

@@ -92,14 +92,14 @@ export function verifyPromptSnapshot(expected = JSON.parse(readFileSync(PROMPT_S
   const actual = capturePromptSnapshot();
   if (canonicalDefinitionJson(actual) !== canonicalDefinitionJson(expected)) {
     throw new Error('rendered prompts changed; inspect the diff and deliberately refresh with '
-      + '`node prompt-snapshot.mjs --write`');
+      + '`node commands/prompt-snapshot.mjs --write`');
   }
   return actual;
 }
 
 function main() {
   if (process.argv.length > 3 || (process.argv[2] && process.argv[2] !== '--write')) {
-    throw new Error('usage: node prompt-snapshot.mjs [--write]');
+    throw new Error('usage: node commands/prompt-snapshot.mjs [--write]');
   }
   if (process.argv[2] === '--write') {
     const snapshot = capturePromptSnapshot();

@@ -1,6 +1,6 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+
 
 import { canonicalDefinitionJson, canonicalizeDefinition } from '../composition/definition-plan.mjs';
 import { normalizePromptText, readAgentSkillDocuments } from '../agents/agent-materials.mjs';

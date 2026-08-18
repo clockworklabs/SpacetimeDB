@@ -96,8 +96,8 @@ function options(args, allowed) {
 
 function usage() {
   return 'Usage:\n'
-    + '  node release-bundle.mjs sbom <image@sha256:digest> --output <file>\n'
-    + '  node release-bundle.mjs assemble <release-spec.json> --root <bundle-dir> --output <release.json>';
+    + '  node src/releases/release-bundle.mjs sbom <image@sha256:digest> --output <file>\n'
+    + '  node src/releases/release-bundle.mjs assemble <release-spec.json> --root <bundle-dir> --output <release.json>';
 }
 
 function main() {

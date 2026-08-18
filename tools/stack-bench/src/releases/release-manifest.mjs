@@ -297,7 +297,7 @@ function main() {
   let args;
   try { args = parseCli(process.argv.slice(2)); }
   catch {
-    console.error('Usage: node release-manifest.mjs verify <release.json> --root <bundle-dir> [--trusted-key <cosign.pub>]');
+    console.error('Usage: node src/releases/release-manifest.mjs verify <release.json> --root <bundle-dir> [--trusted-key <cosign.pub>]');
     process.exit(2);
   }
   const result = verifyReleaseBundle(JSON.parse(readFileSync(args.manifestPath, 'utf8')),

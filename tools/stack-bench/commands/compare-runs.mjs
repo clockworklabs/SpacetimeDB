@@ -16,7 +16,7 @@
 // about the harness, not a score.
 //
 // Usage:
-//   node compare-runs.mjs results/postgres-ecom-run0 results/spacetime-ecom-run0
+//   node commands/compare-runs.mjs results/postgres-ecom-run0 results/spacetime-ecom-run0
 
 import { existsSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -26,7 +26,7 @@ import { evidenceStatusLabel } from '../src/evidence/evidence-presentation.mjs';
 
 const dirs = process.argv.slice(2).filter(a => !a.startsWith('--'));
 if (dirs.length < 2) {
-  console.error('Usage: node compare-runs.mjs <run-dir> <run-dir> [...]');
+  console.error('Usage: node commands/compare-runs.mjs <run-dir> <run-dir> [...]');
   process.exit(2);
 }
 

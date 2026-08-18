@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { canonicalDefinitionJson, compileTrackPlan } from '../src/composition/definition-plan.mjs';
@@ -45,7 +45,7 @@ export function checkDefinitionGoldens({ update = false } = {}) {
     if (update) atomicWrite(path, actual);
   }
   if (changed.length && !update) {
-    throw new Error(`definition golden drift: ${changed.join(', ')}; inspect the semantic change, then run node definition-goldens.mjs --update`);
+    throw new Error(`definition golden drift: ${changed.join(', ')}; inspect the semantic change, then run node commands/definition-goldens.mjs --update`);
   }
   return { checked: entries.length, changed };
 }

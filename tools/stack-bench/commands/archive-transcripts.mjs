@@ -14,12 +14,12 @@
 // mid-July, and those runs are now permanently unauditable. Telemetry is no
 // substitute — it records that a Read happened and never what was read.
 //
-// Usage: node archive-transcripts.mjs [--results <dir>] [--out <dir>]
+// Usage: node commands/archive-transcripts.mjs [--results <dir>] [--out <dir>]
 
 import { readdirSync, existsSync, copyFileSync, mkdirSync, statSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+
 import { operationalOutputRoot } from '../src/runtime/operational-paths.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';

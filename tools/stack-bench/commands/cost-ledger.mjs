@@ -10,9 +10,9 @@
 // of them, prices each from its transcript, reconciles what can be reconciled,
 // and states the residual instead of rounding it away.
 //
-// Usage: node cost-ledger.mjs --workdir <stack-bench-runs/NAME-STAMP> [--reported <usd>]
+// Usage: node commands/cost-ledger.mjs --workdir <stack-bench-runs/NAME-STAMP> [--reported <usd>]
 
-import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -20,7 +20,7 @@ const argv = process.argv.slice(2);
 const opt = k => { const i = argv.indexOf(k); return i === -1 ? null : argv[i + 1]; };
 const workdir = opt('--workdir');
 const reported = opt('--reported') ? Number(opt('--reported')) : null;
-if (!workdir) { console.error('Usage: node cost-ledger.mjs --workdir <run work dir> [--reported usd]'); process.exit(2); }
+if (!workdir) { console.error('Usage: node commands/cost-ledger.mjs --workdir <run work dir> [--reported usd]'); process.exit(2); }
 
 const PRICE = { input: 3.00, output: 15.00, cacheWrite5m: 3.75, cacheWrite1h: 6.00, cacheRead: 0.30 };
 const STORE = join(homedir(), '.claude', 'projects');

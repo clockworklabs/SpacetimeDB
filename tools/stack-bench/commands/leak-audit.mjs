@@ -14,7 +14,7 @@
 // So: parse Bash commands as well as file tools, and take the app directory
 // from the session's own cwd. Anything outside it is reported, whatever it is.
 //
-// Usage: node leak-audit.mjs [--dir <transcript-root>] [--json]
+// Usage: node commands/leak-audit.mjs [--dir <transcript-root>] [--json]
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';

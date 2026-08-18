@@ -10,7 +10,7 @@
 // shipped with 14 missing hooks after three fix rounds. A server in a process
 // that is not free to serve is not a server.
 //
-// Usage: node lint-server.mjs --port-file <path> --cmd <command> [--host <addr>]
+// Usage: node commands/lint-server.mjs --port-file <path> --cmd <command> [--host <addr>]
 
 import { createServer } from 'node:http';
 import { execSync } from 'node:child_process';

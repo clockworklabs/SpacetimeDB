@@ -19,12 +19,12 @@
 // or deliberately malformed, so a working app rejects it.
 //
 // Usage:
-//   node check-actions.mjs --backend spacetime --app <dir> [--out report.json]
-//   node check-actions.mjs --backend postgres --url http://localhost:6573
+//   node commands/check-actions.mjs --backend spacetime --app <dir> [--out report.json]
+//   node commands/check-actions.mjs --backend postgres --url http://localhost:6573
 
 import { readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+
 import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifacts.mjs';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';

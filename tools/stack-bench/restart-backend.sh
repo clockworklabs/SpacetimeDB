@@ -21,7 +21,7 @@
 set -euo pipefail
 
 SPACETIME_BIN="${SPACETIME_BIN:-$(cd "$(dirname "$0")/../.." && pwd)/target/release/spacetimedb-cli.exe}"
-LEASE_CLI="$(cd "$(dirname "$0")" && pwd)/lease-cli.mjs"
+LEASE_CLI="$(cd "$(dirname "$0")" && pwd)/commands/lease-cli.mjs"
 NODE_BIN="${STACK_BENCH_NODE_BIN:-node}"
 command -v "$NODE_BIN" >/dev/null 2>&1 || NODE_BIN=node.exe
 LEASE_CLI_NODE="$LEASE_CLI"

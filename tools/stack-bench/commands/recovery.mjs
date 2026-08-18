@@ -116,7 +116,7 @@ export function recoverSupervisedRun(statePath, { removeState = true } = {}) {
 function main() {
   const [command, statePath] = process.argv.slice(2);
   if (command !== 'recover' || !statePath || process.argv.length !== 4) {
-    console.error('Usage: node recovery.mjs recover <private-supervisor-state.json>');
+    console.error('Usage: node commands/recovery.mjs recover <private-supervisor-state.json>');
     process.exit(2);
   }
   const result = recoverSupervisedRun(statePath);

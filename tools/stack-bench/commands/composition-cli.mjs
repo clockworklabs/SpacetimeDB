@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { compilePackDefinition, compileRecipeFile, resolveTaskFragment } from '../src/composition/composition-compiler.mjs';

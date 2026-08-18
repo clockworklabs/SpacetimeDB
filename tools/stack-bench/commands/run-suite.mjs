@@ -10,13 +10,13 @@
 //   suites -> bundle
 //
 // Usage:
-//   node run-suite.mjs --app <app-dir> --url <url> --backend spacetime|postgres|mongodb
+//   node commands/run-suite.mjs --app <app-dir> --url <url> --backend spacetime|postgres|mongodb
 //                      --label <id> [--out <dir>] [--media] [--level 1] [--no-reset]
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { answers as hostAnswers } from '../src/runtime/platform.mjs';
 import { controlBackend } from '../src/runtime/backend-control.mjs';
@@ -113,7 +113,7 @@ function parseArgs(argv) {
     }
   }
   if (!a.app || !a.url || !a.backend || !a.label) {
-    console.error('Usage: node run-suite.mjs --app <dir> --url <url> --backend <b> --label <id> [--out <dir>] [--media] [--no-reset]');
+    console.error('Usage: node commands/run-suite.mjs --app <dir> --url <url> --backend <b> --label <id> [--out <dir>] [--media] [--no-reset]');
     process.exit(2);
   }
   if (!['scored', 'observed'].includes(a.observation)) {

@@ -10,9 +10,9 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { readArtifact, readArtifactPayload } from '../src/evidence/artifacts.mjs';
 import { killTree, pidsOnPort } from '../src/runtime/platform.mjs';

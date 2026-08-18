@@ -39,7 +39,7 @@ async function main() {
   const unknown = process.argv.slice(2).filter((value, index, args) =>
     value !== '--track' && args[index - 1] !== '--track');
   if (unknown.length || (trackIndex >= 0 && !trackName)) {
-    throw new Error('usage: node check-calibration.mjs [--track <name>]');
+    throw new Error('usage: node commands/check-calibration.mjs [--track <name>]');
   }
   const results = checkCalibrations({ trackName });
   for (const result of results) {

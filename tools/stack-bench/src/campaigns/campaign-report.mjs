@@ -2,7 +2,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 
 import { emptyArtifactIdentities, readArtifactPayload, writeArtifact } from '../evidence/artifacts.mjs';
 import { inspectCampaign, validateCampaignRun } from './campaign-runner.mjs';
