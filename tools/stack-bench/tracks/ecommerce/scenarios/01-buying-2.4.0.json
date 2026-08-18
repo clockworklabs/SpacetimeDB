@@ -17,13 +17,13 @@
       "criteria": [
         {
           "id": "3a",
-          "desc": "a signed-out visitor is offered no way to buy",
+          "desc": "a signed-out visitor cannot use purchasing controls",
           "points": 1,
           "steps": [
-            { "do": "expect", "actor": "visitor", "testid": "buy-now", "absent": true },
-            { "do": "expect", "actor": "visitor", "testid": "add-to-cart", "absent": true }
+            { "do": "expectUnavailable", "actor": "visitor", "testid": "buy-now" },
+            { "do": "expectUnavailable", "actor": "visitor", "testid": "add-to-cart" }
           ],
-          "statedBy": "a signed-out visitor sees no buy or add-to-cart action"
+          "statedBy": "buy and add-to-cart actions are unavailable while signed out"
         },
         {
           "id": "3b",
@@ -46,7 +46,7 @@
             { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
             { "do": "click", "actor": "buyer", "testid": "orders-toggle" },
             { "do": "expect", "actor": "buyer", "testid": "order-item", "contains": "Coffee Grinder" },
-            { "do": "expectNumber", "actor": "buyer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "atLeast": 64 }
+            { "do": "expectNumber", "actor": "buyer", "testid": "order-total", "in": { "testid": "order-item", "contains": "Coffee Grinder" }, "equals": 64 }
           ],
           "statedBy": "it creates an order for the buyer, visible in their order history"
         },

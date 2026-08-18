@@ -237,11 +237,11 @@ class Actor {
     // `scope` narrows the search to inside a specific container (e.g. the badge
     // belonging to ONE room), so a stale element elsewhere can't satisfy it.
     const root = scope
-      ? this.page.locator(tid(scope.testid), { hasText: scope.contains }).first()
+      ? this.page.locator(tid(scope.testid), { hasText: scope.contains }).filter({ visible: true }).first()
       : this.page;
-    return contains
-      ? root.locator(tid(testid), { hasText: contains }).first()
-      : root.locator(tid(testid)).first();
+    return (contains
+      ? root.locator(tid(testid), { hasText: contains })
+      : root.locator(tid(testid))).filter({ visible: true }).first();
   }
 }
 
@@ -352,6 +352,8 @@ function describeStep(step) {
     case 'race': return `two things happen at once (${(step.branches ?? []).length} branches)`;
     case 'runScript': return `run the app's ${step.script}${step.args?.length ? ` ${step.args.join(' ')}` : ''}`;
     case 'expectElementCount': return `expect exactly ${step.equals} ${step.testid}${step.contains ? ` containing "${step.contains}"` : ''}`;
+    case 'expectSequence': return `expect ${step.testid} in the declared order`;
+    case 'expectUnavailable': return `expect ${step.testid} to be unavailable`;
     case 'expectAllPresent': return `expect all ${step.count} "${step.prefix}" messages exactly once`;
     case 'expectOrderMatches': return 'expect both clients agree on order';
     case 'expectForgeryRejected': return 'expect the forged write to be rejected';

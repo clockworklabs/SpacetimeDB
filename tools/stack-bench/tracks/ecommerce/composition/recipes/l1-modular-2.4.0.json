@@ -21,8 +21,8 @@
     }
   },
   "packs": [
-    { "path": "../packs/feature-accounts-1.0.0.json", "id": "ecommerce.feature.accounts", "version": "1.0.0", "includeRoles": ["feature"] },
-    { "path": "../packs/feature-catalog-1.0.0.json", "id": "ecommerce.feature.catalog", "version": "1.0.0", "includeRoles": ["feature"] },
+    { "path": "../packs/feature-accounts-1.1.0.json", "id": "ecommerce.feature.accounts", "version": "1.1.0", "includeRoles": ["feature"] },
+    { "path": "../packs/feature-catalog-1.1.0.json", "id": "ecommerce.feature.catalog", "version": "1.1.0", "includeRoles": ["feature"] },
     { "path": "../packs/feature-purchasing-1.1.0.json", "id": "ecommerce.feature.purchasing", "version": "1.1.0", "includeRoles": ["feature"] },
     { "path": "../packs/feature-cart-checkout-1.1.0.json", "id": "ecommerce.feature.cart-checkout", "version": "1.1.0", "includeRoles": ["feature"] },
     { "path": "../packs/feature-reviews-1.1.0.json", "id": "ecommerce.feature.reviews", "version": "1.1.0", "includeRoles": ["feature"] },
@@ -35,15 +35,15 @@
     { "path": "../packs/spec-external-data-sync-1.1.0.json", "id": "ecommerce.spec.external-data-sync", "version": "1.1.0", "includeRoles": ["guarantee"] }
   ],
   "execution": [
-    { "id": "features", "source": "scenarios/01-features.json" },
+    { "id": "core", "source": "scenarios/01-core-2.4.0.json" },
     { "id": "buying", "source": "scenarios/01-buying-2.4.0.json" },
     { "id": "cart", "source": "scenarios/01-cart-2.4.0.json" },
     { "id": "review-visibility", "source": "scenarios/01-review-visibility-2.4.0.json" },
     { "id": "review-uniqueness", "source": "scenarios/01-review-uniqueness-2.4.0.json" },
     { "id": "review-rating-live", "source": "scenarios/01-review-rating-live-2.4.0.json" },
     { "id": "warehouse-admin", "source": "scenarios/01-warehouse-admin-2.4.0.json" },
-    { "id": "server-actions", "source": "scenarios/01-server-actions-2.1.0.json" },
-    { "id": "invariants", "source": "scenarios/01-invariants.json" },
+    { "id": "server-actions", "source": "scenarios/01-server-actions-2.4.0.json" },
+    { "id": "invariants", "source": "scenarios/01-invariants-2.4.0.json" },
     { "id": "last-unit", "source": "scenarios/01-last-unit-2.3.0.json" },
     { "id": "restock-race", "source": "scenarios/01-restock-race-2.3.0.json" },
     { "id": "duplicate-checkout", "source": "scenarios/01-duplicate-checkout-2.3.0.json" },

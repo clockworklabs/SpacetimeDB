@@ -22,7 +22,7 @@
     "contracts": []
   },
   "checks": [
-    { "id": "ranking", "source": "scenarios/01-features.json", "feature": 2, "criteria": ["2c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.purchasing"] },
+    { "id": "ranking", "source": "scenarios/01-core-2.4.0.json", "feature": 2, "criteria": ["2c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.purchasing"] },
     { "id": "purchase-stock", "source": "scenarios/01-buying-2.4.0.json", "feature": 3, "criteria": ["3b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.catalog", "ecommerce.feature.purchasing"] },
     { "id": "shared-cart", "source": "scenarios/01-cart-2.4.0.json", "feature": 4, "criteria": ["4c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] },
     { "id": "rating", "source": "scenarios/01-review-rating-live-2.4.0.json", "feature": 6, "criteria": ["6c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.reviews"] },

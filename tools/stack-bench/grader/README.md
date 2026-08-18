@@ -23,7 +23,7 @@ in the refresh probe, so a feature that only works after a reload cannot pass.
 ## Scenario format
 
 Scenario files contain features with isolated `actors`, unscored `setup` steps,
-and explicitly normalized criterion points. The full 49-action language is
+and explicitly normalized criterion points. The full 51-action language is
 defined in `definition-compiler.mjs` and registered in `action-catalog.mjs`;
 scenario prose is not the runtime contract.
 

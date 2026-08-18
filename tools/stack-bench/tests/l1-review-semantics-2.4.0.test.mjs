@@ -120,3 +120,74 @@ test('corrected workflows do not grade a particular panel-closing interaction', 
     do: 'click', actor: 'admin', testid: 'admin-link',
   });
 });
+
+test('every scored L1 2.4 check is independently selectable with its numeric prerequisites', () => {
+  const release = buildRecipeRelease(recipe('2.4.0'), { trackRoot: root });
+  const selectionRelease = { checks: release.checkCatalog };
+  assert.equal(release.checkCatalog.length, 48);
+
+  for (const check of release.checkCatalog) {
+    const spec = compileScenarioDefinition(readJson(join(root, check.source)), {
+      source: check.source,
+    });
+    const selected = selectScenarioChecks(spec, selectionRelease, [check.stableKey]);
+    assert.equal(selected.features.length, 1, check.stableKey);
+    const feature = selected.features[0];
+    assert.deepEqual(feature.criteria.map(criterion => criterion.id), [check.criterionId],
+      check.stableKey);
+    const recorded = new Set();
+    for (const step of [...feature.setup, ...feature.criteria[0].steps]) {
+      if (step.relativeTo) {
+        assert(recorded.has(step.relativeTo),
+          `${check.stableKey} reads ${step.relativeTo} before recording it`);
+      }
+      if (step.as) recorded.add(step.as);
+    }
+  }
+});
+
+test('catalog, order, warehouse, and direct-action claims use exact evidence', () => {
+  const core = compileScenarioDefinition(readJson(join(root, 'scenarios', '01-core-2.4.0.json')));
+  const catalog = core.features.find(feature => feature.id === 2);
+  assert.equal(catalog.criteria.find(criterion => criterion.id === '2b').steps[0].do,
+    'expectSequence');
+  assert.equal(catalog.criteria.find(criterion => criterion.id === '2c').steps[1].do,
+    'expectSequence');
+
+  const buying = compileScenarioDefinition(readJson(join(root, 'scenarios',
+    '01-buying-2.4.0.json')));
+  assert.equal(buying.features[0].criteria.find(criterion => criterion.id === '3c')
+    .steps.at(-1).equals, 64);
+
+  const cart = compileScenarioDefinition(readJson(join(root, 'scenarios', '01-cart-2.4.0.json')));
+  assert.equal(cart.features[0].criteria.find(criterion => criterion.id === '4d')
+    .steps.at(-1).count, 1);
+
+  const warehouse = compileScenarioDefinition(readJson(join(root, 'scenarios',
+    '01-warehouse-admin-2.4.0.json')));
+  assert(warehouse.features[0].criteria.find(criterion => criterion.id === '7b').steps
+    .some(step => step.testid === 'admin-location-row' && step.count === 24));
+
+  const direct = compileScenarioDefinition(readJson(join(root, 'scenarios',
+    '01-server-actions-2.4.0.json')));
+  for (const featureId of [101, 103]) {
+    const actions = direct.features.find(feature => feature.id === featureId).criteria[0].steps;
+    assert(actions.some(step => step.do === 'expectActionOutcome' && step.outcome === 'accepted'));
+    assert(actions.some(step => step.do === 'expectActionOutcome' && step.outcome === 'refused'));
+  }
+  const price = direct.features.find(feature => feature.id === 104).criteria[0].steps;
+  assert(price.some(step => step.testid === 'order-total' && step.equals === 449));
+});
+
+test('sibling checks no longer provide account, accounting, or cart state', () => {
+  const spec = compileScenarioDefinition(readJson(join(root, 'scenarios',
+    '01-invariants-2.4.0.json')));
+  const byId = new Map(spec.features.map(feature => [feature.id, feature]));
+  assert(byId.get(105).setup.some(step => step.testid === 'add-to-cart'));
+  assert(byId.get(107).setup.some(step => step.as === 'revenue-before'));
+  assert(byId.get(107).setup.some(step => step.as === 'stand-before'));
+  assert(byId.get(109).setup.some(step => step.testid === 'add-to-cart'));
+  const invalidQuantity = byId.get(109).criteria.find(criterion => criterion.id === '109b').steps;
+  assert(invalidQuantity.some(step => step.do === 'expectReplayRejected'));
+  assert.equal(invalidQuantity.filter(step => step.relativeTo).length, 2);
+});

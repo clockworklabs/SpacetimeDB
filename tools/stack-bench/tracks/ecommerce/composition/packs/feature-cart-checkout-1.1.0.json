@@ -7,7 +7,7 @@
   "title": "Cart and checkout",
   "moduleType": "feature",
   "description": "Account cart operations and checkout.",
-  "requiresPacks": ["ecommerce.feature.accounts@1.0.0", "ecommerce.feature.catalog@1.0.0"],
+  "requiresPacks": ["ecommerce.feature.accounts@1.1.0", "ecommerce.feature.catalog@1.1.0"],
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],

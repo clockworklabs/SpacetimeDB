@@ -20,8 +20,8 @@
     "contracts": []
   },
   "checks": [
-    { "id": "session-reload", "source": "scenarios/01-features.json", "feature": 1, "criteria": ["1e"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.accounts"] },
+    { "id": "session-reload", "source": "scenarios/01-core-2.4.0.json", "feature": 1, "criteria": ["1e"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.accounts"] },
     { "id": "cart-reload", "source": "scenarios/01-cart-2.4.0.json", "feature": 4, "criteria": ["4b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.cart-checkout"] },
-    { "id": "account-state-recovery", "source": "scenarios/01-invariants.json", "feature": 105, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.accounts", "ecommerce.feature.cart-checkout"] }
+    { "id": "account-state-recovery", "source": "scenarios/01-invariants-2.4.0.json", "feature": 105, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.feature.accounts", "ecommerce.feature.cart-checkout"] }
   ]
 }

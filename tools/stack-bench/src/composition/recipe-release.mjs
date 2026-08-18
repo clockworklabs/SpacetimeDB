@@ -16,6 +16,7 @@ const EXECUTION_ONLY_STEP_FIELDS = new Set([
 ]);
 const ASSERTION_CONTAINS_ACTIONS = new Set([
   'expect', 'expectActorsWith', 'expectElementCount', 'expectNotReceived', 'expectReceived',
+  'expectUnavailable',
 ]);
 
 function readJson(path, label) {

@@ -60,8 +60,8 @@ test('legacy suite inheritance is normalized once while schema v1 requires an ex
     /inherit: is required in schema v1/);
 });
 
-test('the scenario language is an explicit 49-action registry', () => {
-  assert.equal(ACTION_IDS.length, 49);
+test('the scenario language is an explicit 51-action registry', () => {
+  assert.equal(ACTION_IDS.length, 51);
   assert.deepEqual(ACTION_REGISTRY.ids, ACTION_IDS);
   assert(ACTION_IDS.includes('clickConcurrently'));
   assert(ACTION_IDS.includes('restartBackend'));

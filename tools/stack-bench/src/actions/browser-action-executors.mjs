@@ -12,7 +12,9 @@ export const BROWSER_ACTION_IDS = Object.freeze([
   'expectElementCount',
   'expectNumber',
   'expectOrderMatches',
+  'expectSequence',
   'expectStable',
+  'expectUnavailable',
   'fill',
   'pressKey',
   'recordNumber',
@@ -150,12 +152,12 @@ async function expect({ input, capabilities, signal }) {
 
   if (input.count !== undefined || input.maxCount !== undefined) {
     const all = scope
-      ? actor.page.locator(browser.testId(scope.testid), { hasText: scope.contains }).first()
-        .locator(browser.testId(input.testid))
+      ? actor.page.locator(browser.testId(scope.testid), { hasText: scope.contains })
+        .filter({ visible: true }).first().locator(browser.testId(input.testid))
       : (contains
         ? actor.page.locator(browser.testId(input.testid), { hasText: contains })
         : actor.page.locator(browser.testId(input.testid)));
-    const count = visible ? await all.count() : 0;
+    const count = visible ? await all.filter({ visible: true }).count() : 0;
     if (input.count !== undefined && count !== input.count) {
       fail(`expected exactly ${input.count} ${browser.testId(input.testid)}`
         + `${contains ? ` containing "${contains}"` : ''}, found ${count}`);
@@ -188,17 +190,65 @@ async function expectElementCount({ input, capabilities, signal }) {
   const deadline = Date.now() + within;
   const root = input.in
     ? actor.page.locator(browser.testId(input.in.testid),
-      input.in.contains ? { hasText: input.in.contains } : {}).first()
+      input.in.contains ? { hasText: input.in.contains } : {}).filter({ visible: true }).first()
     : actor.page;
   for (;;) {
     const count = await root.locator(browser.testId(input.testid),
-      input.contains ? { hasText: input.contains } : {}).count();
+      input.contains ? { hasText: input.contains } : {}).filter({ visible: true }).count();
     if (count === input.equals) return { count };
     if (Date.now() > deadline) {
       fail(`expected exactly ${input.equals} ${browser.testId(input.testid)}`
         + `${input.contains ? ` containing "${input.contains}"` : ''}, saw ${count} (after ${within}ms)`);
     }
     await browser.sleep(400, signal);
+  }
+}
+
+async function expectSequence({ input, capabilities, signal }) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = observation(capabilities);
+  const within = input.within ?? browser.defaultWithin;
+  const deadline = Date.now() + within;
+  const root = input.in
+    ? actor.page.locator(browser.testId(input.in.testid),
+      input.in.contains ? { hasText: browser.expand(input.in.contains) } : {}).filter({ visible: true }).first()
+    : actor.page;
+  let seen = [];
+  for (;;) {
+    seen = (await root.locator(browser.testId(input.testid)).filter({ visible: true }).allInnerTexts())
+      .map(value => value.replace(/\s+/g, ' ').trim());
+    if (seen.length === input.equals.length
+      && seen.every((value, index) => value === browser.expand(input.equals[index]))) {
+      return { values: seen };
+    }
+    if (Date.now() > deadline) {
+      fail(`expected ${browser.testId(input.testid)} sequence ${JSON.stringify(input.equals)}, `
+        + `saw ${JSON.stringify(seen)} (after ${within}ms)`);
+    }
+    await browser.sleep(250, signal);
+  }
+}
+
+async function expectUnavailable({ input, capabilities, signal }) {
+  const actor = actorFor(capabilities, input.actor);
+  const browser = observation(capabilities);
+  const within = input.within ?? browser.defaultWithin;
+  const deadline = Date.now() + within;
+  const scope = input.in
+    ? actor.page.locator(browser.testId(input.in.testid),
+      input.in.contains ? { hasText: browser.expand(input.in.contains) } : {}).filter({ visible: true }).first()
+    : actor.page;
+  const loc = scope.locator(browser.testId(input.testid),
+    input.contains ? { hasText: browser.expand(input.contains) } : {}).filter({ visible: true }).first();
+  for (;;) {
+    if (!await loc.isVisible().catch(() => false)) return { unavailable: true, reason: 'absent' };
+    const disabled = await loc.isDisabled().catch(() => false);
+    const ariaDisabled = await loc.getAttribute('aria-disabled').catch(() => null);
+    if (disabled || ariaDisabled === 'true') return { unavailable: true, reason: 'disabled' };
+    if (Date.now() > deadline) {
+      fail(`${browser.testId(input.testid)} is available to ${input.actor} after ${within}ms`);
+    }
+    await browser.sleep(250, signal);
   }
 }
 
@@ -421,7 +471,9 @@ export const BROWSER_ACTION_IMPLEMENTATIONS = Object.freeze({
   expectElementCount: browserApplicationBoundary(expectElementCount),
   expectNumber: browserApplicationBoundary(expectNumber),
   expectOrderMatches: browserApplicationBoundary(expectOrderMatches),
+  expectSequence: browserApplicationBoundary(expectSequence),
   expectStable: browserApplicationBoundary(expectStable),
+  expectUnavailable: browserApplicationBoundary(expectUnavailable),
   fill: browserApplicationBoundary(fill),
   pressKey: browserApplicationBoundary(pressKey),
   recordNumber: browserApplicationBoundary(recordNumber),

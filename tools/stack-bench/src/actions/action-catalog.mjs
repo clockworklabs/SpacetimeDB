@@ -9,7 +9,8 @@ import { ACTION_IDS, compileActionInput } from '../composition/definition-compil
 const OBSERVATIONS = new Set([
   'expect', 'expectActionOutcome', 'expectActorsWith', 'expectAgreement', 'expectAllPresent', 'expectCallOutcomes',
   'expectElementCount', 'expectForgeryRejected', 'expectNotReceived', 'expectNumber',
-  'expectOrderMatches', 'expectReceived', 'expectReplayRejected', 'expectStable', 'recordNumber',
+  'expectOrderMatches', 'expectReceived', 'expectReplayRejected', 'expectSequence', 'expectStable',
+  'expectUnavailable', 'recordNumber',
 ]);
 const CONCURRENCY = new Set([
   'callConcurrently', 'clickConcurrently', 'expectCallOutcomes', 'race', 'replayConcurrently',

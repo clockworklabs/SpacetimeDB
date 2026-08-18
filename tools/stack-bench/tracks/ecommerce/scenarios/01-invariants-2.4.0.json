@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Account and transaction boundaries",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "Every criterion receives all state it relies on from its feature setup. Security assertions include a working positive path where an empty or broken view could otherwise look secure.",
+  "features": [
+    {
+      "id": 105,
+      "name": "An account keeps what belongs to it",
+      "actors": ["shopper"],
+      "setup": [
+        { "do": "signUp", "actor": "shopper", "name": "pat" },
+        { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } }
+      ],
+      "criteria": [
+        {
+          "id": "105a",
+          "desc": "cart and order history survive a reload as the same account",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "shopper", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Headphones" } },
+            { "do": "reload", "actor": "shopper", "settleMs": 4000 },
+            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "pat" },
+            { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" },
+            { "do": "reload", "actor": "shopper", "settleMs": 2500 },
+            { "do": "click", "actor": "shopper", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "shopper", "testid": "order-item", "contains": "Headphones", "count": 1 }
+          ],
+          "statedBy": "the signed-in account, cart, and orders persist across a page reload"
+        },
+        {
+          "id": "105b",
+          "desc": "the same account and cart survive the connection dropping and coming back",
+          "points": 1,
+          "steps": [
+            { "do": "setOffline", "actor": "shopper", "settleMs": 3000 },
+            { "do": "setOffline", "actor": "shopper", "offline": false, "settleMs": 6000 },
+            { "do": "expect", "actor": "shopper", "testid": "current-user", "contains": "pat" },
+            { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" }
+          ],
+          "statedBy": "the signed-in account and its data remain available after reconnecting"
+        }
+      ]
+    },
+    {
+      "id": 106,
+      "name": "One customer's orders are not another's",
+      "actors": ["one", "two"],
+      "setup": [
+        { "do": "signUp", "actor": "one", "name": "quin" },
+        { "do": "signUp", "actor": "two", "name": "ros" }
+      ],
+      "criteria": [
+        {
+          "id": "106a",
+          "desc": "a working order history contains the customer's own order and not another customer's order",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "one", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
+            { "do": "click", "actor": "two", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
+            { "do": "wait", "actor": "two", "ms": 2000 },
+            { "do": "click", "actor": "two", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "two", "testid": "order-item", "contains": "Desk Lamp", "count": 1 },
+            { "do": "expect", "actor": "two", "testid": "order-item", "contains": "Coffee Grinder", "absent": true }
+          ],
+          "statedBy": "a customer sees only their own orders"
+        }
+      ]
+    },
+    {
+      "id": 107,
+      "name": "The books balance",
+      "actors": ["buyer", "admin"],
+      "setup": [
+        { "do": "signUp", "actor": "buyer", "name": "sam" },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "recordNumber", "actor": "admin", "testid": "admin-revenue", "as": "revenue-before" },
+        { "do": "recordNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Laptop Stand" }, "as": "stand-before" },
+        { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Laptop Stand" } },
+        { "do": "wait", "actor": "buyer", "ms": 1000 },
+        { "do": "click", "actor": "buyer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Laptop Stand" } },
+        { "do": "wait", "actor": "buyer", "ms": 2000 }
+      ],
+      "criteria": [
+        {
+          "id": "107a",
+          "desc": "revenue rises by exactly what was bought",
+          "points": 1,
+          "steps": [
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-revenue", "relativeTo": "revenue-before", "plus": 58, "within": 10000 }
+          ],
+          "statedBy": "total revenue equals the sum of order totals"
+        },
+        {
+          "id": "107b",
+          "desc": "what the store sold is what left the warehouses, and a fresh client agrees",
+          "points": 1,
+          "steps": [
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Laptop Stand" }, "relativeTo": "stand-before", "plus": -2 },
+            { "do": "freshClient", "actor": "buyer" },
+            { "do": "expectNumber", "actor": "buyer-fresh", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Laptop Stand" }, "relativeTo": "stand-before", "plus": -2 }
+          ],
+          "statedBy": "warehouse totals and a fresh storefront agree with completed sales"
+        }
+      ]
+    },
+    {
+      "id": 108,
+      "name": "A review is a claim about a purchase",
+      "actors": ["owner", "stranger"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "tam" },
+        { "do": "signUp", "actor": "stranger", "name": "uma" }
+      ],
+      "criteria": [
+        {
+          "id": "108a",
+          "desc": "someone who never bought the item cannot review it",
+          "points": 2,
+          "steps": [
+            { "do": "fill", "actor": "stranger", "testid": "search-input", "text": "Webcam", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "stranger", "testid": "item-name", "in": { "testid": "item-card", "contains": "Webcam" } },
+            { "do": "fill", "actor": "stranger", "testid": "review-rating", "text": "5" },
+            { "do": "fill", "actor": "stranger", "testid": "review-input", "text": "never bought this" },
+            { "do": "click", "actor": "stranger", "testid": "review-submit" },
+            { "do": "expect", "actor": "stranger", "testid": "review-error", "within": 6000 },
+            { "do": "expect", "actor": "stranger", "testid": "review-item", "contains": "never bought this", "absent": true }
+          ],
+          "statedBy": "the server refuses a review from someone who has never ordered the item"
+        },
+        {
+          "id": "108b",
+          "desc": "buying the item earns the right to review it",
+          "points": 1,
+          "steps": [
+            { "do": "fill", "actor": "owner", "testid": "search-input", "text": "Webcam", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Webcam" } },
+            { "do": "wait", "actor": "owner", "ms": 2000 },
+            { "do": "click", "actor": "owner", "testid": "item-name", "in": { "testid": "item-card", "contains": "Webcam" } },
+            { "do": "fill", "actor": "owner", "testid": "review-rating", "text": "4" },
+            { "do": "fill", "actor": "owner", "testid": "review-input", "text": "bought and used it" },
+            { "do": "click", "actor": "owner", "testid": "review-submit" },
+            { "do": "expect", "actor": "owner", "testid": "review-item", "contains": "bought and used it", "within": 8000 }
+          ],
+          "statedBy": "a customer can review an item they bought"
+        }
+      ]
+    },
+    {
+      "id": 109,
+      "name": "A cart is nobody else's business",
+      "actors": ["owner", "stranger"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "vic" },
+        { "do": "signUp", "actor": "stranger", "name": "wes" },
+        { "do": "click", "actor": "owner", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
+        { "do": "wait", "actor": "owner", "ms": 1500 },
+        { "do": "click", "actor": "owner", "testid": "cart-toggle" }
+      ],
+      "criteria": [
+        {
+          "id": "109a",
+          "desc": "one customer's cart request replayed by another leaves the owner's cart untouched",
+          "points": 2,
+          "steps": [
+            { "do": "replayAs", "actor": "stranger", "from": "owner", "match": "cart", "settleMs": 2500 },
+            { "do": "expect", "actor": "owner", "testid": "cart-item", "contains": "Coffee Grinder", "count": 1 },
+            { "do": "expectNumber", "actor": "owner", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Coffee Grinder" }, "equals": 1 }
+          ],
+          "statedBy": "one customer cannot read or change another customer's cart"
+        },
+        {
+          "id": "109b",
+          "desc": "a quantity below one is refused and leaves the cart unchanged",
+          "points": 1,
+          "steps": [
+            { "do": "recordNumber", "actor": "owner", "testid": "cart-total", "as": "cart-total-before-invalid" },
+            { "do": "recordNumber", "actor": "owner", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Coffee Grinder" }, "as": "cart-quantity-before-invalid" },
+            { "do": "replayAs", "actor": "owner", "from": "owner", "match": "cart", "swap": { "find": "\"quantity\":1", "with": "\"quantity\":-3" }, "settleMs": 2500 },
+            { "do": "expectReplayRejected", "actor": "owner" },
+            { "do": "expectNumber", "actor": "owner", "testid": "cart-total", "relativeTo": "cart-total-before-invalid", "plus": 0 },
+            { "do": "expectNumber", "actor": "owner", "testid": "cart-quantity", "in": { "testid": "cart-item", "contains": "Coffee Grinder" }, "relativeTo": "cart-quantity-before-invalid", "plus": 0 }
+          ],
+          "statedBy": "a request carrying zero or a negative quantity is refused and changes nothing"
+        }
+      ]
+    }
+  ]
+}

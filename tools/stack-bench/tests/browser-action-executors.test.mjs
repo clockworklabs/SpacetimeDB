@@ -141,6 +141,50 @@ test('a visible but blank field does not satisfy a non-empty assertion', async (
   assert.equal(populated.status, 'passed');
 });
 
+test('ordered text and unavailable controls are explicit implementation-neutral observations', async () => {
+  const items = {
+    filter: () => items,
+    allInnerTexts: async () => ['Coffee Grinder', 'Air Purifier'],
+  };
+  const scope = {
+    filter: () => scope,
+    first: () => scope,
+    locator: () => items,
+  };
+  const disabled = {
+    filter: () => disabled,
+    first: () => disabled,
+    isVisible: async () => true,
+    isDisabled: async () => true,
+    getAttribute: async () => null,
+  };
+  const actor = {
+    page: {
+      locator: selector => selector.includes('item-list') ? scope : disabled,
+    },
+  };
+  const provided = services(actor);
+  const ordered = await run({ do: 'expectSequence', actor: 'a', testid: 'item-name',
+    in: { testid: 'item-list' }, equals: ['Coffee Grinder', 'Air Purifier'] }, provided);
+  assert.equal(ordered.status, 'passed');
+  assert.deepEqual(ordered.observation.values, ['Coffee Grinder', 'Air Purifier']);
+
+  const unavailable = await run({ do: 'expectUnavailable', actor: 'a', testid: 'buy-now' }, provided);
+  assert.equal(unavailable.status, 'passed');
+  assert.deepEqual(unavailable.observation, { unavailable: true, reason: 'disabled' });
+});
+
+test('element counts use visible observations instead of hidden duplicate markup', async () => {
+  const matches = {
+    filter: () => ({ count: async () => 2 }),
+  };
+  const actor = { page: { locator: () => matches } };
+  const result = await run({ do: 'expectElementCount', actor: 'a', testid: 'row',
+    contains: 'item', equals: 2, within: 1 }, services(actor));
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(result.observation, { count: 2 });
+});
+
 test('browser timeouts are application evidence while crashes and code bugs remain harness failures', async () => {
   const timeout = Object.assign(new Error('locator.click: element was never actionable'),
     { name: 'TimeoutError' });

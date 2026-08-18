@@ -72,7 +72,7 @@
             { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 0 },
             { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "equals": 99 },
             { "do": "click", "actor": "checkout", "testid": "orders-toggle" },
-            { "do": "expect", "actor": "checkout", "testid": "order-item", "contains": "Headphones" }
+            { "do": "expect", "actor": "checkout", "testid": "order-item", "contains": "Headphones", "count": 1 }
           ],
           "statedBy": "checkout turns the cart into one order, reduces stock for every line, and empties the cart"
         }
