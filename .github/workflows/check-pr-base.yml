@@ -41,4 +41,5 @@ jobs:
         run: >-
           cargo ci other-workflows check-release-deps
           --repo clockworklabs/SpacetimeDB
+          --allowed-repo clockworklabs/SpacetimeDB
           --pr-number "${{ github.event.pull_request.number }}"

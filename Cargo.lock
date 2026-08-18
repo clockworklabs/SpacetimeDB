@@ -908,7 +908,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap 4.5.50",
- "lookup-pr-release",
+ "rollback-coordination",
 ]
 
 [[package]]
@@ -4125,19 +4125,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
-name = "lookup-pr-release"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap 4.5.50",
- "regex",
- "serde",
- "serde_json",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "loom"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6721,6 +6708,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.107",
+]
+
+[[package]]
+name = "rollback-coordination"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "regex",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

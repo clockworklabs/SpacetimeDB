@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-lookup-pr-release = { path = "../../../lookup-pr-release" }
+rollback-coordination = { path = "../../../rollback-coordination" }
 
 [lints]
 workspace = true

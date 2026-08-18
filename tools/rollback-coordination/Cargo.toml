@@ -1,5 +1,5 @@
 [package]
-name = "lookup-pr-release"
+name = "rollback-coordination"
 version = "0.1.0"
 edition.workspace = true
 

@@ -92,7 +92,7 @@ members = [
   "tools/generate-client-api",
   "tools/gen-bindings",
   "tools/release",
-  "tools/lookup-pr-release",
+  "tools/rollback-coordination",
   "tools/regen",
   "tools/xtask-llm-benchmark",
   "crates/bindings-typescript/test-app/server",
