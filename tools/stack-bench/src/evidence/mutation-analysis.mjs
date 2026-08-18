@@ -181,16 +181,25 @@ export function classifyMutationResult(baselineReport, mutantReport, mutation) {
     .map(item => item.key);
   const targetSurvived = targets.filter(item => item.result?.passed).map(item => item.key);
   const collateral = regressions.filter(item => !item.expected);
+  const collateralHarnessFailures = [...baseline.criteria].filter(([key, before]) =>
+    before.passed && !targetKeys.has(key)
+      && mutant.criteria.get(key)?.outcomeKind === 'harness_failure').map(([key]) => key);
+  const collateralInconclusive = [...baseline.criteria].filter(([key, before]) =>
+    before.passed && !targetKeys.has(key)
+      && mutant.criteria.get(key)?.outcomeKind === 'inconclusive').map(([key]) => key);
 
   let status = 'CAUGHT';
   if (targetKeys.size === 0 || missing.length || targetMissing.length) status = 'INVALID_REPORT';
   else if (setupFailures.length) status = 'INVALID_SETUP';
-  else if (targetHarnessFailures.length) status = 'INVALID_HARNESS_FAILURE';
-  else if (targetInconclusive.length) status = 'INVALID_INCONCLUSIVE';
+  else if (targetHarnessFailures.length || collateralHarnessFailures.length) {
+    status = 'INVALID_HARNESS_FAILURE';
+  }
+  else if (targetInconclusive.length || collateralInconclusive.length) status = 'INVALID_INCONCLUSIVE';
   else if (targetSurvived.length && collateral.length) status = 'WRONG_CRITERION';
   else if (targetSurvived.length) status = 'SURVIVED';
   else if (collateral.length) status = 'CAUGHT_COLLATERAL';
 
   return { status, targetKeys: [...targetKeys], targetMissing, targetHarnessFailures, targetInconclusive,
-    targetSurvived, collateral, setupFailures, missing, regressions };
+    targetSurvived, collateral, collateralHarnessFailures, collateralInconclusive,
+    setupFailures, missing, regressions };
 }

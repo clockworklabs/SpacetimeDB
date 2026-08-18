@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
@@ -515,4 +518,17 @@ test('missing named actions and application roots stay inconclusive', async () =
     services(new Map()));
   assert.equal(missingRoot.status, 'inconclusive');
   assert.match(missingRoot.summary, /app directory/);
+});
+
+test('an application-owned script timeout is a scored application failure', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-script-timeout-'));
+  try {
+    writeFileSync(join(root, 'slow.mjs'), 'await new Promise(resolve => setTimeout(resolve, 10000));\n');
+    const result = await run({ do: 'runScript', script: 'slow.mjs', args: [], timeoutMs: 20 },
+      services(new Map(), { appRoot: root }));
+    assert.equal(result.status, 'failed');
+    assert.match(result.summary, /failed|timed out/i);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

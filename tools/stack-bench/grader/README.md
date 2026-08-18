@@ -1,24 +1,22 @@
 # Stack Bench grader
 
 Executes versioned scenario specs against a running generated app and scores each
-feature 0–3 from observed browser behavior only. Replaces the manual two-Chrome-profile
-grading pass.
+check from observed browser behavior. Replaces the manual two-Chrome-profile grading pass.
 
 ```bash
 node grade.mjs --url http://localhost:6173 --level 1 --label spacetime-l1 --out report.json
 ```
 
 Each actor in a scenario gets its own browser context, so identities are genuinely
-separate (apps key identity off `localStorage`). The grader never reloads a page except
-in the refresh probe, so a feature that only works after a reload cannot pass.
+separate. The grader does not reload a failed assertion and retry it; a live-update
+check therefore passes only when the already-open page updates.
 
 ## Scoring rules (enforced in code)
 
-| Rule | Effect |
-|---|---|
-| Setup steps fail | feature scores 0 (untestable) |
-| Assertion fails, but passes after a reload | feature capped at 1 |
-| JS console errors during the feature | feature capped at 2 |
+Each passing check contributes exactly its declared points. A failed check contributes
+zero. An unavailable measurement is recorded separately and never changes the denominator.
+Setup failures are copied onto every affected check, while browser console errors remain
+diagnostic evidence rather than silently changing unrelated scores.
 
 ## Scenario format
 

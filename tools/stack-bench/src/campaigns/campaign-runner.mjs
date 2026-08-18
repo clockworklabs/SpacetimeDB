@@ -236,8 +236,9 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
           && Number.isInteger(level.regression?.max)
           && level.regression.max > 0
           && level.regression.score < level.regression.max;
+        const contractFailure = level.contractPass === false;
         mismatch(validScore && level.score === level.max
-          && !inheritedDeficit, `levels.L${level.level}.score`);
+          && !inheritedDeficit && !contractFailure, `levels.L${level.level}.score`);
       } else {
         mismatch(true, `${at}.levelOutcome`);
       }

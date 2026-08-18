@@ -72,7 +72,7 @@ test('zero-point evidence cannot fail or invalidate a scored benchmark outcome',
 test('an explicitly selected zero-only scope still has a qualification outcome', () => {
   const scoped = {
     totals: { score: 0, max: 0 },
-    selection: { checks: [{ stableKey: 'candidate' }], attemptedChecks: ['candidate'],
+    selection: { checks: [{ stableKey: 'candidate', points: 0 }], attemptedChecks: ['candidate'],
       reportedChecks: ['candidate'], notRun: [] },
     suites: { development: { features: [{ id: 'f', criteria: [
       { ...typed('candidate', 'failed', 'candidate behavior failed', 0), stableKey: 'candidate' },
@@ -96,7 +96,7 @@ test('a fully reported zero-point selection is graded rather than mistaken for m
   const scoped = {
     totals: { score: 0, max: 0 },
     selection: {
-      checks: [{ stableKey: 'pack.control.zero' }],
+      checks: [{ stableKey: 'pack.control.zero', points: 0 }],
       attemptedChecks: ['pack.control.zero'],
       reportedChecks: ['pack.control.zero'],
       notRun: [],
@@ -108,6 +108,35 @@ test('a fully reported zero-point selection is graded rather than mistaken for m
   assert.equal(classifyBundle(scoped).kind, 'passed');
   scoped.selection.reportedChecks = [];
   assert.equal(classifyBundle(scoped).kind, 'ungraded');
+});
+
+test('recipe-bound scores must exactly match their check evidence', () => {
+  const passed = { ...typed('works', 'passed', null, 2), stableKey: 'pack.feature.works' };
+  const scoped = {
+    totals: { score: 1, max: 2, regression: null },
+    selection: {
+      checks: [{ stableKey: 'pack.feature.works', points: 2 }],
+      attemptedChecks: ['pack.feature.works'],
+      reportedChecks: ['pack.feature.works'],
+      notRun: [],
+    },
+    suites: { feature: { features: [{ id: 'f', criteria: [passed] }] }, lint: { pass: true } },
+  };
+  const outcome = classifyBundle(scoped);
+  assert.equal(outcome.kind, 'harness_failure');
+  assert.equal(outcome.phase, 'grading');
+  assert.match(outcome.reason, /reported score 1\/2 disagrees with check evidence 2\/2/);
+
+  scoped.totals.score = 2;
+  assert.equal(classifyBundle(scoped).kind, 'passed');
+
+  scoped.selection.checks.push({ stableKey: 'pack.feature.other', points: 2 });
+  scoped.selection.reportedChecks.push('pack.feature.other');
+  scoped.selection.attemptedChecks.push('pack.feature.other');
+  scoped.suites.feature.features[0].criteria.push({ ...passed, id: 'duplicate' });
+  scoped.totals = { score: 4, max: 4, regression: null };
+  assert.equal(classifyBundle(scoped).kind, 'harness_failure',
+    'duplicating one check must not stand in for a different selected check');
 });
 
 test('mutation control runs only after a conclusive passing pristine grade', () => {

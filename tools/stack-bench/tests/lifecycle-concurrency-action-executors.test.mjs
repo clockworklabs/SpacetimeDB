@@ -117,6 +117,22 @@ test('lifecycle operations distinguish missing control, unsafe refusal, and succ
   assert.deepEqual(calls, [[{ kind: 'test' }, 'restart']]);
 });
 
+test('a generated app server timing out is an application failure, not a harness failure', async () => {
+  const timedOut = Object.assign(new Error('app start timed out'), { code: 'ETIMEDOUT' });
+  const applicationLifecycle = createLifecycleCapability({ restartCmd: 'start-app', application: true,
+    sleep, exec: () => { throw timedOut; } });
+  const appResult = await run({ do: 'startAppServer', settleMs: 0 },
+    services(new Map(), { applicationLifecycle }));
+  assert.equal(appResult.status, 'failed');
+  assert.match(appResult.summary, /could not start the app server/);
+
+  const backendLifecycle = createLifecycleCapability({ restartCmd: 'restart-backend', sleep,
+    exec: () => { throw timedOut; } });
+  const backendResult = await run({ do: 'restartBackend', settleMs: 0 },
+    services(new Map(), { backendLifecycle }));
+  assert.equal(backendResult.status, 'harness_failure');
+});
+
 test('direct PostgreSQL stock writes quote names and require exactly one updated row', async () => {
   const calls = [];
   const waits = [];

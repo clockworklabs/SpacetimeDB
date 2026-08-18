@@ -3,15 +3,14 @@
 //
 // Executes versioned scenario specs against a running app using multiple
 // isolated browser contexts (one per actor), and scores each feature from
-// observed behavior only — one point per criterion it passes. Mechanically
-// enforces the rules human graders applied (features with an explicit `max`,
-// i.e. the invariants, opt out of the caps and are scored purely per-criterion):
-//   - JS console errors during a feature cap it at 2
-//   - a feature that only works after a reload caps at 1
-//   - untestable (setup failed) scores 0
+// observed behavior only — each criterion contributes exactly its declared
+// points when it passes. Console errors remain visible diagnostic evidence;
+// they never silently rewrite an otherwise unrelated criterion score.
+// Untestable setup still earns zero because each affected criterion records
+// non-passing evidence.
 //
-// The grader never reloads a page except in the refresh probe, so "realtime"
-// means realtime.
+// The grader never reloads a failed assertion and tries it again, so
+// "realtime" means realtime.
 //
 // Usage: node grade.mjs --url http://localhost:6173 --level 1 [--out report.json]
 //                      [--label spacetime-l1] [--headed] [--feature N]
@@ -30,7 +29,7 @@ import { resolveGradeRecipeArtifactBinding } from '../src/composition/recipe-rel
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
 import { ACTION_REGISTRY } from '../src/actions/action-catalog.mjs';
 import { createActionRunContext, executeAction } from '../src/actions/action-contract.mjs';
-import { createCheckEvidence, evidenceDisposition, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.mjs';
+import { createCheckEvidence, evidenceIsMeasured, evidencePassed } from '../src/evidence/check-evidence.mjs';
 import { evidenceNowMs } from '../src/evidence/evidence-timing.mjs';
 import { renderEvidenceConsoleLine } from '../src/evidence/evidence-presentation.mjs';
 import { measureGradePackRuntime } from '../src/composition/pack-runtime.mjs';
@@ -607,7 +606,7 @@ async function gradeFeature(browser, feature, args, runCtx) {
   const featureMax = feature.criteria.reduce((n, c) => n + (c.points ?? 1), 0);
   const result = {
     id: feature.id, name: feature.name, score: 0, max: featureMax,
-    criteria: [], caps: [], consoleErrors: [],
+    criteria: [], consoleErrors: [],
   };
 
   const captureFailureScreenshots = async label => {
@@ -639,8 +638,6 @@ async function gradeFeature(browser, feature, args, runCtx) {
     // target supplies no behavioral observation and is inconclusive.
     const classified = classifyCheckFailure(err);
     const why = keepReason(classified.summary.trim());
-    const measured = evidenceDisposition(classified).measured;
-    result.caps.push(measured ? 'setup-failed → 0' : 'setup-unmeasured → untestable');
     const screenshots = await captureFailureScreenshots('setup');
     result.setupEvidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: setupStartedAtMs,
       failure: err, summary: why, attachments: screenshots });
@@ -664,7 +661,6 @@ async function gradeFeature(browser, feature, args, runCtx) {
   }
   result.setupEvidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: setupStartedAtMs });
 
-  let refreshDependent = false;
   for (const criterion of feature.criteria) {
     let failure = null, detail = null, activeActor = null;
     let criterionScreenshots = [];
@@ -700,22 +696,6 @@ async function gradeFeature(browser, feature, args, runCtx) {
       if (criterionScreenshots.length) {
         result.screenshots = [...(result.screenshots ?? []), ...criterionScreenshots];
       }
-      // Refresh probe: does the assertion pass once the page is reloaded?
-      // If so the feature is refresh-dependent, not realtime.
-      const failing = criterion.steps[criterion.steps.length - 1];
-      const primaryActionEvidence = [...ctx.actionEvidence];
-      if (evidenceDisposition(classified).applicationFailure && failing?.do === 'expect' && !failing.absent) {
-        try {
-          const actor = actors.get(failing.actor);
-          await actor.page.reload({ waitUntil: 'domcontentloaded' });
-          await actor.page.waitForTimeout(2000);
-          ctx.actionEvidence = [];
-          await runStep({ ...failing, within: 6000 }, actors, ctx);
-          refreshDependent = true;
-          detail += ' — PASSES AFTER RELOAD (refresh-dependent)';
-        } catch { /* genuinely absent, not just refresh-dependent */ }
-      }
-      ctx.actionEvidence = primaryActionEvidence;
     }
     const evidence = buildCheckEvidence({ ctx, phase: 'assertion', startedAtMs: criterionStartedAtMs,
       failure, actor: activeActor, summary: detail, attachments: criterionScreenshots });
@@ -739,16 +719,6 @@ async function gradeFeature(browser, feature, args, runCtx) {
   // a weaker claim and the report has to say so out loud.
   if (ctx.unverified.length) result.unverified = ctx.unverified;
   if (ctx.verified.length) result.verified = ctx.verified;
-
-  // Caps, applied in severity order.
-  if (feature.max === undefined && refreshDependent && result.score > 1) {
-    result.caps.push('refresh-dependent → capped at 1');
-    result.score = 1;
-  }
-  if (feature.max === undefined && result.consoleErrors.length && result.score > 2) {
-    result.caps.push('console errors → capped at 2');
-    result.score = 2;
-  }
 
   await closeAll();
   if (args.media) result.videos = contexts.map(c => join(args.media, `${slug}-${c.name}.webm`));
@@ -881,7 +851,7 @@ async function main() {
       report.inconclusive = [...(report.inconclusive ?? []),
         ...r.inconclusive.map(c => ({ feature: r.id, ...c }))];
     }
-    console.log(`${r.score}/${r.max}${r.caps.length ? ` (${r.caps.join('; ')})` : ''}`);
+    console.log(`${r.score}/${r.max}`);
     for (const c of r.criteria.filter(c => !evidencePassed(c.evidence))) {
       console.log(`    ${renderEvidenceConsoleLine(c.evidence, c.id)}`);
     }

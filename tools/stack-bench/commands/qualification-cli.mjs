@@ -46,6 +46,31 @@ function evidencePlan(calibration) {
   return evidence;
 }
 
+function defectCheckCoverage(release, calibration) {
+  const scored = release.checkCatalog.filter(check => check.points > 0);
+  const scoredByKey = new Map(scored.map(check => [check.stableKey, check]));
+  const stacks = calibration.qualification.stacks
+    .filter(stack => stack.status !== 'unsupported').map(stack => stack.id).sort();
+  return {
+    required: 'every scored check has an exact known-defect test on every supported stack',
+    totalChecks: scored.length,
+    totalPoints: scored.reduce((total, check) => total + check.points, 0),
+    stacks: stacks.map(stack => {
+      const covered = new Set(calibration.mutations
+        .filter(entry => entry.backend === stack)
+        .flatMap(entry => entry.targets.flatMap(target => target.stableKeys))
+        .filter(key => scoredByKey.has(key)));
+      const missing = scored.filter(check => !covered.has(check.stableKey));
+      return {
+        stack,
+        coveredChecks: covered.size,
+        coveredPoints: [...covered].reduce((total, key) => total + scoredByKey.get(key).points, 0),
+        missingChecks: missing.map(check => check.stableKey),
+      };
+    }),
+  };
+}
+
 export function qualificationReadiness(trackName, level, recipe = null) {
   if (!listTracks().includes(trackName)) throw new Error(`unknown qualification track ${trackName}`);
   const track = loadTrack(trackName);
@@ -82,9 +107,17 @@ export function qualificationReadiness(trackName, level, recipe = null) {
   }
 
   const requiredEvidence = evidencePlan(calibration);
+  const defectChecks = defectCheckCoverage(binding.release, calibration);
   const recorded = new Set(calibration.qualification.evidence.map(entry =>
     `${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`));
   const promotionBlockers = [...launchBlockers];
+  if (binding.status === 'candidate') {
+    for (const coverage of defectChecks.stacks.filter(item => item.missingChecks.length > 0)) {
+      promotionBlockers.push(blocker('defect_check_coverage_incomplete',
+        `defectChecks.${coverage.stack}`,
+        `${coverage.coveredChecks}/${defectChecks.totalChecks} scored checks have exact known-defect tests`));
+    }
+  }
   for (const item of requiredEvidence) {
     const key = `${item.kind}:${item.stack ?? ''}:${item.repetition}`;
     if (!recorded.has(key)) promotionBlockers.push(blocker('evidence_missing', `evidence.${key}`,
@@ -129,6 +162,7 @@ export function qualificationReadiness(trackName, level, recipe = null) {
       ] : [],
     },
     requiredEvidence,
+    defectChecks,
     commands: [
       ...stacks.flatMap(stack => [
         `qualify-reference --backend ${stack} --track ${trackName} --level ${level}${recipeOption} --repetitions ${calibration.qualification.referenceRepetitions} --out ${output}/${trackName}-l${level}-${stack}-reference.json`,

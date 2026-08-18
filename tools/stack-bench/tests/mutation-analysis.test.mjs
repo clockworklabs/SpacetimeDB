@@ -135,6 +135,21 @@ test('a typed harness failure is not mistaken for an inconclusive or caught muta
   assert.deepEqual(result.targetHarnessFailures, ['7:b']);
 });
 
+test('lost evidence outside the declared target invalidates a mutation kill', () => {
+  const inconclusive = classifyMutationResult(report({ a: true, b: true }),
+    report({ a: 'inconclusive', b: false }), mutation);
+  assert.equal(inconclusive.status, 'INVALID_INCONCLUSIVE');
+  assert.deepEqual(inconclusive.collateralInconclusive, ['7:a']);
+
+  const harnessEvidence = createCheckEvidence({ status: 'harness_failure', code: 'browser_failure',
+    phase: 'assertion', summary: 'browser disappeared', startedAtMs: 1, completedAtMs: 2 });
+  const mutant = report({ a: true, b: false });
+  mutant.features[0].criteria[0] = { id: 'a', evidence: harnessEvidence };
+  const harness = classifyMutationResult(report({ a: true, b: true }), mutant, mutation);
+  assert.equal(harness.status, 'INVALID_HARNESS_FAILURE');
+  assert.deepEqual(harness.collateralHarnessFailures, ['7:a']);
+});
+
 test('failure in the wrong criterion is distinguished from survival', () => {
   const result = classifyMutationResult(report({ a: true, b: true }), report({ a: false, b: true }), mutation);
   assert.equal(result.status, 'WRONG_CRITERION');

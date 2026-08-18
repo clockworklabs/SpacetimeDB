@@ -226,7 +226,10 @@ export function createLifecycleCapability({ restartSpec, restartCmd, application
             ? 'app-server control refused on this host'
             : 'backend restart refused — no benchmark-owned instance available');
         }
-        if (harnessProcessFailure(error)) throw error;
+        // A generated app which cannot complete its own start/stop operation
+        // has failed the application contract. Backend-control timeouts and
+        // failures to launch the harness command still provide no app evidence.
+        if (harnessProcessFailure(error) && !(application && error?.code === 'ETIMEDOUT')) throw error;
         fail(application
           ? `could not ${mode} the app server: ${(error.stdout || error.message || '').toString().trim().slice(-160)}`
           : `backend restart failed: ${(error.stdout || error.message || '').toString().trim().slice(-200)}`);

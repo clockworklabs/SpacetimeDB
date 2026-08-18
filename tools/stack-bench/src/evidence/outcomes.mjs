@@ -9,6 +9,52 @@ function criteria(bundle) {
       }))));
 }
 
+function selectedScoreMismatch(bundle, all) {
+  const selection = bundle?.selection;
+  if (!Array.isArray(selection?.checks) || !Array.isArray(selection?.reportedChecks)
+      || selection.notRun?.length !== 0
+      || selection.reportedChecks.length !== selection.checks.length) return null;
+
+  const selected = new Map(selection.checks.map(check => [check.stableKey, check]));
+  if (selected.size !== selection.checks.length
+      || selection.reportedChecks.some(key => !selected.has(key))
+      || new Set(selection.reportedChecks).size !== selection.reportedChecks.length) {
+    return 'reported check scope disagrees with the selected check scope';
+  }
+
+  const reported = all.filter(criterion => criterion.stableKey !== undefined);
+  if (reported.length !== selected.size
+      || new Set(reported.map(criterion => criterion.stableKey)).size !== reported.length
+      || reported.some(criterion => !selected.has(criterion.stableKey))) {
+    return 'graded check evidence disagrees with the selected check scope';
+  }
+
+  let evidenceScore = 0;
+  let evidenceMax = 0;
+  for (const criterion of reported) {
+    const planned = selected.get(criterion.stableKey);
+    if (!Number.isSafeInteger(planned?.points) || planned.points < 0
+        || criterion.points !== planned.points) {
+      return `graded points disagree with the selected definition for ${criterion.stableKey}`;
+    }
+    if (criterion.points <= 0) continue;
+    evidenceMax += criterion.points;
+    if (evidenceDisposition(criterionEvidence(criterion)).passed) evidenceScore += criterion.points;
+  }
+
+  const regression = bundle.totals?.regression;
+  const totalScore = bundle.totals?.score;
+  const totalMax = bundle.totals?.max;
+  const reportedScore = totalScore + (regression?.score ?? 0);
+  const reportedMax = totalMax + (regression?.max ?? 0);
+  if (![totalScore, totalMax, reportedScore, reportedMax].every(Number.isSafeInteger)
+      || reportedScore !== evidenceScore || reportedMax !== evidenceMax) {
+    return `reported score ${String(reportedScore)}/${String(reportedMax)} disagrees with `
+      + `check evidence ${evidenceScore}/${evidenceMax}`;
+  }
+  return null;
+}
+
 export function classifyBundle(bundle) {
   if (!bundle) return { kind: 'ungraded', phase: 'grading', reason: 'no grading bundle was produced',
     appFailures: [], inconclusive: [], harnessFailures: [] };
@@ -28,6 +74,11 @@ export function classifyBundle(bundle) {
       appFailures: [], inconclusive: [], harnessFailures: [] };
   }
   const all = criteria(bundle);
+  const scoreMismatch = selectedScoreMismatch(bundle, all);
+  if (scoreMismatch) {
+    return { kind: 'harness_failure', phase: 'grading', reason: scoreMismatch,
+      appFailures: [], inconclusive: [], harnessFailures: ['score-consistency'] };
+  }
   // Point-bearing checks define an ordinary benchmark outcome. Zero-point
   // criteria are retained as test-development evidence, but they must not
   // fail, invalidate, or repair a scored run. A deliberately selected

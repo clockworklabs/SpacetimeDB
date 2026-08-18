@@ -732,7 +732,11 @@ async function runScript({ input, capabilities, signal }) {
     });
   } catch (error) {
     const infrastructure = harnessProcessFailure(error);
-    if (infrastructure) throw error;
+    // The harness successfully launched Node and the application-owned script
+    // then exceeded its contract deadline. That is an application defect, not
+    // missing measurement evidence. Spawn/permission failures remain harness
+    // failures because the script never ran.
+    if (infrastructure && error?.code !== 'ETIMEDOUT') throw error;
     fail(`${input.script} failed: ${((error.stdout ?? '') + (error.stderr ?? '')).trim().slice(-200) || error.message}`);
   }
   await subprocess.sleep(input.settleMs ?? 3000, signal);

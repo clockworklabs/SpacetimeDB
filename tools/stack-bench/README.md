@@ -292,9 +292,10 @@ over another's account:
 - **Invariants** — identity, isolation, durability, write-path integrity
 - **Delivery** — no loss, no duplication, consistent ordering, reconnect recovery
 
-Scoring rules are enforced in code: console errors cap a feature at 2, a feature
-that only works after a reload caps at 1, and an unreachable feature scores 0.
-The grader never reloads except to probe for that, so "real-time" means real-time.
+Scoring is the exact sum of passed checks. Console errors remain visible diagnostics,
+but do not silently change unrelated check scores. Failed or unavailable checks earn
+zero without changing the declared denominator. The grader does not reload a failed
+live-update assertion and retry it, so "real-time" means real-time.
 
 ## Files
 
