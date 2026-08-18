@@ -9,6 +9,7 @@ import { resolveRecipeRelease } from '../recipe-release.mjs';
 import { childFailureDetail, findMutationBackups, selectObservationScope,
   resetFailureOutcome, suitesForRecipe } from '../run-suite.mjs';
 import { loadTrack } from '../tracks.mjs';
+import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../reset-backend.mjs';
 
 const ECOMMERCE = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
 
@@ -57,6 +58,8 @@ test('a generated app without a restart command is ungraded, not blamed on the h
     { kind: 'ungraded', phase: 'application-restart' });
   assert.deepEqual(resetFailureOutcome(new Error('database container disappeared')),
     { kind: 'harness_failure', phase: 'database-reset' });
+  assert.deepEqual(resetFailureOutcome({ status: GENERATED_APP_LAYOUT_EXIT_CODE }),
+    { kind: 'ungraded', phase: 'application-layout' });
 });
 
 test('observed-only scope is modular, disjoint, and contributes no score', () => {

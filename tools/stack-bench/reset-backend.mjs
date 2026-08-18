@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { leaseFromEnv } from './backend-lease.mjs';
 import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
+import { GeneratedAppLayoutError } from './spacetime-layout.mjs';
+
+export const GENERATED_APP_LAYOUT_EXIT_CODE = 10;
 
 export function resetBackend({ backend, app, exec }) {
   const { lease } = leaseFromEnv(process.env, { backend, active: true });
@@ -20,5 +23,13 @@ async function main() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(error => { console.error(error.stack ?? error.message); process.exitCode = 1; });
+  main().catch(error => {
+    if (error instanceof GeneratedAppLayoutError || error?.code === 'generated_app_layout') {
+      console.error(`GENERATED_APP_LAYOUT: ${error.message}`);
+      process.exitCode = GENERATED_APP_LAYOUT_EXIT_CODE;
+      return;
+    }
+    console.error(error.stack ?? error.message);
+    process.exitCode = 1;
+  });
 }

@@ -19,6 +19,7 @@ export const PROMPT_SNAPSHOT = join(ROOT, 'conditions', 'qualification',
 const STACKS = ['mongodb', 'postgres', 'spacetime'];
 const PROFILES = [
   { reference: 'neutral@1.0.0', mode: 'neutral' },
+  { reference: 'neutral@1.1.0', mode: 'neutral' },
   { reference: 'prescribed@1.0.0', mode: 'prescribed' },
 ];
 const ROUNDS = [
@@ -80,7 +81,7 @@ export function capturePromptSnapshot() {
     schemaVersion: 1,
     kind: 'prompt-snapshot',
     id: 'ecommerce-l1-l2-guidance',
-    version: '1.0.0',
+    version: '1.1.0',
     topology: { platform: 'linux/amd64', hostAlias: '127.0.0.1', runIndex: 0 },
     prompts,
   };

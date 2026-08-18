@@ -15,3 +15,11 @@ test('neutral backend documents contain access facts without implementation pres
     assert.match(content, /Make the remaining implementation choices\s+yourself/);
   }
 });
+
+test('neutral SpacetimeDB guidance states the required packaging interface', () => {
+  const content = readFileSync(join(root, 'backends', 'minimal', 'spacetime-1.1.md'), 'utf8');
+  assert.match(content, /Module source directory \| `\/app\/backend\/spacetimedb`/);
+  assert.match(content, /packaging interface, not an implementation prescription/);
+  assert.match(content, /choose the\s+schema, reducers, client architecture, persistence behavior, and project design\s+yourself/);
+  assert.doesNotMatch(content, /\b(express|socket\.io|mongoose|drizzle|orm|polling|transaction|locking)\b/i);
+});

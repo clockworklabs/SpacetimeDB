@@ -1,8 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 
 import { leasedSpacetimeTarget } from './spacetime-target.mjs';
+import { resolveSpacetimeModuleLayout } from './spacetime-layout.mjs';
 
 const RESET_TIMEOUT_MS = 120_000;
 const WRITE_TIMEOUT_MS = 60_000;
@@ -35,11 +35,10 @@ export function resetMongoDb({ lease, exec = execFileSync }) {
 }
 
 export function resetSpacetime({ lease, app, exec = execFileSync }) {
-  const modulePath = resolve(app, 'backend', 'spacetimedb');
-  if (!existsSync(modulePath)) throw new Error(`module directory is missing: ${modulePath}`);
+  const layout = resolveSpacetimeModuleLayout(app);
   const target = leasedSpacetimeTarget({ requireBuildContainer: true, exec });
   const container = target.buildContainer;
-  const containerModule = '/app/backend/spacetimedb';
+  const containerModule = layout.containerPath;
   try {
     exec('docker', ['exec', container.name, 'test', '-d', containerModule],
       { stdio: 'pipe', timeout: RESET_TIMEOUT_MS });

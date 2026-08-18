@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 
-import { resolveStudyConditions, validateConditionReference } from '../condition-compiler.mjs';
+import { resolveGuidanceProfile, resolveStudyConditions,
+  validateConditionReference } from '../condition-compiler.mjs';
 
 const prescribed = { id: 'prescribed', version: '1.0.0',
   guidanceProfile: 'prescribed@1.0.0', repairPolicy: 'scored-only@1.0.0' };
@@ -65,6 +66,16 @@ test('packaged neutral guidance exists symmetrically without architecture advice
   assert.equal(condition.guidance.mode, 'neutral');
   assert.equal(condition.guidance.material.designAdvice, false);
   assert.deepEqual(Object.keys(condition.guidance.documents), ['mongodb', 'postgres', 'spacetime']);
+});
+
+test('neutral guidance 1.1 adds only the SpacetimeDB packaging contract', () => {
+  const oldProfile = resolveGuidanceProfile('neutral@1.0.0', ['mongodb', 'postgres', 'spacetime']);
+  const nextProfile = resolveGuidanceProfile('neutral@1.1.0', ['mongodb', 'postgres', 'spacetime']);
+  assert.equal(nextProfile.state, 'qualified');
+  assert.equal(nextProfile.material.designAdvice, false);
+  assert.deepEqual(nextProfile.documents.mongodb, oldProfile.documents.mongodb);
+  assert.deepEqual(nextProfile.documents.postgres, oldProfile.documents.postgres);
+  assert.notDeepEqual(nextProfile.documents.spacetime, oldProfile.documents.spacetime);
 });
 
 test('expected modular specifications are scored under the ordinary repair policy', () => {

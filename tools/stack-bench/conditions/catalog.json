@@ -3,7 +3,8 @@
   "kind": "study-condition-catalog",
   "guidanceProfiles": {
     "prescribed@1.0.0": "guidance/prescribed.json",
-    "neutral@1.0.0": "guidance/neutral.json"
+    "neutral@1.0.0": "guidance/neutral.json",
+    "neutral@1.1.0": "guidance/neutral-1.1.0.json"
   },
   "repairPolicies": {
     "scored-only@1.0.0": "repairs/scored-only.json"

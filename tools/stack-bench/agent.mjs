@@ -48,7 +48,10 @@ export function codingSessionFailure(error) {
     ? error.stdout.toString('utf8') : String(error?.stdout ?? '');
   const stdoutTail = stdout.trim().slice(-2000);
   const stderrTail = stderr.trim().slice(-4000);
-  return `coding session failed (${reason})`
+  const killed = error?.status === 137
+    ? ' — process was forcibly killed; use the retained coding-process diagnostic to distinguish memory pressure from another kill'
+    : '';
+  return `coding session failed (${reason})${killed}`
     + `${stdoutTail ? `\ninner stdout tail:\n${stdoutTail}` : ''}`
     + `${stderrTail ? `\ninner stderr tail:\n${stderrTail}` : ''}`;
 }

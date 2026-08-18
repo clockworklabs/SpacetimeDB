@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "kind": "campaign-manifest",
   "id": "ecommerce-l1-product-brief-reference",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "state": "draft",
   "title": "Ecommerce L1 product brief and quality validation",
   "track": "ecommerce",
@@ -39,8 +39,8 @@
   "conditions": [
     {
       "id": "product-brief-quality",
-      "version": "1.0.0",
-      "guidanceProfile": "neutral@1.0.0",
+      "version": "1.1.0",
+      "guidanceProfile": "neutral@1.1.0",
       "repairPolicy": "scored-only@1.0.0",
       "specifications": {
         "levels": [

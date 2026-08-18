@@ -30,6 +30,7 @@ import { executeStackCapability } from './stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from './stack-adapters.mjs';
 import { aggregatePackRuntime, exceededPackBudgets } from './pack-runtime.mjs';
 import { hashAppSource } from './source-snapshot.mjs';
+import { GENERATED_APP_LAYOUT_EXIT_CODE } from './reset-backend.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const RESET = join(ROOT, 'reset-backend.mjs');
@@ -56,7 +57,9 @@ export function childFailureDetail(failure = null, stdout = '', limit = 600) {
 }
 
 export function resetFailureOutcome(error) {
-  return error?.code === 'generated_app_not_restartable'
+  return error?.status === GENERATED_APP_LAYOUT_EXIT_CODE
+    ? { kind: 'ungraded', phase: 'application-layout' }
+    : error?.code === 'generated_app_not_restartable'
     ? { kind: 'ungraded', phase: 'application-restart' }
     : { kind: 'harness_failure', phase: 'database-reset' };
 }
@@ -257,9 +260,9 @@ function resetDatabase(args) {
     console.log('FAILED');
     const detail = childFailureDetail(err, err?.stdout);
     console.log(`    ${detail}`);
-    return { ok: false, detail };
+    return { ok: false, detail, outcome: resetFailureOutcome(err) };
   }
-  return { ok: true, detail: null };
+  return { ok: true, detail: null, outcome: null };
 }
 
 function lint(args) {
@@ -478,7 +481,7 @@ async function main() {
     if (!args.reset) return true;
     const reset = resetDatabase(args);
     lastResetFailure = reset.detail;
-    lastResetOutcome = { kind: 'harness_failure', phase: 'database-reset' };
+    lastResetOutcome = reset.outcome ?? { kind: 'harness_failure', phase: 'database-reset' };
     if (!reset.ok) return false;
     // An app whose fixture data is created at startup has just had it wiped, so
     // the server has to come back before the state it seeds exists again.

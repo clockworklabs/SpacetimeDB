@@ -349,6 +349,31 @@ const res = spawnSync('docker', args, {
   timeout: BUILD_SESSION_TIMEOUT_MS,
 });
 
+if ((res.status ?? 1) !== 0) {
+  const state = spawnSync('docker', ['inspect', '--format', '{{json .State}}', containerName], {
+    encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
+  });
+  const memory = spawnSync('docker', ['exec', containerName, 'sh', '-lc',
+    'for f in memory.events memory.current memory.peak memory.max; do '
+      + 'p="/sys/fs/cgroup/$f"; if test -r "$p"; then echo "[$f]"; cat "$p"; fi; done'], {
+    encoding: 'utf8', env: dockerExecEnv, timeout: DOCKER_PROBE_TIMEOUT_MS,
+  });
+  let containerState = null;
+  try { containerState = JSON.parse(state.stdout?.trim() || 'null'); } catch { /* retain raw text below */ }
+  const diagnostic = {
+    schemaVersion: 1,
+    kind: 'coding-process-exit',
+    status: res.status ?? null,
+    signal: res.signal ?? null,
+    error: res.error?.message ?? null,
+    container: containerState ?? { inspectError: state.stderr?.trim() || state.error?.message || null },
+    cgroupMemory: memory.stdout?.trim() || null,
+    cgroupProbeError: memory.status === 0 ? null
+      : memory.stderr?.trim() || memory.error?.message || `exit ${memory.status}`,
+  };
+  process.stderr.write(`STACK_BENCH_CODING_PROCESS_DIAGNOSTIC ${JSON.stringify(diagnostic)}\n`);
+}
+
 if (res.stdout) process.stdout.write(res.stdout);
 if (res.stderr) process.stderr.write(res.stderr);
 if (res.error) process.stderr.write(`run-build.mjs: coding session failed: ${res.error.message}\n`);

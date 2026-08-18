@@ -101,6 +101,15 @@ test('coding session failures retain bounded stderr for nonzero exits', () => {
   assert.equal(detail.includes('provider rejected the session'), false);
 });
 
+test('exit 137 is reported as a kill without guessing that it was OOM', () => {
+  const detail = codingSessionFailure({ status: 137,
+    stderr: Buffer.from('STACK_BENCH_CODING_PROCESS_DIAGNOSTIC {"status":137,"cgroupMemory":"oom_kill 0"}') });
+  assert.match(detail, /forcibly killed/);
+  assert.match(detail, /coding-process diagnostic/);
+  assert.doesNotMatch(detail, /out of memory|OOM failure/i);
+  assert.match(detail, /oom_kill 0/);
+});
+
 test('appliance lint endpoint is reachable only through its authenticated shim', () => {
   assert.equal(hostServiceAddress({ STACK_BENCH_APPLIANCE: '1' }), '127.0.0.1');
   assert.equal(hostServiceAddress({}), 'host.docker.internal');
