@@ -36,6 +36,10 @@ test('reference qualification requires an explicit valid stack scope', () => {
   assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
     '--backend', 'postgres', '--track', 'ecommerce', '--level', '1',
     '--recipe', 'ecommerce.l1-standard@1.1.0']).recipe, 'ecommerce.l1-standard@1.1.0');
+  assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--repetitions', '1']).repetitions, 1);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--repetitions', '0']), /positive integer/);
 });
 
 test('reference qualification resolves the exact executable calibration identity', () => {

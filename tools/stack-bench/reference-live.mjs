@@ -68,8 +68,8 @@ export function parseReferenceQualificationArgs(argv) {
   if (!isDeclaredLevel(track, args.level)) {
     throw new Error(`--level must be declared for ${args.track}`);
   }
-  if (!Number.isInteger(args.repetitions) || args.repetitions < 2) {
-    throw new Error('--repetitions must be an integer of at least 2');
+  if (!Number.isInteger(args.repetitions) || args.repetitions < 1) {
+    throw new Error('--repetitions must be a positive integer');
   }
   if (!Number.isInteger(args.runIndex) || args.runIndex < 0) {
     throw new Error('--run-index must be a non-negative integer');
