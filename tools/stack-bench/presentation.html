@@ -324,26 +324,29 @@
     position: relative; height: 26px; background: var(--shade7); border-radius: 3px; overflow: hidden;
     border: 1px solid var(--shade4); border-right: 1px solid var(--green-25);
   }
-  .rail i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--shade4); }
   .rail u {
     position: absolute; left: 0; top: 0; bottom: 0; width: 0;
     background: var(--green-10); border-right: 1px solid var(--green);
   }
-  .mt-val { font-family: var(--font-mono); font-size: .82rem; color: var(--n1); text-align: right; opacity: 0; }
+  /* a tick is a fix round landing; it lights as the run crosses it */
+  .rail i {
+    position: absolute; top: 0; bottom: 0; width: 1px; background: var(--shade4);
+    transition: background .25s ease, box-shadow .25s ease;
+  }
+  .rail i.hit { background: var(--green); box-shadow: 0 0 7px 1px var(--green-25); }
+  .rail i.now { animation: tickHit .7s ease-out; }
+  @keyframes tickHit { 0% { box-shadow: 0 0 0 0 var(--green-25) } 100% { box-shadow: 0 0 12px 4px transparent } }
+  .mt-row.done .rail { border-right-color: var(--green); }
+  .mt-val { font-family: var(--font-mono); font-size: .82rem; color: var(--n1); text-align: right; }
   .mt-val.mut { color: var(--n4); }
+  .mt-row.done .mt-val { color: var(--n1); }
   /* each database takes its own share of the cycle to land, then holds */
   @keyframes mtA { 0% { width: 0 } 22% { width: 100% } 100% { width: 100% } }
   @keyframes mtB { 0% { width: 0 } 44% { width: 100% } 100% { width: 100% } }
   @keyframes mtC { 0% { width: 0 } 66% { width: 100% } 100% { width: 100% } }
-  @keyframes mtShowA { 0%, 22% { opacity: 0 } 27%, 100% { opacity: 1 } }
-  @keyframes mtShowB { 0%, 44% { opacity: 0 } 49%, 100% { opacity: 1 } }
-  @keyframes mtShowC { 0%, 66% { opacity: 0 } 71%, 100% { opacity: 1 } }
   section.on .rail u.rA { animation: mtA 10s linear infinite; }
   section.on .rail u.rB { animation: mtB 10s linear infinite; }
   section.on .rail u.rC { animation: mtC 10s linear infinite; }
-  section.on .vA { animation: mtShowA 10s infinite; }
-  section.on .vB { animation: mtShowB 10s infinite; }
-  section.on .vC { animation: mtShowC 10s infinite; }
 
   /* technical diagrams */
   .dia { width: 100%; max-width: 1000px; margin: .4rem 0 1rem; }
@@ -870,20 +873,20 @@
     <div class="mt-head">
       <div>database</div><div class="rt fin">51 / 51</div><div class="rt">rounds</div><div class="rt">cost</div>
     </div>
-    <div class="mt-row">
+    <div class="mt-row" data-rounds="1" data-cost="4.73">
       <div class="mt-name">database a</div>
       <div class="rail"><u class="rA"></u></div>
-      <div class="mt-val mut vA">1</div><div class="mt-val vA">$4.73</div>
+      <div class="mt-val mut js-rounds">0</div><div class="mt-val js-cost">$0.00</div>
     </div>
-    <div class="mt-row">
+    <div class="mt-row" data-rounds="2" data-cost="7.10">
       <div class="mt-name">database b</div>
-      <div class="rail"><i style="left:50%"></i><u class="rB"></u></div>
-      <div class="mt-val mut vB">2</div><div class="mt-val vB">$7.10</div>
+      <div class="rail"><u class="rB"></u><i style="left:50%"></i></div>
+      <div class="mt-val mut js-rounds">0</div><div class="mt-val js-cost">$0.00</div>
     </div>
-    <div class="mt-row">
+    <div class="mt-row" data-rounds="3" data-cost="11.28">
       <div class="mt-name">database c</div>
-      <div class="rail"><i style="left:33.33%"></i><i style="left:66.66%"></i><u class="rC"></u></div>
-      <div class="mt-val mut vC">3</div><div class="mt-val vC">$11.28</div>
+      <div class="rail"><u class="rC"></u><i style="left:33.33%"></i><i style="left:66.66%"></i></div>
+      <div class="mt-val mut js-rounds">0</div><div class="mt-val js-cost">$0.00</div>
     </div>
   </div>
   <p class="supp r d4">Every run lands on the same score, because the loop keeps going until every criterion passes. The spend and the round count behind that score are the measurement.</p>
@@ -1223,6 +1226,53 @@
     targetTimer = setTimeout(() => { target = null; }, 1200);
   };
   const base = () => (target !== null ? target : nearest());
+
+  // The rounds and the spend read off the same clock as the rail that draws them,
+  // so a fix round lands, a tick lights and the bill moves at the same instant.
+  const meter = document.querySelector('.mt');
+  if (meter) {
+    const rows = [...meter.querySelectorAll('.mt-row')].map(row => ({
+      row,
+      fill: row.querySelector('.rail u'),
+      ticks: [...row.querySelectorAll('.rail i')],
+      rounds: +row.dataset.rounds,
+      cost: +row.dataset.cost,
+      elR: row.querySelector('.js-rounds'),
+      elC: row.querySelector('.js-cost'),
+      last: -1,
+    }));
+    const tick = () => {
+      for (const r of rows) {
+        const anim = r.fill.getAnimations()[0];
+        if (!anim || anim.currentTime == null) continue;
+        // the rail is full at r.rounds x 22% of the cycle, one slice per round
+        // currentTime runs past the duration on a repeating animation, so wrap it
+        const dur = anim.effect.getTiming().duration;
+        const p = Math.min(1, ((anim.currentTime % dur) / dur) / (r.rounds * 0.22));
+        const done = Math.floor(p * r.rounds + 1e-9);
+        // floor the cents so the total cannot reach the final figure before the
+        // last round does; the two land together
+        r.elC.textContent = '$' + (Math.floor(r.cost * p * 100) / 100).toFixed(2);
+        if (done !== r.last) {
+          r.elR.textContent = done;
+          r.ticks.forEach((t, i) => {
+            t.classList.toggle('hit', i < done);
+            if (i >= done) t.classList.remove('now');
+          });
+          const crossed = r.ticks[done - 1];
+          if (crossed && done > r.last) {
+            crossed.classList.remove('now');
+            void crossed.offsetWidth;
+            crossed.classList.add('now');
+          }
+          r.row.classList.toggle('done', done >= r.rounds);
+          r.last = done;
+        }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
 
   // attack picker
   document.querySelectorAll('.atk-item').forEach(btn => {
