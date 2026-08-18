@@ -26,6 +26,7 @@ pub fn test(_ctx: &ReducerContext) {
 "#;
 
 /// Ensure that spacetime build properly catches wasm_bindgen imports
+/// Standalone-only: this validates local CLI build diagnostics without publishing a module.
 #[test]
 fn test_detect_wasm_bindgen() {
     let test = Smoketest::builder()
@@ -46,6 +47,7 @@ fn test_detect_wasm_bindgen() {
 }
 
 /// Ensure that spacetime build properly catches getrandom usage
+/// Standalone-only: this validates local CLI build diagnostics without publishing a module.
 #[test]
 fn test_detect_getrandom() {
     let test = Smoketest::builder()

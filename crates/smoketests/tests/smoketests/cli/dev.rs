@@ -8,6 +8,7 @@ fn cli_cmd() -> Command {
     Command::new(ensure_binaries_built())
 }
 
+/// Standalone-only: this checks local CLI help output, so a remote cluster adds no coverage.
 #[test]
 fn cli_dev_help_shows_template_option() {
     let output = cli_cmd().args(["dev", "--help"]).output().expect("failed to execute");
@@ -21,6 +22,7 @@ fn cli_dev_help_shows_template_option() {
     assert!(predicate::str::contains("-t").eval(&stdout), "stdout should contain -t");
 }
 
+/// Standalone-only: this checks local argument parsing before any server request is made.
 #[test]
 fn cli_dev_accepts_template_flag() {
     // Running with an invalid server should fail, but not because of the template flag
@@ -38,6 +40,7 @@ fn cli_dev_accepts_template_flag() {
     );
 }
 
+/// Standalone-only: this checks local argument parsing before any server request is made.
 #[test]
 fn cli_dev_accepts_short_template_flag() {
     let output = cli_cmd()
@@ -54,6 +57,7 @@ fn cli_dev_accepts_short_template_flag() {
     );
 }
 
+/// Standalone-only: this initializes and inspects a project entirely on the local filesystem.
 #[test]
 fn cli_init_with_template_creates_project() {
     let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
@@ -86,6 +90,7 @@ fn cli_init_with_template_creates_project() {
     assert!(project_dir.join("src").exists(), "src directory should exist");
 }
 
+/// Standalone-only: this validates local config parsing before the CLI contacts a server.
 #[test]
 fn config_with_invalid_field_shows_error() {
     // Test that using invalid field names shows a helpful error message
