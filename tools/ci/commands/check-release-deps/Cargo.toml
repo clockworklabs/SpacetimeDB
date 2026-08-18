@@ -7,8 +7,6 @@ edition.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 lookup-pr-release = { path = "../../../lookup-pr-release" }
-regex.workspace = true
-serde.workspace = true
 
 [lints]
 workspace = true

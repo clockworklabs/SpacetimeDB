@@ -1,190 +1,79 @@
-use anyhow::{bail, Context, Result};
-use serde::de::DeserializeOwned;
-use serde::Deserialize;
-use std::process::Command;
+use anyhow::{Context, Result};
 
-#[derive(Debug, PartialEq)]
+pub mod gh;
+
+pub use gh::{Gh, Github};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Release {
     pub tag: String,
-    pub created_at: String,
+    pub published_at: String,
 }
 
-pub trait Github {
-    fn get<T: DeserializeOwned>(&self, endpoint: &str) -> Result<T>;
-}
-
-pub struct Gh;
-
-impl Github for Gh {
-    fn get<T: DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
-        let output = Command::new("gh")
-            .args(["api", endpoint])
-            .output()
-            .with_context(|| format!("failed to run `gh api {endpoint}`"))?;
-        if !output.status.success() {
-            bail!(
-                "GitHub API request {endpoint} failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
-        }
-        serde_json::from_slice(&output.stdout).with_context(|| format!("invalid response from {endpoint}"))
+impl Ord for Release {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.published_at
+            .cmp(&other.published_at)
+            .then_with(|| self.tag.cmp(&other.tag))
     }
 }
 
-#[derive(Deserialize)]
-struct PullRequest {
-    created_at: String,
+impl PartialOrd for Release {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
-#[derive(Deserialize)]
-struct GithubRelease {
-    tag_name: String,
-    published_at: Option<String>,
-    draft: bool,
-}
-
-#[derive(Deserialize)]
-struct CompareResponse {
-    commits: Vec<CompareCommit>,
-}
-
-#[derive(Deserialize)]
-struct CompareCommit {
-    commit: CompareCommitData,
-}
-
-#[derive(Deserialize)]
-struct CompareCommitData {
-    message: String,
-}
-
-#[derive(Debug)]
-struct PublishedRelease {
-    tag: String,
-    published_at: String,
-}
-
-pub fn lookup(client: &impl Github, repo: &str, pr_number: u64, verbose: bool) -> Result<Option<Release>> {
-    trace(verbose, format_args!("Looking up {repo}#{pr_number}"));
-    let pr: PullRequest = client.get(&format!("repos/{repo}/pulls/{pr_number}"))?;
-    trace(verbose, format_args!("PR was created at {}", pr.created_at));
-    let releases = load_releases(client, &pr.created_at, verbose)?;
-    trace(verbose, format_args!("Selected {} releases", releases.len()));
+pub fn lookup_release_for(client: &impl Github, repo: &str, pr_number: u64) -> Result<Option<Release>> {
+    tracing::info!("Looking up {repo}#{pr_number}");
+    let pr = client.pull_request(repo, pr_number)?;
+    tracing::info!("PR was created at {}", pr.created_at);
+    let releases = load_releases(client)?;
+    tracing::info!("Selected {} releases", releases.len());
 
     let suffix = format!("(#{pr_number})");
-    for index in 0..releases.len() {
-        if releases[index].published_at < pr.created_at {
-            continue;
-        }
-        let base = index.checked_sub(1).map(|previous| releases[previous].tag.as_str());
-        match base {
-            Some(base) => trace(
-                verbose,
-                format_args!(
-                    "Checking commits {base}...{} for release {}",
-                    releases[index].tag, releases[index].tag
-                ),
-            ),
-            None => trace(
-                verbose,
-                format_args!(
-                    "Checking history through {} for first tag {}",
-                    releases[index].tag, releases[index].tag
-                ),
-            ),
-        }
-        if range_contains_pr(client, repo, base, &releases[index].tag, &suffix)? {
-            trace(verbose, format_args!("Matched {}", releases[index].tag));
-            return Ok(Some(Release {
-                tag: releases[index].tag.clone(),
-                created_at: releases[index].published_at.clone(),
-            }));
+    let first_older = releases.partition_point(|release| release.published_at >= pr.created_at);
+    let candidates_and_base = releases
+        .get(..=first_older)
+        .with_context(|| format!("no published release predates {repo}#{pr_number}"))?;
+    for pair in candidates_and_base.windows(2) {
+        let [release, base] = pair else { unreachable!() };
+        tracing::info!(
+            "Checking commits {}...{} for release {}",
+            base.tag,
+            release.tag,
+            release.tag
+        );
+
+        // N.B. that this is based on commit subject lines, so it can technically be spoofed.
+        if client
+            .commit_range(repo, &base.tag, &release.tag)?
+            .iter()
+            .any(|commit| subject_matches(&commit.commit.message, &suffix))
+        {
+            tracing::info!("Matched {}", release.tag);
+            return Ok(Some(release.clone()));
         }
     }
-    trace(verbose, format_args!("No release tag contains {repo}#{pr_number}"));
+    tracing::info!("No release tag contains {repo}#{pr_number}");
     Ok(None)
 }
 
-#[allow(clippy::disallowed_macros)]
-fn trace(verbose: bool, message: std::fmt::Arguments<'_>) {
-    if verbose {
-        eprintln!("{message}");
-    }
-}
-
-fn load_releases(client: &impl Github, pr_created_at: &str, verbose: bool) -> Result<Vec<PublishedRelease>> {
-    const RELEASE_REPO: &str = "clockworklabs/SpacetimeDB";
+fn load_releases(client: &impl Github) -> Result<Vec<Release>> {
     let mut result = Vec::new();
-    for page in 1.. {
-        trace(verbose, format_args!("Loading public release page {page}"));
-        let releases: Vec<GithubRelease> =
-            client.get(&format!("repos/{RELEASE_REPO}/releases?per_page=100&page={page}"))?;
-        trace(
-            verbose,
-            format_args!("Public release page {page} returned {} entries", releases.len()),
-        );
-        if releases.is_empty() {
-            break;
+    for release in client.releases()? {
+        if release.draft {
+            tracing::info!("Ignoring draft release {}", release.tag_name);
+            continue;
         }
-        let page_len = releases.len();
-        let mut found_preceding = false;
-        for release in releases {
-            if release.draft {
-                trace(verbose, format_args!("Ignoring draft release {}", release.tag_name));
-                continue;
-            }
-            let Some(published_at) = release.published_at else {
-                trace(
-                    verbose,
-                    format_args!("Ignoring unpublished release {}", release.tag_name),
-                );
-                continue;
-            };
-            let precedes_pr = published_at.as_str() < pr_created_at;
-            trace(
-                verbose,
-                format_args!("Selected release {} published at {published_at}", release.tag_name),
-            );
-            result.push(PublishedRelease {
-                tag: release.tag_name,
-                published_at,
-            });
-            if precedes_pr {
-                found_preceding = true;
-                break;
-            }
-        }
-        if found_preceding || page_len < 100 {
-            break;
-        }
+        result.push(Release {
+            tag: release.tag_name,
+            published_at: release
+                .published_at
+                .context("Non-draft release expected to have published_at")?,
+        });
     }
-    result.reverse();
     Ok(result)
-}
-
-fn range_contains_pr(client: &impl Github, repo: &str, base: Option<&str>, head: &str, suffix: &str) -> Result<bool> {
-    for page in 1.. {
-        let commits = if let Some(base) = base {
-            let response: CompareResponse = client.get(&format!(
-                "repos/{repo}/compare/{base}...{head}?per_page=100&page={page}"
-            ))?;
-            response.commits
-        } else {
-            client.get::<Vec<CompareCommit>>(&format!("repos/{repo}/commits?sha={head}&per_page=100&page={page}"))?
-        };
-        let page_len = commits.len();
-        // N.B. that this is based on commit subject lines, so it can technically be spoofed.
-        if commits
-            .iter()
-            .any(|commit| subject_matches(&commit.commit.message, suffix))
-        {
-            return Ok(true);
-        }
-        if page_len < 100 {
-            return Ok(false);
-        }
-    }
-    unreachable!()
 }
 
 fn subject_matches(message: &str, suffix: &str) -> bool {
@@ -194,13 +83,14 @@ fn subject_matches(message: &str, suffix: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::de::DeserializeOwned;
     use serde_json::{json, Value};
     use std::collections::HashMap;
 
     struct FakeGithub(HashMap<String, Value>);
 
-    impl Github for FakeGithub {
-        fn get<T: DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
+    impl FakeGithub {
+        fn response<T: DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
             serde_json::from_value(
                 self.0
                     .get(endpoint)
@@ -208,6 +98,16 @@ mod tests {
                     .clone(),
             )
             .map_err(Into::into)
+        }
+    }
+
+    impl Github for FakeGithub {
+        fn get<T: DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
+            self.response(endpoint)
+        }
+
+        fn get_paginated<T: DeserializeOwned>(&self, endpoint: &str) -> Result<Vec<T>> {
+            self.response(endpoint)
         }
     }
 
@@ -219,30 +119,30 @@ mod tests {
                 json!({ "created_at": "2024-01-02T00:00:00Z" }),
             ),
             (
-                "repos/clockworklabs/SpacetimeDB/releases?per_page=100&page=1".into(),
-                json!([
+                "repos/clockworklabs/SpacetimeDB/releases?per_page=100".into(),
+                json!([[
                     { "tag_name": "v2", "published_at": "2024-01-03T00:00:00Z", "draft": false },
                     { "tag_name": "ignored", "published_at": null, "draft": true },
                     { "tag_name": "v1", "published_at": "2024-01-01T00:00:00Z", "draft": false }
-                ]),
+                ]]),
             ),
             (
-                "repos/o/r/compare/v1...v2?per_page=100&page=1".into(),
-                json!({ "commits": [{ "commit": { "message": "The change (#42)\n\nDetails" } }] }),
+                "repos/o/r/compare/v1...v2?per_page=100".into(),
+                json!([{ "commits": [{ "commit": { "message": "The change (#42)\n\nDetails" } }] }]),
             ),
         ]));
 
         assert_eq!(
-            lookup(&github, "o/r", 42, false).unwrap(),
+            lookup_release_for(&github, "o/r", 42).unwrap(),
             Some(Release {
                 tag: "v2".into(),
-                created_at: "2024-01-03T00:00:00Z".into()
+                published_at: "2024-01-03T00:00:00Z".into()
             })
         );
     }
 
     fn assert_live_release(pr_number: u64, expected_tag: &str) {
-        let release = lookup(&Gh, "clockworklabs/SpacetimeDB", pr_number, false)
+        let release = lookup_release_for(&Gh, "clockworklabs/SpacetimeDB", pr_number)
             .unwrap_or_else(|error| panic!("failed to look up SpacetimeDB#{pr_number}: {error:#}"))
             .unwrap_or_else(|| panic!("SpacetimeDB#{pr_number} has not been released"));
         assert_eq!(
@@ -252,17 +152,19 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires GitHub API access"]
     fn live_pr_5255_was_released_in_v2_6_0() {
         assert_live_release(5255, "v2.6.0");
     }
 
     #[test]
+    #[ignore = "requires GitHub API access"]
     fn live_pr_5645_was_released_in_v2_8_0() {
         assert_live_release(5645, "v2.8.0");
     }
 
     #[test]
-    fn loads_release_pages_until_it_finds_the_preceding_release() {
+    fn loads_all_release_pages() {
         let mut first_page = Vec::new();
         for number in 0..100 {
             first_page.push(json!({
@@ -271,24 +173,94 @@ mod tests {
                 "draft": false
             }));
         }
-        let github = FakeGithub(HashMap::from([
-            (
-                "repos/clockworklabs/SpacetimeDB/releases?per_page=100&page=1".into(),
-                Value::Array(first_page),
-            ),
-            (
-                "repos/clockworklabs/SpacetimeDB/releases?per_page=100&page=2".into(),
-                json!([
+        let github = FakeGithub(HashMap::from([(
+            "repos/clockworklabs/SpacetimeDB/releases?per_page=100".into(),
+            json!([
+                first_page,
+                [
                     { "tag_name": "draft", "published_at": "2024-01-01T00:00:00Z", "draft": true },
                     { "tag_name": "v-base", "published_at": "2024-01-01T00:00:00Z", "draft": false },
                     { "tag_name": "too-old", "published_at": "2023-01-01T00:00:00Z", "draft": false }
+                ]
+            ]),
+        )]));
+
+        let releases = load_releases(&github).unwrap();
+        assert_eq!(releases.last().unwrap().tag, "too-old");
+        assert_eq!(releases.len(), 102);
+    }
+
+    #[test]
+    fn finds_a_commit_on_a_later_compare_page() {
+        let github = FakeGithub(HashMap::from([
+            (
+                "repos/o/r/pulls/42".into(),
+                json!({ "created_at": "2024-01-02T00:00:00Z" }),
+            ),
+            (
+                "repos/clockworklabs/SpacetimeDB/releases?per_page=100".into(),
+                json!([[
+                    { "tag_name": "v2", "published_at": "2024-01-03T00:00:00Z", "draft": false },
+                    { "tag_name": "v1", "published_at": "2024-01-01T00:00:00Z", "draft": false }
+                ]]),
+            ),
+            (
+                "repos/o/r/compare/v1...v2?per_page=100".into(),
+                json!([
+                    { "commits": [{ "commit": { "message": "Another change (#1)" } }] },
+                    { "commits": [{ "commit": { "message": "The change (#42)" } }] }
                 ]),
             ),
         ]));
 
-        let releases = load_releases(&github, "2024-01-02T00:00:00Z", false).unwrap();
-        assert_eq!(releases.first().unwrap().tag, "v-base");
-        assert_eq!(releases.len(), 101);
+        assert_eq!(lookup_release_for(&github, "o/r", 42).unwrap().unwrap().tag, "v2");
+    }
+
+    #[test]
+    fn searches_candidate_releases_from_newest_to_oldest() {
+        let github = FakeGithub(HashMap::from([
+            (
+                "repos/o/r/pulls/42".into(),
+                json!({ "created_at": "2024-01-02T00:00:00Z" }),
+            ),
+            (
+                "repos/clockworklabs/SpacetimeDB/releases?per_page=100".into(),
+                json!([[
+                    { "tag_name": "v3", "published_at": "2024-01-04T00:00:00Z", "draft": false },
+                    { "tag_name": "v2", "published_at": "2024-01-03T00:00:00Z", "draft": false },
+                    { "tag_name": "v1", "published_at": "2024-01-01T00:00:00Z", "draft": false }
+                ]]),
+            ),
+            (
+                "repos/o/r/compare/v1...v2?per_page=100".into(),
+                json!([{ "commits": [{ "commit": { "message": "The change (#42)" } }] }]),
+            ),
+            (
+                "repos/o/r/compare/v2...v3?per_page=100".into(),
+                json!([{ "commits": [] }]),
+            ),
+        ]));
+
+        assert_eq!(lookup_release_for(&github, "o/r", 42).unwrap().unwrap().tag, "v2");
+    }
+
+    #[test]
+    fn errors_when_no_release_predates_the_pr() {
+        let github = FakeGithub(HashMap::from([
+            (
+                "repos/o/r/pulls/42".into(),
+                json!({ "created_at": "2023-01-01T00:00:00Z" }),
+            ),
+            (
+                "repos/clockworklabs/SpacetimeDB/releases?per_page=100".into(),
+                json!([[
+                    { "tag_name": "v1", "published_at": "2024-01-01T00:00:00Z", "draft": false }
+                ]]),
+            ),
+        ]));
+
+        let error = lookup_release_for(&github, "o/r", 42).unwrap_err();
+        assert!(error.to_string().contains("no published release predates o/r#42"));
     }
 
     #[test]
