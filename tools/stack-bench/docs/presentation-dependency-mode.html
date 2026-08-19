@@ -824,13 +824,6 @@
     width: 100%; max-width: 920px; margin-top: 1.15rem;
     border-top: 1px solid var(--shade1); border-bottom: 1px solid var(--shade1);
   }
-  .selftest-suite {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: .7rem .9rem; border-bottom: 1px solid var(--shade1);
-    color: var(--n3); font: .72rem/1.4 var(--font-mono);
-  }
-  .selftest-suite b { color: var(--n1); font-weight: 500; margin-right: .8rem; }
-  .selftest-suite strong { color: var(--green); font-weight: 500; }
   .selftest-head, .selftest-row {
     display: grid; grid-template-columns: 13.5rem minmax(0, 1fr) 11rem;
     gap: 1.5rem; align-items: center;
@@ -1497,7 +1490,6 @@
   <h2 class="r d1">Stack Bench tests itself.</h2>
   <p class="lead r d2">The same selected checks run against controlled apps. A correct app must pass, a planted defect must fail its target, and an empty app must score zero.</p>
   <div class="selftest r d3" role="img" aria-label="the same selected checks run against a correct reference app, a deliberately broken app, and an empty app, producing all pass, target caught, and zero point results">
-    <div class="selftest-suite"><span><b>HARNESS SUITE</b>unit · integration · Docker runs · cleanup</span><strong>PASS</strong></div>
     <div class="selftest-head"><span>control app</span><span>same selected checks</span><span>expected result</span></div>
     <div class="selftest-row row-reference">
       <div class="selftest-control"><b>Correct reference</b><span>known working behavior</span></div>
