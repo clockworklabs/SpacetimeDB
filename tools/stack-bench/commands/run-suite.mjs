@@ -13,8 +13,8 @@
 //   node commands/run-suite.mjs --app <app-dir> --url <url> --backend spacetime|postgres|mongodb
 //                      --label <id> [--out <dir>] [--media] [--level 1] [--no-reset]
 
-import { execFileSync } from 'node:child_process';
-import { readFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadTrack, suitesFor, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
@@ -31,6 +31,7 @@ import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.mjs';
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
+import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const RESET = join(ROOT, 'commands', 'reset-backend.mjs');
@@ -51,7 +52,10 @@ export function childFailureDetail(failure = null, stdout = '', limit = 600) {
     .filter(value => value !== undefined && value !== null && String(value).trim())
     .join('\n').trim().split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   if (!lines.length) return '';
-  const cause = lines.find(line => !line.startsWith('at ') && !/^Node\.js v/.test(line)) ?? lines[0];
+  const noise = line => line.startsWith('at ') || /^Node\.js v/.test(line)
+    || /^node:internal\//.test(line) || /^\^+$/.test(line) || /^[\[\]{},]+$/.test(line);
+  const cause = lines.find(line => !noise(line) && /(?:error|failed|timeout|closed|econn|killed)/i.test(line))
+    ?? lines.find(line => !noise(line)) ?? lines[0];
   const selected = [cause, ...lines.slice(-4)].filter((line, index, all) => all.indexOf(line) === index);
   return selected.join(' | ').slice(0, limit);
 }
@@ -79,9 +83,29 @@ export function applicationFailureTotals(selection, declaredSuites) {
 
 export function clearPreviousGradeOutputs(output, declaredSuites) {
   for (const name of ['bundle.json', 'contract-lint.json', 'actions.json', 'media', 'failure-media',
-    ...declaredSuites.map(suite => `grading-${suite.id}.json`)]) {
+    ...declaredSuites.flatMap(suite => [`grading-${suite.id}.json`,
+      `grader-${suite.id}.stdout.log`, `grader-${suite.id}.stderr.log`])]) {
     rmSync(join(output, name), { recursive: true, force: true });
   }
+}
+
+export function runGraderChild(argv, output, suiteId, { execute = spawnSync } = {}) {
+  const options = { encoding: 'utf8', cwd: ROOT, timeout: COMMAND_TIMEOUT_MS,
+    maxBuffer: 64 * 1024 * 1024 };
+  const result = execute(process.execPath, argv, options);
+  const stdout = redactCredentials(String(result.stdout ?? ''));
+  const stderr = redactCredentials(String(result.stderr ?? ''));
+  const safeId = String(suiteId).replace(/[^A-Za-z0-9._-]/g, '_');
+  const stdoutName = `grader-${safeId}.stdout.log`;
+  const stderrName = `grader-${safeId}.stderr.log`;
+  writeFileSync(join(output, stdoutName), stdout);
+  writeFileSync(join(output, stderrName), stderr);
+  let failure = result.error ?? null;
+  if (!failure && result.status !== 0) {
+    failure = new Error(`grader exited ${result.status ?? result.signal ?? 'without status'}`);
+  }
+  if (failure) Object.assign(failure, { stdout, stderr, status: result.status, signal: result.signal });
+  return { stdout, stderr, failure, stdoutName, stderrName };
 }
 
 function parseArgs(argv) {
@@ -382,18 +406,13 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
   if (args.app) argv.push('--app', args.app);
   if (args.media) argv.push('--media', join(args.out, 'media'), '--trace');
   else argv.push('--failure-media', join(args.out, 'failure-media'));
-  let stdout = '';
-  let failure = null;
-  try {
-    stdout = run('node', argv);
-  } catch (err) {
-    stdout = (err.stdout || '').toString();
-    failure = err;
-  }
+  const child = runGraderChild(argv, args.out, suite.id);
+  const { stdout, failure } = child;
   if (!existsSync(out)) {
     console.log('NO REPORT');
     const detail = childFailureDetail(failure, stdout);
-    throw new Error(`grader produced no report for ${suite.id}${detail ? `: ${detail}` : ''}`);
+    throw new Error(`grader produced no report for ${suite.id}${detail ? `: ${detail}` : ''}; `
+      + `full diagnostics: ${child.stdoutName}, ${child.stderrName}`);
   }
   const r = readArtifactPayload(out, { expectedKind: 'grade' });
   if (selectedChecks.length) {

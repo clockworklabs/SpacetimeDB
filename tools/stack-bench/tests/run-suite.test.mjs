@@ -8,7 +8,7 @@ import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selectio
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, resetFailureOutcome, suitesForRecipe,
-  verifyReseedProbe } from '../commands/run-suite.mjs';
+  runGraderChild, verifyReseedProbe } from '../commands/run-suite.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 
@@ -50,6 +50,37 @@ test('grader child diagnostics retain the cause instead of only trailing stack f
   assert.match(detail, /^Error: check evidence action is malformed \|/);
   assert.match(detail, /gradeFeature/);
   assert.doesNotMatch(detail, /validateCheckEvidence/);
+});
+
+test('grader child diagnostics skip Node rejection boilerplate', () => {
+  const stderr = [
+    'node:internal/process/promises:394',
+    '    triggerUncaughtException(err, true /* fromPromise */);',
+    '    ^',
+    '',
+    'browserContext.close: Target page, context or browser has been closed',
+    '    at closeAll (grade.mjs:596:21)',
+    'Node.js v24.18.1',
+  ].join('\n');
+  assert.match(childFailureDetail({ stderr }),
+    /^browserContext\.close: Target page, context or browser has been closed/);
+});
+
+test('grader subprocess output is retained with credentials redacted', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-grader-child-'));
+  try {
+    const result = runGraderChild(['grade.mjs'], root, 'account-create', {
+      execute: () => ({ status: 1, signal: null,
+        stdout: 'starting account-create\n',
+        stderr: 'ANTHROPIC_API_KEY=should-not-leak\nError: browser closed\n' }),
+    });
+    assert(result.failure);
+    assert.match(result.stderr, /\[redacted credential\]/);
+    assert.doesNotMatch(result.stderr, /should-not-leak/);
+    assert.equal(readFileSync(join(root, result.stdoutName), 'utf8'), 'starting account-create\n');
+    assert.equal(readFileSync(join(root, result.stderrName), 'utf8'),
+      '[redacted credential]\nError: browser closed\n');
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('generated layout and restart defects are repairable app failures, not harness failures', () => {
@@ -95,10 +126,14 @@ test('a new grade removes only prior outputs that it owns', () => {
     mkdirSync(join(root, 'failure-media'), { recursive: true });
     writeFileSync(join(root, 'bundle.json'), 'old');
     writeFileSync(join(root, 'grading-features.json'), 'old');
+    writeFileSync(join(root, 'grader-features.stdout.log'), 'old');
+    writeFileSync(join(root, 'grader-features.stderr.log'), 'old');
     writeFileSync(join(root, 'operator-notes.txt'), 'keep');
     clearPreviousGradeOutputs(root, [{ id: 'features' }]);
     assert.equal(existsSync(join(root, 'bundle.json')), false);
     assert.equal(existsSync(join(root, 'grading-features.json')), false);
+    assert.equal(existsSync(join(root, 'grader-features.stdout.log')), false);
+    assert.equal(existsSync(join(root, 'grader-features.stderr.log')), false);
     assert.equal(existsSync(join(root, 'failure-media')), false);
     assert.equal(readFileSync(join(root, 'operator-notes.txt'), 'utf8'), 'keep');
   } finally { rmSync(root, { recursive: true, force: true }); }

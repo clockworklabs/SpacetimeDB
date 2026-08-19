@@ -63,6 +63,10 @@ provenance verification, contract linting, scenario execution, and bundle
 creation. Direct `grade.mjs` invocation is useful only for focused authoring and
 does not replace those run-level preconditions.
 
+Each suite retains credential-redacted `grader-<suite>.stdout.log` and
+`grader-<suite>.stderr.log` beside its report. If a grader process exits before
+writing JSON, those files are the authoritative failure diagnostics.
+
 Validate new scored scenarios with both null controls and source-bound defects:
 
 ```bash

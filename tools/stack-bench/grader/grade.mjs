@@ -558,6 +558,38 @@ async function runStep(step, actors, ctx) {
   return runRegisteredAction(step, actors, ctx);
 }
 
+export async function closeActorContexts(entries, {
+  trace = false, media = null, slug = 'grade',
+} = {}) {
+  const failures = [];
+  const record = (name, stage, error) => failures.push({
+    actor: name,
+    stage,
+    reason: keepReason(error?.message ?? String(error)),
+  });
+  for (const { context, name, page } of entries) {
+    if (trace) {
+      try {
+        await context.tracing.stop({ path: join(media ?? '.', `${slug}-${name}.trace.zip`) });
+      } catch (error) { record(name, 'trace', error); }
+    }
+    let video = null;
+    if (media) {
+      try { video = page.video(); }
+      catch (error) { record(name, 'video-handle', error); }
+    }
+    try { await context.close(); }
+    catch (error) { record(name, 'context-close', error); }
+    if (video) {
+      try { await video.saveAs(join(media, `${slug}-${name}.webm`)); }
+      catch (error) { record(name, 'video-save', error); }
+      try { await video.delete(); }
+      catch (error) { record(name, 'video-delete', error); }
+    }
+  }
+  return failures;
+}
+
 // ─── Feature grading ─────────────────────────────────────────────────────────
 
 async function gradeFeature(browser, feature, args, runCtx) {
@@ -571,35 +603,6 @@ async function gradeFeature(browser, feature, args, runCtx) {
   const actors = new Map();
   const contexts = [];
   const slug = `${args.label ?? 'run'}-f${feature.id}`;
-  for (const name of feature.actors) {
-    // Isolated storage per actor. Video is per-context, so each actor gets its
-    // own recording — you can watch what every participant saw, side by side.
-    const context = await browser.newContext(
-      args.media ? { recordVideo: { dir: args.media, size: { width: 1280, height: 800 } } } : {}
-    );
-    if (args.trace) await context.tracing.start({ screenshots: true, snapshots: true });
-    const page = await context.newPage();
-    page.setDefaultTimeout(DEFAULT_WITHIN);
-    await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    const actor = new Actor(name, page, context);
-    actor.annotate = Boolean(args.media);
-    actors.set(name, actor);
-    contexts.push({ context, name, page });
-  }
-
-  const closeAll = async () => {
-    for (const { context, name, page } of [...contexts, ...extraContexts]) {
-      if (args.trace) {
-        await context.tracing.stop({ path: join(args.media ?? '.', `${slug}-${name}.trace.zip`) }).catch(() => {});
-      }
-      const video = args.media ? page.video() : null;
-      await context.close();                     // video is only finalized on close
-      if (video) {
-        await video.saveAs(join(args.media, `${slug}-${name}.webm`)).catch(() => {});
-        await video.delete().catch(() => {});     // drop Playwright's hashed original
-      }
-    }
-  };
 
   // A feature is worth what its criteria are worth. An explicit `max` is only
   // a consistency check (check-scenarios.mjs enforces it), never a top-up.
@@ -608,6 +611,48 @@ async function gradeFeature(browser, feature, args, runCtx) {
     id: feature.id, name: feature.name, score: 0, max: featureMax,
     criteria: [], consoleErrors: [],
   };
+  const closeAll = async () => {
+    const failures = await closeActorContexts([...contexts, ...extraContexts], {
+      trace: args.trace, media: args.media, slug,
+    });
+    if (failures.length) result.cleanupEvidence = { status: 'harness_failure', failures };
+    return failures;
+  };
+  const initializationStartedAtMs = evidenceNowMs();
+  try {
+    for (const name of feature.actors) {
+      // Isolated storage per actor. Video is per-context, so each actor gets its
+      // own recording — you can watch what every participant saw, side by side.
+      const context = await browser.newContext(
+        args.media ? { recordVideo: { dir: args.media, size: { width: 1280, height: 800 } } } : {}
+      );
+      contexts.push({ context, name, page: null });
+      if (args.trace) await context.tracing.start({ screenshots: true, snapshots: true });
+      const page = await context.newPage();
+      contexts[contexts.length - 1].page = page;
+      page.setDefaultTimeout(DEFAULT_WITHIN);
+      await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      const actor = new Actor(name, page, context);
+      actor.annotate = Boolean(args.media);
+      actors.set(name, actor);
+    }
+  } catch (error) {
+    const classified = classifyCheckFailure(error);
+    const reason = keepReason(classified.summary.trim());
+    result.setupEvidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: initializationStartedAtMs,
+      failure: error, summary: reason });
+    for (const criterion of feature.criteria) {
+      const points = criterion.points ?? 1;
+      const evidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: initializationStartedAtMs,
+        failure: error, summary: `browser setup failed: ${reason}`, actions: [] });
+      result.criteria.push({ id: criterion.id, desc: criterion.desc, points, evidence });
+      result.inconclusive = [...(result.inconclusive ?? []),
+        { id: criterion.id, points, status: evidence.status, code: evidence.code,
+          phase: evidence.phase, summary: evidence.summary }];
+    }
+    await closeAll();
+    return result;
+  }
 
   const captureFailureScreenshots = async label => {
     if (!args.failureMedia) return [];
@@ -738,7 +783,7 @@ async function countExistingRooms(browser, args, runId) {
   } catch {
     return -1;                                     // couldn't determine
   } finally {
-    await context.close();
+    await context.close().catch(() => {});
   }
 }
 
@@ -856,7 +901,12 @@ async function main() {
     }
   }
 
-  await browser.close();
+  try { await browser.close(); }
+  catch (error) {
+    report.cleanupEvidence = { status: 'harness_failure', failures: [{
+      actor: null, stage: 'browser-close', reason: keepReason(error?.message ?? String(error)),
+    }] };
+  }
 
   if (recipeRelease) report.packRuntime = measureGradePackRuntime(report);
 
@@ -879,4 +929,9 @@ async function main() {
   }
 }
 
-main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch(error => {
+    console.error(error.stack ?? error.message);
+    process.exitCode = 2;
+  });
+}
