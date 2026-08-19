@@ -42,7 +42,7 @@ and dashboard-started work remains fully operable from the CLI. See
 - `dashboard/README.md` — optional web control room
 - `grader/README.md` — grader architecture and evidence model
 - `tracks/ecommerce/composition/README.md` — packs, recipes, and release composition
-- `docs/presentation-dependency-mode.html` — presentation of dependency-based progression and scoring
+- `docs/stack-bench.html` - Stack Bench presentation
 
 Working notes, generated reports, and run artifacts are local operator material
 and are intentionally not tracked in the repository. Reviewable project
