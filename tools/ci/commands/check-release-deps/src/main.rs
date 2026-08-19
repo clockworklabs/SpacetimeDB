@@ -38,7 +38,7 @@ fn main() -> Result<()> {
         &[args.pr_number],
     )?;
     match point {
-        Some(release) => println!("Earliest rollback point: {release}"),
+        Some(release) => println!("All mentioned PRs have been released. Earliest rollback point: {release}"),
         None => println!("No PR mentions found, so trivially succeeding."),
     }
     Ok(())

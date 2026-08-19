@@ -512,7 +512,6 @@ jobs:
       RUST_BACKTRACE: full
       TARGET_TRIPLE: x86_64-unknown-linux-gnu
       OPENSSL_CACHE_SUFFIX: ""
-      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Find Git ref
         env:
