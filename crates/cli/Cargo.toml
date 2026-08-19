@@ -73,6 +73,7 @@ tokio-tungstenite.workspace = true
 toml.workspace = true
 toml_edit.workspace = true
 tracing = { workspace = true, features = ["release_max_level_off"] }
+url.workspace = true
 walkdir.workspace = true
 wasmbin.workspace = true
 webbrowser.workspace = true
