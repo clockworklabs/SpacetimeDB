@@ -819,7 +819,8 @@
   .behvis .label { fill: var(--n1); font-size: 13px; font-weight: 600; }
   .behvis .minor { fill: var(--n4); font-size: 10px; }
   .behvis .cap { fill: var(--n4); font-size: 9px; letter-spacing: .14em; }
-  section.on .behvis .wire.live { stroke-dasharray: 5 8; animation: dashRun 1.1s linear infinite; }
+  section.on .behvis .wire.live { stroke-dasharray: 5 8; animation: behDash 1.1s linear infinite; }
+  @keyframes behDash { to { stroke-dashoffset: -13; } }
   .selftest {
     width: 100%; max-width: 920px; margin-top: 1.15rem;
     border-top: 1px solid var(--shade1); border-bottom: 1px solid var(--shade1);
