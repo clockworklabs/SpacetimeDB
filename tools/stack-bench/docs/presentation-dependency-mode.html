@@ -1111,23 +1111,23 @@
 <section class="fit-slide visual-first">
   <div class="kicker r">one controlled run</div>
   <h2 class="r d1">Stack Bench controls every step.</h2>
-  <p class="lead r d2">Each run pins the request and environment, isolates the build and services, and keeps repair feedback and evidence in one reproducible record.</p>
-  <svg class="dia r d3" viewBox="0 0 960 452" role="img" aria-label="Stack Bench coordinates preflight, the agent, stack services, the generated app, browser grading, results, evidence, and repair">
+  <p class="lead r d2">Each run keeps the request and environment fixed, isolates the build and services, and saves the results and evidence.</p>
+  <svg class="dia r d3" viewBox="0 0 960 452" role="img" aria-label="Stack Bench checks the setup, runs the agent and app stack, grades the app, and saves the results and evidence">
     <defs><marker id="a2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#2b3a42"/></marker></defs>
-    <rect class="b key" x="385" y="8" width="200" height="40"/><text class="lbl" x="405" y="26">Stack Bench</text><text class="sub" x="405" y="40">one run · one record</text>
-    <rect class="b" x="60" y="92" width="200" height="40"/><text class="lbl" x="78" y="110">preflight</text><text class="sub" x="78" y="124">validate before spend</text>
-    <rect class="b" x="385" y="92" width="200" height="40"/><text class="lbl" x="405" y="110">AI agent</text><text class="sub" x="405" y="124">build or repair</text>
-    <rect class="b" x="700" y="92" width="200" height="40"/><text class="lbl" x="718" y="110">app stack</text><text class="sub" x="718" y="124">selected for this run</text>
-    <rect class="b lit" x="385" y="168" width="200" height="40"/><text class="lbl" x="405" y="186">build container</text><text class="sub" x="405" y="200">isolated agent session</text>
-    <rect class="b lit" x="700" y="168" width="200" height="40" style="animation-delay:.8s"/><text class="lbl" x="718" y="186">stack services</text><text class="sub" x="718" y="200">isolated and reset</text>
-    <rect class="b key" x="385" y="244" width="515" height="40"/><text class="lbl" x="405" y="262">running application</text><text class="sub" x="405" y="276">the generated product against its assigned stack</text>
-    <rect class="b key" x="130" y="320" width="770" height="46"/><text class="lbl" x="150" y="338">browser grader</text><text class="sub" x="150" y="354">customer sessions · operator sessions · controlled probes</text>
-    <rect class="b" x="130" y="396" width="360" height="44"/><text class="lbl" x="150" y="414">typed results</text><text class="sub" x="150" y="429">pass · fail · inconclusive · system failure</text>
-    <rect class="b" x="540" y="396" width="360" height="44"/><text class="lbl" x="560" y="414">evidence</text><text class="sub" x="560" y="429">prompt · source · cost · video · trace</text>
+    <rect class="b key" x="385" y="8" width="200" height="40"/><text class="lbl" x="405" y="26">Stack Bench</text><text class="sub" x="405" y="40">controls the run</text>
+    <rect class="b" x="60" y="92" width="200" height="40"/><text class="lbl" x="78" y="110">preflight</text><text class="sub" x="78" y="124">checks setup first</text>
+    <rect class="b" x="385" y="92" width="200" height="40"/><text class="lbl" x="405" y="110">agent</text><text class="sub" x="405" y="124">builds or fixes</text>
+    <rect class="b" x="700" y="92" width="200" height="40"/><text class="lbl" x="718" y="110">app stack</text><text class="sub" x="718" y="124">selected for the run</text>
+    <rect class="b lit" x="385" y="168" width="200" height="40"/><text class="lbl" x="405" y="186">build</text><text class="sub" x="405" y="200">isolated workspace</text>
+    <rect class="b lit" x="700" y="168" width="200" height="40" style="animation-delay:.8s"/><text class="lbl" x="718" y="186">services</text><text class="sub" x="718" y="200">isolated and reset</text>
+    <rect class="b key" x="385" y="244" width="515" height="40"/><text class="lbl" x="405" y="262">app</text><text class="sub" x="405" y="276">running on the selected stack</text>
+    <rect class="b key" x="130" y="320" width="770" height="46"/><text class="lbl" x="150" y="338">grader</text><text class="sub" x="150" y="354">runs the product tests</text>
+    <rect class="b" x="130" y="396" width="360" height="44"/><text class="lbl" x="150" y="414">results</text><text class="sub" x="150" y="429">pass · fail · could not test</text>
+    <rect class="b" x="540" y="396" width="360" height="44"/><text class="lbl" x="560" y="414">evidence</text><text class="sub" x="560" y="429">prompt · source · cost · visuals</text>
     <path class="e" d="M470 48 V70 H160 V88"/><path class="e flow" d="M485 48 V88"/><path class="e" d="M500 48 V70 H800 V88"/>
     <path class="e flow" d="M485 132 V164"/><path class="e flow" d="M800 132 V164"/><path class="e flow" d="M485 208 V240"/><path class="e flow" d="M800 208 V240"/>
     <path class="e flow" d="M600 284 V300 H515 V316"/><path class="e flow" d="M310 366 V392"/><path class="e flow" d="M720 366 V392"/>
-    <path class="e back" d="M130 418 H40 V150 H430 V134" marker-end="url(#a2)"/><text class="sub acc" x="46" y="252">app failures</text><text class="sub" x="46" y="266">return to the agent</text>
+    <path class="e back" d="M130 418 H40 V150 H430 V134" marker-end="url(#a2)"/><text class="sub acc" x="46" y="252">failed tests</text><text class="sub" x="46" y="266">return to the agent</text>
   </svg>
 </section>
 
