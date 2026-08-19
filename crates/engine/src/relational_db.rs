@@ -930,12 +930,12 @@ impl RelationalDB {
         }
     }
 
-    /// Subscribe to a channel of snapshot offsets.
+    /// Subscribe to a channel of snapshot candidate offsets.
     ///
     /// If a `snapshot_repo` was provided when this database was opened, this method
     /// returns a `watch::Receiver` that updates with the latest [`TxOffset`] a snapshot
-    /// was taken at.
-    pub fn subscribe_to_snapshots(&self) -> Option<watch::Receiver<TxOffset>> {
+    /// was taken at, if one is known.
+    pub fn subscribe_to_snapshots(&self) -> Option<watch::Receiver<Option<TxOffset>>> {
         self.snapshot_worker.as_ref().map(|snap| snap.subscribe())
     }
 
@@ -1801,7 +1801,7 @@ pub async fn local_history(
 ///
 /// Suitable **only** for non-replicated databases.
 pub async fn snapshot_watching_commitlog_compressor(
-    mut snapshot_rx: watch::Receiver<u64>,
+    mut snapshot_rx: watch::Receiver<Option<u64>>,
     mut clog_tx: Option<spacetimedb_runtime::sync::mpsc::Sender<u64>>,
     mut snap_tx: Option<spacetimedb_runtime::sync::mpsc::Sender<u64>>,
     durability: LocalDurability,
@@ -1809,7 +1809,9 @@ pub async fn snapshot_watching_commitlog_compressor(
 ) {
     let mut prev_snapshot_offset = *snapshot_rx.borrow_and_update();
     while snapshot_rx.changed().await.is_ok() {
-        let snapshot_offset = *snapshot_rx.borrow_and_update();
+        let Some(snapshot_offset) = *snapshot_rx.borrow_and_update() else {
+            continue;
+        };
         let durability = durability.clone();
 
         if let Some(snap_tx) = &mut snap_tx
@@ -1818,10 +1820,14 @@ pub async fn snapshot_watching_commitlog_compressor(
             tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
         }
 
+        let Some(prev) = prev_snapshot_offset.replace(snapshot_offset) else {
+            continue;
+        };
+
         let res: io::Result<_> = asyncify(&runtime, move || {
             let segment_offsets = durability.existing_segment_offsets()?;
             let start_idx = segment_offsets
-                .binary_search(&prev_snapshot_offset)
+                .binary_search(&prev)
                 // if the snapshot is in the middle of a segment, we want to round down.
                 // [0, 2].binary_search(1) will return Err(1), so we subtract 1.
                 .unwrap_or_else(|i| i.saturating_sub(1));
@@ -1846,8 +1852,6 @@ pub async fn snapshot_watching_commitlog_compressor(
                 continue;
             }
         };
-        prev_snapshot_offset = snapshot_offset;
-
         if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment)
             && let Err(err) = clog_tx.try_send(last_compressed_segment)
         {

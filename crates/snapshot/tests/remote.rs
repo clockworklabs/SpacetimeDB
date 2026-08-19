@@ -264,9 +264,10 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     .unwrap()?;
 
     let mut snapshot_offset = *watch.borrow();
-    while snapshot_offset < SNAPSHOT_FREQUENCY && watch.changed().await.is_ok() {
+    while snapshot_offset.map_or(true, |offset| offset < SNAPSHOT_FREQUENCY) && watch.changed().await.is_ok() {
         snapshot_offset = *watch.borrow_and_update();
     }
+    let snapshot_offset = snapshot_offset.expect("snapshot should be created");
     assert!(snapshot_offset >= SNAPSHOT_FREQUENCY);
     info!(
         "snapshot creation took {}s",

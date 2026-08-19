@@ -59,7 +59,7 @@ impl Compression {
 /// to preserve event subscriptions on the `SnapshotWorker`'s `snapshot_created` channel.
 #[derive(Clone)]
 pub struct SnapshotWorker {
-    snapshot_created: watch::Sender<TxOffset>,
+    snapshot_created: watch::Sender<Option<TxOffset>>,
     request_snapshot: mpsc::UnboundedSender<Request>,
     snapshot_repository: Arc<DynSnapshotRepo>,
 }
@@ -72,7 +72,7 @@ impl SnapshotWorker {
     /// to future snapshots before handing off the worker to the database.
     pub fn new(snapshot_repository: Arc<DynSnapshotRepo>, compression: Compression, rt: Handle) -> Self {
         let database = snapshot_repository.database_identity();
-        let latest_snapshot = snapshot_repository.latest_snapshot().ok().flatten().unwrap_or(0);
+        let latest_snapshot = snapshot_repository.latest_snapshot().ok().flatten();
         let (snapshot_created, _) = watch::channel(latest_snapshot);
         let (request_tx, request_rx) = mpsc::unbounded();
 
@@ -139,12 +139,12 @@ impl SnapshotWorker {
         let _ = self.request_snapshot.unbounded_send(Request::TakeSnapshot);
     }
 
-    /// Subscribe to the [TxOffset]s of snapshots created by this worker.
+    /// Subscribe to the latest snapshot candidate known to this worker.
     ///
     /// Note that the returned [`watch::Receiver`] only stores the most recent
-    /// snapshot offset, but can be turned into a [`futures::Stream`] using the
-    /// `WatchStream` from the `tokio-stream` crate.
-    pub fn subscribe(&self) -> watch::Receiver<TxOffset> {
+    /// snapshot offset, if one exists, but can be turned into a [`futures::Stream`]
+    /// using the `WatchStream` from the `tokio-stream` crate.
+    pub fn subscribe(&self) -> watch::Receiver<Option<TxOffset>> {
         self.snapshot_created.subscribe()
     }
 }
@@ -175,7 +175,7 @@ enum Request {
 struct SnapshotWorkerActor {
     snapshot_requests: mpsc::UnboundedReceiver<Request>,
     snapshot_repo: Arc<DynSnapshotRepo>,
-    snapshot_created: watch::Sender<TxOffset>,
+    snapshot_created: watch::Sender<Option<TxOffset>>,
     metrics: SnapshotMetrics,
     rt: Handle,
     compression: Option<Compressor>,
@@ -208,7 +208,7 @@ impl SnapshotWorkerActor {
                         .inspect_err(|e| warn!("database={database_identity} SnapshotWorker: {e:#}"));
                     if let Ok(snapshot_offset) = res {
                         self.maybe_compress_snapshots(snapshot_offset).await;
-                        self.snapshot_created.send_replace(snapshot_offset);
+                        self.snapshot_created.send_replace(Some(snapshot_offset));
                     }
                 }
                 Request::ReplaceState(new_state) => {
