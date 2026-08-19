@@ -14,7 +14,12 @@ test('the reference registry binds active, blocked, and historical provenance li
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 15);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 0);
+  assert.deepEqual(registry.fixtures.filter(fixture => fixture.status === 'candidate')
+    .map(fixture => fixture.id).sort(), [
+    'ecommerce-l2-cumulative-1.5-mongodb',
+    'ecommerce-l2-cumulative-1.5-postgres',
+    'ecommerce-l2-cumulative-1.5-spacetime',
+  ]);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
   escaped.fixtures[0].archivedEvidence = ['results/unbound-grade.json'];

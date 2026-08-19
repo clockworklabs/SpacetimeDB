@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "edits": [
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid={testId} onClick={onOpen}",
+      "replace": "data-testid={testId} data-buy-input={JSON.stringify({ itemId: item.id })} onClick={onOpen}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"order-item\" data-entity-id={String(order.id)} key={order.id}",
+      "replace": "data-testid=\"order-item\" data-entity-id={String(order.id)} data-ship-input={JSON.stringify({ orderId: order.id })} data-cancel-input={JSON.stringify({ orderId: order.id })} key={order.id}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"admin-item-row\" key={it.id}",
+      "replace": "data-testid=\"admin-item-row\" data-price-input={it.name === \"Gaming Mouse\" ? JSON.stringify({ itemId: it.id, price: 1 }) : undefined} data-transfer-input={it.name === \"Headphones\" ? JSON.stringify({ itemId: it.id, fromWarehouseId: warehouses.find((w) => w.name === \"East\")!.id, toWarehouseId: warehouses.find((w) => w.name === \"West\")!.id, quantity: 25 }) : undefined} key={it.id}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"admin-location-row\" key={loc.id}",
+      "replace": "data-testid=\"admin-location-row\" data-restock-input={JSON.stringify({ itemId: loc.itemId, warehouseId: loc.warehouseId, quantity: 1 })} key={loc.id}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "<div className=\"cart-item\" data-testid=\"cart-item\">",
+      "replace": "<div className=\"cart-item\" data-testid=\"cart-item\" data-cart-input={JSON.stringify({ itemId: line.itemId, quantity: -3 })}>"
+    },
+    {
+      "path": "server/src/index.ts",
+      "find": "async function broadcastRecommendedForUser(userId: string) {\n  const items = await getRecommendedItems(userId);\n  const snapshot = JSON.stringify(items);\n  if (lastRecommendedSnapshot.get(userId) !== snapshot) {\n    lastRecommendedSnapshot.set(userId, snapshot);\n    io.to(`user:${userId}`).emit(\"recommended:update\", items);\n  }\n}",
+      "replace": "async function broadcastRecommendedForUser(userId: string | null) {\n  const items = await getRecommendedItems(userId);\n  const snapshot = JSON.stringify(items);\n  const audience = userId ?? \"visitors\";\n  if (lastRecommendedSnapshot.get(audience) !== snapshot) {\n    lastRecommendedSnapshot.set(audience, snapshot);\n    io.to(userId ? `user:${userId}` : \"visitors\").emit(\"recommended:update\", items);\n  }\n}"
+    },
+    {
+      "path": "server/src/index.ts",
+      "find": "  if (!userId) return itemsLive.slice(0, 10);",
+      "replace": "  if (!userId) return itemsLive.filter((item) => item.purchaseCount > 0).slice(0, 10);"
+    },
+    {
+      "path": "server/src/index.ts",
+      "find": "async function broadcastRecommendedForAll() {\n  for (const userId of connectedUsers.keys()) {\n    await broadcastRecommendedForUser(userId);\n  }\n}",
+      "replace": "async function broadcastRecommendedForAll() {\n  for (const userId of connectedUsers.keys()) {\n    await broadcastRecommendedForUser(userId);\n  }\n  await broadcastRecommendedForUser(null);\n}"
+    },
+    {
+      "path": "server/src/index.ts",
+      "find": "    connectedUsers.set(userId, (connectedUsers.get(userId) || 0) + 1);\n  }\n\n  socket.on(\"disconnect\", () => {",
+      "replace": "    connectedUsers.set(userId, (connectedUsers.get(userId) || 0) + 1);\n  } else {\n    socket.join(\"visitors\");\n  }\n\n  socket.on(\"disconnect\", () => {"
+    }
+  ]
+}

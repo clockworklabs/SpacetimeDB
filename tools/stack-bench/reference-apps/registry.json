@@ -349,6 +349,72 @@
       "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2-v1.4.0/."
     },
     {
+      "id": "ecommerce-l2-cumulative-1.5-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "candidate",
+      "recipes": ["ecommerce.l2-standard@1.5.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/mongodb",
+        "baseSha256": "6aafa2ec888b4049a87f488469f16118cd480517bfa876e57538f751744d1c7b",
+        "patchPath": "reference-apps/patches/ecommerce-l2-cumulative-1.5/mongodb.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The maintained MongoDB L2 reference plus the exact L1 2.4 and L2 action-input handles required by cumulative L2 1.5."
+      },
+      "imported": {
+        "sourceSha256": "2b678936abe7faa9670a914a425369f478956a2f5ef3326725d32a3b7aacebdb"
+      },
+      "mutationManifests": [],
+      "qualification": "Candidate source pending exact hash-bound L2 1.5 reference and mutation qualification."
+    },
+    {
+      "id": "ecommerce-l2-cumulative-1.5-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "candidate",
+      "recipes": ["ecommerce.l2-standard@1.5.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/postgres",
+        "baseSha256": "70e2c03771fe8eb35defb8669bfca465e86714b849534241bcd1ab83a23792b0",
+        "patchPath": "reference-apps/patches/ecommerce-l2-cumulative-1.5/postgres.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The maintained PostgreSQL L2 reference plus the exact L1 2.4 and L2 action-input handles required by cumulative L2 1.5."
+      },
+      "imported": {
+        "sourceSha256": "7b3d6c936623ed8ff8b4ff3e61204c291b784c2d36c2bc1edbd5bcca47f9c952"
+      },
+      "mutationManifests": [],
+      "qualification": "Candidate source pending exact hash-bound L2 1.5 reference and mutation qualification."
+    },
+    {
+      "id": "ecommerce-l2-cumulative-1.5-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "candidate",
+      "recipes": ["ecommerce.l2-standard@1.5.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/spacetime",
+        "baseSha256": "cd562347bede7943167f776bf48dde1fc8e06a963ad1a2cd111bb020c9d7a375",
+        "patchPath": "reference-apps/patches/ecommerce-l2-cumulative-1.5/spacetime.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The maintained SpacetimeDB L2 reference plus the exact L1 2.4 and L2 action-input handles required by cumulative L2 1.5."
+      },
+      "imported": {
+        "sourceSha256": "b0bfc4405e684511874f5a867a5dc84e28b258e46729b7199a1e8aa5e27b61ce"
+      },
+      "mutationManifests": [],
+      "qualification": "Candidate source pending exact hash-bound L2 1.5 reference and mutation qualification."
+    },
+    {
       "id": "chat-l1-mongodb",
       "backend": "mongodb",
       "track": "chat",
