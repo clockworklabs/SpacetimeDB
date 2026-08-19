@@ -25,6 +25,10 @@
     --green:  #4cf490;
     --green-25: #4cf49040;
     --green-10: #4cf4901a;
+    --open: #67b7ff;
+    --open-10: #67b7ff1a;
+    --working: #f6c85f;
+    --working-10: #f6c85f1a;
     --n1: #e6e9f0;  /* primary text */
     --n3: #b6c0cf;  /* secondary text */
     --n4: #6f7987;  /* muted */
@@ -749,33 +753,68 @@
   .dg-n rect { fill: #0d1418; stroke: #1e2c33; stroke-width: 1.2; rx: 6; }
   .dg .dg-label { fill: var(--n1); font-size: 12px; }
   .dg .dg-state { font-size: 9px; text-anchor: end; opacity: 0; }
+  .dg .dg-state.open { fill: var(--open); }
+  .dg .dg-state.working { fill: var(--working); }
   .dg .dg-state.pass { fill: var(--green); }
   .dg .dg-state.fail { fill: #fc6897; }
   .dg .dg-state.locked { fill: var(--n4); }
   .dg-edges path { fill: none; stroke: #253239; stroke-width: 1.4; }
   .dg-flow { fill: none; stroke: var(--green); stroke-width: 1.7; stroke-dasharray: 5 8; opacity: 0; }
-  section.on .dg .l1-pass rect { animation: dgPass1 8s ease-in-out infinite; }
-  section.on .dg .l1-fail rect { animation: dgFail1 8s ease-in-out infinite; }
-  section.on .dg .l2-pass rect { animation: dgPass2 8s ease-in-out infinite; }
-  section.on .dg .l2-fail rect { animation: dgFail2 8s ease-in-out infinite; }
-  section.on .dg .l2-locked, section.on .dg .l3-locked { animation: dgLocked 8s ease-in-out infinite; }
-  section.on .dg .l3-pass rect { animation: dgPass3 8s ease-in-out infinite; }
-  section.on .dg .state-l1 { animation: dgState1 8s ease-in-out infinite; }
-  section.on .dg .state-l2 { animation: dgState2 8s ease-in-out infinite; }
-  section.on .dg .state-l3 { animation: dgState3 8s ease-in-out infinite; }
-  section.on .dg .flow-l2 { animation: dgFlow2 8s linear infinite; }
-  section.on .dg .flow-l3 { animation: dgFlow3 8s linear infinite; }
-  @keyframes dgPass1 { 0%,14%,100% { stroke:#1e2c33; fill:#0d1418; } 20%,92% { stroke:var(--green); fill:var(--green-10); } }
-  @keyframes dgFail1 { 0%,14%,100% { stroke:#1e2c33; fill:#0d1418; } 20%,92% { stroke:#fc6897; fill:#fc689714; } }
-  @keyframes dgPass2 { 0%,39%,100% { stroke:#1e2c33; fill:#0d1418; opacity:.35; } 27%,38% { opacity:1; } 45%,92% { stroke:var(--green); fill:var(--green-10); opacity:1; } }
-  @keyframes dgFail2 { 0%,39%,100% { stroke:#1e2c33; fill:#0d1418; opacity:.35; } 27%,38% { opacity:1; } 45%,92% { stroke:#fc6897; fill:#fc689714; opacity:1; } }
-  @keyframes dgPass3 { 0%,64%,100% { stroke:#1e2c33; fill:#0d1418; opacity:.3; } 53%,63% { opacity:1; } 70%,92% { stroke:var(--green); fill:var(--green-10); opacity:1; } }
-  @keyframes dgLocked { 0%,14%,100% { opacity:.3; } 20%,92% { opacity:.16; } }
-  @keyframes dgState1 { 0%,17%,96%,100% { opacity:0; } 23%,92% { opacity:1; } }
-  @keyframes dgState2 { 0%,42%,96%,100% { opacity:0; } 48%,92% { opacity:1; } }
-  @keyframes dgState3 { 0%,67%,96%,100% { opacity:0; } 73%,92% { opacity:1; } }
-  @keyframes dgFlow2 { 0%,20%,96%,100% { opacity:0; stroke-dashoffset:18; } 26%,92% { opacity:1; stroke-dashoffset:-18; } }
-  @keyframes dgFlow3 { 0%,46%,96%,100% { opacity:0; stroke-dashoffset:18; } 53%,92% { opacity:1; stroke-dashoffset:-18; } }
+  section.on .dg .l1-pass rect { animation: dgL1Pass 9s ease-in-out infinite; }
+  section.on .dg .l1-fail rect { animation: dgL1Fail 9s ease-in-out infinite; }
+  section.on .dg .l2-pass rect { animation: dgL2Pass 9s ease-in-out infinite; }
+  section.on .dg .l2-fail rect { animation: dgL2Fail 9s ease-in-out infinite; }
+  section.on .dg .l2-locked, section.on .dg .l3-locked { animation: dgLocked 9s ease-in-out infinite; }
+  section.on .dg .l3-open rect { animation: dgL3Open 9s ease-in-out infinite; }
+  section.on .dg .phase-l1-open { animation: dgL1OpenText 9s ease-in-out infinite; }
+  section.on .dg .phase-l1-working { animation: dgL1WorkingText 9s ease-in-out infinite; }
+  section.on .dg .phase-l1-result { animation: dgL1ResultText 9s ease-in-out infinite; }
+  section.on .dg .phase-l2-open { animation: dgL2OpenText 9s ease-in-out infinite; }
+  section.on .dg .phase-l2-working { animation: dgL2WorkingText 9s ease-in-out infinite; }
+  section.on .dg .phase-l2-result { animation: dgL2ResultText 9s ease-in-out infinite; }
+  section.on .dg .phase-l3-open { animation: dgL3OpenText 9s ease-in-out infinite; }
+  section.on .dg .blocked-l1 { animation: dgBlockedL1Text 9s ease-in-out infinite; }
+  section.on .dg .blocked-l2 { animation: dgBlockedL2Text 9s ease-in-out infinite; }
+  section.on .dg .flow-l2 { animation: dgFlow2 9s linear infinite; }
+  section.on .dg .flow-l3 { animation: dgFlow3 9s linear infinite; }
+  @keyframes dgL1Pass {
+    0%,10%,97%,100% { stroke:var(--open); fill:var(--open-10); }
+    14%,23% { stroke:var(--working); fill:var(--working-10); }
+    27%,93% { stroke:var(--green); fill:var(--green-10); }
+  }
+  @keyframes dgL1Fail {
+    0%,10%,97%,100% { stroke:var(--open); fill:var(--open-10); }
+    14%,23% { stroke:var(--working); fill:var(--working-10); }
+    27%,93% { stroke:#fc6897; fill:#fc689714; }
+  }
+  @keyframes dgL2Pass {
+    0%,29%,97%,100% { stroke:#1e2c33; fill:#0d1418; opacity:.3; }
+    33%,40% { stroke:var(--open); fill:var(--open-10); opacity:1; }
+    44%,53% { stroke:var(--working); fill:var(--working-10); opacity:1; }
+    57%,93% { stroke:var(--green); fill:var(--green-10); opacity:1; }
+  }
+  @keyframes dgL2Fail {
+    0%,29%,97%,100% { stroke:#1e2c33; fill:#0d1418; opacity:.3; }
+    33%,40% { stroke:var(--open); fill:var(--open-10); opacity:1; }
+    44%,53% { stroke:var(--working); fill:var(--working-10); opacity:1; }
+    57%,93% { stroke:#fc6897; fill:#fc689714; opacity:1; }
+  }
+  @keyframes dgL3Open {
+    0%,59%,97%,100% { stroke:#1e2c33; fill:#0d1418; opacity:.3; }
+    63%,93% { stroke:var(--open); fill:var(--open-10); opacity:1; }
+  }
+  @keyframes dgLocked { 0%,100% { opacity:.2; } }
+  @keyframes dgL1OpenText { 0%,10%,97%,100% { opacity:1; } 13%,96% { opacity:0; } }
+  @keyframes dgL1WorkingText { 0%,12%,25%,100% { opacity:0; } 15%,22% { opacity:1; } }
+  @keyframes dgL1ResultText { 0%,25%,95%,100% { opacity:0; } 28%,93% { opacity:1; } }
+  @keyframes dgL2OpenText { 0%,31%,42%,100% { opacity:0; } 34%,39% { opacity:1; } }
+  @keyframes dgL2WorkingText { 0%,42%,55%,100% { opacity:0; } 45%,52% { opacity:1; } }
+  @keyframes dgL2ResultText { 0%,55%,95%,100% { opacity:0; } 58%,93% { opacity:1; } }
+  @keyframes dgL3OpenText { 0%,61%,95%,100% { opacity:0; } 64%,93% { opacity:1; } }
+  @keyframes dgBlockedL1Text { 0%,25%,95%,100% { opacity:0; } 28%,93% { opacity:1; } }
+  @keyframes dgBlockedL2Text { 0%,55%,95%,100% { opacity:0; } 58%,93% { opacity:1; } }
+  @keyframes dgFlow2 { 0%,25%,42%,100% { opacity:0; stroke-dashoffset:18; } 29%,39% { opacity:1; stroke-dashoffset:-18; } }
+  @keyframes dgFlow3 { 0%,55%,72%,100% { opacity:0; stroke-dashoffset:18; } 59%,69% { opacity:1; stroke-dashoffset:-18; } }
 
   /* CEO review deck: keep the main narrative lean; detailed harness material remains as appendix source. */
   section.appendix { display: none; }
@@ -1237,7 +1276,7 @@
 <section id="graph-slide" class="visual-tight graph-slide visual-first">
   <div class="kicker r">dependency mode</div>
   <h2 class="r d1">Passed features move forward.</h2>
-  <p class="lead r d2">Each feature follows its own path. A pass opens its children; a failure stops only that path while the rest continue.</p>
+  <p class="lead r d2">Each feature moves from open to working, then passes or fails. A pass opens its children; a failure stops only that path.</p>
   <svg class="dg r d3" viewBox="0 0 1000 360" role="img" aria-label="four feature paths animate through three levels, with passing paths moving forward and failed paths stopping">
     <text class="dg-col" x="20" y="18">LEVEL 1</text>
     <text class="dg-col" x="350" y="18">LEVEL 2</text>
@@ -1252,20 +1291,20 @@
     <path class="dg-flow flow-l2" d="M260 66 H350 M260 214 H350 M260 288 H350"/>
     <path class="dg-flow flow-l3" d="M590 66 H680 M590 288 H680"/>
 
-    <g class="dg-n l1-pass"><rect x="20" y="42" width="240" height="48"/><text class="dg-label" x="38" y="71">accounts</text><text class="dg-state pass state-l1" x="242" y="71">PASS</text></g>
-    <g class="dg-n l1-fail"><rect x="20" y="116" width="240" height="48"/><text class="dg-label" x="38" y="145">catalog</text><text class="dg-state fail state-l1" x="242" y="145">FAIL</text></g>
-    <g class="dg-n l1-pass"><rect x="20" y="190" width="240" height="48"/><text class="dg-label" x="38" y="219">cart</text><text class="dg-state pass state-l1" x="242" y="219">PASS</text></g>
-    <g class="dg-n l1-pass"><rect x="20" y="264" width="240" height="48"/><text class="dg-label" x="38" y="293">warehouse</text><text class="dg-state pass state-l1" x="242" y="293">PASS</text></g>
+    <g class="dg-n l1-pass"><rect x="20" y="42" width="240" height="48"/><text class="dg-label" x="38" y="71">accounts</text><text class="dg-state open phase-l1-open" x="242" y="71">OPEN</text><text class="dg-state working phase-l1-working" x="242" y="71">WORKING</text><text class="dg-state pass phase-l1-result" x="242" y="71">PASS</text></g>
+    <g class="dg-n l1-fail"><rect x="20" y="116" width="240" height="48"/><text class="dg-label" x="38" y="145">catalog</text><text class="dg-state open phase-l1-open" x="242" y="145">OPEN</text><text class="dg-state working phase-l1-working" x="242" y="145">WORKING</text><text class="dg-state fail phase-l1-result" x="242" y="145">FAIL</text></g>
+    <g class="dg-n l1-pass"><rect x="20" y="190" width="240" height="48"/><text class="dg-label" x="38" y="219">cart</text><text class="dg-state open phase-l1-open" x="242" y="219">OPEN</text><text class="dg-state working phase-l1-working" x="242" y="219">WORKING</text><text class="dg-state pass phase-l1-result" x="242" y="219">PASS</text></g>
+    <g class="dg-n l1-pass"><rect x="20" y="264" width="240" height="48"/><text class="dg-label" x="38" y="293">warehouse</text><text class="dg-state open phase-l1-open" x="242" y="293">OPEN</text><text class="dg-state working phase-l1-working" x="242" y="293">WORKING</text><text class="dg-state pass phase-l1-result" x="242" y="293">PASS</text></g>
 
-    <g class="dg-n l2-pass"><rect x="350" y="42" width="240" height="48"/><text class="dg-label" x="368" y="71">operator access</text><text class="dg-state pass state-l2" x="572" y="71">PASS</text></g>
-    <g class="dg-n l2-locked"><rect x="350" y="116" width="240" height="48"/><text class="dg-label" x="368" y="145">search</text><text class="dg-state locked state-l1" x="572" y="145">LOCKED</text></g>
-    <g class="dg-n l2-fail"><rect x="350" y="190" width="240" height="48"/><text class="dg-label" x="368" y="219">checkout</text><text class="dg-state fail state-l2" x="572" y="219">FAIL</text></g>
-    <g class="dg-n l2-pass"><rect x="350" y="264" width="240" height="48"/><text class="dg-label" x="368" y="293">stock transfers</text><text class="dg-state pass state-l2" x="572" y="293">PASS</text></g>
+    <g class="dg-n l2-pass"><rect x="350" y="42" width="240" height="48"/><text class="dg-label" x="368" y="71">operator access</text><text class="dg-state open phase-l2-open" x="572" y="71">OPEN</text><text class="dg-state working phase-l2-working" x="572" y="71">WORKING</text><text class="dg-state pass phase-l2-result" x="572" y="71">PASS</text></g>
+    <g class="dg-n l2-locked"><rect x="350" y="116" width="240" height="48"/><text class="dg-label" x="368" y="145">search</text><text class="dg-state locked blocked-l1" x="572" y="145">LOCKED</text></g>
+    <g class="dg-n l2-fail"><rect x="350" y="190" width="240" height="48"/><text class="dg-label" x="368" y="219">checkout</text><text class="dg-state open phase-l2-open" x="572" y="219">OPEN</text><text class="dg-state working phase-l2-working" x="572" y="219">WORKING</text><text class="dg-state fail phase-l2-result" x="572" y="219">FAIL</text></g>
+    <g class="dg-n l2-pass"><rect x="350" y="264" width="240" height="48"/><text class="dg-label" x="368" y="293">stock transfers</text><text class="dg-state open phase-l2-open" x="572" y="293">OPEN</text><text class="dg-state working phase-l2-working" x="572" y="293">WORKING</text><text class="dg-state pass phase-l2-result" x="572" y="293">PASS</text></g>
 
-    <g class="dg-n l3-pass"><rect x="680" y="42" width="240" height="48"/><text class="dg-label" x="698" y="71">account recovery</text><text class="dg-state pass state-l3" x="902" y="71">OPEN</text></g>
-    <g class="dg-n l3-locked"><rect x="680" y="116" width="240" height="48"/><text class="dg-label" x="698" y="145">recommendations</text><text class="dg-state locked state-l1" x="902" y="145">LOCKED</text></g>
-    <g class="dg-n l3-locked"><rect x="680" y="190" width="240" height="48"/><text class="dg-label" x="698" y="219">returns</text><text class="dg-state locked state-l2" x="902" y="219">LOCKED</text></g>
-    <g class="dg-n l3-pass"><rect x="680" y="264" width="240" height="48"/><text class="dg-label" x="698" y="293">scheduled restocks</text><text class="dg-state pass state-l3" x="902" y="293">OPEN</text></g>
+    <g class="dg-n l3-open"><rect x="680" y="42" width="240" height="48"/><text class="dg-label" x="698" y="71">account recovery</text><text class="dg-state open phase-l3-open" x="902" y="71">OPEN</text></g>
+    <g class="dg-n l3-locked"><rect x="680" y="116" width="240" height="48"/><text class="dg-label" x="698" y="145">recommendations</text><text class="dg-state locked blocked-l1" x="902" y="145">LOCKED</text></g>
+    <g class="dg-n l3-locked"><rect x="680" y="190" width="240" height="48"/><text class="dg-label" x="698" y="219">returns</text><text class="dg-state locked blocked-l2" x="902" y="219">LOCKED</text></g>
+    <g class="dg-n l3-open"><rect x="680" y="264" width="240" height="48"/><text class="dg-label" x="698" y="293">scheduled restocks</text><text class="dg-state open phase-l3-open" x="902" y="293">OPEN</text></g>
   </svg>
 </section>
 
