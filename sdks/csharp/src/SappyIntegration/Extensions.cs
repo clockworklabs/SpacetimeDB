@@ -7,32 +7,28 @@ namespace SpacetimeDB.SappyIntegration
 {
     public static class Extensions
     {
-        public static bool AddSapTarget<T>(this IEventListeners<T> listeners, SapTarget<T> value) where T : Delegate
+        public static void AddSapTarget<T>(this IEventListeners<T> listeners, SapTarget<T> value) where T : Delegate
         {
-            if (listeners is not SappyEventListeners<T> sappyEventListeners)
+            if (listeners is SappyEventListeners<T> sappyEventListeners)
             {
-                throw new InvalidOperationException(
-                    "Cannot add a SapTarget because this listener collection is not backed by Sappy. " +
-                    "Ensure the Sappy integration assembly registered before this table handle was created."
-                );
+                sappyEventListeners.Add(value);
             }
-
-            sappyEventListeners.Add(value);
-            return true;
+            else
+            {
+                listeners.Add(value.Callback);
+            }
         }
 
-        public static bool RemoveSapTarget<T>(this IEventListeners<T> listeners, SapTarget<T> value) where T : Delegate
+        public static void RemoveSapTarget<T>(this IEventListeners<T> listeners, SapTarget<T> value) where T : Delegate
         {
-            if (listeners is not SappyEventListeners<T> sappyEventListeners)
+            if (listeners is SappyEventListeners<T> sappyEventListeners)
             {
-                throw new InvalidOperationException(
-                    "Cannot remove a SapTarget because this listener collection is not backed by Sappy. " +
-                    "Ensure the Sappy integration assembly registered before this table handle was created."
-                );
+                sappyEventListeners.Remove(value);
             }
-
-            sappyEventListeners.Remove(value);
-            return true;
+            else
+            {
+                listeners.Add(value.Callback);
+            }
         }
     }
 }
