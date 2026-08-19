@@ -1,0 +1,25 @@
+Write a SpacetimeDB backend module in Rust that exposes an upload route and an external upload procedure.
+
+TABLE
+- uploaded_asset (public), struct UploadedAsset
+  - Fields:
+    - id: u64 (primary key)
+    - url: String
+    - size: u64
+    - status: u16
+    - response_body_present: bool
+
+HANDLER
+- POST /upload
+  - Return status 201
+  - Return body "https://files.local/object-1"
+
+PROCEDURE
+- upload_and_register(upload_url: String, data: Vec<u8>) -> String
+  - POST the binary data to the supplied public URL
+  - Require a successful response
+  - Open a transaction and store id 1, the supplied URL, the byte length, the response status, and whether the response body is non-empty
+  - Return the supplied URL
+
+ROUTER
+- Register POST /upload through an HTTP router

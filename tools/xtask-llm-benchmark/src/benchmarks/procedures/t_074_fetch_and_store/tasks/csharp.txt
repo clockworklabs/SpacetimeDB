@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in C# that fetches external data before storing a result in a transaction.
+
+TABLE
+- FetchedRecord (public, accessor FetchedRecord)
+  - Fields:
+    - Id: ulong (primary key)
+    - Status: ushort
+    - ValidBody: bool
+
+PROCEDURE
+- FetchAndStore(url: string)
+  - Perform an outbound GET to the supplied public URL before opening a transaction
+  - Inside a short transaction, store Id 1 and the response status
+  - Set ValidBody based on whether the response body contains "Example Domain"
