@@ -34,6 +34,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_LOG: rollback_coordination=info
     steps:
       - uses: actions/checkout@v4
         with:
