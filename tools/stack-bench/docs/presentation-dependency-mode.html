@@ -887,23 +887,17 @@
   }
   /* CTO presentation: simple, centered compositions with one job per slide. */
   .cto-visual { width: 100%; max-width: 920px; margin-top: 1.45rem; }
-  .fairvis, .systemvis, .behvis { width: 100%; max-width: 920px; overflow: visible; }
-  .fairvis text, .systemvis text, .behvis text { font-family: var(--font-mono); }
-  .fairvis .lane, .systemvis .probe, .behvis .area { fill: #0b1115; stroke: #26343b; stroke-width: 1.2; }
-  .fairvis .app, .systemvis .app, .behvis .core { fill: #0e1915; stroke: var(--green); stroke-width: 1.3; }
-  .fairvis .wire, .systemvis .wire, .behvis .wire { fill: none; stroke: #33444d; stroke-width: 1.4; }
-  .fairvis .wire.live, .systemvis .wire.live { stroke: var(--green); }
-  .fairvis .label, .systemvis .label, .behvis .label { fill: var(--n1); font-size: 13px; font-weight: 600; }
-  .fairvis .minor, .systemvis .minor, .behvis .minor { fill: var(--n4); font-size: 10px; }
-  .fairvis .cap, .systemvis .cap, .behvis .cap { fill: var(--n4); font-size: 9px; letter-spacing: .14em; }
+  .fairvis, .behvis { width: 100%; max-width: 920px; overflow: visible; }
+  .fairvis text, .behvis text { font-family: var(--font-mono); }
+  .fairvis .lane, .behvis .area { fill: #0b1115; stroke: #26343b; stroke-width: 1.2; }
+  .fairvis .app, .behvis .core { fill: #0e1915; stroke: var(--green); stroke-width: 1.3; }
+  .fairvis .wire, .behvis .wire { fill: none; stroke: #33444d; stroke-width: 1.4; }
+  .fairvis .wire.live, .behvis .wire.live { stroke: var(--green); }
+  .fairvis .label, .behvis .label { fill: var(--n1); font-size: 13px; font-weight: 600; }
+  .fairvis .minor, .behvis .minor { fill: var(--n4); font-size: 10px; }
+  .fairvis .cap, .behvis .cap { fill: var(--n4); font-size: 9px; letter-spacing: .14em; }
   .fairvis .metric { fill: var(--n3); font-size: 11px; }
-  section.on .fairvis .wire.live, section.on .systemvis .wire.live { stroke-dasharray: 5 8; animation: dashRun 1.1s linear infinite; }
-  section.on .systemvis .probe { animation: probePulse 5s ease-in-out infinite; }
-  section.on .systemvis .probe:nth-of-type(2) { animation-delay: .5s; }
-  section.on .systemvis .probe:nth-of-type(3) { animation-delay: 1s; }
-  section.on .systemvis .probe:nth-of-type(4) { animation-delay: 1.5s; }
-  section.on .systemvis .probe:nth-of-type(5) { animation-delay: 2s; }
-  @keyframes probePulse { 0%,78%,100% { stroke:#26343b; } 84%,94% { stroke:var(--green); } }
+  section.on .fairvis .wire.live, section.on .behvis .wire.live { stroke-dasharray: 5 8; animation: dashRun 1.1s linear infinite; }
   .proof-step span {
     display: block; color: var(--n4); font: .67rem/1.3 var(--font-mono); letter-spacing: .12em; text-transform: uppercase;
   }
@@ -1072,37 +1066,19 @@
   </svg>
 </section>
 
-<!-- 3 how the app is tested -->
+<!-- 4 how the app is tested -->
 <section class="visual-tight visual-first">
   <div class="kicker r">how testing works</div>
-  <h2 class="r d1">The generated app is tested end to end.</h2>
-  <p class="lead r d2">The grader combines real user sessions with controlled faults, then checks both the visible result and durable database state.</p>
-  <svg class="systemvis cto-visual r d3" viewBox="0 0 920 390" role="img" aria-label="a running generated app is tested by browser actors, direct database writes, reconnects, restarts, and concurrent actions">
-    <rect class="probe" x="20" y="34" width="230" height="58" rx="8"/><text class="cap" x="42" y="55">REAL CLIENTS</text><text class="label" x="42" y="77">Multiple browser actors</text>
-    <rect class="probe" x="20" y="128" width="230" height="58" rx="8"/><text class="cap" x="42" y="149">OUTSIDE THE APP</text><text class="label" x="42" y="171">Direct database changes</text>
-    <rect class="probe" x="20" y="222" width="230" height="58" rx="8"/><text class="cap" x="42" y="243">CLIENT RECOVERY</text><text class="label" x="42" y="265">Offline and reconnect</text>
-    <rect class="app" x="340" y="94" width="240" height="142" rx="12"/><text class="cap" x="460" y="128" text-anchor="middle">GENERATED PRODUCT</text><text class="label" x="460" y="166" text-anchor="middle" style="font-size:18px">RUNNING APP</text><text class="minor" x="460" y="190" text-anchor="middle">browser + API + database</text>
-    <rect class="probe" x="670" y="70" width="230" height="58" rx="8"/><text class="cap" x="692" y="91">SERVICE RECOVERY</text><text class="label" x="692" y="113">Restart the app service</text>
-    <rect class="probe" x="670" y="196" width="230" height="58" rx="8"/><text class="cap" x="692" y="217">CONTENTION</text><text class="label" x="692" y="239">Concurrent actions</text>
-    <path class="wire live" d="M250 63 H300 V126 H336"/><path class="wire live" d="M250 157 H336"/><path class="wire live" d="M250 251 H300 V205 H336"/>
-    <path class="wire live" d="M584 129 H625 V99 H666"/><path class="wire live" d="M584 201 H625 V225 H666"/>
-    <path class="wire" d="M460 240 V290"/><rect class="lane" x="255" y="292" width="410" height="62" rx="8"/><text class="cap" x="460" y="315" text-anchor="middle">ASSERT AND RECORD</text><text class="label" x="460" y="339" text-anchor="middle">Visible state + persisted state + evidence</text>
-  </svg>
-</section>
-
-<!-- 4 what is tested -->
-<section class="visual-tight visual-first">
-  <div class="kicker r">what gets measured</div>
-  <h2 class="r d1">The tests cover production behavior.</h2>
-  <p class="lead r d2">Checks span visible workflows and the server behavior underneath them, so a polished happy path cannot hide a weak backend.</p>
-  <svg class="behvis cto-visual r d3" viewBox="0 0 920 380" role="img" aria-label="six production behavior areas surround the generated application">
-    <path class="wire" d="M290 64 H360 L400 138 M290 190 H360 M290 316 H360 L400 242 M630 64 H560 L520 138 M630 190 H560 M630 316 H560 L520 242"/>
-    <rect class="area" x="20" y="34" width="270" height="60" rx="8"/><text class="label" x="42" y="59">USER WORKFLOWS</text><text class="minor" x="42" y="78">accounts · cart · checkout · returns</text>
-    <rect class="area" x="20" y="160" width="270" height="60" rx="8"/><text class="label" x="42" y="185">ACCESS + OWNERSHIP</text><text class="minor" x="42" y="204">protected actions · account isolation</text>
+  <h2 class="r d1">Stack Bench tests the finished product.</h2>
+  <p class="lead r d2">The grader uses real browser sessions, direct database changes, service interruptions, and concurrent actions, then checks both visible and persisted state.</p>
+  <svg class="behvis cto-visual r d3" viewBox="0 0 920 380" role="img" aria-label="six end-to-end test areas surround the generated application">
+    <path class="wire live" d="M290 64 H360 L400 138 M290 190 H360 M290 316 H360 L400 242 M630 64 H560 L520 138 M630 190 H560 M630 316 H560 L520 242"/>
+    <rect class="area" x="20" y="34" width="270" height="60" rx="8"/><text class="label" x="42" y="59">REAL USER FLOWS</text><text class="minor" x="42" y="78">multiple browser actors</text>
+    <rect class="area" x="20" y="160" width="270" height="60" rx="8"/><text class="label" x="42" y="185">ACCESS + OWNERSHIP</text><text class="minor" x="42" y="204">protected and cross-account actions</text>
     <rect class="area" x="20" y="286" width="270" height="60" rx="8"/><text class="label" x="42" y="311">DURABILITY + RECOVERY</text><text class="minor" x="42" y="330">reload · reconnect · restart</text>
-    <circle class="core" cx="460" cy="190" r="98"/><text class="cap" x="460" y="176" text-anchor="middle">THE GENERATED APP</text><text class="label" x="460" y="204" text-anchor="middle" style="font-size:17px">PRODUCTION</text><text class="label" x="460" y="226" text-anchor="middle" style="font-size:17px">BEHAVIOR</text>
-    <rect class="area" x="630" y="34" width="270" height="60" rx="8"/><text class="label" x="652" y="59">LIVE STATE</text><text class="minor" x="652" y="78">open pages stay current</text>
-    <rect class="area" x="630" y="160" width="270" height="60" rx="8"/><text class="label" x="652" y="185">CONCURRENCY + TRANSACTIONS</text><text class="minor" x="652" y="204">races · idempotency · conservation</text>
+    <circle class="core" cx="460" cy="190" r="98"/><text class="cap" x="460" y="166" text-anchor="middle">GENERATED APP</text><text class="label" x="460" y="198" text-anchor="middle" style="font-size:17px">TESTED END TO END</text><text class="minor" x="460" y="220" text-anchor="middle">visible + persisted state</text>
+    <rect class="area" x="630" y="34" width="270" height="60" rx="8"/><text class="label" x="652" y="59">LIVE STATE</text><text class="minor" x="652" y="78">direct database changes reach open pages</text>
+    <rect class="area" x="630" y="160" width="270" height="60" rx="8"/><text class="label" x="652" y="185">CONCURRENCY</text><text class="minor" x="652" y="204">overlapping actions · exact totals</text>
     <rect class="area" x="630" y="286" width="270" height="60" rx="8"/><text class="label" x="652" y="311">OPERATIONS + ACCOUNTING</text><text class="minor" x="652" y="330">shipping · pricing · revenue</text>
   </svg>
 </section>
