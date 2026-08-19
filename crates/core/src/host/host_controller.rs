@@ -307,6 +307,13 @@ impl HostInitError {
     }
 }
 
+fn validate_init_reducer_call_result(call_result: ReducerCallResult) -> anyhow::Result<()> {
+    if matches!(call_result.outcome, ReducerOutcome::BudgetExceeded) {
+        return Err(HostInitError::OutOfEnergy.into());
+    }
+    Result::from(call_result)
+}
+
 #[derive(Clone, Debug)]
 pub struct ProcedureCallResult {
     pub return_val: AlgebraicValue,
@@ -1263,10 +1270,7 @@ impl Host {
         if program_needs_init {
             let InitDatabaseResult { reducer, tx_offset } = launched.module_host.init_database(program).await?;
             if let Some(call_result) = reducer {
-                if matches!(call_result.outcome, ReducerOutcome::BudgetExceeded) {
-                    return Err(HostInitError::OutOfEnergy.into());
-                }
-                Result::from(call_result)?;
+                validate_init_reducer_call_result(call_result)?;
             }
             bootstrap_completion = Some(BootstrapCompletion::pending(
                 bootstrap_generation,
@@ -1652,4 +1656,38 @@ where
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
     let _ = DB_METRICS.http_response_size_bytes.remove_label_values(db);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reducer_call_result(outcome: ReducerOutcome) -> ReducerCallResult {
+        ReducerCallResult {
+            outcome,
+            execution_budget_used: FunctionBudget::ZERO,
+            execution_duration: Duration::ZERO,
+        }
+    }
+
+    #[test]
+    fn init_reducer_budget_exceeded_maps_to_out_of_energy_cause() {
+        let error = validate_init_reducer_call_result(reducer_call_result(ReducerOutcome::BudgetExceeded))
+            .expect_err("budget exceeded init reducer should fail host init");
+
+        assert_eq!(
+            HostInitError::metric_cause(&error),
+            ModuleHostInitFailureCause::OutOfEnergy
+        );
+    }
+
+    #[test]
+    fn init_reducer_failure_maps_to_other_cause() {
+        let error = validate_init_reducer_call_result(reducer_call_result(ReducerOutcome::Failed(Box::new(
+            Box::from("init failed"),
+        ))))
+        .expect_err("failed init reducer should fail host init");
+
+        assert_eq!(HostInitError::metric_cause(&error), ModuleHostInitFailureCause::Other);
+    }
 }
