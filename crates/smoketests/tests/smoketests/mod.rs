@@ -6,6 +6,7 @@ mod call;
 mod change_host_type;
 mod cli;
 mod client_connection_errors;
+mod column_defaults;
 mod confirmed_reads;
 mod connect_disconnect_from_cli;
 mod create_project;
