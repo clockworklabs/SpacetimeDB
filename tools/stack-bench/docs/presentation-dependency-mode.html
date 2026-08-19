@@ -825,19 +825,36 @@
   .dg { width: 100%; max-width: 1000px; }
   .dg text { font-family: var(--font-mono); font-size: 11.5px; fill: var(--n1); }
   .dg .dg-col { font-size: 10.5px; fill: var(--n4); letter-spacing: .08em; }
-  .dg .dg-col.dim { fill: var(--n5); }
-  .dg .dg-note, .dg .dg-end { font-size: 10px; fill: var(--n5); }
   .dg-n rect { fill: #0d1418; stroke: #1e2c33; stroke-width: 1.2; rx: 6; }
-  .dg-n.l1 rect { stroke: var(--green-25); }
-  .dg-n.l3 rect { stroke-dasharray: 4 4; }
-  .dg-n.l3 text { fill: var(--n4); }
-  .dg-n.l4 rect { stroke: #16232a; stroke-dasharray: 4 4; }
-  .dg-n.l4 text { fill: var(--n5); }
+  .dg .dg-label { fill: var(--n1); font-size: 12px; }
+  .dg .dg-state { font-size: 9px; text-anchor: end; opacity: 0; }
+  .dg .dg-state.pass { fill: var(--green); }
+  .dg .dg-state.fail { fill: #fc6897; }
+  .dg .dg-state.locked { fill: var(--n4); }
   .dg-edges path { fill: none; stroke: #253239; stroke-width: 1.4; }
-  .dg-edges path.l3 { stroke-dasharray: 4 4; }
-  /* the run crosses the graph once, left to right, so the order reads itself */
-  section.on .dg-edges path { stroke-dasharray: 4 8; animation: dashRun 1.1s linear infinite; }
-  section.on .dg-edges path.l3 { animation: none; stroke-dasharray: 4 4; }
+  .dg-flow { fill: none; stroke: var(--green); stroke-width: 1.7; stroke-dasharray: 5 8; opacity: 0; }
+  section.on .dg .l1-pass rect { animation: dgPass1 8s ease-in-out infinite; }
+  section.on .dg .l1-fail rect { animation: dgFail1 8s ease-in-out infinite; }
+  section.on .dg .l2-pass rect { animation: dgPass2 8s ease-in-out infinite; }
+  section.on .dg .l2-fail rect { animation: dgFail2 8s ease-in-out infinite; }
+  section.on .dg .l2-locked, section.on .dg .l3-locked { animation: dgLocked 8s ease-in-out infinite; }
+  section.on .dg .l3-pass rect { animation: dgPass3 8s ease-in-out infinite; }
+  section.on .dg .state-l1 { animation: dgState1 8s ease-in-out infinite; }
+  section.on .dg .state-l2 { animation: dgState2 8s ease-in-out infinite; }
+  section.on .dg .state-l3 { animation: dgState3 8s ease-in-out infinite; }
+  section.on .dg .flow-l2 { animation: dgFlow2 8s linear infinite; }
+  section.on .dg .flow-l3 { animation: dgFlow3 8s linear infinite; }
+  @keyframes dgPass1 { 0%,14%,100% { stroke:#1e2c33; fill:#0d1418; } 20%,92% { stroke:var(--green); fill:var(--green-10); } }
+  @keyframes dgFail1 { 0%,14%,100% { stroke:#1e2c33; fill:#0d1418; } 20%,92% { stroke:#fc6897; fill:#fc689714; } }
+  @keyframes dgPass2 { 0%,39%,100% { stroke:#1e2c33; fill:#0d1418; opacity:.35; } 27%,38% { opacity:1; } 45%,92% { stroke:var(--green); fill:var(--green-10); opacity:1; } }
+  @keyframes dgFail2 { 0%,39%,100% { stroke:#1e2c33; fill:#0d1418; opacity:.35; } 27%,38% { opacity:1; } 45%,92% { stroke:#fc6897; fill:#fc689714; opacity:1; } }
+  @keyframes dgPass3 { 0%,64%,100% { stroke:#1e2c33; fill:#0d1418; opacity:.3; } 53%,63% { opacity:1; } 70%,92% { stroke:var(--green); fill:var(--green-10); opacity:1; } }
+  @keyframes dgLocked { 0%,14%,100% { opacity:.3; } 20%,92% { opacity:.16; } }
+  @keyframes dgState1 { 0%,17%,96%,100% { opacity:0; } 23%,92% { opacity:1; } }
+  @keyframes dgState2 { 0%,42%,96%,100% { opacity:0; } 48%,92% { opacity:1; } }
+  @keyframes dgState3 { 0%,67%,96%,100% { opacity:0; } 73%,92% { opacity:1; } }
+  @keyframes dgFlow2 { 0%,20%,96%,100% { opacity:0; stroke-dashoffset:18; } 26%,92% { opacity:1; stroke-dashoffset:-18; } }
+  @keyframes dgFlow3 { 0%,46%,96%,100% { opacity:0; stroke-dashoffset:18; } 53%,92% { opacity:1; stroke-dashoffset:-18; } }
 
   /* CEO review deck: keep the main narrative lean; detailed harness material remains as appendix source. */
   section.appendix { display: none; }
@@ -915,9 +932,6 @@
   section.on .proof-step:nth-child(3)::before { animation-delay: .9s; }
   section.on .proof-step:nth-child(4)::before { animation-delay: 1.35s; }
   @keyframes gatePulse { 0%,72%,100% { box-shadow: none; } 80%,92% { box-shadow: 0 0 22px #4cf49066; } }
-  .dg .dg-col.dim, .dg-n.l4 text { fill: var(--n4); }
-  .dg-n.l4 rect { stroke: #2b3a42; }
-
   /* Product overview: one flat feature grid, not a dashboard. */
   .feature-grid {
     display: grid;
@@ -1154,58 +1168,36 @@
 <!-- 4 the dependency graph -->
 <section id="graph-slide" class="visual-tight graph-slide visual-first">
   <div class="kicker r">dependency mode</div>
-  <h2 class="r d1">Passed features open the next work.</h2>
-  <p class="lead r d2">The versioned graph can contain any number of levels and branches. A child opens only after every declared parent passes.</p>
-  <svg class="dg r d3" viewBox="0 0 1000 424" role="img" aria-label="six level one features unlock level two work, which can unlock level three work">
-    <text class="dg-col" x="16" y="14">LEVEL 1</text>
-    <text class="dg-col" x="250" y="14">LEVEL 2</text>
-    <text class="dg-col dim" x="512" y="14">LEVEL 3</text>
+  <h2 class="r d1">Passed features move forward.</h2>
+  <p class="lead r d2">Each feature follows its own path. A pass opens its children; a failure stops only that path while the rest continue.</p>
+  <svg class="dg r d3" viewBox="0 0 1000 360" role="img" aria-label="four feature paths animate through three levels, with passing paths moving forward and failed paths stopping">
+    <text class="dg-col" x="20" y="18">LEVEL 1</text>
+    <text class="dg-col" x="350" y="18">LEVEL 2</text>
+    <text class="dg-col" x="680" y="18">LEVEL 3</text>
 
     <g class="dg-edges">
-      <path d="M184 42 H246"/>
-      <path d="M184 102 H246"/>
-      <path d="M184 162 H246"/>
-      <path d="M184 162 C 214 162, 216 210, 246 210"/>
-      <path d="M184 222 C 214 222, 216 210, 246 210"/>
-      <path d="M184 222 C 214 222, 216 258, 246 258"/>
-      <path d="M184 282 C 214 282, 216 306, 246 306"/>
-      <path class="l3" d="M446 162 H508"/>
-      <path class="l3" d="M446 258 H508"/>
-      <path class="l3" d="M446 306 H508"/>
+      <path d="M260 66 H350 M590 66 H680"/>
+      <path d="M260 140 H350 M590 140 H680"/>
+      <path d="M260 214 H350 M590 214 H680"/>
+      <path d="M260 288 H350 M590 288 H680"/>
     </g>
+    <path class="dg-flow flow-l2" d="M260 66 H350 M260 214 H350 M260 288 H350"/>
+    <path class="dg-flow flow-l3" d="M590 66 H680 M590 288 H680"/>
 
-    <g class="dg-n l1">
-      <rect x="16" y="24" width="168" height="36"/><text x="32" y="47">accounts</text>
-      <rect x="16" y="84" width="168" height="36"/><text x="32" y="107">catalog</text>
-      <rect x="16" y="144" width="168" height="36"/><text x="32" y="167">purchasing</text>
-      <rect x="16" y="204" width="168" height="36"/><text x="32" y="227">cart</text>
-      <rect x="16" y="264" width="168" height="36"/><text x="32" y="287">warehouse admin</text>
-      <rect x="16" y="324" width="168" height="36"/><text x="32" y="347">reviews</text>
-    </g>
-    <text class="dg-end" x="200" y="347">ends here</text>
+    <g class="dg-n l1-pass"><rect x="20" y="42" width="240" height="48"/><text class="dg-label" x="38" y="71">accounts</text><text class="dg-state pass state-l1" x="242" y="71">PASS</text></g>
+    <g class="dg-n l1-fail"><rect x="20" y="116" width="240" height="48"/><text class="dg-label" x="38" y="145">catalog</text><text class="dg-state fail state-l1" x="242" y="145">FAIL</text></g>
+    <g class="dg-n l1-pass"><rect x="20" y="190" width="240" height="48"/><text class="dg-label" x="38" y="219">cart</text><text class="dg-state pass state-l1" x="242" y="219">PASS</text></g>
+    <g class="dg-n l1-pass"><rect x="20" y="264" width="240" height="48"/><text class="dg-label" x="38" y="293">warehouse</text><text class="dg-state pass state-l1" x="242" y="293">PASS</text></g>
 
-    <g class="dg-n l2">
-      <rect x="246" y="24" width="200" height="36"/><text x="262" y="47">operator access</text>
-      <rect x="246" y="84" width="200" height="36"/><text x="262" y="107">store reports</text>
-      <rect x="246" y="144" width="200" height="36"/><text x="262" y="167">shipping queue</text>
-      <rect x="246" y="192" width="200" height="36"/><text x="262" y="215">price history</text>
-      <rect x="246" y="240" width="200" height="36"/><text x="262" y="263">returns</text>
-      <rect x="246" y="288" width="200" height="36"/><text x="262" y="311">stock transfers</text>
-    </g>
-    <text class="dg-note" x="456" y="215">needs both</text>
+    <g class="dg-n l2-pass"><rect x="350" y="42" width="240" height="48"/><text class="dg-label" x="368" y="71">operator access</text><text class="dg-state pass state-l2" x="572" y="71">PASS</text></g>
+    <g class="dg-n l2-locked"><rect x="350" y="116" width="240" height="48"/><text class="dg-label" x="368" y="145">search</text><text class="dg-state locked state-l1" x="572" y="145">LOCKED</text></g>
+    <g class="dg-n l2-fail"><rect x="350" y="190" width="240" height="48"/><text class="dg-label" x="368" y="219">checkout</text><text class="dg-state fail state-l2" x="572" y="219">FAIL</text></g>
+    <g class="dg-n l2-pass"><rect x="350" y="264" width="240" height="48"/><text class="dg-label" x="368" y="293">stock transfers</text><text class="dg-state pass state-l2" x="572" y="293">PASS</text></g>
 
-    <g class="dg-n l3">
-      <rect x="508" y="144" width="200" height="36"/><text x="524" y="167">order updates</text>
-      <rect x="508" y="240" width="200" height="36"/><text x="524" y="263">reservation expiry</text>
-      <rect x="508" y="288" width="200" height="36"/><text x="524" y="311">scheduled restocks</text>
-    </g>
-
-    <g class="dg-n l4">
-      <rect x="756" y="118" width="228" height="76"/>
-      <text x="772" y="143">MORE LEVELS</text>
-      <text x="772" y="166">the same rule</text>
-      <text x="772" y="184">keeps going</text>
-    </g>
+    <g class="dg-n l3-pass"><rect x="680" y="42" width="240" height="48"/><text class="dg-label" x="698" y="71">account recovery</text><text class="dg-state pass state-l3" x="902" y="71">OPEN</text></g>
+    <g class="dg-n l3-locked"><rect x="680" y="116" width="240" height="48"/><text class="dg-label" x="698" y="145">recommendations</text><text class="dg-state locked state-l1" x="902" y="145">LOCKED</text></g>
+    <g class="dg-n l3-locked"><rect x="680" y="190" width="240" height="48"/><text class="dg-label" x="698" y="219">returns</text><text class="dg-state locked state-l2" x="902" y="219">LOCKED</text></g>
+    <g class="dg-n l3-pass"><rect x="680" y="264" width="240" height="48"/><text class="dg-label" x="698" y="293">scheduled restocks</text><text class="dg-state pass state-l3" x="902" y="293">OPEN</text></g>
   </svg>
 </section>
 
