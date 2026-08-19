@@ -34,7 +34,7 @@ The server prints to the terminal running `npm run dev`; it restarts on save, so
 To inspect stored data while debugging:
 
 ```bash
-docker exec stack-bench-mongodb mongosh <database from DATABASE_URL> --quiet --eval "db.items.find().limit(5)"
+docker exec "${MONGO_CONTAINER:-stack-bench-dev-mongodb}" mongosh <database from DATABASE_URL> --quiet --eval "db.items.find().limit(5)"
 ```
 
 **Data policy while building:** the database holds nothing but this app's own

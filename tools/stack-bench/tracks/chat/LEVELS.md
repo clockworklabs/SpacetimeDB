@@ -1,123 +1,67 @@
-# Stack Bench level sequence
+# Chat track — level sequence
 
-Levels are ordered by **the property each one makes verifiable**, not by feature novelty.
-Every level adds features, but its reason for existing is the class of machine checks it
-unlocks, and each depends on the primitives the level below establishes.
+The chat track is retained as a collaboration workload built around rooms,
+messages, presence, and per-user state. Its definitions remain supported, but
+its current reference fixtures are blocked and must be rebuilt before chat is
+presented as a newly qualified cross-stack comparison.
 
-This replaces the inherited 19-level chat ladder, which was built for a cost-to-build
-benchmark and ordered by feature novelty. That ordering put authentication at no level at
-all and contended state at level 19, so the first two levels could not discriminate between
-backends — all three scored identically because nothing they exercised could fail.
+Levels are cumulative and ordered by the property they make measurable.
 
-The domain stays a chat/collaboration app. Rooms and messages are a good shared resource.
-Only the progression changed.
+## Status
 
----
+| Level | Product scope | Status |
+|---|---|---|
+| L1 | accounts, rooms, messages, presence, typing, and read state | definitions available; reference rebuild required |
+| L2 | private rooms, membership, invitations, removal, profiles, and friends | definitions available; reference rebuild required |
+| L3 | contended counters, capacity, and transfers | planned |
+| L4 | deferred and expiring work | planned |
+| L5 | correctness and efficiency under load | planned |
 
-## L1 — Basic chat, with accounts
+`track.json` declares the available suites and the current validation boundary.
+The reference registry records why each chat reference is blocked. A blocked
+reference cannot be used as qualification evidence.
 
-**Unlocks:** identity, durable shared state, ephemeral state, per-user state.
+## L1 — Basic chat with accounts
 
-Sequential's basic chat, with accounts added in place of its display-name stub.
-Rooms, messages, presence, typing indicators, read receipts and unread counts.
+L1 establishes stable identity, durable shared state, ephemeral room-scoped
+state, and per-user derived state:
 
-Each feature contributes a different class of state for the harness to verify.
-Accounts give stable identity, without which ownership and attribution mean
-nothing. Rooms and messages give durable shared state. Typing indicators give
-ephemeral, room-scoped state that has to expire on its own. Read receipts give
-per-user-per-message state driven by other people's actions. Unread counts give
-per-user derived counters, which is where the historical grading data shows the
-most bugs.
+- account creation and sessions;
+- room creation and messaging;
+- presence and typing indicators;
+- read receipts and unread counts;
+- delivery, ordering, reconnect, and system invariants declared by the track.
 
-The chat app is sequential's, unchanged: it is the app the team has history and
-human grades for, and its feature set was well chosen. Accounts are the only
-addition — "set a display name" is not authentication, and standing it in for one
-made identity untestable.
+Each browser actor runs in an isolated context, so identity and per-user state
+are measured independently.
 
+## L2 — Authorization and people
 
-## L2 — Authorization
-
-**Unlocks:** access control, revocation, tenant isolation.
-
-Resource ownership, private rooms, membership, invitations, kick/ban. Only members read a
-private room. Revocation takes effect immediately, without a reload.
-
-This is where hand-rolled backends genuinely struggle: every check is code someone has to
-remember to write, on every path.
+L2 adds resource ownership, private rooms, membership, invitations, removal,
+profiles, friend requests, and presence. Its checks cover both visible behavior
+and direct authorization or privacy evidence where the transport can be
+exercised conclusively.
 
 ## L3 — Contended state
 
-**Unlocks:** atomicity and isolation — the ACID properties nothing else here reaches.
-
-Reaction and vote counts, a limited-capacity resource (seats, inventory, claims), a
-per-user balance that transfers. All mutated by many clients at once.
-
-Verified arithmetically: K clients × M operations must leave exactly K×M; a capacity of N
-must never be exceeded; no balance may be double-spent; two clients claiming the same unique
-thing must produce exactly one winner. These are unarguable checks with no judgment in them,
-and they are impossible to perform by hand.
+The L3 target introduces reaction or vote counters, bounded capacity, unique
+claims, and balance transfers. Exact arithmetic and winner counts are the
+intended observable outcomes. No current L3 release is qualified.
 
 ## L4 — Deferred and expiring work
 
-**Unlocks:** durability of background work.
-
-Scheduled sends, expiring/ephemeral content, reminders. Verified across a backend restart:
-pending work survives and still fires, and expired content is actually deleted rather than
-hidden.
+The L4 target covers scheduled messages, expiry, and reminders across process
+restart. No current L4 release is qualified.
 
 ## L5 — Volume
 
-**Unlocks:** throughput, latency, and efficiency under load.
+The L5 target measures correctness, propagation latency, throughput, and query
+growth with many rooms, a large message history, and concurrent clients. No
+current L5 workload is qualified.
 
-The app must remain correct and responsive with many rooms, a large message history, and
-many concurrent clients. Sustained writes per second, propagation latency percentiles, and
-whether query cost grows with data size.
+## Running and extending the track
 
----
-
-## Compliance with the benchmark brief
-
-| Requirement | Where it is satisfied | Status |
-|---|---|---|
-| Machine verifiable; deterministic inputs and expected end state | Scenario specs executed by `grader/grade.mjs`; no human judgment in scoring | done |
-| Restart the application, verify durability | `restartBackend` step + `restart-backend.sh`; L1 session durability, L4 deferred work | done |
-| Real-time properties with multiple clients, non-trivial effects | One isolated browser context per actor; delivery integrity, ordering, exactly-once, convergence | done |
-| ACID properties | Durability at L1/L4; **atomicity and isolation at L3** | L3 outstanding |
-| Scaling: throughput and latency | **L5**; `perf-benchmark/` exists but is not yet wired in | outstanding |
-| Backend hint; fix the model, vary the backend | `--backend` selects the guidance pack; spacetime, postgres, mongodb implemented | done (Convex absent) |
-| Fixed prompts, easy to run | Level prompts in `spec/`; `run-suite.mjs` grades an app in one command | partial — build and grade are still two commands |
-| Agent hears verifier findings and gets to fix them | `run.sh --fix` consumes a bug report; the grader does not yet emit one automatically | partial — loop not closed |
-| Track time, errors, tokens and cost | OpenTelemetry cost capture, per-run timing, structured findings in every bundle | done |
-
-## Notes on running this sequence
-
-Levels are cumulative: an app at L3 still has to pass L1 and L2 checks. Grading a level runs
-that level's scenarios plus every earlier level's, so a regression introduced at L4 is
-caught rather than scored around.
-
-Each level keeps its own contract (`contracts/`), feature scenarios, and invariant scenarios.
-Invariants are scored on a separate axis from features, because a feature-only score cannot
-see cross-cutting properties — an app can implement every feature and still let one user
-take over another's account.
-
-## Level 2 — Authorization and People (specified 2026-08-07)
-
-Access control plus the social layer: private rooms with invitations and live
-removal, per-user profiles, friend requests, and presence. The design intent is
-subscription lifecycles — every L2 surface is a panel or list whose contents can
-change WHILE it is open, which is where fetch-on-open architectures go stale and
-where per-viewer access control (a private room, a removal that must take effect
-mid-session) has to be enforced by the data layer rather than by whichever
-clients happen to be polite.
-
-Suites: `02-features` (scored), `02-invariants` (scored — wire-level privacy via
-expectNotReceived, replay-forgery of bio edits and friend accepts, friendship
-as one relationship), and `02-systems` (withheld races: a profile panel opened
-at the moment its bio is saved, a friend accept landing mid-refetch). Systems
-criteria follow the standard promotion rule: zero points until each
-demonstrably fails a real build and its mutant is CAUGHT.
-
-The former draft files `02-scheduled.json` and `04-durability.json` (from the
-pre-track ladder, wired into no suite) were removed when this level was
-specified. Scheduled messages are not part of any current level; the grader's
-`scheduleMessage` verb remains for the deferred-work level (04) to use.
+Use the package entrypoints documented in the primary `README.md`: `bench` runs
+the build/grade/correction loop, `run-suite.mjs` grades a prepared app, and
+`report-bugs.mjs` produces structured correction input. New scored checks require
+reference, null-control, and defect-detection evidence before promotion.

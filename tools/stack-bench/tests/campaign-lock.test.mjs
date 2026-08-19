@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { acquireCampaignLock, campaignLockIsActive, controllerInstance,
-  releaseCampaignLock } from '../src/campaigns/campaign-lock.mjs';
+  ownerAlive, releaseCampaignLock } from '../src/campaigns/campaign-lock.mjs';
 
 const campaign = { id: 'ecommerce-l1-example', contentSha256: 'a'.repeat(64) };
 
@@ -40,6 +40,31 @@ test('controller identity falls back to hostname when container mount identity i
     readMountInfo: () => '/docker/containers/short-id/hostname /etc/hostname',
     fallbackHostname: () => 'host-controller',
   }), 'host-controller');
+});
+
+test('cross-controller liveness fails closed when Docker cannot answer', () => {
+  const container = 'ab'.repeat(32);
+  const record = { ownerInstance: container, ownerPid: 14 };
+  assert.throws(() => ownerAlive(record, 'cd'.repeat(32), {
+    inspect: () => ({ error: new Error('docker unavailable'), status: null }),
+  }), /cannot inspect controller/);
+  assert.throws(() => ownerAlive(record, 'cd'.repeat(32), {
+    inspect: () => ({ status: 1, stdout: '', stderr: 'permission denied' }),
+  }), /cannot determine whether controller/);
+});
+
+test('cross-controller liveness reclaims only a stopped or missing exact container', () => {
+  const container = 'ab'.repeat(32);
+  const record = { ownerInstance: container, ownerPid: 14 };
+  assert.equal(ownerAlive(record, 'cd'.repeat(32), {
+    inspect: () => ({ status: 0, stdout: 'true\n', stderr: '' }),
+  }), true);
+  assert.equal(ownerAlive(record, 'cd'.repeat(32), {
+    inspect: () => ({ status: 0, stdout: 'false\n', stderr: '' }),
+  }), false);
+  assert.equal(ownerAlive(record, 'cd'.repeat(32), {
+    inspect: () => ({ status: 1, stdout: '', stderr: `Error: No such object: ${container}` }),
+  }), false);
 });
 
 test('a campaign lock admits one exact controller and only its token can release it', () => {

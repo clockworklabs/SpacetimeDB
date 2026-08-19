@@ -256,11 +256,15 @@ Tracks are isolated by a port offset and a name slug, so two can run at the same
 
 ## Levels
 
-The five-level ladder below is the production target. Both tracks are currently
-validated through **L2**. A run may choose any declared level; its artifact says
-exactly which levels ran and separately records the track's current
-`validatedThrough` boundary. A level with no declared suite fails instead of
-falling back to L1 grading.
+The five-level ladder below is the production target. Ecommerce L1 2.4 is the
+current fully qualified release. Ecommerce L2 1.4 remains the promoted default,
+but it predates the current per-stack defect-coverage gate; L2 1.5 closes that
+static coverage gap and is awaiting live qualification evidence. Chat definitions
+remain available through L2, but their reference fixtures must be rebuilt before
+chat is presented as a current qualified comparison.
+
+Every artifact records the exact levels and recipe that ran. A level without a
+launchable catalog release fails instead of falling back to another level.
 
 Ordered by the property each makes verifiable, not by feature novelty — see each
 track's `LEVELS.md`.
@@ -284,13 +288,15 @@ Scenarios (`tracks/<t>/scenarios/`) then drive real browser clients — one isol
 context per actor, so identities are genuinely separate — and assert on what a
 user would observe.
 
-Three scored axes, kept apart because a feature score cannot see cross-cutting
-properties. An app can implement every listed feature and still let one user take
-over another's account:
+Scoring groups are track-defined because the applications expose different
+failure modes. Ecommerce uses features, invariants, contention, and systems
+coverage; chat uses features, invariants, delivery, and systems coverage. The
+compiled recipe—not a hard-coded universal axis list—is the source of truth for
+which checks and points apply to a run.
 
-- **Features** — does each described feature work
-- **Invariants** — identity, isolation, durability, write-path integrity
-- **Delivery** — no loss, no duplication, consistent ordering, reconnect recovery
+The separation matters: a feature score cannot detect cross-cutting failures
+such as broken ownership, durability, transaction boundaries, or reconnect
+recovery.
 
 Scoring is the exact sum of passed checks. Console errors remain visible diagnostics,
 but do not silently change unrelated check scores. Failed or unavailable checks earn

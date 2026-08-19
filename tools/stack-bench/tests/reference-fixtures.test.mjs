@@ -9,7 +9,7 @@ import { inspectReferenceCandidate, loadReferenceRegistry,
   validateReferenceRegistry } from '../src/references/reference-fixtures.mjs';
 import { resolveReferenceSelection } from '../src/references/reference-selection.mjs';
 
-test('the reference registry binds active, blocked, and historical provenance lifecycles', () => {
+test('the reference registry binds active, candidate, blocked, and provenance lifecycles', () => {
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
@@ -22,8 +22,9 @@ test('the reference registry binds active, blocked, and historical provenance li
   ]);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
+  escaped.fixtures[0].origin = { kind: 'historical-import', source: '../outside',
+    sourceSha256: 'a'.repeat(64) };
   escaped.fixtures[0].archivedEvidence = ['results/unbound-grade.json'];
-  escaped.fixtures[0].origin.source = '../outside';
   assert(validateReferenceRegistry(escaped).issues.some(issue => issue.includes('must stay inside')));
 });
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { humaniseDiagnostic, sanitiseConsoleError, sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.mjs';
+import { humaniseDiagnostic, redactCredentials, sanitiseConsoleError,
+  sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.mjs';
 
 const forbidden = /data-testid|getBy(?:TestId|Role|Text)|waitForSelector|locator\(|localhost|127\.0\.0\.1|host\.docker\.internal|[A-Za-z]:[\\/]|\/tools\/stack-bench|\b\d+(?:ms|s)\b|runExpect/i;
 
@@ -25,6 +26,15 @@ test('credentials are redacted from diagnostics and console output', () => {
   const result = sanitiseConsoleError('Authorization: Bearer secret.payload api_key=sk-abcdefghijklmnop `oops`');
   assert.doesNotMatch(result, /secret\.payload|sk-abcdefghijklmnop|`/);
   assert.match(result, /redacted/i);
+});
+
+test('credential redaction covers provider environment and JSON spellings', () => {
+  const input = 'ANTHROPIC_API_KEY=provider-value '
+    + 'CLAUDE_CODE_OAUTH_TOKEN=subscription-value '
+    + '{"apiKey":"json-value","oauth_token":"oauth-value"}';
+  const result = redactCredentials(input);
+  assert.doesNotMatch(result, /provider-value|subscription-value|json-value|oauth-value/);
+  assert.equal(result.match(/\[redacted credential\]/g)?.length, 4);
 });
 
 test('humanisation keeps useful behaviour while hiding the implementation', () => {

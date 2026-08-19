@@ -174,7 +174,9 @@ test('campaign detail exposes the evidence package but not arbitrary campaign fi
   const output = join(campaign, outputRelative);
   const media = join(output, 'grading', 'failure-media');
   mkdirSync(media, { recursive: true });
-  writeFileSync(join(output, 'process.stdout.log'), 'authorization: Bearer secret-token-value\nresult ok\n');
+  writeFileSync(join(output, 'process.stdout.log'), 'authorization: Bearer secret-token-value\n'
+    + 'ANTHROPIC_API_KEY=provider-secret\nCLAUDE_CODE_OAUTH_TOKEN=oauth-secret\n'
+    + '{"apiKey":"json-secret"}\nresult ok\n');
   writeFileSync(join(output, 'run.json'), '{"result":"ok"}\n');
   writeFileSync(join(media, 'failed-check.png'), Buffer.from('89504e470d0a1a0a', 'hex'));
   mkdirSync(join(campaign, 'admissions'), { recursive: true });
@@ -187,8 +189,10 @@ test('campaign detail exposes the evidence package but not arbitrary campaign fi
   assert.equal(detail.package.executions[0].visuals[0].path,
     `${outputRelative}/grading/failure-media/failed-check.png`);
   const log = detail.package.executions[0].artifacts.find(item => item.path.endsWith('process.stdout.log'));
-  assert.match(readCampaignArtifactBody(resolveCampaignArtifact(resultsRoot, 'evidence-run', log.id)).toString(),
-    /\[redacted credential\]/);
+  const servedLog = readCampaignArtifactBody(
+    resolveCampaignArtifact(resultsRoot, 'evidence-run', log.id)).toString();
+  assert.match(servedLog, /\[redacted credential\]/);
+  assert.doesNotMatch(servedLog, /secret-token-value|provider-secret|oauth-secret|json-secret/);
   assert.throws(() => resolveCampaignArtifact(resultsRoot, 'evidence-run',
     Buffer.from('admissions/private.json').toString('base64url')), /not available/);
   assert.throws(() => resolveCampaignArtifact(resultsRoot, 'evidence-run',

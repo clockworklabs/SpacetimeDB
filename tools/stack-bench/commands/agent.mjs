@@ -33,6 +33,7 @@ import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.mjs';
 import { codingSessionFailure, runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
+import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const REPO = resolve(ROOT, '..', '..');
@@ -198,10 +199,8 @@ function containerImage(name) {
   } catch { return { reference: 'unknown', imageId: null }; }
 }
 
-// Anything ambient that could change how the model behaves. We cannot prove no
-// environment variable influenced a run, but we can record which ones were
-// present so the question is answerable later. CLAUDE_EFFORT was set on this
-// machine for every run in the project before anyone noticed.
+// Record ambient provider configuration that can change model behaviour while
+// replacing credential values with presence markers.
 function ambientEnv() {
   const seen = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -637,6 +636,9 @@ async function main() {
     process.stdout.write(buildPrompt(args, p, track, undefined, { skillsText, requirementText, contractText }));
     return;
   }
+  if (args.mode === 'build') {
+    assertNewOrEmptyDirectory(args.app, 'build application directory');
+  }
   // Printed prompts describe the one supported coding topology but are a pure
   // review operation: they must work on a release-review machine that does not
   // have Docker or the build image. A paid session, by contrast, proves the
@@ -649,22 +651,8 @@ async function main() {
   // database port and would have skipped the pre-build wipe entirely, which is
   // exactly the backend whose leftover module causes the migration abort.
   ensureDatabase(args.backend, args.runIndex, p.dbPort, track, args.mode === 'build');
-  // `build` means from scratch. Leaving a previous app in place lets the agent
-  // inherit code — and a stale BUG_REPORT.md — from a run that has nothing to do
-  // with this one.
-  if (args.mode === 'build') {
-    // A dev server from a previous run can still hold the directory open, so
-    // give the filesystem a moment rather than failing the whole build.
-    for (let attempt = 0; ; attempt++) {
-      try { rmSync(args.app, { recursive: true, force: true }); break; }
-      catch (err) {
-        if (attempt >= 5) throw err;
-        // A synchronous sleep with no child process: `timeout` refuses to run
-        // when stdin is not a console, which is exactly how this is invoked.
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
-      }
-    }
-  }
+  // A build must start from a new or empty directory. Never turn a caller-
+  // supplied path into permission to recursively erase an existing tree.
   mkdirSync(args.app, { recursive: true });
   writeFileSync(join(args.app, '.stack-bench-backend'), args.backend);
 
@@ -674,9 +662,7 @@ async function main() {
   const lintCmd = `node "${join(ROOT, 'linter', 'lint.mjs')}" --url http://localhost:${p.vite} --level ${args.level}`
     + (track.name === DEFAULT_TRACK ? '' : ` --track ${track.name}`);
   const lintServer = startLintServer(lintCmd, args.app);
-  // A detached child outlives a parent that throws. Without this, every failed
-  // build would leave a listener behind — the exact thing this harness has been
-  // fixing all day.
+  // A detached child outlives a parent that throws, so every exit path stops it.
   const stopLint = () => killTree(lintServer.pid);
   process.on('exit', stopLint);
   for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { stopLint(); process.exit(130); });

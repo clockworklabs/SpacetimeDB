@@ -84,16 +84,16 @@ test('modular selection rejects overlap, wrong module kinds, and unobservable ch
   noProbe.checkCatalog.find(item => item.packId === 'example.concurrency').observations = ['requested'];
   assert.throws(() => resolveModularRecipeSelection(noProbe, {
     expectedSpecifications: ['example.concurrency@1.0.0'],
-  }), /has no unmentioned observation/);
+  }), /has no evaluation without prompting/);
   const noRequested = structuredClone(release);
   noRequested.checkCatalog.find(item => item.packId === 'example.durability').observations = ['unmentioned'];
   assert.throws(() => resolveModularRecipeSelection(noRequested, {
     requestedSpecifications: ['example.durability@1.0.0'],
-  }), /has no requested observation/);
+  }), /has no prompted evaluation/);
   assert.throws(() => resolveModularRecipeSelection(release, {
     featureIds: ['example.accounts'],
     requestedSpecifications: ['example.durability@1.0.0'],
-  }), /has no requested observation/);
+  }), /has no prompted evaluation/);
   const featureAddingSpec = structuredClone(release);
   featureAddingSpec.components.packs.find(item => item.id === 'example.durability')
     .requiresPacks = ['example.cart@1.0.0'];

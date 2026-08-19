@@ -8,11 +8,11 @@ import { compileCampaignFile, validateCompiledCampaignPlan } from '../src/campai
 import { campaignLockIsActive } from '../src/campaigns/campaign-lock.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { readCampaignState, validateCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
+import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.mjs';
 
 const MAX_LOG_BYTES = 96 * 1024;
 const MAX_PUBLIC_TEXT_BYTES = 8 * 1024 * 1024;
 const MAX_ARTIFACTS_PER_EXECUTION = 512;
-const SECRET = /\b(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+\/-]+=*|\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|password)\s*[=:]\s*[^\s,;]+|\b(?:sk|key)-[A-Za-z0-9_-]{16,}\b/gi;
 const IMAGE_TYPES = new Map([
   ['.png', 'image/png'], ['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.webp', 'image/webp'],
 ]);
@@ -37,7 +37,7 @@ function readTextTail(path, limit = MAX_LOG_BYTES) {
     const length = Math.min(size, limit);
     const buffer = Buffer.alloc(length);
     readSync(descriptor, buffer, 0, length, size - length);
-    return buffer.toString('utf8').replace(SECRET, '[redacted credential]');
+    return redactCredentials(buffer.toString('utf8'));
   } finally {
     closeSync(descriptor);
   }
@@ -168,7 +168,7 @@ export function resolveCampaignArtifact(resultsRoot, key, id) {
 export function readCampaignArtifactBody(artifact) {
   if (artifact.kind === 'visual') return readFileSync(artifact.absolute);
   if (artifact.size > MAX_PUBLIC_TEXT_BYTES) throw new Error('campaign artifact is too large to view');
-  return Buffer.from(readFileSync(artifact.absolute, 'utf8').replace(SECRET, '[redacted credential]'));
+  return Buffer.from(redactCredentials(readFileSync(artifact.absolute, 'utf8')));
 }
 
 function matches(text, pattern) {

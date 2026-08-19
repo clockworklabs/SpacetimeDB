@@ -1,178 +1,97 @@
 # Ecommerce track — level sequence
 
-A store is a better vehicle than a chat app for the properties that survive a
-strong model. Chat's L1 saturated: every backend scored full marks on features,
-so the only thing the feature axis measured was how much guidance each backend's
-pack contained. A store puts numbers at the centre — stock, quantities, totals,
-rankings — and a number is either right or it is not.
+The ecommerce track measures shared numeric state, per-account state, access
+control, and concurrency through a storefront backed by warehouses. Levels are
+cumulative: a higher-level recipe must retain the exact checks owned by its
+base release.
 
-The domain is a storefront with a warehouse behind it. Levels are ordered by the
-property each one makes verifiable, as in the chat track.
+## Status
 
----
+| Level | Product scope | Release status |
+|---|---|---|
+| L1 | storefront, accounts, carts, purchases, reviews, warehouses | `ecommerce.l1-modular@2.4.0` is promoted and qualified |
+| L2 | fulfilment, transfers, cancellations, returns, and pricing | `ecommerce.l2-standard@1.4.0` is promoted; `1.5.0` is the current qualification candidate |
+| L3 | reservations and scheduled work | scenario definitions exist; no qualified modular release |
+| L4 | customer-specific ranking and catalogue search | design target only |
+| L5 | correctness and efficiency under load | design target only |
+
+The promotion and candidate catalogs, not this document, are authoritative for
+which exact release can launch. Qualification status is computed with
+`commands/qualification-cli.mjs status`.
 
 ## L1 — Storefront and warehouse
 
-**Unlocks:** identity, live derived values, per-account durable state, and
-arithmetic that many clients can break at once.
+L1 establishes the reusable application base:
 
-Accounts, a public storefront ranked by sales, buying, a cart, order history,
-reviews, and an admin area over warehouses and stock.
+- account creation, sign-in, sign-out, and durable account state;
+- a public product catalogue with sales ranking, stock, and ratings;
+- authenticated purchases, carts shared across sessions, checkout, and order
+  history;
+- customer reviews and warehouse administration;
+- authorization, ownership, server-authoritative pricing, and accounting
+  invariants;
+- bounded contention, external-data synchronization, reconnect recovery, and
+  exact-once updates to an already-open list.
 
-Every headline number on this level is **derived from something else and shared
-by everyone**: the storefront ranking is a rollup of purchases, an item's stock
-is the sum of its rows across warehouses, an item's rating is the average of its
-reviews, and revenue is the sum of all orders. Each has to stay correct live, for
-signed-out visitors as well as customers. That is one property expressed four
-ways, which is what makes the level hard to pass by accident.
+Headline values are derived from shared state: stock is the sum of warehouse
+rows, ratings are derived from reviews, rankings are derived from purchases,
+and revenue is derived from orders. The grader verifies the relevant values in
+multiple views rather than accepting element presence as proof.
 
-The cart carries the other half: it belongs to an account rather than a browser,
-so the same customer in two places sees one cart. And purchases are deliberately
-**not rate limited**, because the contention suite needs customers to be able to
-collide.
+The promoted L1 2.4 recipe contains 48 checks worth 58 points. Forty-six checks
+are scored. The restock precondition and external-write reload assertion run as
+supporting controls with zero points.
 
-L1 is deliberately large — the full anonymous, customer and admin surface — because
-a smaller L1 is what saturated on the chat track.
+## L2 — Running the business
 
-## L2 — Running the business (built)
+L2 adds staff and administrative operations over the L1 store:
 
-**Unlocks:** many projections of one dataset, all live at once.
+- fulfilment queues and shipping authorization;
+- stock transfers with directional and total-stock conservation;
+- cancellation, return, and stock restoration;
+- price history and paid-price preservation;
+- low-stock, category-sales, recommendation, and best-seller views;
+- cross-account authorization, refund accounting, and transfer-versus-purchase
+  conservation.
 
-Fulfilment, stock movement between warehouses, cancellations and returns, price
-changes — with visitor, customer, staff and admin each watching a different view
-of the same store. Includes the cross-row atomicity case: a transfer must leave
-the total unchanged even when a purchase interleaves with it (202d, withheld).
+The current L2 1.5 candidate rebases these checks onto exact L1 2.4. It retains
+all 48 L1 checks and adds 28 L2 checks, for 76 checks and 117 points. Its source-
+bound defect definitions cover every scored check on MongoDB, PostgreSQL, and
+SpacetimeDB. It remains a draft until its reference, mutation, and null-control
+artifacts are produced and bound to the calibration.
 
-## L3 — Work that happens later (built)
+## L3 — Deferred work
 
-**Unlocks:** durability of deferred work.
+The L3 product target covers reservations, scheduled restocks, order-state
+transitions, abandoned carts, and work that must survive process restarts and
+execute exactly once. Existing scenario files are development inputs, not a
+qualified cumulative release. They must not be reported as L3 benchmark data.
 
-Reservations that expire on their own, restocks scheduled for a later time,
-orders that advance pending → shipped → delivered with nobody watching, carts
-that go abandoned. The invariants are the point: deferred work survives a
-backend restart, fires exactly once, never fires early, and time never creates
-or destroys stock. This is where an in-memory timer stops being an
-implementation detail and becomes a defect.
+## L4 — Per-customer derivation
 
-## L4 — Personalisation at catalogue scale (designed)
-
-**Unlocks:** per-customer derived state, computed per viewer.
-
-A storefront ranked for *you*: items sharing a category with something you have
-bought come first, then the global ranking. Faceted search over a larger
-catalogue. The rule must be stated precisely enough to check arithmetically —
-each viewer sees a different correct answer over the same rows, which is the
-per-viewer analogue of L1's shared derived values.
+The L4 target adds deterministic customer-specific ranking, faceted catalogue
+search, tie-breaking, pagination, and isolation between viewers. Its contract,
+reference fixtures, defect definitions, and calibration are not yet frozen.
 
 ## L5 — Volume
 
-**Unlocks:** throughput, latency and efficiency under load.
+The L5 target applies versioned ecommerce workloads at larger catalogue,
+history, and concurrency sizes. Correctness remains scored. Latency and resource
+measurements remain diagnostic until workload generation and accounting are
+qualified.
 
-A large catalogue, a long order history and many concurrent shoppers. Ranking and
-search latency percentiles, sustained purchases per second, and whether query cost
-grows with catalogue size. A flash sale is contention at scale: the L1 oversell
-check, but with hundreds of customers.
+## Composition and scoring
 
----
+Features and specifications are separate modules. A run can select feature
+packs, choose which specifications are stated in the initial prompt, and choose
+which applicable specifications are evaluated. Dependencies are resolved before
+the prompt and check selection are hashed.
 
-## Scoring axes
+Every check has one typed outcome: `passed`, `failed`, `inconclusive`, or
+`harness_failure`. Only passed, point-bearing checks add to the score. A missing
+or inconclusive measurement never changes the declared denominator. Zero-point
+controls remain visible as supporting evidence.
 
-Three suites per level, scored separately, for the reason the chat track learned
-the hard way: a feature-only score cannot see a cross-cutting property, so an app
-can implement everything on the list and still sell one item to two people.
-
-- **features** — the level's functionality
-- **invariants** — properties that must hold regardless of feature completeness:
-  a purchase needs an account, an order belongs to whoever placed it, the price is
-  the store's to set, stock is administered by admins only, the books balance
-- **contention** — what many clients doing the same thing at once must leave behind
-
-Contention criteria start at **zero points and stay there** until mutation testing
-proves the criterion can catch a real defect. An unproven criterion is a
-hypothesis, and this benchmark has already had four hypotheses of that kind
-evaporate when a stronger model wrote the competitor's code. They run and report
-from the start, so the evidence accumulates; they simply cannot move a score until
-they have earned it.
-
-## Systems invariants (both tracks) — the failures that never appear in a demo
-
-Feature tests measure what an app does when one person uses it politely. The
-systems suite (`scenarios/01-systems.json`, both tracks) measures what survives
-the conditions production actually has. Classes, and where each stands:
-
-**Out-of-band writes** (implemented, withheld): another system writes to the
-database — a cron job, an ERP sync, moderation tooling. The spec requires a
-`scripts/backoffice.mjs` that writes to the database directly, and criteria
-901a/b assert open clients reflect the change live. A broadcast layer only
-announces writes that went through it; a subscription to the data itself does
-not care who wrote.
-
-**Enumeration during mutation** (implemented, withheld): a list is fetched while
-its contents change. Criterion 902a asserts the moved row lands exactly once —
-fetch-then-merge architectures show it zero times (stale) or twice (fetch plus
-its own live echo).
-
-**Multiple app servers** (designed, not yet implemented): two instances of the
-app's server against the same database, actors split between them — the classic
-socket.io failure, where a message sent through server A never reaches clients
-on server B. Needs: the prompt to require the server to honour a PORT override,
-bench.mjs to launch a second instance, and the grader to take per-actor URLs.
-SpacetimeDB has no app-server tier to duplicate, which is the point being
-measured.
-
-**Fine-grained subscription lifecycles** (L2 material): profiles and friend
-lists that a client subscribes to when a panel opens and drops when it closes.
-Fetch-on-open architectures go stale the moment the panel outlives its fetch.
-Belongs with the L2 feature specs, where the surfaces exist.
-
-**Races and transactions** (partially covered today): oversell and double-spend
-live in the contention suite; stock conservation is invariant 104. Missing is
-cross-row atomicity under interleaving — a warehouse transfer racing a purchase,
-where a non-transactional backend can lose or duplicate a unit between rows.
-Belongs in 02-operations, where transfers exist.
-
-**Extensibility** (measured by the ladder itself): the cost of L2 on top of L1 —
-turns, dollars, and whether L1 criteria still pass after the upgrade — is the
-extensibility number. No new criteria needed; the protocol is to re-run the L1
-suites after every upgrade and report regressions as first-class results.
-
-The promotion rule is the same as contention's, with no exceptions: every
-systems criterion starts at zero points and earns them only when it
-demonstrably fails a real build AND mutation testing shows it catches the
-defect it claims to catch.
-
-**Who tests the back-office test.** The app authors the lever AND the surface
-being judged, so the criterion is anchored three ways or it is not a test:
-
-1. *External arithmetic* — expected values derive from the dictated seed
-   (Desk Lamp 55+45; set East to 5 ⇒ the UI must read exactly 50). The app
-   owns the lever, never the answer key. A no-op or wrong-field script cannot
-   match a number it does not control.
-2. *Server-down execution* — stop the app server, run the script, restart,
-   the value must have persisted. Kills scripts that call the app's API and
-   writes that only patched server memory. Requires the stopAppServer /
-   startAppServer step verbs; NOT YET IMPLEMENTED, and 901 must not be
-   promoted before it is.
-3. *Counterfeit levers* — promotion requires harness-authored mutant scripts
-   (no-op, API-calling, memory-patch) each swapped into a passing reference
-   app and CAUGHT.
-
-**Why the criterion is fair**, stated before a hostile reviewer states it for
-us: every backend has a legitimate, native path to passing. Postgres apps can
-pass with triggers plus LISTEN/NOTIFY; mongo apps can pass with change
-streams — both real, documented, production-normal features. SpacetimeDB
-passes with no additional work because no write path exists outside its sync
-layer: reducers and SQL both flow through the commit stream subscriptions
-read from. That means the script's write is technically "in-band" on
-SpacetimeDB — which is the property under test, not a loophole: the
-measurement is what it COSTS each stack to make external writes safe, and
-"nothing, by construction" is a finding, not a rig. The criterion is winnable
-by an expert human on all three stacks; the difference is the bill.
-
-Residual, stated so nobody over-claims: a file-outbox design (script writes a
-queue, server ingests) passes all three anchors, while a genuinely foreign
-system writing rows directly would bypass it. Schema-blind grading cannot
-close that. The property this criterion may honestly claim is "has a
-documented external-edit path that is live and survives its server being
-down" — which a pure broadcast architecture does not have — and results must
-be published under that claim, not the stronger one.
+Checks are promoted only after the exact reference passes, the null application
+cannot earn credit, and source-bound defects make the intended check fail
+without unrelated regressions on every supported stack.

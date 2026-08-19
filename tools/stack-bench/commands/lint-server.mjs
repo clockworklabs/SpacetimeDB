@@ -63,12 +63,8 @@ server.headersTimeout = 0;
 server.requestTimeout = 0;
 server.timeout = 0;
 
-// Loopback, including for containerised builds. Docker Desktop proxies
-// host.docker.internal through to the host's 127.0.0.1 — measured, because the
-// obvious guess is the opposite and widening the bind to 0.0.0.0 would put the
-// hook server on the LAN for nothing. --host exists for a Docker that does not
-// do that (plain Linux with --add-host=host.docker.internal:host-gateway
-// reaches the host's gateway address, where a loopback listener is invisible).
+// Bind to loopback by default. `--host` supports Linux container topologies
+// whose host gateway cannot reach a loopback-only listener.
 server.listen(0, arg('--host') ?? '127.0.0.1', () => {
   // The port file is how the parent learns the port without an async wait: it
   // is written only once the socket is actually accepting.

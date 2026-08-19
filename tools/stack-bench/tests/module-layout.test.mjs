@@ -104,7 +104,7 @@ test('package command entrypoints exist', () => {
   }
 });
 
-test('local and appliance compose files pin the same database images and volumes', () => {
+test('local and appliance compose files pin the same images but isolate resources', () => {
   const local = readFileSync(join(ROOT, 'docker-compose.yaml'), 'utf8');
   const appliance = readFileSync(join(ROOT, 'appliance', 'docker-compose.yaml'), 'utf8');
   const image = (source, service) => source.match(new RegExp(
@@ -113,8 +113,9 @@ test('local and appliance compose files pin the same database images and volumes
     assert.match(image(local, service) ?? '', /@sha256:[a-f0-9]{64}$/);
     assert.equal(image(local, service), image(appliance, service));
   }
-  for (const volume of ['stack-bench-appliance-pgdata', 'stack-bench-appliance-mongodata']) {
-    assert.match(local, new RegExp(`name: ${volume}`));
-    assert.match(appliance, new RegExp(`name: ${volume}`));
+  for (const resource of ['postgres', 'mongodb', 'pgdata', 'mongodata']) {
+    assert.match(local, new RegExp(`stack-bench-dev-${resource}`));
+    assert.match(appliance, new RegExp(`stack-bench-(?:appliance-)?${resource}`));
+    assert.doesNotMatch(appliance, new RegExp(`stack-bench-dev-${resource}`));
   }
 });

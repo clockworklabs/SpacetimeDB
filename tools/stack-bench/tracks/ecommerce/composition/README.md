@@ -1,8 +1,8 @@
 # Ecommerce benchmark composition
 
-This directory is the versioned, mix-and-match source model for the ecommerce
-benchmark. It is deliberately separate from the current `track.json` level/suite
-manifest while migration parity is proven.
+This directory is the versioned, composable source model for the ecommerce
+benchmark. Packs define independently selectable features and specifications;
+recipes bind exact pack, fixture, prompt, execution, and scoring versions.
 
 - `packs/` contains both legacy behavior packs and the modular catalog. Modular
   packs explicitly identify either a visible product feature or an optional
@@ -12,16 +12,17 @@ manifest while migration parity is proven.
 - `fixtures/` records exact starting products, stock, accounts, and empty state.
 - `recipes/` selects exact pack and fixture versions, supplies only global task
   framing, and defines execution order and scoring.
-- `promotions.json` contains candidate or promoted aliases such as L1 and L2.
-  An alias cannot be promoted to a draft recipe.
+- `promotions.json` contains the promoted and retired releases behind public
+  aliases such as L1 and L2.
+- `candidates.json` contains exact draft releases that may be selected for
+  qualification without changing a public alias.
 - `calibrations/` binds one exact recipe to canonical reference apps, mutation
   manifests, null expectations, repetition policy, stack status, and promotion
   state. Calibration applies to the whole combination, not to packs separately.
 
-The parity recipes explicitly use `legacy-source-points` so their current
-scores can be compared byte-for-byte during migration. That scoring mode is
-rejected unless the recipe declares its legacy level. New recipes use explicit
-stable-key weights; the smoke recipe demonstrates that form.
+Older parity recipes use `legacy-source-points` and remain only where a retained
+qualification artifact depends on their exact bytes. Current modular recipes
+use explicit weights attached to permanent check keys.
 
 At runtime, pack selection is requested-task selection. Its transitive declared
 dependencies are included in both prompt composition and grading. A check
@@ -38,14 +39,9 @@ npm run check:composition
 npm run check:calibration
 ```
 
-Current status: these sources compile and prove exact L1/L2 membership, ordering,
-check, and score parity. The live runner resolves the requested alias,
-rechecks that parity before launching a browser, and records the exact recipe
-identity in every grade and bundle. Scenario actions execute through the
-versioned, capability-scoped action registry. L1 1.0 and L2 1.1 are promoted
-and qualified. Framework-neutral L1 1.1 and L2 1.2 are catalogued candidates:
-their task meaning changed, while their execution and scoring hashes remain
-identical to the promoted releases. They are not promotion evidence yet.
+The live runner resolves the requested release before launching a browser and
+records its exact identity in every grade and bundle. Scenario actions execute
+through the versioned, capability-scoped action registry.
 
 Normal runs resolve the promoted alias. A single-level run may select a
 catalogued candidate exactly with `--recipe <id>@<version>`. Exact selection is
@@ -76,30 +72,33 @@ the hashes are the proof:
 Saved releases include source digests and the compact check catalog. They do not
 copy fixture passwords, prompt contents, or the full executable grader plan.
 
-The framework-neutral L1 and L2 calibrations are qualified and promoted. Each
-binds all three active reference apps and their exact mutation manifests to
-repeated Docker reference, mutation, and null evidence. The earlier releases
-and promotion records are retired: their calibration evidence remains
-verifiable, but active resolution refuses to launch them for a new run.
+## Current release status
 
-`ecommerce.l1-modular@2.0.0` is a draft recipe, not a promoted run target. It
-splits L1 into six feature modules and six specification modules while owning
-all 48 existing criteria exactly once at the existing 51-point total. Feature
-selection and each specification's requested, expected, or observed treatment
-compose and hash independently at the library boundary. Requested specifications
-appear in the prompt and score; expected specifications are withheld initially
-but still score and enter repairs; observed specifications stay in a separate
-zero-score first-build result. Five specifications support the unmentioned
-observation used by expected and observed treatments. External data
-synchronization is requested-only because its current oracle needs the exact
-interoperability table contract in the prompt. Campaign compilation, preflight,
-agent isolation, scored grading/repair, source-bound observation, run provenance,
-and treatment-aware reporting are wired. Cross-stack reference, null, and
-exact-mutation qualification remains unfinished.
+| Alias | Exact release | Catalog state | Current qualification status |
+|---|---|---|---|
+| L1 | `ecommerce.l1-modular@2.4.0` | promoted | qualified; 46/46 scored checks have exact defect definitions on MongoDB, PostgreSQL, and SpacetimeDB |
+| L2 | `ecommerce.l2-standard@1.4.0` | promoted | historically qualified; it predates the current per-stack defect-coverage gate and now reports 36/74 scored checks covered |
+| L2 candidate | `ecommerce.l2-standard@1.5.0` | draft | 74/74 scored checks have exact defect definitions on all three stacks; live reference, mutation, and null evidence is still pending |
 
-Draft recipes are listed in `candidates.json`, separate from
-`promotions.json`. Exact candidate selection therefore cannot change the
-promotion-catalog hash bound into qualified calibration evidence. The generic
-task-request boundary replays legacy schema-1 and modular schema-3 requests
-through the real agent and grading entrypoints. Campaign conditions resolve the
-same content-bound selection without a redundant probe-policy layer.
+The L2 1.5 candidate is not a published result or promoted default. Its
+qualification status currently has seven blockers: one reference run and one
+mutation run for each supported stack, plus one null-control run. Check the
+compiler-owned status instead of maintaining release claims by hand:
+
+```text
+node commands/qualification-cli.mjs status --track ecommerce --level 1 --recipe ecommerce.l1-modular@2.4.0
+node commands/qualification-cli.mjs status --track ecommerce --level 2 --recipe ecommerce.l2-standard@1.5.0
+```
+
+Specification treatment is independent from feature selection:
+
+- **requested** specifications appear in the initial prompt and are scored;
+- **expected** specifications are not prescribed initially, but are scored and
+  may enter a correction report after a failure;
+- **observed** specifications are evaluated separately after the first build
+  and do not alter the requested-feature score or correction loop.
+
+Exact candidate selection cannot change the promotion-catalog hash bound into
+qualified calibration evidence. Retired releases remain verifiable but cannot
+be launched as new runs. Campaign conditions and direct CLI requests resolve
+through the same content-bound task and grading entrypoints.

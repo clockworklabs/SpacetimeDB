@@ -127,10 +127,10 @@ test('a requested specification applies only to the selected feature surface', (
   assert.doesNotMatch(accounts.task.requirementText, /cart|orders|reviews|administrator/i);
 });
 
-test('an unmentioned expectation that needs a prescribed schema fails closed', () => {
+test('an expectation evaluated without prompting that needs a prescribed schema fails closed', () => {
   assert.throws(() => resolveModularRecipeSelection(release, {
     expectedSpecifications: ['ecommerce.spec.external-data-sync@1.0.0'],
-  }), /has no unmentioned observation/);
+  }), /has no evaluation without prompting/);
 });
 
 test('criteria with ordered state dependencies are not exposed as isolated probes', () => {

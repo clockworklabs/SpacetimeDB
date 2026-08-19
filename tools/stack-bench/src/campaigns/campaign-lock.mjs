@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -30,14 +30,31 @@ export function controllerInstance(env = process.env, {
   return fallbackHostname();
 }
 
-function ownerAlive(record, currentInstance) {
+export function ownerAlive(record, currentInstance, {
+  inspect = instance => spawnSync('docker', ['inspect', '--type', 'container', '--format',
+    '{{.State.Running}}', instance], { encoding: 'utf8', stdio: 'pipe', timeout: 15_000 }),
+} = {}) {
   if (record.ownerInstance === currentInstance) return processAlive(record.ownerPid);
-  try {
-    return execFileSync('docker', ['inspect', '--format', '{{.State.Running}}', record.ownerInstance],
-      { encoding: 'utf8', stdio: 'pipe', timeout: 15_000 }).trim() === 'true';
-  } catch {
+  if (!HASH.test(record.ownerInstance)) {
+    fail(`cannot prove whether controller ${record.ownerInstance} is alive from ${currentInstance}`);
+  }
+  const result = inspect(record.ownerInstance);
+  if (result.error) {
+    fail(`cannot inspect controller ${record.ownerInstance}: ${result.error.message}`);
+  }
+  if (result.status === 0) {
+    const running = String(result.stdout ?? '').trim();
+    if (running === 'true') return true;
+    if (running === 'false') return false;
+    fail(`controller ${record.ownerInstance} returned an invalid Docker state`);
+  }
+  const detail = `${result.stderr ?? ''}${result.stdout ?? ''}`.trim();
+  const escaped = record.ownerInstance.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (new RegExp(`(?:No such object|No such container):\\s*${escaped}(?:\\s|$)`, 'i').test(detail)) {
     return false;
   }
+  fail(`cannot determine whether controller ${record.ownerInstance} is alive: `
+    + `${detail || `docker inspect exited ${result.status}`}`);
 }
 
 function validateRecord(input, path = '<campaign-lock>') {

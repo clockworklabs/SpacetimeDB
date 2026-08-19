@@ -337,16 +337,8 @@ function lint(args) {
   return r;
 }
 
-// The spec names the write actions so contention tests can issue several at the
-// same instant, which clicking cannot do. When one is missing the symptom is a
-// criterion reporting INCONCLUSIVE and being subtracted from this run's
-// denominator — which is how one backend was scored out of 48 and another out
-// of 50 for the same level. Say it here instead, where it is one line and
-// obviously about the app rather than about the database.
-//
-// Not fatal: features and invariants still grade perfectly well without it, and
-// aborting would throw away a run over tests that were going to be excluded
-// anyway.
+// Named write actions let concurrency checks issue authenticated operations
+// without prescribing one transport. Missing actions are reported explicitly.
 function checkActions(args) {
   process.stdout.write(`  ${'actions'.padEnd(10)} ... `);
   const out = join(args.out, 'actions.json');

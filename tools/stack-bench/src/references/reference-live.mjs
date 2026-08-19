@@ -183,7 +183,8 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-export function auditReferenceRun(output, fixture, { requireMutationControl = false } = {}) {
+export function auditReferenceRun(output, fixture,
+  { requireMutationControl = false, release = null } = {}) {
   const runPath = join(output, 'run.json');
   const bundlePath = join(output, 'grading', 'bundle.json');
   if (!existsSync(runPath) || !existsSync(bundlePath)) {
@@ -192,6 +193,10 @@ export function auditReferenceRun(output, fixture, { requireMutationControl = fa
   const run = readArtifactPayload(runPath, { expectedKind: 'benchmark_run' });
   const bundle = readArtifactPayload(bundlePath, { expectedKind: 'grade_bundle' });
   const failures = [];
+  if (!release?.contentSha256 || !Array.isArray(release.checkCatalog)
+      || release.checkCatalog.length === 0) {
+    failures.push('exact recipe release was not supplied to the qualification audit');
+  }
   if (run.backend !== fixture.backend || run.track !== fixture.track) failures.push('run identity does not match fixture');
   if (run.setup?.isolation?.mode !== 'container') failures.push('run was not isolated in Docker');
   if (run.outcome?.kind !== 'passed') failures.push(`run outcome is ${run.outcome?.kind ?? 'missing'}`);
@@ -213,13 +218,42 @@ export function auditReferenceRun(output, fixture, { requireMutationControl = fa
       for (const criterion of feature.criteria ?? []) {
         const key = `${suiteId}/${feature.id}/${criterion.id}`;
         const evidence = criterionEvidence(criterion);
-        criteria.push({ key, points: criterion.points ?? 0, passed: evidencePassed(evidence),
-          status: evidence.status });
+        criteria.push({ key, stableKey: criterion.stableKey ?? null,
+          points: criterion.points ?? 0, passed: evidencePassed(evidence), status: evidence.status });
         if (!evidencePassed(evidence)) failures.push(`${key} did not pass`);
       }
     }
   }
   if (!criteria.length) failures.push('no scenario criteria were recorded');
+  if (release) {
+    const expectedRecipe = { id: release.id, version: release.version,
+      contentSha256: release.contentSha256 };
+    const actualRecipe = bundle.selection?.recipe;
+    if (actualRecipe?.id !== expectedRecipe.id || actualRecipe?.version !== expectedRecipe.version
+        || actualRecipe?.contentSha256 !== expectedRecipe.contentSha256) {
+      failures.push('grading bundle recipe identity does not match the requested release');
+    }
+    if (bundle.recipeRelease?.contentSha256 !== release.contentSha256) {
+      failures.push('grading bundle release document does not match the requested release');
+    }
+    const fields = ['stableKey', 'points', 'source', 'executionId', 'featureId',
+      'criterionId', 'packId', 'checkGroupId'];
+    const shape = check => Object.fromEntries(fields.map(field => [field, check?.[field] ?? null]));
+    const order = checks => checks.map(shape).sort((a, b) => a.stableKey.localeCompare(b.stableKey));
+    const expectedChecks = order(release.checkCatalog);
+    const selectedChecks = Array.isArray(bundle.selection?.checks)
+      ? order(bundle.selection.checks) : null;
+    if (!selectedChecks || JSON.stringify(selectedChecks) !== JSON.stringify(expectedChecks)) {
+      failures.push('graded check catalog does not match the requested release');
+    }
+    const expectedKeys = expectedChecks.map(check => check.stableKey);
+    const reportedKeys = [...(bundle.selection?.reportedChecks ?? [])].sort();
+    const evidenceKeys = criteria.map(check => check.stableKey).sort();
+    if (JSON.stringify(reportedKeys) !== JSON.stringify(expectedKeys)
+        || JSON.stringify(evidenceKeys) !== JSON.stringify(expectedKeys)) {
+      failures.push('graded check evidence does not cover the exact requested release');
+    }
+  }
   const lease = run.backendLease;
   if (lease?.state !== 'released') failures.push('backend lease was not released');
   if (lease?.resources?.buildContainer?.running !== false) failures.push('leased build container was not recorded as removed');
@@ -312,6 +346,7 @@ async function runOnce(fixture, args, context, id, repetition) {
   const started = Date.now();
   const harnessBefore = qualificationInputs();
   let processError = null;
+  let cleanupPending = false;
   try {
     prepareReferenceFixtureSource(fixture, app);
     const adapter = STACK_ADAPTER_REGISTRY.get(fixture.backend);
@@ -337,7 +372,11 @@ async function runOnce(fixture, args, context, id, repetition) {
         ? `benchmark exceeded ${args.timeoutMinutes} minute repetition deadline`
         : child.error?.message ?? `benchmark exited ${child.code ?? child.signal ?? 'without status'}`;
       try { rescueSupervisedLease(supervisorState, output); }
-      catch (cleanupError) { throw new Error(`${reason}; lease cleanup failed: ${cleanupError.message}`); }
+      catch (cleanupError) {
+        cleanupPending = true;
+        throw new Error(`${reason}; lease cleanup failed: ${cleanupError.message}; `
+          + `recovery authority retained at ${supervisorState}`);
+      }
       throw new Error(reason);
     }
   } catch (error) {
@@ -347,7 +386,9 @@ async function runOnce(fixture, args, context, id, repetition) {
     // removes its leased container before returning; deleting the caller-owned
     // source copy here cannot target another run.
     try {
-      rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+      if (!cleanupPending) {
+        rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+      }
     } catch (error) {
       // Cleanup evidence must not replace the benchmark failure that caused it.
       // Retain the exact owned path for diagnosis; a later run has a distinct
@@ -356,7 +397,10 @@ async function runOnce(fixture, args, context, id, repetition) {
       processError = processError ? `${processError}; ${cleanup}` : cleanup;
     }
   }
-  const audit = auditReferenceRun(output, fixture, { requireMutationControl: args.mutations });
+  const audit = auditReferenceRun(output, fixture, {
+    requireMutationControl: args.mutations,
+    release: context.binding.release,
+  });
   const harnessAfter = qualificationInputs();
   if (harnessAfter.sha256 !== harnessBefore.sha256) {
     audit.failures.unshift('qualification harness changed while this repetition was running');

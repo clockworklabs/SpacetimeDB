@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -61,6 +61,16 @@ test('lease updates are atomic and retain identity', () => {
     const onDisk = JSON.parse(readFileSync(f.path, 'utf8'));
     assert.equal(onDisk.runId, f.lease.runId);
     assert.deepEqual(onDisk.resources.listenerPids, [8080]);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('lease ownership tokens are stored with private filesystem modes', t => {
+  if (process.platform === 'win32') return t.skip('POSIX modes are not enforced on Windows');
+  const f = fixture();
+  try {
+    writeBackendLease(f.path, f.lease);
+    assert.equal(statSync(f.root).mode & 0o777, 0o700);
+    assert.equal(statSync(f.path).mode & 0o777, 0o600);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
   referenceQualificationPaths, referenceQualificationRunner, referenceQualificationSelectionArgs,
   referenceQualificationWorkRoot, rescueSupervisedLease, runBounded } from '../src/references/reference-live.mjs';
-import { writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
+import { emptyArtifactIdentities, writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
@@ -125,12 +125,19 @@ test('reference qualification records whether its controller is the supported Li
 });
 
 function writeEvidence(root, { id, points, passed }) {
+  const stableKey = `test.reference.${id}`;
+  const release = { id: 'test.reference', version: '1.0.0', contentSha256: 'b'.repeat(64),
+    checkCatalog: [{ stableKey, points, source: 'scenarios/test.json', executionId: 'systems',
+      featureId: 901, criterionId: id, packId: 'test.reference', checkGroupId: 'systems' }] };
+  const identities = emptyArtifactIdentities({ recipe: { id: release.id, version: release.version,
+    sha256: release.contentSha256, state: 'qualified' } });
   mkdirSync(join(root, 'grading'), { recursive: true });
   writeRunJson(join(root, 'run.json'), {
     id: 'reference-run', backend: 'mongodb', track: 'ecommerce',
+    identities,
     setup: { isolation: { mode: 'container', imageId: 'sha256:test' } },
     outcome: { kind: 'passed' },
-    levels: [{ level: 1, graded: true, contractPass: true, score: 1, max: 1 }],
+    levels: [{ level: 1, graded: true, contractPass: true, score: points, max: points }],
     backendLease: { state: 'released', resources: {
       buildContainer: { running: false }, locks: [{ key: 'slot:test', releasedAt: 'now' }],
     } },
@@ -141,17 +148,23 @@ function writeEvidence(root, { id, points, passed }) {
     code: passed ? 'completed' : 'test_result', phase: 'assertion',
     startedAtMs: 1, completedAtMs: 2 });
   writeArtifact(join(root, 'grading', 'bundle.json'), { kind: 'grade_bundle', id: 'reference-bundle',
-    payload: { suites: {
+    identities,
+    payload: { recipeRelease: release, selection: {
+      recipe: { id: release.id, version: release.version, contentSha256: release.contentSha256 },
+      checks: release.checkCatalog, reportedChecks: [stableKey], notRun: [],
+    }, suites: {
       lint: { pass: true },
-      systems: { features: [{ id: 901, setupEvidence, criteria: [{ id, points, evidence }] }] },
+      systems: { features: [{ id: 901, setupEvidence,
+        criteria: [{ id, stableKey, points, evidence }] }] },
     } } });
+  return release;
 }
 
 test('reference qualification audits zero-point criteria and teardown evidence', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
   try {
-    writeEvidence(root, { id: '901a', points: 0, passed: true });
-    const audit = auditReferenceRun(root, fixture);
+    const release = writeEvidence(root, { id: '901a', points: 0, passed: true });
+    const audit = auditReferenceRun(root, fixture, { release });
     assert.equal(audit.ok, true);
     assert.equal(audit.criteria, 1);
     assert.equal(audit.zeroPointCriteria, 1);
@@ -161,8 +174,8 @@ test('reference qualification audits zero-point criteria and teardown evidence',
 test('reference qualification rejects a failed zero-point criterion', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
   try {
-    writeEvidence(root, { id: '901a', points: 0, passed: false });
-    const audit = auditReferenceRun(root, fixture);
+    const release = writeEvidence(root, { id: '901a', points: 0, passed: false });
+    const audit = auditReferenceRun(root, fixture, { release });
     assert.equal(audit.ok, false);
     assert.deepEqual(audit.failures, ['systems/901/901a did not pass']);
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -171,7 +184,7 @@ test('reference qualification rejects a failed zero-point criterion', () => {
 test('mutation qualification requires a full baseline and every exact mutant caught', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
   try {
-    writeEvidence(root, { id: '901a', points: 0, passed: true });
+    const release = writeEvidence(root, { id: '901a', points: 0, passed: true });
     const runPath = join(root, 'run.json');
     const run = JSON.parse(readFileSync(runPath, 'utf8'));
     run.payload.mutationControl = { ok: true };
@@ -180,16 +193,36 @@ test('mutation qualification requires a full baseline and every exact mutant cau
       payload: { ok: true, fixtureSha256: fixture.imported.sourceSha256,
         baseline: { total: 2, max: 2 }, summary: { caught: 1, total: 1 },
         results: [{ id: 'known-defect', status: 'CAUGHT' }] } });
-    const passing = auditReferenceRun(root, fixture, { requireMutationControl: true });
+    const passing = auditReferenceRun(root, fixture, { requireMutationControl: true, release });
     assert.equal(passing.ok, true);
     assert.deepEqual(passing.mutations, { caught: 1, total: 1 });
 
     const failed = JSON.parse(readFileSync(join(root, 'mutation-control.json'), 'utf8'));
     failed.payload.results[0].status = 'SURVIVED';
     writeFileSync(join(root, 'mutation-control.json'), JSON.stringify(failed));
-    const audit = auditReferenceRun(root, fixture, { requireMutationControl: true });
+    const audit = auditReferenceRun(root, fixture, { requireMutationControl: true, release });
     assert.equal(audit.ok, false);
     assert(audit.failures.includes('known-defect is SURVIVED'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reference qualification refuses identity-less or wrong same-sized check evidence', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
+  try {
+    const release = writeEvidence(root, { id: '901a', points: 1, passed: true });
+    const bundlePath = join(root, 'grading', 'bundle.json');
+    const bundle = JSON.parse(readFileSync(bundlePath, 'utf8'));
+    bundle.payload.selection.checks[0].stableKey = 'wrong.same-sized.check';
+    bundle.payload.selection.reportedChecks = ['wrong.same-sized.check'];
+    bundle.payload.suites.systems.features[0].criteria[0].stableKey = 'wrong.same-sized.check';
+    writeFileSync(bundlePath, JSON.stringify(bundle));
+    const wrong = auditReferenceRun(root, fixture, { release });
+    assert.equal(wrong.ok, false);
+    assert(wrong.failures.includes('graded check catalog does not match the requested release'));
+
+    const unidentified = auditReferenceRun(root, fixture);
+    assert.equal(unidentified.ok, false);
+    assert(unidentified.failures.includes('exact recipe release was not supplied to the qualification audit'));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

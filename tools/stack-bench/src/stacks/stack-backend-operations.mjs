@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 
 import { leasedSpacetimeTarget } from '../runtime/spacetime-target.mjs';
 import { resolveSpacetimeModuleLayout } from '../runtime/spacetime-layout.mjs';
+import { databaseContainerName } from './database-containers.mjs';
 
 const RESET_TIMEOUT_MS = 120_000;
 const WRITE_TIMEOUT_MS = 60_000;
@@ -57,7 +58,7 @@ const sqlString = value => `'${String(value).replaceAll("'", "''")}'`;
 
 export function setPostgresStock({ item, warehouse, quantity, dbName, exec = execFileSync,
   containers = {} }) {
-  const container = containers.postgres ?? process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres';
+  const container = containers.postgres ?? databaseContainerName('postgres');
   const sql = `UPDATE stock SET quantity = ${quantity} WHERE item_id = `
     + `(SELECT id FROM item WHERE name = ${sqlString(item)}) AND warehouse_id = `
     + `(SELECT id FROM warehouse WHERE name = ${sqlString(warehouse)})`;
@@ -80,7 +81,7 @@ export function setPostgresStock({ item, warehouse, quantity, dbName, exec = exe
 
 export function setMongoDbStock({ item, warehouse, quantity, dbName, exec = execFileSync,
   containers = {} }) {
-  const container = containers.mongodb ?? process.env.MONGO_CONTAINER ?? 'stack-bench-mongodb';
+  const container = containers.mongodb ?? databaseContainerName('mongodb');
   const script = `
     const it = db.item.findOne({ name: ${JSON.stringify(item)} });
     const wh = db.warehouse.findOne({ name: ${JSON.stringify(warehouse)} });

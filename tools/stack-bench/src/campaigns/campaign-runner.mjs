@@ -536,7 +536,7 @@ export function reconcileCampaign(campaignFile, directory,
 
 export async function executeCampaign(campaignFile, directory,
   { mode = 'frozen', env = process.env, execute = runBounded,
-    admit = runCampaignAdmission } = {}) {
+    admit = runCampaignAdmission, rescue = rescueSupervisedLease } = {}) {
   const plan = compileCampaignFile(resolve(campaignFile));
   if (!['frozen', 'model-free-trial'].includes(mode)) {
     throw new Error(`unknown campaign execution mode ${JSON.stringify(mode)}`);
@@ -597,8 +597,11 @@ export async function executeCampaign(campaignFile, directory,
       } catch (error) {
         let reason = `attempt launcher failed: ${error.message}`;
         if (existsSync(supervisorState)) {
-          try { rescueSupervisedLease(supervisorState, output); }
-          catch (cleanupError) { reason += `; cleanup failed: ${cleanupError.message}`; }
+          try { rescue(supervisorState, output); }
+          catch (cleanupError) {
+            return { cleanupRequired: true,
+              reason: `${reason}; cleanup failed: ${cleanupError.message}` };
+          }
         }
         return { exitCode: null, timedOut: false,
           run: { outcome: { kind: 'harness_failure', reason } } };
@@ -618,22 +621,25 @@ export async function executeCampaign(campaignFile, directory,
       } catch (error) {
         let reason = `could not record campaign process evidence: ${error.message}`;
         if (existsSync(supervisorState)) {
-          try { rescueSupervisedLease(supervisorState, output); }
-          catch (cleanupError) { reason += `; cleanup failed: ${cleanupError.message}`; }
+          try { rescue(supervisorState, output); }
+          catch (cleanupError) {
+            return { cleanupRequired: true,
+              reason: `${reason}; cleanup failed: ${cleanupError.message}` };
+          }
         }
         return { exitCode: processResult.code ?? null, timedOut: false,
           run: { outcome: { kind: 'harness_failure', reason } } };
       }
       let cleanupError = null;
       if (!processResult.ok && existsSync(supervisorState)) {
-        try { rescueSupervisedLease(supervisorState, output); }
+        try { rescue(supervisorState, output); }
         catch (error) { cleanupError = error; }
       }
-      const result = cleanupError
-        ? { exitCode: processResult.code, timedOut: false, run: { outcome: {
-          kind: 'harness_failure', reason: `attempt cleanup failed: ${cleanupError.message}` } } }
-        : readAttemptResult(plan, claim.attempt, output, processResult);
-      return result;
+      if (cleanupError) {
+        return { cleanupRequired: true,
+          reason: `attempt cleanup failed: ${cleanupError.message}` };
+      }
+      return readAttemptResult(plan, claim.attempt, output, processResult);
     };
     const active = new Map();
     const invalidAtStart = state.summary.invalid;
@@ -653,6 +659,13 @@ export async function executeCampaign(campaignFile, directory,
       if (!active.size) return state;
       const completed = await Promise.race(active.values());
       active.delete(completed.claim.executionId);
+      if (completed.result.cleanupRequired === true) {
+        // Keep the execution running in durable state. Its private supervisor
+        // authority still exists, so reconcile can retry exact-owned cleanup.
+        // Marking it invalid here would strand that authority permanently.
+        stopLaunching = true;
+        continue;
+      }
       state = finishCampaignExecution(state, completed.claim.executionId,
         completed.result, {
           retries: plan.definition.attemptPolicy.retries,

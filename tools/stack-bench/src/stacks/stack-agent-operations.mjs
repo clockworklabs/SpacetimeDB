@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path';
+import { databaseContainerName } from './database-containers.mjs';
 
 export function postgresConnectionUrl({ dbPort, database, hostUrl }) {
   return hostUrl(`postgresql://stackbench:stackbench@localhost:${dbPort}/${database}`);
@@ -24,7 +25,7 @@ export function postgresSetupMetadata({ helpers, env }) {
   return {
     spacetime: null,
     spacetimeBindings: null,
-    database: helpers.containerImage(env.POSTGRES_CONTAINER ?? 'stack-bench-postgres'),
+    database: helpers.containerImage(databaseContainerName('postgres', env)),
   };
 }
 
@@ -32,7 +33,7 @@ export function mongoDbSetupMetadata({ helpers, env }) {
   return {
     spacetime: null,
     spacetimeBindings: null,
-    database: helpers.containerImage(env.MONGO_CONTAINER ?? 'stack-bench-mongodb'),
+    database: helpers.containerImage(databaseContainerName('mongodb', env)),
   };
 }
 

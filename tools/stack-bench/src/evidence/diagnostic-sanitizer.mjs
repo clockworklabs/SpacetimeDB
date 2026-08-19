@@ -4,13 +4,15 @@ const LOCATOR_CALL = /\b(?:page\.)?(?:locator|getByTestId|getByRole|getByText|ge
 const LOCAL_URL = /\b(?:https?:\/\/)?(?:localhost|127\.0\.0\.1|0\.0\.0\.0|host\.docker\.internal)(?::\d+)?(?:\/[^\s'"`)]+)?/gi;
 const WINDOWS_PATH = /\b[A-Za-z]:[\\/][^\s'"`)]*/g;
 const HARNESS_PATH = /\/(?:app|workspace|root|home|tmp|mnt|tools\/stack-bench)(?:\/[^\s'"`):]*)*/g;
+const BEARER_CREDENTIAL = /\b(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+\/-]+=*/gi;
+const NAMED_CREDENTIAL = /["']?(?:anthropic_api_key|claude_code_oauth_token|api[_-]?key|access[_-]?token|auth[_-]?token|oauth[_-]?token|password|secret)["']?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/gi;
+const PREFIXED_CREDENTIAL = /\b(?:sk|key)-[A-Za-z0-9_-]{16,}\b/g;
 
-function redactSecrets(value) {
-  return value
-    .replace(/\b(?:authorization\s*:\s*)?bearer\s+[A-Za-z0-9._~+\/-]+=*/gi, 'credential [redacted]')
-    .replace(/\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|password)\s*[=:]\s*[^\s,;]+/gi,
-      match => `${match.split(/[=:]/, 1)[0]}=[redacted]`)
-    .replace(/\b(?:sk|key)-[A-Za-z0-9_-]{16,}\b/g, '[redacted credential]');
+export function redactCredentials(value) {
+  return String(value ?? '')
+    .replace(BEARER_CREDENTIAL, '[redacted credential]')
+    .replace(NAMED_CREDENTIAL, '[redacted credential]')
+    .replace(PREFIXED_CREDENTIAL, '[redacted credential]');
 }
 
 function clean(value, limit, { callLog = true } = {}) {
@@ -31,7 +33,7 @@ function clean(value, limit, { callLog = true } = {}) {
     }
   }
 
-  let result = redactSecrets(raw)
+  let result = redactCredentials(raw)
     .replace(/^\s*at\s+.*$/gm, ' ')
     .replace(/\bfile:\/\/\/?[^\s'"`)]+/gi, 'a file')
     .replace(LOCAL_URL, 'the app')

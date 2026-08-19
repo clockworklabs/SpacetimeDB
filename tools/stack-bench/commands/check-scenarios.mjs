@@ -44,11 +44,11 @@ function hooksByLevel(track) {
 
 // `statedBy` predates modular prompt treatments. It remains useful provenance,
 // but it is no longer a universal launch invariant: a specification can be
-// intentionally graded in an unmentioned treatment, and requested treatments
+// intentionally evaluated without prompting, and requested treatments
 // are assembled from pack-owned prompt fragments rather than only the legacy
 // level prompt. Keep stale legacy quotes visible without confusing them with an
 // executable scenario error. Pack composition and prompt snapshots validate the
-// actual requested/unmentioned treatment bindings.
+// actual prompted/unprompted treatment bindings.
 import { existsSync } from 'node:fs';
 const norm = t => t.replace(/\*\*/g, '').replace(/—/g, '-').toLowerCase().replace(/\s+/g, ' ').trim();
 function promptFor(track, level) {

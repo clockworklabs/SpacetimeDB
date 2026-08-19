@@ -1,7 +1,7 @@
 # Databases for the Postgres and MongoDB backends.
 #
-# Own ports, container names and volumes so a benchmark run never shares state
-# with — or collides with — anything else running on the machine. The SpacetimeDB
+# Development-only ports, container names and volumes keep this stack separate
+# from the appliance. The SpacetimeDB
 # backend needs no service here; run `spacetime start` for it.
 #
 #   docker compose -f tools/stack-bench/docker-compose.yaml up -d
@@ -11,7 +11,7 @@ name: stack-bench
 services:
   postgres:
     image: postgres:16@sha256:219341e4cedb06c8634f80af40851da3425b41b76603fd890272f58e37e139f7
-    container_name: stack-bench-postgres
+    container_name: stack-bench-dev-postgres
     ports:
       - "6532:5432"
     environment:
@@ -31,7 +31,7 @@ services:
   # what an agent builds on a standard stack.
   mongodb:
     image: mongo:7@sha256:554a9bb1ec6e00c40ba078a41974a834d1a9a8ab1772645b69142afecc87f082
-    container_name: stack-bench-mongodb
+    container_name: stack-bench-dev-mongodb
     ports:
       - "6537:27017"
     volumes:
@@ -44,6 +44,6 @@ services:
 
 volumes:
   pgdata:
-    name: stack-bench-appliance-pgdata
+    name: stack-bench-dev-pgdata
   mongodata:
-    name: stack-bench-appliance-mongodata
+    name: stack-bench-dev-mongodata

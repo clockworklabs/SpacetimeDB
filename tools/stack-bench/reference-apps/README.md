@@ -13,10 +13,10 @@ the best way to build the application.
   every mutation anchor is unique, and every mutant is cleanly caught at its
   declared criterion without setup failure, inconclusive evidence, or collateral.
 
-Provenance is explicit and does not imply quality. `historical-import` records a
-preserved source tree and opaque old evidence; `authored` identifies a maintained
-benchmark oracle with no historical claim. Both remain candidates until the same
-current Docker qualification gates pass.
+Provenance is explicit and does not imply product quality. `authored` identifies
+a maintained benchmark oracle whose authority comes from its checked-in source
+hash and current qualification evidence. A registry entry must not depend on a
+local archive that is absent from a clean checkout.
 
 Logical track/level entries may reuse one source directory when they bind the
 same exact hash. Qualification and mutation evidence remain separate per level;
@@ -31,8 +31,8 @@ after mutation. The following must all be true:
    image used by benchmark runs.
 2. The app starts in Docker with run-specific ports and database/module names;
    no host execution mode or workstation path is allowed.
-3. Two clean baseline grades pass every scored and zero-point criterion in the
-   bound scenario, with identical criterion outcomes.
+3. The required baseline grades pass every scored and zero-point criterion in
+   the exact bound recipe, with identical criterion identities and outcomes.
 4. Source contains no `.env`, credentials, generated bindings, build output,
    transcripts, grader artifacts, or mutation backups.
 5. Mutation manifests are regenerated against the checked-in bytes and pass the
@@ -50,11 +50,10 @@ reference hashes compiled. Compile success is not live grading or promotion
 evidence.
 
 Run `npm run qualify:reference -- --backend <mongodb|postgres|spacetime>` for
-the live gate. It always performs at least two clean Docker runs, audits scored
-and zero-point criteria, requires stable criterion fingerprints and one
-immutable image, verifies lease/container/lock teardown, and writes an atomic
-summary under `results/reference-live/`. MongoDB, PostgreSQL and SpacetimeDB all
-passed this gate twice on 2026-08-11; their mutation gates remain open.
+the live gate. It runs the repetition count declared by the exact calibration,
+audits scored and zero-point criteria, binds every check identity and definition,
+requires one immutable image, verifies lease/container/lock teardown, and writes
+an atomic summary under `results/reference-live/`.
 
 Add `--mutations` to run the exact manifest inside the same authenticated
 Docker lifecycle. The qualifier first binds the pristine directory hash to the

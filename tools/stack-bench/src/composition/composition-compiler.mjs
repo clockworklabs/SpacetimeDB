@@ -278,7 +278,7 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
       fail(`${source}.checks`, 'feature modules cannot own guarantee checks');
     }
     if (pack.checks.some(check => check.observations?.includes('unmentioned'))) {
-      fail(`${source}.checks`, 'feature modules cannot own unmentioned observations');
+      fail(`${source}.checks`, 'feature modules cannot own evaluations without prompting');
     }
     if (pack.checks.some(check => check.requiresFeatures !== undefined)) {
       fail(`${source}.checks`, 'feature modules cannot declare specification applicability');
@@ -289,7 +289,7 @@ export function compilePackDefinition(input, { source = '<pack>' } = {}) {
       fail(`${source}.checks`, 'specification modules cannot own feature checks');
     }
     if (pack.checks.some(check => check.observations === undefined)) {
-      fail(`${source}.checks`, 'specification modules must declare requested/unmentioned observations');
+      fail(`${source}.checks`, 'specification modules must declare prompted and/or unprompted evaluation');
     }
     if (pack.checks.some(check => check.requiresFeatures === undefined)) {
       fail(`${source}.checks`, 'specification checks must declare applicable feature modules');

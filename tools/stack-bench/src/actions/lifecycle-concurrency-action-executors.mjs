@@ -8,6 +8,7 @@ import { controlBackend } from '../runtime/backend-control.mjs';
 import { harnessBrowserFailure, harnessProcessFailure } from '../evidence/harness-errors.mjs';
 import { executeStackCapability, StackCapabilityUnsupportedError } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
+import { databaseContainerName } from '../stacks/database-containers.mjs';
 
 export const LIFECYCLE_CONCURRENCY_ACTION_IDS = Object.freeze([
   'clickConcurrently',
@@ -240,8 +241,8 @@ export function createLifecycleCapability({ restartSpec, restartCmd, application
 }
 
 export function createDatabaseWriteCapability({ backend, spacetime, dbName, expand,
-  exec = execFileSync, mongoContainer = process.env.MONGO_CONTAINER ?? 'stack-bench-mongodb',
-  postgresContainer = process.env.POSTGRES_CONTAINER ?? 'stack-bench-postgres' }) {
+  exec = execFileSync, mongoContainer = databaseContainerName('mongodb'),
+  postgresContainer = databaseContainerName('postgres') }) {
   return Object.freeze({
     setStock(input) {
       const item = expand(input.item);

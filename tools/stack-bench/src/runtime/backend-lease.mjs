@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, renameSync, mkdirSync, rmSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync, renameSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { executeStackLeaseCapability } from '../stacks/stack-lease-capabilities.mjs';
 
@@ -128,10 +128,13 @@ export function readBackendLease(path, expected = {}) {
 
 export function writeBackendLease(path, lease) {
   validateBackendLease(lease);
-  mkdirSync(dirname(path), { recursive: true });
+  const directory = dirname(path);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  chmodSync(directory, 0o700);
   const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(lease, null, 2)}\n`, { flag: 'wx' });
+  writeFileSync(temporary, `${JSON.stringify(lease, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
   renameSync(temporary, path);
+  chmodSync(path, 0o600);
 }
 
 export function updateBackendLease(path, expected, update) {

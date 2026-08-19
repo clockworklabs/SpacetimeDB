@@ -18,7 +18,7 @@
 // unless --retain-backend.
 
 import { execFile, execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, cpSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -580,29 +580,6 @@ async function main() {
       'STACK_BENCH_NODE_BIN', ...stackRuntime.windowsEnvironmentBridge];
     const existing = (process.env.WSLENV ?? '').split(':').filter(Boolean);
     process.env.WSLENV = [...new Set([...existing, ...bridge])].join(':');
-  }
-
-  // Current runs build outside results/. Keep a legacy app/ from masquerading
-  // as current source: remove it only when source/ already preserves the same
-  // run, otherwise park it under an explicit legacy name.
-  const staleApp = join(args.out, 'app');
-  if (existsSync(staleApp)) {
-    const supersededBySource = existsSync(join(args.out, 'source'));
-    try {
-      if (supersededBySource) {
-        rmSync(staleApp, { recursive: true, force: true });
-        console.log('  results    ... removed a stale app/ from an earlier run (source/ has that code)');
-      } else {
-        const parked = join(args.out, 'app-from-earlier-run');
-        rmSync(parked, { recursive: true, force: true });
-        renameSync(staleApp, parked);
-        console.log('  results    ... an earlier run left app/ with no source/; kept it as app-from-earlier-run/');
-      }
-    } catch (err) {
-      // Naming it is the point — a leftover nobody knows about is the hazard.
-      console.log(`  results    ... WARNING: could not clear stale ${staleApp}: ${String(err.message).split('\n')[0]}`);
-      console.log("               it is NOT this run's app — read source/ instead.");
-    }
   }
 
   let tornDown = false;

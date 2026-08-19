@@ -107,6 +107,8 @@ function qualify(fixture, imageIdentity) {
   let lease;
   let leaseEvidence = null;
   let error = null;
+  let cleanupComplete = true;
+  const recordError = message => { error = error ? `${error}\n${message}` : message; };
   try {
     prepareReferenceFixtureSource(fixture, app);
     const adapter = STACK_ADAPTER_REGISTRY.get(fixture.backend);
@@ -153,18 +155,27 @@ function qualify(fixture, imageIdentity) {
           });
         }
       }
-      catch (cleanupError) { error ??= `cleanup failed: ${cleanupError.stack ?? cleanupError.message}`; }
+      catch (cleanupError) {
+        cleanupComplete = false;
+        recordError(`cleanup failed: ${cleanupError.stack ?? cleanupError.message}`);
+      }
       try {
         const finalLease = existsSync(leasePath)
           ? readBackendLease(leasePath, { token: lease.ownershipToken })
           : lease;
-        releaseResourceLocks(finalLease);
-        for (const lock of finalLease.resources.locks) lock.releasedAt = new Date().toISOString();
+        if (cleanupComplete) {
+          releaseResourceLocks(finalLease);
+          for (const lock of finalLease.resources.locks) lock.releasedAt = new Date().toISOString();
+        }
         leaseEvidence = publicBackendLease(finalLease);
       }
-      catch (cleanupError) { error ??= `lock cleanup failed: ${cleanupError.stack ?? cleanupError.message}`; }
+      catch (cleanupError) {
+        cleanupComplete = false;
+        recordError(`lock cleanup failed: ${cleanupError.stack ?? cleanupError.message}`);
+      }
     }
-    rmSync(work, { recursive: true, force: true });
+    if (cleanupComplete) rmSync(work, { recursive: true, force: true });
+    else recordError(`recovery authority retained at ${leasePath}`);
   }
   return { id: fixture.id, backend: fixture.backend, ok: error === null,
     fixtureSha256: fixture.imported.sourceSha256, image: imageIdentity,

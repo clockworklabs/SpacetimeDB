@@ -35,7 +35,7 @@ The server prints to the terminal running `npm run dev`; it restarts on save, so
 To inspect stored data while debugging:
 
 ```bash
-docker exec stack-bench-postgres psql -U stackbench -d <database from DATABASE_URL> -c "SELECT * FROM items LIMIT 5"
+docker exec "${POSTGRES_CONTAINER:-stack-bench-dev-postgres}" psql -U stackbench -d <database from DATABASE_URL> -c "SELECT * FROM items LIMIT 5"
 ```
 
 **Data policy while building:** the database holds nothing but this app's own

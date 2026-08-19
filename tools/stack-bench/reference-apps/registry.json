@@ -9,21 +9,13 @@
       "status": "active",
       "targetPath": "reference-apps/ecommerce/mongodb",
       "origin": {
-        "kind": "historical-import",
-        "result": "archive/pre-v1/results/mongodb-ecom-run0",
-        "source": "archive/pre-v1/results/mongodb-ecom-run0/source",
-        "sourceSha256": "17a418f675dad9f3a367119c8e1cfecec7821ab77d5ae6e570306c6a1bb3195c"
+        "kind": "authored",
+        "note": "Maintained as a benchmark oracle; qualification relies on the checked-in source and current hash-bound evidence."
       },
       "imported": {
         "path": "reference-apps/ecommerce/mongodb",
         "sourceSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a"
       },
-      "archivedEvidence": [
-        "archive/pre-v1/results/mongodb-ecom-run0/grading/grading-features.json",
-        "archive/pre-v1/results/mongodb-ecom-run0/grading/grading-invariants.json",
-        "archive/pre-v1/results/mongodb-ecom-run0/grading/grading-contention.json",
-        "archive/pre-v1/results/mongodb-ecom-run0/grading/grading-systems.json"
-      ],
       "mutationManifests": ["grader/mutations/mongodb-ecom-l1.json"],
       "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1/."
     },
@@ -35,20 +27,13 @@
       "status": "active",
       "targetPath": "reference-apps/ecommerce/postgres",
       "origin": {
-        "kind": "historical-import",
-        "result": "archive/pre-v1/results/postgres-ecom-l2",
-        "source": "archive/pre-v1/results/postgres-ecom-l2/source",
-        "sourceSha256": "c3ee2e10d4d363b1d45312c59485a9215cdc1d8774aa3fe904d2145e816c092a"
+        "kind": "authored",
+        "note": "Maintained as a benchmark oracle; qualification relies on the checked-in source and current hash-bound evidence."
       },
       "imported": {
         "path": "reference-apps/ecommerce/postgres",
         "sourceSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc"
       },
-      "archivedEvidence": [
-        "archive/pre-v1/results/postgres-ecom-l2/grading/grading-contention.json",
-        "archive/pre-v1/results/postgres-ecom-l2/grading/grading-invariants@L1.json",
-        "archive/pre-v1/results/postgres-ecom-l2/grading/grading-systems@L1.json"
-      ],
       "mutationManifests": ["grader/mutations/postgres-ecom-l1.json"],
       "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1/."
     },
@@ -60,21 +45,13 @@
       "status": "active",
       "targetPath": "reference-apps/ecommerce/spacetime",
       "origin": {
-        "kind": "historical-import",
-        "result": "archive/pre-v1/results/spacetime-ecom-trial2",
-        "source": "archive/pre-v1/results/spacetime-ecom-trial2/source",
-        "sourceSha256": "bcf68dcab958ee9b9b8ff54d8d40aa83cb1aa100f1b0c09b42f5e9202830b2b0"
+        "kind": "authored",
+        "note": "Maintained as a benchmark oracle; qualification relies on the checked-in source and current hash-bound evidence."
       },
       "imported": {
         "path": "reference-apps/ecommerce/spacetime",
         "sourceSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1"
       },
-      "archivedEvidence": [
-        "archive/pre-v1/results/spacetime-ecom-trial2/grading/grading-features.json",
-        "archive/pre-v1/results/spacetime-ecom-trial2/grading/grading-invariants.json",
-        "archive/pre-v1/results/spacetime-ecom-trial2/grading/grading-contention.json",
-        "archive/pre-v1/results/spacetime-ecom-trial2/grading/grading-systems.json"
-      ],
       "mutationManifests": ["grader/mutations/spacetime-ecom-l1.json"],
       "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1/."
     },

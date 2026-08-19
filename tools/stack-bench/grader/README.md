@@ -1,7 +1,7 @@
 # Stack Bench grader
 
 Executes versioned scenario specs against a running generated app and scores each
-check from observed browser behavior. Replaces the manual two-Chrome-profile grading pass.
+check from structured browser, transport, lifecycle, and database evidence.
 
 ```bash
 node grade.mjs --url http://localhost:6173 --level 1 --label spacetime-l1 --out report.json
@@ -58,11 +58,17 @@ scenarios:
   container (e.g. `typing-indicator`) that is always visible. Presence checks on those pass
   and absence checks fail, regardless of behavior — both wrong. Use `contains`.
 
-Reset the app's database before grading (`../../llm-sequential-upgrade/reset-app.sh <app-dir>`);
-leftover rows from earlier runs are the main source of spurious passes.
+Use `commands/run-suite.mjs` for normal grading. It owns database reset,
+provenance verification, contract linting, scenario execution, and bundle
+creation. Direct `grade.mjs` invocation is useful only for focused authoring and
+does not replace those run-level preconditions.
 
-Validate new scenarios against a known-broken app before trusting them. `../linter/fixtures/mock-chat.html`
-is a useful negative control: it has no backend, so it should score 1/12.
+Validate new scored scenarios with both null controls and source-bound defects:
+
+```bash
+npm run test:null
+npm run check:mutations -- --app <reference-app> --mutations <manifest>
+```
 
 ## Validating the grader itself
 
@@ -88,12 +94,12 @@ putting `file` on each entry in `edits`. Multi-file defects are applied and
 restored as one control; every file is backed up before any edit is written,
 and a failed restore stops the run from reusing that source tree.
 
-## Clean state is a precondition, not a nicety
+## Clean state is a precondition
 
-Grading a dirty database silently biases scores DOWNWARD: an accumulated room/user list
-breaks assertions that pass on a clean app. Feature 1 scored 3/3 on a fresh database and
-2/3 on a dirty one, repeatably. The grader records `environment.preexistingRooms` and
-warns when it is non-zero — treat any such run as non-comparable.
+Residual rows can change list, uniqueness, and aggregate assertions. The normal
+runner resets the selected run-owned database before each suite, verifies the
+configured database identity, and records reset or provenance failures as
+harness failures rather than application scores.
 
 ## Watching a run
 
@@ -111,30 +117,15 @@ Watching Bob's video for a failing feature is the fastest way to confirm a verdi
 before reporting it, and the recordings double as the evidence artifact published with results.
 `media/` is gitignored — recordings belong with the run output, not the repo.
 
-## Verify which backend answered
+## Verify the execution target
 
-Both Express backends default to port 6001, so whichever server started last owns it and
-the other app's client silently proxies into it — producing confident scores for the wrong
-system. This has happened twice. Before grading an Express app, confirm the API is the one
-you think: `curl -s localhost:6001/api/rooms` returns integer ids for Postgres and 24-char
-hex ObjectIds for MongoDB.
+Do not infer a backend from an ID shape or a conventional port. Preflight binds
+the selected stack adapter, database/module name, allocated ports, container
+identity, and run lease. `run-suite.mjs` then verifies database provenance before
+grading. A mismatch is a harness failure and must not produce an application
+score.
 
-## Identical failures across backends mean the grader is wrong
-
-Three false-positive classes have been caught this way, and the tell was always the same:
-every backend failing the same criterion in the same way. Architectures this different do
-not break identically — when they appear to, suspect the oracle first.
-
-The third instance: a delivery-integrity check reported "3 of 30 messages duplicated" on
-BOTH SpacetimeDB and Postgres. `hasText: "AA-1"` substring-matches `AA-10`…`AA-19`, `AA-2`
-matches `AA-20`…`AA-29`, and `AA-3` matches `AA-30` — exactly three apparent duplicates on
-any app. Indices are zero-padded now. Prefer exact or delimited matching for anything
-generated in a sequence.
-
-## Negative results are results
-
-Both backends pass Delivery Integrity and Connection Resilience at 8 concurrent messages
-and at 30. socket.io has reconnection and buffering built in, so the Express stack handles
-these correctly — the hypothesis that it would drop or reorder messages did not hold.
-Record findings like this rather than escalating the workload until the desired backend
-wins; the credibility of the differences we DO report depends on it.
+When several stacks fail the same check, inspect the structured evidence and
+recorded media before attributing the result to an application. Cross-stack
+agreement is useful diagnostic evidence, but it is not itself proof that either
+the apps or the oracle are wrong.

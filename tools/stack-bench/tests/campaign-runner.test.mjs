@@ -530,6 +530,50 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('failed cleanup leaves supervisor authority reconcilable instead of finalizing the attempt', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-cleanup-'));
+  try {
+    const definition = JSON.parse(readFileSync(example, 'utf8'));
+    definition.repetitions = 1;
+    definition.parallelism = 1;
+    definition.stacks = [definition.stacks[0]];
+    definition.agents = [definition.agents[0]];
+    definition.conditions = [definition.conditions[0]];
+    const campaignPath = join(root, 'campaign.json');
+    const results = join(root, 'results');
+    writeFileSync(campaignPath, `${JSON.stringify(definition, null, 2)}\n`);
+    const state = await executeCampaign(campaignPath, results, { mode: 'model-free-trial',
+      admit: (plan, directory) => runCampaignAdmission(plan, directory, {
+        env: {}, now: '2026-08-12T00:00:30.000Z', uuid: () => 'cleanup',
+        preflight: request => ({ schemaVersion: 1, generatedAt: '2026-08-12T00:00:30.000Z',
+          request: { backends: request.backends, track: request.track, levels: request.levelList,
+            runIndex: request.runIndex, agentAdapter: request.agentAdapter,
+            packs: request.packIds, checks: request.checkKeys, image: request.image,
+            resultsDir: request.resultsDir, smoke: request.smoke },
+          ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] }),
+      }),
+      execute: async (_command, argv, options) => {
+        mkdirSync(join(results, '.private'), { recursive: true });
+        writeFileSync(options.env.STACK_BENCH_SUPERVISOR_STATE, '{}');
+        return { code: 1, timedOut: false };
+      },
+      rescue: () => { throw new Error('runtime still owns a process'); },
+    });
+    assert.equal(state.status, 'running');
+    assert.equal(state.summary.running, 1);
+    assert.equal(state.summary.invalid, 0);
+
+    const rescued = [];
+    const reconciled = reconcileCampaign(campaignPath, results, {
+      rescue: supervisor => { rescued.push(supervisor); },
+    });
+    assert.equal(rescued.length, 1);
+    assert.equal(reconciled.summary.running, 0);
+    assert.equal(reconciled.summary.invalid, 1);
+    assert.equal(reconciled.attempts[0].executions[0].outcome, 'scheduler_interrupted');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('interrupted parallel work advances only after every exact cleanup is proven', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-reconcile-'));
   try {

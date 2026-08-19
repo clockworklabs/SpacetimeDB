@@ -89,6 +89,13 @@ container; it must not write it to an artifact, command log, transcript path,
 or long-lived environment block. Coding containers can read their own provider
 credential, which remains a declared residual risk.
 
+The coding process and every command it launches can read that credential and
+has outbound network access. V1 therefore requires a dedicated disposable
+runner and a credential scoped to the campaign and rotated immediately after
+use. It is not safe to supply a reusable developer credential. A credential
+broker that exchanges short-lived, attempt-bound grants is required before the
+appliance can run on a shared or persistent host.
+
 Developer-home credential mounts are not part of the appliance. They remain a
 local-development convenience only. Adding another provider requires its agent
 adapter to declare its credential alternatives and outbound HTTPS destinations.

@@ -149,15 +149,8 @@ export function workRoot() {
   return process.env.STACK_BENCH_WORK_DIR ?? join(tmpdir(), 'stack-bench-runs');
 }
 
-// A run gets its OWN directory, stamped, rather than reusing one per backend.
-// Reuse meant a single stale handle wedged every future run: a finished run left
-// postgres-run0/app empty but undeletable — some process still had it as its
-// working directory — and the next build died on EBUSY after five retries, which
-// turns somebody else's leftover into a failed benchmark. A run that never
-// reuses a path cannot be blocked by one.
-//
-// `stamp` is supplied by the caller so every level of one run shares a directory
-// — L2 upgrades the app L1 built.
+// A stamped directory isolates each run while allowing its levels to share the
+// same application source for cumulative upgrades.
 export const workDirFor = (track, backend, runIndex, stamp) =>
   join(workRoot(), resultsName(track, backend, runIndex) + (stamp ? `-${stamp}` : ''));
 

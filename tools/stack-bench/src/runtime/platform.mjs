@@ -139,11 +139,41 @@ export function pidsMatching(needle) {
   return found.filter(Boolean).filter(p => !protectedPids.has(Number(p)));
 }
 
-/** Kill a process and its children. Never throws — it may already be gone. */
+export function processTreePids(rootPid, processRows) {
+  const root = Number(rootPid);
+  if (!Number.isSafeInteger(root) || root <= 0) return [];
+  const children = new Map();
+  for (const line of String(processRows ?? '').split(/\r?\n/)) {
+    const match = line.trim().match(/^(\d+)\s+(\d+)$/);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    const parent = Number(match[2]);
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent).push(pid);
+  }
+  const ordered = [];
+  const seen = new Set([root]);
+  const visit = pid => {
+    for (const child of children.get(pid) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      visit(child);
+      ordered.push(child);
+    }
+  };
+  visit(root);
+  ordered.push(root);
+  return ordered;
+}
+
+/** Kill a process and its descendants. Never throws — it may already be gone. */
 export function killTree(pid) {
   if (!pid || String(pid) === '0' || Number(pid) === process.pid) return;
   if (isWindows) run('taskkill', ['/F', '/PID', String(pid), '/T']);
-  else run('kill', ['-9', String(pid)]);
+  else {
+    const tree = processTreePids(pid, run('ps', ['-eo', 'pid=,ppid=']));
+    run('kill', ['-9', ...tree.map(String)]);
+  }
 }
 
 /** Kill a child spawned with detached:true, including its process group. */

@@ -129,8 +129,9 @@ export function resolveModularRecipeSelection(release, {
     for (const ref of refs) {
       const id = exactModuleRef(ref, `${treatment} specification`).id;
       if (!checksByTreatment[treatment].some(check => check.packId === id)) {
-        const observation = treatment === 'requested' ? 'requested' : 'unmentioned';
-        throw new Error(`${treatment} specification ${ref} has no ${observation} observation`);
+        const observation = treatment === 'requested'
+          ? 'prompted evaluation' : 'evaluation without prompting';
+        throw new Error(`${treatment} specification ${ref} has no ${observation}`);
       }
     }
   }
