@@ -180,7 +180,7 @@
       "file": "client/src/App.tsx",
       "edits": [{
         "find": "    socket.on(\"cart:update\", (data: CartT) => setCart(data));",
-        "replace": "    socket.on(\"cart:update\", (_data: CartT) => { /* mutant: live cart updates ignored */ });"
+        "replace": "    socket.on(\"cart:update\", (data: CartT) => setCart(current => current.items.length === 0 ? current : data)); // mutant: an empty second-session cart ignores its first remote update"
       }]
     },
     {
@@ -325,24 +325,20 @@
       "id": "reconnect-hydration-loses-account-state",
       "scenario": "tracks/ecommerce/scenarios/01-account-state-reconnect-2.4.0.json",
       "targets": [{ "feature": 105, "criterion": "105b" }],
-      "desc": "A network disconnect clears the cart and reconnect ignores both the fresh cart snapshot and later cart events.",
+      "desc": "The first authenticated socket connection hydrates correctly, but a replacement connection clears the cart and ignores its fresh snapshot.",
       "file": "client/src/App.tsx",
       "edits": [
         {
           "find": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;",
-          "replace": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;\n    let lostAccountState = false;\n    const loseAccountState = () => {\n      lostAccountState = true;\n      setCart({ items: [], total: 0 });\n    };\n    window.addEventListener(\"offline\", loseAccountState);"
+          "replace": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;\n    let connectionCount = 0;"
         },
         {
-          "find": "      if (token) {\n        refreshCart(token).catch((err) => console.error(err));\n      }",
-          "replace": "      if (token && !lostAccountState) {\n        refreshCart(token).catch((err) => console.error(err));\n      }"
+          "find": "    socket.on(\"connect\", () => {\n      refreshItems().catch((err) => console.error(err));\n      if (token) {\n        refreshCart(token).catch((err) => console.error(err));\n      }\n    });",
+          "replace": "    socket.on(\"connect\", () => {\n      connectionCount += 1;\n      refreshItems().catch((err) => console.error(err));\n      if (token && connectionCount === 1) {\n        refreshCart(token).catch((err) => console.error(err));\n      } else if (token) {\n        setCart({ items: [], total: 0 }); // mutant: replacement connection loses account state\n      }\n    });"
         },
         {
           "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => setCart(data));",
-          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => { if (!lostAccountState) setCart(data); });"
-        },
-        {
-          "find": "    return () => {\n      socket.disconnect();\n    };",
-          "replace": "    return () => {\n      window.removeEventListener(\"offline\", loseAccountState);\n      socket.disconnect();\n    };"
+          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => { if (connectionCount === 1) setCart(data); });"
         }
       ]
     },

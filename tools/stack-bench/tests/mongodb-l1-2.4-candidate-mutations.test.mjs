@@ -135,11 +135,15 @@ test('cart-boundary mutants exercise the named server actions', () => {
     'the negative-quantity mutant must bypass both the route check and schema validation');
 
   const reconnect = mutationEdits(mutations.get('reconnect-hydration-loses-account-state'));
-  assert.equal(reconnect.length, 4);
-  assert(reconnect.some(edit => edit.replace.includes('window.addEventListener(\"offline\"')));
-  assert(reconnect.some(edit => edit.replace.includes('window.removeEventListener(\"offline\"')));
-  assert(reconnect.some(edit => edit.replace.includes('!lostAccountState')),
-    'the reconnect defect must block the recovery paths that defeated the first live mutant');
+  assert.equal(reconnect.length, 3);
+  assert(reconnect.some(edit => edit.replace.includes('connectionCount += 1')));
+  assert(reconnect.some(edit => edit.replace.includes('connectionCount === 1')),
+    'the reconnect defect must preserve initial hydration and reject replacement snapshots');
+
+  const sharedCart = mutationEdits(mutations.get('shared-cart-live-events-ignored'));
+  assert.equal(sharedCart.length, 1);
+  assert(sharedCart[0].replace.includes('current.items.length === 0 ? current : data'),
+    'the shared-cart defect must ignore the empty second session without breaking checkout cleanup');
 });
 
 test('MongoDB L1 2.4 candidate is bound to the exact derived fixture and compiles', t => {
