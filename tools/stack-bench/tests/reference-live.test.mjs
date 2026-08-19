@@ -57,24 +57,24 @@ test('parallel Spacetime qualification derives an isolated listener port from th
 });
 
 test('reference qualification resolves the exact executable calibration identity', () => {
-  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-direct-actions-mongodb',
-    imported: { sourceSha256: 'd90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40' } });
+  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-action-inputs-2.4-mongodb',
+    imported: { sourceSha256: '76810d72211fc0182aa31b663ffc153a82ff1918cd34902187873a4b53a4ebf2' } });
   assert.equal(context.identity.id, 'ecommerce.l1-modular-calibration');
   assert.equal(context.identity.sha256, context.calibration.qualificationSha256);
 });
 
 test('reference qualification resolves the requested promoted calibration', () => {
-  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-direct-actions-mongodb',
-    imported: { sourceSha256: 'd90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40' } },
-  'ecommerce.l1-modular@2.3.0');
-  assert.equal(context.binding.release.version, '2.3.0');
-  assert.equal(context.calibration.version, '2.3.0');
+  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-action-inputs-2.4-mongodb',
+    imported: { sourceSha256: '76810d72211fc0182aa31b663ffc153a82ff1918cd34902187873a4b53a4ebf2' } },
+  'ecommerce.l1-modular@2.4.0');
+  assert.equal(context.binding.release.version, '2.4.0');
+  assert.equal(context.calibration.version, '2.4.0');
   assert.equal(context.calibration.state, 'qualified');
 });
 
 test('modular reference qualification selects every exact check without prescribing specifications', () => {
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.l1-modular@2.3.0');
+    'ecommerce.l1-modular@2.4.0');
   const argv = referenceQualificationSelectionArgs(binding);
   const valueAfter = flag => argv[argv.indexOf(flag) + 1].split(',');
   const featureIds = valueAfter('--feature-module');

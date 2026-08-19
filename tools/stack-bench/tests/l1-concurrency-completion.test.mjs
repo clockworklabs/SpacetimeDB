@@ -7,7 +7,8 @@ import ts from 'typescript';
 
 import { mutationEdits, mutationScenario, mutationTargetKeys,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
-import { prepareReferenceSource } from '../src/references/reference-agent.mjs';
+import { loadReferenceRegistry, prepareReferenceFixtureSource,
+  selectReferenceFixture } from '../src/references/reference-fixtures.mjs';
 import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
 
@@ -23,6 +24,12 @@ const RESTOCK_RACE = 'tracks/ecommerce/scenarios/01-restock-race-2.3.0.json';
 const DUPLICATE_CHECKOUT = 'tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json';
 const EXTERNAL_LIVE = 'tracks/ecommerce/scenarios/01-external-live-sync-1.1.0.json';
 const EXTERNAL_RECONNECT = 'tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json';
+
+function prepareReferenceSource(args) {
+  const fixture = selectReferenceFixture(loadReferenceRegistry(), args);
+  const prepared = prepareReferenceFixtureSource(fixture, args.app);
+  return { fixture, sourceSha256: prepared.sha256 };
+}
 const OPEN_LIST = 'tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json';
 
 const cases = [

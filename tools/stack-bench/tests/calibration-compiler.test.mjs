@@ -14,7 +14,7 @@ import { loadTrack } from '../src/composition/tracks.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = loadTrack('ecommerce');
-const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'l1-modular-2.3.0.json');
+const CALIBRATION = join(TRACK.dir, 'composition', 'calibrations', 'l1-modular-2.4.0.json');
 
 function current() {
   const binding = resolveRecipeRelease(TRACK, 1);
@@ -43,7 +43,7 @@ function temporaryCalibration(change) {
   const directory = mkdtempSync(join(tmpdir(), 'stack-bench-calibration-'));
   const trackRoot = join(directory, 'ecommerce');
   cpSync(TRACK.dir, trackRoot, { recursive: true });
-  const path = join(trackRoot, 'composition', 'calibrations', 'l1-modular-2.3.0.json');
+  const path = join(trackRoot, 'composition', 'calibrations', 'l1-modular-2.4.0.json');
   const value = JSON.parse(readFileSync(CALIBRATION, 'utf8'));
   change(value);
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
@@ -77,7 +77,7 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
   assert.deepEqual(checkCalibrations({ trackName: 'ecommerce' })
     .map(result => `${result.id}@${result.version}:${result.state}`), [
     'ecommerce.l1-modular-calibration@2.3.0:qualified',
-    'ecommerce.l1-modular-calibration@2.4.0:draft',
+    'ecommerce.l1-modular-calibration@2.4.0:qualified',
     'ecommerce.l1-standard-calibration@1.0.0:qualified',
     'ecommerce.l1-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.1.0:qualified',

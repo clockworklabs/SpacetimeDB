@@ -25,10 +25,10 @@ test('the shared adapter request forwards the exact recipe into reference select
   const command = agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('reference-fixture'), {
     mode: 'build', backend: 'mongodb', level: 1, app: '/work/reference',
     track: 'ecommerce', runIndex: 0, model: 'reference-fixture',
-    guidance: 'prescribed', recipe: 'ecommerce.l1-modular@2.3.0',
+    guidance: 'prescribed', recipe: 'ecommerce.l1-modular@2.4.0',
   });
   const parsed = parseReferenceAgentArgs(['node', ...command]);
-  assert.equal(parsed.recipe, 'ecommerce.l1-modular@2.3.0');
+  assert.equal(parsed.recipe, 'ecommerce.l1-modular@2.4.0');
 });
 
 test('the model-free reference builder rejects unsupported modes and malformed scope', () => {
@@ -52,7 +52,7 @@ test('reference adapter seeds an empty campaign app from the exact registered fi
     const args = { backend: 'mongodb', track: 'ecommerce', level: 1,
       app: join(root, 'app') };
     const seeded = prepareReferenceSource(args);
-    assert.equal(seeded.fixture.id, 'ecommerce-l1-direct-actions-mongodb');
+    assert.equal(seeded.fixture.id, 'ecommerce-l1-action-inputs-2.4-mongodb');
     assert.equal(seeded.seeded, true);
     assert.equal(prepareReferenceSource(args).seeded, false);
     writeFileSync(join(args.app, 'unexpected.txt'), 'different source');
@@ -60,23 +60,17 @@ test('reference adapter seeds an empty campaign app from the exact registered fi
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('a recipe-specific reference applies its exact patch without changing the qualified base', () => {
+test('a retired recipe-specific reference cannot be launched', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-derived-'));
   try {
     const args = { backend: 'mongodb', track: 'ecommerce', level: 1,
       recipe: 'ecommerce.l1-modular@2.3.0', app: join(root, 'app') };
-    const seeded = prepareReferenceSource(args);
-    assert.equal(seeded.fixture.id, 'ecommerce-l1-direct-actions-mongodb');
-    assert.equal(seeded.sourceSha256,
-      'd90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40');
-    const client = readFileSync(join(args.app, 'client', 'src', 'App.tsx'), 'utf8');
-    assert.match(client, /data-buy-input=/);
-    assert.match(client, /data-restock-input=/);
-    assert.equal(prepareReferenceSource(args).seeded, false);
+    assert.throws(() => prepareReferenceSource(args),
+      /no recipe release|retired|requires exactly one catalogued/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('the L1 2.4 candidate uses its separately bound action-input fixture', () => {
+test('the promoted L1 2.4 release uses its separately bound action-input fixture', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l1-2.4-'));
   try {
     const args = { backend: 'mongodb', track: 'ecommerce', level: 1,

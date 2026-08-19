@@ -29,7 +29,7 @@ test('null qualification can select one exact track and level', () => {
 
 test('recipe-bound null qualification grades the exact modular execution and checks', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.3.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.4.0');
   const suites = nullControlSuites(track, 1, binding);
   const checks = suites.flatMap(suite => suite.checks);
 
@@ -50,19 +50,17 @@ test('recipe-bound null qualification grades the exact modular execution and che
     assert.deepEqual(selectedKeys, suite.checks.map(check => check.stableKey).sort());
     return [suite.id, selectedKeys];
   }));
-  const serverActions = [...selectedByExecution.entries()]
-    .find(([id]) => id.includes('server-actions'))?.[1] ?? [];
-  const invariants = [...selectedByExecution.entries()]
-    .find(([id]) => id.includes('invariants'))?.[1] ?? [];
   for (const criterion of ['101a', '102a', '103a', '104a']) {
-    assert(serverActions.some(key => key.endsWith(`.${criterion}`)));
-    assert.equal(invariants.some(key => key.endsWith(`.${criterion}`)), false);
+    const owners = [...selectedByExecution.entries()]
+      .filter(([, keys]) => keys.some(key => key.endsWith(`.${criterion}`)));
+    assert.equal(owners.length, 1);
+    assert.equal(owners[0][0].includes('invariants'), false);
   }
 });
 
 test('recipe-bound null qualification rejects an execution with no mapped checks', () => {
   const track = loadTrack('ecommerce');
-  const binding = structuredClone(resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.3.0'));
+  const binding = structuredClone(resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.4.0'));
   binding.execution.push({ id: 'empty-execution', source: binding.execution[0].source,
     ownership: { kind: 'current', level: 1 } });
   assert.throws(() => nullControlSuites(track, 1, binding), /maps no checks/);

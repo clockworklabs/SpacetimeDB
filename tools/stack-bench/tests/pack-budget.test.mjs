@@ -42,10 +42,10 @@ function reference(stack, stackIndex, overrides = {}) {
       fixture: { id: fixture.id, sha256: fixture.sourceSha256 },
     }),
     payload: { fixture: fixture.id, fixtureSha256: fixture.sourceSha256,
-      requiredRepetitions: 2, isolation: 'docker', mutationControl: false,
+      requiredRepetitions: 1, isolation: 'docker', mutationControl: false,
       runner: { ...applianceRunner },
       stable: true, sameImage: true, sameHarness: true, harnessSha256: 'b'.repeat(64), ok: true,
-      runs: [1, 2].map(repetition => ({ repetition, ok: true, packRuntime: runtime(stackIndex, repetition) })),
+      runs: [1].map(repetition => ({ repetition, ok: true, packRuntime: runtime(stackIndex, repetition) })),
       ...overrides } });
 }
 
@@ -59,9 +59,9 @@ function exactEvidence() {
 
 test('budget recommendation requires every exact reference repetition and applies the published rule', () => {
   const result = recommendPackBudgets({ binding, calibration, evidence: exactEvidence() });
-  assert.equal(result.samples.length, binding.plan.packs.length * 3 * 2);
+  assert.equal(result.samples.length, binding.plan.packs.length * 3);
   assert.equal(result.recommendations.length, binding.plan.packs.length);
-  assert(result.recommendations.every(item => item.sampleCount === 6));
+  assert(result.recommendations.every(item => item.sampleCount === 3));
   assert(result.recommendations.every(item => item.maxRuntimeMs === 3_000));
   assert.equal(PACK_BUDGET_POLICY.multiplier, 2);
   assert.deepEqual(result.measuredEngine, currentEngineIdentity());

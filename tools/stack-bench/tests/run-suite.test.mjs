@@ -106,10 +106,10 @@ test('a new grade removes only prior outputs that it owns', () => {
 
 test('observed-only scope is modular, disjoint, and contributes no score', () => {
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.l1-modular@2.3.0');
+    'ecommerce.l1-modular@2.4.0');
   const selected = createBoundRecipeTaskRequest(binding, {
     featureIds: ['ecommerce.feature.accounts'],
-    observedSpecifications: ['ecommerce.spec.state-durability@1.0.0'],
+    observedSpecifications: ['ecommerce.spec.state-durability@1.1.0'],
   });
   const scored = selectObservationScope(selected, 'scored');
   const observed = selectObservationScope(selected, 'observed');
@@ -124,7 +124,7 @@ test('observed-only scope is modular, disjoint, and contributes no score', () =>
 
 test('recipe-bound grading uses the recipe execution sources', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.3.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.4.0');
   const suites = suitesForRecipe(track, binding);
 
   assert.match(suites.find(suite => suite.id === 'duplicate-checkout').spec,
@@ -134,14 +134,18 @@ test('recipe-bound grading uses the recipe execution sources', () => {
 
 test('hardened modular grading isolates the four direct server checks', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.3.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.4.0');
   const suites = suitesForRecipe(track, binding);
 
-  assert.match(suites.find(suite => suite.id === 'server-actions').spec,
-    /01-server-actions-2\.1\.0\.json$/);
-  assert.deepEqual(binding.release.checkCatalog
-    .filter(check => check.executionId === 'server-actions')
-    .map(check => String(check.criterionId)), ['101a', '102a', '103a', '104a']);
+  const expected = new Map([
+    ['purchase-session', '101a'], ['purchase-attribution', '102a'],
+    ['admin-write', '103a'], ['server-price', '104a'],
+  ]);
+  for (const [executionId, criterionId] of expected) {
+    assert(suites.some(suite => suite.id === executionId));
+    assert.equal(binding.release.checkCatalog.find(check => check.executionId === executionId)
+      .criterionId, criterionId);
+  }
 });
 
 test('recipe execution keeps inherited suites out of the current-level score', () => {

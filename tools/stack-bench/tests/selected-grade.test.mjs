@@ -57,7 +57,7 @@ test('the live grader executes and reports exactly one selected stable check', a
     const port = await server.port;
     const track = loadTrack('ecommerce');
     const binding = resolveRecipeRelease(track, 1);
-    const check = binding.release.checkCatalog.find(candidate => candidate.executionId === 'features');
+    const check = binding.release.checkCatalog.find(candidate => candidate.criterionId === '2a');
     const selection = resolveRecipeSelection(binding.release, { checkKeys: [check.stableKey] });
     await run(GRADER, [
       '--url', `http://127.0.0.1:${port}`,

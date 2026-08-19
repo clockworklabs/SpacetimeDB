@@ -8,7 +8,8 @@ import ts from 'typescript';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { mutationEdits, mutationScenario, mutationTargetKeys,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
-import { prepareReferenceSource } from '../src/references/reference-agent.mjs';
+import { loadReferenceRegistry, prepareReferenceFixtureSource,
+  selectReferenceFixture } from '../src/references/reference-fixtures.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const SCENARIO_RELATIVE = 'tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json';
@@ -20,6 +21,12 @@ const cases = [
   ['postgres', 'ffc2192ee7bce1a5f5e60bd4158118f44dd0d5cc1fcf0bcf21bc38fbfb20d6f1'],
   ['spacetime', '7deedf0dc4c17064b9a6a9bb76bc0c488cd04f21472ce7412539ac98368fd3e6'],
 ];
+
+function prepareReferenceSource(args) {
+  const fixture = selectReferenceFixture(loadReferenceRegistry(), args);
+  const prepared = prepareReferenceFixtureSource(fixture, args.app);
+  return { fixture, sourceSha256: prepared.sha256 };
+}
 
 test('the focused 902a candidate deterministically checks an already-open live list', () => {
   const scenario = compileScenarioDefinition(JSON.parse(readFileSync(SCENARIO, 'utf8')),

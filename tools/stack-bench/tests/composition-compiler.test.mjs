@@ -22,7 +22,7 @@ const recipePath = name => join(ECOMMERCE, 'composition', 'recipes', name);
 
 test('the ecommerce composition tree validates as one source set', () => {
   assert.deepEqual(checkCompositions({ trackName: 'ecommerce' }), [{
-      track: 'ecommerce', packs: 51, fixtures: 2, recipes: 12, checks: 601, aliases: 6,
+      track: 'ecommerce', packs: 51, fixtures: 2, recipes: 12, checks: 601, aliases: 7,
   }]);
 });
 
@@ -76,6 +76,7 @@ test('ecommerce L1 and L2 recipes preserve current suite, feature, check, order,
   assert.deepEqual(promotions.entries.map(entry => [entry.alias, entry.status, entry.recipe.id]), [
     ['L1', 'retired', 'ecommerce.l1-standard'],
     ['L1', 'retired', 'ecommerce.l1-standard'],
+    ['L1', 'retired', 'ecommerce.l1-modular'],
     ['L1', 'promoted', 'ecommerce.l1-modular'],
     ['L2', 'retired', 'ecommerce.l2-standard'],
     ['L2', 'retired', 'ecommerce.l2-standard'],
@@ -311,6 +312,9 @@ test('source contracts reject unknown fields, malformed versions, duplicate fixt
       recipe: { path: 'recipes/r.json', id: 'example.recipe', version: '1.0.0' } }],
   };
   assert.throws(() => compilePromotionDefinition(catalog), /must look like L1/);
+  assert.deepEqual(compilePromotionDefinition({ ...catalog, entries: [] }).entries, []);
+  assert.throws(() => compilePromotionDefinition({ ...catalog, state: 'qualified', entries: [] }),
+    /must be non-empty once the catalog is qualified/);
 });
 
 test('task fragment markers are contained, unique, ordered, and non-empty', () => {

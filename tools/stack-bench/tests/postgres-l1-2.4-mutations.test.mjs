@@ -15,7 +15,7 @@ const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
 const RECIPE = 'ecommerce.l1-modular@2.4.0';
 const FIXTURE_SHA256 = '389d778f1835377fd2f92864d6afa20851c65076c80ddecba1e860cf7f4d9ec9';
-const MANIFEST = join(ROOT, 'grader', 'mutations', 'candidates',
+const MANIFEST = join(ROOT, 'grader', 'mutations',
   'postgres-ecom-l1-modular-2.4.0.json');
 const EXPECTED_MISSING = [];
 
@@ -30,7 +30,7 @@ const stableByTarget = new Map(release.checkCatalog.map(check => [
 test('PostgreSQL L1 2.4 candidate mutations bind to the exact prepared fixture', () => {
   assert.deepEqual({ schemaVersion: manifest.schemaVersion, status: manifest.status,
     backend: manifest.backend, track: manifest.track, level: manifest.level }, {
-    schemaVersion: 1, status: 'candidate', backend: 'postgres', track: 'ecommerce', level: 1,
+    schemaVersion: 1, status: 'active', backend: 'postgres', track: 'ecommerce', level: 1,
   });
   assert.equal(manifest.fixtureSha256, FIXTURE_SHA256);
   assert.equal(Object.hasOwn(manifest, 'scenario'), false);

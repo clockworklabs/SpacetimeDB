@@ -13,7 +13,7 @@ import { prepareReferenceSource } from '../src/references/reference-agent.mjs';
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
 const RECIPE = 'ecommerce.l1-modular@2.4.0';
-const MANIFEST = join(ROOT, 'grader', 'mutations', 'candidates',
+const MANIFEST = join(ROOT, 'grader', 'mutations',
   'mongodb-ecom-l1-modular-2.4.0.json');
 const FIXTURE_SHA256 = '76810d72211fc0182aa31b663ffc153a82ff1918cd34902187873a4b53a4ebf2';
 const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
@@ -46,7 +46,7 @@ test('MongoDB L1 2.4 candidate covers every scored stable check exactly', t => {
     level: manifest.level,
   }, {
     schemaVersion: 1,
-    status: 'candidate',
+    status: 'active',
     fixtureSha256: FIXTURE_SHA256,
     backend: 'mongodb',
     track: 'ecommerce',

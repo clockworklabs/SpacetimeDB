@@ -68,7 +68,7 @@ const modularFeatures = [
 function modularDefinition({ requested = [], expected = [], observed = [] } = {}) {
   return definition({
     repetitions: 1,
-    selection: { levels: [{ level: 1, recipe: 'ecommerce.l1-modular@2.3.0',
+    selection: { levels: [{ level: 1, recipe: 'ecommerce.l1-modular@2.4.0',
       features: modularFeatures, checks: [] }] },
     conditions: [{ ...definition().conditions[0], specifications: { levels: [{ level: 1,
       requested, expected, observed }] } }],
@@ -155,11 +155,11 @@ test('guidance conditions are an independent campaign axis with stack-specific A
 });
 
 test('modular campaigns bind requested, expected, and observed specifications independently', () => {
-  const requestedSpecifications = ['ecommerce.spec.access-control@1.1.0'];
+  const requestedSpecifications = ['ecommerce.spec.access-control@1.2.0'];
   const expected = compile(modularDefinition({ requested: requestedSpecifications,
-    expected: ['ecommerce.spec.state-durability@1.0.0'] }));
+    expected: ['ecommerce.spec.state-durability@1.1.0'] }));
   const observed = compile(modularDefinition({ requested: requestedSpecifications,
-    observed: ['ecommerce.spec.state-durability@1.0.0'] }));
+    observed: ['ecommerce.spec.state-durability@1.1.0'] }));
   const selected = expected.conditions[0].requested.levels[0];
   assert.equal(expected.bindings[0].recipe.id, 'ecommerce.l1-modular');
   assert.equal(expected.bindings[0].promotion.status, 'promoted');
@@ -168,7 +168,7 @@ test('modular campaigns bind requested, expected, and observed specifications in
   assert.equal(selected.selection.schemaVersion, 3);
   assert.deepEqual(selected.selection.features, modularFeatures);
   assert.deepEqual(selected.selection.specifications, { requested: requestedSpecifications,
-    expected: ['ecommerce.spec.state-durability@1.0.0'], observed: [] });
+    expected: ['ecommerce.spec.state-durability@1.1.0'], observed: [] });
   assert(selected.selection.scoredChecks.length > 0);
   assert.equal(selected.selection.observedChecks.length, 0);
   assert.equal(observed.conditions[0].requested.levels[0].selection.observedChecks.length, 4);
@@ -293,12 +293,12 @@ test('the packaged modular reference gate scores quality specifications without 
   const expected = plan.conditions.find(condition => condition.id === 'product-brief-quality');
   assert.deepEqual(expected.requested.levels[0].selection.specifications,
     { requested: [], expected: [
-      'ecommerce.spec.access-control@1.1.0',
-      'ecommerce.spec.concurrency-safety@1.2.0',
+      'ecommerce.spec.access-control@1.2.0',
+      'ecommerce.spec.concurrency-safety@1.3.0',
       'ecommerce.spec.external-data-sync@1.1.0',
-      'ecommerce.spec.live-state@1.1.0',
-      'ecommerce.spec.state-durability@1.0.0',
-      'ecommerce.spec.transactional-integrity@1.2.0',
+      'ecommerce.spec.live-state@1.2.0',
+      'ecommerce.spec.state-durability@1.1.0',
+      'ecommerce.spec.transactional-integrity@1.3.0',
     ], observed: [] });
   assert.equal(expected.requested.levels[0].selection.observedChecks.length, 0);
   assert.equal(expected.requested.levels[0].selection.scoredPoints, 58);

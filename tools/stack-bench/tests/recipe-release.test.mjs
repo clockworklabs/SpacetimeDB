@@ -155,11 +155,11 @@ test('promoted runner binding fails closed on drift and emits only the selected 
 test('the qualified modular release is the promoted default and retired releases cannot launch', () => {
   const track = loadTrack('ecommerce');
   const promoted = resolveRecipeRelease(track, 1);
-  const exact = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.3.0');
+  const exact = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.4.0');
   assert.equal(promoted.release.id, 'ecommerce.l1-modular');
-  assert.equal(promoted.release.version, '2.3.0');
+  assert.equal(promoted.release.version, '2.4.0');
   assert.equal(promoted.status, 'promoted');
-  assert.equal(exact.release.version, '2.3.0');
+  assert.equal(exact.release.version, '2.4.0');
   assert.equal(exact.status, 'promoted');
   assert.equal(promoted.release.checkCatalog.length, 48);
   assert.equal(promoted.release.scoring.points, 58);
@@ -349,7 +349,7 @@ test('the grader rejects parent/child recipe drift before launching a browser', 
     '--url', 'http://127.0.0.1:1',
     '--level', '1',
     '--track', 'ecommerce',
-    '--spec', join(ECOMMERCE, 'scenarios', '01-features.json'),
+    '--spec', join(ECOMMERCE, 'scenarios', '01-account-create-2.4.0.json'),
     '--expected-recipe-sha256', '0'.repeat(64),
   ], { encoding: 'utf8' });
   assert.notEqual(result.status, 0);
@@ -363,7 +363,7 @@ test('the grader rejects a stale selected check before launching a browser', () 
     '--url', 'http://127.0.0.1:1',
     '--level', '1',
     '--track', 'ecommerce',
-    '--spec', join(ECOMMERCE, 'scenarios', '01-features.json'),
+    '--spec', join(ECOMMERCE, 'scenarios', '01-account-create-2.4.0.json'),
     '--selected-check', 'ecommerce.missing.check',
   ], { encoding: 'utf8' });
   assert.notEqual(result.status, 0);

@@ -13,8 +13,8 @@ test('the reference registry binds active, blocked, and historical provenance li
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 12);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 3);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 15);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'candidate').length, 0);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
   escaped.fixtures[0].archivedEvidence = ['results/unbound-grade.json'];
@@ -43,9 +43,9 @@ test('default reference tooling follows the promoted recipe instead of an unscop
   const promoted = resolveReferenceSelection(registry, {
     backend: 'mongodb', track: 'ecommerce', level: 1,
   });
-  assert.equal(promoted.recipe, 'ecommerce.l1-modular@2.3.0');
+  assert.equal(promoted.recipe, 'ecommerce.l1-modular@2.4.0');
   assert.equal(promoted.binding.status, 'promoted');
-  assert.equal(promoted.fixture.id, 'ecommerce-l1-direct-actions-mongodb');
+  assert.equal(promoted.fixture.id, 'ecommerce-l1-action-inputs-2.4-mongodb');
 
   const promotedL2 = resolveReferenceSelection(registry, {
     backend: 'mongodb', track: 'ecommerce', level: 2,

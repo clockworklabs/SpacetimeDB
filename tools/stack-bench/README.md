@@ -115,7 +115,7 @@ npm run bench -- --backend postgres --track ecommerce --levels 1 \
   --pack ecommerce.feature.accounts \
   --check ecommerce.feature.accounts.accounts.1a
 npm run bench -- --backend postgres --track ecommerce --levels 1 \
-  --recipe ecommerce.l1-modular@2.3.0
+  --recipe ecommerce.l1-modular@2.4.0
 
 # Inspect an exhausted level, then grant at most four more correction rounds.
 npm run repair -- status <run-directory> --level 1

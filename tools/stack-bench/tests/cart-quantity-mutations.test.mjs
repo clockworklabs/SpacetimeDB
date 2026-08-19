@@ -8,7 +8,8 @@ import ts from 'typescript';
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { mutationEdits, mutationScenario, mutationTargetKeys,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
-import { prepareReferenceSource } from '../src/references/reference-agent.mjs';
+import { loadReferenceRegistry, prepareReferenceFixtureSource,
+  selectReferenceFixture } from '../src/references/reference-fixtures.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const scenarioPath = 'tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json';
@@ -29,6 +30,12 @@ const cases = [
     manifest: 'spacetime-ecom-l1-modular-2.3.0.json',
   },
 ];
+
+function prepareReferenceSource(args) {
+  const fixture = selectReferenceFixture(loadReferenceRegistry(), args);
+  const prepared = prepareReferenceFixtureSource(fixture, args.app);
+  return { fixture, sourceSha256: prepared.sha256 };
+}
 
 function load(entry) {
   return JSON.parse(readFileSync(join(ROOT, 'grader', 'mutations', entry.manifest), 'utf8'));

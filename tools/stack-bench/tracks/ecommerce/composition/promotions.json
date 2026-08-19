@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "kind": "promotion-catalog",
   "id": "ecommerce.recipes",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "state": "qualified",
   "title": "Ecommerce recipe releases",
   "entries": [
@@ -18,8 +18,13 @@
     },
     {
       "alias": "L1",
-      "status": "promoted",
+      "status": "retired",
       "recipe": { "path": "recipes/l1-modular-2.3.0.json", "id": "ecommerce.l1-modular", "version": "2.3.0" }
+    },
+    {
+      "alias": "L1",
+      "status": "promoted",
+      "recipe": { "path": "recipes/l1-modular-2.4.0.json", "id": "ecommerce.l1-modular", "version": "2.4.0" }
     },
     {
       "alias": "L2",

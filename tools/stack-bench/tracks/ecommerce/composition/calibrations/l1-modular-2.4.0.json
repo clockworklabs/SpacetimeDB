@@ -3,7 +3,7 @@
   "kind": "calibration-manifest",
   "id": "ecommerce.l1-modular-calibration",
   "version": "2.4.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Ecommerce L1 independent-check calibration",
   "track": "ecommerce",
   "recipe": {
@@ -42,20 +42,20 @@
   "mutations": [
     {
       "backend": "mongodb",
-      "path": "grader/mutations/candidates/mongodb-ecom-l1-modular-2.4.0.json",
-      "sha256": "2c30e9245327fa308d32a85e342de07d82d4cacfc3fb91335b23564fd0f9eefe",
+      "path": "grader/mutations/mongodb-ecom-l1-modular-2.4.0.json",
+      "sha256": "2820e3f08c74d940bf3436b23631573d4cfe79d5d3a5aa5431b0eb32a826cefb",
       "referenceId": "ecommerce-l1-action-inputs-2.4-mongodb"
     },
     {
       "backend": "postgres",
-      "path": "grader/mutations/candidates/postgres-ecom-l1-modular-2.4.0.json",
-      "sha256": "80294e2bc3f10e226fb828216dbf874f2b4c1b0c3355b07d2c17891756f998df",
+      "path": "grader/mutations/postgres-ecom-l1-modular-2.4.0.json",
+      "sha256": "412ca1f241c20fe3b5383e175bc1fdb6e4b16d3f9c640ee9777f3f1810ad2951",
       "referenceId": "ecommerce-l1-action-inputs-2.4-postgres"
     },
     {
       "backend": "spacetime",
-      "path": "grader/mutations/candidates/spacetime-ecom-l1-modular-2.4.0.json",
-      "sha256": "409182c1e64b4638379d9d1e5a4d20de2052a5f4c52d1094ab747cae4ba1b996",
+      "path": "grader/mutations/spacetime-ecom-l1-modular-2.4.0.json",
+      "sha256": "b722365972260beaf79cdc45f3524fe787d4f9076084bb5f74b27abcd8c81751",
       "referenceId": "ecommerce-l1-action-inputs-2.4-spacetime"
     }
   ],
@@ -91,17 +91,66 @@
       "architecture": "x64"
     },
     "stacks": [
-      { "id": "mongodb", "status": "candidate" },
-      { "id": "postgres", "status": "candidate" },
-      { "id": "spacetime", "status": "candidate" }
+      { "id": "mongodb", "status": "qualified" },
+      { "id": "postgres", "status": "qualified" },
+      { "id": "spacetime", "status": "qualified" }
     ],
-    "evidence": []
+    "evidence": [
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v2.4.0/ecommerce-l1-mongodb-reference.json",
+        "sha256": "b870b6671eefae9f4791b0019d6bdb775c7cce1eaca8f80c8858b636db1af355"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v2.4.0/ecommerce-l1-mongodb-mutation.json",
+        "sha256": "645e826bf827c4789662dcc861aa82c3c7ea2174dddc7e3e8ea60b572ea71983"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v2.4.0/ecommerce-l1-postgres-reference.json",
+        "sha256": "fe720acbb943b4e4ccb7ea178d84c8f04425b394ed380f61e7ddf843ec629660"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v2.4.0/ecommerce-l1-postgres-mutation.json",
+        "sha256": "cc7835edda1a78db6980d4324fa12fcc43d938d9640d09ded84e9833eeff5d3a"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v2.4.0/ecommerce-l1-spacetime-reference.json",
+        "sha256": "648941af2c4f2fce9be49a269f601a9bad6a579f5f3757748b9ca7d9c126596b"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v2.4.0/ecommerce-l1-spacetime-mutation.json",
+        "sha256": "97a218e8d0146bef5ceb46821a285ea3bed25128ba1a45ade074f898ac934b7c"
+      },
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v2.4.0/ecommerce-l1-null.json",
+        "sha256": "e293be0dc31c777d942eaa767bf7b1c4c9a3e528f93d46d41baf9491a64520d6"
+      }
+    ]
   },
   "equivalenceDecisions": [],
   "promotion": {
-    "catalogPath": "composition/candidates.json",
-    "catalogSha256": "e3465e3d3f1a48356fb1d398052eb9b57c6c03848abcf16108de2e2cb9ab306e",
+    "catalogPath": "composition/promotions.json",
+    "catalogSha256": "4daf35a5753087c67923265615c217178eb2703f6f96dbd336b2a274dac36730",
     "alias": "L1",
-    "status": "candidate"
+    "status": "promoted"
   }
 }

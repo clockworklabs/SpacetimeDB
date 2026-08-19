@@ -14,7 +14,7 @@ const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
 const RECIPE = 'ecommerce.l1-modular@2.4.0';
 const FIXTURE_SHA256 = 'd5cb5af9db96b3ae4ff2b0d928dec4394ac6f88dfdce83201a0d8508b69902e5';
-const MANIFEST = join(ROOT, 'grader', 'mutations', 'candidates',
+const MANIFEST = join(ROOT, 'grader', 'mutations',
   'spacetime-ecom-l1-modular-2.4.0.json');
 const EXPECTED_UNMUTATED = [];
 const SERVER_GUARANTEES = new Set([
@@ -59,7 +59,7 @@ test('Spacetime L1 2.4 candidate mutations bind every honest defect to exact sou
 
     assert.deepEqual({ schemaVersion: manifest.schemaVersion, status: manifest.status,
       backend: manifest.backend, track: manifest.track, level: manifest.level }, {
-      schemaVersion: 1, status: 'candidate', backend: 'spacetime', track: 'ecommerce', level: 1,
+      schemaVersion: 1, status: 'active', backend: 'spacetime', track: 'ecommerce', level: 1,
     });
     assert.equal(Object.hasOwn(manifest, 'scenario'), false,
       'each mutation must own its exact scenario instead of using a fallback');

@@ -3,7 +3,7 @@
   "kind": "benchmark-recipe",
   "id": "ecommerce.l1-modular",
   "version": "2.4.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Ecommerce L1 independent checks",
   "track": "ecommerce",
   "fixture": { "path": "../fixtures/storefront-1.0.0.json", "id": "ecommerce.storefront", "version": "1.0.0" },

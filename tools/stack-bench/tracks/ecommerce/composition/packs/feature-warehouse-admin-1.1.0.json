@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.feature.warehouse-admin",
   "version": "1.1.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Warehouse administration",
   "moduleType": "feature",
   "description": "Warehouse inventory, restocking, and revenue views.",

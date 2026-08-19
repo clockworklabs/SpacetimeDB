@@ -9,7 +9,8 @@ import { compilePackDefinition } from '../src/composition/composition-compiler.m
 import { compileScenarioDefinition } from '../src/composition/definition-compiler.mjs';
 import { mutationEdits, mutationScenario, mutationTargetKeys,
   validateMutationDefinitions } from '../src/evidence/mutation-analysis.mjs';
-import { prepareReferenceSource } from '../src/references/reference-agent.mjs';
+import { loadReferenceRegistry, prepareReferenceFixtureSource,
+  selectReferenceFixture } from '../src/references/reference-fixtures.mjs';
 import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { selectScenarioChecks } from '../src/composition/recipe-selection.mjs';
 
@@ -20,6 +21,12 @@ const RESTART_SCENARIO = 'tracks/ecommerce/scenarios/01-external-server-restart-
 const RECONNECT_SCENARIO = 'tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json';
 const PACK = 'tracks/ecommerce/composition/packs/spec-external-data-sync-1.1.0.json';
 const MUTATIONS = 'grader/mutations';
+
+function prepareReferenceSource(args) {
+  const fixture = selectReferenceFixture(loadReferenceRegistry(), args);
+  const prepared = prepareReferenceFixtureSource(fixture, args.app);
+  return { fixture, sourceSha256: prepared.sha256 };
+}
 
 const cases = [
   {

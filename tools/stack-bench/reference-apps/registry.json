@@ -155,7 +155,7 @@
       "backend": "mongodb",
       "track": "ecommerce",
       "level": 1,
-      "status": "candidate",
+      "status": "active",
       "recipes": ["ecommerce.l1-modular@2.4.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/mongodb",
@@ -170,16 +170,16 @@
         "sourceSha256": "76810d72211fc0182aa31b663ffc153a82ff1918cd34902187873a4b53a4ebf2"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/mongodb-ecom-l1-modular-2.4.0.json"
+        "grader/mutations/mongodb-ecom-l1-modular-2.4.0.json"
       ],
-      "qualification": "Pending exact L1 2.4 Docker reference and mutation evidence."
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.4.0/."
     },
     {
       "id": "ecommerce-l1-action-inputs-2.4-postgres",
       "backend": "postgres",
       "track": "ecommerce",
       "level": 1,
-      "status": "candidate",
+      "status": "active",
       "recipes": ["ecommerce.l1-modular@2.4.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/postgres",
@@ -194,16 +194,16 @@
         "sourceSha256": "389d778f1835377fd2f92864d6afa20851c65076c80ddecba1e860cf7f4d9ec9"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/postgres-ecom-l1-modular-2.4.0.json"
+        "grader/mutations/postgres-ecom-l1-modular-2.4.0.json"
       ],
-      "qualification": "Pending exact L1 2.4 Docker reference and mutation evidence."
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.4.0/."
     },
     {
       "id": "ecommerce-l1-action-inputs-2.4-spacetime",
       "backend": "spacetime",
       "track": "ecommerce",
       "level": 1,
-      "status": "candidate",
+      "status": "active",
       "recipes": ["ecommerce.l1-modular@2.4.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/spacetime",
@@ -218,9 +218,9 @@
         "sourceSha256": "d5cb5af9db96b3ae4ff2b0d928dec4394ac6f88dfdce83201a0d8508b69902e5"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/spacetime-ecom-l1-modular-2.4.0.json"
+        "grader/mutations/spacetime-ecom-l1-modular-2.4.0.json"
       ],
-      "qualification": "Pending exact L1 2.4 Docker reference and mutation evidence."
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.4.0/."
     },
     {
       "id": "ecommerce-l2-mongodb",

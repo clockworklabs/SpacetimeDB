@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.spec.live-state",
   "version": "1.2.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Live state",
   "moduleType": "specification",
   "description": "Cross-client updates and reconnect convergence without reload.",

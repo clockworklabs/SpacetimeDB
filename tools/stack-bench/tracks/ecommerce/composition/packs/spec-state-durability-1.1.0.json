@@ -3,7 +3,7 @@
   "kind": "test-pack",
   "id": "ecommerce.spec.state-durability",
   "version": "1.1.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "State durability",
   "moduleType": "specification",
   "description": "Session and account-state continuity across reload and reconnect.",

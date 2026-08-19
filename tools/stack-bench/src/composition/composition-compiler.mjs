@@ -789,8 +789,9 @@ export function compilePromotionDefinition(input, { source = '<promotion-catalog
   const catalog = structuredClone(input);
   strictObject(catalog, source, PROMOTION_FIELDS);
   identityFields(catalog, source, 'promotion-catalog');
-  if (!Array.isArray(catalog.entries) || catalog.entries.length === 0) {
-    fail(`${source}.entries`, 'must be a non-empty array');
+  if (!Array.isArray(catalog.entries)) fail(`${source}.entries`, 'must be an array');
+  if (catalog.entries.length === 0 && catalog.state !== 'draft') {
+    fail(`${source}.entries`, 'must be non-empty once the catalog is qualified');
   }
   const activeAliases = new Set();
   const candidates = new Set();

@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "kind": "campaign-manifest",
   "id": "ecommerce-l1-product-brief-reference",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "state": "draft",
   "title": "Ecommerce L1 product brief and quality validation",
   "track": "ecommerce",
@@ -11,7 +11,7 @@
     "levels": [
       {
         "level": 1,
-        "recipe": "ecommerce.l1-modular@2.3.0",
+        "recipe": "ecommerce.l1-modular@2.4.0",
         "features": [
           "ecommerce.feature.accounts",
           "ecommerce.feature.cart-checkout",
@@ -39,7 +39,7 @@
   "conditions": [
     {
       "id": "product-brief-quality",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "guidanceProfile": "neutral@1.1.0",
       "repairPolicy": "scored-only@1.0.0",
       "specifications": {
@@ -48,12 +48,12 @@
             "level": 1,
             "requested": [],
             "expected": [
-              "ecommerce.spec.access-control@1.1.0",
-              "ecommerce.spec.concurrency-safety@1.2.0",
+              "ecommerce.spec.access-control@1.2.0",
+              "ecommerce.spec.concurrency-safety@1.3.0",
               "ecommerce.spec.external-data-sync@1.1.0",
-              "ecommerce.spec.live-state@1.1.0",
-              "ecommerce.spec.state-durability@1.0.0",
-              "ecommerce.spec.transactional-integrity@1.2.0"
+              "ecommerce.spec.live-state@1.2.0",
+              "ecommerce.spec.state-durability@1.1.0",
+              "ecommerce.spec.transactional-integrity@1.3.0"
             ],
             "observed": []
           }

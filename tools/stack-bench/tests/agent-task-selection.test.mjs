@@ -88,7 +88,7 @@ test('ordinary runs select scored checks while test-development checks require e
 
 test('selected pack prompts contain only their own framework-neutral testing calls', () => {
   const candidate = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.l1-modular@2.3.0');
+    'ecommerce.l1-modular@2.4.0');
   const neutral = resolveGuidanceProfile('neutral@1.0.0', ['postgres']);
   const app = mkdtempSync(join(tmpdir(), 'stack-bench-candidate-task-'));
   try {
@@ -114,7 +114,7 @@ test('selected pack prompts contain only their own framework-neutral testing cal
 
 test('the real unprescribed prompt withholds every expected quality specification', () => {
   const modular = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.l1-modular@2.3.0');
+    'ecommerce.l1-modular@2.4.0');
   const features = modular.release.components.packs
     .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
   const expectedSpecifications = modular.release.components.packs
@@ -142,7 +142,7 @@ test('the real unprescribed prompt withholds every expected quality specificatio
 
 test('exact modular qualification can include supporting checks without changing the prompt scope', () => {
   const modular = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.l1-modular@2.3.0');
+    'ecommerce.l1-modular@2.4.0');
   const features = modular.release.components.packs
     .filter(pack => pack.moduleType === 'feature').map(pack => pack.id);
   const expectedSpecifications = modular.release.components.packs
@@ -163,7 +163,7 @@ test('exact modular qualification can include supporting checks without changing
 
 test('agent provenance uses the exact recipe execution instead of the legacy level suites', () => {
   const track = loadTrack('ecommerce');
-  const modular = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.3.0');
+  const modular = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.4.0');
   const paths = agentScenarioPaths(track, 1, modular);
 
   assert.deepEqual(paths.map(path => path.replaceAll('\\', '/').split('/scenarios/')[1]),
@@ -177,7 +177,7 @@ test('a standalone recipe selects its exact prompt and cannot disagree with a bo
   try {
     const promoted = printStandalonePrompt(app);
     const candidate = printStandalonePrompt(app,
-      ['--recipe', 'ecommerce.l1-modular@2.3.0']);
+      ['--recipe', 'ecommerce.l1-modular@2.4.0']);
     assert.equal(candidate, promoted);
     assert.match(candidate, /data-buy-input/);
     assert.match(promoted, /data-buy-input/);
@@ -186,7 +186,7 @@ test('a standalone recipe selects its exact prompt and cannot disagree with a bo
     assert.throws(() => printPrompt(app, request,
       ['--recipe', 'ecommerce.l1-modular@2.2.0']), error =>
       /does not match bound task/.test(String(error.stderr)));
-    assert.equal(agentRecipeRequest('ecommerce.l1-modular@2.3.0'),
-      'ecommerce.l1-modular@2.3.0');
+    assert.equal(agentRecipeRequest('ecommerce.l1-modular@2.4.0'),
+      'ecommerce.l1-modular@2.4.0');
   } finally { rmSync(app, { recursive: true, force: true }); }
 });

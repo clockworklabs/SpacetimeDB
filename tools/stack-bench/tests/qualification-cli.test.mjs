@@ -6,7 +6,7 @@ import { parseQualificationArgs, qualificationReadiness } from '../commands/qual
 test('qualification status lists exact evidence and launch readiness without writing', () => {
   const status = qualificationReadiness('ecommerce', 1);
   assert.match(status.scope.calibration.sha256, /^[a-f0-9]{64}$/);
-  assert.equal(status.requiredEvidence.length, 13);
+  assert.equal(status.requiredEvidence.length, 7);
   assert.equal(status.commands.length, 7);
   assert.equal(status.budgetPreparation.required, false);
   assert.deepEqual(status.budgetPreparation.commands, []);
@@ -40,7 +40,7 @@ test('qualification status exposes the exact runner required by a recipe', () =>
   assert.equal(status.launch.ok, true);
 });
 
-test('new candidates disclose complete defect coverage and wait for live evidence', () => {
+test('the promoted L1 release discloses complete defect coverage and exact evidence', () => {
   const status = qualificationReadiness('ecommerce', 1, 'ecommerce.l1-modular@2.4.0');
   assert.equal(status.defectChecks.totalChecks, 46);
   assert.equal(status.defectChecks.totalPoints, 58);
@@ -49,28 +49,30 @@ test('new candidates disclose complete defect coverage and wait for live evidenc
   ]);
   assert(status.defectChecks.stacks.every(item => item.coveredPoints === 58
     && item.missingChecks.length === 0));
-  assert.equal(status.promotion.ready, false);
+  assert.equal(status.promotion.ready, true);
   assert.equal(status.promotion.blockers
     .filter(item => item.code === 'defect_check_coverage_incomplete').length, 0);
-  assert.equal(status.promotion.blockers
-    .filter(item => item.code === 'evidence_missing').length, 7);
+  assert.deepEqual(status.promotion.blockers, []);
+  assert.equal(status.requiredEvidence.length, 7);
 });
 
 test('qualification resolves the promoted modular L1 release exactly and by default', () => {
   const parsed = parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
-    '--track', 'ecommerce', '--level', '1', '--recipe', 'ecommerce.l1-modular@2.3.0']);
-  assert.equal(parsed.recipe, 'ecommerce.l1-modular@2.3.0');
+    '--track', 'ecommerce', '--level', '1', '--recipe', 'ecommerce.l1-modular@2.4.0']);
+  assert.equal(parsed.recipe, 'ecommerce.l1-modular@2.4.0');
   const status = qualificationReadiness(parsed.track, parsed.level, parsed.recipe);
-  assert.equal(status.scope.recipe.version, '2.3.0');
-  assert.equal(status.scope.calibration.version, '2.3.0');
+  assert.equal(status.scope.recipe.version, '2.4.0');
+  assert.equal(status.scope.calibration.version, '2.4.0');
   assert.equal(status.launch.ok, true);
-  assert.equal(status.requiredEvidence.length, 13);
+  assert.equal(status.requiredEvidence.length, 7);
   assert.equal(status.promotion.ready, true);
   assert.deepEqual(status.promotion.blockers, []);
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
     && item.state === 'promoted' && item.target === 'promoted'));
-  assert(status.commands.every(command => command.includes('--recipe ecommerce.l1-modular@2.3.0')));
-  assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '2.3.0');
+  assert(status.commands.every(command => command.includes('--recipe ecommerce.l1-modular@2.4.0')));
+  assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '2.4.0');
+  assert.throws(() => qualificationReadiness('ecommerce', 1, 'ecommerce.l1-modular@2.3.0'),
+    /no recipe release|retired|requires exactly one catalogued/);
   assert.throws(() => qualificationReadiness('ecommerce', 1, 'ecommerce.l1-standard@1.1.0'),
     /no recipe release|retired|requires exactly one catalogued/);
 });
