@@ -774,7 +774,7 @@
     stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; margin-bottom: .2rem;
   }
   .rcpt b { font-family: var(--font-mono); font-size: .82rem; color: var(--n1); font-weight: 500; }
-  .rcpt i { font-family: var(--font-mono); font-size: .72rem; color: var(--n4); font-style: normal; line-height: 1.45; }
+  .rcpt i { font-family: var(--font-mono); font-size: .72rem; color: var(--n3); font-style: normal; line-height: 1.45; }
   section.on .rcpt { opacity: 0; animation: lineIn .35s ease forwards; }
   section.on .rcpt:nth-child(1) { animation-delay: 0.23s; }
   section.on .rcpt:nth-child(2) { animation-delay: 0.28s; }
@@ -816,26 +816,11 @@
   section.on .pbar i { animation: pplay 8s linear infinite; }
   @keyframes pplay { to { width: 100%; } }
 
-  /* skeleton scoreboard */
-  .board { max-width: 900px; width: 100%; border: 1px solid var(--shade1); border-radius: 10px; overflow: hidden; position: relative; }
-  .board table { margin: 0; max-width: none; }
-  .board th { padding: .85rem 1.1rem; background: var(--shade7); }
-  .skel { display: inline-block; width: 5.4rem; height: 1rem; border-radius: 4px; background: var(--shade4); position: relative; overflow: hidden; vertical-align: middle; }
-  .skel.w2 { width: 2.8rem; } .skel.w3 { width: 6rem; }
-  .skel::after { content: ''; position: absolute; inset: 0;
-    background: linear-gradient(90deg, transparent, #4cf49022, transparent);
-    transform: translateX(-100%); animation: shimmer 2s infinite; }
-  @keyframes shimmer { to { transform: translateX(100%); } }
-  .board .overlay { position: absolute; inset: 0; display: grid; place-items: center;
-    background: #06060699; font-family: var(--font-mono); font-size: 1rem; color: var(--n1); text-align: center; padding: 1rem; }
-
   @media (max-width: 720px) {
     .files { columns: 1; }
     #dots { display: none; }
     section { padding-left: 1.4rem; padding-right: 1.4rem; }
   }
-  /* second line inside a scoreboard cell, for what the average is made of */
-  .board td.num .q { display: block; margin-top: .25rem; font-size: .68rem; color: var(--n4); font-family: var(--font-mono); }
   /* the dependency graph: levels across, edges showing what unlocks what */
   .dg { width: 100%; max-width: 1000px; }
   .dg text { font-family: var(--font-mono); font-size: 11.5px; fill: var(--n1); }
@@ -856,10 +841,6 @@
 
   /* CEO review deck: keep the main narrative lean; detailed harness material remains as appendix source. */
   section.appendix { display: none; }
-  .compare { width: 100%; max-width: 980px; display: grid; grid-template-columns: 1fr 1fr; gap: 2.2rem; margin-top: 1.4rem; }
-  .compare-col { border-top: 1px solid var(--shade2); padding-top: 1rem; }
-  .compare-col h3 { margin: 0 0 .65rem; color: var(--n1); font-size: clamp(1.1rem, 2vw, 1.35rem); font-weight: 560; }
-  .compare-col p { margin: 0; color: var(--n4); line-height: 1.55; max-width: 34rem; }
   .modevis, .promptvis { width: 100%; max-width: 1000px; margin-top: 1.1rem; }
   .modevis text, .promptvis text { font-family: var(--font-mono); fill: var(--n3); font-size: 11px; }
   .modevis .title, .promptvis .title { fill: var(--n1); font-size: 13px; font-weight: 600; }
@@ -882,20 +863,70 @@
   section.graph-slide h2 { margin-bottom: .75rem; }
   section.graph-slide .lead { margin-top: 0 !important; }
   section.graph-slide .dg { margin-top: 1.2rem; }
-  .promptarrow { align-self: center; color: var(--green); font-family: var(--font-mono); font-size: 1.35rem; }
-  .scoremath { width: 100%; max-width: 940px; display: grid; grid-template-columns: 1fr auto 1fr; gap: 1.2rem; align-items: center; margin-top: 1.4rem; }
-  .formula { border-top: 1px solid var(--shade2); padding-top: 1rem; }
-  .formula b { display: block; color: var(--n4); font-family: var(--font-mono); font-size: .78rem; margin-bottom: .45rem; }
-  .formula span { color: var(--n1); font-size: clamp(1rem, 2vw, 1.3rem); line-height: 1.35; }
-  .road { width: 100%; max-width: 980px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.1rem; margin-top: 1.5rem; }
-  .road-step { border-top: 1px solid var(--shade2); padding-top: .9rem; }
-  .road-step em { display: block; color: var(--n4); font-family: var(--font-mono); font-size: .72rem; font-style: normal; margin-bottom: .45rem; }
-  .road-step b { display: block; color: var(--n1); font-size: .92rem; margin-bottom: .35rem; }
-  .road-step span { display: block; color: var(--n4); font-size: .8rem; line-height: 1.45; }
+  .scorevis {
+    display: grid; grid-template-columns: minmax(0, 1fr) 13rem; gap: 3rem;
+    padding: 1.5rem 0; border-top: 1px solid var(--shade1); border-bottom: 1px solid var(--shade1);
+  }
+  .scoreareas { display: grid; gap: 1.15rem; }
+  .scorerow { display: grid; grid-template-columns: 10rem minmax(0, 1fr) 4rem; gap: 1rem; align-items: center; }
+  .scorelabel b { display: block; color: var(--n1); font-size: .95rem; font-weight: 560; }
+  .scorelabel span { display: block; color: var(--n4); font-family: var(--font-mono); font-size: .7rem; margin-top: .1rem; }
+  .scorebar { height: 12px; background: var(--shade4); overflow: hidden; }
+  .scorebar i { display: block; height: 100%; width: var(--score); background: var(--green); opacity: .72; transform-origin: left; }
+  section.on .scorebar i { animation: scoreGrow 1s ease-out both; }
+  @keyframes scoreGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .scorepct { color: var(--n1); font-family: var(--font-mono); font-size: .9rem; text-align: right; }
+  .overallscore { border-left: 1px solid var(--shade1); padding-left: 2.5rem; display: flex; flex-direction: column; justify-content: center; }
+  .overallscore span { color: var(--n4); font-family: var(--font-mono); font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; }
+  .overallscore strong { color: var(--n1); font-size: clamp(3rem, 6vw, 5rem); line-height: 1; margin: .55rem 0 .65rem; font-weight: 620; }
+  .overallscore small { color: var(--n4); font-size: .78rem; line-height: 1.45; }
   @media (max-width: 760px) {
-    .compare, .road { grid-template-columns: 1fr; }
-    .scoremath { grid-template-columns: 1fr; }
-    .promptarrow { transform: rotate(90deg); justify-self: center; }
+    .scorevis { grid-template-columns: 1fr; gap: 1.5rem; }
+    .scorerow { grid-template-columns: 7rem minmax(0, 1fr) 3.5rem; }
+    .overallscore { border-left: 0; border-top: 1px solid var(--shade1); padding: 1.5rem 0 0; }
+  }
+  /* CTO presentation: simple, centered compositions with one job per slide. */
+  .cto-visual { width: 100%; max-width: 920px; margin-top: 1.45rem; }
+  .fairvis, .systemvis, .behvis { width: 100%; max-width: 920px; overflow: visible; }
+  .fairvis text, .systemvis text, .behvis text { font-family: var(--font-mono); }
+  .fairvis .lane, .systemvis .probe, .behvis .area { fill: #0b1115; stroke: #26343b; stroke-width: 1.2; }
+  .fairvis .app, .systemvis .app, .behvis .core { fill: #0e1915; stroke: var(--green); stroke-width: 1.3; }
+  .fairvis .wire, .systemvis .wire, .behvis .wire { fill: none; stroke: #33444d; stroke-width: 1.4; }
+  .fairvis .wire.live, .systemvis .wire.live { stroke: var(--green); }
+  .fairvis .label, .systemvis .label, .behvis .label { fill: var(--n1); font-size: 13px; font-weight: 600; }
+  .fairvis .minor, .systemvis .minor, .behvis .minor { fill: var(--n4); font-size: 10px; }
+  .fairvis .cap, .systemvis .cap, .behvis .cap { fill: var(--n4); font-size: 9px; letter-spacing: .14em; }
+  .fairvis .metric { fill: var(--n3); font-size: 11px; }
+  section.on .fairvis .wire.live, section.on .systemvis .wire.live { stroke-dasharray: 5 8; animation: dashRun 1.1s linear infinite; }
+  section.on .systemvis .probe { animation: probePulse 5s ease-in-out infinite; }
+  section.on .systemvis .probe:nth-of-type(2) { animation-delay: .5s; }
+  section.on .systemvis .probe:nth-of-type(3) { animation-delay: 1s; }
+  section.on .systemvis .probe:nth-of-type(4) { animation-delay: 1.5s; }
+  section.on .systemvis .probe:nth-of-type(5) { animation-delay: 2s; }
+  @keyframes probePulse { 0%,78%,100% { stroke:#26343b; } 84%,94% { stroke:var(--green); } }
+  .proof-step span {
+    display: block; color: var(--n4); font: .67rem/1.3 var(--font-mono); letter-spacing: .12em; text-transform: uppercase;
+  }
+  .proof-step b { display: block; margin: .55rem 0 .35rem; color: var(--n1); font-size: .95rem; }
+  .proof-step small { display: block; color: var(--n4); font: .72rem/1.5 var(--font-mono); }
+  .proof-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.65rem; position: relative; }
+  .proof-flow::before { content: ''; position: absolute; left: 8%; right: 8%; top: 20px; height: 1px; background: var(--shade1); }
+  .proof-step { position: relative; padding-top: 3.1rem; }
+  .proof-step::before {
+    content: ''; position: absolute; top: 8px; left: 0; width: 24px; height: 24px; border: 1px solid var(--green); border-radius: 50%; background: #07100c;
+  }
+  .proof-step::after { content: ''; position: absolute; top: 15px; left: 7px; width: 9px; height: 5px; border-left: 2px solid var(--green); border-bottom: 2px solid var(--green); transform: rotate(-45deg); }
+  section.on .proof-step::before { animation: gatePulse 4.8s ease-in-out infinite; }
+  section.on .proof-step:nth-child(2)::before { animation-delay: .45s; }
+  section.on .proof-step:nth-child(3)::before { animation-delay: .9s; }
+  section.on .proof-step:nth-child(4)::before { animation-delay: 1.35s; }
+  @keyframes gatePulse { 0%,72%,100% { box-shadow: none; } 80%,92% { box-shadow: 0 0 22px #4cf49066; } }
+  .dg .dg-col.dim, .dg-n.l4 text { fill: var(--n4); }
+  .dg-n.l4 rect { stroke: #2b3a42; }
+
+  @media (max-width: 760px) {
+    .proof-flow { grid-template-columns: 1fr; }
+    .proof-flow::before { display: none; }
   }
 </style>
 </head>
@@ -916,96 +947,72 @@
     <span>SpacetimeDB</span>
   </div>
   <h1 class="r d1">Stack Bench</h1>
-  <p class="lead r d2"><span>Compare AI-built apps across database stacks by progress, score, repair cost and evidence.</span></p>
+  <p class="lead r d2"><span>Build the same product on different database stacks. Test what works, repair what fails, and compare the evidence.</span></p>
 </section>
 
-<!-- 2 how Stack Bench runs -->
+<!-- 3 functional architecture -->
 <section class="fit-slide visual-first">
-  <div class="kicker r">how Stack Bench works</div>
-  <h2 class="r d1">Build the app. Test the app.</h2>
-  <svg class="dia r d2" viewBox="0 0 960 452" role="img" aria-label="stack bench architecture">
-    <defs>
-      <marker id="a2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-        <path d="M0 0 L8 4 L0 8 z" fill="#2b3a42"/>
-      </marker>
-    </defs>
-
-    <rect class="b key" x="385" y="8" width="200" height="40"/>
-    <text class="lbl" x="405" y="26">Stack Bench</text><text class="sub" x="405" y="40">one run &middot; one record</text>
-
-    <rect class="b" x="60" y="92" width="200" height="40"/>
-    <text class="lbl" x="78" y="110">setup check</text><text class="sub" x="78" y="124">before any spend</text>
-
-    <rect class="b" x="385" y="92" width="200" height="40"/>
-    <text class="lbl" x="405" y="110">AI agent</text><text class="sub" x="405" y="124">build or fix</text>
-
-    <rect class="b" x="700" y="92" width="200" height="40"/>
-    <text class="lbl" x="718" y="110">database stack</text><text class="sub" x="718" y="124">isolated for this run</text>
-
-    <rect class="b lit" x="385" y="168" width="200" height="40"/>
-    <text class="lbl" x="405" y="186">build container</text><text class="sub" x="405" y="200">isolated build session</text>
-
-    <rect class="b lit" x="700" y="168" width="200" height="40" style="animation-delay:.8s"/>
-    <text class="lbl" x="718" y="186">database services</text><text class="sub" x="718" y="200">reset for each test group</text>
-
-    <rect class="b key" x="385" y="244" width="515" height="40"/>
-    <text class="lbl" x="405" y="262">running app</text><text class="sub" x="405" y="276">the generated product, ready to use</text>
-
-    <rect class="b key" x="130" y="320" width="770" height="46"/>
-    <text class="lbl" x="150" y="338">browser grader</text>
-    <text class="sub" x="150" y="354">real customer and operator sessions &middot; one result per test</text>
-
-    <rect class="b" x="130" y="396" width="360" height="44"/>
-    <text class="lbl" x="150" y="414">test results</text><text class="sub" x="150" y="429">passed &middot; failed &middot; could not run</text>
-
-    <rect class="b" x="540" y="396" width="360" height="44"/>
-    <text class="lbl" x="560" y="414">evidence</text><text class="sub" x="560" y="429">request &middot; cost &middot; video &middot; trace &middot; source</text>
-
-    <path class="e" d="M470 48 V70 H160 V88"/>
-    <path class="e flow" d="M485 48 V88"/>
-    <path class="e" d="M500 48 V70 H800 V88"/>
-    <path class="e flow" d="M485 132 V164"/>
-    <path class="e flow" d="M800 132 V164"/>
-    <path class="e flow" d="M485 208 V240"/>
-    <path class="e flow" d="M800 208 V240"/>
-    <path class="e flow" d="M600 284 V300 H515 V316"/>
-    <path class="e flow" d="M310 366 V392"/>
-    <path class="e flow" d="M720 366 V392"/>
-    <path class="e back" d="M130 418 H40 V150 H430 V134" marker-end="url(#a2)"/>
-    <text class="sub acc" x="46" y="252">app failures</text>
-    <text class="sub" x="46" y="266">return to the agent</text>
+  <div class="kicker r">one controlled run</div>
+  <h2 class="r d1">How Stack Bench runs.</h2>
+  <p class="lead r d2">Each run pins the request and environment, isolates the build and services, and keeps repair feedback and evidence in one reproducible record.</p>
+  <svg class="dia r d3" viewBox="0 0 960 452" role="img" aria-label="Stack Bench coordinates preflight, the agent, database services, the generated app, browser grading, results, evidence, and repair">
+    <defs><marker id="a2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#2b3a42"/></marker></defs>
+    <rect class="b key" x="385" y="8" width="200" height="40"/><text class="lbl" x="405" y="26">Stack Bench</text><text class="sub" x="405" y="40">one run · one record</text>
+    <rect class="b" x="60" y="92" width="200" height="40"/><text class="lbl" x="78" y="110">preflight</text><text class="sub" x="78" y="124">validate before spend</text>
+    <rect class="b" x="385" y="92" width="200" height="40"/><text class="lbl" x="405" y="110">AI agent</text><text class="sub" x="405" y="124">build or repair</text>
+    <rect class="b" x="700" y="92" width="200" height="40"/><text class="lbl" x="718" y="110">database stack</text><text class="sub" x="718" y="124">selected for this run</text>
+    <rect class="b lit" x="385" y="168" width="200" height="40"/><text class="lbl" x="405" y="186">build container</text><text class="sub" x="405" y="200">isolated agent session</text>
+    <rect class="b lit" x="700" y="168" width="200" height="40" style="animation-delay:.8s"/><text class="lbl" x="718" y="186">database services</text><text class="sub" x="718" y="200">isolated and reset</text>
+    <rect class="b key" x="385" y="244" width="515" height="40"/><text class="lbl" x="405" y="262">running application</text><text class="sub" x="405" y="276">the generated product against its assigned stack</text>
+    <rect class="b key" x="130" y="320" width="770" height="46"/><text class="lbl" x="150" y="338">browser grader</text><text class="sub" x="150" y="354">customer sessions · operator sessions · controlled probes</text>
+    <rect class="b" x="130" y="396" width="360" height="44"/><text class="lbl" x="150" y="414">typed results</text><text class="sub" x="150" y="429">pass · fail · inconclusive · system failure</text>
+    <rect class="b" x="540" y="396" width="360" height="44"/><text class="lbl" x="560" y="414">evidence</text><text class="sub" x="560" y="429">prompt · source · cost · video · trace</text>
+    <path class="e" d="M470 48 V70 H160 V88"/><path class="e flow" d="M485 48 V88"/><path class="e" d="M500 48 V70 H800 V88"/>
+    <path class="e flow" d="M485 132 V164"/><path class="e flow" d="M800 132 V164"/><path class="e flow" d="M485 208 V240"/><path class="e flow" d="M800 208 V240"/>
+    <path class="e flow" d="M600 284 V300 H515 V316"/><path class="e flow" d="M310 366 V392"/><path class="e flow" d="M720 366 V392"/>
+    <path class="e back" d="M130 418 H40 V150 H430 V134" marker-end="url(#a2)"/><text class="sub acc" x="46" y="252">app failures</text><text class="sub" x="46" y="266">return to the agent</text>
   </svg>
-  <p class="supp r d3">Stack Bench gives the same brief to an agent in an isolated build, starts the app against its assigned database, then tests it through real browser sessions. The run record keeps the exact prompt, source, score, cost and evidence.</p>
 </section>
 
-<!-- 3 repair loop -->
-<!-- 2 how progress works -->
+<!-- 3 how the app is tested -->
 <section class="visual-tight visual-first">
-  <div class="kicker r">how progress works</div>
-  <h2 class="r d1">A failure stops one path.</h2>
-  <p class="lead r d2">A passed feature can open only its declared children. A failed feature stops that path while unrelated work continues.</p>
-  <svg class="modevis r d3" viewBox="0 0 960 330" role="img" aria-label="accounts and reviews pass and unlock more work while a failed catalog feature stops search">
-    <defs>
-      <marker id="mode-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#4cf490"/></marker>
-    </defs>
-    <text class="title" x="24" y="34">LEVEL 1 RESULTS</text>
-    <rect class="node pass" x="78" y="76" width="190" height="50"/><text class="pass-label" x="125" y="106">accounts ✓</text>
-    <rect class="node fail" x="385" y="76" width="190" height="50"/><text class="fail-label" x="439" y="106">catalog ×</text>
-    <rect class="node pass" x="692" y="76" width="190" height="50"/><text class="pass-label" x="746" y="106">reviews ✓</text>
-    <path class="flow" marker-end="url(#mode-arrow)" d="M173 128 V224"/>
-    <path class="stop" d="M480 128 V194"/>
-    <text class="fail-label" text-anchor="middle" x="480" y="216">stops here</text>
-    <path class="flow" marker-end="url(#mode-arrow)" d="M787 128 V224"/>
-    <rect class="node pass" x="73" y="244" width="200" height="50"/><text class="pass-label" x="110" y="274">account recovery</text>
-    <rect class="node locked" x="385" y="244" width="190" height="50"/><text x="426" y="274">search locked</text>
-    <rect class="node pass" x="687" y="244" width="200" height="50"/><text class="pass-label" x="735" y="274">review ranking</text>
+  <div class="kicker r">how testing works</div>
+  <h2 class="r d1">The generated app is tested end to end.</h2>
+  <p class="lead r d2">The grader combines real user sessions with controlled faults, then checks both the visible result and durable database state.</p>
+  <svg class="systemvis cto-visual r d3" viewBox="0 0 920 390" role="img" aria-label="a running generated app is tested by browser actors, direct database writes, reconnects, restarts, and concurrent actions">
+    <rect class="probe" x="20" y="34" width="230" height="58" rx="8"/><text class="cap" x="42" y="55">REAL CLIENTS</text><text class="label" x="42" y="77">Multiple browser actors</text>
+    <rect class="probe" x="20" y="128" width="230" height="58" rx="8"/><text class="cap" x="42" y="149">OUTSIDE THE APP</text><text class="label" x="42" y="171">Direct database changes</text>
+    <rect class="probe" x="20" y="222" width="230" height="58" rx="8"/><text class="cap" x="42" y="243">CLIENT RECOVERY</text><text class="label" x="42" y="265">Offline and reconnect</text>
+    <rect class="app" x="340" y="94" width="240" height="142" rx="12"/><text class="cap" x="460" y="128" text-anchor="middle">GENERATED PRODUCT</text><text class="label" x="460" y="166" text-anchor="middle" style="font-size:18px">RUNNING APP</text><text class="minor" x="460" y="190" text-anchor="middle">browser + API + database</text>
+    <rect class="probe" x="670" y="70" width="230" height="58" rx="8"/><text class="cap" x="692" y="91">SERVICE RECOVERY</text><text class="label" x="692" y="113">Restart the app service</text>
+    <rect class="probe" x="670" y="196" width="230" height="58" rx="8"/><text class="cap" x="692" y="217">CONTENTION</text><text class="label" x="692" y="239">Concurrent actions</text>
+    <path class="wire live" d="M250 63 H300 V126 H336"/><path class="wire live" d="M250 157 H336"/><path class="wire live" d="M250 251 H300 V205 H336"/>
+    <path class="wire live" d="M584 129 H625 V99 H666"/><path class="wire live" d="M584 201 H625 V225 H666"/>
+    <path class="wire" d="M460 240 V290"/><rect class="lane" x="255" y="292" width="410" height="62" rx="8"/><text class="cap" x="460" y="315" text-anchor="middle">ASSERT AND RECORD</text><text class="label" x="460" y="339" text-anchor="middle">Visible state + persisted state + evidence</text>
+  </svg>
+</section>
+
+<!-- 4 what is tested -->
+<section class="visual-tight visual-first">
+  <div class="kicker r">what gets measured</div>
+  <h2 class="r d1">The tests cover production behavior.</h2>
+  <p class="lead r d2">Checks span visible workflows and the server behavior underneath them, so a polished happy path cannot hide a weak backend.</p>
+  <svg class="behvis cto-visual r d3" viewBox="0 0 920 380" role="img" aria-label="six production behavior areas surround the generated application">
+    <path class="wire" d="M290 64 H360 L400 138 M290 190 H360 M290 316 H360 L400 242 M630 64 H560 L520 138 M630 190 H560 M630 316 H560 L520 242"/>
+    <rect class="area" x="20" y="34" width="270" height="60" rx="8"/><text class="label" x="42" y="59">USER WORKFLOWS</text><text class="minor" x="42" y="78">accounts · cart · checkout · returns</text>
+    <rect class="area" x="20" y="160" width="270" height="60" rx="8"/><text class="label" x="42" y="185">ACCESS + OWNERSHIP</text><text class="minor" x="42" y="204">protected actions · account isolation</text>
+    <rect class="area" x="20" y="286" width="270" height="60" rx="8"/><text class="label" x="42" y="311">DURABILITY + RECOVERY</text><text class="minor" x="42" y="330">reload · reconnect · restart</text>
+    <circle class="core" cx="460" cy="190" r="98"/><text class="cap" x="460" y="176" text-anchor="middle">THE GENERATED APP</text><text class="label" x="460" y="204" text-anchor="middle" style="font-size:17px">PRODUCTION</text><text class="label" x="460" y="226" text-anchor="middle" style="font-size:17px">BEHAVIOR</text>
+    <rect class="area" x="630" y="34" width="270" height="60" rx="8"/><text class="label" x="652" y="59">LIVE STATE</text><text class="minor" x="652" y="78">open pages stay current</text>
+    <rect class="area" x="630" y="160" width="270" height="60" rx="8"/><text class="label" x="652" y="185">CONCURRENCY + TRANSACTIONS</text><text class="minor" x="652" y="204">races · idempotency · conservation</text>
+    <rect class="area" x="630" y="286" width="270" height="60" rx="8"/><text class="label" x="652" y="311">OPERATIONS + ACCOUNTING</text><text class="minor" x="652" y="330">shipping · pricing · revenue</text>
   </svg>
 </section>
 
 <!-- 3 a run -->
-<section class="visual-tight visual-first">
-  <div class="kicker r">when a test fails</div>
-  <h2 class="r d1">Each level has a repair limit.</h2>
+<section id="repair-slide" class="visual-tight visual-first">
+  <div class="kicker r">repair and retest</div>
+  <h2 class="r d1">Failed tests return to the agent.</h2>
   <svg class="cyc r d2" viewBox="0 0 960 310" role="img" aria-label="unlock, build, grade, fix failures, advance, or stop that path">
     <defs>
       <marker id="a3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
@@ -1067,14 +1074,14 @@
     <div class="st">ready<span class="sv"><span class="v-u1">2 of 12</span><span class="v-u2 good">4 of 12</span></span></div>
     <div class="st">cost<span class="sv"><span class="v-c0">tracked</span><span class="v-c1">tracked</span><span class="v-c2">tracked</span></span></div>
   </div>
-  <p class="supp r d4">Stack Bench tests the features that are ready. If a test fails and attempts remain, the agent receives the failure and repairs the app. Passing work opens the next features. When attempts run out, only that path stops and the rest of the run continues.</p>
+  <p class="supp r d4">Each level has a configured repair budget. Completed app failures spend it; provider and test-system failures do not.</p>
 </section>
 
 <!-- 4 the dependency graph -->
-<section class="visual-tight graph-slide visual-first">
-  <div class="kicker r">level by level</div>
-  <h2 class="r d1">Passed features open the next level.</h2>
-  <p class="lead r d2">The graph defines which features depend on others. A child is ready only when every declared parent has passed, and the same rule works for any number of levels.</p>
+<section id="graph-slide" class="visual-tight graph-slide visual-first">
+  <div class="kicker r">dependency mode</div>
+  <h2 class="r d1">Passed features open the next work.</h2>
+  <p class="lead r d2">The versioned graph can contain any number of levels and branches. A child opens only after every declared parent passes.</p>
   <svg class="dg r d3" viewBox="0 0 1000 424" role="img" aria-label="six level one features unlock level two work, which can unlock level three work">
     <text class="dg-col" x="16" y="14">LEVEL 1</text>
     <text class="dg-col" x="250" y="14">LEVEL 2</text>
@@ -1131,61 +1138,15 @@
 <!-- 5 modular prompts -->
 <section class="visual-tight visual-first">
   <div class="kicker r">each request</div>
-  <h2 class="r d1">The prompt and tests are separate.</h2>
-  <p class="lead r d2">The prompt contains the app brief, features ready now, and failures to repair. Future feature requirements stay out until they unlock. Stack Bench independently selects the checks it runs, including regression and product behavior checks.</p>
-  <svg class="promptvis r d3" viewBox="0 0 1000 350" role="img" aria-label="Stack Bench builds the agent prompt from ready work while selecting the test plan separately">
-    <defs>
-      <marker id="prompt-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#4cf490"/></marker>
-      <marker id="neutral-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#41515a"/></marker>
-    </defs>
-
-    <text class="title" x="20" y="24">AGENT REQUEST</text>
-    <rect class="node active" x="20" y="42" width="190" height="76"/>
-    <text class="active-label" x="40" y="66">ready work</text>
-    <text class="small" x="40" y="86">feature requirements</text>
-    <text class="small" x="40" y="103">current failures</text>
-
-    <rect class="node neutral" x="270" y="42" width="190" height="76"/>
-    <text class="title" x="290" y="66">PROMPT</text>
-    <text class="small" x="290" y="86">app brief · database</text>
-    <text class="small" x="290" y="103">ready work · test hooks</text>
-
-    <rect class="node active" x="520" y="42" width="190" height="76"/>
-    <text class="title" x="540" y="66">AGENT</text>
-    <text class="small" x="540" y="86">builds or repairs</text>
-    <text class="small" x="540" y="103">the application</text>
-
-    <rect class="node neutral" x="770" y="42" width="190" height="76"/>
-    <text class="title" x="790" y="66">APPLICATION</text>
-    <text class="small" x="790" y="86">the source and running app</text>
-    <text class="small" x="790" y="103">produced by the agent</text>
-
-    <path class="flow" d="M210 80 H266" marker-end="url(#prompt-arrow)"/>
-    <path class="flow" d="M460 80 H516" marker-end="url(#prompt-arrow)"/>
-    <path class="flow" d="M710 80 H766" marker-end="url(#prompt-arrow)"/>
-
-    <rect class="node locked" x="20" y="138" width="190" height="56"/>
-    <text class="locked-label" x="40" y="162">future features</text>
-    <text class="locked-label" x="40" y="180">not included until ready</text>
-
-    <line x1="20" y1="222" x2="960" y2="222" stroke="#26333a"/>
-    <text class="title" x="20" y="250">INDEPENDENT TEST PLAN</text>
-
-    <rect class="node neutral" x="20" y="266" width="260" height="66"/>
-    <text class="title" x="40" y="290">SELECTED CHECKS</text>
-    <text class="small" x="40" y="310">active · regression · product behavior</text>
-
-    <rect class="node active" x="370" y="266" width="230" height="66"/>
-    <text class="title" x="390" y="290">STACK BENCH TESTS</text>
-    <text class="small" x="390" y="310">runs against the application</text>
-
-    <rect class="node neutral" x="690" y="266" width="270" height="66"/>
-    <text class="title" x="710" y="290">RESULT AND EVIDENCE</text>
-    <text class="small" x="710" y="310">pass · fail · score · screenshots · trace</text>
-
-    <path d="M280 299 H366" stroke="#41515a" stroke-width="1.5" fill="none" marker-end="url(#neutral-arrow)"/>
-    <path d="M600 299 H686" stroke="#41515a" stroke-width="1.5" fill="none" marker-end="url(#neutral-arrow)"/>
-    <path d="M865 118 V236 H485 V262" stroke="#41515a" stroke-width="1.5" fill="none" marker-end="url(#neutral-arrow)"/>
+  <h2 class="r d1">The prompt follows the graph.</h2>
+  <p class="lead r d2">The app brief and stack stay fixed while feature requirements change with progress. Passed work remains under regression.</p>
+  <svg class="fairvis r d3" viewBox="0 0 920 340" role="img" aria-label="the agent request changes as features pass, unlock, or fail">
+    <rect class="lane" x="20" y="70" width="240" height="170" rx="10"/><text class="cap" x="44" y="98">FIRST REQUEST</text><text class="label" x="44" y="132">APP BRIEF</text><text class="minor" x="44" y="153">database access · test hooks</text><line x1="44" y1="172" x2="236" y2="172" stroke="#26343b"/><text class="label" x="44" y="202">READY NOW</text><text class="minor" x="44" y="223">accounts · catalog · cart</text>
+    <path class="wire live" d="M260 155 H335"/><text class="cap" x="297" y="140" text-anchor="middle">PASS</text>
+    <rect class="app" x="335" y="70" width="250" height="170" rx="10"/><text class="cap" x="359" y="98">NEXT REQUEST</text><text class="label" x="359" y="132">NEWLY UNLOCKED</text><text class="minor" x="359" y="153">shipping · transfers · returns</text><line x1="359" y1="172" x2="561" y2="172" stroke="#28543d"/><text class="label" x="359" y="202">PASSED WORK</text><text class="minor" x="359" y="223">kept under regression</text>
+    <path class="wire live" d="M585 155 H660"/><text class="cap" x="622" y="140" text-anchor="middle">FAIL</text>
+    <rect class="lane" x="660" y="70" width="240" height="170" rx="10"/><text class="cap" x="684" y="98">REPAIR REQUEST</text><text class="label" x="684" y="132">FAILED WORK</text><text class="minor" x="684" y="153">the feature that needs repair</text><line x1="684" y1="172" x2="876" y2="172" stroke="#26343b"/><text class="label" x="684" y="202">FAILURE EVIDENCE</text><text class="minor" x="684" y="223">steps · assertion · screenshot</text>
+    <path class="wire" d="M20 286 H900"/><text class="cap" x="20" y="312">LOCKED WORK STAYS OUT UNTIL ITS PARENTS PASS</text>
   </svg>
 </section>
 
@@ -1388,106 +1349,74 @@
   <p class="supp r d3" style="margin-top:1.2rem">Twenty-one criteria go at the store on purpose, on top of the thirteen that check it does the job at all. Pick any one to see the checks it makes.</p>
 </section>
 
-<!-- 6 proving the grader -->
-<section class="appendix" aria-hidden="true">
-  <div class="kicker r">proving the grader</div>
-  <h2 class="r d1">We plant a defect, and the grader has to catch it</h2>
-  <div class="kill r d2" role="img" aria-label="the whole suite of criteria, with one killed by a planted defect and the whole board blanked by an empty build">
-    <div class="kill-head">
-      <span>34 criteria &middot; one tile each</span>
-      <span class="tally">
-        <span class="ky1">34 pass</span>
-        <span class="ky2">33 pass &middot; 1 fail</span>
-        <span class="ky3">0 pass</span>
-      </span>
-    </div>
-    <div class="tiles"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="target"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-    <div class="killcap">
-      <span class="kc1">a store that passes every one of them</span>
-      <span class="kc2">its stock guard removed &middot; <b>no-oversell</b> fails, and the other 33 hold</span>
-      <span class="kc3">a store with nothing built in it &middot; the whole board holds at zero</span>
-    </div>
+<!-- automated validation -->
+<section class="visual-tight visual-first">
+  <div class="kicker r">testing the benchmark</div>
+  <h2 class="r d1">Stack Bench tests itself.</h2>
+  <p class="lead r d2">Automated tests verify the harness. Controlled apps prove the grader.</p>
+  <div class="proof-flow cto-visual r d3" role="img" aria-label="automated harness tests run, a working reference app passes, a planted defect fails the intended check, and an empty app earns no points">
+    <div class="proof-step"><span>harness suite</span><b>Code paths tested</b><small>unit · integration · run controls</small></div>
+    <div class="proof-step"><span>reference control</span><b>Working app passes</b><small>the full selected test plan</small></div>
+    <div class="proof-step"><span>defect control</span><b>Known defect fails</b><small>the intended check, without noise</small></div>
+    <div class="proof-step"><span>empty control</span><b>Missing work scores zero</b><small>no feature, no evidence, no points</small></div>
   </div>
-  <p class="supp r d4" style="margin-top:1.2rem">A criterion starts scoring once it passes a working store, fails the planted defect on its own, and holds an empty build at zero. If a planted defect survives, the grader is at fault, so that criterion goes back for repair. Prompts, guidance and tests stay untouched.</p>
 </section>
 
 <!-- 7 score -->
 <section class="visual-first">
   <div class="kicker r">results</div>
-  <h2 class="r d1">Each product area gets a score.</h2>
-  <div class="provisional r d2">example scores</div>
-  <div class="board r d3" role="img" aria-label="example product area score calculation">
-    <table>
-      <tr><th>product area</th><th>passed points</th><th>available points</th><th>score</th><th>how far it got</th></tr>
-      <tr class="hero"><td>identity</td><td class="num">12</td><td class="num">12</td><td class="num">100%</td><td>level 3 passed</td></tr>
-      <tr><td>inventory</td><td class="num">15</td><td class="num">20</td><td class="num">75%</td><td>stopped at level 3</td></tr>
-      <tr><td>fulfilment</td><td class="num">8</td><td class="num">16</td><td class="num">50%</td><td>stopped at level 2</td></tr>
-      <tr><td>reviews</td><td class="num">6</td><td class="num">6</td><td class="num">100%</td><td>complete at level 1</td></tr>
-    </table>
+  <h2 class="r d1">Each product area is scored separately.</h2>
+  <p class="supp r d2">Each product area is scored independently, unopened paths score zero, and shared checks count once. The overall score is the average.</p>
+  <div class="scorevis r d3" role="img" aria-label="example product area scores of 100, 75, 50, and 100 percent averaging to an overall score of 81 percent">
+    <div class="scoreareas">
+      <div class="scorerow">
+        <div class="scorelabel"><b>Identity</b><span>12 of 12 points</span></div>
+        <div class="scorebar"><i style="--score:100%"></i></div>
+        <div class="scorepct">100%</div>
+      </div>
+      <div class="scorerow">
+        <div class="scorelabel"><b>Inventory</b><span>15 of 20 points</span></div>
+        <div class="scorebar"><i style="--score:75%"></i></div>
+        <div class="scorepct">75%</div>
+      </div>
+      <div class="scorerow">
+        <div class="scorelabel"><b>Fulfilment</b><span>8 of 16 points</span></div>
+        <div class="scorebar"><i style="--score:50%"></i></div>
+        <div class="scorepct">50%</div>
+      </div>
+      <div class="scorerow">
+        <div class="scorelabel"><b>Reviews</b><span>6 of 6 points</span></div>
+        <div class="scorebar"><i style="--score:100%"></i></div>
+        <div class="scorepct">100%</div>
+      </div>
+    </div>
+    <div class="overallscore">
+      <span>example overall</span>
+      <strong>81%</strong>
+      <small>Rounded average of the four product-area scores</small>
+    </div>
   </div>
-  <div class="scoremath r d4">
-    <div class="formula"><b>PRODUCT AREA</b><span>passed test points &divide; available test points</span></div>
-    <div class="promptarrow">&rarr;</div>
-    <div class="formula"><b>OVERALL SCORE</b><span>average of all product areas</span></div>
-  </div>
-  <p class="supp r d4">Each product area is scored independently, then the area scores are averaged. Features that never open score zero, invalid test attempts stay separate, and shared checks count once.</p>
 </section>
 
 <!-- 8 evidence -->
 <section class="fit-slide visual-first">
   <div class="kicker r">evidence</div>
-  <h2 class="r d1">Inspect any result.</h2>
-  <div class="pack r d2">
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M8 12l3 3 5-6"/></svg>
-        <b>test results</b><i>one per test, with the user and deadline</i>
-      </div>
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 20h20"/><path d="M5 20V10M11 20V4M17 20v-6"/></svg>
-        <b>the run record</b><i>score, cost, tokens, wall time, session id</i>
-      </div>
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h8M9 15h8M9 18h5"/></svg>
-        <b>the prompt</b><i>the exact text the agent was handed</i>
-      </div>
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M12 8v4M12 14h.01"/></svg>
-        <b>repair feedback</b><i>the failures sent back to the agent</i>
-      </div>
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h13v12H3z"/><path d="M16 10l5-3v10l-5-3z"/></svg>
-        <b>video</b><i>one recording for each test user</i>
-      </div>
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3z"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="8.5" cy="9.5" r="1.3"/></svg>
-        <b>screenshots</b><i>one per test, and one per failure</i>
-      </div>
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-7 4 14 3-7h6"/></svg>
-        <b>traces</b><i>a browser trace with snapshots for each user</i>
-      </div>
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4"/><path d="M12 11v10"/></svg>
-        <b>the source</b><i>the exact source that produced the score</i>
-      </div>
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4L4 12l5 8M15 4l5 8-5 8"/></svg>
-        <b>required controls</b><i>checked before testing begins</i>
-      </div>
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v18"/><path d="M5 4h13l-3 4 3 4H5z"/></svg>
-        <b>the preflight</b><i>the checks that had to pass before any spend</i>
-      </div>
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg>
-        <b>a known broken app</b><i>proves the tests catch the defect they claim to catch</i>
-      </div>
-      <div class="rcpt">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M6.7 17.3L17.3 6.7"/></svg>
-        <b>an empty app</b><i>proves missing work cannot earn points</i>
-      </div>
+  <h2 class="r d1">Inspect the full run package.</h2>
+  <p class="lead r d2">Open the exact result, source, visuals, and run economics behind the score.</p>
+  <div class="pack r d3" role="img" aria-label="the evidence package includes test results, the run record, prompt, repair feedback, video, screenshots, traces, source, controls, preflight, a known broken app, and an empty app">
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"/><path d="M8 12l3 3 5-6"/></svg><b>test results</b><i>one verdict for every selected check</i></div>
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 20h20"/><path d="M5 20V10M11 20V4M17 20v-6"/></svg><b>run record</b><i>score, cost, tokens, time, session</i></div>
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h8M9 15h8M9 18h5"/></svg><b>exact prompt</b><i>the request given to the agent</i></div>
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M12 8v4M12 14h.01"/></svg><b>repair feedback</b><i>failures returned to the agent</i></div>
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h13v12H3z"/><path d="M16 10l5-3v10l-5-3z"/></svg><b>video</b><i>recording for each test actor</i></div>
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3z"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="8.5" cy="9.5" r="1.3"/></svg><b>screenshots</b><i>captured results and failures</i></div>
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12h4l3-7 4 14 3-7h6"/></svg><b>browser traces</b><i>snapshots and actions for each actor</i></div>
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7l8-4 8 4v10l-8 4-8-4z"/><path d="M4 7l8 4 8-4"/><path d="M12 11v10"/></svg><b>source</b><i>the exact app that produced the score</i></div>
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4L4 12l5 8M15 4l5 8-5 8"/></svg><b>required controls</b><i>checked before grading begins</i></div>
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v18"/><path d="M5 4h13l-3 4 3 4H5z"/></svg><b>preflight</b><i>checks completed before model spend</i></div>
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg><b>known broken app</b><i>proves the intended defect is caught</i></div>
+    <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M6.7 17.3L17.3 6.7"/></svg><b>empty app</b><i>proves missing work earns zero</i></div>
   </div>
-  <p class="supp r d4">The evidence package records when work became ready, every repair attempt, every request, and any later change to the repair limit. A paused run resumes only with the same app, test plan, model and prior evidence.</p>
 </section>
 
 <!-- 9 close -->
@@ -1506,10 +1435,11 @@
       <span class="mt-name">Stack C</span><span class="rail"><u class="rC"></u><i style="left:33%"></i><i style="left:66%"></i><i style="left:98%"></i></span><span class="mt-val js-rounds">0</span><span class="mt-val js-cost">$0.00</span><span class="mt-val score js-score">0%</span>
     </div>
   </div>
-  <p class="supp r d3">Every stack starts with the same app brief, model, test plan and scoring. The final report shows how far each stack progressed, what failed, what it cost to repair, and the evidence behind every score.</p>
+  <p class="supp r d3">The report puts progress, score, repairs, cost, and evidence side by side. Any result can be opened back to its full run package.</p>
 </section>
 
 <script>
+  document.getElementById('repair-slide').before(document.getElementById('graph-slide'));
   const sections = [...document.querySelectorAll('section:not(.appendix)')];
   const dots = document.getElementById('dots');
   sections.forEach((s, i) => {
