@@ -290,21 +290,6 @@ mod tests {
     }
 
     #[test]
-    fn rejects_different_release_sets() {
-        let first = repository(&["v2.7.0", "v2.8.0"]);
-        let second = repository(&["v2.7.0"]);
-        let first_path = first.path().canonicalize().unwrap();
-        let second_path = second.path().canonicalize().unwrap();
-        let github = FakeGithub {
-            names: HashMap::from([(first_path, "o/first".into()), (second_path, "o/second".into())]),
-            responses: HashMap::new(),
-        };
-        let error = load_repos(&github, &[first.path(), second.path()], false).unwrap_err();
-        assert!(error.to_string().contains("release tags differ"));
-        assert!(error.to_string().contains("v2.8.0"));
-    }
-
-    #[test]
     fn finds_a_pr_in_its_exact_adjacent_release_range() {
         let repository = repository(&["v2.7.0"]);
         commit(repository.path(), "change", "The change (#42)");

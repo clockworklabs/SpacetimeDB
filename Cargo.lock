@@ -909,6 +909,7 @@ dependencies = [
  "anyhow",
  "clap 4.5.50",
  "rollback-coordination",
+ "tracing-subscriber",
 ]
 
 [[package]]
