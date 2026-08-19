@@ -131,9 +131,11 @@ test('corrected workflows do not grade a particular panel-closing interaction', 
   const cart = compileScenarioDefinition(readJson(join(root, 'scenarios',
     '01-cart-2.4.0.json')));
   const checkout = cart.features[0].criteria.find(criterion => criterion.id === '4d').steps;
-  assert(checkout.some(step => step.do === 'reload'));
+  assert(checkout.some(step => step.do === 'signIn' && step.actor === 'checkout2'));
+  assert(!checkout.some(step => step.do === 'reload'),
+    'checkout persistence must not duplicate the separate cart-reload check');
   assert(checkout.some(step => step.do === 'expectNumber'
-    && step.testid === 'cart-count' && step.equals === 0));
+    && step.actor === 'checkout2' && step.testid === 'cart-count' && step.equals === 0));
 
   const warehouse = compileScenarioDefinition(readJson(join(root, 'scenarios',
     '01-warehouse-stock-live-2.4.0.json')));
@@ -171,6 +173,12 @@ test('every scored L1 2.4 check is independently selectable with its numeric pre
 test('catalog, order, warehouse, and direct-action claims use exact evidence', () => {
   const core = compileScenarioDefinition(readJson(join(root, 'scenarios', '01-core-2.4.0.json')));
   const catalog = core.features.find(feature => feature.id === 2);
+  const catalogValues = catalog.criteria.find(criterion => criterion.id === '2a').steps;
+  assert(catalogValues.some(step => step.do === 'fill' && step.actor === 'inspector'
+    && step.text === 'Air Purifier'));
+  assert(catalogValues.filter(step => step.do.startsWith('expect'))
+    .every(step => step.actor === 'inspector'),
+  'catalog values must use a separate view so ranking defects cannot hide the inspected item');
   assert.equal(catalog.criteria.find(criterion => criterion.id === '2b').steps[0].do,
     'expectSequence');
   assert.equal(catalog.criteria.find(criterion => criterion.id === '2c').steps[1].do,

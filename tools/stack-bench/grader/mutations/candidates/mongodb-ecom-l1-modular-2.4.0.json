@@ -325,12 +325,22 @@
       "id": "reconnect-hydration-loses-account-state",
       "scenario": "tracks/ecommerce/scenarios/01-account-state-reconnect-2.4.0.json",
       "targets": [{ "feature": 105, "criterion": "105b" }],
-      "desc": "Reconnect hydration discards the account's persisted cart response.",
+      "desc": "A network disconnect clears the cart and reconnect ignores both the fresh cart snapshot and later cart events.",
       "file": "client/src/App.tsx",
-      "edits": [{
-        "find": "  const refreshCart = useCallback(async (tok: string) => {\n    const data = await apiFetch(\"/api/cart\", tok);\n    setCart(data);\n  }, []);",
-        "replace": "  const refreshCart = useCallback(async (tok: string) => {\n    await apiFetch(\"/api/cart\", tok);\n    setCart({ items: [], total: 0 }); // mutant: account state is discarded on hydration\n  }, []);"
-      }]
+      "edits": [
+        {
+          "find": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;",
+          "replace": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;\n    let lostAccountState = false;"
+        },
+        {
+          "find": "      if (token) {\n        refreshCart(token).catch((err) => console.error(err));\n      }",
+          "replace": "      if (token && !lostAccountState) {\n        refreshCart(token).catch((err) => console.error(err));\n      }"
+        },
+        {
+          "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => setCart(data));",
+          "replace": "    socket.on(\"disconnect\", () => {\n      lostAccountState = true;\n      setCart({ items: [], total: 0 });\n    });\n    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => { if (!lostAccountState) setCart(data); });"
+        }
+      ]
     },
     {
       "id": "order-history-is-not-owner-scoped",

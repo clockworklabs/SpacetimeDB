@@ -133,6 +133,12 @@ test('cart-boundary mutants exercise the named server actions', () => {
     'server/src/index.ts');
   assert.equal(mutationEdits(mutations.get('negative-cart-quantity-is-accepted')).length, 2,
     'the negative-quantity mutant must bypass both the route check and schema validation');
+
+  const reconnect = mutationEdits(mutations.get('reconnect-hydration-loses-account-state'));
+  assert.equal(reconnect.length, 3);
+  assert(reconnect.some(edit => edit.replace.includes('socket.on(\"disconnect\"')));
+  assert(reconnect.some(edit => edit.replace.includes('!lostAccountState')),
+    'the reconnect defect must block the recovery paths that defeated the first live mutant');
 });
 
 test('MongoDB L1 2.4 candidate is bound to the exact derived fixture and compiles', t => {

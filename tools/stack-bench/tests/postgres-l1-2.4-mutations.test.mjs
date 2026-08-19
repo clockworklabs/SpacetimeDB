@@ -75,6 +75,21 @@ test('every PostgreSQL target resolves to the exact L1 2.4 release scenario', t 
   t.diagnostic(`46/46 scored keys covered; missing: ${missing.join(', ') || 'none'}`);
 });
 
+test('PostgreSQL live survivors are replaced by deterministic database defects', () => {
+  const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
+  const duplicate = mutationFileEdits(mutations.get('repeat-review-creates-a-second-row'));
+  assert.equal(duplicate.length, 1);
+  assert(duplicate[0].replace.includes(
+    'ALTER TABLE review DROP CONSTRAINT IF EXISTS review_item_id_account_id_unique'));
+  assert(!duplicate[0].replace.includes('ON CONFLICT'));
+
+  const ownership = mutationFileEdits(mutations.get('cart-add-is-forced-into-another-account'));
+  assert.equal(ownership.length, 1);
+  assert(ownership[0].replace.includes('SELECT id FROM account ORDER BY id LIMIT 1'));
+  assert(!ownership[0].replace.includes("username = 'vic'"),
+    'scenario actor names are not literal persisted usernames');
+});
+
 test('every PostgreSQL mutation anchor applies exactly once and remains valid TypeScript', () => {
   const fixture = selectReferenceFixture(loadReferenceRegistry(), {
     backend: 'postgres', track: 'ecommerce', level: 1, recipe: RECIPE,

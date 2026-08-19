@@ -212,14 +212,14 @@
       }]
     },
     {
-      "id": "repeat-review-duplicates-by-reassigning-the-first-row",
+      "id": "repeat-review-creates-a-second-row",
       "scenario": "tracks/ecommerce/scenarios/01-review-uniqueness-2.4.0.json",
       "targets": [{ "feature": 6, "criterion": "6b" }],
-      "desc": "A repeat submission reassigns the first row before inserting the replacement, leaving two visible reviews from one account workflow without changing the installed schema.",
+      "desc": "Remove the live database uniqueness constraint and insert a second review for the same item and account.",
       "file": "server/src/index.ts",
       "edits": [{
-        "find": "      `INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)\n       ON CONFLICT (item_id, account_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment`,",
-        "replace": "      `WITH moved AS (\n         UPDATE review SET account_id = (SELECT id FROM account WHERE id <> $2 ORDER BY id LIMIT 1)\n         WHERE item_id = $1 AND account_id = $2\n       )\n       INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)`,"
+        "find": "    await pool.query(\n      `INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)\n       ON CONFLICT (item_id, account_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment`,",
+        "replace": "    await pool.query(\"ALTER TABLE review DROP CONSTRAINT IF EXISTS review_item_id_account_id_unique\");\n    await pool.query(\n      `INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)`,"
       }]
     },
     {
@@ -391,11 +391,11 @@
       "id": "cart-add-is-forced-into-another-account",
       "scenario": "tracks/ecommerce/scenarios/01-cart-boundary-2.4.0.json",
       "targets": [{ "feature": 109, "criterion": "109a" }],
-      "desc": "Ignore the authenticated caller and force every cart addition into the scenario owner's account.",
+      "desc": "Ignore the authenticated caller and force every cart addition into the first account created by the scenario.",
       "file": "server/src/index.ts",
       "edits": [{
         "find": "    const accountId = req.account!.id;\n    const client = await pool.connect();\n    let state;",
-        "replace": "    const owner = await pool.query(`SELECT id FROM account WHERE username = 'vic'`);\n    const accountId = owner.rows[0].id; // mutant: ignore the authenticated caller\n    const client = await pool.connect();\n    let state;"
+        "replace": "    const owner = await pool.query(`SELECT id FROM account ORDER BY id LIMIT 1`);\n    const accountId = owner.rows[0].id; // mutant: ignore the authenticated caller\n    const client = await pool.connect();\n    let state;"
       }]
     },
     {

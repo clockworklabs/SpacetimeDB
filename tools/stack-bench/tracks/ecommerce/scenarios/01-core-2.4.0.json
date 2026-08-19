@@ -9,7 +9,7 @@
     {
       "id": 2,
       "name": "Storefront is public and live",
-      "actors": ["buyer", "visitor"],
+      "actors": ["buyer", "visitor", "inspector"],
       "setup": [
         { "do": "signUp", "actor": "buyer", "name": "dov" }
       ],
@@ -19,9 +19,10 @@
           "desc": "a signed-out visitor sees the catalogue with the seeded prices and stock",
           "points": 1,
           "steps": [
-            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Air Purifier" },
-            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 189 },
-            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 100 }
+            { "do": "fill", "actor": "inspector", "testid": "search-input", "text": "Air Purifier", "enter": true, "settleMs": 1500 },
+            { "do": "expect", "actor": "inspector", "testid": "item-card", "contains": "Air Purifier", "in": { "testid": "search-results" } },
+            { "do": "expectNumber", "actor": "inspector", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 189 },
+            { "do": "expectNumber", "actor": "inspector", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 100 }
           ],
           "statedBy": "each card shows its name, current price, and total stock"
         },
