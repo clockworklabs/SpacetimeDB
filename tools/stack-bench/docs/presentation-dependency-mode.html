@@ -1072,14 +1072,14 @@
     <span>SpacetimeDB</span>
   </div>
   <h1 class="r d1">Stack Bench</h1>
-  <p class="lead r d2"><span>Build the same product on different database stacks. Test what works, repair what fails, and compare the evidence.</span></p>
+  <p class="lead r d2"><span>Build the same product on different app stacks. Test what works, repair what fails, and compare the evidence.</span></p>
 </section>
 
 <!-- 2 product overview -->
 <section class="visual-tight visual-first">
   <div class="kicker r">what it includes</div>
   <h2 class="r d1">What Stack Bench includes.</h2>
-  <p class="lead r d2">One system runs the build, tests the finished product, manages repairs, and preserves everything needed to compare database stacks.</p>
+  <p class="lead r d2">One system runs the build, tests the finished product, manages repairs, and preserves everything needed to compare app stacks.</p>
   <div class="feature-grid r d3" role="list" aria-label="Stack Bench capabilities">
     <article class="feature-item" role="listitem">
       <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M7 8h18v16H7z"/><path d="M11 13l3 3-3 3M17 19h4"/></svg></div>
@@ -1094,12 +1094,12 @@
     <article class="feature-item" role="listitem">
       <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 9l11-5 11 5-11 5zM5 9v14l11 5 11-5V9M16 14v14"/></svg></div>
       <h3>Isolated stack runtime</h3>
-      <p>Starts the generated app and database services in controlled containers.</p>
+      <p>Starts the generated app and selected stack services in controlled containers.</p>
     </article>
     <article class="feature-item" role="listitem">
       <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 7h22v16H5zM10 27h12M16 23v4"/><path d="M10 15l4 4 8-9"/></svg></div>
       <h3>Automated grader</h3>
-      <p>Exercises real user flows, database changes, failures, and concurrency.</p>
+      <p>Exercises real user flows, direct data changes, failures, and concurrency.</p>
     </article>
     <article class="feature-item" role="listitem">
       <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M25 11a10 10 0 10.5 9"/><path d="M25 5v6h-6M12 12l8 8M20 12l-8 8"/></svg></div>
@@ -1119,14 +1119,14 @@
   <div class="kicker r">one controlled run</div>
   <h2 class="r d1">How Stack Bench runs.</h2>
   <p class="lead r d2">Each run pins the request and environment, isolates the build and services, and keeps repair feedback and evidence in one reproducible record.</p>
-  <svg class="dia r d3" viewBox="0 0 960 452" role="img" aria-label="Stack Bench coordinates preflight, the agent, database services, the generated app, browser grading, results, evidence, and repair">
+  <svg class="dia r d3" viewBox="0 0 960 452" role="img" aria-label="Stack Bench coordinates preflight, the agent, stack services, the generated app, browser grading, results, evidence, and repair">
     <defs><marker id="a2" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#2b3a42"/></marker></defs>
     <rect class="b key" x="385" y="8" width="200" height="40"/><text class="lbl" x="405" y="26">Stack Bench</text><text class="sub" x="405" y="40">one run · one record</text>
     <rect class="b" x="60" y="92" width="200" height="40"/><text class="lbl" x="78" y="110">preflight</text><text class="sub" x="78" y="124">validate before spend</text>
     <rect class="b" x="385" y="92" width="200" height="40"/><text class="lbl" x="405" y="110">AI agent</text><text class="sub" x="405" y="124">build or repair</text>
-    <rect class="b" x="700" y="92" width="200" height="40"/><text class="lbl" x="718" y="110">database stack</text><text class="sub" x="718" y="124">selected for this run</text>
+    <rect class="b" x="700" y="92" width="200" height="40"/><text class="lbl" x="718" y="110">app stack</text><text class="sub" x="718" y="124">selected for this run</text>
     <rect class="b lit" x="385" y="168" width="200" height="40"/><text class="lbl" x="405" y="186">build container</text><text class="sub" x="405" y="200">isolated agent session</text>
-    <rect class="b lit" x="700" y="168" width="200" height="40" style="animation-delay:.8s"/><text class="lbl" x="718" y="186">database services</text><text class="sub" x="718" y="200">isolated and reset</text>
+    <rect class="b lit" x="700" y="168" width="200" height="40" style="animation-delay:.8s"/><text class="lbl" x="718" y="186">stack services</text><text class="sub" x="718" y="200">isolated and reset</text>
     <rect class="b key" x="385" y="244" width="515" height="40"/><text class="lbl" x="405" y="262">running application</text><text class="sub" x="405" y="276">the generated product against its assigned stack</text>
     <rect class="b key" x="130" y="320" width="770" height="46"/><text class="lbl" x="150" y="338">browser grader</text><text class="sub" x="150" y="354">customer sessions · operator sessions · controlled probes</text>
     <rect class="b" x="130" y="396" width="360" height="44"/><text class="lbl" x="150" y="414">typed results</text><text class="sub" x="150" y="429">pass · fail · inconclusive · system failure</text>
@@ -1147,7 +1147,7 @@
     <div class="run-plan-label">Frozen for the run</div>
     <div class="run-plan">
       <div class="run-setting"><b>Model</b><span>provider + exact model</span></div>
-      <div class="run-setting"><b>Stack</b><span>database + adapter</span></div>
+      <div class="run-setting"><b>Stack</b><span>backend + chosen tools</span></div>
       <div class="run-setting"><b>Product work</b><span>features ready now</span></div>
       <div class="run-setting"><b>Tests</b><span>checks + scoring</span></div>
       <div class="run-setting"><b>Budget</b><span>build + repair limits</span></div>
@@ -1163,7 +1163,7 @@
       </div>
       <div class="request-fields">
         <div class="request-field"><b>Product brief</b><span>the app and current features</span></div>
-        <div class="request-field"><b>Database access</b><span>connection details and ports</span></div>
+        <div class="request-field"><b>Stack access</b><span>connection details and ports</span></div>
         <div class="request-field"><b>API reference</b><span>selected SDK material</span></div>
         <div class="request-field"><b>Testing interface</b><span>required hooks and lint command</span></div>
       </div>
@@ -1175,14 +1175,14 @@
 <section class="visual-tight visual-first">
   <div class="kicker r">how testing works</div>
   <h2 class="r d1">Stack Bench tests the finished product.</h2>
-  <p class="lead r d2">The grader uses real browser sessions, direct database changes, service interruptions, and concurrent actions, then checks both visible and persisted state.</p>
+  <p class="lead r d2">The grader uses real browser sessions, direct data changes, service interruptions, and concurrent actions, then checks both visible and persisted state.</p>
   <svg class="behvis cto-visual r d3" viewBox="0 0 920 380" role="img" aria-label="six end-to-end test areas surround the generated application">
     <path class="wire live" d="M290 64 H360 L400 138 M290 190 H360 M290 316 H360 L400 242 M630 64 H560 L520 138 M630 190 H560 M630 316 H560 L520 242"/>
     <rect class="area" x="20" y="34" width="270" height="60" rx="8"/><text class="label" x="42" y="59">REAL USER FLOWS</text><text class="minor" x="42" y="78">multiple browser actors</text>
     <rect class="area" x="20" y="160" width="270" height="60" rx="8"/><text class="label" x="42" y="185">ACCESS + OWNERSHIP</text><text class="minor" x="42" y="204">protected and cross-account actions</text>
     <rect class="area" x="20" y="286" width="270" height="60" rx="8"/><text class="label" x="42" y="311">DURABILITY + RECOVERY</text><text class="minor" x="42" y="330">reload · reconnect · restart</text>
     <circle class="core" cx="460" cy="190" r="98"/><text class="cap" x="460" y="166" text-anchor="middle">GENERATED APP</text><text class="label" x="460" y="198" text-anchor="middle" style="font-size:17px">TESTED END TO END</text><text class="minor" x="460" y="220" text-anchor="middle">visible + persisted state</text>
-    <rect class="area" x="630" y="34" width="270" height="60" rx="8"/><text class="label" x="652" y="59">LIVE STATE</text><text class="minor" x="652" y="78">direct database changes reach open pages</text>
+    <rect class="area" x="630" y="34" width="270" height="60" rx="8"/><text class="label" x="652" y="59">LIVE STATE</text><text class="minor" x="652" y="78">direct data changes reach open pages</text>
     <rect class="area" x="630" y="160" width="270" height="60" rx="8"/><text class="label" x="652" y="185">CONCURRENCY</text><text class="minor" x="652" y="204">overlapping actions · exact totals</text>
     <rect class="area" x="630" y="286" width="270" height="60" rx="8"/><text class="label" x="652" y="311">OPERATIONS + ACCOUNTING</text><text class="minor" x="652" y="330">shipping · pricing · revenue</text>
   </svg>
