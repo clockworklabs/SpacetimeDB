@@ -135,15 +135,9 @@
   section.visual-first > .lead,
   section.visual-first > .supp { order: 1; max-width: 920px; margin: 0 auto 1.2rem !important; padding-right: 10rem; box-sizing: border-box; font-size: .94rem; line-height: 1.45; color: var(--n4); }
   section.visual-first > :not(.kicker):not(h2):not(p) { order: 2; }
-  section.comparison-slide > .mt { max-width: 920px; margin-top: .4rem; margin-bottom: 1.2rem; gap: .7rem; }
-  section.comparison-slide .mt-head,
-  section.comparison-slide .mt-row { grid-template-columns: 8rem 1fr 4.5rem 5.5rem 5rem; gap: 1.25rem; }
-  section.comparison-slide .rail { height: 38px; }
   @media (max-width: 900px) {
     section.visual-first > .lead,
     section.visual-first > .supp { padding-right: 0; }
-    section.comparison-slide .mt-head,
-    section.comparison-slide .mt-row { grid-template-columns: 5rem 1fr 3.3rem 4.2rem 4rem; gap: .55rem; }
   }
 
   /* loop diagram */
@@ -312,50 +306,6 @@
   }
   section.on .d-toast { animation: dToast 7s infinite; }
   @keyframes dToast { 0%, 12% { opacity: 0; transform: translateY(6px); } 16%, 88% { opacity: 1; transform: none; } 94%, 100% { opacity: 0; } }
-
-
-
-  /* what is measured: one finish line, three distances to it */
-  .mt { width: 100%; max-width: 720px; margin: 1.7rem 0 1.4rem; display: grid; gap: .45rem; }
-  .mt-head, .mt-row { display: grid; grid-template-columns: 7rem 1fr 3.4rem 3.4rem 4.4rem; gap: 1rem; align-items: center; }
-  /* the score is the headline now, so it carries the weight the rail used to */
-  .mt-val.score { color: var(--n1); }
-  .mt-row.done .mt-val.score { color: var(--n1); }
-  .mt-head {
-    font-family: var(--font-mono); font-size: .68rem; letter-spacing: .12em;
-    text-transform: uppercase; color: var(--n4); padding-bottom: .15rem;
-  }
-  .mt-head .rt { text-align: right; }
-  .mt-head .fin { color: var(--n4); letter-spacing: .06em; }
-  .mt-name { font-family: var(--font-mono); font-size: .8rem; color: var(--n3); }
-  .rail {
-    position: relative; height: 26px; background: var(--shade7); border-radius: 3px; overflow: hidden;
-    border: 1px solid var(--shade4); border-right: 1px solid var(--green-25);
-  }
-  .rail u {
-    position: absolute; left: 0; top: 0; bottom: 0; width: 0;
-    background: var(--green-10); border-right: 1px solid var(--green);
-  }
-  /* a tick is a fix round landing; it lights as the run crosses it */
-  .rail i {
-    position: absolute; top: 0; bottom: 0; width: 1px; background: var(--shade4);
-    transition: background .25s ease, box-shadow .25s ease;
-  }
-  .rail i.hit { background: var(--green); box-shadow: 0 0 7px 1px var(--green-25); }
-  .rail i.now { animation: tickHit .7s ease-out; }
-  @keyframes tickHit { 0% { box-shadow: 0 0 0 0 var(--green-25) } 100% { box-shadow: 0 0 12px 4px transparent } }
-  .mt-row.done .rail { border-right-color: var(--green); }
-  .mt-val { font-family: var(--font-mono); font-size: .82rem; color: var(--n1); text-align: right; }
-  .mt-val.mut { color: var(--n4); }
-  .mt-row.done .mt-val { color: var(--n1); }
-  /* each database takes its own share of the cycle, then holds wherever its
-     fixes ran out: only the first one reaches the far edge */
-  @keyframes mtA { 0% { width: 0 } 22% { width: 100% } 100% { width: 100% } }
-  @keyframes mtB { 0% { width: 0 } 44% { width: 86% } 100% { width: 86% } }
-  @keyframes mtC { 0% { width: 0 } 66% { width: 61% } 100% { width: 61% } }
-  section.on .rail u.rA { animation: mtA 10s linear infinite; }
-  section.on .rail u.rB { animation: mtB 10s linear infinite; }
-  section.on .rail u.rC { animation: mtC 10s linear infinite; }
 
   /* proving the grader: the whole suite on screen, so a clean kill is visible */
   .kill { width: 100%; max-width: 940px; display: grid; gap: .85rem; }
@@ -1576,8 +1526,8 @@
 <!-- 7 score -->
 <section class="visual-first">
   <div class="kicker r">results</div>
-  <h2 class="r d1">Each product area is scored separately.</h2>
-  <p class="supp r d2">Each product area is scored independently, unopened paths score zero, and shared checks count once. The overall score is the average.</p>
+  <h2 class="r d1">Scores show where each stack succeeds.</h2>
+  <p class="supp r d2">Each product area keeps its own score, then the area scores are averaged. Stack results stay comparable without hiding where they differ.</p>
   <div class="scorevis r d3" role="img" aria-label="example product area scores of 100, 75, 50, and 100 percent averaging to an overall score of 81 percent">
     <div class="scoreareas">
       <div class="scorerow">
@@ -1602,7 +1552,7 @@
       </div>
     </div>
     <div class="overallscore">
-      <span>example overall</span>
+      <span>overall score</span>
       <strong>81%</strong>
       <small>Rounded average of the four product-area scores</small>
     </div>
@@ -1628,25 +1578,6 @@
     <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"/></svg><b>known broken app</b><i>proves the intended defect is caught</i></div>
     <div class="rcpt"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M6.7 17.3L17.3 6.7"/></svg><b>empty app</b><i>proves missing work earns zero</i></div>
   </div>
-</section>
-
-<!-- 9 close -->
-<section class="visual-first comparison-slide">
-  <div class="kicker r">one report</div>
-  <h2 class="r d1">Compare the stacks.</h2>
-  <div class="mt r d2" aria-label="illustrative comparison of three Stack Bench runs">
-    <div class="mt-head"><span>example stack</span><span>progress</span><span class="rt">repairs</span><span class="rt">cost</span><span class="rt fin">score</span></div>
-    <div class="mt-row" data-rounds="1" data-cost="4.80" data-score="100">
-      <span class="mt-name">Stack A</span><span class="rail"><u class="rA"></u><i style="left:98%"></i></span><span class="mt-val js-rounds">0</span><span class="mt-val js-cost">$0.00</span><span class="mt-val score js-score">0%</span>
-    </div>
-    <div class="mt-row" data-rounds="2" data-cost="7.25" data-score="86">
-      <span class="mt-name">Stack B</span><span class="rail"><u class="rB"></u><i style="left:50%"></i><i style="left:98%"></i></span><span class="mt-val js-rounds">0</span><span class="mt-val js-cost">$0.00</span><span class="mt-val score js-score">0%</span>
-    </div>
-    <div class="mt-row" data-rounds="3" data-cost="9.90" data-score="61">
-      <span class="mt-name">Stack C</span><span class="rail"><u class="rC"></u><i style="left:33%"></i><i style="left:66%"></i><i style="left:98%"></i></span><span class="mt-val js-rounds">0</span><span class="mt-val js-cost">$0.00</span><span class="mt-val score js-score">0%</span>
-    </div>
-  </div>
-  <p class="supp r d3">The report puts progress, score, repairs, cost, and evidence side by side. Any result can be opened back to its full run package.</p>
 </section>
 
 <script>
@@ -1694,56 +1625,6 @@
     targetTimer = setTimeout(() => { target = null; }, 1200);
   };
   const base = () => (target !== null ? target : nearest());
-
-  // The rounds and the spend read off the same clock as the rail that draws them,
-  // so a fix round lands, a tick lights and the bill moves at the same instant.
-  const meter = document.querySelector('.mt');
-  if (meter) {
-    const rows = [...meter.querySelectorAll('.mt-row')].map(row => ({
-      row,
-      fill: row.querySelector('.rail u'),
-      ticks: [...row.querySelectorAll('.rail i')],
-      rounds: +row.dataset.rounds,
-      cost: +row.dataset.cost,
-      score: +row.dataset.score,
-      elR: row.querySelector('.js-rounds'),
-      elC: row.querySelector('.js-cost'),
-      elS: row.querySelector('.js-score'),
-      last: -1,
-    }));
-    const tick = () => {
-      for (const r of rows) {
-        const anim = r.fill.getAnimations()[0];
-        if (!anim || anim.currentTime == null) continue;
-        // the rail is full at r.rounds x 22% of the cycle, one slice per round
-        // currentTime runs past the duration on a repeating animation, so wrap it
-        const dur = anim.effect.getTiming().duration;
-        const p = Math.min(1, ((anim.currentTime % dur) / dur) / (r.rounds * 0.22));
-        const done = Math.floor(p * r.rounds + 1e-9);
-        // floor the cents so the total cannot reach the final figure before the
-        // last round does; the two land together
-        r.elC.textContent = '$' + (Math.floor(r.cost * p * 100) / 100).toFixed(2);
-        r.elS.textContent = Math.round(r.score * p) + '%';
-        if (done !== r.last) {
-          r.elR.textContent = done;
-          r.ticks.forEach((t, i) => {
-            t.classList.toggle('hit', i < done);
-            if (i >= done) t.classList.remove('now');
-          });
-          const crossed = r.ticks[done - 1];
-          if (crossed && done > r.last) {
-            crossed.classList.remove('now');
-            void crossed.offsetWidth;
-            crossed.classList.add('now');
-          }
-          r.row.classList.toggle('done', done >= r.rounds);
-          r.last = done;
-        }
-      }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }
 
   // attack picker
   document.querySelectorAll('.atk-item').forEach(btn => {
