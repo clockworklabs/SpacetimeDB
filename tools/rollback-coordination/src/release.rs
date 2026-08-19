@@ -31,7 +31,7 @@ impl Release {
         // public and private repositories began using the same release tags.
         // We compare only the core version here. SemVer orders prereleases before
         // their base release, whereas our hotfix tags come after it.
-        if Version::new(version.major, version.minor, version.patch) < Version::new(2,7,0) {
+        if Version::new(version.major, version.minor, version.patch) < Version::new(2, 7, 0) {
             tracing::debug!("Not parsing tag that is too old");
             return Ok(None);
         }

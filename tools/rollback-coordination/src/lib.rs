@@ -88,9 +88,7 @@ pub fn pull_requests_in_range(repo_path: &Path, base: &str, head: &str) -> Resul
         let number = subject
             .strip_suffix(')')
             .and_then(|subject| subject.rsplit_once("(#"))
-            .map(|(_, number)| number)
-            .filter(|number| !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()))
-            .and_then(|number| number.parse().ok());
+            .and_then(|(_, number)| number.parse().ok());
         if let Some(number) = number {
             if pull_requests.insert(number) {
                 tracing::info!("Found PR #{number}");
