@@ -3,8 +3,8 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use rollback_coordination::{earliest_rollback_point, Gh};
-use std::collections::BTreeSet;
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -12,21 +12,33 @@ use std::fs;
 )]
 struct Args {
     #[arg(long)]
-    repo: String,
-    #[arg(long = "allowed-repo", required = true)]
-    allowed_repos: Vec<String>,
+    current_repo: PathBuf,
+    /// Paths to local clones of the repos that are allowed to be considered as release dependencies in the rollback safety PR section
+    #[arg(long = "allowed-reference-repo", required = true)]
+    allowed_reference_repos: Vec<PathBuf>,
     #[arg(long)]
     pr_number: u64,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let template = fs::read_to_string(".github/pull_request_template.md")
+    let template = fs::read_to_string(args.current_repo.join(".github/pull_request_template.md"))
         .context("failed to read .github/pull_request_template.md")?;
-    let allowed_repos = args.allowed_repos.into_iter().collect::<BTreeSet<_>>();
-    let point = earliest_rollback_point(&Gh, &args.repo, &allowed_repos, Some(&template), &[args.pr_number])?;
+    let allowed_reference_repos = args
+        .allowed_reference_repos
+        .iter()
+        .map(PathBuf::as_path)
+        .collect::<Vec<_>>();
+    let point = earliest_rollback_point(
+        &Gh,
+        &args.current_repo,
+        &allowed_reference_repos,
+        Some(&template),
+        false,
+        &[args.pr_number],
+    )?;
     match point {
-        Some(release) => println!("Earliest rollback point: {}", release.tag),
+        Some(release) => println!("Earliest rollback point: {release}"),
         None => println!("No PR mentions found, so trivially succeeding."),
     }
     Ok(())

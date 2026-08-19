@@ -6715,12 +6715,13 @@ name = "rollback-coordination"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap 4.5.50",
+ "duct",
  "regex",
+ "semver",
  "serde",
  "serde_json",
+ "tempfile",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

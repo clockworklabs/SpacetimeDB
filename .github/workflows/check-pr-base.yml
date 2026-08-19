@@ -36,10 +36,13 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@v4
+        with:
+          # We inspect local tags and git commits in order to determine whether things have been released
+          fetch-depth: 0
       - uses: dsherret/rust-toolchain-file@v1
       - name: Check release dependencies
         run: >-
           cargo ci other-workflows check-release-deps
-          --repo clockworklabs/SpacetimeDB
-          --allowed-repo clockworklabs/SpacetimeDB
+          --current-repo .
+          --allowed-reference-repo .
           --pr-number "${{ github.event.pull_request.number }}"
