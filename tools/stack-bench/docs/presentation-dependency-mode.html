@@ -969,11 +969,139 @@
   section.on .feature-item:nth-child(6) { animation-delay: .52s; }
   @keyframes featureIn { to { opacity: 1; transform: none; } }
 
+  /* One run definition becomes one exact agent request. */
+  .run-outline {
+    width: 100%;
+    max-width: 920px;
+    margin-top: 1.1rem;
+  }
+  .run-plan-label, .request-label {
+    color: var(--n4);
+    font: .66rem/1.2 var(--font-mono);
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  .run-plan {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    margin-top: .55rem;
+    border-top: 1px solid var(--shade1);
+    border-bottom: 1px solid var(--shade1);
+  }
+  .run-setting {
+    min-height: 88px;
+    padding: 1rem 1.05rem .9rem;
+    border-right: 1px solid var(--shade1);
+    background: linear-gradient(180deg, #0b1114 0%, #09100d 100%);
+  }
+  .run-setting:first-child { border-left: 1px solid var(--shade1); }
+  .run-setting b {
+    display: block;
+    color: var(--n1);
+    font: 590 .84rem/1.2 var(--font);
+  }
+  .run-setting span {
+    display: block;
+    margin-top: .38rem;
+    color: var(--n3);
+    font: .68rem/1.35 var(--font-mono);
+  }
+  .request-flow {
+    height: 42px;
+    position: relative;
+  }
+  .request-flow::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 1px;
+    height: 27px;
+    background: var(--green);
+    opacity: .65;
+  }
+  .request-flow::after {
+    content: '';
+    position: absolute;
+    left: calc(50% - 4px);
+    top: 24px;
+    width: 7px;
+    height: 7px;
+    border-right: 1px solid var(--green);
+    border-bottom: 1px solid var(--green);
+    transform: rotate(45deg);
+  }
+  .agent-request {
+    display: grid;
+    grid-template-columns: 12.5rem minmax(0, 1fr);
+    min-height: 190px;
+    border: 1px solid var(--green-25);
+    background: #09110d;
+  }
+  .request-command {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 1.25rem 1.3rem;
+    border-right: 1px solid var(--green-25);
+  }
+  .request-command strong {
+    color: var(--green);
+    font: 600 1.08rem/1.25 var(--font);
+  }
+  .request-command small {
+    color: var(--n3);
+    font: .68rem/1.5 var(--font-mono);
+  }
+  .request-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .request-field {
+    padding: 1.05rem 1.25rem;
+    border-right: 1px solid var(--shade1);
+    border-bottom: 1px solid var(--shade1);
+  }
+  .request-field:nth-child(2n) { border-right: 0; }
+  .request-field:nth-last-child(-n+2) { border-bottom: 0; }
+  .request-field b {
+    display: block;
+    color: var(--n1);
+    font-size: .8rem;
+    font-weight: 580;
+  }
+  .request-field span {
+    display: block;
+    margin-top: .22rem;
+    color: var(--n3);
+    font: .68rem/1.4 var(--font-mono);
+  }
+  section.on .run-setting, section.on .request-field, section.on .request-command {
+    opacity: 0;
+    transform: translateY(7px);
+    animation: runOutlineIn .4s ease forwards;
+  }
+  section.on .run-setting:nth-child(1) { animation-delay: .15s; }
+  section.on .run-setting:nth-child(2) { animation-delay: .21s; }
+  section.on .run-setting:nth-child(3) { animation-delay: .27s; }
+  section.on .run-setting:nth-child(4) { animation-delay: .33s; }
+  section.on .run-setting:nth-child(5) { animation-delay: .39s; }
+  section.on .request-command { animation-delay: .52s; }
+  section.on .request-field:nth-child(1) { animation-delay: .58s; }
+  section.on .request-field:nth-child(2) { animation-delay: .64s; }
+  section.on .request-field:nth-child(3) { animation-delay: .70s; }
+  section.on .request-field:nth-child(4) { animation-delay: .76s; }
+  @keyframes runOutlineIn { to { opacity: 1; transform: none; } }
+
   @media (max-width: 760px) {
     .selftest-head, .selftest-row { grid-template-columns: 8rem minmax(0, 1fr) 7rem; gap: .65rem; }
     .check-strip { gap: .18rem; }
     .feature-grid { grid-template-columns: 1fr 1fr; }
     .feature-item { min-height: 138px; padding: 1rem; }
+    .run-plan { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .run-setting:last-child { grid-column: span 2; }
+    .agent-request { grid-template-columns: 1fr; }
+    .request-command { border-right: 0; border-bottom: 1px solid var(--green-25); gap: .75rem; }
   }
 </style>
 </head>
@@ -1060,7 +1188,40 @@
   </svg>
 </section>
 
-<!-- 4 how the app is tested -->
+<!-- 4 run definition and agent request -->
+<section class="visual-tight visual-first">
+  <div class="kicker r">the run plan</div>
+  <h2 class="r d1">What goes into a run.</h2>
+  <p class="lead r d2">Choose the model, stack, product work, tests, and repair budget. Stack Bench records those choices and builds the request the agent receives.</p>
+  <div class="run-outline r d3" role="img" aria-label="A frozen run plan defines the exact request sent to the agent">
+    <div class="run-plan-label">Frozen for the run</div>
+    <div class="run-plan">
+      <div class="run-setting"><b>Model</b><span>provider + exact model</span></div>
+      <div class="run-setting"><b>Stack</b><span>database + adapter</span></div>
+      <div class="run-setting"><b>Product work</b><span>features ready now</span></div>
+      <div class="run-setting"><b>Tests</b><span>checks + scoring</span></div>
+      <div class="run-setting"><b>Budget</b><span>build + repair limits</span></div>
+    </div>
+    <div class="request-flow" aria-hidden="true"></div>
+    <div class="agent-request">
+      <div class="request-command">
+        <div>
+          <div class="request-label">Agent request</div>
+          <strong>Build, add, or fix</strong>
+        </div>
+        <small>Repair requests also include failed checks and expected results.</small>
+      </div>
+      <div class="request-fields">
+        <div class="request-field"><b>Product brief</b><span>the app and current features</span></div>
+        <div class="request-field"><b>Database access</b><span>connection details and ports</span></div>
+        <div class="request-field"><b>API reference</b><span>selected SDK material</span></div>
+        <div class="request-field"><b>Testing interface</b><span>required hooks and lint command</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 how the app is tested -->
 <section class="visual-tight visual-first">
   <div class="kicker r">how testing works</div>
   <h2 class="r d1">Stack Bench tests the finished product.</h2>
