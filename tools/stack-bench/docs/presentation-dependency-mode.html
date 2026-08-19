@@ -184,27 +184,6 @@
   }
 
 
-  /* mutation demo: one injected defect, exactly one criterion flips */
-  .mut { display: flex; flex-direction: column; gap: 1.5rem; max-width: 900px; margin: 1.6rem 0 1.8rem; width: 100%; }
-  .mutrow { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-  .mutrow .mutlabel:last-child { width: auto; }
-  .mutlabel { font-family: var(--font-mono); font-size: .92rem; color: var(--n4); width: 10rem; flex: none; }
-  .dots { display: flex; gap: .5rem; flex-wrap: wrap; }
-  .dot {
-    width: clamp(46px, 6vw, 74px); height: 14px; border-radius: 999px;
-    background: var(--green-10); border: 1px solid var(--green-25);
-  }
-  .dot.hollow { background: none; border: 1px dashed var(--n5); }
-  section.on .dot.hit { animation: defect 4s ease-in-out infinite; }
-  @keyframes defect {
-    0%, 30%  { background: var(--green-10); border-color: var(--green-25); box-shadow: none; }
-    40%, 85% { background: #fc689726; border-color: #fc6897; box-shadow: 0 0 14px #fc689733; }
-    95%,100% { background: var(--green-10); border-color: var(--green-25); box-shadow: none; }
-  }
-  section.on .mutnote { animation: assertPop 4s ease-in-out infinite; }
-  .mutnote { font-family: var(--font-mono); font-size: .78rem; color: #fc6897; opacity: 0; }
-
-
   /* video banner demo */
   .banners { display: grid; gap: .6rem; max-width: 720px; margin: .6rem 0 1.2rem; }
   .banner {
@@ -793,14 +772,6 @@
 
   @keyframes stockTick { 0%, 55% { opacity: 1; } 60%, 78% { opacity: .45; } 80%, 100% { opacity: 1; } }
 
-  /* staged mutation captions */
-  .mutcap { font-family: var(--font-mono); font-size: clamp(.8rem, 1.6vw, .92rem); min-height: 2.8em; position: relative; max-width: 900px; }
-  .mutcap span { position: absolute; left: 0; top: 0; opacity: 0; }
-  section.on .mc1 { animation: mc1 4s ease-in-out infinite; color: var(--n4); }
-  section.on .mc2 { animation: mc2 4s ease-in-out infinite; color: #fc6897; }
-  @keyframes mc1 { 0%, 28% { opacity: 1; } 36%, 90% { opacity: 0; } 98%, 100% { opacity: 1; } }
-  @keyframes mc2 { 0%, 32% { opacity: 0; } 40%, 86% { opacity: 1; } 94%, 100% { opacity: 0; } }
-
   /* video player mock */
   .player { max-width: 820px; width: 100%; border: 1px solid var(--shade1); border-radius: 10px; overflow: hidden; background: #0a0d10; }
   .pbanner { position: relative; height: 2.2rem; }
@@ -899,23 +870,48 @@
   .behvis .minor { fill: var(--n4); font-size: 10px; }
   .behvis .cap { fill: var(--n4); font-size: 9px; letter-spacing: .14em; }
   section.on .behvis .wire.live { stroke-dasharray: 5 8; animation: dashRun 1.1s linear infinite; }
-  .proof-step span {
-    display: block; color: var(--n4); font: .67rem/1.3 var(--font-mono); letter-spacing: .12em; text-transform: uppercase;
+  .selftest {
+    width: 100%; max-width: 920px; margin-top: 1.15rem;
+    border-top: 1px solid var(--shade1); border-bottom: 1px solid var(--shade1);
   }
-  .proof-step b { display: block; margin: .55rem 0 .35rem; color: var(--n1); font-size: .95rem; }
-  .proof-step small { display: block; color: var(--n4); font: .72rem/1.5 var(--font-mono); }
-  .proof-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.65rem; position: relative; }
-  .proof-flow::before { content: ''; position: absolute; left: 8%; right: 8%; top: 20px; height: 1px; background: var(--shade1); }
-  .proof-step { position: relative; padding-top: 3.1rem; }
-  .proof-step::before {
-    content: ''; position: absolute; top: 8px; left: 0; width: 24px; height: 24px; border: 1px solid var(--green); border-radius: 50%; background: #07100c;
+  .selftest-suite {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: .7rem .9rem; border-bottom: 1px solid var(--shade1);
+    color: var(--n3); font: .72rem/1.4 var(--font-mono);
   }
-  .proof-step::after { content: ''; position: absolute; top: 15px; left: 7px; width: 9px; height: 5px; border-left: 2px solid var(--green); border-bottom: 2px solid var(--green); transform: rotate(-45deg); }
-  section.on .proof-step::before { animation: gatePulse 4.8s ease-in-out infinite; }
-  section.on .proof-step:nth-child(2)::before { animation-delay: .45s; }
-  section.on .proof-step:nth-child(3)::before { animation-delay: .9s; }
-  section.on .proof-step:nth-child(4)::before { animation-delay: 1.35s; }
-  @keyframes gatePulse { 0%,72%,100% { box-shadow: none; } 80%,92% { box-shadow: 0 0 22px #4cf49066; } }
+  .selftest-suite b { color: var(--n1); font-weight: 500; margin-right: .8rem; }
+  .selftest-suite strong { color: var(--green); font-weight: 500; }
+  .selftest-head, .selftest-row {
+    display: grid; grid-template-columns: 13.5rem minmax(0, 1fr) 11rem;
+    gap: 1.5rem; align-items: center;
+  }
+  .selftest-head {
+    padding: .55rem .9rem; color: var(--n4);
+    font: .64rem/1.3 var(--font-mono); letter-spacing: .12em; text-transform: uppercase;
+  }
+  .selftest-row { padding: 1rem .9rem; border-top: 1px solid var(--shade4); }
+  .selftest-control b { display: block; color: var(--n1); font-size: .9rem; font-weight: 560; }
+  .selftest-control span { display: block; color: var(--n4); font: .68rem/1.4 var(--font-mono); margin-top: .15rem; }
+  .check-strip { display: grid; grid-template-columns: repeat(12, 1fr); gap: .36rem; }
+  .check-unit { height: 13px; border: 1px solid var(--green-25); background: var(--green-10); border-radius: 2px; }
+  .check-unit.target { position: relative; }
+  .check-unit.target::after {
+    content: ''; position: absolute; left: 50%; top: -10px; width: 1px; height: 31px;
+    background: #fc689755; transform: translateX(-50%); opacity: 0;
+  }
+  .check-unit.blank { border-style: dashed; border-color: var(--n5); background: transparent; }
+  .selftest-result { color: var(--n3); font: .73rem/1.4 var(--font-mono); }
+  .selftest-result strong { display: block; color: var(--n1); font-weight: 500; font-size: .8rem; }
+  .selftest-result span { display: block; color: var(--n4); margin-top: .15rem; }
+  section.on .selftest-row { opacity: .3; animation: selfRow 7.2s ease-in-out infinite; }
+  section.on .selftest-row.row-reference { animation-delay: 0s; }
+  section.on .selftest-row.row-defect { animation-delay: .65s; }
+  section.on .selftest-row.row-empty { animation-delay: 1.3s; }
+  section.on .check-unit.target { animation: selfDefect 7.2s ease-in-out infinite; animation-delay: .65s; }
+  section.on .check-unit.target::after { animation: selfMarker 7.2s ease-in-out infinite; animation-delay: .65s; }
+  @keyframes selfRow { 0%,4%,100% { opacity:.35; } 10%,84% { opacity:1; } 94% { opacity:.35; } }
+  @keyframes selfDefect { 0%,12%,100% { background:var(--green-10); border-color:var(--green-25); } 18%,84% { background:#fc689726; border-color:#fc6897; box-shadow:0 0 16px #fc689733; } }
+  @keyframes selfMarker { 0%,12%,100% { opacity:0; } 18%,84% { opacity:1; } }
   /* Product overview: one flat feature grid, not a dashboard. */
   .feature-grid {
     display: grid;
@@ -974,8 +970,8 @@
   @keyframes featureIn { to { opacity: 1; transform: none; } }
 
   @media (max-width: 760px) {
-    .proof-flow { grid-template-columns: 1fr; }
-    .proof-flow::before { display: none; }
+    .selftest-head, .selftest-row { grid-template-columns: 8rem minmax(0, 1fr) 7rem; gap: .65rem; }
+    .check-strip { gap: .18rem; }
     .feature-grid { grid-template-columns: 1fr 1fr; }
     .feature-item { min-height: 138px; padding: 1rem; }
   }
@@ -1388,12 +1384,31 @@
 <section class="visual-tight visual-first">
   <div class="kicker r">testing the benchmark</div>
   <h2 class="r d1">Stack Bench tests itself.</h2>
-  <p class="lead r d2">Automated tests verify the harness. Controlled apps prove the grader.</p>
-  <div class="proof-flow cto-visual r d3" role="img" aria-label="automated harness tests run, a working reference app passes, a planted defect fails the intended check, and an empty app earns no points">
-    <div class="proof-step"><span>harness suite</span><b>Code paths tested</b><small>unit · integration · run controls</small></div>
-    <div class="proof-step"><span>reference control</span><b>Working app passes</b><small>the full selected test plan</small></div>
-    <div class="proof-step"><span>defect control</span><b>Known defect fails</b><small>the intended check, without noise</small></div>
-    <div class="proof-step"><span>empty control</span><b>Missing work scores zero</b><small>no feature, no evidence, no points</small></div>
+  <p class="lead r d2">The same selected checks run against controlled apps. A correct app must pass, a planted defect must fail its target, and an empty app must score zero.</p>
+  <div class="selftest r d3" role="img" aria-label="the same selected checks run against a correct reference app, a deliberately broken app, and an empty app, producing all pass, target caught, and zero point results">
+    <div class="selftest-suite"><span><b>HARNESS SUITE</b>unit · integration · Docker runs · cleanup</span><strong>PASS</strong></div>
+    <div class="selftest-head"><span>control app</span><span>same selected checks</span><span>expected result</span></div>
+    <div class="selftest-row row-reference">
+      <div class="selftest-control"><b>Correct reference</b><span>known working behavior</span></div>
+      <div class="check-strip" aria-hidden="true">
+        <i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i>
+      </div>
+      <div class="selftest-result"><strong>ALL PASS</strong><span>reference accepted</span></div>
+    </div>
+    <div class="selftest-row row-defect">
+      <div class="selftest-control"><b>Planted defect</b><span>one known behavior broken</span></div>
+      <div class="check-strip" aria-hidden="true">
+        <i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit target"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i><i class="check-unit"></i>
+      </div>
+      <div class="selftest-result"><strong>TARGET CAUGHT</strong><span>other checks stay clean</span></div>
+    </div>
+    <div class="selftest-row row-empty">
+      <div class="selftest-control"><b>Empty app</b><span>required work missing</span></div>
+      <div class="check-strip" aria-hidden="true">
+        <i class="check-unit blank"></i><i class="check-unit blank"></i><i class="check-unit blank"></i><i class="check-unit blank"></i><i class="check-unit blank"></i><i class="check-unit blank"></i><i class="check-unit blank"></i><i class="check-unit blank"></i><i class="check-unit blank"></i><i class="check-unit blank"></i><i class="check-unit blank"></i><i class="check-unit blank"></i>
+      </div>
+      <div class="selftest-result"><strong>ZERO POINTS</strong><span>missing work earns no credit</span></div>
+    </div>
   </div>
 </section>
 
