@@ -29,42 +29,43 @@ pub struct Release {
 }
 
 impl Release {
-    fn from_version(version: Version) -> Result<Self> {
+    fn from_tag(tag: &str) -> Result<Option<Self>> {
+        let Some(version) = tag.strip_prefix('v') else {
+            tracing::debug!("Not parsing tag that does not start with `v`");
+            return Ok(None);
+        };
+        let Ok(version) = Version::parse(version) else {
+            tracing::debug!("Not parsing tag that is not a semver");
+            return Ok(None);
+        };
+
+        // Compare only the core version here. SemVer orders prereleases before
+        // their base release, whereas our hotfix tags come after it.
+        if Version::new(version.major, version.minor, version.patch) < MINIMUM_RELEASE {
+            tracing::debug!("Not parsing tag that is too old");
+            return Ok(None);
+        }
+
         if !version.build.is_empty() {
             bail!("release versions may not contain build metadata");
         }
+
         let hotfix = if version.pre.is_empty() {
             None
         } else {
             let prerelease = version.pre.as_str();
             let number = prerelease
                 .strip_prefix("hotfix")
-                .filter(|number| !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()))
+                .and_then(|number| number.parse::<u64>().ok())
                 .with_context(|| format!("unsupported release suffix `-{prerelease}`; expected `-hotfixN`"))?;
-            let parsed = number
-                .parse::<u64>()
-                .with_context(|| format!("invalid hotfix number `{number}`"))?;
-            if parsed.to_string() != number {
-                bail!("hotfix number `{number}` is not canonical");
+            // reject things that start with 0, include separators, etc.
+            if format!("hotfix{number}") != prerelease {
+                bail!("release suffix `-{prerelease}` is not a canonical form");
             }
-            Some(parsed)
+            Some(number)
         };
-        Ok(Self { version, hotfix })
-    }
 
-    fn core(&self) -> (u64, u64, u64) {
-        (self.version.major, self.version.minor, self.version.patch)
-    }
-}
-
-impl FromStr for Release {
-    type Err = anyhow::Error;
-
-    fn from_str(tag: &str) -> Result<Self> {
-        let version = tag
-            .strip_prefix('v')
-            .with_context(|| format!("release tag `{tag}` must start with `v`"))?;
-        Self::from_version(Version::parse(version).with_context(|| format!("invalid release tag `{tag}`"))?)
+        Ok(Some(Self { version, hotfix }))
     }
 }
 
@@ -76,8 +77,8 @@ impl fmt::Display for Release {
 
 impl Ord for Release {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.core()
-            .cmp(&other.core())
+        (self.version.major, self.version.minor, self.version.patch)
+            .cmp(&(other.version.major, other.version.minor, other.version.patch))
             .then_with(|| self.hotfix.cmp(&other.hotfix))
     }
 }
@@ -102,21 +103,11 @@ pub fn load_releases(repo_path: &Path, ignore_incompatible_tags: bool) -> Result
         .with_context(|| format!("failed to list tags in {}", repo_path.display()))?;
     let mut releases = BTreeSet::new();
     for tag in output.lines().filter(|tag| !tag.is_empty()) {
-        let Some(version) = tag.strip_prefix('v') else {
-            continue;
-        };
-        let Ok(version) = Version::parse(version) else {
-            continue;
-        };
-        // Compare only the core version here. SemVer orders prereleases before
-        // their base release, whereas our hotfix tags come after it.
-        if Version::new(version.major, version.minor, version.patch) < MINIMUM_RELEASE {
-            continue;
-        }
-        match Release::from_version(version) {
-            Ok(release) => {
+        match Release::from_tag(tag) {
+            Ok(Some(release)) => {
                 releases.insert(release);
             }
+            Ok(None) => {}
             Err(error) if ignore_incompatible_tags => {
                 tracing::warn!(tag, "Ignoring incompatible release tag: {error:#}");
             }
@@ -147,29 +138,48 @@ fn load_repos(
     Ok(repositories)
 }
 
-fn lookup_release_for(repository: &Repository, repo: &str, pr_number: u64) -> Result<Option<Release>> {
+fn release_for_pr(repository: &Repository, repo: &str, pr_number: u64) -> Result<Option<Release>> {
     tracing::info!("Looking up {repo}#{pr_number}");
-    let suffix = format!("(#{pr_number})");
     for pair in repository.releases.windows(2) {
         let [release, base] = pair else { unreachable!() };
         tracing::info!("Checking commits {base}..{release} for release {release}");
-        let subjects = cmd!("git", "log", "--format=%s", format!("{base}..{release}"))
-            .dir(&repository.path)
-            .read()
-            .with_context(|| {
-                format!(
-                    "failed to inspect commits {base}..{release} in {}",
-                    repository.path.display()
-                )
-            })?;
-        // N.B. that this is based on commit subject lines, so it can technically be spoofed.
-        if subjects.lines().any(|subject| subject.ends_with(&suffix)) {
+        if pull_requests_in_range(repo, &repository.path, &base.to_string(), &release.to_string())?.contains(&pr_number)
+        {
             tracing::info!("Matched {release}");
             return Ok(Some(release.clone()));
         }
     }
     tracing::info!("No release tag contains {repo}#{pr_number}");
     Ok(None)
+}
+
+/// Returns the unique PR numbers associated with commits in `base..head`.
+///
+/// PR numbers are read from the conventional `(#123)` commit-subject suffix.
+/// N.B. That this is just based on commit subject line, so it could be spoofed in principle.
+/// Each PR is logged as it is found, and commits without that suffix produce a warning.
+pub fn pull_requests_in_range(repo_name: &str, repo: &Path, base: &str, head: &str) -> Result<Vec<u64>> {
+    let subjects = cmd!("git", "log", "--format=%s", format!("{base}..{head}"))
+        .dir(repo)
+        .read()
+        .with_context(|| format!("failed to inspect commits {base}..{head} in {}", repo.display()))?;
+    let mut pull_requests = BTreeSet::new();
+    for subject in subjects.lines() {
+        let number = subject
+            .strip_suffix(')')
+            .and_then(|subject| subject.rsplit_once("(#"))
+            .map(|(_, number)| number)
+            .filter(|number| !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|number| number.parse().ok());
+        if let Some(number) = number {
+            if pull_requests.insert(number) {
+                tracing::info!("Found {repo_name}#{number}");
+            }
+        } else {
+            eprintln!("Warning: {repo_name} commit is not associated with a pull request: {subject}");
+        }
+    }
+    Ok(pull_requests.into_iter().collect())
 }
 
 /// Computes the earliest release to which all requested pull requests can safely be rolled back.
@@ -192,7 +202,10 @@ pub fn earliest_rollback_point(
 
     let results = pr_numbers
         .iter()
-        .map(|&number| earliest_rollback_point_for_pr(github, &repositories, &current_repo, strict_template, number))
+        .map(|&number| {
+            earliest_rollback_point_for_pr(github, &repositories, &current_repo, strict_template, number)
+                .with_context(|| format!("failed to determine rollback point for {current_repo}#{number}"))
+        })
         .collect::<Vec<_>>();
     Ok(results.collect_all()?.into_iter().flatten().max())
 }
@@ -206,12 +219,10 @@ fn earliest_rollback_point_for_pr(
 ) -> Result<Option<Release>> {
     let pr = github
         .pull_request(current_repo, number)
-        .with_context(|| format!("failed to load {current_repo}#{number}"))?;
+        .with_context(|| "failed to load PR")?;
     let body = pr.body.as_deref().unwrap_or_default();
-    let Some(dependencies) = pr_parsing::rollback_dependencies(body, current_repo, strict_template)
-        .with_context(|| format!("failed to validate {current_repo}#{number}"))?
-    else {
-        tracing::info!("{current_repo}#{number} has no dependencies");
+    let Some(dependencies) = pr_parsing::rollback_dependencies(body, current_repo, strict_template)? else {
+        tracing::info!("PR has no dependencies");
         return Ok(None);
     };
 
@@ -220,29 +231,14 @@ fn earliest_rollback_point_for_pr(
         .map(|dependency| {
             let repository = repositories.get(&dependency.repo).with_context(|| {
                 format!(
-                    "{}#{} is not in an allowed repository (required by {current_repo}#{number})",
+                    "{}#{} is not in an allowed repository",
                     dependency.repo, dependency.number
                 )
             })?;
-            let release = lookup_release_for(repository, &dependency.repo, dependency.number)
-                .with_context(|| {
-                    format!(
-                        "release lookup failed for {}#{} (required by {current_repo}#{number})",
-                        dependency.repo, dependency.number
-                    )
-                })?
-                .with_context(|| {
-                    format!(
-                        "{}#{} has not been released (required by {current_repo}#{number})",
-                        dependency.repo, dependency.number
-                    )
-                })?;
-            tracing::info!(
-                "{}#{} was released in {} (required by {current_repo}#{number})",
-                dependency.repo,
-                dependency.number,
-                release
-            );
+            let release = release_for_pr(repository, &dependency.repo, dependency.number)
+                .with_context(|| format!("release lookup failed for {}#{}", dependency.repo, dependency.number))?
+                .with_context(|| format!("{}#{} has not been released", dependency.repo, dependency.number))?;
+            tracing::info!("{}#{} was released in {}", dependency.repo, dependency.number, release);
             Ok(Some(release))
         })
         .collect::<Vec<Result<Option<Release>>>>();
@@ -402,9 +398,20 @@ mod tests {
             releases: load_releases(repository.path(), false).unwrap(),
         };
         assert_eq!(
-            lookup_release_for(&repository, "o/r", 42).unwrap(),
+            release_for_pr(&repository, "o/r", 42).unwrap(),
             Some("v2.8.0".parse().unwrap())
         );
+    }
+
+    #[test]
+    fn enumerates_prs_and_unmatched_commits_since_a_release() {
+        let repository = repository(&["v2.7.0"]);
+        commit(repository.path(), "first", "First (#42)");
+        commit(repository.path(), "duplicate", "Follow-up (#42)");
+        commit(repository.path(), "unmatched", "Merge branch");
+
+        let pull_requests = pull_requests_in_range("o/r", repository.path(), "v2.7.0", "HEAD").unwrap();
+        assert_eq!(pull_requests, vec![42]);
     }
 
     #[test]
