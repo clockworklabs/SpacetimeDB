@@ -1185,7 +1185,7 @@
 <section id="repair-slide" class="visual-tight visual-first">
   <div class="kicker r">repair and retest</div>
   <h2 class="r d1">Failed tests return to the agent.</h2>
-  <svg class="cyc r d2" viewBox="0 0 960 310" role="img" aria-label="unlock, build, grade, fix failures, advance, or stop that path">
+  <svg class="cyc r d2" viewBox="0 0 960 310" role="img" aria-label="start the level, build, test, repair failures, continue, or stop that path">
     <defs>
       <marker id="a3" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
         <path d="M0 0 L8 4 L0 8 z" fill="#253239"/>
@@ -1193,34 +1193,34 @@
     </defs>
 
     <rect class="n p-unlock" x="20" y="40" width="170" height="52"/>
-    <text class="nl p-unlock" x="40" y="64">ready</text>
-    <text x="40" y="80">earlier work passed</text>
+    <text class="nl p-unlock" x="40" y="64">start level</text>
+    <text x="40" y="80">dependencies passed</text>
 
     <rect class="n p-build" x="215" y="40" width="170" height="52"/>
     <text class="nl p-build" x="235" y="64">build</text>
-    <text x="235" y="80">ready features</text>
+    <text x="235" y="80">current features</text>
 
     <rect class="n p-grade1" x="410" y="40" width="170" height="52"/>
     <text class="nl p-grade1" x="430" y="64">test</text>
-    <text x="430" y="80">new and earlier work</text>
+    <text x="430" y="80">current and earlier features</text>
 
     <polygon class="n p-dec1" points="600,66 670,32 740,66 670,100"/>
     <text class="nl p-dec1" text-anchor="middle" x="670" y="70">all pass?</text>
 
     <rect class="n p-done" x="765" y="40" width="175" height="52"/>
     <text class="nl p-done" x="785" y="64">continue</text>
-    <text x="785" y="80">next work opens</text>
+    <text x="785" y="80">next level opens</text>
 
     <polygon class="n p-dec2" points="435,206 500,172 565,206 500,240"/>
-    <text class="nl p-dec2" text-anchor="middle" x="500" y="210">attempts left?</text>
+    <text class="nl p-dec2" text-anchor="middle" x="500" y="210">repairs left?</text>
 
     <rect class="n p-fix" x="215" y="180" width="170" height="52"/>
     <text class="nl p-fix" x="235" y="204">repair</text>
-    <text x="235" y="220">what failed</text>
+    <text x="235" y="220">failed tests</text>
 
     <rect class="n p-stop" x="620" y="180" width="180" height="52"/>
     <text class="nl p-stop" x="640" y="204">that path stops</text>
-    <text x="640" y="220">the rest keeps going</text>
+    <text x="640" y="220">other paths continue</text>
 
     <path class="edge2 e1" d="M190 66 H211"/>
     <path class="edge2 e2" d="M385 66 H406"/>
@@ -1238,15 +1238,15 @@
     <text text-anchor="middle" x="590" y="198" style="fill:#6f7987">none</text>
 
     <path class="edge2 ret" d="M852 92 V286 H105 V96"/>
-    <text x="400" y="278" style="fill:#6f7987">continue with ready work</text>
+    <text x="400" y="278" style="fill:#6f7987">continue with passed paths</text>
   </svg>
   <div class="state r d3">
-    <div class="st">active<span class="sv"><span class="v-a1">accounts, catalog</span><span class="v-a2">purchasing, admin</span></span></div>
-    <div class="st">attempts<span class="sv"><span class="v-k1">3 of 3</span><span class="v-k2 bad">2 of 3</span></span></div>
-    <div class="st">ready<span class="sv"><span class="v-u1">2 of 12</span><span class="v-u2 good">4 of 12</span></span></div>
-    <div class="st">cost<span class="sv"><span class="v-c0">tracked</span><span class="v-c1">tracked</span><span class="v-c2">tracked</span></span></div>
+    <div class="st">level<span class="sv"><span class="v-a1">L1</span><span class="v-a2 good">L2</span></span></div>
+    <div class="st">repairs<span class="sv"><span class="v-k1">0 of 3</span><span class="v-k2">1 of 3</span></span></div>
+    <div class="st">features passed<span class="sv"><span class="v-u1">2 of 12</span><span class="v-u2 good">4 of 12</span></span></div>
+    <div class="st">cost<span class="sv"><span class="v-c0">$0.00</span><span class="v-c1">$3.20</span><span class="v-c2">$6.40</span></span></div>
   </div>
-  <p class="supp r d4">Each level has a configured repair budget. Completed app failures spend it; provider and test-system failures do not.</p>
+  <p class="supp r d4">Each level has a repair budget. App failures use it; provider and test-system failures do not.</p>
 </section>
 
 <!-- 4 the dependency graph -->
