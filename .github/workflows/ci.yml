@@ -1040,6 +1040,7 @@ jobs:
             curl -fsSL https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh | UNITY_CLI_CHANNEL=beta bash
             find "$HOME"/.local/bin -name unity
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/bin:$PATH"
           fi
           unity --version
 
