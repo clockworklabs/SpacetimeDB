@@ -10,9 +10,10 @@
     {
       "id": 105,
       "name": "An account keeps what belongs to it",
-      "actors": ["shopper"],
+      "actors": ["shopper", "peer"],
       "setup": [
         {"do":"signUp","actor":"shopper","name":"pat"},
+        {"do":"signIn","actor":"peer","name":"pat"},
         {
           "do": "click",
           "actor": "shopper",
@@ -27,12 +28,19 @@
           "points": 1,
           "steps": [
             {"do":"setOffline","actor":"shopper","settleMs":3000},
+            {
+              "do": "click",
+              "actor": "peer",
+              "testid": "add-to-cart",
+              "in": {"testid":"item-card","contains":"Headphones"}
+            },
             {"do":"setOffline","actor":"shopper","offline":false,"settleMs":6000},
             {"do":"expect","actor":"shopper","testid":"current-user","contains":"pat"},
             {"do":"click","actor":"shopper","testid":"cart-toggle"},
-            {"do":"expect","actor":"shopper","testid":"cart-item","contains":"Keyboard"}
+            {"do":"expect","actor":"shopper","testid":"cart-item","contains":"Keyboard"},
+            {"do":"expect","actor":"shopper","testid":"cart-item","contains":"Headphones"}
           ],
-          "statedBy": "the signed-in account and its data remain available after reconnecting"
+          "statedBy": "the signed-in account and its current data remain available after reconnecting"
         }
       ]
     }

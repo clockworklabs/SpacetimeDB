@@ -218,6 +218,14 @@ test('invariant checks own their setup and server actions', () => {
     '01-account-state-reconnect-2.4.0.json'))).features[0];
   assert(reload.setup.some(step => step.testid === 'add-to-cart'));
   assert(reconnect.setup.some(step => step.testid === 'add-to-cart'));
+  assert(reconnect.setup.some(step => step.do === 'signIn' && step.actor === 'peer'));
+  const reconnectCheck = reconnect.criteria.find(criterion => criterion.id === '105b');
+  assert(reconnectCheck.steps.some(step => step.actor === 'peer'
+    && step.testid === 'add-to-cart' && step.in?.contains === 'Headphones'),
+    'reconnect must observe account state committed by another session while offline');
+  assert(reconnectCheck.steps.some(step => step.actor === 'shopper'
+    && step.testid === 'cart-item' && step.contains === 'Headphones'),
+    'reconnect must catch up to the state that changed while offline');
 
   const accounting = compileScenarioDefinition(readJson(join(root, 'scenarios',
     '01-books-balance-2.4.0.json'))).features[0];
