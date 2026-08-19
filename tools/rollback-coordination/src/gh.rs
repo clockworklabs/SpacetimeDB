@@ -7,7 +7,6 @@ use serde::Deserialize;
 use std::path::Path;
 use std::process::Command;
 
-// TODO: Consolidate this with other half-implementations of GitHub CLI calls across the codebase.
 #[derive(Deserialize)]
 pub struct PullRequest {
     pub body: Option<String>,
