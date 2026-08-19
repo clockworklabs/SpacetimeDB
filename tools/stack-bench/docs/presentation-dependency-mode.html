@@ -861,19 +861,19 @@
   .compare-col h3 { margin: 0 0 .65rem; color: var(--n1); font-size: clamp(1.1rem, 2vw, 1.35rem); font-weight: 560; }
   .compare-col p { margin: 0; color: var(--n4); line-height: 1.55; max-width: 34rem; }
   .modevis, .promptvis { width: 100%; max-width: 1000px; margin-top: 1.1rem; }
-  .modevis text, .promptvis text { font-family: var(--font-mono); fill: var(--n4); font-size: 11px; }
+  .modevis text, .promptvis text { font-family: var(--font-mono); fill: var(--n3); font-size: 11px; }
   .modevis .title, .promptvis .title { fill: var(--n1); font-size: 13px; font-weight: 600; }
-  .modevis .small, .promptvis .small { fill: var(--n5); font-size: 10px; }
+  .modevis .small, .promptvis .small { fill: var(--n3); font-size: 10px; }
   .modevis .node, .promptvis .node { fill: #0d1418; stroke: #26333a; stroke-width: 1.2; rx: 7; }
   .modevis .pass, .promptvis .active { stroke: var(--green); fill: var(--green-10); }
   .modevis .fail { stroke: #fc6897; fill: #fc689714; }
-  .modevis .locked, .promptvis .locked { stroke-dasharray: 4 4; opacity: .5; }
+  .modevis .locked, .promptvis .locked { stroke-dasharray: 4 4; opacity: .72; }
   .modevis .flow, .promptvis .flow { stroke: var(--green); stroke-width: 1.6; fill: none; }
   .modevis .stop { stroke: #fc6897; stroke-width: 1.5; fill: none; stroke-dasharray: 4 4; }
   .modevis .pass-label, .promptvis .active-label { fill: var(--green); }
   .modevis .fail-label { fill: #fc6897; }
   .promptvis .neutral { stroke: #41515a; fill: #0d1418; }
-  .promptvis .locked-label { fill: var(--n5); }
+  .promptvis .locked-label { fill: var(--n4); }
   section.visual-tight { padding-top: 3rem; padding-bottom: 2.5rem; }
   section.visual-tight .modevis, section.visual-tight .promptvis { max-height: 330px; margin-top: .55rem; }
   section.visual-tight .supp { margin-top: .55rem !important; font-size: .9rem; }
@@ -1131,54 +1131,61 @@
 <!-- 5 modular prompts -->
 <section class="visual-tight visual-first">
   <div class="kicker r">each request</div>
-  <h2 class="r d1">The agent sees only the current work.</h2>
-  <p class="lead r d2">Each request is assembled from the app brief and the features ready now. Passed features stay out of later repair requests unless they break again, and future features stay out until their dependencies pass.</p>
-  <svg class="promptvis r d3" viewBox="0 0 1000 382" role="img" aria-label="Stack Bench sends the app brief and features ready now to the agent while testing is chosen separately">
+  <h2 class="r d1">The prompt and tests are separate.</h2>
+  <p class="lead r d2">The prompt contains the app brief, features ready now, and failures to repair. Future feature requirements stay out until they unlock. Stack Bench independently selects the checks it runs, including regression and product behavior checks.</p>
+  <svg class="promptvis r d3" viewBox="0 0 1000 350" role="img" aria-label="Stack Bench builds the agent prompt from ready work while selecting the test plan separately">
     <defs>
       <marker id="prompt-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#4cf490"/></marker>
       <marker id="neutral-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="#41515a"/></marker>
     </defs>
 
-    <text class="title" x="20" y="28">WHAT STACK BENCH SENDS</text>
-    <rect class="node neutral" x="20" y="50" width="210" height="66"/>
-    <text x="38" y="73">always included</text><text class="small" x="38" y="91">app brief · database</text><text class="small" x="38" y="105">model · run rules</text>
-    <rect class="node active" x="20" y="136" width="210" height="66"/>
-    <text class="active-label" x="38" y="159">features ready now</text><text class="small" x="38" y="177">requirements · test hooks</text><text class="small" x="38" y="191">current failures</text>
-    <rect class="node locked" x="20" y="248" width="210" height="66"/>
-    <text class="locked-label" x="38" y="271">future features</text><text class="small" x="38" y="291">not sent yet</text>
-    <text class="small" x="82" y="340">not sent</text>
+    <text class="title" x="20" y="24">AGENT REQUEST</text>
+    <rect class="node active" x="20" y="42" width="190" height="76"/>
+    <text class="active-label" x="40" y="66">ready work</text>
+    <text class="small" x="40" y="86">feature requirements</text>
+    <text class="small" x="40" y="103">current failures</text>
 
-    <path d="M230 83 H300" stroke="#41515a" stroke-width="1.5" fill="none" marker-end="url(#neutral-arrow)"/>
-    <path class="flow" d="M230 169 H300" marker-end="url(#prompt-arrow)"/>
-    <path d="M230 281 H270" stroke="#41515a" stroke-width="1.3" stroke-dasharray="4 4"/>
-    <line x1="274" y1="270" x2="290" y2="292" stroke="#6f7987" stroke-width="1.6"/><line x1="290" y1="270" x2="274" y2="292" stroke="#6f7987" stroke-width="1.6"/>
+    <rect class="node neutral" x="270" y="42" width="190" height="76"/>
+    <text class="title" x="290" y="66">PROMPT</text>
+    <text class="small" x="290" y="86">app brief · database</text>
+    <text class="small" x="290" y="103">ready work · test hooks</text>
 
-    <rect class="node neutral" x="304" y="74" width="208" height="150"/>
-    <text class="title" x="326" y="102">BUILD THE REQUEST</text>
-    <line x1="326" y1="116" x2="490" y2="116" stroke="#26333a"/>
-    <text x="326" y="142">app brief</text>
-    <text x="326" y="165">database access</text>
-    <text class="active-label" x="326" y="188">features ready now</text>
-    <text class="active-label" x="326" y="211">test failures</text>
+    <rect class="node active" x="520" y="42" width="190" height="76"/>
+    <text class="title" x="540" y="66">AGENT</text>
+    <text class="small" x="540" y="86">builds or repairs</text>
+    <text class="small" x="540" y="103">the application</text>
 
-    <path class="flow" d="M512 149 H580" marker-end="url(#prompt-arrow)"/>
-    <rect class="node active" x="584" y="86" width="176" height="126"/>
-    <text class="title" x="606" y="114">AGENT RECEIVES</text>
-    <text class="small" x="606" y="142">the current request</text>
-    <text class="small" x="606" y="164">only current work</text>
-    <text class="active-label" x="606" y="190">no future hints</text>
+    <rect class="node neutral" x="770" y="42" width="190" height="76"/>
+    <text class="title" x="790" y="66">APPLICATION</text>
+    <text class="small" x="790" y="86">the source and running app</text>
+    <text class="small" x="790" y="103">produced by the agent</text>
 
-    <rect class="node neutral" x="796" y="86" width="184" height="190"/>
-    <text class="title" x="818" y="114">STACK BENCH TESTS</text>
-    <line x1="818" y1="128" x2="958" y2="128" stroke="#26333a"/>
-    <text x="818" y="154">current features</text>
-    <text x="818" y="178">earlier features</text>
-    <text x="818" y="202">app behavior</text>
-    <text x="818" y="226">other checks</text>
-    <text class="small" x="818" y="258">chosen separately</text>
+    <path class="flow" d="M210 80 H266" marker-end="url(#prompt-arrow)"/>
+    <path class="flow" d="M460 80 H516" marker-end="url(#prompt-arrow)"/>
+    <path class="flow" d="M710 80 H766" marker-end="url(#prompt-arrow)"/>
 
-    <path d="M672 212 V320 H888 V280" stroke="#41515a" stroke-width="1.5" fill="none" marker-end="url(#neutral-arrow)"/>
-    <text class="small" x="610" y="346">what we ask for and what we test stay separate</text>
+    <rect class="node locked" x="20" y="138" width="190" height="56"/>
+    <text class="locked-label" x="40" y="162">future features</text>
+    <text class="locked-label" x="40" y="180">not included until ready</text>
+
+    <line x1="20" y1="222" x2="960" y2="222" stroke="#26333a"/>
+    <text class="title" x="20" y="250">INDEPENDENT TEST PLAN</text>
+
+    <rect class="node neutral" x="20" y="266" width="260" height="66"/>
+    <text class="title" x="40" y="290">SELECTED CHECKS</text>
+    <text class="small" x="40" y="310">active · regression · product behavior</text>
+
+    <rect class="node active" x="370" y="266" width="230" height="66"/>
+    <text class="title" x="390" y="290">STACK BENCH TESTS</text>
+    <text class="small" x="390" y="310">runs against the application</text>
+
+    <rect class="node neutral" x="690" y="266" width="270" height="66"/>
+    <text class="title" x="710" y="290">RESULT AND EVIDENCE</text>
+    <text class="small" x="710" y="310">pass · fail · score · screenshots · trace</text>
+
+    <path d="M280 299 H366" stroke="#41515a" stroke-width="1.5" fill="none" marker-end="url(#neutral-arrow)"/>
+    <path d="M600 299 H686" stroke="#41515a" stroke-width="1.5" fill="none" marker-end="url(#neutral-arrow)"/>
+    <path d="M865 118 V236 H485 V262" stroke="#41515a" stroke-width="1.5" fill="none" marker-end="url(#neutral-arrow)"/>
   </svg>
 </section>
 
