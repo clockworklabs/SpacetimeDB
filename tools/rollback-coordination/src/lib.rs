@@ -5,7 +5,6 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 pub mod gh;
 mod pr_parsing;
@@ -29,7 +28,7 @@ pub struct Release {
 }
 
 impl Release {
-    fn from_tag(tag: &str) -> Result<Option<Self>> {
+    pub fn from_tag(tag: &str) -> Result<Option<Self>> {
         let Some(version) = tag.strip_prefix('v') else {
             tracing::debug!("Not parsing tag that does not start with `v`");
             return Ok(None);
@@ -143,8 +142,7 @@ fn release_for_pr(repository: &Repository, repo: &str, pr_number: u64) -> Result
     for pair in repository.releases.windows(2) {
         let [release, base] = pair else { unreachable!() };
         tracing::info!("Checking commits {base}..{release} for release {release}");
-        if pull_requests_in_range(repo, &repository.path, &base.to_string(), &release.to_string())?.contains(&pr_number)
-        {
+        if pull_requests_in_range(&repository.path, &base.to_string(), &release.to_string())?.contains(&pr_number) {
             tracing::info!("Matched {release}");
             return Ok(Some(release.clone()));
         }
@@ -158,11 +156,11 @@ fn release_for_pr(repository: &Repository, repo: &str, pr_number: u64) -> Result
 /// PR numbers are read from the conventional `(#123)` commit-subject suffix.
 /// N.B. That this is just based on commit subject line, so it could be spoofed in principle.
 /// Each PR is logged as it is found, and commits without that suffix produce a warning.
-pub fn pull_requests_in_range(repo_name: &str, repo: &Path, base: &str, head: &str) -> Result<Vec<u64>> {
+pub fn pull_requests_in_range(repo_path: &Path, base: &str, head: &str) -> Result<Vec<u64>> {
     let subjects = cmd!("git", "log", "--format=%s", format!("{base}..{head}"))
-        .dir(repo)
+        .dir(repo_path)
         .read()
-        .with_context(|| format!("failed to inspect commits {base}..{head} in {}", repo.display()))?;
+        .with_context(|| format!("failed to inspect commits {base}..{head} in {}", repo_path.display()))?;
     let mut pull_requests = BTreeSet::new();
     for subject in subjects.lines() {
         let number = subject
@@ -173,10 +171,10 @@ pub fn pull_requests_in_range(repo_name: &str, repo: &Path, base: &str, head: &s
             .and_then(|number| number.parse().ok());
         if let Some(number) = number {
             if pull_requests.insert(number) {
-                tracing::info!("Found {repo_name}#{number}");
+                tracing::info!("Found PR #{number}");
             }
         } else {
-            eprintln!("Warning: {repo_name} commit is not associated with a pull request: {subject}");
+            eprintln!("Warning: commit is not associated with a pull request: {subject}");
         }
     }
     Ok(pull_requests.into_iter().collect())
@@ -245,8 +243,8 @@ fn earliest_rollback_point_for_pr(
     Ok(results.collect_all()?.into_iter().flatten().max())
 }
 
-trait CollectAll<T> {
-    // Collect and combine all errors from a Vec<Result<T>>
+/// Collects every successful value, or combines every error into one error.
+pub trait CollectAll<T> {
     fn collect_all(self) -> Result<Vec<T>>;
 }
 
@@ -339,16 +337,16 @@ mod tests {
 
     #[test]
     fn release_is_canonical_and_uses_hotfix_ordering() {
-        let base: Release = "v2.8.0".parse().unwrap();
-        let hotfix_2: Release = "v2.8.0-hotfix2".parse().unwrap();
-        let hotfix_10: Release = "v2.8.0-hotfix10".parse().unwrap();
+        let base = Release::from_tag("v2.8.0").unwrap().unwrap();
+        let hotfix_2 = Release::from_tag("v2.8.0-hotfix2").unwrap().unwrap();
+        let hotfix_10 = Release::from_tag("v2.8.0-hotfix10").unwrap().unwrap();
         assert_eq!(base.to_string(), "v2.8.0");
         assert!(base < hotfix_2);
         assert!(hotfix_2 < hotfix_10);
-        assert!("2.8.0".parse::<Release>().is_err());
-        assert!("v2.8.0-rc1".parse::<Release>().is_err());
-        assert!("v2.8.0-hotfix01".parse::<Release>().is_err());
-        assert!("v2.8.0+build".parse::<Release>().is_err());
+        assert!(Release::from_tag("2.8.0").unwrap().is_none());
+        assert!(Release::from_tag("v2.8.0-rc1").is_err());
+        assert!(Release::from_tag("v2.8.0-hotfix01").is_err());
+        assert!(Release::from_tag("v2.8.0+build").is_err());
     }
 
     #[test]
@@ -367,7 +365,7 @@ mod tests {
         assert!(load_releases(repository.path(), false).is_err());
         assert_eq!(
             load_releases(repository.path(), true).unwrap(),
-            vec!["v2.7.0".parse().unwrap()]
+            vec![Release::from_tag("v2.7.0").unwrap().unwrap()]
         );
     }
 
@@ -399,7 +397,7 @@ mod tests {
         };
         assert_eq!(
             release_for_pr(&repository, "o/r", 42).unwrap(),
-            Some("v2.8.0".parse().unwrap())
+            Some(Release::from_tag("v2.8.0").unwrap().unwrap())
         );
     }
 
@@ -410,7 +408,7 @@ mod tests {
         commit(repository.path(), "duplicate", "Follow-up (#42)");
         commit(repository.path(), "unmatched", "Merge branch");
 
-        let pull_requests = pull_requests_in_range("o/r", repository.path(), "v2.7.0", "HEAD").unwrap();
+        let pull_requests = pull_requests_in_range(repository.path(), "v2.7.0", "HEAD").unwrap();
         assert_eq!(pull_requests, vec![42]);
     }
 
