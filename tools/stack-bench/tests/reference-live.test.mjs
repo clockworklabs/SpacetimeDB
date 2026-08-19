@@ -42,6 +42,20 @@ test('reference qualification requires an explicit valid stack scope', () => {
     '--backend', 'postgres', '--repetitions', '0']), /positive integer/);
 });
 
+test('parallel Spacetime qualification derives an isolated listener port from the run index', () => {
+  const first = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'spacetime', '--run-index', '0']);
+  const parallel = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'spacetime', '--run-index', '14']);
+  const explicit = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'spacetime', '--run-index', '14', '--spacetime-port', '4411']);
+
+  assert.equal(first.spacetimePort, 3310);
+  assert.equal(parallel.spacetimePort, 3324);
+  assert.notEqual(first.spacetimePort, parallel.spacetimePort);
+  assert.equal(explicit.spacetimePort, 4411);
+});
+
 test('reference qualification resolves the exact executable calibration identity', () => {
   const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-direct-actions-mongodb',
     imported: { sourceSha256: 'd90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40' } });
