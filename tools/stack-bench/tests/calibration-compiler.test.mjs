@@ -83,6 +83,7 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
     'ecommerce.l2-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.2.0:qualified',
     'ecommerce.l2-standard-calibration@1.4.0:qualified',
+    'ecommerce.l2-standard-calibration@1.5.0:draft',
   ]);
 });
 

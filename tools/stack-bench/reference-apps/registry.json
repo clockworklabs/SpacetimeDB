@@ -367,7 +367,9 @@
       "imported": {
         "sourceSha256": "2b678936abe7faa9670a914a425369f478956a2f5ef3326725d32a3b7aacebdb"
       },
-      "mutationManifests": [],
+      "mutationManifests": [
+        "grader/mutations/candidates/mongodb-ecom-l2-cumulative-1.5.0.json"
+      ],
       "qualification": "Candidate source pending exact hash-bound L2 1.5 reference and mutation qualification."
     },
     {
@@ -389,7 +391,9 @@
       "imported": {
         "sourceSha256": "7b3d6c936623ed8ff8b4ff3e61204c291b784c2d36c2bc1edbd5bcca47f9c952"
       },
-      "mutationManifests": [],
+      "mutationManifests": [
+        "grader/mutations/candidates/postgres-ecom-l2-cumulative-1.5.0.json"
+      ],
       "qualification": "Candidate source pending exact hash-bound L2 1.5 reference and mutation qualification."
     },
     {
@@ -411,7 +415,9 @@
       "imported": {
         "sourceSha256": "b0bfc4405e684511874f5a867a5dc84e28b258e46729b7199a1e8aa5e27b61ce"
       },
-      "mutationManifests": [],
+      "mutationManifests": [
+        "grader/mutations/candidates/spacetime-ecom-l2-cumulative-1.5.0.json"
+      ],
       "qualification": "Candidate source pending exact hash-bound L2 1.5 reference and mutation qualification."
     },
     {
