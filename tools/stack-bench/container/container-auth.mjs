@@ -32,17 +32,15 @@ export function resolveContainerAuth({ apiKey = '', env = process.env, credentia
       mount: { kind: 'bind', source, target: SUBSCRIPTION_TOKEN_TARGET, readOnly: true } };
   }
   if (credentialsPath && exists(credentialsPath)) {
-    return { mode: 'credentials', environment: null,
-      mount: { kind: 'bind', source: credentialsPath,
-        target: '/root/.claude/.credentials.json', readOnly: false } };
+    throw new Error('rotating Claude credential files cannot be isolated from generated shell commands; '
+      + 'select an API key or CLAUDE_CODE_OAUTH_TOKEN_FILE');
   }
   throw new Error(`no API key, ${SUBSCRIPTION_TOKEN_ENVIRONMENT}, `
     + `${SUBSCRIPTION_TOKEN_ENVIRONMENT}_FILE, or credentials file is available`);
 }
 
-export function containerAuthCommand(auth, claudeArgs) {
-  if (auth.mode !== 'subscription-token' || !auth.mount) return ['claude', ...claudeArgs];
-  return ['sh', '-lc',
-    `CLAUDE_CODE_OAUTH_TOKEN="$(cat ${SUBSCRIPTION_TOKEN_TARGET})" exec claude "$@"`,
-    'stack-bench-claude', ...claudeArgs];
+export function containerAuthSecret(auth, { read = readFileSync } = {}) {
+  if (auth?.environment?.value) return String(auth.environment.value).trim();
+  if (auth?.mount?.source) return String(read(auth.mount.source, 'utf8')).trim();
+  throw new Error('selected container authentication has no broker credential');
 }

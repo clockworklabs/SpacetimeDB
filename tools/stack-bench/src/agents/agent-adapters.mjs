@@ -29,13 +29,12 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
     { apiKeyEnvironmentVariable: 'ANTHROPIC_API_KEY',
       credentialEnvironmentVariables: ['CLAUDE_CODE_OAUTH_TOKEN'],
       costLimit: 'native',
-      credentialFiles: [join('.claude', '.credentials.json')],
       outboundDestinations: ['https://api.anthropic.com'], requiredExecutables: ['claude'],
       // `claude auth status --json` exits zero even when it reports
       // `loggedIn:false`; the adapter command must turn semantic logout into a
       // failed preflight without making a provider request.
       credentialStatusCommand: CLAUDE_SUBSCRIPTION_STATUS_COMMAND,
-      usesStackSkills: true, version: '1.10.0' }),
+      usesStackSkills: true, version: '1.11.0' }),
   adapter('deterministic', join('fixtures', 'stub-agent.mjs'), 'deterministic',
     { costLimit: 'non-billable', version: '1.1.0' }),
   adapter('fault-injection', join('fixtures', 'fault-agent.mjs'), 'fault-injection',

@@ -95,7 +95,7 @@ test('preflight fails before a paid run when the selected agent executable is ab
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('subscription credential status is checked inside the exact build image without a model call', () => {
+test('a rotating interactive credential cannot satisfy preflight', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-credential-'));
   try {
     const credential = join(root, '.claude', '.credentials.json');
@@ -103,43 +103,19 @@ test('subscription credential status is checked inside the exact build image wit
     writeFileSync(credential, '{}');
     const selected = parsePreflightArgs(['node', 'preflight.mjs', '--backend', 'stub',
       '--track', 'loop', '--levels', '1', '--agent-adapter', 'claude-code',
-      '--results-dir', root, '--smoke']);
-    let dockerArgs;
-    let credentialStatus = 'ready';
+      '--results-dir', root]);
     const run = (_file, args) => {
       if (args[0] === 'info') return dockerInfo();
       if (args[0] === 'compose') return '2.40.0';
       if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
         ? 'linux/amd64' : `${IMAGE_ID}\n`;
-      if (args[0] === 'run') {
-        dockerArgs = args;
-        const mount = args[args.indexOf('-v') + 1].split(':/results')[0];
-        writeFileSync(join(mount, args.at(-1)), 'container-write-ok');
-        return JSON.stringify({ platform: 'linux', arch: 'x64', node: 'v22.0.0', reached: [],
-          tcpReached: [], executables: { claude: '/usr/local/bin/claude' },
-          credentialStatus, diskFreeBytes: 20 * 1024 ** 3 });
-      }
       throw new Error(`unexpected docker command: ${args.join(' ')}`);
     };
     const report = runPreflight(selected, { run, now: Date.parse('2026-08-12T12:00:00.100Z'),
       env: {}, home: root, statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
       pidsOnPort: () => [], probePort: () => ({ free: true }) });
-    assert.equal(report.checks.find(check => check.id === 'agent.authentication').status, 'pass');
-    assert.equal(report.checks.find(check => check.id === 'agent.authentication-provider').status, 'warn');
-    assert.match(report.checks.find(check => check.id === 'agent.authentication-provider').summary,
-      /did not ask the provider/);
-    assert.match(dockerArgs[dockerArgs.indexOf('--mount') + 1],
-      /dst=\/root\/\.claude\/\.credentials\.json,readonly$/);
-    assert.deepEqual(JSON.parse(dockerArgs.at(-3)),
-      AGENT_ADAPTER_REGISTRY.get('claude-code').credentialStatusCommand);
-    credentialStatus = 'not-ready';
-    const loggedOut = runPreflight(selected, { run, now: Date.parse('2026-08-12T12:00:00.100Z'),
-      env: {}, home: root, statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
-      pidsOnPort: () => [], probePort: () => ({ free: true }) });
-    assert.equal(loggedOut.ok, false);
-    assert.equal(loggedOut.checks.find(check => check.id === 'agent.authentication').status, 'fail');
-    assert.match(loggedOut.checks.find(check => check.id === 'agent.authentication').remediation,
-      /Refresh/);
+    assert.equal(report.ok, false);
+    assert.equal(report.checks.find(check => check.id === 'agent.credentials').status, 'fail');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

@@ -241,7 +241,7 @@ test('frozen campaigns require exact runtime images and accept qualified levels'
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.10.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.11.0',
     model: 'claude-sonnet-5' }];
   const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
     source: 'test snapshot', models: { 'claude-sonnet-5': {

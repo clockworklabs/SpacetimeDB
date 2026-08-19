@@ -2,22 +2,20 @@ import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-import { containerAuthCommand, resolveContainerAuth,
+import { containerAuthSecret, resolveContainerAuth,
   SUBSCRIPTION_TOKEN_TARGET } from '../container/container-auth.mjs';
 
-test('container auth keeps direct secret values out of Docker command arguments', () => {
+test('container auth resolves a direct subscription token in controller memory', () => {
   const secret = 'subscription-secret-value';
   const auth = resolveContainerAuth({ env: { CLAUDE_CODE_OAUTH_TOKEN: secret },
     credentialsPath: '/unused/credentials' });
   assert.equal(auth.mode, 'subscription-token');
   assert.equal(auth.environment.name, 'CLAUDE_CODE_OAUTH_TOKEN');
   assert.equal(auth.environment.value, secret);
-  const command = containerAuthCommand(auth, ['--print', 'hello']);
-  assert.deepEqual(command, ['claude', '--print', 'hello']);
-  assert.doesNotMatch(JSON.stringify(command), /subscription-secret-value/);
+  assert.equal(containerAuthSecret(auth), secret);
 });
 
-test('container auth mounts a selected subscription token read-only and loads it at exec', () => {
+test('container auth resolves a selected subscription token only in the controller', () => {
   const tokenPath = resolve('/private/token');
   const auth = resolveContainerAuth({ env: { CLAUDE_CODE_OAUTH_TOKEN_FILE: tokenPath },
     credentialsPath: '/unused/credentials', exists: path => path === tokenPath,
@@ -25,11 +23,7 @@ test('container auth mounts a selected subscription token read-only and loads it
   assert.equal(auth.mode, 'subscription-token');
   assert.deepEqual(auth.mount, { kind: 'bind', source: tokenPath,
     target: SUBSCRIPTION_TOKEN_TARGET, readOnly: true });
-  const command = containerAuthCommand(auth, ['--print']);
-  assert.equal(command[0], 'sh');
-  assert.match(command[2], /CLAUDE_CODE_OAUTH_TOKEN/);
-  assert.match(command[2], /exec claude/);
-  assert.doesNotMatch(JSON.stringify(command), /present/);
+  assert.equal(containerAuthSecret(auth, { read: () => 'present\n' }), 'present');
 });
 
 test('container auth rejects ambiguous or unusable selected credentials', () => {
@@ -46,10 +40,9 @@ test('container auth rejects ambiguous or unusable selected credentials', () => 
   }, exists: () => true, read: () => '\n' }), /is empty/);
 });
 
-test('container auth retains the explicit rotating-credential fallback', () => {
-  const auth = resolveContainerAuth({ env: {}, credentialsPath: '/home/.claude/.credentials.json',
-    exists: path => path === '/home/.claude/.credentials.json' });
-  assert.equal(auth.mode, 'credentials');
-  assert.equal(auth.mount.target, '/root/.claude/.credentials.json');
-  assert.equal(auth.mount.readOnly, false);
+test('container auth rejects rotating credentials that generated commands could read', () => {
+  assert.throws(() => resolveContainerAuth({ env: {},
+    credentialsPath: '/home/.claude/.credentials.json',
+    exists: path => path === '/home/.claude/.credentials.json' }),
+  /cannot be isolated/);
 });

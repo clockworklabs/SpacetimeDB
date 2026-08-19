@@ -19,13 +19,15 @@ destroy it after copying verified results elsewhere.
   wrong-release content.
 - `docker-compose.yaml` starts the controller, one-shot dependency initializer,
   and digest-pinned PostgreSQL and MongoDB services.
-- `operator.env.example` documents the three operator-supplied values. It never
+- `operator.env.example` documents the required operator values. It never
   contains a real secret or a usable mutable image tag.
 
 The coding container receives the selected app, its own transcript directory,
 and only the dependency paths declared by its stack adapter. It never receives
 the controller image filesystem, scenarios, grader, results, or release
-manifest.
+manifest. It also never receives the provider API key, subscription token, or
+login file. A controller-owned session broker adds the selected provider
+credential to model requests and stops when that coding session ends.
 
 ## Build a development candidate
 
@@ -65,11 +67,8 @@ the downloaded bundle.
 2. For subscription billing, run `claude setup-token` once for the dedicated
    runner, write only the returned token to
    `/var/lib/stack-bench/secrets/claude_subscription_token`, and set the file to
-   mode `0600`. Select `subscription-token` in the operator environment. The
-   older rotating interactive-login file remains available as the explicit
-   `credentials` mode at
-   `/var/lib/stack-bench/controller-home/.claude/.credentials.json`. For API
-   billing, write the provider API key as the only line in a mode-`0600` file
+   mode `0600`. Select `subscription-token` in the operator environment. For
+   API billing, write the provider API key as the only line in a mode-`0600` file
    below `/var/lib/stack-bench/secrets` and select `api-key`. Never configure
    more than one mode for a run.
 3. Copy `operator.env.example` to `/var/lib/stack-bench/operator.env`, select the

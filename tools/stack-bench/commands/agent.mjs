@@ -728,10 +728,10 @@ async function main() {
           ...(maxBudgetUsd != null ? ['--max-budget-usd', String(maxBudgetUsd)] : []),
           '--settings', `/app/${basename(settings)}`,
           '--ports', [p.vite, p.express].filter(Boolean).join(','),
-          ...(args.apiKey ? ['--api-key', args.apiKey] : []),
           ...(resumeSession ? ['--resume-session', resumeSession] : []),
           ...(recoverStoppedContainer ? ['--recover-stopped-container'] : []),
-        ], { input, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, env: cliEnv,
+        ], { input, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
+          env: { ...cliEnv, ...(args.apiKey ? { STACK_BENCH_AGENT_API_KEY: args.apiKey } : {}) },
           timeout: BUILD_SESSION_TIMEOUT_MS }),
     });
   } catch (err) {
@@ -800,7 +800,7 @@ async function main() {
       // two are not the same measurement.
       auth: (args.apiKey ?? process.env.ANTHROPIC_API_KEY) ? 'api-key'
         : (process.env.CLAUDE_CODE_OAUTH_TOKEN || process.env.CLAUDE_CODE_OAUTH_TOKEN_FILE)
-          ? 'subscription-token' : 'credentials',
+          ? 'subscription-token' : 'not-selected',
       // What is actually being benchmarked, not just what drove it.
       ...executeStackCapability(adapter, 'agent', 'setup-metadata', {
         imageId: imageIdentity.id,

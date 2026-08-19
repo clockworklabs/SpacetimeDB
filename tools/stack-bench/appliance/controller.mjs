@@ -31,9 +31,9 @@ export function resolveControllerCommand(argv) {
 }
 
 export function controllerChildEnvironment(source = process.env) {
-  const mode = source.STACK_BENCH_AGENT_AUTH ?? 'credentials';
-  if (!['credentials', 'subscription-token', 'api-key'].includes(mode)) {
-    throw new Error('STACK_BENCH_AGENT_AUTH must be credentials, subscription-token, or api-key');
+  const mode = source.STACK_BENCH_AGENT_AUTH ?? 'subscription-token';
+  if (!['subscription-token', 'api-key'].includes(mode)) {
+    throw new Error('STACK_BENCH_AGENT_AUTH must be subscription-token or api-key');
   }
   const env = { ...source };
   delete env.ANTHROPIC_API_KEY;

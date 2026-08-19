@@ -13,7 +13,7 @@
 // Usage (argv mirrors what agent.mjs already computes):
 //   node run-build.mjs --app <dir> --image <tag> --effort high \
 //                      [--ports 6473,6573] [--model claude-sonnet-5] \
-//                      [--settings /app/.sandbox-settings.json] [--api-key <key>]
+//                      [--settings /app/.sandbox-settings.json]
 //
 // Run it by hand from Git Bash and export MSYS_NO_PATHCONV=1 first, or the shell
 // rewrites `/app/...` arguments into `C:/Program Files/Git/app/...` before this
@@ -29,7 +29,8 @@ import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
 import { dockerHostGatewayArguments } from '../src/runtime/docker-network.mjs';
-import { containerAuthCommand, resolveContainerAuth } from './container-auth.mjs';
+import { resolveContainerAuth, SUBSCRIPTION_TOKEN_TARGET } from './container-auth.mjs';
+import { startCredentialBroker, stopCredentialBroker } from './credential-broker.mjs';
 import { recoverStoppedBuildContainer } from './recover-build-container.mjs';
 
 const argv = process.argv.slice(2);
@@ -83,15 +84,10 @@ if (!containerPlan || !Array.isArray(containerPlan.requiredPaths)
   process.exit(2);
 }
 
-// Auth. API keys and direct subscription tokens are forwarded by environment
-// name so their values never appear in Docker command arguments. Appliance
-// subscription tokens arrive as a read-only secret file and are read only by
-// the final shell that execs Claude. The older rotating credential remains
-// read-write because the CLI refreshes it in place.
-//
-// Conflicting explicit modes fail closed. A stale interactive credential may
-// remain on disk, but it is ignored when a token or API key was selected.
-const apiKey = opt('--api-key', process.env.ANTHROPIC_API_KEY ?? '');
+// Auth is resolved in the controller. A short-lived broker forwards model API
+// requests later. The coding container never receives the long-lived provider
+// credential or a credential file.
+const apiKey = process.env.STACK_BENCH_AGENT_API_KEY ?? process.env.ANTHROPIC_API_KEY ?? '';
 const creds = join(homedir(), '.claude', '.credentials.json');
 let auth = null;
 if (!prepareOnly) {
@@ -142,12 +138,16 @@ catch (error) {
 }
 
 function inspectContainer(name) {
-  const r = spawnSync('docker', ['inspect', '--format',
-    '{{.Id}} {{.Image}} {{.State.Running}} {{.HostConfig.NetworkMode}}', name],
+  const r = spawnSync('docker', ['inspect', name],
   { encoding: 'utf8', env: dockerEnv, timeout: DOCKER_TIMEOUT_MS });
   if (r.status !== 0) return null;
-  const [id, inspectedImage, running, networkMode] = r.stdout.trim().split(/\s+/, 4);
-  return { id, image: inspectedImage, running: running === 'true', networkMode };
+  const inspected = JSON.parse(r.stdout)[0];
+  const sensitiveTargets = new Set([SUBSCRIPTION_TOKEN_TARGET, '/root/.claude/.credentials.json']);
+  const unsafeCredentialExposure = (inspected.Mounts ?? [])
+    .some(mount => sensitiveTargets.has(mount.Destination))
+    || (inspected.Config?.Env ?? []).some(value => /^(?:ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN)=/.test(value));
+  return { id: inspected.Id, image: inspected.Image, running: inspected.State?.Running === true,
+    networkMode: inspected.HostConfig?.NetworkMode, unsafeCredentialExposure };
 }
 
 // Resolve ownership before looking at, reusing, or creating a container. A
@@ -194,6 +194,11 @@ if (existing) {
       + `expected ${expectedNetworkMode}`);
     process.exit(3);
   }
+  if (existing?.unsafeCredentialExposure) {
+    console.error(`run-build.mjs: leased container ${containerName} was created with a provider credential; `
+      + 'reconcile the run and start it with the isolated credential broker');
+    process.exit(3);
+  }
 } else if (priorContainer) {
   console.error(`run-build.mjs: leased container ${priorContainer.name}/${priorContainer.id} is missing`);
   process.exit(3);
@@ -210,7 +215,6 @@ if (!existing) {
   create.push('--network', expectedNetworkMode);
   create.push(...dockerHostGatewayArguments(expectedNetworkMode));
   if (projects) create.push('-v', `${projects}:/root/.claude/projects/-app`);
-  if (auth?.mount) create.push(...dockerMountArguments(auth.mount));
   // The selected adapter owns every stack-specific mount. Giving a treatment
   // another stack's artifacts would violate the "only artifacts under test"
   // boundary.
@@ -313,10 +317,6 @@ const args = ['exec', '-i', '-w', '/app'];
 
 args.push('-e', 'DISABLE_AUTOUPDATER=1', '-e', 'FORCE_PROMPT_CACHING_5M=1');
 const dockerExecEnv = { ...process.env, MSYS_NO_PATHCONV: '1' };
-if (auth?.environment) {
-  dockerExecEnv[auth.environment.name] = auth.environment.value;
-  args.push('-e', auth.environment.name);
-}
 // A container does not inherit the caller's environment, so anything the run is
 // meant to be configured by has to be handed over explicitly. Only variables the
 // harness sets deliberately are forwarded — passing the whole environment would
@@ -340,18 +340,34 @@ const claudeArgs = [
 // The sandbox settings file is written into the app directory by the caller,
 // so it arrives through the /app mount at a known container path.
 if (opt('--settings')) claudeArgs.push('--settings', opt('--settings'));
-args.push(containerName, ...containerAuthCommand(auth, claudeArgs));
+
+let credentialBroker = null;
+try {
+  credentialBroker = startCredentialBroker(auth,
+    { networkMode: expectedNetworkMode, deadlineMs: BUILD_SESSION_TIMEOUT_MS });
+} catch (error) {
+  console.error(`run-build.mjs: ${error.message}`);
+  process.exit(2);
+}
+dockerExecEnv.ANTHROPIC_AUTH_TOKEN = credentialBroker.sessionToken;
+args.push('-e', 'ANTHROPIC_AUTH_TOKEN', '-e', `ANTHROPIC_BASE_URL=${credentialBroker.baseUrl}`,
+  containerName, 'claude', ...claudeArgs);
 
 // MSYS_NO_PATHCONV: Git Bash rewrites container-side paths like /app into
 // Windows paths (C:/Program Files/Git/app) and every mount silently lands
 // somewhere wrong.
-const res = spawnSync('docker', args, {
-  input: process.stdin.isTTY ? '' : readFileSync(0, 'utf8'),
-  encoding: 'utf8',
-  maxBuffer: 256 * 1024 * 1024,
-  env: dockerExecEnv,
-  timeout: BUILD_SESSION_TIMEOUT_MS,
-});
+let res;
+try {
+  res = spawnSync('docker', args, {
+    input: process.stdin.isTTY ? '' : readFileSync(0, 'utf8'),
+    encoding: 'utf8',
+    maxBuffer: 256 * 1024 * 1024,
+    env: dockerExecEnv,
+    timeout: BUILD_SESSION_TIMEOUT_MS,
+  });
+} finally {
+  stopCredentialBroker(credentialBroker);
+}
 
 if ((res.status ?? 1) !== 0) {
   const state = spawnSync('docker', ['inspect', '--format', '{{json .State}}', containerName], {

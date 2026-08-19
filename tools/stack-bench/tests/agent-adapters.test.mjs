@@ -14,7 +14,7 @@ test('built-in agent adapters are statically registered and content identified',
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const identity = agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));
     assert.equal(identity.id, id);
-    const expectedVersion = id === 'claude-code' ? '1.10.0' : id === 'deterministic' ? '1.1.0' : '1.0.0';
+    const expectedVersion = id === 'claude-code' ? '1.11.0' : id === 'deterministic' ? '1.1.0' : '1.0.0';
     assert.equal(identity.version, expectedVersion);
     assert.match(identity.sha256, /^[a-f0-9]{64}$/);
   }
