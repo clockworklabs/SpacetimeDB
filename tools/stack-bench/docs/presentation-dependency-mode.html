@@ -924,9 +924,68 @@
   .dg .dg-col.dim, .dg-n.l4 text { fill: var(--n4); }
   .dg-n.l4 rect { stroke: #2b3a42; }
 
+  /* Product overview: one flat feature grid, not a dashboard. */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: 100%;
+    max-width: 920px;
+    margin-top: 1.1rem;
+    border-top: 1px solid var(--shade1);
+    border-left: 1px solid var(--shade1);
+  }
+  .feature-item {
+    min-height: 152px;
+    padding: 1.35rem 1.45rem 1.25rem;
+    border-right: 1px solid var(--shade1);
+    border-bottom: 1px solid var(--shade1);
+    background: linear-gradient(145deg, #0b1114 0%, #08100c 100%);
+  }
+  .feature-icon {
+    width: 28px;
+    height: 28px;
+    margin-bottom: .85rem;
+    color: var(--green);
+  }
+  .feature-icon svg {
+    width: 100%;
+    height: 100%;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .feature-item h3 {
+    margin: 0 0 .35rem;
+    color: var(--n1);
+    font-size: 1rem;
+    font-weight: 590;
+  }
+  .feature-item p {
+    margin: 0;
+    color: var(--n3);
+    font-size: .78rem;
+    line-height: 1.45;
+  }
+  section.on .feature-item {
+    opacity: 0;
+    transform: translateY(10px);
+    animation: featureIn .45s ease forwards;
+  }
+  section.on .feature-item:nth-child(1) { animation-delay: .22s; }
+  section.on .feature-item:nth-child(2) { animation-delay: .28s; }
+  section.on .feature-item:nth-child(3) { animation-delay: .34s; }
+  section.on .feature-item:nth-child(4) { animation-delay: .40s; }
+  section.on .feature-item:nth-child(5) { animation-delay: .46s; }
+  section.on .feature-item:nth-child(6) { animation-delay: .52s; }
+  @keyframes featureIn { to { opacity: 1; transform: none; } }
+
   @media (max-width: 760px) {
     .proof-flow { grid-template-columns: 1fr; }
     .proof-flow::before { display: none; }
+    .feature-grid { grid-template-columns: 1fr 1fr; }
+    .feature-item { min-height: 138px; padding: 1rem; }
   }
 </style>
 </head>
@@ -948,6 +1007,45 @@
   </div>
   <h1 class="r d1">Stack Bench</h1>
   <p class="lead r d2"><span>Build the same product on different database stacks. Test what works, repair what fails, and compare the evidence.</span></p>
+</section>
+
+<!-- 2 product overview -->
+<section class="visual-tight visual-first">
+  <div class="kicker r">what it includes</div>
+  <h2 class="r d1">What Stack Bench includes.</h2>
+  <p class="lead r d2">One system runs the build, tests the finished product, manages repairs, and preserves everything needed to compare database stacks.</p>
+  <div class="feature-grid r d3" role="list" aria-label="Stack Bench capabilities">
+    <article class="feature-item" role="listitem">
+      <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M7 8h18v16H7z"/><path d="M11 13l3 3-3 3M17 19h4"/></svg></div>
+      <h3>AI build runner</h3>
+      <p>Runs the selected model with the product brief, stack, and budget.</p>
+    </article>
+    <article class="feature-item" role="listitem">
+      <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><circle cx="8" cy="8" r="3"/><circle cx="24" cy="8" r="3"/><circle cx="16" cy="24" r="3"/><path d="M10.5 9.5l4 11M21.5 9.5l-4 11M11 8h10"/></svg></div>
+      <h3>Modular product spec</h3>
+      <p>Versions features, dependencies, prompts, checks, and scoring rules.</p>
+    </article>
+    <article class="feature-item" role="listitem">
+      <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 9l11-5 11 5-11 5zM5 9v14l11 5 11-5V9M16 14v14"/></svg></div>
+      <h3>Isolated stack runtime</h3>
+      <p>Starts the generated app and database services in controlled containers.</p>
+    </article>
+    <article class="feature-item" role="listitem">
+      <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M5 7h22v16H5zM10 27h12M16 23v4"/><path d="M10 15l4 4 8-9"/></svg></div>
+      <h3>Automated grader</h3>
+      <p>Exercises real user flows, database changes, failures, and concurrency.</p>
+    </article>
+    <article class="feature-item" role="listitem">
+      <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M25 11a10 10 0 10.5 9"/><path d="M25 5v6h-6M12 12l8 8M20 12l-8 8"/></svg></div>
+      <h3>Repair controller</h3>
+      <p>Returns failed checks to the agent and manages the repair budget.</p>
+    </article>
+    <article class="feature-item" role="listitem">
+      <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M8 4h12l5 5v19H8zM20 4v6h6"/><path d="M12 15h9M12 20h9M12 25h6"/></svg></div>
+      <h3>Evidence and comparison</h3>
+      <p>Packages source, prompts, scores, cost, screenshots, video, and traces.</p>
+    </article>
+  </div>
 </section>
 
 <!-- 3 functional architecture -->
