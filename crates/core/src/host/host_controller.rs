@@ -21,7 +21,9 @@ use crate::subscription::module_subscription_manager::{spawn_send_worker, Subscr
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::util::asyncify;
 use crate::util::jobs::{AllocatedJobCore, JobCores};
-use crate::worker_metrics::{record_module_host_init_attempt, record_module_host_init_failure, WORKER_METRICS};
+use crate::worker_metrics::{
+    record_module_host_init_attempt, record_module_host_init_failure, ModuleHostInitFailureCause, WORKER_METRICS,
+};
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
@@ -289,6 +291,25 @@ impl From<&EventStatus> for ReducerOutcome {
                 ReducerOutcome::Failed(Box::new((&**e).into()))
             }
             EventStatus::OutOfEnergy => ReducerOutcome::BudgetExceeded,
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum HostInitError {
+    #[error("init reducer ran out of energy")]
+    OutOfEnergy,
+}
+
+impl HostInitError {
+    fn metric_cause(error: &anyhow::Error) -> ModuleHostInitFailureCause {
+        if error
+            .downcast_ref::<Self>()
+            .is_some_and(|error| matches!(error, Self::OutOfEnergy))
+        {
+            ModuleHostInitFailureCause::OutOfEnergy
+        } else {
+            ModuleHostInitFailureCause::Other
         }
     }
 }
@@ -769,7 +790,20 @@ impl HostController {
 
         Host::try_init(self, database, replica_id)
             .await
-            .inspect_err(|_| record_module_host_init_failure(database_identity))
+            .inspect_err(|error| {
+                let cause = HostInitError::metric_cause(error);
+                match cause {
+                    ModuleHostInitFailureCause::OutOfEnergy => {
+                        log::debug!(
+                            "failed to init replica {replica_id} for {database_identity} due to out of energy error from init reducer: {error}"
+                        );
+                    }
+                    ModuleHostInitFailureCause::Other => {
+                        log::warn!("failed to init replica {replica_id} for {database_identity}: {error:#}");
+                    }
+                }
+                record_module_host_init_failure(database_identity, cause)
+            })
             .with_context(|| format!("failed to init replica {} for {}", replica_id, database_identity))
     }
 }
@@ -1239,6 +1273,9 @@ impl Host {
         if program_needs_init {
             let InitDatabaseResult { reducer, tx_offset } = launched.module_host.init_database(program).await?;
             if let Some(call_result) = reducer {
+                if matches!(call_result.outcome, ReducerOutcome::BudgetExceeded) {
+                    return Err(HostInitError::OutOfEnergy.into());
+                }
                 Result::from(call_result)?;
             }
             bootstrap_completion = Some(BootstrapCompletion::pending(
