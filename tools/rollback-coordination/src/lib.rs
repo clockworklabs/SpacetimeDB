@@ -174,7 +174,7 @@ pub fn pull_requests_in_range(repo_path: &Path, base: &str, head: &str) -> Resul
                 tracing::info!("Found PR #{number}");
             }
         } else {
-            eprintln!("Warning: commit is not associated with a pull request: {subject}");
+            tracing::warn!("Commit is not associated with a pull request: {subject}");
         }
     }
     Ok(pull_requests.into_iter().collect())

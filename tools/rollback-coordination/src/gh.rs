@@ -1,11 +1,11 @@
 //! Thin wrappers around GitHub API requests. Business logic belongs in the
 //! calling coordination modules, not here.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
+use duct::cmd;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::path::Path;
-use std::process::Command;
 
 // TODO: Consolidate this with other half-implementations of GitHub CLI calls across the codebase.
 #[derive(Deserialize)]
@@ -32,32 +32,17 @@ pub struct Gh;
 
 impl Github for Gh {
     fn get<T: DeserializeOwned>(&self, endpoint: &str) -> Result<T> {
-        let output = Command::new("gh")
-            .args(["api", endpoint])
-            .output()
+        let output = cmd!("gh", "api", endpoint)
+            .read()
             .with_context(|| format!("failed to run `gh api {endpoint}`"))?;
-        if !output.status.success() {
-            bail!(
-                "GitHub API request {endpoint} failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
-        }
-        serde_json::from_slice(&output.stdout).with_context(|| format!("invalid response from {endpoint}"))
+        serde_json::from_str(&output).with_context(|| format!("invalid response from {endpoint}"))
     }
 
     fn repository_info(&self, path: &Path) -> Result<RepositoryInfo> {
-        let output = Command::new("gh")
-            .args(["repo", "view", "--json", "nameWithOwner"])
-            .current_dir(path)
-            .output()
+        let output = cmd!("gh", "repo", "view", "--json", "nameWithOwner")
+            .dir(path)
+            .read()
             .with_context(|| format!("failed to run `gh repo view` in {}", path.display()))?;
-        if !output.status.success() {
-            bail!(
-                "`gh repo view` failed in {}: {}",
-                path.display(),
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
-        }
-        serde_json::from_slice(&output.stdout).context("invalid response from `gh repo view`")
+        serde_json::from_str(&output).context("invalid response from `gh repo view`")
     }
 }
