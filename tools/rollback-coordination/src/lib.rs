@@ -267,6 +267,8 @@ mod tests {
         assert!(Release::from_tag("v2.8.0-rc1").is_err());
         assert!(Release::from_tag("v2.8.0-hotfix01").is_err());
         assert!(Release::from_tag("v2.8.0+build").is_err());
+        let release = Release::from_tag("v2.8.1").unwrap().unwrap();
+        assert_eq!((release.major(), release.minor(), release.patch()), (2, 8, 1));
     }
 
     #[test]

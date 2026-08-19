@@ -57,6 +57,18 @@ impl Release {
 
         Ok(Some(Self { version, hotfix }))
     }
+
+    pub fn major(&self) -> u64 {
+        self.version.major
+    }
+
+    pub fn minor(&self) -> u64 {
+        self.version.minor
+    }
+
+    pub fn patch(&self) -> u64 {
+        self.version.patch
+    }
 }
 
 impl fmt::Display for Release {
