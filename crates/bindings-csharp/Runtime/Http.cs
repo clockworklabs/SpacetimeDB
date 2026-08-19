@@ -95,7 +95,7 @@ public sealed class HttpRequest
     /// Optional timeout for the request.
     /// </summary>
     /// <remarks>
-    /// The SpacetimeDB host clamps all timeouts to a maximum of 500ms.
+    /// The SpacetimeDB host clamps all timeouts to a maximum of 180 seconds.
     /// </remarks>
     public TimeSpan? Timeout { get; init; }
 }
@@ -143,7 +143,7 @@ public sealed class HttpError(string message) : Exception(message)
 /// </para>
 ///
 /// <para>
-/// <b>Timeouts:</b> The host clamps all HTTP timeouts to a maximum of 500ms.
+/// <b>Timeouts:</b> The host clamps all HTTP timeouts to a maximum of 180 seconds.
 /// </para>
 ///
 /// <para>
@@ -154,14 +154,17 @@ public sealed class HttpError(string message) : Exception(message)
 /// </remarks>
 public sealed class HttpClient
 {
-    private static readonly TimeSpan MaxTimeout = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan MaxTimeout = TimeSpan.FromSeconds(180);
+    private static byte[] responseWireBuffer = new byte[0x10_000];
+    private static byte[] responseBodyBuffer = new byte[0x10_000];
+    private static byte[] errorWireBuffer = new byte[0x10_000];
 
     /// <summary>
     /// Send a simple <c>GET</c> request to <paramref name="uri"/> with no headers.
     /// </summary>
     /// <param name="uri">The request URI.</param>
     /// <param name="timeout">
-    /// Optional timeout for the request. The host clamps timeouts to a maximum of 500ms.
+    /// Optional timeout for the request. The host clamps timeouts to a maximum of 180 seconds.
     /// </param>
     /// <returns>
     /// <c>Ok(HttpResponse)</c> when a response was received (regardless of HTTP status code),
@@ -291,7 +294,7 @@ public sealed class HttpClient
                 );
             }
 
-            // The host clamps all HTTP timeouts to a maximum of 500ms.
+            // The host clamps all HTTP timeouts to a maximum of 180 seconds.
             // Clamp here as well to keep C# behavior aligned with the Rust docs and to reduce surprises.
             var timeout = request.Timeout;
             if (timeout is not null)
@@ -331,9 +334,9 @@ public sealed class HttpClient
 
             var status = FFI.procedure_http_request(
                 requestBytes,
-                (uint)requestBytes.Length,
+                requestBytes.Length,
                 bodyBytes,
-                (uint)bodyBytes.Length,
+                bodyBytes.Length,
                 out var out_
             );
 
@@ -341,10 +344,11 @@ public sealed class HttpClient
             {
                 case Errno.OK:
                 {
-                    var responseWireBytes = out_.A.Consume();
-                    var responseWire = FromBytes(new HttpResponseWire.BSATN(), responseWireBytes);
+                    using var responseWireStream = out_.A.Consume(ref responseWireBuffer);
+                    var responseWire = FromBytes(new HttpResponseWire.BSATN(), responseWireStream);
 
-                    var body = new HttpBody(out_.B.Consume());
+                    using var responseBodyStream = out_.B.Consume(ref responseBodyBuffer);
+                    var body = new HttpBody(responseBodyStream.ToArray());
                     var (statusCode, version, headers) = FromWireResponse(responseWire);
 
                     return Result<HttpResponse, HttpError>.Ok(
@@ -353,8 +357,8 @@ public sealed class HttpClient
                 }
                 case Errno.HTTP_ERROR:
                 {
-                    var errorWireBytes = out_.A.Consume();
-                    var err = FromBytes(new SpacetimeDB.BSATN.String(), errorWireBytes);
+                    using var errorWireStream = out_.A.Consume(ref errorWireBuffer);
+                    var err = FromBytes(new SpacetimeDB.BSATN.String(), errorWireStream);
                     return Result<HttpResponse, HttpError>.Err(new HttpError(err));
                 }
                 case Errno.WOULD_BLOCK_TRANSACTION:
@@ -378,9 +382,8 @@ public sealed class HttpClient
         }
     }
 
-    private static T FromBytes<T>(IReadWrite<T> rw, byte[] bytes)
+    private static T FromBytes<T>(IReadWrite<T> rw, MemoryStream ms)
     {
-        using var ms = new MemoryStream(bytes);
         using var reader = new BinaryReader(ms);
         var value = rw.Read(reader);
         if (ms.Position != ms.Length)
