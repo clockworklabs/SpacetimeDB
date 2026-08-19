@@ -1,13 +1,10 @@
 media/
 local-notes/
-PLAN.md
 *.local.md
-GRADING_RUBRIC_L1.md
 .loop-test/
 results/
 archive/pre-v1/results/
 snapshot-l*/
-GRADING_RUBRIC.md
 grader/.candidates/
 .spacetime-data/
 .spacetime-data.bak-*/

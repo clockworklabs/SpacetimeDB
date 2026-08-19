@@ -12,7 +12,7 @@ test('the release-source CLI anchors itself to the repository instead of the cal
 
 function repository() {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-'));
-  const files = ['.dockerignore', 'licenses/BSL.txt', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
+  const files = ['licenses/BSL.txt', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
     'crates/bindings-typescript/package.json', 'skills/typescript-server/SKILL.md',
     'tools/stack-bench/commands/bench.mjs'];
   for (const path of files) {
@@ -42,6 +42,8 @@ test('release source identity hashes only the exact tracked build inputs', () =>
     assert.equal(before.files, files.length);
     assert.equal(before.paths.includes('pnpm-lock.yaml'), true);
     assert.equal(before.paths.includes('skills'), true);
+    assert.equal(before.paths.includes('.dockerignore'), false);
+    assert.equal(before.paths.includes('.gitattributes'), false);
     writeFileSync(join(root, 'tools', 'stack-bench', 'JOURNAL.local.md'), 'different local notes\n');
     assert.deepEqual(releaseSourceIdentity(root, { runGit: git(files) }), before);
     writeFileSync(join(root, 'tools', 'stack-bench', 'commands', 'bench.mjs'), 'changed tracked input\n');
@@ -66,5 +68,22 @@ test('controller build context includes every repository root copied by its Dock
   for (const root of new Set(roots)) {
     assert.match(ignore, new RegExp(`^!${root}(?:\\r?\\n|/)`, 'm'),
       `${root} is copied but excluded from the controller build context`);
+  }
+});
+
+test('controller build context excludes ignored local Stack Bench state', () => {
+  const ignore = readFileSync(join(import.meta.dirname, '..', 'appliance',
+    'Controller.Dockerfile.dockerignore'), 'utf8');
+  const rules = new Set(ignore.split(/\r?\n/));
+  const localPaths = [
+    'tools/stack-bench/local-notes',
+    'tools/stack-bench/media',
+    'tools/stack-bench/snapshot-l*',
+    'tools/stack-bench/grader/.candidates',
+    'tools/stack-bench/grader/.mutation-report.json',
+    'tools/stack-bench/tracks/*/overview.html',
+  ];
+  for (const path of localPaths) {
+    assert.equal(rules.has(path), true, `${path} can leak into the controller build context`);
   }
 });

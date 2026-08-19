@@ -21,4 +21,11 @@ tools/stack-bench/archive/pre-v1/results
 tools/stack-bench/.spacetime-data*
 tools/stack-bench/.loop-test
 tools/stack-bench/*.local.md
+tools/stack-bench/**/*.local.md
 tools/stack-bench/transcripts
+tools/stack-bench/local-notes
+tools/stack-bench/media
+tools/stack-bench/snapshot-l*
+tools/stack-bench/grader/.candidates
+tools/stack-bench/grader/.mutation-report.json
+tools/stack-bench/tracks/*/overview.html

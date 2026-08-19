@@ -16,8 +16,6 @@ const RELEASE_SOURCE_PATHS = Object.freeze([
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
-  '.dockerignore',
-  '.gitattributes',
 ]);
 
 export function releaseSourceRoot() {

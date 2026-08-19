@@ -2,8 +2,3 @@
 **/ModuleBindings/** linguist-generated=true eol=lf
 /docs/llms/** linguist-generated=true
 /docs/llms/*-details.json linguist-generated=false
-/tools/stack-bench/** text=auto eol=lf
-/.gitattributes text eol=lf
-/.dockerignore text eol=lf
-/crates/bindings-typescript/** text=auto eol=lf
-/licenses/BSL.txt text eol=lf

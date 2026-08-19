@@ -45,8 +45,8 @@ This creates a local development candidate only. A distributable release still
 requires registry digests, generated SBOMs, signatures/attestations, and a
 verified release manifest.
 
-The identity command refuses changed or untracked release inputs. The root
-Docker ignore file also excludes the local journal, dependencies, generated
+The identity command refuses changed or untracked release inputs. The
+Dockerfile-specific ignore file excludes local notes, dependencies, generated
 results, transcripts, runtime state, and archived applications so those bytes
 cannot leak into the image or make otherwise identical builds diverge.
 
