@@ -1,0 +1,1353 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "fixtureSha256": "2b678936abe7faa9670a914a425369f478956a2f5ef3326725d32a3b7aacebdb",
+  "backend": "mongodb",
+  "track": "ecommerce",
+  "level": 2,
+  "note": "Candidate mutation coverage for cumulative L2 1.5 rebased onto qualified L1 2.4. It binds the exact recipe-specific L2 1.5 reference overlay and carries deterministic defects for all 46 inherited L1 keys and all 28 L2-only keys, including a source-synchronized stale-write defect for 202d.",
+  "mutations": [
+    {
+      "id": "signup-does-not-expose-created-account",
+      "scenario": "tracks/ecommerce/scenarios/01-account-create-2.4.0.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1a"
+        }
+      ],
+      "desc": "Signup succeeds but the client discards the created account identity from its current session view.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    saveSession(data.token, data.user);\n  };\n\n  const handleSignIn",
+          "replace": "    saveSession(data.token, { ...data.user, username: \"\" });\n  };\n\n  const handleSignIn"
+        }
+      ]
+    },
+    {
+      "id": "duplicate-signup-reports-success",
+      "scenario": "tracks/ecommerce/scenarios/01-account-duplicate-2.4.0.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1b"
+        }
+      ],
+      "desc": "A duplicate username is reported as a successful empty signup response instead of a refusal.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (existing) return res.status(409).json({ error: \"Username is already taken\" });",
+          "replace": "  if (existing) return res.json({}); // mutant: duplicate signup is falsely accepted"
+        }
+      ]
+    },
+    {
+      "id": "signin-skips-password-verification",
+      "scenario": "tracks/ecommerce/scenarios/01-account-password-2.4.0.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1c"
+        }
+      ],
+      "desc": "Signin accepts an existing account without requiring its password to match.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (!valid) return res.status(401).json({ error: \"Invalid username or password\" });",
+          "replace": "  if (false && !valid) return res.status(401).json({ error: \"Invalid username or password\" });"
+        }
+      ]
+    },
+    {
+      "id": "signout-keeps-current-account",
+      "scenario": "tracks/ecommerce/scenarios/01-account-signout-2.4.0.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1d"
+        }
+      ],
+      "desc": "Signout disconnects the token state but leaves the current account and persisted credential in place.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const handleSignOut = () => {\n    clearSession();\n  };",
+          "replace": "  const handleSignOut = () => {\n    setToken(null); // mutant: visible and persisted account state is not cleared\n  };"
+        }
+      ]
+    },
+    {
+      "id": "session-token-not-persisted",
+      "scenario": "tracks/ecommerce/scenarios/01-account-reload-2.4.0.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1e"
+        }
+      ],
+      "desc": "The active session is kept only in React state and is unavailable after a page reload.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    localStorage.setItem(TOKEN_KEY, tok);\n    setToken(tok);",
+          "replace": "    void tok; // mutant: the session token is never persisted\n    setToken(tok);"
+        }
+      ]
+    },
+    {
+      "id": "seeded-air-purifier-price-is-wrong",
+      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "targets": [
+        {
+          "feature": 2,
+          "criterion": "2a"
+        }
+      ],
+      "desc": "The public catalogue is seeded with the wrong authoritative Air Purifier price.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "{ name: \"Air Purifier\", price: 189.0, east: 60, west: 40, description: \"HEPA filtration for cleaner indoor air.\" }",
+          "replace": "{ name: \"Air Purifier\", price: 190.0, east: 60, west: 40, description: \"HEPA filtration for cleaner indoor air.\" }"
+        }
+      ]
+    },
+    {
+      "id": "initial-top-ten-is-reversed",
+      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "targets": [
+        {
+          "feature": 2,
+          "criterion": "2b"
+        }
+      ],
+      "desc": "The client reverses the initial all-zero-purchase ranking but uses the server ranking after a purchase.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const top10 = useMemo(() => items.slice(0, 10), [items]);",
+          "replace": "  const top10 = useMemo(() => items.every((item) => item.purchaseCount === 0) ? items.slice(0, 10).reverse() : items.slice(0, 10), [items]);"
+        }
+      ]
+    },
+    {
+      "id": "purchase-counts-never-affect-ranking",
+      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "targets": [
+        {
+          "feature": 2,
+          "criterion": "2c"
+        }
+      ],
+      "desc": "The catalogue ranking ignores recorded purchases and therefore never promotes the bought item.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      purchaseCount: purchaseMap.get(id) || 0,",
+          "replace": "      purchaseCount: 0, // mutant: ranking ignores durable purchase counts"
+        }
+      ]
+    },
+    {
+      "id": "search-requires-an-exact-name",
+      "scenario": "tracks/ecommerce/scenarios/01-core-2.4.0.json",
+      "targets": [
+        {
+          "feature": 2,
+          "criterion": "2d"
+        }
+      ],
+      "desc": "Search compares the whole item name instead of matching a query within it.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    return items.filter((it) => it.name.toLowerCase().includes(q));",
+          "replace": "    return items.filter((it) => it.name.toLowerCase() === q);"
+        }
+      ]
+    },
+    {
+      "id": "signed-out-visitors-see-purchase-controls",
+      "scenario": "tracks/ecommerce/scenarios/01-buying-2.4.0.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3a"
+        }
+      ],
+      "desc": "The client treats every non-admin state, including a signed-out visitor, as a customer allowed to see purchase controls.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const isCustomer = !!currentUser && !currentUser.isAdmin && !currentUser.isStaff;",
+          "replace": "  const isCustomer = !currentUser?.isAdmin && !currentUser?.isStaff;"
+        }
+      ]
+    },
+    {
+      "id": "espresso-stock-row-ignores-live-updates",
+      "scenario": "tracks/ecommerce/scenarios/01-buying-2.4.0.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3b"
+        }
+      ],
+      "desc": "The live catalogue handler preserves a stale Espresso Machine stock projection while applying all other item updates.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));",
+          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => setItems((previous) => data.map((item) => item.name === \"Espresso Machine\" ? { ...item, stock: previous.find((old) => old.id === item.id)?.stock ?? item.stock } : item)));"
+        }
+      ]
+    },
+    {
+      "id": "purchase-order-uses-zero-price",
+      "scenario": "tracks/ecommerce/scenarios/01-buying-2.4.0.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3c"
+        }
+      ],
+      "desc": "A direct purchase records the item but stores a zero order total instead of the price paid.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    total: item.price,\n  });",
+          "replace": "    total: 0, // mutant: purchase receipt loses the authoritative price\n  });"
+        }
+      ]
+    },
+    {
+      "id": "checkout-can-reserve-below-zero",
+      "scenario": "tracks/ecommerce/scenarios/01-buying-2.4.0.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3d"
+        }
+      ],
+      "desc": "Checkout removes the positive-stock predicate and can reserve units after inventory reaches zero.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "      { item_id: itemId, quantity: { $gte: 1 } },\n      { $inc: { quantity: -1 } },",
+          "replace": "      { item_id: itemId },\n      { $inc: { quantity: -1 } },"
+        }
+      ]
+    },
+    {
+      "id": "existing-cart-line-does-not-increment",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-2.4.0.json",
+      "targets": [
+        {
+          "feature": 4,
+          "criterion": "4a"
+        }
+      ],
+      "desc": "Adding an existing cart item acknowledges the request without increasing its quantity.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "{ $inc: { \"items.$.quantity\": qty } }",
+          "replace": "{ $inc: { \"items.$.quantity\": 0 } }"
+        }
+      ]
+    },
+    {
+      "id": "reload-hydrates-an-empty-cart",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-2.4.0.json",
+      "targets": [
+        {
+          "feature": 4,
+          "criterion": "4b"
+        }
+      ],
+      "desc": "Cart hydration discards the persisted server response after reload.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const refreshCart = useCallback(async (tok: string) => {\n    const data = await apiFetch(\"/api/cart\", tok);\n    setCart(data);\n  }, []);",
+          "replace": "  const refreshCart = useCallback(async (tok: string) => {\n    await apiFetch(\"/api/cart\", tok);\n    setCart({ items: [], total: 0 }); // mutant: persisted cart response is discarded\n  }, []);"
+        }
+      ]
+    },
+    {
+      "id": "shared-cart-live-events-ignored",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-2.4.0.json",
+      "targets": [
+        {
+          "feature": 4,
+          "criterion": "4c"
+        }
+      ],
+      "desc": "An already-open second session ignores committed cart update events.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    socket.on(\"cart:update\", (data: CartT) => setCart(data));",
+          "replace": "    socket.on(\"cart:update\", (data: CartT) => setCart(current => current.items.length === 0 ? current : data)); // mutant: an empty second-session cart ignores its first remote update"
+        }
+      ]
+    },
+    {
+      "id": "checkout-does-not-clear-cart",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-2.4.0.json",
+      "targets": [
+        {
+          "feature": 4,
+          "criterion": "4d"
+        }
+      ],
+      "desc": "Checkout reads the cart without atomically claiming and clearing it, leaving purchased lines persisted.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "const claimedCart = await Cart.findOneAndUpdate({ userId }, { $set: { items: [] } });",
+          "replace": "const claimedCart = await Cart.findOne({ userId });"
+        }
+      ]
+    },
+    {
+      "id": "review-comment-is-not-persisted",
+      "scenario": "tracks/ecommerce/scenarios/01-review-visibility-2.4.0.json",
+      "targets": [
+        {
+          "feature": 6,
+          "criterion": "6a"
+        }
+      ],
+      "desc": "Review submission persists an empty comment rather than the customer's submitted text.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    { itemId, userId: user._id, username: user.username, rating: ratingNum, comment: comment || \"\" },",
+          "replace": "    { itemId, userId: user._id, username: user.username, rating: ratingNum, comment: \"\" },"
+        }
+      ]
+    },
+    {
+      "id": "repeat-review-uses-a-new-owner-key",
+      "scenario": "tracks/ecommerce/scenarios/01-review-uniqueness-2.4.0.json",
+      "targets": [
+        {
+          "feature": 6,
+          "criterion": "6b"
+        }
+      ],
+      "desc": "Each review submission is stored under a fresh owner key, bypassing the one-review-per-customer constraint.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    { itemId, userId: user._id },\n    { itemId, userId: user._id, username: user.username, rating: ratingNum, comment: comment || \"\" },",
+          "replace": "    { itemId, userId: new Types.ObjectId() },\n    { itemId, userId: new Types.ObjectId(), username: user.username, rating: ratingNum, comment: comment || \"\" },"
+        }
+      ]
+    },
+    {
+      "id": "live-review-average-uses-an-extra-divisor",
+      "scenario": "tracks/ecommerce/scenarios/01-review-rating-live-2.4.0.json",
+      "targets": [
+        {
+          "feature": 6,
+          "criterion": "6c"
+        }
+      ],
+      "desc": "The live review event divides the rating sum by one more review than actually exists.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "async function broadcastReviews(itemId: string) {\n  const reviews = await Review.find({ itemId }).sort({ createdAt: -1 });\n  const average = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;",
+          "replace": "async function broadcastReviews(itemId: string) {\n  const reviews = await Review.find({ itemId }).sort({ createdAt: -1 });\n  const average = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / (reviews.length + 1) : 0;"
+        }
+      ]
+    },
+    {
+      "id": "admin-navigation-is-visible-to-customers",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-admin-2.4.0.json",
+      "targets": [
+        {
+          "feature": 7,
+          "criterion": "7a"
+        }
+      ],
+      "desc": "The client shows admin navigation to every signed-in account rather than administrators only.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "          {currentUser?.isAdmin && (\n            <button className=\"btn btn-ghost\" data-testid=\"admin-link\" onClick={openAdmin}>",
+          "replace": "          {currentUser && (\n            <button className=\"btn btn-ghost\" data-testid=\"admin-link\" onClick={openAdmin}>"
+        }
+      ]
+    },
+    {
+      "id": "warehouse-view-omits-one-location",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-admin-2.4.0.json",
+      "targets": [
+        {
+          "feature": 7,
+          "criterion": "7b"
+        }
+      ],
+      "desc": "The admin warehouse projection truncates the final item-location row.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "          {overview.locations.map((loc) => (",
+          "replace": "          {overview.locations.slice(0, -1).map((loc) => ("
+        }
+      ]
+    },
+    {
+      "id": "restock-does-not-increase-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-warehouse-stock-live-2.4.0.json",
+      "targets": [
+        {
+          "feature": 7,
+          "criterion": "7c"
+        }
+      ],
+      "desc": "The restock endpoint accepts a positive quantity but increments authoritative stock by zero.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await Stock.findOneAndUpdate(\n    { item_id: item._id, warehouse_id: warehouse._id },\n    { $inc: { quantity: qty } },\n    { upsert: true }\n  );",
+          "replace": "  await Stock.findOneAndUpdate(\n    { item_id: item._id, warehouse_id: warehouse._id },\n    { $inc: { quantity: 0 } },\n    { upsert: true }\n  );"
+        }
+      ]
+    },
+    {
+      "id": "unauthenticated-purchase-defaults-to-admin",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-session-2.4.0.json",
+      "targets": [
+        {
+          "feature": 101,
+          "criterion": "101a"
+        }
+      ],
+      "desc": "The purchase endpoint drops authentication and assigns sessionless purchases to the seeded administrator.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/items/:id/buy\", requireAuth, async (req, res) => {",
+          "replace": "app.post(\"/api/items/:id/buy\", async (req, res) => {"
+        },
+        {
+          "find": "  const user = (req as any).user;\n  const order = await Order.create({",
+          "replace": "  const user = (req as any).user || await User.findOne({ username: \"admin\" });\n  const order = await Order.create({"
+        }
+      ]
+    },
+    {
+      "id": "desk-lamp-purchase-is-attributed-to-another-account",
+      "scenario": "tracks/ecommerce/scenarios/01-purchase-attribution-2.4.0.json",
+      "targets": [
+        {
+          "feature": 102,
+          "criterion": "102a"
+        }
+      ],
+      "desc": "The Desk Lamp purchase path stores the order under another existing customer instead of its authenticated caller.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    userId: user._id,\n    items: [\n      {\n        itemId: item._id,\n        name: item.name,\n        price: item.price,\n        quantity: 1,\n        allocations: [{ warehouseId: decremented.warehouse_id, quantity: 1 }],\n      },\n    ],",
+          "replace": "    userId: item.name === \"Desk Lamp\" ? (await User.findOne({ _id: { $ne: user._id }, isAdmin: false, isStaff: false }))!._id : user._id,\n    items: [\n      {\n        itemId: item._id,\n        name: item.name,\n        price: item.price,\n        quantity: 1,\n        allocations: [{ warehouseId: decremented.warehouse_id, quantity: 1 }],\n      },\n    ],"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-restock-directly",
+      "scenario": "tracks/ecommerce/scenarios/01-admin-write-2.4.0.json",
+      "targets": [
+        {
+          "feature": 103,
+          "criterion": "103a"
+        }
+      ],
+      "desc": "The direct restock route retains authentication but drops its administrator role gate.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/admin/restock\", requireAuth, requireAdmin, async (req, res) => {",
+          "replace": "app.post(\"/api/admin/restock\", requireAuth, async (req, res) => {"
+        }
+      ]
+    },
+    {
+      "id": "direct-purchase-total-ignores-store-price",
+      "scenario": "tracks/ecommerce/scenarios/01-server-price-2.4.0.json",
+      "targets": [
+        {
+          "feature": 104,
+          "criterion": "104a"
+        }
+      ],
+      "desc": "The direct purchase creates one order but records a zero total rather than the store's current price.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    total: item.price,\n  });",
+          "replace": "    total: 0, // mutant: direct purchase ignores the authoritative price\n  });"
+        }
+      ]
+    },
+    {
+      "id": "cart-hydration-loses-account-state",
+      "scenario": "tracks/ecommerce/scenarios/01-account-state-reload-2.4.0.json",
+      "targets": [
+        {
+          "feature": 105,
+          "criterion": "105a"
+        }
+      ],
+      "desc": "Reload hydration discards the account's persisted cart response.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const refreshCart = useCallback(async (tok: string) => {\n    const data = await apiFetch(\"/api/cart\", tok);\n    setCart(data);\n  }, []);",
+          "replace": "  const refreshCart = useCallback(async (tok: string) => {\n    await apiFetch(\"/api/cart\", tok);\n    setCart({ items: [], total: 0 }); // mutant: account state is discarded on hydration\n  }, []);"
+        }
+      ]
+    },
+    {
+      "id": "reconnect-hydration-loses-account-state",
+      "scenario": "tracks/ecommerce/scenarios/01-account-state-reconnect-2.4.0.json",
+      "targets": [
+        {
+          "feature": 105,
+          "criterion": "105b"
+        }
+      ],
+      "desc": "The initial account cart loads correctly, but after network restoration the client ignores both refreshed and pushed cart state.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;",
+          "replace": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;\n    let ignoreCartCatchup = false;\n    const ignoreCartAfterNetworkRestore = () => { ignoreCartCatchup = true; };\n    window.addEventListener(\"online\", ignoreCartAfterNetworkRestore, { once: true });"
+        },
+        {
+          "find": "    socket.on(\"connect\", () => {\n      refreshItems().catch((err) => console.error(err));\n      if (token) {\n        refreshCart(token).catch((err) => console.error(err));\n      }\n    });",
+          "replace": "    socket.on(\"connect\", () => {\n      refreshItems().catch((err) => console.error(err));\n      if (token && !ignoreCartCatchup) {\n        refreshCart(token).catch((err) => console.error(err));\n      }\n    });"
+        },
+        {
+          "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => setCart(data));",
+          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => { if (!ignoreCartCatchup) setCart(data); });"
+        },
+        {
+          "find": "    return () => {\n      socket.disconnect();\n    };",
+          "replace": "    return () => {\n      window.removeEventListener(\"online\", ignoreCartAfterNetworkRestore);\n      socket.disconnect();\n    };"
+        }
+      ]
+    },
+    {
+      "id": "order-history-is-not-owner-scoped",
+      "scenario": "tracks/ecommerce/scenarios/01-order-ownership-2.4.0.json",
+      "targets": [
+        {
+          "feature": 106,
+          "criterion": "106a"
+        }
+      ],
+      "desc": "The order-history query returns every customer's orders instead of filtering by the authenticated owner.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const orders = await Order.find({ userId: (req as any).user._id }).sort({ createdAt: -1 });",
+          "replace": "  const orders = await Order.find({}).sort({ createdAt: -1 });"
+        }
+      ]
+    },
+    {
+      "id": "revenue-aggregation-ignores-order-totals",
+      "scenario": "tracks/ecommerce/scenarios/01-books-balance-2.4.0.json",
+      "targets": [
+        {
+          "feature": 107,
+          "criterion": "107a"
+        }
+      ],
+      "desc": "The admin revenue aggregation counts every order as zero regardless of its stored total.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    { $group: { _id: null, total: { $sum: { $multiply: [\"$items.price\", \"$items.quantity\"] } } } },",
+          "replace": "    { $group: { _id: null, total: { $sum: 0 } } },"
+        }
+      ]
+    },
+    {
+      "id": "sales-do-not-decrement-warehouse-stock",
+      "scenario": "tracks/ecommerce/scenarios/01-books-balance-2.4.0.json",
+      "targets": [
+        {
+          "feature": 107,
+          "criterion": "107b"
+        }
+      ],
+      "desc": "Direct purchases still create priced orders but change warehouse stock by zero.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    { item_id: item._id, quantity: { $gte: 1 } },\n    { $inc: { quantity: -1 } },\n    { sort: { quantity: -1 } }",
+          "replace": "    { item_id: item._id, quantity: { $gte: 1 } },\n    { $inc: { quantity: 0 } },\n    { sort: { quantity: -1 } }"
+        }
+      ]
+    },
+    {
+      "id": "unpurchased-review-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility-2.4.0.json",
+      "targets": [
+        {
+          "feature": 108,
+          "criterion": "108a"
+        }
+      ],
+      "desc": "The review endpoint bypasses its completed-purchase eligibility check.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (!hasPurchased) {\n    return res.status(403).json({ error: \"You can only review items you have purchased\" });\n  }",
+          "replace": "  if (false && !hasPurchased) {\n    return res.status(403).json({ error: \"You can only review items you have purchased\" });\n  }"
+        }
+      ]
+    },
+    {
+      "id": "purchased-review-eligibility-query-never-matches",
+      "scenario": "tracks/ecommerce/scenarios/01-review-eligibility-2.4.0.json",
+      "targets": [
+        {
+          "feature": 108,
+          "criterion": "108b"
+        }
+      ],
+      "desc": "The eligibility query requires an impossible negative order total, rejecting even a customer who bought the item.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const hasPurchased = await Order.exists({ userId: user._id, \"items.itemId\": new Types.ObjectId(itemId) });",
+          "replace": "  const hasPurchased = await Order.exists({ userId: user._id, \"items.itemId\": new Types.ObjectId(itemId), total: -1 });"
+        }
+      ]
+    },
+    {
+      "id": "cart-add-is-scoped-by-item-instead-of-owner",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary-2.4.0.json",
+      "targets": [
+        {
+          "feature": 109,
+          "criterion": "109a"
+        }
+      ],
+      "desc": "Adding an item chooses an existing cart by item contents before falling back to the authenticated owner, allowing a replay to change another account's cart.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const userId = (req as any).user._id.toString();\n  await addToCart(userId, item._id, qty);",
+          "replace": "  const existingItemCart = await Cart.findOne({ \"items.itemId\": item._id });\n  const userId = existingItemCart?.userId.toString() || (req as any).user._id.toString();\n  await addToCart(userId, item._id, qty);"
+        }
+      ]
+    },
+    {
+      "id": "negative-cart-quantity-is-accepted",
+      "scenario": "tracks/ecommerce/scenarios/01-cart-boundary-2.4.0.json",
+      "targets": [
+        {
+          "feature": 109,
+          "criterion": "109b"
+        }
+      ],
+      "desc": "The named cart quantity operation accepts a negative integer and persists it without schema validation.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  if (!Number.isInteger(qty) || qty < 1) {\n    return res.status(400).json({ error: \"Quantity must be at least 1\" });\n  }",
+          "replace": "  if (!Number.isInteger(qty)) {\n    return res.status(400).json({ error: \"Quantity must be an integer\" });\n  }"
+        },
+        {
+          "find": "  line.quantity = qty;\n  await cart.save();",
+          "replace": "  await Cart.updateOne(\n    { _id: cart._id, \"items.itemId\": itemId },\n    { $set: { \"items.$.quantity\": qty } }\n  ); // mutant: bypasses the cart-line minimum validator"
+        }
+      ]
+    },
+    {
+      "id": "oversell-unguarded-decrement",
+      "scenario": "tracks/ecommerce/scenarios/01-last-unit-2.3.0.json",
+      "targets": [
+        {
+          "feature": 201,
+          "criterion": "201a"
+        },
+        {
+          "feature": 201,
+          "criterion": "201b"
+        },
+        {
+          "feature": 201,
+          "criterion": "201c"
+        }
+      ],
+      "desc": "Removing the atomic positive-stock predicate lets all simultaneous buyers decrement inventory and create orders.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "{ item_id: item._id, quantity: { $gte: 1 } },",
+          "replace": "{ item_id: item._id },"
+        }
+      ]
+    },
+    {
+      "id": "purchase-does-not-reserve-stock-restock-race",
+      "scenario": "tracks/ecommerce/scenarios/01-restock-race-2.3.0.json",
+      "targets": [
+        {
+          "feature": 202,
+          "criterion": "202a"
+        }
+      ],
+      "desc": "Purchases create orders but decrement stock by zero, so the rush ends at start plus five rather than start plus two.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    { item_id: item._id, quantity: { $gte: 1 } },\n    { $inc: { quantity: -1 } },\n    { sort: { quantity: -1 } }",
+          "replace": "    { item_id: item._id, quantity: { $gte: 1 } },\n    { $inc: { quantity: 0 } },\n    { sort: { quantity: -1 } }"
+        }
+      ]
+    },
+    {
+      "id": "existing-cart-line-does-not-increment-concurrently",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
+      "targets": [
+        {
+          "feature": 203,
+          "criterion": "203a"
+        }
+      ],
+      "desc": "The second concurrent add matches the existing line but increments it by zero.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "{ $inc: { \"items.$.quantity\": qty } }",
+          "replace": "{ $inc: { \"items.$.quantity\": 0 } }"
+        }
+      ]
+    },
+    {
+      "id": "checkout-not-idempotent",
+      "scenario": "tracks/ecommerce/scenarios/01-duplicate-checkout-2.3.0.json",
+      "targets": [
+        {
+          "feature": 203,
+          "criterion": "203b"
+        }
+      ],
+      "desc": "Replacing atomic cart claim-and-clear with a read lets two checkouts reuse one cart.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "const claimedCart = await Cart.findOneAndUpdate({ userId }, { $set: { items: [] } });",
+          "replace": "const claimedCart = await Cart.findOne({ userId });"
+        }
+      ]
+    },
+    {
+      "id": "external-stock-polling-disabled",
+      "scenario": "tracks/ecommerce/scenarios/01-external-live-sync-1.1.0.json",
+      "targets": [
+        {
+          "feature": 901,
+          "criterion": "901a"
+        }
+      ],
+      "desc": "The server stops reconciling direct database stock writes into live catalogue events.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  broadcastItems().catch((err) => console.error(\"broadcastItems poll failed\", err));",
+          "replace": "  // mutant: direct database stock changes are never reconciled"
+        }
+      ]
+    },
+    {
+      "id": "server-restart-disables-catalog-recovery",
+      "scenario": "tracks/ecommerce/scenarios/01-external-server-restart-sync-1.1.0.json",
+      "targets": [
+        {
+          "feature": 901,
+          "criterion": "901c"
+        }
+      ],
+      "desc": "After a socket disconnect, the existing page ignores both reconnect refreshes and later catalogue snapshots.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const socketRef = useRef<Socket | null>(null);\n\n  const saveSession",
+          "replace": "  const socketRef = useRef<Socket | null>(null);\n  const acceptCatalogRecovery = useRef(true);\n\n  const saveSession"
+        },
+        {
+          "find": "    socket.on(\"connect\", () => {\n      refreshItems().catch((err) => console.error(err));",
+          "replace": "    socket.on(\"disconnect\", () => { acceptCatalogRecovery.current = false; });\n    socket.on(\"connect\", () => {\n      if (acceptCatalogRecovery.current) refreshItems().catch((err) => console.error(err));"
+        },
+        {
+          "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));",
+          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => { if (acceptCatalogRecovery.current) setItems(data); });"
+        }
+      ]
+    },
+    {
+      "id": "reconnect-generation-ignores-current-catalog",
+      "scenario": "tracks/ecommerce/scenarios/01-external-reconnect-sync-1.1.0.json",
+      "targets": [
+        {
+          "feature": 901,
+          "criterion": "901d"
+        }
+      ],
+      "desc": "After the browser goes offline, the existing page ignores reconnect refreshes and subsequent catalogue events.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "  const socketRef = useRef<Socket | null>(null);\n\n  const saveSession",
+          "replace": "  const socketRef = useRef<Socket | null>(null);\n  const acceptCatalogUpdates = useRef(true);\n  useEffect(() => {\n    const stopCatalogRecovery = () => { acceptCatalogUpdates.current = false; };\n    window.addEventListener(\"offline\", stopCatalogRecovery);\n    return () => window.removeEventListener(\"offline\", stopCatalogRecovery);\n  }, []);\n\n  const saveSession"
+        },
+        {
+          "find": "    setItems(data.items);",
+          "replace": "    if (acceptCatalogUpdates.current) setItems(data.items);"
+        },
+        {
+          "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));",
+          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => {\n      if (acceptCatalogUpdates.current) setItems(data);\n    });"
+        }
+      ]
+    },
+    {
+      "id": "open-review-list-ignores-live-update",
+      "scenario": "tracks/ecommerce/scenarios/01-open-list-live-2.3.0.json",
+      "targets": [
+        {
+          "feature": 902,
+          "criterion": "902a"
+        }
+      ],
+      "desc": "The already-open review list ignores a committed review update from another client.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "      setItemDetail((prev) => (prev && prev.id === payload.itemId ? { ...prev, reviews: payload.reviews, average: payload.average } : prev));",
+          "replace": "      void payload; // mutant: the already-open review list ignores committed updates"
+        }
+      ]
+    },
+    {
+      "id": "cancel-does-not-restore-stock-feature",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3a"
+        }
+      ],
+      "desc": "Cancellation changes order state but skips restoration of its recorded warehouse allocations.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  for (const line of order.items) {\n    await restoreAllocations(line.allocations as any, line.itemId);\n  }\n  order.status = \"cancelled\";",
+          "replace": "  for (const line of order.items) {\n    void line; // mutant: cancellation does not restore its reserved stock\n  }\n  order.status = \"cancelled\";"
+        }
+      ]
+    },
+    {
+      "id": "cancel-does-not-restore-stock-fresh-client",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "targets": [
+        {
+          "feature": 202,
+          "criterion": "202b"
+        },
+        {
+          "feature": 202,
+          "criterion": "202c"
+        }
+      ],
+      "desc": "Cancellation changes order state but skips restoration, so a fresh client reads the persisted shortfall.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  for (const line of order.items) {\n    await restoreAllocations(line.allocations as any, line.itemId);\n  }\n  order.status = \"cancelled\";",
+          "replace": "  for (const line of order.items) {\n    void line; // mutant: cancellation does not restore its reserved stock\n  }\n  order.status = \"cancelled\";"
+        }
+      ]
+    },
+    {
+      "id": "cancel-restores-stock-but-keeps-pending-status",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3b"
+        }
+      ],
+      "desc": "Cancellation restores allocations but writes pending back to order history.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  order.status = \"cancelled\";\n  await order.save();",
+          "replace": "  order.status = \"pending\";\n  await order.save();"
+        }
+      ]
+    },
+    {
+      "id": "cancelled-order-remains-in-revenue-feature",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3a"
+        }
+      ],
+      "desc": "Admin revenue includes cancelled orders even though cancellation otherwise succeeds.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "async function getRevenue(): Promise<number> {\n  const rows = await Order.aggregate([\n    { $match: { status: { $ne: \"cancelled\" } } },",
+          "replace": "async function getRevenue(): Promise<number> {\n  const rows = await Order.aggregate([\n    { $match: {} },"
+        }
+      ]
+    },
+    {
+      "id": "cancelled-order-remains-in-revenue-invariant",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "targets": [
+        {
+          "feature": 203,
+          "criterion": "203a"
+        }
+      ],
+      "desc": "Admin revenue includes cancelled orders even though cancellation otherwise succeeds.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "async function getRevenue(): Promise<number> {\n  const rows = await Order.aggregate([\n    { $match: { status: { $ne: \"cancelled\" } } },",
+          "replace": "async function getRevenue(): Promise<number> {\n  const rows = await Order.aggregate([\n    { $match: {} },"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-transfer-stock-focused",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 201,
+          "criterion": "201a"
+        }
+      ],
+      "desc": "The transfer route keeps authentication but drops its administrator role gate.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/admin/transfer\", requireAuth, requireAdmin, async (req, res) => {",
+          "replace": "app.post(\"/api/admin/transfer\", requireAuth, async (req, res) => {"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-change-price-focused",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 201,
+          "criterion": "201b"
+        }
+      ],
+      "desc": "The price route keeps authentication but drops its administrator role gate.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/admin/price\", requireAuth, requireAdmin, async (req, res) => {",
+          "replace": "app.post(\"/api/admin/price\", requireAuth, async (req, res) => {"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order-direct-1-1",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions-1.1.0.json",
+      "targets": [
+        {
+          "feature": 201,
+          "criterion": "201c"
+        }
+      ],
+      "desc": "The shipping route keeps authentication but drops its staff role gate.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/fulfilment/ship\", requireAuth, requireStaff, async (req, res) => {",
+          "replace": "app.post(\"/api/fulfilment/ship\", requireAuth, async (req, res) => {"
+        }
+      ]
+    },
+    {
+      "id": "customer-can-cancel-foreign-order-1-1",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions-1.1.0.json",
+      "targets": [
+        {
+          "feature": 204,
+          "criterion": "204a"
+        }
+      ],
+      "desc": "Cancellation retains authentication and pending-state validation but drops order ownership.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (req as any).user;\n  const order = await Order.findOne({ _id: req.params.id, userId: user._id });",
+          "replace": "app.post(\"/api/orders/:id/cancel\", requireAuth, async (req, res) => {\n  const user = (req as any).user;\n  const order = await Order.findOne({ _id: req.params.id });"
+        }
+      ]
+    },
+    {
+      "id": "queue-depth-lags-one-order",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1a"
+        }
+      ],
+      "desc": "The queue renders every order but its visible depth remains one behind.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "Orders waiting: <span className=\"value\" data-testid=\"queue-depth\">{queue.depth}</span>",
+          "replace": "Orders waiting: <span className=\"value\" data-testid=\"queue-depth\">{Math.max(0, queue.depth - 1)}</span>"
+        }
+      ]
+    },
+    {
+      "id": "ship-acknowledges-without-changing-status",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1c"
+        }
+      ],
+      "desc": "Shipping returns success but writes pending back to the order, leaving both live views unchanged.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  order.status = \"shipped\";\n  await order.save();",
+          "replace": "  order.status = \"pending\";\n  await order.save();"
+        }
+      ]
+    },
+    {
+      "id": "customer-sees-fulfilment-navigation",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1d"
+        }
+      ],
+      "desc": "The fulfilment navigation is shown to every signed-in account instead of only staff and administrators.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "          {(currentUser?.isStaff || currentUser?.isAdmin) && (\n            <button className=\"btn btn-ghost\" data-testid=\"staff-link\"",
+          "replace": "          {currentUser && (\n            <button className=\"btn btn-ghost\" data-testid=\"staff-link\""
+        }
+      ]
+    },
+    {
+      "id": "customer-can-ship-order-focused",
+      "scenario": "tracks/ecommerce/scenarios/02-self-contained-1.4.0.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1e"
+        }
+      ],
+      "desc": "The shipping route retains authentication but drops the staff role gate.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "app.post(\"/api/fulfilment/ship\", requireAuth, requireStaff, async (req, res) => {",
+          "replace": "app.post(\"/api/fulfilment/ship\", requireAuth, async (req, res) => {"
+        }
+      ]
+    },
+    {
+      "id": "transfer-debits-source-without-crediting-existing-destination",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 2,
+          "criterion": "2a"
+        },
+        {
+          "feature": 202,
+          "criterion": "202a"
+        }
+      ],
+      "desc": "A transfer debits the source row but adds zero units to an existing destination row, violating both directional movement and total conservation while still returning success.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await Stock.findOneAndUpdate(\n    { item_id: itemId, warehouse_id: toWarehouseId },\n    { $inc: { quantity: qty } },\n    { upsert: true }\n  );",
+          "replace": "  await Stock.findOneAndUpdate(\n    { item_id: itemId, warehouse_id: toWarehouseId },\n    { $inc: { quantity: 0 } },\n    { upsert: true }\n  );"
+        }
+      ]
+    },
+    {
+      "id": "transfer-warehouse-totals-omit-destination-credit",
+      "scenario": "tracks/ecommerce/scenarios/02-transfer-totals-1.4.0.json",
+      "targets": [
+        {
+          "feature": 2,
+          "criterion": "2b"
+        }
+      ],
+      "desc": "A transfer debits the source but adds zero to the existing destination, so the two live warehouse totals do not move in opposite directions.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  await Stock.findOneAndUpdate(\n    { item_id: itemId, warehouse_id: toWarehouseId },\n    { $inc: { quantity: qty } },\n    { upsert: true }\n  );",
+          "replace": "  await Stock.findOneAndUpdate(\n    { item_id: itemId, warehouse_id: toWarehouseId },\n    { $inc: { quantity: 0 } },\n    { upsert: true }\n  );"
+        }
+      ]
+    },
+    {
+      "id": "transfer-overdraft-guard-removed",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 2,
+          "criterion": "2c"
+        }
+      ],
+      "desc": "The atomic source debit no longer requires sufficient quantity, allowing an overdrawn transfer to succeed and change both rows.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "{ item_id: itemId, warehouse_id: fromWarehouseId, quantity: { $gte: qty } }",
+          "replace": "{ item_id: itemId, warehouse_id: fromWarehouseId }"
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-change-not-broadcast-to-visitors",
+      "scenario": "tracks/ecommerce/scenarios/02-live-price-1.4.0.json",
+      "targets": [
+        {
+          "feature": 4,
+          "criterion": "4b"
+        }
+      ],
+      "desc": "The signed-out search result caches detached rows and ignores later catalog updates.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "    return items.filter((it) => it.name.toLowerCase().includes(q));\n  }, [items, searchQuery]);",
+          "replace": "    // mutant: cache detached result rows and ignore later catalog updates\n    return items.filter((it) => it.name.toLowerCase().includes(q)).map((it) => ({ ...it }));\n  }, [searchQuery]);"
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-change-not-broadcast-to-open-carts",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 4,
+          "criterion": "4c"
+        }
+      ],
+      "desc": "The price reaches the catalog but the price route omits its targeted open-cart broadcast.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    broadcastRecommendedForAll(),\n    broadcastCartsContainingItem(item._id),",
+          "replace": "    broadcastRecommendedForAll(),\n    // mutant: carts containing this item are not refreshed"
+        }
+      ]
+    },
+    {
+      "id": "low-stock-excludes-boundary-ten",
+      "scenario": "tracks/ecommerce/scenarios/02-low-stock-1.4.0.json",
+      "targets": [
+        {
+          "feature": 5,
+          "criterion": "5a"
+        }
+      ],
+      "desc": "The low-stock view uses a strict boundary and omits items with exactly ten units.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    .filter((it) => it.stock <= 10)",
+          "replace": "    .filter((it) => it.stock < 10)"
+        }
+      ]
+    },
+    {
+      "id": "category-totals-ignore-pending-purchases",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 5,
+          "criterion": "5b"
+        }
+      ],
+      "desc": "Category totals include only shipped orders, so a newly accepted pending purchase is absent from the live totals.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "async function getCategoryTotals() {\n  const rows = await Order.aggregate([\n    { $match: { status: { $ne: \"cancelled\" } } },",
+          "replace": "async function getCategoryTotals() {\n  const rows = await Order.aggregate([\n    { $match: { status: \"shipped\" } },"
+        }
+      ]
+    },
+    {
+      "id": "recommendations-ignore-pending-purchases",
+      "scenario": "tracks/ecommerce/scenarios/02-features.json",
+      "targets": [
+        {
+          "feature": 5,
+          "criterion": "5c"
+        }
+      ],
+      "desc": "Personal recommendations derive categories only from shipped orders, so a newly accepted pending purchase has no influence.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "    { $match: { userId: new Types.ObjectId(userId), status: { $ne: \"cancelled\" } } },",
+          "replace": "    { $match: { userId: new Types.ObjectId(userId), status: \"shipped\" } },"
+        }
+      ]
+    },
+    {
+      "id": "cancelled-purchases-remain-in-best-sellers",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 5,
+          "criterion": "5d"
+        }
+      ],
+      "desc": "Best-seller purchase counts keep cancelled orders, so the cancelled product remains visible to a signed-out visitor.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "async function getPurchaseCounts(): Promise<Map<string, number>> {\n  const rows = await Order.aggregate([\n    { $match: { status: { $ne: \"cancelled\" } } },",
+          "replace": "async function getPurchaseCounts(): Promise<Map<string, number>> {\n  const rows = await Order.aggregate([\n    { $match: {} },"
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-rewrites-receipts",
+      "scenario": "tracks/ecommerce/scenarios/02-paid-price-history-1.4.0.json",
+      "targets": [
+        {
+          "feature": 4,
+          "criterion": "4a"
+        }
+      ],
+      "desc": "Changing a catalog price cascades into saved order lines and recomputes historical order totals.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const item = await Item.findByIdAndUpdate(itemId, { price: priceNum }, { new: true });\n  if (!item) return res.status(404).json({ error: \"Item not found\" });",
+          "replace": "  const item = await Item.findByIdAndUpdate(itemId, { price: priceNum }, { new: true });\n  if (!item) return res.status(404).json({ error: \"Item not found\" });\n  const historicalOrders = await Order.find({ \"items.itemId\": item._id });\n  for (const historical of historicalOrders) {\n    for (const line of historical.items) {\n      if (line.itemId.toString() === item._id.toString()) line.price = priceNum;\n    }\n    historical.total = historical.items.reduce((sum, line) => sum + line.price * line.quantity, 0);\n    await historical.save();\n  }"
+        }
+      ]
+    },
+    {
+      "id": "catalog-price-rewrites-earned-revenue",
+      "scenario": "tracks/ecommerce/scenarios/02-invariants.json",
+      "targets": [
+        {
+          "feature": 203,
+          "criterion": "203b"
+        }
+      ],
+      "desc": "Changing a catalog price cascades into saved order lines and recomputes historical order totals and revenue.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "  const item = await Item.findByIdAndUpdate(itemId, { price: priceNum }, { new: true });\n  if (!item) return res.status(404).json({ error: \"Item not found\" });",
+          "replace": "  const item = await Item.findByIdAndUpdate(itemId, { price: priceNum }, { new: true });\n  if (!item) return res.status(404).json({ error: \"Item not found\" });\n  const historicalOrders = await Order.find({ \"items.itemId\": item._id });\n  for (const historical of historicalOrders) {\n    for (const line of historical.items) {\n      if (line.itemId.toString() === item._id.toString()) line.price = priceNum;\n    }\n    historical.total = historical.items.reduce((sum, line) => sum + line.price * line.quantity, 0);\n    await historical.save();\n  }"
+        }
+      ]
+    },
+    {
+      "id": "queue-warehouse-reports-west",
+      "scenario": "tracks/ecommerce/scenarios/02-queue-warehouse-1.4.0.json",
+      "targets": [
+        {
+          "feature": 1,
+          "criterion": "1b"
+        }
+      ],
+      "desc": "The queue renders West for the deterministic Desk Lamp allocation even though the order reserved stock in East.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "{(l.warehouseNames || []).join(\", \") || \"Unknown\"}",
+          "replace": "{\"West\"}"
+        }
+      ]
+    },
+    {
+      "id": "returned-line-marker-omitted",
+      "scenario": "tracks/ecommerce/scenarios/02-strengthened-1.4.0.json",
+      "targets": [
+        {
+          "feature": 3,
+          "criterion": "3c"
+        }
+      ],
+      "desc": "A returned order line keeps its persisted returned state, restored stock, and adjusted revenue but omits the visible returned marker.",
+      "file": "client/src/App.tsx",
+      "edits": [
+        {
+          "find": "l.returned ? \" (returned)\" : \"\"",
+          "replace": "\"\""
+        }
+      ]
+    },
+    {
+      "id": "transfer-overwrites-concurrent-purchase-with-stale-stock",
+      "scenario": "tracks/ecommerce/scenarios/02-server-actions-1.1.0.json",
+      "targets": [
+        {
+          "feature": 202,
+          "criterion": "202d"
+        }
+      ],
+      "desc": "The Headphones transfer deliberately captures its source row before the concurrent purchase, waits until that purchase has decremented stock and committed its order, then writes the stale transfer result. Both actions are accepted, but the stale transfer write loses the purchase's stock change, proving the exact-total check detects broken cross-operation synchronization.",
+      "file": "server/src/index.ts",
+      "edits": [
+        {
+          "find": "const io = new SocketIOServer(server, {\n  cors: { origin: \"*\" },\n});",
+          "replace": "const io = new SocketIOServer(server, {\n  cors: { origin: \"*\" },\n});\n\nlet mutationTransferCapturedResolve!: () => void;\nconst mutationTransferCaptured = new Promise<void>((resolve) => {\n  mutationTransferCapturedResolve = resolve;\n});\nlet mutationBuyCommittedResolve!: () => void;\nconst mutationBuyCommitted = new Promise<void>((resolve) => {\n  mutationBuyCommittedResolve = resolve;\n});"
+        },
+        {
+          "find": "  const item = await Item.findById(itemId);\n  if (!item) return res.status(404).json({ error: \"Item not found\" });\n\n  const decremented = await Stock.findOneAndUpdate(",
+          "replace": "  const item = await Item.findById(itemId);\n  if (!item) return res.status(404).json({ error: \"Item not found\" });\n  if (item.name === \"Headphones\") await mutationTransferCaptured;\n\n  const decremented = await Stock.findOneAndUpdate("
+        },
+        {
+          "find": "    total: item.price,\n  });\n\n  await Promise.all([",
+          "replace": "    total: item.price,\n  });\n  if (item.name === \"Headphones\") mutationBuyCommittedResolve();\n\n  await Promise.all(["
+        },
+        {
+          "find": "  const source = await Stock.findOneAndUpdate(\n    { item_id: itemId, warehouse_id: fromWarehouseId, quantity: { $gte: qty } },\n    { $inc: { quantity: -qty } }\n  );\n  if (!source) return res.status(400).json({ error: \"Source warehouse does not hold enough stock\" });",
+          "replace": "  const transferItem = await Item.findById(itemId);\n  const staleSource = transferItem?.name === \"Headphones\"\n    ? await Stock.findOne({\n        item_id: itemId,\n        warehouse_id: fromWarehouseId,\n        quantity: { $gte: qty },\n      })\n    : null;\n  if (staleSource) {\n    mutationTransferCapturedResolve();\n    await mutationBuyCommitted;\n  }\n\n  const source = staleSource\n    ? await Stock.findOneAndUpdate(\n        { item_id: itemId, warehouse_id: fromWarehouseId },\n        { $set: { quantity: staleSource.quantity - qty } }\n      )\n    : await Stock.findOneAndUpdate(\n        { item_id: itemId, warehouse_id: fromWarehouseId, quantity: { $gte: qty } },\n        { $inc: { quantity: -qty } }\n      );\n  if (!source) return res.status(400).json({ error: \"Source warehouse does not hold enough stock\" });"
+        }
+      ]
+    }
+  ]
+}
