@@ -140,7 +140,7 @@ fn earliest_rollback_point_for_pr(
         .with_context(|| "failed to load PR")?;
     let body = pr.body.as_deref().unwrap_or_default();
     let Some(dependencies) = pr_parsing::rollback_dependencies(body, current_repo, strict_template)? else {
-        tracing::info!("PR has no dependencies");
+        tracing::info!("PR {current_repo}#{number} has no dependencies");
         return Ok(None);
     };
 
