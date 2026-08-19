@@ -43,7 +43,7 @@
     {
       "backend": "mongodb",
       "path": "grader/mutations/candidates/mongodb-ecom-l1-modular-2.4.0.json",
-      "sha256": "788c296b46f4c8a446a0ede4203131fb65ba90a0b67cf160e7ea83cdbc621f99",
+      "sha256": "2c30e9245327fa308d32a85e342de07d82d4cacfc3fb91335b23564fd0f9eefe",
       "referenceId": "ecommerce-l1-action-inputs-2.4-mongodb"
     },
     {

@@ -135,10 +135,11 @@ test('cart-boundary mutants exercise the named server actions', () => {
     'the negative-quantity mutant must bypass both the route check and schema validation');
 
   const reconnect = mutationEdits(mutations.get('reconnect-hydration-loses-account-state'));
-  assert.equal(reconnect.length, 3);
-  assert(reconnect.some(edit => edit.replace.includes('connectionCount += 1')));
-  assert(reconnect.some(edit => edit.replace.includes('connectionCount === 1')),
-    'the reconnect defect must preserve initial hydration and reject replacement snapshots');
+  assert.equal(reconnect.length, 4);
+  assert(reconnect.some(edit => edit.replace.includes('ignoreCartAfterNetworkRestore')));
+  assert(reconnect.some(edit => edit.replace.includes('token && !ignoreCartCatchup')));
+  assert(reconnect.some(edit => edit.replace.includes('if (!ignoreCartCatchup) setCart(data)')),
+    'the reconnect defect must preserve initial hydration and reject all post-restore catch-up');
 
   const sharedCart = mutationEdits(mutations.get('shared-cart-live-events-ignored'));
   assert.equal(sharedCart.length, 1);

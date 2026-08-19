@@ -325,20 +325,24 @@
       "id": "reconnect-hydration-loses-account-state",
       "scenario": "tracks/ecommerce/scenarios/01-account-state-reconnect-2.4.0.json",
       "targets": [{ "feature": 105, "criterion": "105b" }],
-      "desc": "The first authenticated socket connection hydrates correctly, but a replacement connection clears the cart and ignores its fresh snapshot.",
+      "desc": "The initial account cart loads correctly, but after network restoration the client ignores both refreshed and pushed cart state.",
       "file": "client/src/App.tsx",
       "edits": [
         {
           "find": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;",
-          "replace": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;\n    let connectionCount = 0;"
+          "replace": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;\n    let ignoreCartCatchup = false;\n    const ignoreCartAfterNetworkRestore = () => { ignoreCartCatchup = true; };\n    window.addEventListener(\"online\", ignoreCartAfterNetworkRestore, { once: true });"
         },
         {
           "find": "    socket.on(\"connect\", () => {\n      refreshItems().catch((err) => console.error(err));\n      if (token) {\n        refreshCart(token).catch((err) => console.error(err));\n      }\n    });",
-          "replace": "    socket.on(\"connect\", () => {\n      connectionCount += 1;\n      refreshItems().catch((err) => console.error(err));\n      if (token && connectionCount === 1) {\n        refreshCart(token).catch((err) => console.error(err));\n      } else if (token) {\n        setCart({ items: [], total: 0 }); // mutant: replacement connection loses account state\n      }\n    });"
+          "replace": "    socket.on(\"connect\", () => {\n      refreshItems().catch((err) => console.error(err));\n      if (token && !ignoreCartCatchup) {\n        refreshCart(token).catch((err) => console.error(err));\n      }\n    });"
         },
         {
           "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => setCart(data));",
-          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => { if (connectionCount === 1) setCart(data); });"
+          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => { if (!ignoreCartCatchup) setCart(data); });"
+        },
+        {
+          "find": "    return () => {\n      socket.disconnect();\n    };",
+          "replace": "    return () => {\n      window.removeEventListener(\"online\", ignoreCartAfterNetworkRestore);\n      socket.disconnect();\n    };"
         }
       ]
     },
