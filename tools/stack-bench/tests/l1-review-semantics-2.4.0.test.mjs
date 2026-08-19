@@ -131,11 +131,12 @@ test('corrected workflows do not grade a particular panel-closing interaction', 
   const cart = compileScenarioDefinition(readJson(join(root, 'scenarios',
     '01-cart-2.4.0.json')));
   const checkout = cart.features[0].criteria.find(criterion => criterion.id === '4d').steps;
-  assert(checkout.some(step => step.do === 'signIn' && step.actor === 'checkout2'));
+  assert(!checkout.some(step => step.do === 'signIn'),
+    'checkout must not duplicate the separate multi-session cart check');
   assert(!checkout.some(step => step.do === 'reload'),
     'checkout persistence must not duplicate the separate cart-reload check');
   assert(checkout.some(step => step.do === 'expectNumber'
-    && step.actor === 'checkout2' && step.testid === 'cart-count' && step.equals === 0));
+    && step.actor === 'checkout' && step.testid === 'cart-count' && step.equals === 0));
 
   const warehouse = compileScenarioDefinition(readJson(join(root, 'scenarios',
     '01-warehouse-stock-live-2.4.0.json')));

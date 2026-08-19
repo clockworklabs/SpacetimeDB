@@ -78,10 +78,13 @@ test('every PostgreSQL target resolves to the exact L1 2.4 release scenario', t 
 test('PostgreSQL live survivors are replaced by deterministic database defects', () => {
   const mutations = new Map(manifest.mutations.map(mutation => [mutation.id, mutation]));
   const duplicate = mutationFileEdits(mutations.get('repeat-review-creates-a-second-row'));
-  assert.equal(duplicate.length, 1);
-  assert(duplicate[0].replace.includes(
-    'ALTER TABLE review DROP CONSTRAINT IF EXISTS review_item_id_account_id_unique'));
-  assert(!duplicate[0].replace.includes('ON CONFLICT'));
+  assert.equal(duplicate.length, 3);
+  assert(duplicate.some(edit => edit.replace.includes(
+    'CREATE TABLE IF NOT EXISTS review_duplicate')));
+  assert(duplicate.some(edit => edit.replace.includes('UNION ALL')));
+  assert(duplicate.some(edit => edit.replace.includes('INSERT INTO review_duplicate')));
+  assert(!duplicate.some(edit => edit.replace.includes('ALTER TABLE')),
+    'a defect must not leave the shared live schema changed for the next mutation probe');
 
   const ownership = mutationFileEdits(mutations.get('cart-add-is-forced-into-another-account'));
   assert.equal(ownership.length, 1);

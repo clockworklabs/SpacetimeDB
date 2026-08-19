@@ -135,8 +135,9 @@ test('cart-boundary mutants exercise the named server actions', () => {
     'the negative-quantity mutant must bypass both the route check and schema validation');
 
   const reconnect = mutationEdits(mutations.get('reconnect-hydration-loses-account-state'));
-  assert.equal(reconnect.length, 3);
-  assert(reconnect.some(edit => edit.replace.includes('socket.on(\"disconnect\"')));
+  assert.equal(reconnect.length, 4);
+  assert(reconnect.some(edit => edit.replace.includes('window.addEventListener(\"offline\"')));
+  assert(reconnect.some(edit => edit.replace.includes('window.removeEventListener(\"offline\"')));
   assert(reconnect.some(edit => edit.replace.includes('!lostAccountState')),
     'the reconnect defect must block the recovery paths that defeated the first live mutant');
 });

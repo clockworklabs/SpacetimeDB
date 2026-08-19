@@ -330,7 +330,7 @@
       "edits": [
         {
           "find": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;",
-          "replace": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;\n    let lostAccountState = false;"
+          "replace": "    const socket = io({ auth: token ? { token } : {} });\n    socketRef.current = socket;\n    let lostAccountState = false;\n    const loseAccountState = () => {\n      lostAccountState = true;\n      setCart({ items: [], total: 0 });\n    };\n    window.addEventListener(\"offline\", loseAccountState);"
         },
         {
           "find": "      if (token) {\n        refreshCart(token).catch((err) => console.error(err));\n      }",
@@ -338,7 +338,11 @@
         },
         {
           "find": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => setCart(data));",
-          "replace": "    socket.on(\"disconnect\", () => {\n      lostAccountState = true;\n      setCart({ items: [], total: 0 });\n    });\n    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => { if (!lostAccountState) setCart(data); });"
+          "replace": "    socket.on(\"items:update\", (data: ItemT[]) => setItems(data));\n    socket.on(\"cart:update\", (data: CartT) => { if (!lostAccountState) setCart(data); });"
+        },
+        {
+          "find": "    return () => {\n      socket.disconnect();\n    };",
+          "replace": "    return () => {\n      window.removeEventListener(\"offline\", loseAccountState);\n      socket.disconnect();\n    };"
         }
       ]
     },

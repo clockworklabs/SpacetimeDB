@@ -9,7 +9,7 @@
     {
       "id": 4,
       "name": "Cart belongs to the account",
-      "actors": ["quantity", "reload", "live1", "live2", "checkout", "checkout2"],
+      "actors": ["quantity", "reload", "live1", "live2", "checkout"],
       "setup": [
         { "do": "signUp", "actor": "quantity", "name": "nora" },
         { "do": "signUp", "actor": "reload", "name": "omar" },
@@ -68,11 +68,10 @@
             { "do": "click", "actor": "checkout", "testid": "cart-toggle" },
             { "do": "click", "actor": "checkout", "testid": "checkout-submit" },
             { "do": "wait", "actor": "checkout", "ms": 1500 },
-            { "do": "signIn", "actor": "checkout2", "name": "quinn" },
-            { "do": "expectNumber", "actor": "checkout2", "testid": "cart-count", "equals": 0 },
-            { "do": "expectNumber", "actor": "checkout2", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "equals": 99 },
-            { "do": "click", "actor": "checkout2", "testid": "orders-toggle" },
-            { "do": "expect", "actor": "checkout2", "testid": "order-item", "contains": "Headphones", "count": 1 }
+            { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 0 },
+            { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "equals": 99 },
+            { "do": "click", "actor": "checkout", "testid": "orders-toggle" },
+            { "do": "expect", "actor": "checkout", "testid": "order-item", "contains": "Headphones", "count": 1 }
           ],
           "statedBy": "checkout turns the cart into one order, reduces stock for every line, and empties the cart"
         }

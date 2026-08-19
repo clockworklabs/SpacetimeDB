@@ -215,12 +215,22 @@
       "id": "repeat-review-creates-a-second-row",
       "scenario": "tracks/ecommerce/scenarios/01-review-uniqueness-2.4.0.json",
       "targets": [{ "feature": 6, "criterion": "6b" }],
-      "desc": "Remove the live database uniqueness constraint and insert a second review for the same item and account.",
+      "desc": "Persist reviews in an unconstrained shadow table and read it as ordinary review storage, allowing two rows for one item and account without polluting later mutation probes.",
       "file": "server/src/index.ts",
-      "edits": [{
-        "find": "    await pool.query(\n      `INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)\n       ON CONFLICT (item_id, account_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment`,",
-        "replace": "    await pool.query(\"ALTER TABLE review DROP CONSTRAINT IF EXISTS review_item_id_account_id_unique\");\n    await pool.query(\n      `INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)`,"
-      }]
+      "edits": [
+        {
+          "find": "async function main() {\n  await seed();",
+          "replace": "async function main() {\n  await pool.query(`CREATE TABLE IF NOT EXISTS review_duplicate (LIKE review INCLUDING DEFAULTS)`);\n  await seed();"
+        },
+        {
+          "find": "    `SELECT r.id, r.account_id, a.username, r.rating, r.comment, r.created_at\n     FROM review r JOIN account a ON a.id = r.account_id\n     WHERE r.item_id = $1\n     ORDER BY r.created_at DESC`,",
+          "replace": "    `SELECT r.id, r.account_id, a.username, r.rating, r.comment, r.created_at\n     FROM (\n       SELECT id, account_id, item_id, rating, comment, created_at FROM review\n       UNION ALL\n       SELECT id + 1000000, account_id, item_id, rating, comment, created_at FROM review_duplicate\n     ) r JOIN account a ON a.id = r.account_id\n     WHERE r.item_id = $1\n     ORDER BY r.created_at DESC`,"
+        },
+        {
+          "find": "    await pool.query(\n      `INSERT INTO review (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)\n       ON CONFLICT (item_id, account_id) DO UPDATE SET rating = excluded.rating, comment = excluded.comment`,",
+          "replace": "    await pool.query(\n      `INSERT INTO review_duplicate (item_id, account_id, rating, comment) VALUES ($1, $2, $3, $4)`,"
+        }
+      ]
     },
     {
       "id": "review-average-update-is-not-broadcast",
