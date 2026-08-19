@@ -28,15 +28,16 @@ test('qualification status rejects ambiguous or undeclared scope', () => {
     '--track', 'ecommerce']), /usage/);
 });
 
-test('qualification status exposes the exact runner required by a recipe', () => {
+test('qualification status separates launch readiness from incomplete defect coverage', () => {
   const status = qualificationReadiness('ecommerce', 2);
   assert.deepEqual(status.scope.runner, {
     schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
   });
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
     && item.state === 'promoted' && item.target === 'promoted'));
-  assert.equal(status.promotion.ready, true);
-  assert.deepEqual(status.promotion.blockers, []);
+  assert.equal(status.promotion.ready, false);
+  assert.equal(status.promotion.blockers.length, 3);
+  assert(status.promotion.blockers.every(item => item.code === 'defect_check_coverage_incomplete'));
   assert.equal(status.launch.ok, true);
 });
 
@@ -83,8 +84,12 @@ test('qualification resolves the promoted modular L2 release exactly and by defa
   assert.equal(status.scope.calibration.version, '1.4.0');
   assert.equal(status.launch.ok, true);
   assert.equal(status.requiredEvidence.length, 7);
-  assert.equal(status.promotion.ready, true);
-  assert.deepEqual(status.promotion.blockers, []);
+  assert.equal(status.promotion.ready, false);
+  assert.deepEqual(status.promotion.blockers.map(item => [item.code, item.path]), [
+    ['defect_check_coverage_incomplete', 'defectChecks.mongodb'],
+    ['defect_check_coverage_incomplete', 'defectChecks.postgres'],
+    ['defect_check_coverage_incomplete', 'defectChecks.spacetime'],
+  ]);
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
     && item.state === 'promoted' && item.target === 'promoted'));
   assert(status.commands.every(command => command.includes('--recipe ecommerce.l2-standard@1.4.0')));

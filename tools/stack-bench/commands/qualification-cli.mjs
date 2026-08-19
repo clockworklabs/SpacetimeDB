@@ -111,12 +111,10 @@ export function qualificationReadiness(trackName, level, recipe = null) {
   const recorded = new Set(calibration.qualification.evidence.map(entry =>
     `${entry.kind}:${entry.stack ?? ''}:${entry.repetition}`));
   const promotionBlockers = [...launchBlockers];
-  if (binding.status === 'candidate') {
-    for (const coverage of defectChecks.stacks.filter(item => item.missingChecks.length > 0)) {
-      promotionBlockers.push(blocker('defect_check_coverage_incomplete',
-        `defectChecks.${coverage.stack}`,
-        `${coverage.coveredChecks}/${defectChecks.totalChecks} scored checks have exact known-defect tests`));
-    }
+  for (const coverage of defectChecks.stacks.filter(item => item.missingChecks.length > 0)) {
+    promotionBlockers.push(blocker('defect_check_coverage_incomplete',
+      `defectChecks.${coverage.stack}`,
+      `${coverage.coveredChecks}/${defectChecks.totalChecks} scored checks have exact known-defect tests`));
   }
   for (const item of requiredEvidence) {
     const key = `${item.kind}:${item.stack ?? ''}:${item.repetition}`;
