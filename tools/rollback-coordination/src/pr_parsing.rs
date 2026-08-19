@@ -7,6 +7,7 @@ const ROLLBACK_SAFETY_HEADING: &str = "Rollback safety impact";
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct PullRequestRef {
+    // fully-qualified repo name in owner/repo format
     pub(crate) repo: String,
     pub(crate) number: u64,
 }

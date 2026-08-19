@@ -141,9 +141,8 @@ fn load_repos(
             .repository_info(&path)
             .with_context(|| format!("failed to identify repository at {}", path.display()))?
             .name_with_owner;
-        let name = name.name_with_owner;
         let releases = load_releases(&path, ignore_incompatible_tags)?;
-        repositories[name.clone()] = Repository { path, releases };
+        repositories.insert(name, Repository { path, releases });
     }
     Ok(repositories)
 }
