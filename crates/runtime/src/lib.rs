@@ -53,6 +53,16 @@ pub enum Handle {
     Simulation(sim::Handle),
 }
 
+impl fmt::Debug for Handle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Tokio(_) => f.write_str("Handle::Tokio"),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(_) => f.write_str("Handle::Simulation"),
+        }
+    }
+}
+
 pub struct JoinHandle<T> {
     inner: JoinHandleInner<T>,
 }
@@ -134,6 +144,16 @@ impl fmt::Display for JoinError {
 
 impl std::error::Error for JoinError {}
 
+impl JoinError {
+    pub fn is_panic(&self) -> bool {
+        match &self.inner {
+            JoinErrorInner::Tokio(error) => error.is_panic(),
+            #[cfg(feature = "simulation")]
+            JoinErrorInner::Simulation(_) => false,
+        }
+    }
+}
+
 impl<T> JoinHandleInner<T> {
     fn abort_handle(&self) -> AbortHandle {
         match self {
@@ -208,6 +228,28 @@ impl<T> Unpin for JoinHandle<T> {}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuntimeTimeout;
 
+#[must_use = "runtime context exits immediately unless the guard is held"]
+pub struct EnterGuard<'a> {
+    _inner: EnterGuardInner<'a>,
+}
+
+#[allow(dead_code)]
+enum EnterGuardInner<'a> {
+    Tokio(tokio::runtime::EnterGuard<'a>),
+    #[cfg(feature = "simulation")]
+    Simulation(sim_std::EnterGuard),
+}
+
+impl Drop for EnterGuard<'_> {
+    fn drop(&mut self) {
+        match &self._inner {
+            EnterGuardInner::Tokio(_) => {}
+            #[cfg(feature = "simulation")]
+            EnterGuardInner::Simulation(_) => {}
+        }
+    }
+}
+
 impl fmt::Display for RuntimeTimeout {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("runtime operation timed out")
@@ -216,6 +258,36 @@ impl fmt::Display for RuntimeTimeout {
 
 impl std::error::Error for RuntimeTimeout {}
 
+/// Spawn a task on the current Runtime
+pub fn spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
+    Handle::current().spawn(future)
+}
+
+/// Run blocking work on the current runtime.
+///
+/// Tokio runs `f` on its blocking thread pool. The simulation backend runs `f`
+/// as a normal simulated task on the single executor thread, so it preserves
+/// deterministic scheduling but does not provide blocking-pool parallelism.
+pub async fn spawn_blocking<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    Handle::current().spawn_blocking(f).await
+}
+
+/// Spawn a task on the current Tokio runtime, bypassing simulation enter state.
+pub fn tokio_spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
+    JoinHandle {
+        inner: JoinHandleInner::Tokio(tokio::spawn(future)),
+    }
+}
+
+/// Sleep on the currently active Runtime
+pub async fn sleep(duration: Duration) {
+    Handle::current().sleep(duration).await
+}
+
 impl Handle {
     pub fn tokio(handle: TokioHandle) -> Self {
         Self::Tokio(handle)
@@ -223,6 +295,24 @@ impl Handle {
 
     pub fn tokio_current() -> Self {
         Self::tokio(TokioHandle::current())
+    }
+
+    /// Return the runtime handle active on this OS thread.
+    pub fn current() -> Handle {
+        #[cfg(feature = "simulation")]
+        if let Some(handle) = sim_std::try_current_handle() {
+            return handle;
+        }
+
+        Handle::tokio_current()
+    }
+
+    #[cfg(feature = "simulation")]
+    pub fn into_sim(self) -> sim::Handle {
+        return match self {
+            Handle::Tokio(_) => panic!("tokio handle does not exist in simulation"),
+            Handle::Simulation(handle) => handle,
+        };
     }
 }
 
@@ -234,6 +324,18 @@ impl Handle {
 }
 
 impl Handle {
+    pub fn enter(&self) -> EnterGuard<'_> {
+        match self {
+            Self::Tokio(handle) => EnterGuard {
+                _inner: EnterGuardInner::Tokio(handle.enter()),
+            },
+            #[cfg(feature = "simulation")]
+            Self::Simulation(_) => EnterGuard {
+                _inner: EnterGuardInner::Simulation(sim_std::enter(self.clone())),
+            },
+        }
+    }
+
     pub fn spawn<T: Send + 'static>(&self, future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
         match self {
             Self::Tokio(handle) => JoinHandle {
@@ -241,8 +343,16 @@ impl Handle {
             },
             #[cfg(feature = "simulation")]
             Self::Simulation(handle) => JoinHandle {
-                inner: JoinHandleInner::Simulation(handle.spawn_on(sim::NodeId::MAIN, future)),
+                inner: JoinHandleInner::Simulation(handle.spawn(future)),
             },
+        }
+    }
+
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        match self {
+            Self::Tokio(handle) => handle.block_on(future),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => handle.block_on(future),
         }
     }
 
@@ -265,7 +375,7 @@ impl Handle {
             // the simulation backend.
             #[cfg(feature = "simulation")]
             Self::Simulation(handle) => handle
-                .spawn_on(sim::NodeId::MAIN, async move { f() })
+                .spawn(async move { f() })
                 .await
                 .expect("simulation spawn_blocking task should not be cancelled"),
         }
@@ -327,6 +437,73 @@ mod tests {
         });
 
         assert!(flag.load(Ordering::Acquire));
+    }
+
+    #[cfg(feature = "simulation")]
+    #[test]
+    fn ambient_runtime_uses_entered_simulation_handle() {
+        use crate::sim::Runtime;
+        let mut rt = Runtime::new(9);
+        let handle = Handle::simulation(rt.handle());
+        let _entered = handle.enter();
+
+        let output = rt.block_on(async {
+            let task = crate::spawn(async {
+                crate::sleep(std::time::Duration::from_millis(1)).await;
+                7
+            });
+            task.await.expect("ambient simulation task should complete")
+        });
+
+        assert_eq!(output, 7);
+        assert!(rt.elapsed() >= std::time::Duration::from_millis(1));
+    }
+
+    #[cfg(feature = "simulation")]
+    #[test]
+    fn simulation_enter_is_reentrant_for_same_handle() {
+        use crate::sim::Runtime;
+        let rt = Runtime::new(10);
+        let handle = Handle::simulation(rt.handle());
+        let outer = handle.enter();
+
+        {
+            let _inner = handle.enter();
+            assert!(matches!(crate::Handle::current(), Handle::Simulation(_)));
+        }
+
+        assert!(matches!(crate::Handle::current(), Handle::Simulation(_)));
+        drop(outer);
+    }
+
+    #[cfg(feature = "simulation")]
+    #[test]
+    fn ambient_spawn_inside_node_inherits_node_pause() {
+        use crate::sim::Runtime;
+        let mut rt = Runtime::new(11);
+        let handle = Handle::simulation(rt.handle());
+        let _entered = handle.enter();
+        let node = rt.create_node().name("worker").build();
+        let child_ran = Arc::new(AtomicBool::new(false));
+
+        rt.block_on(async {
+            let flag = Arc::clone(&child_ran);
+            let node_for_parent = node.clone();
+            let parent = node.spawn(async move {
+                let child = crate::spawn(async move {
+                    flag.store(true, Ordering::Release);
+                });
+                drop(child);
+                node_for_parent.pause();
+            });
+
+            parent.await.expect("parent task should complete");
+            assert!(!child_ran.load(Ordering::Acquire));
+
+            node.resume();
+            handle.sleep(std::time::Duration::from_millis(1)).await;
+            assert!(child_ran.load(Ordering::Acquire));
+        });
     }
 
     #[cfg(feature = "simulation")]

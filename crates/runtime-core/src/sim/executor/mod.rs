@@ -39,6 +39,7 @@ const READY_TASK_BUDGET: usize = 256;
 pub struct RuntimeConfig {
     pub seed: u64,
     pub network: Option<net::Options>,
+    pub buggify: bool,
     pub node_faults: NodeFaultOptions,
 }
 
@@ -47,12 +48,18 @@ impl RuntimeConfig {
         Self {
             seed,
             network: None,
+            buggify: false,
             node_faults: NodeFaultOptions::default(),
         }
     }
 
     pub fn with_network(mut self, network: net::Options) -> Self {
         self.network = network.into();
+        self
+    }
+
+    pub fn enable_buggify(mut self) -> Self {
+        self.buggify = true;
         self
     }
 
@@ -131,10 +138,9 @@ impl NodeBuilder {
     }
 }
 
-/// Handle to one simulated node in the runtime.
+/// Thin wrapper around a node-bound runtime handle.
 #[derive(Clone)]
 pub struct Node {
-    id: NodeId,
     handle: Handle,
     config: Arc<NodeConfig>,
 }
@@ -142,7 +148,17 @@ pub struct Node {
 impl Node {
     /// Return the stable identifier for this simulated node.
     pub fn id(&self) -> NodeId {
-        self.id
+        self.handle.node_id()
+    }
+
+    /// Return a cloneable handle bound to this simulated node.
+    pub fn handle(&self) -> Handle {
+        self.handle.clone()
+    }
+
+    /// Convert this node wrapper into its node-bound handle.
+    pub fn into_handle(self) -> Handle {
+        self.handle
     }
 
     /// Return the optional human-readable name for this node.
@@ -152,45 +168,45 @@ impl Node {
 
     /// Return the simulated network endpoint for this node.
     pub fn net(&self) -> Option<net::NodeNetwork> {
-        self.handle.network().map(|net| net.on_node(self.id))
-    }
-
-    /// Crash this node and invalidate all tasks spawned before the crash.
-    pub fn crash(&self) {
-        self.handle.crash_node(self.id);
+        self.handle.net()
     }
 
     /// Pause scheduling for this node.
     pub fn pause(&self) {
-        self.handle.pause(self.id);
+        self.handle.pause();
+    }
+
+    /// Crash this node and invalidate all tasks spawned before the crash.
+    pub fn crash(&self) {
+        self.handle.crash_node();
     }
 
     /// Resume scheduling for this node.
     pub fn resume(&self) {
-        self.handle.resume(self.id);
+        self.handle.resume();
     }
 
     /// Restart this node and invalidate all tasks spawned before the restart.
     pub fn restart(&self) {
-        self.handle.restart_node(self.id);
+        self.handle.restart_node();
     }
 
-    /// Spawn a `Send` future onto this simulated node.
+    /// Spawn a future onto this simulated node.
     pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
     where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
+        F: Future + 'static,
+        F::Output: 'static,
     {
-        self.handle.spawn_on(self.id, future)
+        self.handle.spawn(future)
     }
 
-    /// Spawn a non-`Send` future onto this simulated node.
+    /// Spawn a future onto this simulated node.
     pub fn spawn_local<F>(&self, future: F) -> JoinHandle<F::Output>
     where
         F: Future + 'static,
         F::Output: 'static,
     {
-        self.handle.spawn_local_on(self.id, future)
+        self.handle.spawn_local(future)
     }
 }
 
@@ -221,7 +237,7 @@ impl Runtime {
     /// While the future runs, spawned tasks share the same deterministic
     /// scheduler, timer wheel, and runtime RNG.
     pub fn block_on<F: Future>(&mut self, future: F) -> F::Output {
-        self.executor.block_on(future)
+        self.executor.block_on_on(NodeId::MAIN, future)
     }
 
     /// Return the amount of virtual time elapsed in this runtime.
@@ -233,6 +249,7 @@ impl Runtime {
     pub fn handle(&self) -> Handle {
         Handle {
             executor: Arc::clone(&self.executor),
+            node: NodeId::MAIN,
         }
     }
 
@@ -249,21 +266,21 @@ impl Runtime {
     /// Tasks already queued for the node are retained and will run only after
     /// the node is resumed.
     pub fn pause(&self, node: NodeId) {
-        self.handle().pause(node);
+        self.executor.pause(node);
     }
 
     /// Resume scheduling for a previously paused node.
     pub fn resume(&self, node: NodeId) {
-        self.handle().resume(node);
+        self.executor.resume(node);
     }
 
-    /// Spawn a `Send` future onto a specific simulated node.
-    pub fn spawn_on<F>(&self, node: NodeId, future: F) -> JoinHandle<F::Output>
+    /// Spawn a future onto the currently running node, or `MAIN` outside node work.
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
     where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
+        F: Future + 'static,
+        F::Output: 'static,
     {
-        self.handle().spawn_on(node, future)
+        self.executor.spawn(future)
     }
 
     pub fn enable_buggify(&self) {
@@ -319,12 +336,30 @@ impl Runtime {
 #[derive(Clone)]
 pub struct Handle {
     executor: Arc<Executor>,
+    node: NodeId,
 }
 
 impl Handle {
+    /// Return the stable identifier this handle is bound to.
+    pub fn node_id(&self) -> NodeId {
+        self.node
+    }
+
+    fn with_node(&self, node: NodeId) -> Self {
+        Self {
+            executor: Arc::clone(&self.executor),
+            node,
+        }
+    }
+
     /// Return the shared simulated network for this runtime.
     pub fn network(&self) -> Option<net::Network> {
         self.executor.net.clone()
+    }
+
+    /// Return the simulated network endpoint for this handle's node.
+    pub fn net(&self) -> Option<net::NodeNetwork> {
+        self.network().map(|net| net.on_node(self.node))
     }
 
     /// Create a new simulated node owned by this runtime.
@@ -343,50 +378,56 @@ impl Handle {
         let id = self.executor.create_node(config);
         let config = self.node_config(id);
         Node {
-            id,
-            handle: self.clone(),
+            handle: self.with_node(id),
             config,
         }
     }
 
     /// Pause scheduling for a node.
-    pub fn pause(&self, node: NodeId) {
-        self.executor.pause(node);
+    pub fn pause(&self) {
+        self.executor.pause(self.node);
     }
 
     /// Crash a node until it is restarted.
-    pub fn crash_node(&self, node: NodeId) {
-        self.executor.crash_node(node);
+    pub fn crash_node(&self) {
+        self.executor.crash_node(self.node);
     }
 
     /// Resume scheduling for a node and requeue any buffered tasks for it.
-    pub fn resume(&self, node: NodeId) {
-        self.executor.resume(node);
+    pub fn resume(&self) {
+        self.executor.resume(self.node);
     }
 
     /// Restart a node and invalidate all tasks spawned before the restart.
-    pub fn restart_node(&self, node: NodeId) {
-        self.executor.restart_node(node);
+    pub fn restart_node(&self) {
+        self.executor.restart_node(self.node);
     }
 
-    /// Spawn a `Send` future onto a specific simulated node.
-    pub fn spawn_on<F>(&self, node: NodeId, future: F) -> JoinHandle<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        self.executor.spawn_on(node, future)
-    }
-
-    /// Spawn a non-`Send` future onto a specific simulated node.
+    /// Spawn a future onto this handle's node.
     ///
-    /// This is only valid because the simulation executor is single-threaded.
-    pub fn spawn_local_on<F>(&self, node: NodeId, future: F) -> JoinHandle<F::Output>
+    /// The main runtime handle keeps ambient spawn semantics and inherits the
+    /// node currently being polled. Node-bound handles always target their
+    /// bound node.
+    pub fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
     where
         F: Future + 'static,
         F::Output: 'static,
     {
-        self.executor.spawn_local_on(node, future)
+        if self.node == NodeId::MAIN {
+            self.executor.spawn(future)
+        } else {
+            self.executor.assert_main_or_node(self.node);
+            self.executor.spawn_on(self.node, future)
+        }
+    }
+
+    /// Spawn a non-`Send` future onto this handle's node.
+    pub fn spawn_local<F>(&self, future: F) -> JoinHandle<F::Output>
+    where
+        F: Future + 'static,
+        F::Output: 'static,
+    {
+        self.spawn(future)
     }
 
     /// Return the current virtual time for this runtime.
@@ -419,7 +460,7 @@ impl Handle {
     }
 
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
-        self.executor.block_on(future)
+        self.executor.block_on_on(self.node, future)
     }
 
     pub fn enable_buggify(&self) {
@@ -455,6 +496,7 @@ impl Handle {
 struct Executor {
     queue: Receiver,
     sender: Sender,
+    current_tasks: Mutex<Vec<TaskMeta>>,
     nodes: spin::Mutex<BTreeMap<NodeId, Arc<NodeRecord>>>,
     node_faults: NodeFaultOptions,
     next_node: AtomicU64,
@@ -480,9 +522,14 @@ impl Executor {
             net.register_node(NodeId::MAIN);
         }
 
+        if config.buggify {
+            rng.enable_buggify();
+        }
+
         Self {
             queue: queue.receiver(),
             sender: queue.sender(),
+            current_tasks: Mutex::new(Vec::new()),
             nodes: spin::Mutex::new(nodes),
             node_faults: config.node_faults,
             next_node: AtomicU64::new(1),
@@ -585,28 +632,17 @@ impl Executor {
         }
     }
 
-    /// Spawn a `Send` task and enqueue its runnable on the shared runtime queue.
-    fn spawn_on<F>(&self, node: NodeId, future: F) -> JoinHandle<F::Output>
+    /// Spawn a task onto the node whose task is currently being polled.
+    fn spawn<F>(&self, future: F) -> JoinHandle<F::Output>
     where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
+        F: Future + 'static,
+        F::Output: 'static,
     {
-        let abort = AbortHandle::new();
-        let abortable = Abortable::new(future, abort.clone());
-        let sender = self.sender.clone();
-        let (runnable, task) = async_task::Builder::new()
-            .metadata(self.task_meta(node))
-            .spawn(move |_| abortable, move |runnable| sender.send(runnable));
-        runnable.schedule();
-
-        JoinHandle {
-            task: task.fallible(),
-            abort,
-        }
+        self.spawn_on(self.current_node(), future)
     }
 
-    /// Spawn a non-`Send` task on the single-threaded runtime.
-    fn spawn_local_on<F>(&self, node: NodeId, future: F) -> JoinHandle<F::Output>
+    /// Spawn a task and enqueue its runnable on the shared runtime queue.
+    fn spawn_on<F>(&self, node: NodeId, future: F) -> JoinHandle<F::Output>
     where
         F: Future + 'static,
         F::Output: 'static,
@@ -622,7 +658,7 @@ impl Executor {
         runnable.schedule();
 
         JoinHandle {
-            task: task.fallible(),
+            task: Some(task.fallible()),
             abort,
         }
     }
@@ -634,11 +670,13 @@ impl Executor {
     /// simulated fault sources at one captured instant, then advances virtual
     /// time only when no current-time source can make progress. If neither
     /// runnable work nor timers remain, the simulation is considered deadlocked.
-    fn block_on<F: Future>(&self, future: F) -> F::Output {
+    fn block_on_on<F: Future>(&self, node: NodeId, future: F) -> F::Output {
+        self.assert_main_or_node(node);
+
         let sender = self.sender.clone();
         let (runnable, mut task) = unsafe {
             async_task::Builder::new()
-                .metadata(self.task_meta(NodeId::MAIN))
+                .metadata(self.task_meta(node))
                 .spawn_unchecked(move |_| future, move |runnable| sender.send(runnable))
         };
         runnable.schedule();
@@ -778,6 +816,7 @@ impl Executor {
                 state.paused_queue.lock().push(runnable);
                 continue;
             }
+            let _current_task = self.enter_current_task(meta);
             runnable.run();
             // Advance virtual time by 100ns-1us per task poll to model execution cost.
             // Using the runtime RNG keeps overhead deterministic by seed.
@@ -801,12 +840,51 @@ impl Executor {
     }
 
     fn task_meta(&self, node: NodeId) -> TaskMeta {
+        if let Some(current) = self.current_task()
+            && current.node == node
+        {
+            return current;
+        }
+
         let state = self.node_state(node);
         TaskMeta::new(node, state.generation())
     }
 
+    fn current_task(&self) -> Option<TaskMeta> {
+        self.current_tasks.lock().last().copied()
+    }
+
+    fn current_node(&self) -> NodeId {
+        self.current_task().map(|meta| meta.node).unwrap_or(NodeId::MAIN)
+    }
+
+    fn assert_main_or_node(&self, node: NodeId) {
+        let caller = self.current_node();
+        assert!(
+            caller == NodeId::MAIN || caller == node,
+            "node {caller} cannot spawn task on node {node}"
+        );
+    }
+
+    fn enter_current_task(&self, meta: TaskMeta) -> CurrentTaskGuard<'_> {
+        self.current_tasks.lock().push(meta);
+        CurrentTaskGuard { executor: self, meta }
+    }
+
     fn node_state(&self, node: NodeId) -> Arc<NodeState> {
         self.node_record(node).state.clone()
+    }
+}
+
+struct CurrentTaskGuard<'a> {
+    executor: &'a Executor,
+    meta: TaskMeta,
+}
+
+impl Drop for CurrentTaskGuard<'_> {
+    fn drop(&mut self) {
+        let current = self.executor.current_tasks.lock().pop();
+        assert_eq!(current, Some(self.meta), "current simulated task stack corrupted");
     }
 }
 
@@ -980,6 +1058,8 @@ mod tests {
     use super::*;
     use crate::sim::RuntimeConfig;
 
+    struct Spawned<T>(JoinHandle<T>);
+
     struct DropFlag(Arc<AtomicUsize>);
 
     impl Drop for DropFlag {
@@ -1034,6 +1114,20 @@ mod tests {
         });
 
         assert_eq!(value, 11);
+    }
+
+    #[test]
+    #[should_panic(expected = "cannot spawn task on node")]
+    fn node_cannot_spawn_task_on_another_node() {
+        let mut runtime = Runtime::new(3);
+        let node_a = runtime.create_node().name("a").build();
+        let node_b = runtime.create_node().name("b").build();
+
+        let task = node_a.spawn(async move {
+            let _child = node_b.spawn(async {});
+        });
+
+        runtime.block_on(task).expect("parent task should panic first");
     }
 
     #[test]
@@ -1202,6 +1296,94 @@ mod tests {
         });
 
         assert_eq!(value, 17);
+    }
+
+    #[test]
+    fn node_bound_handle_block_on_runs_on_bound_node() {
+        let mut runtime = Runtime::new(14);
+        let main = runtime.handle();
+        let node = runtime.create_node().name("bound").build();
+        let node_handle = node.handle();
+        let child_ran = Arc::new(AtomicBool::new(false));
+
+        let child = node_handle
+            .block_on({
+                let main = main.clone();
+                let node = node.clone();
+                let child_ran = Arc::clone(&child_ran);
+                async move {
+                    let child = main.spawn(async move {
+                        child_ran.store(true, Ordering::Release);
+                    });
+                    node.pause();
+                    Spawned(child)
+                }
+            })
+            .0;
+
+        runtime.block_on(async {
+            yield_now().await;
+        });
+        assert!(!child_ran.load(Ordering::Acquire));
+
+        node.resume();
+        runtime
+            .block_on(child)
+            .expect("child spawned from node-bound block_on should complete");
+        assert!(child_ran.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn nested_block_on_restores_outer_node_context() {
+        let mut runtime = Runtime::new(15);
+        let main = runtime.handle();
+        let node = runtime.create_node().name("outer").build();
+        let node_handle = node.handle();
+        let child_ran = Arc::new(AtomicBool::new(false));
+
+        let outer = node.spawn({
+            let main = main.clone();
+            let node = node.clone();
+            let child_ran = Arc::clone(&child_ran);
+            async move {
+                node_handle.block_on(async {
+                    yield_now().await;
+                });
+
+                let child = main.spawn(async move {
+                    child_ran.store(true, Ordering::Release);
+                });
+                node.pause();
+                Spawned(child)
+            }
+        });
+        let child = runtime.block_on(outer).expect("outer task should complete").0;
+
+        runtime.block_on(async {
+            yield_now().await;
+        });
+        assert!(!child_ran.load(Ordering::Acquire));
+
+        node.resume();
+        runtime
+            .block_on(child)
+            .expect("ambient spawn should inherit restored outer node");
+        assert!(child_ran.load(Ordering::Acquire));
+    }
+
+    #[test]
+    #[should_panic(expected = "node 1 cannot spawn task on node 2")]
+    fn nested_block_on_rejects_cross_node_reentry() {
+        let mut runtime = Runtime::new(16);
+        let node_a = runtime.create_node().name("a").build();
+        let node_b = runtime.create_node().name("b").build();
+        let node_b_handle = node_b.handle();
+
+        let task = node_a.spawn(async move {
+            node_b_handle.block_on(async {});
+        });
+
+        let _ = runtime.block_on(task);
     }
 
     #[test]
