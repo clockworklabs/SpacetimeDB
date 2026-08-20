@@ -236,8 +236,8 @@ struct MyTable {
 
 #[spacetimedb::procedure]
 fn insert_a_value(ctx: &mut ProcedureContext, a: u32, b: String) {
-    ctx.with_tx(|ctx| {
-        ctx.my_table().insert(MyTable { a, b });
+    ctx.with_tx(|tx| {
+        tx.db.my_table().insert(MyTable { a, b });
     });
 }
 ```
@@ -369,11 +369,11 @@ For fallible database operations, instead use `ProcedureContext::try_with_tx`:
 ```rust
 #[spacetimedb::procedure]
 fn maybe_insert_a_value(ctx: &mut ProcedureContext, a: u32, b: String) {
-    ctx.try_with_tx(|ctx| {
+    ctx.try_with_tx(|tx| {
         if a < 10 {
             return Err("a is less than 10!");
         }
-        ctx.my_table().insert(MyTable { a, b });
+        tx.db.my_table().insert(MyTable { a, b });
         Ok(())
     });
 }
