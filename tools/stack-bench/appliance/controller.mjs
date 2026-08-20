@@ -23,6 +23,8 @@ const COMMANDS = Object.freeze({
   'test': ['--test', join(ROOT, 'tests', '*.test.mjs')],
 });
 
+const COMMANDS_WITHOUT_AGENT_AUTH = new Set(['init-deps', 'verify-deps']);
+
 export function resolveControllerCommand(argv) {
   const [command, ...rest] = argv;
   if (!command || command === '--help' || command === 'help') return null;
@@ -30,16 +32,17 @@ export function resolveControllerCommand(argv) {
   return { executable: process.execPath, args: [...COMMANDS[command], ...rest] };
 }
 
-export function controllerChildEnvironment(source = process.env) {
-  const mode = source.STACK_BENCH_AGENT_AUTH ?? 'subscription-token';
-  if (!['subscription-token', 'api-key'].includes(mode)) {
-    throw new Error('STACK_BENCH_AGENT_AUTH must be subscription-token or api-key');
-  }
+export function controllerChildEnvironment(source = process.env, { requireAgentAuth = true } = {}) {
   const env = { ...source };
   delete env.ANTHROPIC_API_KEY;
   delete env.ANTHROPIC_API_KEY_FILE;
   delete env.CLAUDE_CODE_OAUTH_TOKEN;
   delete env.CLAUDE_CODE_OAUTH_TOKEN_FILE;
+  if (!requireAgentAuth) return env;
+  const mode = source.STACK_BENCH_AGENT_AUTH ?? 'subscription-token';
+  if (!['subscription-token', 'api-key'].includes(mode)) {
+    throw new Error('STACK_BENCH_AGENT_AUTH must be subscription-token or api-key');
+  }
   if (mode === 'api-key') {
     const path = source.STACK_BENCH_ANTHROPIC_API_KEY_FILE?.trim();
     if (!path) throw new Error('api-key auth requires STACK_BENCH_ANTHROPIC_API_KEY_FILE');
@@ -80,10 +83,12 @@ function help() {
 }
 
 async function main(argv) {
+  const command = argv[2];
   const resolved = resolveControllerCommand(argv.slice(2));
   if (!resolved) { help(); return; }
   const child = spawn(resolved.executable, resolved.args,
-    { stdio: 'inherit', env: controllerChildEnvironment(process.env) });
+    { stdio: 'inherit', env: controllerChildEnvironment(process.env,
+      { requireAgentAuth: !COMMANDS_WITHOUT_AGENT_AUTH.has(command) }) });
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => child.kill(signal));
   const outcome = await new Promise((resolveExit, reject) => {
     child.once('error', reject);

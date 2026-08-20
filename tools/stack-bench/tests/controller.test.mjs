@@ -55,3 +55,12 @@ test('controller selects exactly one explicit agent credential mode', () => {
   assert.throws(() => controllerChildEnvironment({ STACK_BENCH_AGENT_AUTH: 'credentials' }),
     /must be subscription-token or api-key/);
 });
+
+test('dependency setup does not require or forward agent credentials', () => {
+  const env = controllerChildEnvironment({ PATH: '/usr/bin',
+    ANTHROPIC_API_KEY: 'ambient-key', CLAUDE_CODE_OAUTH_TOKEN: 'ambient-token' },
+  { requireAgentAuth: false });
+  assert.equal(env.PATH, '/usr/bin');
+  assert.equal(env.ANTHROPIC_API_KEY, undefined);
+  assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, undefined);
+});
