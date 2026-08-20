@@ -101,6 +101,8 @@ export function parseArgs(argv) {
       case '--api-key': a.apiKey = argv[++i]; break;
       case '--api-key-file': a.apiKeyFile = resolve(argv[++i]); break;
       case '--mutations': a.mutations = resolve(argv[++i]); break;
+      case '--mutation-shard-index': a.mutationShardIndex = Number(argv[++i]); break;
+      case '--mutation-shard-count': a.mutationShardCount = Number(argv[++i]); break;
       // Start from an existing built app (a preserved L1 source) and UPGRADE it,
       // instead of rebuilding the lower level. The correct L1 that scored 51/51
       // is the right foundation for L2 — rebuilding it costs money and adds
@@ -129,6 +131,9 @@ export function parseArgs(argv) {
   }
   if (a.maxBudgetUsd !== undefined && (!Number.isFinite(a.maxBudgetUsd) || a.maxBudgetUsd <= 0)) {
     throw new Error('--max-budget-usd must be a positive number');
+  }
+  if ((a.mutationShardIndex === undefined) !== (a.mutationShardCount === undefined)) {
+    throw new Error('--mutation-shard-index and --mutation-shard-count must be supplied together');
   }
   return a;
 }

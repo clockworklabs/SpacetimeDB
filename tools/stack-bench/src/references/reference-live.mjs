@@ -27,7 +27,9 @@ import { calibrationQualificationIdentity, resolveCalibrationForRelease } from '
 import { resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { isModularRecipeRelease } from '../composition/recipe-selection.mjs';
 import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.mjs';
+import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { controllerRunner } from '../runtime/runner-environment.mjs';
+import { mergeMutationShards, mutationWorkerSlots } from '../evidence/mutation-shards.mjs';
 
 export { controllerRunner as referenceQualificationRunner } from '../runtime/runner-environment.mjs';
 
@@ -47,7 +49,8 @@ function qualificationInputs() {
 
 export function parseReferenceQualificationArgs(argv) {
   const args = { track: 'ecommerce', level: 1, repetitions: 2,
-    runIndex: 0, spacetimePort: null, timeoutMinutes: null, mutations: false };
+    runIndex: 0, spacetimePort: null, timeoutMinutes: null, mutations: false,
+    mutationWorkers: 1, mutationShardIndex: null, mutationShardCount: null };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--backend') args.backend = argv[++i];
     else if (argv[i] === '--track') args.track = argv[++i];
@@ -55,9 +58,15 @@ export function parseReferenceQualificationArgs(argv) {
     else if (argv[i] === '--recipe') args.recipe = argv[++i];
     else if (argv[i] === '--repetitions') args.repetitions = Number(argv[++i]);
     else if (argv[i] === '--run-index') args.runIndex = Number(argv[++i]);
-    else if (argv[i] === '--spacetime-port') args.spacetimePort = Number(argv[++i]);
+    else if (argv[i] === '--spacetime-port') {
+      args.spacetimePort = Number(argv[++i]);
+      args.spacetimePortExplicit = true;
+    }
     else if (argv[i] === '--timeout-minutes') args.timeoutMinutes = Number(argv[++i]);
     else if (argv[i] === '--mutations') args.mutations = true;
+    else if (argv[i] === '--mutation-workers') args.mutationWorkers = Number(argv[++i]);
+    else if (argv[i] === '--mutation-shard-index') args.mutationShardIndex = Number(argv[++i]);
+    else if (argv[i] === '--mutation-shard-count') args.mutationShardCount = Number(argv[++i]);
     else if (argv[i] === '--out') args.out = resolve(argv[++i]);
     else throw new Error(`unknown argument ${argv[i]}`);
   }
@@ -75,6 +84,32 @@ export function parseReferenceQualificationArgs(argv) {
   if (!Number.isInteger(args.runIndex) || args.runIndex < 0) {
     throw new Error('--run-index must be a non-negative integer');
   }
+  if (!Number.isInteger(args.mutationWorkers) || args.mutationWorkers < 1
+      || args.mutationWorkers > 8) {
+    throw new Error('--mutation-workers must be an integer from 1 through 8');
+  }
+  if (args.mutationWorkers > 1 && !args.mutations) {
+    throw new Error('--mutation-workers above 1 requires --mutations');
+  }
+  const shardSupplied = args.mutationShardIndex !== null || args.mutationShardCount !== null;
+  if (shardSupplied && (args.mutationShardIndex === null || args.mutationShardCount === null)) {
+    throw new Error('--mutation-shard-index and --mutation-shard-count must be supplied together');
+  }
+  if (shardSupplied) {
+    if (!args.mutations || args.mutationWorkers !== 1) {
+      throw new Error('internal mutation shard coordinates require --mutations and one worker');
+    }
+    // The pure partition helper owns coordinate range validation.
+    mutationWorkerSlots({ workerCount: args.mutationShardCount, runIndex: 0,
+      maxRunIndex: RUN_INDEX_CAP });
+    if (!Number.isInteger(args.mutationShardIndex) || args.mutationShardIndex < 0
+        || args.mutationShardIndex >= args.mutationShardCount) {
+      throw new Error('--mutation-shard-index is outside the declared shard count');
+    }
+  } else {
+    mutationWorkerSlots({ workerCount: args.mutationWorkers, runIndex: args.runIndex,
+      maxRunIndex: RUN_INDEX_CAP });
+  }
   args.spacetimePort ??= DEFAULT_SPACETIME_PORT + args.runIndex;
   if (!Number.isInteger(args.spacetimePort) || args.spacetimePort < 1024 || args.spacetimePort > 65535) {
     throw new Error('--spacetime-port must be an integer from 1024 through 65535');
@@ -88,7 +123,7 @@ export function parseReferenceQualificationArgs(argv) {
 }
 
 export function runBounded(command, argv,
-  { cwd, env, stdio = 'inherit', timeoutMs, terminate = killTree, logs = null }) {
+  { cwd, env, stdio = 'inherit', timeoutMs, terminate = killTree, logs = null, signal = null }) {
   return new Promise(resolveRun => {
     const maximum = logs?.maxBytes ?? 4 * 1024 * 1024;
     if (logs && (!Number.isInteger(maximum) || maximum <= 0)) {
@@ -131,23 +166,34 @@ export function runBounded(command, argv,
       child.stderr.on('data', capture('stderr', process.stderr));
     }
     let timedOut = false;
+    let cancelled = false;
     let spawnError = null;
+    const stop = () => {
+      terminate(child.pid);
+      try { child.kill('SIGKILL'); } catch { /* already exited */ }
+    };
+    const cancel = () => { cancelled = true; stop(); };
+    if (signal) {
+      if (signal.aborted) cancel();
+      else signal.addEventListener('abort', cancel, { once: true });
+    }
     const timer = setTimeout(() => {
       timedOut = true;
       // SIGTERM handlers are bypassed by Node on Windows. Kill the exact child
       // tree, then let the lease-aware supervisor remove detached resources.
-      terminate(child.pid);
-      try { child.kill('SIGKILL'); } catch { /* already exited */ }
+      stop();
     }, timeoutMs);
     child.once('error', error => { spawnError = error; });
-    child.once('close', (code, signal) => {
+    child.once('close', (code, childSignal) => {
       clearTimeout(timer);
+      signal?.removeEventListener('abort', cancel);
       const captured = streams ? Object.fromEntries(Object.entries(streams).map(([name, state]) => {
         closeSync(state.fd);
         return [name, { path: state.path, sha256: state.hash.digest('hex'), bytes: state.bytes,
           retainedBytes: state.retainedBytes, truncated: state.bytes > state.retainedBytes }];
       })) : null;
-      resolveRun({ ok: !timedOut && !spawnError && code === 0, code, signal, timedOut,
+      resolveRun({ ok: !timedOut && !cancelled && !spawnError && code === 0,
+        code, signal: childSignal, timedOut, cancelled,
         error: spawnError, logs: captured,
         stdoutTail: streams?.stdout.tail.trim() || '', stderrTail: streams?.stderr.tail.trim() || '' });
     });
@@ -364,6 +410,10 @@ async function runOnce(fixture, args, context, id, repetition) {
         throw new Error(`${fixture.id} must own exactly one mutation manifest for live mutation qualification`);
       }
       benchArgs.push('--mutations', join(ROOT, fixture.mutationManifests[0]));
+      if (args.mutationShardCount !== null) {
+        benchArgs.push('--mutation-shard-index', String(args.mutationShardIndex),
+          '--mutation-shard-count', String(args.mutationShardCount));
+      }
     }
     const child = await runBounded(process.execPath, benchArgs,
       { cwd: ROOT, stdio: 'inherit', env, timeoutMs: args.timeoutMs });
@@ -413,6 +463,156 @@ async function runOnce(fixture, args, context, id, repetition) {
     harnessSha256Before: harnessBefore.sha256, harnessSha256After: harnessAfter.sha256, ...audit };
 }
 
+export function parallelMutationChildArgv(args, context,
+  { artifactPath, repetition, workerIndex, workerCount }) {
+  const runIndex = args.runIndex + workerIndex;
+  const argv = [fileURLToPath(import.meta.url), '--backend', args.backend,
+    '--track', args.track, '--level', String(args.level), '--recipe',
+    `${context.binding.release.id}@${context.binding.release.version}`,
+    '--repetitions', '1', '--run-index', String(runIndex), '--timeout-minutes',
+    String(args.timeoutMinutes), '--mutations', '--mutation-shard-index',
+    String(workerIndex), '--mutation-shard-count', String(workerCount), '--out', artifactPath];
+  if (args.spacetimePortExplicit) {
+    argv.push('--spacetime-port', String(args.spacetimePort + workerIndex));
+  }
+  return argv;
+}
+
+function identityKey(identity) {
+  return JSON.stringify({ id: identity?.id ?? null, version: identity?.version ?? null,
+    sha256: identity?.sha256 ?? null, state: identity?.state ?? null });
+}
+
+function readParallelMutationWorker(path, processResult, expected, manifest) {
+  const failures = [];
+  if (!processResult.ok) {
+    failures.push(processResult.timedOut ? 'worker timed out'
+      : processResult.error?.message ?? `worker exited ${processResult.code ?? processResult.signal}`);
+  }
+  if (!existsSync(path)) return { failures: [...failures, 'worker artifact is missing'] };
+  let artifact;
+  try { artifact = readArtifact(path); }
+  catch (error) { return { failures: [...failures, `worker artifact is invalid: ${error.message}`] }; }
+  if (artifact.kind !== 'reference_qualification') failures.push('worker artifact has the wrong kind');
+  const payload = artifact.payload;
+  if (payload?.mutationControl !== true || payload?.requiredRepetitions !== 1
+      || payload?.runs?.length !== 1) {
+    failures.push('worker qualification shape is invalid');
+  }
+  for (const key of ['engine', 'fixture', 'recipe', 'calibration', 'stackAdapter']) {
+    if (identityKey(artifact.identities?.[key]) !== identityKey(expected[key])) {
+      failures.push(`worker ${key} identity does not match the parent`);
+    }
+  }
+  const run = payload?.runs?.[0] ?? null;
+  if (payload?.ok !== true || run?.ok !== true) failures.push('worker qualification did not pass');
+  let control = null;
+  if (run?.output) {
+    const childRoot = resolve(dirname(path));
+    const outputRoot = resolve(childRoot, run.output);
+    if (outputRoot !== childRoot && !outputRoot.startsWith(`${childRoot}${sep}`)) {
+      failures.push('worker run output escapes its artifact directory');
+    } else {
+      const controlPath = join(outputRoot, 'mutation-control.json');
+      try { control = readArtifactPayload(controlPath, { expectedKind: 'mutation_control' }); }
+      catch (error) { failures.push(`worker mutation artifact is invalid: ${error.message}`); }
+    }
+  } else failures.push('worker run output is missing');
+  const assigned = manifest.mutations
+    .filter((_, position) => position % expected.workerCount === expected.workerIndex)
+    .map(mutation => mutation.id);
+  if (control && (control.shard?.index !== expected.workerIndex
+      || control.shard?.count !== expected.workerCount
+      || JSON.stringify(control.shard?.mutationIds) !== JSON.stringify(assigned))) {
+    failures.push('worker mutation shard does not match its assignment');
+  }
+  if (control?.ok !== true) failures.push('worker mutation control did not pass');
+  return { artifact, payload, run, control, failures };
+}
+
+async function runParallelMutationRepetition(fixture, args, context, id, repetition, artifactIdentities) {
+  if (fixture.mutationManifests.length !== 1) {
+    throw new Error(`${fixture.id} must own exactly one mutation manifest for parallel qualification`);
+  }
+  const manifest = readJson(join(ROOT, fixture.mutationManifests[0]));
+  if (!Array.isArray(manifest.mutations) || manifest.mutations.length < args.mutationWorkers) {
+    throw new Error(`--mutation-workers cannot exceed ${manifest.mutations?.length ?? 0} mutations`);
+  }
+  const started = Date.now();
+  const workerRoot = join(args.runsRoot, `r${repetition + 1}-workers`);
+  mkdirSync(workerRoot, { recursive: true });
+  const cancellation = new AbortController();
+  const cancel = () => cancellation.abort();
+  process.once('SIGINT', cancel);
+  process.once('SIGTERM', cancel);
+  let workers;
+  try {
+    workers = await Promise.all(Array.from({ length: args.mutationWorkers }, async (_, workerIndex) => {
+      const artifactPath = join(workerRoot, `w${workerIndex + 1}.json`);
+      const logs = { stdout: join(workerRoot, `w${workerIndex + 1}.stdout.log`),
+        stderr: join(workerRoot, `w${workerIndex + 1}.stderr.log`) };
+      const argv = parallelMutationChildArgv(args, context,
+        { artifactPath, repetition, workerIndex, workerCount: args.mutationWorkers });
+      const processResult = await runBounded(process.execPath, argv,
+        { cwd: ROOT, env: process.env, timeoutMs: args.timeoutMs + 5 * 60_000, logs,
+          signal: cancellation.signal });
+      return { workerIndex, runIndex: args.runIndex + workerIndex, artifactPath, logs, processResult };
+    }));
+  } finally {
+    process.removeListener('SIGINT', cancel);
+    process.removeListener('SIGTERM', cancel);
+  }
+  const inspected = workers.map(worker => ({ ...worker, ...readParallelMutationWorker(
+    worker.artifactPath, worker.processResult,
+    { ...artifactIdentities, workerIndex: worker.workerIndex,
+      workerCount: args.mutationWorkers }, manifest) }));
+  const failures = inspected.flatMap(worker => worker.failures
+    .map(failure => `worker ${worker.workerIndex + 1}: ${failure}`));
+  if (cancellation.signal.aborted) failures.unshift('parallel mutation qualification was interrupted');
+  let results = [];
+  try {
+    results = mergeMutationShards(manifest.mutations, inspected.map(worker => ({
+      index: worker.control?.shard?.index,
+      count: worker.control?.shard?.count,
+      mutationIds: worker.control?.shard?.mutationIds,
+      results: worker.control?.results,
+    })));
+  } catch (error) { failures.push(error.message); }
+  const representative = inspected.find(worker => worker.run)?.run ?? {};
+  const caught = results.filter(result => result.status === 'CAUGHT').length;
+  if (results.length && caught !== results.length) failures.push('one or more mutations were not cleanly caught');
+  const fingerprints = new Set(inspected.map(worker => worker.run?.fingerprint).filter(Boolean));
+  const images = new Set(inspected.map(worker => worker.run?.imageId).filter(Boolean));
+  const harnesses = new Set(inspected.flatMap(worker =>
+    [worker.run?.harnessSha256Before, worker.run?.harnessSha256After]).filter(Boolean));
+  if (fingerprints.size !== 1) failures.push('worker baseline fingerprints differ');
+  if (images.size !== 1) failures.push('worker build images differ');
+  if (harnesses.size !== 1) failures.push('worker harness identities differ');
+  return { repetition: repetition + 1,
+    output: relative(args.artifactDirectory, workerRoot).replaceAll('\\', '/'),
+    durationMs: Date.now() - started,
+    processError: failures.length ? failures.join('; ') : null,
+    harnessSha256Before: harnesses.size === 1 ? [...harnesses][0] : null,
+    harnessSha256After: harnesses.size === 1 ? [...harnesses][0] : null,
+    ok: failures.length === 0,
+    failures,
+    runId: id,
+    score: representative.score ?? null,
+    imageId: images.size === 1 ? [...images][0] : null,
+    criteria: representative.criteria ?? null,
+    zeroPointCriteria: representative.zeroPointCriteria ?? null,
+    fingerprint: fingerprints.size === 1 ? [...fingerprints][0] : null,
+    outcome: failures.length === 0 ? 'passed' : 'harness_failure',
+    packRuntime: representative.packRuntime ?? null,
+    mutations: { caught, total: results.length },
+    workers: inspected.map(worker => ({ index: worker.workerIndex, runIndex: worker.runIndex,
+      artifact: relative(args.artifactDirectory, worker.artifactPath).replaceAll('\\', '/'),
+      mutationIds: worker.control?.shard?.mutationIds ?? [], ok: worker.failures.length === 0,
+      logs: Object.fromEntries(Object.entries(worker.processResult.logs ?? {})
+        .map(([name, log]) => [name, relative(args.artifactDirectory, log.path).replaceAll('\\', '/')])) })),
+  };
+}
+
 async function main() {
   const args = parseReferenceQualificationArgs(process.argv);
   const registry = loadReferenceRegistry();
@@ -446,9 +646,13 @@ async function main() {
     fixtureSha256: fixture.imported.sourceSha256, requiredRepetitions: args.repetitions,
     startedAt: new Date().toISOString(), isolation: 'docker',
     runner: controllerRunner(), mutationControl: args.mutations, runs: [] };
+  const artifactIdentities = artifact.identities;
   for (let repetition = 0; repetition < args.repetitions; repetition++) {
     console.log(`\nqualifying ${fixture.id}: clean run ${repetition + 1}/${args.repetitions}`);
-    const run = await runOnce(fixture, args, context, id, repetition);
+    const run = args.mutationWorkers > 1
+      ? await runParallelMutationRepetition(fixture, args, context, id, repetition,
+        artifactIdentities)
+      : await runOnce(fixture, args, context, id, repetition);
     artifact.runs.push(run);
     // Repetition measures stability of a passing baseline. Repeating a setup or
     // infrastructure failure only wastes time and produces duplicate noise.

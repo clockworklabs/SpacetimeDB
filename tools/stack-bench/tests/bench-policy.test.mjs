@@ -11,6 +11,15 @@ test('direct runs default to ten repair rounds while an explicit budget still wi
     '--fix-rounds', '4']).fixRounds, 4);
 });
 
+test('mutation shard coordinates are paired', () => {
+  const args = parseArgs(['node', 'bench', '--backend', 'postgres',
+    '--mutation-shard-index', '1', '--mutation-shard-count', '3']);
+  assert.equal(args.mutationShardIndex, 1);
+  assert.equal(args.mutationShardCount, 3);
+  assert.throws(() => parseArgs(['node', 'bench', '--backend', 'postgres',
+    '--mutation-shard-index', '1']), /must be supplied together/);
+});
+
 test('the first repair that makes an unstartable app gradeable is never rolled back', () => {
   const after = { suites: {}, totals: { score: 35, max: 58 } };
   for (const phase of ['application-restart', 'application-seed']) {

@@ -26,6 +26,10 @@ export function mutationControlArgv(args, appDir, url, track) {
     '--track', args.track, '--run-index', String(args.runIndex), '--out', output,
     '--restart-spec', JSON.stringify(restartSpecFor(args, appDir, track)),
     '--parent-attempt-id', args.parentAttemptId,
+    ...(args.mutationShardCount === undefined ? [] : [
+      '--mutation-shard-index', String(args.mutationShardIndex),
+      '--mutation-shard-count', String(args.mutationShardCount),
+    ]),
     ...(recipe ? ['--recipe', recipe] : [])];
 }
 

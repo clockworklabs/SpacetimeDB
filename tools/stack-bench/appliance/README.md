@@ -265,6 +265,29 @@ Artifacts created before runner identity or the complete runner observation was
 recorded remain readable, but are not accepted where the selected calibration
 requires that evidence.
 
+Mutation qualification is serial by default. Use `--mutation-workers N` with
+`--mutations` to split one exact mutation manifest across 1 to 8 isolated
+workers. Each worker receives a separate run slot, source tree, generated app,
+backend lease, ports, logs, and artifact directory. The parent command accepts
+the result only when the workers use the same recipe, calibration, fixture,
+engine, image, harness, and pristine baseline, and their results form the exact
+mutation manifest once. A worker failure does not cancel the other workers.
+An operator interrupt stops all workers and leaves their logs for diagnosis.
+
+```sh
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  qualify-reference --backend postgres --track ecommerce --level 2 \
+  --recipe ecommerce.l2-standard@1.5.0 --mutations \
+  --mutation-workers 4 --run-index 8 --repetitions 1 \
+  --out /var/lib/stack-bench/results/postgres-l2-mutations.json
+```
+
+The worker count reserves consecutive run slots starting at `--run-index`.
+The command fails before launch if those slots exceed the supported range or
+if the worker count exceeds the number of mutations. Keep top-level
+qualifications on non-overlapping slot ranges when several stacks run at once.
+
 Before the first qualification of a recipe whose packs still have unmeasured
 runtime budgets, run each `budgetPreparation.commands` entry printed by
 `qualification status` through the same Compose prefix shown above. Those

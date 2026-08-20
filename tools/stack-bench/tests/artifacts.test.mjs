@@ -176,6 +176,22 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
   } }), /runner\.dockerOs must be a non-empty string/);
 });
 
+test('mutation shard artifacts bind exact coordinates to ordered results', () => {
+  const result = { id: 'broken-auth', status: 'CAUGHT' };
+  assert.doesNotThrow(() => createArtifact({ kind: 'mutation_control', id: 'shard', payload: {
+    shard: { index: 1, count: 3, mutationIds: ['broken-auth'] }, results: [result],
+  } }));
+  assert.throws(() => createArtifact({ kind: 'mutation_control', id: 'bad-index', payload: {
+    shard: { index: 3, count: 3, mutationIds: ['broken-auth'] }, results: [result],
+  } }), /coordinates are invalid/);
+  assert.throws(() => createArtifact({ kind: 'mutation_control', id: 'wrong-result', payload: {
+    shard: { index: 1, count: 3, mutationIds: ['other'] }, results: [result],
+  } }), /match ordered results/);
+  assert.throws(() => createArtifact({ kind: 'mutation_control', id: 'unknown-shard-field', payload: {
+    shard: { index: 1, count: 3, mutationIds: ['broken-auth'], worker: true }, results: [result],
+  } }), /worker is unknown/);
+});
+
 test('public artifacts reject secret-bearing fields before touching disk', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-artifact-'));
   try {

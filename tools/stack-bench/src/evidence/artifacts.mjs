@@ -71,7 +71,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'backend', 'url', 'app', 'level', 'suites', 'totals', 'code', 'error', 'outcome', 'provenance',
     'actions', 'selection', 'packRuntime', 'observation', 'source']),
   mutation_control: new Set(['durationMs', 'app', 'mutations', 'manifestStatus', 'fixtureSha256',
-    'spec', 'backend', 'track', 'ok', 'outcome', 'baseline', 'summary', 'results']),
+    'spec', 'backend', 'track', 'shard', 'ok', 'outcome', 'baseline', 'summary', 'results']),
   null_control: new Set(['durationMs', 'runner', 'tracks', 'ok', 'summary', 'criteria']),
   pack_budget_measurement: new Set(['schemaVersion', 'track', 'level', 'policy', 'evidence',
     'runner', 'samples', 'recommendations']),
@@ -424,7 +424,31 @@ function validatePayload(kind, payload) {
       if (isObject(suite)) validateGradeFeatures(suite.features, `grade_bundle payload.suites.${suiteId}.features`);
     }
   }
-  if (kind === 'mutation_control') arrayWhenPresent('results');
+  if (kind === 'mutation_control') {
+    arrayWhenPresent('results');
+    if (payload.shard !== undefined) {
+      if (!isObject(payload.shard)) fail('mutation_control payload.shard must be an object');
+      const allowed = new Set(['index', 'count', 'mutationIds']);
+      for (const key of Object.keys(payload.shard)) {
+        if (!allowed.has(key)) fail(`mutation_control payload.shard.${key} is unknown`);
+      }
+      const { index, count, mutationIds } = payload.shard;
+      if (!Number.isSafeInteger(count) || count < 1
+        || !Number.isSafeInteger(index) || index < 0 || index >= count) {
+        fail('mutation_control payload.shard coordinates are invalid');
+      }
+      if (!Array.isArray(mutationIds) || mutationIds.length === 0
+        || mutationIds.some(id => typeof id !== 'string' || !id)
+        || new Set(mutationIds).size !== mutationIds.length) {
+        fail('mutation_control payload.shard.mutationIds must contain unique non-empty strings');
+      }
+      const resultIds = (payload.results ?? []).map(result => result?.id);
+      if (resultIds.length !== mutationIds.length
+        || resultIds.some((id, position) => id !== mutationIds[position])) {
+        fail('mutation_control payload.shard.mutationIds must match ordered results');
+      }
+    }
+  }
   if (kind === 'null_control') { arrayWhenPresent('criteria'); runnerWhenPresent(); }
   if (kind === 'pack_budget_measurement') {
     objectWhenPresent('policy'); arrayWhenPresent('evidence'); arrayWhenPresent('samples');

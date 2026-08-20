@@ -48,6 +48,7 @@ import { resetBackend } from "../src/stacks/backend-reset.mjs";
 import { fetchStatus } from "../src/runtime/readiness.mjs";
 import { executeStackCapability } from "../src/stacks/stack-adapter-contract.mjs";
 import { STACK_ADAPTER_REGISTRY } from "../src/stacks/stack-adapters.mjs";
+import { mutationShard } from "../src/evidence/mutation-shards.mjs";
 
 // Resolve tooling relative to this file so the runner works from any directory.
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -72,6 +73,8 @@ function parseArgs(argv) {
     else if (argv[i] === "--restart-spec") a.restartSpec = JSON.parse(argv[++i]);
     else if (argv[i] === "--out") a.out = argv[++i];
     else if (argv[i] === "--parent-attempt-id") a.parentAttemptId = argv[++i];
+    else if (argv[i] === "--mutation-shard-index") a.mutationShardIndex = Number(argv[++i]);
+    else if (argv[i] === "--mutation-shard-count") a.mutationShardCount = Number(argv[++i]);
     else {
       console.error(`Unknown arg ${argv[i]}`);
       process.exit(2);
@@ -84,6 +87,11 @@ function parseArgs(argv) {
     process.exit(2);
   }
   a.runIndex ??= "0";
+  const shardFields = [a.mutationShardIndex, a.mutationShardCount]
+    .filter(value => value !== undefined);
+  if (shardFields.length === 1) {
+    throw new Error('--mutation-shard-index and --mutation-shard-count must be supplied together');
+  }
   return a;
 }
 
@@ -237,6 +245,17 @@ async function main() {
   if (!/^[a-f0-9]{64}$/.test(spec.fixtureSha256)) {
     throw new Error("mutation manifest fixtureSha256 must be 64 lowercase hex characters");
   }
+  if (!Array.isArray(spec.mutations) || spec.mutations.length === 0) {
+    throw new Error('mutation manifest requires at least one mutation');
+  }
+  const fullMutations = spec.mutations;
+  const shard = args.mutationShardCount === undefined
+    ? { index: 0, count: 1, mutationIds: fullMutations.map(mutation => mutation.id),
+      mutations: fullMutations }
+    : mutationShard(fullMutations,
+      { index: args.mutationShardIndex, count: args.mutationShardCount });
+  if (shard.mutations.length === 0) throw new Error('mutation shard has no assigned mutations');
+  spec.mutations = shard.mutations;
   if (args.backend && args.backend !== spec.backend) {
     throw new Error(
       `--backend conflicts with manifest backend ${spec.backend}`,
@@ -434,6 +453,7 @@ async function main() {
     spec: baselines.map(entry => entry.scenario),
     backend: args.backend,
     track: args.track,
+    shard: { index: shard.index, count: shard.count, mutationIds: shard.mutationIds },
     baseline: {
       total: baselines.reduce((sum, entry) => sum + Number(entry.total), 0),
       max: baselines.reduce((sum, entry) => sum + Number(entry.max), 0),

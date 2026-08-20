@@ -33,6 +33,18 @@ test('mutation control time grows with the declared defect inventory', () => {
     5 * 60_000 + 35 * (75_000 + 8_000));
 });
 
+test('mutation shard coordinates reach the mutation runner together', () => {
+  const manifest = join(ROOT, 'grader', 'mutations', 'mongodb-ecom-l1.json');
+  const args = { out: 'output', mutations: manifest, backend: 'mongodb',
+    track: 'ecommerce', runIndex: 4, parentAttemptId: 'parallel-attempt',
+    recipe: null, recipeTasks: new Map(), mutationShardIndex: 2, mutationShardCount: 4 };
+  const argv = mutationControlArgv(args, 'app', 'http://localhost:5173',
+    loadTrack('ecommerce'));
+  const index = argv.indexOf('--mutation-shard-index');
+  assert.deepEqual(argv.slice(index, index + 4),
+    ['--mutation-shard-index', '2', '--mutation-shard-count', '4']);
+});
+
 test('a mismatched mutation fixture fails before acquiring any backend resource', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-mutation-preflight-'));
   const output = join(root, 'output');

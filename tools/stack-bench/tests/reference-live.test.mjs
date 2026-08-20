@@ -5,7 +5,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
-  referenceQualificationPaths, referenceQualificationRunner, referenceQualificationSelectionArgs,
+  parallelMutationChildArgv, referenceQualificationPaths, referenceQualificationRunner,
+  referenceQualificationSelectionArgs,
   referenceQualificationWorkRoot, rescueSupervisedLease, runBounded } from '../src/references/reference-live.mjs';
 import { emptyArtifactIdentities, writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
@@ -54,6 +55,27 @@ test('parallel Spacetime qualification derives an isolated listener port from th
   assert.equal(parallel.spacetimePort, 3324);
   assert.notEqual(first.spacetimePort, parallel.spacetimePort);
   assert.equal(explicit.spacetimePort, 4411);
+});
+
+test('parallel mutation qualification reserves bounded slots and exact child shards', () => {
+  const args = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'mongodb', '--mutations', '--mutation-workers', '4', '--run-index', '8']);
+  assert.equal(args.mutationWorkers, 4);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'mongodb', '--mutation-workers', '2']), /requires --mutations/);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'mongodb', '--mutations', '--mutation-workers', '2', '--run-index', '20']),
+  /run-index cap/);
+
+  const argv = parallelMutationChildArgv(args,
+    { binding: { release: { id: 'ecommerce.l2-standard', version: '1.5.0' } } },
+    { artifactPath: '/results/w3.json', repetition: 0, workerIndex: 2, workerCount: 4 });
+  const after = flag => argv[argv.indexOf(flag) + 1];
+  assert.equal(after('--run-index'), '10');
+  assert.equal(after('--mutation-shard-index'), '2');
+  assert.equal(after('--mutation-shard-count'), '4');
+  assert.equal(after('--repetitions'), '1');
+  assert.equal(after('--out'), '/results/w3.json');
 });
 
 test('reference qualification resolves the exact executable calibration identity', () => {
@@ -236,6 +258,19 @@ test('reference qualification terminates a child at its repetition deadline', as
   assert.equal(result.ok, false);
   assert.equal(result.timedOut, true);
   assert(Date.now() - started < 10_000, 'timed-out child was not terminated promptly');
+});
+
+test('parallel qualification cancellation terminates every bounded child', async () => {
+  const cancellation = new AbortController();
+  setTimeout(() => cancellation.abort(), 50);
+  const result = await runBounded(process.execPath,
+    ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore', timeoutMs: 10_000, signal: cancellation.signal,
+      terminate: pid => process.kill(pid, 'SIGKILL'),
+    });
+  assert.equal(result.ok, false);
+  assert.equal(result.cancelled, true);
+  assert.equal(result.timedOut, false);
 });
 
 test('bounded execution tees useful tails and caps durable process logs', async () => {
