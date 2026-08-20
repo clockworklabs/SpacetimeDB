@@ -44,7 +44,7 @@ public abstract class IndexBase<Row>
     }
 
     protected IEnumerable<Row> DoFilter<Bounds>(Bounds bounds)
-        where Bounds : IBTreeIndexBounds => new RawTableIter<Bounds>(indexId, bounds).Parse();
+        where Bounds : IBTreeIndexBounds => new RawTableIter<Bounds>(indexId, bounds);
 
     protected uint DoDelete<Bounds>(Bounds bounds)
         where Bounds : IBTreeIndexBounds
@@ -129,7 +129,7 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
         new RW().Write(w, key);
         var point = s.ToArray();
 
-        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
         if (!e.MoveNext())
         {
             return null;
@@ -192,7 +192,7 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
         new RW().Write(w, key);
         var point = s.ToArray();
 
-        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
         if (!e.MoveNext())
         {
             return null;
@@ -241,7 +241,7 @@ public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW>(string name)
         new RW().Write(w, key);
         var point = s.ToArray();
 
-        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
         if (!e.MoveNext())
         {
             return null;
@@ -280,7 +280,7 @@ public abstract class ReadOnlyRefUniqueIndex<Handle, Row, T, RW>(string name)
         new RW().Write(w, key);
         var point = s.ToArray();
 
-        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        using var e = new RawPointIter(indexId, point).GetEnumerator();
         if (!e.MoveNext())
         {
             return null;
@@ -319,5 +319,5 @@ public abstract class ReadOnlyTableView<Row>
         return count;
     }
 
-    protected IEnumerable<Row> DoIter() => new TableIter(tableId).Parse();
+    protected IEnumerable<Row> DoIter() => new TableIter(tableId);
 }

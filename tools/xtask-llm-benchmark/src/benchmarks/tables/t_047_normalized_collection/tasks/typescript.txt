@@ -1,0 +1,13 @@
+Write a SpacetimeDB backend module in TypeScript that models an unbounded child collection with normalized tables.
+
+TABLES
+- collection_owner (public)
+  - id: u64 (primary key, auto increment)
+  - name: string
+- child_item (public)
+  - id: u64 (primary key, auto increment)
+  - ownerId: u64
+  - value: string
+  - index byOwner: btree(ownerId)
+
+Do not store child items in an array on collection_owner. No reducers are required.

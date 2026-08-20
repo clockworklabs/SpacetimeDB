@@ -11,7 +11,7 @@ This is a list of common problems when using SpacetimeDB and how to fix them.
 
 If your CLI operations fail with the error `Invalid Token: InvalidSignature`, it's likely because you logged in with `--server-issued-login` from a different SpacetimeDB server. It's also possible your server's signing keys have changed, most likely due to the server having been reset.
 
-Log out to remove the invalid token, then log in again. Logging in with GitHub will prevent this happening again, as those identities are portable and valid with any SpacetimeDB server, including Maincloud.
+Log out to remove the invalid token, then log in again. Logging in with GitHub or Google will prevent this happening again, as those identities are portable and valid with any SpacetimeDB server, including Maincloud.
 
 ```bash
 spacetime logout

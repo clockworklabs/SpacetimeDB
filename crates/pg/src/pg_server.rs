@@ -25,7 +25,7 @@ use pgwire::tokio::process_socket;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api::auth::validate_token;
 use spacetimedb_client_api::routes::database;
-use spacetimedb_client_api::routes::database::{SqlParams, SqlQueryParams};
+use spacetimedb_client_api::routes::database::SqlQueryParams;
 use spacetimedb_client_api::{Authorization, ControlStateReadAccess, ControlStateWriteAccess, NodeDelegate};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::DatabaseName;
@@ -154,14 +154,25 @@ where
 {
     async fn exe_sql(&self, query: String) -> PgWireResult<Vec<Response>> {
         let params = self.cached.lock().await.clone().unwrap();
-        let db = SqlParams {
-            name_or_identity: database::NameOrIdentity::Name(DatabaseName(params.database.clone())),
-        };
+        let name_or_identity = database::NameOrIdentity::Name(DatabaseName(params.database.clone()));
+        let database_identity = response(name_or_identity.resolve(&self.ctx).await, &params.database).await?;
+        let database = response(
+            self.ctx
+                .get_database_by_identity(&database_identity)
+                .await
+                .map_err(|err| {
+                    log::warn!("PG: unable to load database {database_identity}: {err:#}");
+                    (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into()
+                })
+                .and_then(|database| database.ok_or_else(|| database::NO_SUCH_DATABASE.into())),
+            &params.database,
+        )
+        .await?;
 
         let sql = match response(
             database::sql_direct(
                 self.ctx.clone(),
-                db,
+                database,
                 SqlQueryParams { confirmed: Some(true) },
                 params.caller_identity,
                 params.caller_auth.clone(),

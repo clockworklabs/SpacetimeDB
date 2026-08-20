@@ -917,7 +917,7 @@ impl InstanceEnv {
             .map_err(http_error)?;
 
         // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
-        // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
+        // Clamp to the range `0..HTTP_MAX_TIMEOUT`.
         let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_MAX_TIMEOUT);
 
         // reqwest's timeout covers from the start of the request to the end of reading the body,
