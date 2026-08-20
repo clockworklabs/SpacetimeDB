@@ -13,13 +13,9 @@ test('the reference registry binds active, candidate, blocked, and provenance li
   const registry = loadReferenceRegistry();
   const result = validateReferenceRegistry(registry);
   assert.deepEqual(result.issues, []);
-  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 15);
+  assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 18);
   assert.deepEqual(registry.fixtures.filter(fixture => fixture.status === 'candidate')
-    .map(fixture => fixture.id).sort(), [
-    'ecommerce-l2-cumulative-1.5-mongodb',
-    'ecommerce-l2-cumulative-1.5-postgres',
-    'ecommerce-l2-cumulative-1.5-spacetime',
-  ]);
+    .map(fixture => fixture.id).sort(), []);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
   escaped.fixtures[0].origin = { kind: 'historical-import', source: '../outside',
@@ -56,9 +52,9 @@ test('default reference tooling follows the promoted recipe instead of an unscop
   const promotedL2 = resolveReferenceSelection(registry, {
     backend: 'mongodb', track: 'ecommerce', level: 2,
   });
-  assert.equal(promotedL2.recipe, 'ecommerce.l2-standard@1.4.0');
+  assert.equal(promotedL2.recipe, 'ecommerce.l2-standard@1.5.0');
   assert.equal(promotedL2.binding.status, 'promoted');
-  assert.equal(promotedL2.fixture.id, 'ecommerce-l2-server-actions-mongodb');
+  assert.equal(promotedL2.fixture.id, 'ecommerce-l2-cumulative-1.5-mongodb');
 
   assert.throws(() => resolveReferenceSelection(registry, {
     backend: 'mongodb', track: 'ecommerce', level: 1,
@@ -72,8 +68,8 @@ test('the promoted L2 recipe selects one derived fixture per backend without rep
     assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2 }).id,
       `ecommerce-l2-${backend}`);
     assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
-      recipe: 'ecommerce.l2-standard@1.4.0' }).id,
-    `ecommerce-l2-server-actions-${backend}`);
+      recipe: 'ecommerce.l2-standard@1.5.0' }).id,
+    `ecommerce-l2-cumulative-1.5-${backend}`);
     assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
       recipe: 'ecommerce.l2-standard@1.2.0' }).id,
     `ecommerce-l2-${backend}`);

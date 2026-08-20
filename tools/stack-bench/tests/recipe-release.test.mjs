@@ -144,7 +144,7 @@ test('promoted runner binding fails closed on drift and emits only the selected 
 
   const box = copyTrack();
   try {
-    editJson(join(box.root, 'composition', 'recipes', 'l2-standard-1.4.0.json'),
+    editJson(join(box.root, 'composition', 'recipes', 'l2-standard-1.5.0.json'),
       value => { value.execution[0].source = 'scenarios/does-not-exist.json'; });
     const copiedTrack = { ...track, dir: box.root,
       suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
@@ -187,9 +187,9 @@ test('the qualified modular release is the promoted default and retired releases
 
 test('the promoted L2 release binds modular L1 exactly and keeps all L2-only checks', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.4.0');
+  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.5.0');
   const l1 = buildRecipeRelease(
-    join(ECOMMERCE, 'composition', 'recipes', 'l1-modular-2.3.0.json'),
+    join(ECOMMERCE, 'composition', 'recipes', 'l1-modular-2.4.0.json'),
     { trackRoot: ECOMMERCE },
   );
   const previous = buildRecipeRelease(
@@ -232,7 +232,7 @@ test('cumulative candidate resolution rejects dropped L2 coverage', () => {
     const copiedTrack = { ...track, dir: box.root,
       suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
     assert.throws(() => resolveRecipeRelease(copiedTrack, 2, 'ecommerce.l2-standard@1.4.0'),
-      /changes the cumulative L2 check set/);
+      /changes the cumulative L2 check set|unknown checks/);
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
@@ -253,7 +253,7 @@ test('cumulative continuity does not trust mutable scenario level labels', () =>
     const copiedTrack = { ...track, dir: box.root,
       suites: JSON.parse(readFileSync(join(box.root, 'track.json'), 'utf8')).suites };
     assert.throws(() => resolveRecipeRelease(copiedTrack, 2, 'ecommerce.l2-standard@1.4.0'),
-      /changes the cumulative L2 check set/);
+      /changes the cumulative L2 check set|unknown checks/);
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 
@@ -262,14 +262,14 @@ test('the first cumulative level bootstraps only from the exact promoted lower l
   try {
     const recipe = join(box.root, 'composition', 'recipes', 'l3-bootstrap-1.0.0.json');
     const source = JSON.parse(readFileSync(
-      join(box.root, 'composition', 'recipes', 'l2-standard-1.4.0.json'), 'utf8'));
+      join(box.root, 'composition', 'recipes', 'l2-standard-1.5.0.json'), 'utf8'));
     source.id = 'ecommerce.l3-bootstrap';
     source.version = '1.0.0';
     source.state = 'draft';
     source.title = 'L3 bootstrap fixture';
     source.compatibility = { legacyLevel: 3, mode: 'cumulative' };
-    source.task.baseRecipe = { path: 'l2-standard-1.4.0.json',
-      id: 'ecommerce.l2-standard', version: '1.4.0' };
+    source.task.baseRecipe = { path: 'l2-standard-1.5.0.json',
+      id: 'ecommerce.l2-standard', version: '1.5.0' };
     writeFileSync(recipe, `${JSON.stringify(source, null, 2)}\n`);
     writeFileSync(join(box.root, 'composition', 'candidates.json'), `${JSON.stringify({
       schemaVersion: 1,
@@ -301,8 +301,8 @@ test('the first cumulative level bootstraps only from the exact promoted lower l
 
     editJson(recipe, value => {
       value.state = 'qualified';
-      value.task.baseRecipe = { path: 'l2-standard-1.4.0.json',
-        id: 'ecommerce.l2-standard', version: '1.4.0' };
+      value.task.baseRecipe = { path: 'l2-standard-1.5.0.json',
+        id: 'ecommerce.l2-standard', version: '1.5.0' };
     });
     editJson(join(box.root, 'composition', 'promotions.json'), value => {
       value.entries.push({ alias: 'L3', status: 'promoted', recipe: {
@@ -311,7 +311,7 @@ test('the first cumulative level bootstraps only from the exact promoted lower l
     });
     const promoted = resolveRecipeRelease(copiedTrack, 3);
     assert.equal(promoted.status, 'promoted');
-    assert.equal(promoted.release.task.baseRecipe.version, '1.4.0');
+    assert.equal(promoted.release.task.baseRecipe.version, '1.5.0');
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 

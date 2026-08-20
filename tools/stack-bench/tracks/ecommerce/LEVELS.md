@@ -10,7 +10,7 @@ base release.
 | Level | Product scope | Release status |
 |---|---|---|
 | L1 | storefront, accounts, carts, purchases, reviews, warehouses | `ecommerce.l1-modular@2.4.0` is promoted and qualified |
-| L2 | fulfilment, transfers, cancellations, returns, and pricing | `ecommerce.l2-standard@1.4.0` is promoted; `1.5.0` is the current qualification candidate |
+| L2 | fulfilment, transfers, cancellations, returns, and pricing | `ecommerce.l2-standard@1.5.0` is promoted and qualified |
 | L3 | reservations and scheduled work | scenario definitions exist; no qualified modular release |
 | L4 | customer-specific ranking and catalogue search | design target only |
 | L5 | correctness and efficiency under load | design target only |
@@ -54,11 +54,11 @@ L2 adds staff and administrative operations over the L1 store:
 - cross-account authorization, refund accounting, and transfer-versus-purchase
   conservation.
 
-The current L2 1.5 candidate rebases these checks onto exact L1 2.4. It retains
+The promoted L2 1.5 release rebases these checks onto exact L1 2.4. It retains
 all 48 L1 checks and adds 28 L2 checks, for 76 checks and 117 points. Its source-
 bound defect definitions cover every scored check on MongoDB, PostgreSQL, and
-SpacetimeDB. It remains a draft until its reference, mutation, and null-control
-artifacts are produced and bound to the calibration.
+SpacetimeDB. Its exact reference, mutation, and null-control artifacts are bound
+to its qualified calibration.
 
 ## L3 — Deferred work
 

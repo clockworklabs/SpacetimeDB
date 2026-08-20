@@ -78,7 +78,7 @@ test('mutation scenarios may override a manifest default and are required for ex
 
 test('recipe-bound mutation grading selects only checks owned by the scenario', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.4.0');
+  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.5.0');
   const keys = releaseScenarioCheckKeys(binding.release, track.dir,
     join(track.dir, 'scenarios', '02-features.json'));
   assert(keys.includes('ecommerce.operations-access.fulfilment-queue.1a'));

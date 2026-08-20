@@ -258,12 +258,11 @@ Tracks are isolated by a port offset and a name slug, so two can run at the same
 
 ## Levels
 
-The five-level ladder below is the production target. Ecommerce L1 2.4 is the
-current fully qualified release. Ecommerce L2 1.4 remains the promoted default,
-but it predates the current per-stack defect-coverage gate; L2 1.5 closes that
-static coverage gap and is awaiting live qualification evidence. Chat definitions
-remain available through L2, but their reference fixtures must be rebuilt before
-chat is presented as a current qualified comparison.
+The five-level ladder below is the production target. Ecommerce L1 2.4 and L2
+1.5 are the current qualified releases. L2 1.5 contains 74 scored checks. Each
+scored check has an exact known-defect test on all three supported stacks. Chat
+definitions remain available through L2, but their reference fixtures must be
+rebuilt before chat is presented as a current qualified comparison.
 
 Every artifact records the exact levels and recipe that ran. A level without a
 launchable catalog release fails instead of falling back to another level.

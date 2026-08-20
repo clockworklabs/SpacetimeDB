@@ -83,7 +83,7 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
     'ecommerce.l2-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.2.0:qualified',
     'ecommerce.l2-standard-calibration@1.4.0:qualified',
-    'ecommerce.l2-standard-calibration@1.5.0:draft',
+    'ecommerce.l2-standard-calibration@1.5.0:qualified',
   ]);
 });
 
@@ -144,7 +144,7 @@ test('qualification evidence is semantically bound and tampering fails closed', 
 test('the qualified L2 release keeps its score contract and binds fresh qualification evidence', () => {
   const binding = resolveRecipeRelease(TRACK, 2);
   const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
-    'l2-standard-1.4.0.json'), {
+    'l2-standard-1.5.0.json'), {
     trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release,
   });
   assert.equal(binding.release.scoring.points, 117);
@@ -171,7 +171,7 @@ test('qualification uses typed ownership when inherited execution ids are rename
 
   assert.equal(currentLevelPoints(release, execution), 59);
   const plan = compileCalibrationFile(join(TRACK.dir, 'composition', 'calibrations',
-    'l2-standard-1.4.0.json'), {
+    'l2-standard-1.5.0.json'), {
     trackRoot: TRACK.dir, stackBenchRoot: ROOT, release: binding.release,
   });
   const entry = plan.qualification.evidence.find(evidence => evidence.kind === 'reference'

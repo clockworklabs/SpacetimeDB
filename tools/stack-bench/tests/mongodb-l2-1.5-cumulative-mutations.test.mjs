@@ -13,7 +13,7 @@ import { prepareReferenceFixtureSource } from '../src/references/reference-fixtu
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
 const FIXTURE_SHA256 = '7f2fb4f996d4a9a448d203cd48f4deedeaea7af9fbbf3bb56122b3d4cc546634';
-const MANIFEST = join(ROOT, 'grader', 'mutations', 'candidates',
+const MANIFEST = join(ROOT, 'grader', 'mutations',
   'mongodb-ecom-l2-cumulative-1.5.0.json');
 const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',
@@ -47,7 +47,7 @@ function resolveTargets(mutation) {
   });
 }
 
-test('MongoDB L2 1.5 candidate covers the exact cumulative scored catalog', t => {
+test('MongoDB L2 1.5 covers the exact cumulative scored catalog', t => {
   assert.deepEqual({
     schemaVersion: manifest.schemaVersion,
     status: manifest.status,
@@ -57,7 +57,7 @@ test('MongoDB L2 1.5 candidate covers the exact cumulative scored catalog', t =>
     level: manifest.level,
   }, {
     schemaVersion: 1,
-    status: 'candidate',
+    status: 'active',
     fixtureSha256: FIXTURE_SHA256,
     backend: 'mongodb',
     track: 'ecommerce',

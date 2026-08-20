@@ -330,7 +330,7 @@
       "backend": "mongodb",
       "track": "ecommerce",
       "level": 2,
-      "status": "candidate",
+      "status": "active",
       "recipes": ["ecommerce.l2-standard@1.5.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/l2/mongodb",
@@ -345,16 +345,16 @@
         "sourceSha256": "7f2fb4f996d4a9a448d203cd48f4deedeaea7af9fbbf3bb56122b3d4cc546634"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/mongodb-ecom-l2-cumulative-1.5.0.json"
+        "grader/mutations/mongodb-ecom-l2-cumulative-1.5.0.json"
       ],
-      "qualification": "Candidate source pending exact hash-bound L2 1.5 reference and mutation qualification."
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2-v1.5.0/."
     },
     {
       "id": "ecommerce-l2-cumulative-1.5-postgres",
       "backend": "postgres",
       "track": "ecommerce",
       "level": 2,
-      "status": "candidate",
+      "status": "active",
       "recipes": ["ecommerce.l2-standard@1.5.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/l2/postgres",
@@ -369,16 +369,16 @@
         "sourceSha256": "7b3d6c936623ed8ff8b4ff3e61204c291b784c2d36c2bc1edbd5bcca47f9c952"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/postgres-ecom-l2-cumulative-1.5.0.json"
+        "grader/mutations/postgres-ecom-l2-cumulative-1.5.0.json"
       ],
-      "qualification": "Candidate source pending exact hash-bound L2 1.5 reference and mutation qualification."
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2-v1.5.0/."
     },
     {
       "id": "ecommerce-l2-cumulative-1.5-spacetime",
       "backend": "spacetime",
       "track": "ecommerce",
       "level": 2,
-      "status": "candidate",
+      "status": "active",
       "recipes": ["ecommerce.l2-standard@1.5.0"],
       "source": {
         "basePath": "reference-apps/ecommerce/l2/spacetime",
@@ -393,9 +393,9 @@
         "sourceSha256": "b0bfc4405e684511874f5a867a5dc84e28b258e46729b7199a1e8aa5e27b61ce"
       },
       "mutationManifests": [
-        "grader/mutations/candidates/spacetime-ecom-l2-cumulative-1.5.0.json"
+        "grader/mutations/spacetime-ecom-l2-cumulative-1.5.0.json"
       ],
-      "qualification": "Candidate source pending exact hash-bound L2 1.5 reference and mutation qualification."
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2-v1.5.0/."
     },
     {
       "id": "chat-l1-mongodb",

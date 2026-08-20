@@ -3,7 +3,7 @@
   "kind": "benchmark-recipe",
   "id": "ecommerce.l2-standard",
   "version": "1.5.0",
-  "state": "draft",
+  "state": "qualified",
   "title": "Ecommerce L2 cumulative successor",
   "track": "ecommerce",
   "compatibility": { "legacyLevel": 2, "mode": "cumulative" },

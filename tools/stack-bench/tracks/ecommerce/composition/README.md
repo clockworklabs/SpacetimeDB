@@ -77,13 +77,11 @@ copy fixture passwords, prompt contents, or the full executable grader plan.
 | Alias | Exact release | Catalog state | Current qualification status |
 |---|---|---|---|
 | L1 | `ecommerce.l1-modular@2.4.0` | promoted | qualified; 46/46 scored checks have exact defect definitions on MongoDB, PostgreSQL, and SpacetimeDB |
-| L2 | `ecommerce.l2-standard@1.4.0` | promoted | historically qualified; it predates the current per-stack defect-coverage gate and now reports 36/74 scored checks covered |
-| L2 candidate | `ecommerce.l2-standard@1.5.0` | draft | 74/74 scored checks have exact defect definitions on all three stacks; live reference, mutation, and null evidence is still pending |
+| L2 | `ecommerce.l2-standard@1.5.0` | promoted | qualified; 74/74 scored checks have exact defect definitions on MongoDB, PostgreSQL, and SpacetimeDB |
+| Previous L2 | `ecommerce.l2-standard@1.4.0` | retired | its source-bound qualification evidence remains verifiable |
 
-The L2 1.5 candidate is not a published result or promoted default. Its
-qualification status currently has seven blockers: one reference run and one
-mutation run for each supported stack, plus one null-control run. Check the
-compiler-owned status instead of maintaining release claims by hand:
+The L2 1.5 calibration binds one reference run and one mutation run for each
+supported stack, plus one null-control run. Check the compiler-owned status:
 
 ```text
 node commands/qualification-cli.mjs status --track ecommerce --level 1 --recipe ecommerce.l1-modular@2.4.0

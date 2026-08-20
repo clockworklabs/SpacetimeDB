@@ -15,7 +15,7 @@ const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
 const RECIPE = 'ecommerce.l2-standard@1.5.0';
 const FIXTURE_SHA256 = '7b3d6c936623ed8ff8b4ff3e61204c291b784c2d36c2bc1edbd5bcca47f9c952';
-const MANIFEST = join(ROOT, 'grader', 'mutations', 'candidates',
+const MANIFEST = join(ROOT, 'grader', 'mutations',
   'postgres-ecom-l2-cumulative-1.5.0.json');
 const L1_MANIFEST = join(ROOT, 'grader', 'mutations',
   'postgres-ecom-l1-modular-2.4.0.json');
@@ -47,7 +47,7 @@ function resolveTargets(mutation) {
   });
 }
 
-test('PostgreSQL L2 1.5 candidate is the exact cumulative mutation composition', () => {
+test('PostgreSQL L2 1.5 is the exact cumulative mutation composition', () => {
   assert.deepEqual({
     schemaVersion: manifest.schemaVersion,
     status: manifest.status,
@@ -57,7 +57,7 @@ test('PostgreSQL L2 1.5 candidate is the exact cumulative mutation composition',
     level: manifest.level,
   }, {
     schemaVersion: 1,
-    status: 'candidate',
+    status: 'active',
     fixtureSha256: FIXTURE_SHA256,
     backend: 'postgres',
     track: 'ecommerce',
@@ -130,7 +130,7 @@ test('the exact PostgreSQL L2 1.5 fixture carries every cumulative action input'
     backend: 'postgres', track: 'ecommerce', level: 2, recipe: RECIPE,
   });
   assert.equal(fixture.id, 'ecommerce-l2-cumulative-1.5-postgres');
-  assert.equal(fixture.status, 'candidate');
+  assert.equal(fixture.status, 'active');
   assert.equal(fixture.imported.sourceSha256, FIXTURE_SHA256);
 
   const work = mkdtempSync(join(tmpdir(), 'stack-bench-postgres-l2-1.5-source-'));

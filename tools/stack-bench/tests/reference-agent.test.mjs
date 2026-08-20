@@ -91,28 +91,28 @@ test('the promoted L1 2.4 release uses its separately bound action-input fixture
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('the L2 candidate prepares the exact six action inputs for every backend', () => {
+test('the promoted L2 release prepares the exact seven action inputs for every backend', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l2-derived-'));
   const expected = {
-    mongodb: '3c5dd399671c89d59c05f0834d3e24fe9d091fe406a1f4b23b9495411d1010cb',
-    postgres: '99c8af18eb709aebfe8bc8d22b55aa13219c0c2dcc7fef07e384ebe5aaa8677a',
-    spacetime: '359ed185c5d9dff2754f806c1169314985baeb2bca90a09f2ab52a5ee056b8fc',
+    mongodb: '7f2fb4f996d4a9a448d203cd48f4deedeaea7af9fbbf3bb56122b3d4cc546634',
+    postgres: '7b3d6c936623ed8ff8b4ff3e61204c291b784c2d36c2bc1edbd5bcca47f9c952',
+    spacetime: 'b0bfc4405e684511874f5a867a5dc84e28b258e46729b7199a1e8aa5e27b61ce',
   };
   try {
     for (const [backend, sourceSha256] of Object.entries(expected)) {
       const args = { backend, track: 'ecommerce', level: 2,
-        recipe: 'ecommerce.l2-standard@1.4.0', app: join(root, backend) };
+        recipe: 'ecommerce.l2-standard@1.5.0', app: join(root, backend) };
       const seeded = prepareReferenceSource(args);
-      assert.equal(seeded.fixture.id, `ecommerce-l2-server-actions-${backend}`);
+      assert.equal(seeded.fixture.id, `ecommerce-l2-cumulative-1.5-${backend}`);
       assert.equal(seeded.sourceSha256, sourceSha256);
       const files = backend === 'spacetime'
         ? ['client/src/components/ItemCard.tsx', 'client/src/components/OrdersPanel.tsx',
-          'client/src/components/AdminPanel.tsx']
+          'client/src/components/AdminPanel.tsx', 'client/src/components/CartPanel.tsx']
         : ['client/src/App.tsx'];
       const client = files.map(path => readFileSync(join(args.app, ...path.split('/')), 'utf8')).join('\n');
       for (const attribute of [
         'data-buy-input=', 'data-ship-input=', 'data-cancel-input=', 'data-transfer-input=',
-        'data-restock-input=', 'data-price-input=',
+        'data-restock-input=', 'data-price-input=', 'data-cart-input=',
       ]) assert.match(client, new RegExp(attribute));
       const verified = prepareReferenceSource(args);
       assert.equal(verified.seeded, false);

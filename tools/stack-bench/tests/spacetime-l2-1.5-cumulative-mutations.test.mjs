@@ -15,7 +15,7 @@ const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
 const RECIPE = 'ecommerce.l2-standard@1.5.0';
 const FIXTURE_SHA256 = 'b0bfc4405e684511874f5a867a5dc84e28b258e46729b7199a1e8aa5e27b61ce';
-const MANIFEST = join(ROOT, 'grader', 'mutations', 'candidates',
+const MANIFEST = join(ROOT, 'grader', 'mutations',
   'spacetime-ecom-l2-cumulative-1.5.0.json');
 const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
 const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',
@@ -78,7 +78,7 @@ function resolveTargets(mutation) {
   });
 }
 
-test('SpacetimeDB L2 1.5 candidate covers every scored cumulative check honestly', t => {
+test('SpacetimeDB L2 1.5 covers every scored cumulative check honestly', t => {
   assert.deepEqual({
     schemaVersion: manifest.schemaVersion,
     status: manifest.status,
@@ -88,7 +88,7 @@ test('SpacetimeDB L2 1.5 candidate covers every scored cumulative check honestly
     level: manifest.level,
   }, {
     schemaVersion: 1,
-    status: 'candidate',
+    status: 'active',
     fixtureSha256: FIXTURE_SHA256,
     backend: 'spacetime',
     track: 'ecommerce',
@@ -155,7 +155,7 @@ test('SpacetimeDB L2 1.5 candidate covers every scored cumulative check honestly
   t.diagnostic(`${manifest.mutations.length} mutations cover ${covered.size}/${scored.length} scored keys`);
 });
 
-test('all SpacetimeDB L2 1.5 mutations bind and transpile against the exact candidate source', t => {
+test('all SpacetimeDB L2 1.5 mutations bind and transpile against the exact source', t => {
   const fixture = selectReferenceFixture(loadReferenceRegistry(), {
     backend: 'spacetime', track: 'ecommerce', level: 2, recipe: RECIPE,
   });

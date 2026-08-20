@@ -10,7 +10,7 @@ const TRACK = join(ROOT, 'tracks', 'ecommerce');
 const RECIPE = join(TRACK, 'composition', 'recipes', 'l2-standard-1.4.0.json');
 const CALIBRATION = join(TRACK, 'composition', 'calibrations', 'l2-standard-1.4.0.json');
 
-test('L2 1.4 is qualified by the complete source-bound evidence set', () => {
+test('retired L2 1.4 keeps its complete source-bound qualification evidence', () => {
   const release = buildRecipeRelease(RECIPE, { trackRoot: TRACK });
   const plan = compileCalibrationFile(CALIBRATION, {
     trackRoot: TRACK,
@@ -61,7 +61,7 @@ test('L2 1.4 is qualified by the complete source-bound evidence set', () => {
   }, { referenceRepetitions: 1, mutationRepetitions: 1 });
   assert.deepEqual(plan.qualification.stacks.map(stack => stack.status),
     ['qualified', 'qualified', 'qualified']);
-  assert.equal(plan.promotion.status, 'promoted');
+  assert.equal(plan.promotion.status, 'retired');
   assert.match(plan.qualificationSha256, /^[a-f0-9]{64}$/);
   assert.match(plan.contentSha256, /^[a-f0-9]{64}$/);
 });
