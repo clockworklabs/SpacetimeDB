@@ -1049,7 +1049,7 @@ jobs:
           unity install "${UNITY_VERSION}" --yes --accept-eula --non-interactive --format ndjson
           UNITY_EDITOR_PATH="$(unity editors path "${UNITY_VERSION}")/Editor/Unity"
           echo "UNITY_EDITOR_PATH=$UNITY_EDITOR_PATH" >> "$GITHUB_ENV"
-          "$UNITY_EDITOR_PATH" -version
+          "$UNITY_EDITOR_PATH" -batchmode -nographics -quit -logFile - -version
 
       - name: Activate Unity license
         env:
