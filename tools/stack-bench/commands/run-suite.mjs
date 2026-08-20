@@ -228,7 +228,7 @@ export async function verifyReseedProbe(url, expectation, { fetchImpl = fetch } 
 // somewhere else is not measuring what we think it is: one Postgres app pointed
 // at an unrelated project's container on 5433 and graded "fine" while writing to
 // a database the harness could not reset.
-function checkDatabaseProvenance(args) {
+export function checkDatabaseProvenance(args) {
   const adapter = STACK_ADAPTER_REGISTRY.get(args.backend);
   const expected = executeStackCapability(adapter, 'ports', 'allocations').db;
   if (!expected) return { ok: true, reason: 'no external database for this backend' };
@@ -239,6 +239,7 @@ function checkDatabaseProvenance(args) {
   // it lives; the check is that the app targets the benchmark's database, not
   // that it stores the URL in a particular file.
   const urls = [];
+  let usesLeasedEnvironment = false;
   const walk = dir => {
     if (!existsSync(dir)) return;
     for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -247,14 +248,22 @@ function checkDatabaseProvenance(args) {
       if (e.isDirectory()) { walk(p); continue; }
       if (!/\.(env|ts|tsx|js|mjs|json|yaml|yml)$|^\.env/.test(e.name)) continue;
       try {
-        const m = executeStackCapability(adapter, 'agent', 'find-database-urls',
-          { text: readFileSync(p, 'utf8') });
+        const text = readFileSync(p, 'utf8');
+        if (/process\.env(?:\.DATABASE_URL|\[['"]DATABASE_URL['"]\])/.test(text)) {
+          usesLeasedEnvironment = true;
+        }
+        const m = executeStackCapability(adapter, 'agent', 'find-database-urls', { text });
         if (m) urls.push(...m);
       } catch { /* unreadable file proves nothing */ }
     }
   };
   walk(args.app);
-  if (!urls.length) return { ok: false, reason: 'no database connection string found anywhere in the app' };
+  if (usesLeasedEnvironment) {
+    return { ok: true, url: 'process.env.DATABASE_URL',
+      reason: 'app reads the database URL supplied by its authenticated backend lease' };
+  }
+  if (!urls.length) return { ok: false,
+    reason: 'app neither reads process.env.DATABASE_URL nor contains a database connection string' };
   const ok = urls.some(u => u.includes(`:${expected}/`));
   return { ok, url: urls[0],
     reason: ok ? 'ok' : `app targets ${urls[0]} but the benchmark database is on port ${expected}` };

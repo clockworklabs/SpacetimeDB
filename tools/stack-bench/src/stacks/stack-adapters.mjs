@@ -64,6 +64,28 @@ function adapter(id, lease, capabilities = {}, { version = '1.0.0' } = {}) {
   };
 }
 
+export function leasedDatabaseEnvironment(adapter, { database, networkMode }) {
+  const dbPort = executeStackCapability(adapter, 'ports', 'allocations').db;
+  if (!dbPort) return {};
+  const databaseUrl = executeStackCapability(adapter, 'agent', 'connection-url', {
+    dbPort, database,
+    hostUrl: url => url.replace(/127\.0\.0\.1|localhost/g,
+      networkMode === 'host' ? '127.0.0.1' : 'host.docker.internal'),
+  });
+  if (typeof databaseUrl !== 'string' || !databaseUrl) {
+    throw new Error(`stack adapter ${adapter.id} did not provide its leased database URL`);
+  }
+  return { DATABASE_URL: databaseUrl };
+}
+
+function hostedLifecycleControl(adapterId, input) {
+  const selected = STACK_ADAPTER_REGISTRY.get(adapterId);
+  return controlHosted({ ...input, environment: leasedDatabaseEnvironment(selected, {
+    database: input.lease.resources.database,
+    networkMode: input.lease.resources.buildContainer?.networkMode,
+  }) });
+}
+
 export const STACK_ADAPTER_REGISTRY = createStackAdapterRegistry([
   adapter('spacetime', stackLeaseCapability('spacetime'), {
     reset: operationProvider('spacetime', 'reset',
@@ -99,7 +121,7 @@ export const STACK_ADAPTER_REGISTRY = createStackAdapterRegistry([
       { run: resetPostgres, 'requires-reseed': () => true }),
     'database-write': operationProvider('postgres', 'database-write', { 'set-stock': setPostgresStock }),
     lifecycle: operationProvider('postgres', 'lifecycle',
-      { activate: activateHosted, control: controlHosted }),
+      { activate: activateHosted, control: input => hostedLifecycleControl('postgres', input) }),
     diagnostics: operationProvider('postgres', 'diagnostics', { capture: captureHostedDiagnostics }),
     database: operationProvider('postgres', 'database', { prepare: preparePostgresDatabase }),
     grading: operationProvider('postgres', 'grading', { context: createHttpGradingContext }),
@@ -122,13 +144,13 @@ export const STACK_ADAPTER_REGISTRY = createStackAdapterRegistry([
     'build-container': operationProvider('postgres', 'build-container', { plan: standardBuildContainerPlan }),
     reference: operationProvider('postgres', 'reference', { deploy: deployPostgresReference }),
     orchestrator: operationProvider('postgres', 'orchestrator', { config: standardOrchestratorConfig }),
-  }, { version: '1.1.0' }),
+  }, { version: '1.2.0' }),
   adapter('mongodb', stackLeaseCapability('mongodb'), {
     reset: operationProvider('mongodb', 'reset',
       { run: resetMongoDb, 'requires-reseed': () => true }),
     'database-write': operationProvider('mongodb', 'database-write', { 'set-stock': setMongoDbStock }),
     lifecycle: operationProvider('mongodb', 'lifecycle',
-      { activate: activateHosted, control: controlHosted }),
+      { activate: activateHosted, control: input => hostedLifecycleControl('mongodb', input) }),
     diagnostics: operationProvider('mongodb', 'diagnostics', { capture: captureHostedDiagnostics }),
     database: operationProvider('mongodb', 'database', { prepare: prepareMongoDbDatabase }),
     grading: operationProvider('mongodb', 'grading', { context: createHttpGradingContext }),
@@ -151,7 +173,7 @@ export const STACK_ADAPTER_REGISTRY = createStackAdapterRegistry([
     'build-container': operationProvider('mongodb', 'build-container', { plan: standardBuildContainerPlan }),
     reference: operationProvider('mongodb', 'reference', { deploy: deployMongoDbReference }),
     orchestrator: operationProvider('mongodb', 'orchestrator', { config: standardOrchestratorConfig }),
-  }, { version: '1.1.0' }),
+  }, { version: '1.2.0' }),
   adapter('stub', stackLeaseCapability('stub'), {
     reset: operationProvider('stub', 'reset', { 'requires-reseed': () => false }),
     lifecycle: operationProvider('stub', 'lifecycle', { activate: activateHosted }),

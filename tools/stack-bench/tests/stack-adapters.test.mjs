@@ -4,13 +4,13 @@ import test from 'node:test';
 
 import { createStackAdapterRegistry, executeStackCapability,
   STACK_ADAPTER_SCHEMA_VERSION, STACK_CAPABILITY_SCHEMA_VERSION } from '../src/stacks/stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
+import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 
 test('built-in and deterministic test stack adapters preserve the proven port grid', () => {
   assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['mongodb', 'postgres', 'spacetime', 'stub']);
   const postgres = STACK_ADAPTER_REGISTRY.get('postgres');
-  assert.equal(postgres.version, '1.1.0');
-  assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.1.0');
+  assert.equal(postgres.version, '1.2.0');
+  assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.2.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.0.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('stub').version, '1.0.0');
   assert.deepEqual(executeStackCapability(postgres, 'ports', 'for-run',
@@ -67,6 +67,18 @@ test('build-container plans expose only artifacts owned by the selected stack', 
       'build-container', 'plan', { repo, appDir, env: { STACK_BENCH_APPLIANCE: '1' } });
     assert.equal(appliancePlan.networkNamespace, id === 'stub' ? null : 'host');
   }
+});
+
+test('hosted stacks receive the exact leased database through the standard environment', () => {
+  assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('postgres'), {
+    database: 'stackbench_ecom_run6', networkMode: 'host',
+  }), { DATABASE_URL: 'postgresql://stackbench:stackbench@127.0.0.1:6532/stackbench_ecom_run6' });
+  assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('mongodb'), {
+    database: 'stackbench_ecom_run7', networkMode: 'bridge',
+  }), { DATABASE_URL: 'mongodb://host.docker.internal:6537/stackbench_ecom_run7' });
+  assert.deepEqual(leasedDatabaseEnvironment(STACK_ADAPTER_REGISTRY.get('spacetime'), {
+    database: null, networkMode: 'host',
+  }), {});
 });
 
 test('a new stack registers without changing engine code', () => {

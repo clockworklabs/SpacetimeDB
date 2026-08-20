@@ -22,8 +22,8 @@ function definition(overrides = {}) {
     selection: { packs: [], checks: [] },
     stacks: [
       { id: 'spacetime', adapterVersion: '1.0.0' },
-      { id: 'postgres', adapterVersion: '1.1.0' },
-      { id: 'mongodb', adapterVersion: '1.1.0' },
+      { id: 'postgres', adapterVersion: '1.2.0' },
+      { id: 'mongodb', adapterVersion: '1.2.0' },
     ],
     agents: [{ adapter: 'deterministic', adapterVersion: '1.1.0', model: 'deterministic' }],
     conditions: [{ id: 'prescribed', version: '1.0.0',
@@ -218,7 +218,7 @@ test('campaign validation rejects ambiguity, silent fallback, and incomplete ana
   assert.throws(() => validateCampaignDefinition({ ...definition(), surprise: true }), /surprise.*unknown/);
   assert.throws(() => validateCampaignDefinition(definition({ levels: [1, 3] })), /ascending and contiguous/);
   assert.throws(() => validateCampaignDefinition(definition({ stacks: [
-    { id: 'postgres', adapterVersion: '1.1.0' }, { id: 'postgres', adapterVersion: '1.1.0' },
+    { id: 'postgres', adapterVersion: '1.2.0' }, { id: 'postgres', adapterVersion: '1.2.0' },
   ] })), /duplicates|name each stack once/);
   assert.throws(() => validateCampaignDefinition(definition({ attemptPolicy: {
     retries: 1, retryOn: [], excludeFromAnalysis: [],

@@ -33,12 +33,12 @@ import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.mjs';
 import { codingSessionFailure, runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
+import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
 import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const REPO = resolve(ROOT, '..', '..');
 const CONTROL_COMMAND_TIMEOUT_MS = 120_000;
-const BUILD_SESSION_TIMEOUT_MS = 58 * 60_000;
 const DEFAULT_CODING_INTERRUPTION_RETRIES = 2;
 
 // The benchmark runs its own SpacetimeDB host so that measurements describe the
@@ -732,7 +732,7 @@ async function main() {
           ...(recoverStoppedContainer ? ['--recover-stopped-container'] : []),
         ], { input, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024,
           env: { ...cliEnv, ...(args.apiKey ? { STACK_BENCH_AGENT_API_KEY: args.apiKey } : {}) },
-          timeout: BUILD_SESSION_TIMEOUT_MS }),
+          timeout: AGENT_PROCESS_TIMEOUT_MS }),
     });
   } catch (err) {
     coding = { raw: '', spawnError: codingSessionFailure(err), sessionResults: [],

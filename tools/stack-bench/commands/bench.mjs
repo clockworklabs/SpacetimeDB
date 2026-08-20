@@ -241,6 +241,27 @@ function runAgent(args, adapter, mode, level, appDir) {
   });
 }
 
+export function finalizeRunTotals(run, started, { now = Date.now(), costComplete = true } = {}) {
+  run.totals = {
+    score: run.levels.reduce((n, level) => n + (level.score ?? 0), 0),
+    max: run.levels.reduce((n, level) => n + (level.max ?? 0), 0),
+    costUsd: Number(run.levels.reduce((n, level) => n
+      + (level.buildCostUsd ?? level.resumeCostUsd ?? 0)
+      + (level.fixCostUsd ?? 0), 0).toFixed(4)),
+    costComplete,
+    fixRounds: run.levels.reduce((n, level) => n + (level.fixRounds ?? 0), 0),
+    sessions: run.levels.reduce((n, level) => n + (level.sessionTotals?.sessions ?? 0), 0),
+    tokens: run.levels.reduce((n, level) => n + (level.sessionTotals?.tokens ?? 0), 0),
+    outputTokens: run.levels.reduce((n, level) => n + (level.sessionTotals?.outputTokens ?? 0), 0),
+    turns: run.levels.reduce((n, level) => n + (level.sessionTotals?.turns ?? 0), 0),
+    modelDurationMs: run.levels.reduce((n, level) => n
+      + (level.sessionTotals?.durationMs ?? 0), 0),
+    durationSec: Math.round((now - started) / 1000),
+    ungraded: run.levels.filter(level => !level.graded).map(level => level.level),
+  };
+  return run.totals;
+}
+
 export function gradeArgv(args, appDir, url, label, level, track, parentAttemptId,
   { observation = 'scored', out = null, sourceSha256 = null } = {}) {
   const restartSpec = restartSpecFor(args, appDir, track);
@@ -725,6 +746,22 @@ async function main() {
         completedLevels: [], stoppedAfterLevel: null, blockedLevels: [] } }, levels: [] };
   activeRun = run;
 
+  const runAgentForLevel = async (mode, level) => {
+    try {
+      return await runAgent(args, agentAdapter, mode, level, appDir);
+    } catch (error) {
+      const reason = String(error?.message ?? error).split(/\r?\n/)[0];
+      run.outcome = { kind: 'harness_failure', phase: `agent-${mode}`,
+        reason, appFailures: [], inconclusive: [], harnessFailures: [reason] };
+      run.validation.ladder.stoppedAfterLevel = run.levels.at(-1)?.level ?? null;
+      run.validation.ladder.blockedLevels = args.levelList.filter(candidate => candidate >= level);
+      finalizeRunTotals(run, started, { costComplete: false });
+      run.completedAt = new Date().toISOString();
+      writeRunJson(join(args.out, 'run.json'), run);
+      throw error;
+    }
+  };
+
   // Stop at the session that becomes contaminated. Exit 4 so campaign tooling
   // records an unusable run rather than a valid zero.
   const abortContaminated = (whichSession, contamination) => {
@@ -746,7 +783,7 @@ async function main() {
     console.log(`\n================ ${args.backend} — level ${level} ================`);
 
     const firstMode = continuing ? 'resume' : args.seedFrom ? 'upgrade' : 'build';
-    const build = await runAgent(args, agentAdapter,
+    const build = await runAgentForLevel(
       level === args.levelList[0] ? firstMode : 'upgrade', level, appDir);
     const buildLeak = auditContamination(appDir);
     if (buildLeak) abortContaminated(`level ${level} ${firstMode}`, buildLeak);
@@ -944,7 +981,7 @@ async function main() {
       snapshotSource(appDir, snapshot);
       fixRounds += 1;
       console.log(`--- fix round ${fixRounds}/${args.fixRounds} ---`);
-      const fix = await runAgent(args, agentAdapter, 'fix', level, appDir);
+      const fix = await runAgentForLevel('fix', level);
       fixCost += fix.costUsd;
       fixSessions.push({ round: fixRounds, sessionId: fix.sessionId ?? null,
         costUsd: fix.costUsd, durationMs: fix.durationMs, usage: fix.usage ?? null,
@@ -1169,24 +1206,7 @@ async function main() {
       { stdio: 'pipe' });
   } catch { console.log('  (transcript archiving failed — evidence is on a 30-day timer)'); }
 
-  run.totals = {
-    // A level that never ran contributes nothing rather than NaN.
-    score: run.levels.reduce((n, l) => n + (l.score ?? 0), 0),
-    max: run.levels.reduce((n, l) => n + (l.max ?? 0), 0),
-    costUsd: Number(run.levels.reduce((n, l) => n + (l.buildCostUsd ?? l.resumeCostUsd ?? 0)
-      + (l.fixCostUsd ?? 0), 0).toFixed(4)),
-    fixRounds: run.levels.reduce((n, l) => n + (l.fixRounds ?? 0), 0),
-    sessions: run.levels.reduce((n, l) => n + (l.sessionTotals?.sessions ?? 0), 0),
-    tokens: run.levels.reduce((n, l) => n + (l.sessionTotals?.tokens ?? 0), 0),
-    outputTokens: run.levels.reduce((n, l) => n + (l.sessionTotals?.outputTokens ?? 0), 0),
-    turns: run.levels.reduce((n, l) => n + (l.sessionTotals?.turns ?? 0), 0),
-    modelDurationMs: run.levels.reduce((n, l) => n + (l.sessionTotals?.durationMs ?? 0), 0),
-    durationSec: Math.round((Date.now() - started) / 1000),
-    // Which levels the totals are actually made of. A run missing a level is
-    // not comparable with one that graded them all, and the summary has to
-    // carry that rather than leaving it to be noticed.
-    ungraded: run.levels.filter(l => !l.graded).map(l => l.level),
-  };
+  finalizeRunTotals(run, started);
   run.outcome = aggregateRunOutcome(run.levels);
   if (args.repairGrant) {
     run.continuation.cumulativeCostAfterUsd = Number((run.continuation.cumulativeCostBeforeUsd

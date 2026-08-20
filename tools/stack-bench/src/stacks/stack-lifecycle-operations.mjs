@@ -77,7 +77,7 @@ export function captureHostedDiagnostics({ lease, output, exec = execFileSync })
 }
 
 export async function controlHosted({ adapterId: backend, lease, app, port, probe, mode,
-  signal = null, exec = execFileSync }) {
+  environment = {}, signal = null, exec = execFileSync }) {
   if (!Number.isInteger(Number(port)) || Number(port) <= 0 || typeof probe !== 'string') {
     throw new Error('hosted backend control requires a port and probe');
   }
@@ -101,8 +101,14 @@ export async function controlHosted({ adapterId: backend, lease, app, port, prob
     error.code = 'generated_app_not_restartable';
     throw error;
   }
+  const environmentArgs = Object.entries(environment).flatMap(([key, value]) => {
+    if (!/^[A-Z][A-Z0-9_]*$/.test(key) || typeof value !== 'string' || /[\r\n\0]/.test(value)) {
+      throw new Error(`invalid hosted runtime environment entry ${key}`);
+    }
+    return ['-e', `${key}=${value}`];
+  });
   exec('docker', ['exec', '-d', '-w', serverRelative === '.' ? '/app' : `/app/${serverRelative}`,
-    '-e', `PORT=${Number(port)}`, container.name, 'sh', '-lc',
+    '-e', `PORT=${Number(port)}`, ...environmentArgs, container.name, 'sh', '-lc',
     `exec npm run ${script} > /tmp/restart-${backend}-${Number(port)}.log 2>&1`],
   { stdio: 'pipe', timeout: DOCKER_TIMEOUT_MS });
   await waitFor(() => answers(url), 180_000, `${backend} API to start`, signal);

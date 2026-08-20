@@ -25,13 +25,14 @@ import { homedir } from 'node:os';
 import { leaseFromEnv, updateBackendLease } from '../src/runtime/backend-lease.mjs';
 import { resolveContainerImage } from '../src/runtime/container-image.mjs';
 import { executeStackCapability } from '../src/stacks/stack-adapter-contract.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
+import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
 import { dockerHostGatewayArguments } from '../src/runtime/docker-network.mjs';
 import { resolveContainerAuth, SUBSCRIPTION_TOKEN_TARGET } from './container-auth.mjs';
 import { startCredentialBroker, stopCredentialBroker } from './credential-broker.mjs';
 import { recoverStoppedBuildContainer } from './recover-build-container.mjs';
+import { CODING_SESSION_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d = null) => { const i = argv.indexOf(k); return i === -1 ? d : argv[i + 1]; };
@@ -46,7 +47,6 @@ catch (error) { console.error(`run-build.mjs: ${error.message}`); process.exit(2
 const prepareOnly = argv.includes('--prepare-only');
 const DOCKER_TIMEOUT_MS = 120_000;
 const DOCKER_PROBE_TIMEOUT_MS = 10_000;
-const BUILD_SESSION_TIMEOUT_MS = 55 * 60_000;
 
 const REPO = resolve(join(new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), '..', '..', '..'));
 const imageReference = opt('--image', DEFAULT_BUILD_IMAGE);
@@ -316,6 +316,10 @@ if (prepareOnly) {
 const args = ['exec', '-i', '-w', '/app'];
 
 args.push('-e', 'DISABLE_AUTOUPDATER=1', '-e', 'FORCE_PROMPT_CACHING_5M=1');
+const leasedEnvironment = leasedDatabaseEnvironment(adapter, {
+  database: leaseContext.lease.resources.database, networkMode: expectedNetworkMode,
+});
+for (const [key, value] of Object.entries(leasedEnvironment)) args.push('-e', `${key}=${value}`);
 const dockerExecEnv = { ...process.env, MSYS_NO_PATHCONV: '1' };
 // A container does not inherit the caller's environment, so anything the run is
 // meant to be configured by has to be handed over explicitly. Only variables the
@@ -344,7 +348,7 @@ if (opt('--settings')) claudeArgs.push('--settings', opt('--settings'));
 let credentialBroker = null;
 try {
   credentialBroker = startCredentialBroker(auth,
-    { networkMode: expectedNetworkMode, deadlineMs: BUILD_SESSION_TIMEOUT_MS });
+    { networkMode: expectedNetworkMode, deadlineMs: CODING_SESSION_TIMEOUT_MS });
 } catch (error) {
   console.error(`run-build.mjs: ${error.message}`);
   process.exit(2);
@@ -363,7 +367,7 @@ try {
     encoding: 'utf8',
     maxBuffer: 256 * 1024 * 1024,
     env: dockerExecEnv,
-    timeout: BUILD_SESSION_TIMEOUT_MS,
+    timeout: CODING_SESSION_TIMEOUT_MS,
   });
 } finally {
   stopCredentialBroker(credentialBroker);
