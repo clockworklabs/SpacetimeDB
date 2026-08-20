@@ -9,7 +9,7 @@ import { loadReferenceRegistry, prepareReferenceFixtureSource, selectReferenceFi
 
 const recipe = 'ecommerce.l2-standard@1.5.0';
 const expected = new Map([
-  ['mongodb', '2b678936abe7faa9670a914a425369f478956a2f5ef3326725d32a3b7aacebdb'],
+  ['mongodb', '7f2fb4f996d4a9a448d203cd48f4deedeaea7af9fbbf3bb56122b3d4cc546634'],
   ['postgres', '7b3d6c936623ed8ff8b4ff3e61204c291b784c2d36c2bc1edbd5bcca47f9c952'],
   ['spacetime', 'b0bfc4405e684511874f5a867a5dc84e28b258e46729b7199a1e8aa5e27b61ce'],
 ]);
@@ -46,6 +46,13 @@ test('L2 1.5 references deterministically compose L1 2.4 and L2 action inputs', 
         const attribute = `data-${action}-input=`;
         assert.equal(source.split(attribute).length - 1, 1,
           `${backend} must expose exactly one ${attribute}`);
+      }
+
+      if (backend === 'mongodb') {
+        const viteConfig = readFileSync(join(first, 'client', 'vite.config.ts'), 'utf8');
+        assert.match(viteConfig, /Number\(process\.env\.API_PORT\) \|\| 6401/);
+        assert.match(viteConfig, /Number\(process\.env\.VITE_PORT\) \|\| 6673/);
+        assert.match(viteConfig, /target: `http:\/\/localhost:\$\{apiPort\}`/);
       }
 
       if (backend === 'spacetime') {

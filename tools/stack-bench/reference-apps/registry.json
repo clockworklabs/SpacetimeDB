@@ -342,7 +342,7 @@
         "note": "The maintained MongoDB L2 reference plus the exact L1 2.4 and L2 action-input handles required by cumulative L2 1.5."
       },
       "imported": {
-        "sourceSha256": "2b678936abe7faa9670a914a425369f478956a2f5ef3326725d32a3b7aacebdb"
+        "sourceSha256": "7f2fb4f996d4a9a448d203cd48f4deedeaea7af9fbbf3bb56122b3d4cc546634"
       },
       "mutationManifests": [
         "grader/mutations/candidates/mongodb-ecom-l2-cumulative-1.5.0.json"

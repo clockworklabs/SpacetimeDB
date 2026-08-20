@@ -12,7 +12,7 @@ import { prepareReferenceFixtureSource } from '../src/references/reference-fixtu
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
-const FIXTURE_SHA256 = '2b678936abe7faa9670a914a425369f478956a2f5ef3326725d32a3b7aacebdb';
+const FIXTURE_SHA256 = '7f2fb4f996d4a9a448d203cd48f4deedeaea7af9fbbf3bb56122b3d4cc546634';
 const MANIFEST = join(ROOT, 'grader', 'mutations', 'candidates',
   'mongodb-ecom-l2-cumulative-1.5.0.json');
 const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
@@ -131,6 +131,23 @@ test('the 202d defect deterministically loses a committed purchase without timin
   assert.match(replacement, /await mutationBuyCommitted/);
   assert.match(replacement, /\$set: \{ quantity: staleSource\.quantity - qty \}/);
   assert.doesNotMatch(replacement, /setTimeout|setInterval|\bsleep\b/i);
+});
+
+test('the order ownership defect breaks both owner-scoped read paths', () => {
+  const mutation = manifest.mutations.find(candidate =>
+    candidate.id === 'order-history-is-not-owner-scoped');
+  assert(mutation);
+  assert.equal(mutation.scenario,
+    'tracks/ecommerce/scenarios/01-order-ownership-2.4.0.json');
+  assert.deepEqual(mutationTargetKeys(mutation), ['106:106a']);
+  assert.equal(mutation.file, 'server/src/index.ts');
+  assert.equal(mutation.edits.length, 2);
+
+  const anchors = mutation.edits.map(edit => edit.find).join('\n');
+  assert.match(anchors, /req as any/,
+    'the HTTP order-history response must lose owner scoping');
+  assert.match(anchors, /broadcastOrders/,
+    'the live order update must lose owner scoping too');
 });
 
 test('all 71 mutations bind and transpile against the exact L2 1.5 source', t => {

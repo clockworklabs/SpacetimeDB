@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "status": "candidate",
-  "fixtureSha256": "2b678936abe7faa9670a914a425369f478956a2f5ef3326725d32a3b7aacebdb",
+  "fixtureSha256": "7f2fb4f996d4a9a448d203cd48f4deedeaea7af9fbbf3bb56122b3d4cc546634",
   "backend": "mongodb",
   "track": "ecommerce",
   "level": 2,
@@ -554,12 +554,16 @@
           "criterion": "106a"
         }
       ],
-      "desc": "The order-history query returns every customer's orders instead of filtering by the authenticated owner.",
+      "desc": "The order-history response and live update return every customer's orders instead of filtering by the authenticated owner.",
       "file": "server/src/index.ts",
       "edits": [
         {
           "find": "  const orders = await Order.find({ userId: (req as any).user._id }).sort({ createdAt: -1 });",
           "replace": "  const orders = await Order.find({}).sort({ createdAt: -1 });"
+        },
+        {
+          "find": "async function broadcastOrders(userId: string) {\n  const orders = await Order.find({ userId }).sort({ createdAt: -1 });",
+          "replace": "async function broadcastOrders(userId: string) {\n  const orders = await Order.find({}).sort({ createdAt: -1 });"
         }
       ]
     },
