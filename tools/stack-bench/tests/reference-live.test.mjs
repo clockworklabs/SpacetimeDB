@@ -5,10 +5,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
-  parallelMutationChildArgv, referenceQualificationPaths, referenceQualificationRunner,
+  parallelMutationChildArgv, readParallelMutationWorker, referenceQualificationPaths,
+  referenceQualificationRunner,
   referenceQualificationSelectionArgs,
   referenceQualificationWorkRoot, rescueSupervisedLease, runBounded } from '../src/references/reference-live.mjs';
-import { emptyArtifactIdentities, writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
+import { emptyArtifactIdentities, readArtifact, writeArtifact, writeRunJson }
+  from '../src/evidence/artifacts.mjs';
 import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
@@ -76,6 +78,41 @@ test('parallel mutation qualification reserves bounded slots and exact child sha
   assert.equal(after('--mutation-shard-count'), '4');
   assert.equal(after('--repetitions'), '1');
   assert.equal(after('--out'), '/results/w3.json');
+});
+
+test('parallel worker evidence is read only from its exact contained output', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-parallel-worker-'));
+  try {
+    const artifactPath = join(root, 'w1.json');
+    const output = join(root, 'w1.runs', 'r1');
+    mkdirSync(output, { recursive: true });
+    const identities = emptyArtifactIdentities({
+      fixture: { id: 'fixture', sha256: 'a'.repeat(64), state: 'candidate' },
+      recipe: { id: 'recipe', version: '1.0.0', sha256: 'b'.repeat(64), state: 'candidate' },
+      calibration: { id: 'calibration', version: '1.0.0', sha256: 'c'.repeat(64), state: 'draft' },
+      stackAdapter: { id: 'mongodb' },
+    });
+    const mutationIds = ['first', 'second'];
+    writeArtifact(join(output, 'mutation-control.json'), { kind: 'mutation_control', id: 'control',
+      payload: { ok: true, shard: { index: 0, count: 1, mutationIds },
+        results: mutationIds.toReversed().map(id => ({ id, status: 'CAUGHT' })) } });
+    writeArtifact(artifactPath, { kind: 'reference_qualification', id: 'worker', identities,
+      payload: { mutationControl: true, requiredRepetitions: 1, ok: true,
+        runs: [{ ok: true, output: 'w1.runs/r1' }] } });
+    const inspected = readParallelMutationWorker(artifactPath, { ok: true },
+      { ...identities, workerIndex: 0, workerCount: 1 },
+      { mutations: mutationIds.map(id => ({ id })) });
+    assert.deepEqual(inspected.failures, []);
+    assert.deepEqual(inspected.control.results.map(result => result.id), ['second', 'first']);
+
+    const escaped = readArtifact(artifactPath);
+    escaped.payload.runs[0].output = '../outside';
+    writeFileSync(artifactPath, JSON.stringify(escaped));
+    const rejected = readParallelMutationWorker(artifactPath, { ok: true },
+      { ...identities, workerIndex: 0, workerCount: 1 },
+      { mutations: mutationIds.map(id => ({ id })) });
+    assert(rejected.failures.includes('worker run output escapes its artifact directory'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('reference qualification resolves the exact executable calibration identity', () => {

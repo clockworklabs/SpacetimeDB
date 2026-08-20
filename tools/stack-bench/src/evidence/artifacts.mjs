@@ -444,8 +444,10 @@ function validatePayload(kind, payload) {
       }
       const resultIds = (payload.results ?? []).map(result => result?.id);
       if (resultIds.length !== mutationIds.length
-        || resultIds.some((id, position) => id !== mutationIds[position])) {
-        fail('mutation_control payload.shard.mutationIds must match ordered results');
+        || resultIds.some(id => typeof id !== 'string' || !id)
+        || new Set(resultIds).size !== resultIds.length
+        || resultIds.some(id => !mutationIds.includes(id))) {
+        fail('mutation_control payload.shard.mutationIds must match the exact result set');
       }
     }
   }

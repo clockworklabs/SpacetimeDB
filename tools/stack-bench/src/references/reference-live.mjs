@@ -10,7 +10,7 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync,
   writeSync } from 'node:fs';
-import { basename, dirname, extname, join, relative, resolve } from 'node:path';
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
@@ -483,7 +483,7 @@ function identityKey(identity) {
     sha256: identity?.sha256 ?? null, state: identity?.state ?? null });
 }
 
-function readParallelMutationWorker(path, processResult, expected, manifest) {
+export function readParallelMutationWorker(path, processResult, expected, manifest) {
   const failures = [];
   if (!processResult.ok) {
     failures.push(processResult.timedOut ? 'worker timed out'

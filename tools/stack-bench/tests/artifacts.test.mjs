@@ -176,19 +176,20 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
   } }), /runner\.dockerOs must be a non-empty string/);
 });
 
-test('mutation shard artifacts bind exact coordinates to ordered results', () => {
-  const result = { id: 'broken-auth', status: 'CAUGHT' };
+test('mutation shard artifacts bind exact coordinates to the exact result set', () => {
+  const results = [{ id: 'broken-auth', status: 'CAUGHT' },
+    { id: 'broken-owner', status: 'CAUGHT' }];
   assert.doesNotThrow(() => createArtifact({ kind: 'mutation_control', id: 'shard', payload: {
-    shard: { index: 1, count: 3, mutationIds: ['broken-auth'] }, results: [result],
+    shard: { index: 1, count: 3, mutationIds: ['broken-owner', 'broken-auth'] }, results,
   } }));
   assert.throws(() => createArtifact({ kind: 'mutation_control', id: 'bad-index', payload: {
-    shard: { index: 3, count: 3, mutationIds: ['broken-auth'] }, results: [result],
+    shard: { index: 3, count: 3, mutationIds: ['broken-auth'] }, results: [results[0]],
   } }), /coordinates are invalid/);
   assert.throws(() => createArtifact({ kind: 'mutation_control', id: 'wrong-result', payload: {
-    shard: { index: 1, count: 3, mutationIds: ['other'] }, results: [result],
-  } }), /match ordered results/);
+    shard: { index: 1, count: 3, mutationIds: ['other'] }, results: [results[0]],
+  } }), /match the exact result set/);
   assert.throws(() => createArtifact({ kind: 'mutation_control', id: 'unknown-shard-field', payload: {
-    shard: { index: 1, count: 3, mutationIds: ['broken-auth'], worker: true }, results: [result],
+    shard: { index: 1, count: 3, mutationIds: ['broken-auth'], worker: true }, results: [results[0]],
   } }), /worker is unknown/);
 });
 
