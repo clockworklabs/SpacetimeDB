@@ -63,9 +63,9 @@ public static class ProcedureExtensions
         {
             FFI.volatile_nonatomic_schedule_immediate(
                 name_bytes,
-                (uint)name_bytes.Length,
+                name_bytes.Length,
                 args_bytes,
-                (uint)args_bytes.Length
+                args_bytes.Length
             );
         }
         catch (Exception ex)

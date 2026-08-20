@@ -1,6 +1,6 @@
 use spacetimedb_smoketests::{random_string, require_local_server, require_pnpm, ModuleLanguage, Smoketest};
 
-const TYPESCRIPT_MODULE_WITHOUT_NEW_COLUMNS: &str = r#"import { schema, table, t } from "spacetimedb/server";
+const TYPESCRIPT_MODULE_V1: &str = r#"import { schema, table, t } from "spacetimedb/server";
 
 const AppUsers = table(
   { name: "users", public: false },
@@ -72,6 +72,34 @@ export const find_users_by_active_status = spacetimedb.reducer(
 );
 "#;
 
+const TYPESCRIPT_MODULE_V2_RENAMED_ACCESSOR: &str = r#"import { schema, table, t } from "spacetimedb/server";
+
+const renamedUsers = table(
+  { name: "users", public: false },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    name: t.string(),
+    emailAddress: t.string().index("btree"),
+  },
+);
+
+const spacetimedb = schema({
+  renamedUsers,
+});
+export default spacetimedb;
+
+export const find_user_by_email = spacetimedb.reducer(
+  { emailAddress: t.string() },
+  (ctx, { emailAddress }) => {
+    let count = 0;
+    for (const _row of ctx.db.renamedUsers.emailAddress.filter(emailAddress)) {
+      count += 1;
+    }
+    console.info(`matched ${count}`);
+  },
+);
+"#;
+
 #[test]
 fn test_typescript_add_optional_columns() {
     require_pnpm!();
@@ -86,7 +114,7 @@ fn test_typescript_add_optional_columns() {
         .source(
             ModuleLanguage::TypeScript,
             "typescript-add-optional-columns-v1",
-            TYPESCRIPT_MODULE_WITHOUT_NEW_COLUMNS,
+            TYPESCRIPT_MODULE_V1,
         )
         .run()
         .unwrap();
@@ -107,4 +135,38 @@ fn test_typescript_add_optional_columns() {
 
     test.call("find_user_by_email", &["alice@example.com"]).unwrap();
     test.call("find_users_by_active_status", &["false"]).unwrap();
+}
+
+#[test]
+fn test_typescript_change_index_source_name() {
+    require_pnpm!();
+    require_local_server!();
+
+    let mut test = Smoketest::builder().autopublish(false).build();
+    let module_name = format!("typescript-change-source-name-{}", random_string());
+
+    let database_identity = test
+        .publish()
+        .name(&module_name)
+        .source(
+            ModuleLanguage::TypeScript,
+            "typescript-change-source-name-v1",
+            TYPESCRIPT_MODULE_V1,
+        )
+        .run()
+        .unwrap();
+
+    test.call("insert_user", &["Alice", "alice@example.com"]).unwrap();
+
+    test.publish()
+        .name(&database_identity)
+        .source(
+            ModuleLanguage::TypeScript,
+            "typescript-change-source-name-v2",
+            TYPESCRIPT_MODULE_V2_RENAMED_ACCESSOR,
+        )
+        .run()
+        .unwrap();
+
+    test.call("find_user_by_email", &["alice@example.com"]).unwrap();
 }

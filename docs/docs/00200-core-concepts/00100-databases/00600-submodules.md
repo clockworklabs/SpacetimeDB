@@ -23,7 +23,7 @@ A submodule is a regular SpacetimeDB module. Nothing special marks a module as a
 
 ```typescript
 // auth_lib/src/index.ts
-import { schema, table, t, SyncResponse, Router } from 'spacetimedb/server';
+import { schema, table, t, SyncResponse, Router, type ReducerCtx } from 'spacetimedb/server';
 
 const users = table(
   { name: 'users', public: true },
@@ -53,7 +53,7 @@ export const sessionCount = spacetimedb.procedure(
 );
 
 export const activeSessions = spacetimedb.anonymousView(
-  { name: 'activeSessions', public: true },
+  { name: 'active_sessions', public: true },
   t.array(sessions.rowType),
   (ctx) => [...ctx.db.sessions.iter()]
 );
@@ -81,7 +81,7 @@ The consumer controls the namespace name. Pass the submodule's module-namespace 
 
 ```typescript
 // my-database/src/index.ts
-import { schema } from 'spacetimedb/server';
+import { schema, table } from 'spacetimedb/server';
 import * as authLib from 'auth_lib';
 
 const players = table({ name: 'players', public: true }, { /* ... */ });
@@ -114,7 +114,7 @@ Submodule tables appear under a namespace field on `ctx.db`. The field matches t
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.reducer('example', {}, (ctx) => {
+export const example = spacetimedb.reducer((ctx) => {
   // Consumer's own tables (no namespace)
   for (const player of ctx.db.players.iter()) { /* ... */ }
 
@@ -140,12 +140,12 @@ Call a submodule reducer or a plain helper function typed against the submodule'
 
 ```typescript
 // auth_lib: plain helper function typed against the submodule's own schema
-export function sessionCountHelper(ctx: ReducerContext<typeof spacetimedb>): number {
+export function sessionCountHelper(ctx: ReducerCtx<typeof spacetimedb>): number {
   return ctx.db.sessions.count();
 }
 
 // my-database: call submodule reducer and helper from a consumer reducer
-spacetimedb.reducer('onLogin', { token: t.string() }, (ctx, { token }) => {
+export const onLogin = spacetimedb.reducer({ token: t.string() }, (ctx, { token }) => {
   // call a submodule reducer
   authLib.verifyToken(ctx.as.myauth, { token });
 
@@ -155,7 +155,7 @@ spacetimedb.reducer('onLogin', { token: t.string() }, (ctx, { token }) => {
 });
 ```
 
-`ctx.as.myauth` is a `ReducerContext` scoped to the `myauth` namespace. It shares the same sender, timestamp, and connectionId as the parent context, but its `ctx.db` points at `ctx.db.myauth`.
+`ctx.as.myauth` is a `ReducerCtx` scoped to the `myauth` namespace. It shares the same sender, timestamp, and connectionId as the parent context, but its `ctx.db` points at `ctx.db.myauth`.
 
 For reducers registered through the submodule's own schema (via `schema.reducer(...)`), the host passes a scoped context automatically when invoked directly. `ctx.as` is only needed when the consumer calls a submodule function explicitly.
 
@@ -167,7 +167,7 @@ For reducers registered through the submodule's own schema (via `schema.reducer(
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-Use `ctx.as.<alias>` to pass a submodule-scoped `ProcedureContext` to a submodule procedure. To call a submodule reducer from inside a procedure, open a transaction first with `ctx.withTx` and then narrow with `tx.as.<alias>`:
+Use `ctx.as.<alias>` to pass a submodule-scoped `ProcedureCtx` to a submodule procedure. To call a submodule reducer from inside a procedure, open a transaction first with `ctx.withTx` and then narrow with `tx.as.<alias>`:
 
 ```typescript
 // call a submodule procedure
@@ -182,7 +182,7 @@ export const transactAndCount = spacetimedb.procedure(
   t.u64(),
   (ctx, { token }) => {
     ctx.withTx(tx => {
-      // tx is a root ReducerContext; narrow to the submodule namespace
+      // tx is a root ReducerCtx; narrow to the submodule namespace
       authLib.verifyToken(tx.as.myauth, { token });
     });
     return authLib.sessionCount(ctx.as.myauth);
@@ -271,7 +271,7 @@ conn.subscriptionBuilder().subscribe(tables => [
 
 ## Calling Submodule Reducers and Procedures from the Client
 
-Submodule reducers and procedures are identified by their fully-qualified name, using `/` as the separator between namespace and function name.
+Submodule reducers and procedures are identified by their fully-qualified name, using `.` as the separator between namespace and function name.
 
 ### Client SDK
 
@@ -322,16 +322,16 @@ conn.reducers.myauth.verifyToken({ token: 'abc123' });
 ### HTTP API
 
 ```
-POST /v1/database/my-database/call/myauth/verify_token
+POST /v1/database/my-database/call/myauth.verify_token
 ```
 
 ### CLI
 
 ```bash
-spacetime call my-database "myauth/verify_token" '{"token": "abc123"}'
+spacetime call my-database "myauth.verify_token" '{"token": "abc123"}'
 ```
 
-The namespace prefix is the alias you chose, and the function name after `/` is the canonical
+The namespace prefix is the alias you chose, and the function name after `.` is the canonical
 snake_case form of the submodule's export name -- `verifyToken` in TypeScript is `verify_token`
 on the wire. Generated client bindings expose the camelCase accessor instead, as shown above.
 

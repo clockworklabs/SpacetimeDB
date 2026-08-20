@@ -871,10 +871,10 @@ void AMyActor::BeginPlay()
 
     // Setup connection callbacks
     FOnConnectDelegate ConnectDelegate;
-    ConnectDelegate.BindDynamic(this, &AMyActor::OnConnected);
+    BIND_DELEGATE_SAFE(ConnectDelegate, this, AMyActor, OnConnected);
 
     FOnDisconnectDelegate DisconnectDelegate;
-    DisconnectDelegate.BindDynamic(this, &AMyActor::OnDisconnected);
+    BIND_DELEGATE_SAFE(DisconnectDelegate, this, AMyActor, OnDisconnected);
 
     // Build and connect
     Conn = UDbConnection::Builder()
@@ -932,6 +932,11 @@ void AMyActor::SendMessage(const FString& Text)
     {
         Conn->Reducers->SendMessage(Text);
     }
+}
+
+void AMyActor::OnDisconnected(UDbConnection* Connection, const FString& Error)
+{
+    UE_LOG(LogTemp, Warning, TEXT("Disconnected from SpacetimeDB: %s"), *Error);
 }
 ```
 

@@ -1,0 +1,21 @@
+Write a SpacetimeDB backend module in TypeScript that defines a query-builder semijoin view.
+
+TABLES
+- member (public)
+  - Fields:
+    - id: u64 (primary key)
+    - name: string
+- eligibility (public)
+  - Fields:
+    - id: u64 (primary key)
+    - memberId: u64 (btree index)
+
+REDUCERS
+- seed()
+  - Insert member 1 named "Ada" and member 2 named "Grace"
+  - Insert eligibility id 10 for only member 1
+
+VIEW
+- eligible_member (public, non-anonymous query-builder)
+  - Use a semijoin
+  - Return members only when a matching eligibility row exists

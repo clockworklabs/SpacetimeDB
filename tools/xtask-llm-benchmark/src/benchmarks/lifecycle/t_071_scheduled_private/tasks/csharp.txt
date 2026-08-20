@@ -1,0 +1,20 @@
+Write a SpacetimeDB backend module in C# with a private scheduled table that is not client-callable.
+
+TABLES
+- JobResult (public, accessor JobResult)
+  - Fields:
+    - Id: ulong (primary key)
+    - Status: string
+- PrivateJob (private, scheduled for RunPrivateJob, accessor PrivateJob)
+  - Fields, in this order:
+    - ScheduledId: ulong (primary key, auto-increment)
+    - ScheduledAt: ScheduleAt
+    - ResultId: ulong
+
+REDUCERS
+- EnqueuePrivate(id: ulong)
+  - Write JobResult Status "queued"
+  - Schedule that Id for one millisecond later
+- RunPrivateJob(job: PrivateJob) (scheduled reducer)
+  - Must be scheduler-only and not client-callable
+  - Update the matching JobResult Status to "complete"
