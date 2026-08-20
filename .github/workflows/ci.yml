@@ -1051,8 +1051,8 @@ jobs:
 
       - name: Activate Unity license
         env:
-          UNITY_SERVICE_ACCOUNT_ID: ${{ secrets.UNITY_SERVICE_ACCOUNT_ID || secrets.UNITY_SERVICE_ACCOUNT_KEY_ID }}
-          UNITY_SERVICE_ACCOUNT_SECRET: ${{ secrets.UNITY_SERVICE_ACCOUNT_SECRET || secrets.UNITY_SERVICE_ACCOUNT_KEY_SECRET }}
+          UNITY_SERVICE_ACCOUNT_ID: ${{ secrets.UNITY_EMAIL }}
+          UNITY_SERVICE_ACCOUNT_SECRET: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
         run: |
           unity license status --format json && exit 0
