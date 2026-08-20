@@ -23,7 +23,12 @@ const COMMANDS = Object.freeze({
   'test': ['--test', join(ROOT, 'tests', '*.test.mjs')],
 });
 
-const COMMANDS_WITHOUT_AGENT_AUTH = new Set(['init-deps', 'verify-deps']);
+const COMMANDS_REQUIRING_AGENT_AUTH = new Set(['preflight', 'dashboard', 'run']);
+
+export function controllerCommandRequiresAgentAuth(command, args = []) {
+  if (COMMANDS_REQUIRING_AGENT_AUTH.has(command)) return true;
+  return command === 'campaign' && args[0] === 'run';
+}
 
 export function resolveControllerCommand(argv) {
   const [command, ...rest] = argv;
@@ -88,7 +93,7 @@ async function main(argv) {
   if (!resolved) { help(); return; }
   const child = spawn(resolved.executable, resolved.args,
     { stdio: 'inherit', env: controllerChildEnvironment(process.env,
-      { requireAgentAuth: !COMMANDS_WITHOUT_AGENT_AUTH.has(command) }) });
+      { requireAgentAuth: controllerCommandRequiresAgentAuth(command, argv.slice(3)) }) });
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => child.kill(signal));
   const outcome = await new Promise((resolveExit, reject) => {
     child.once('error', reject);

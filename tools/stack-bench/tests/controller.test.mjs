@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { controllerChildEnvironment, resolveControllerCommand } from '../appliance/controller.mjs';
+import { controllerChildEnvironment, controllerCommandRequiresAgentAuth,
+  resolveControllerCommand } from '../appliance/controller.mjs';
 
 test('controller exposes a small explicit operator command surface', () => {
   assert.equal(resolveControllerCommand([]), null);
@@ -63,4 +64,21 @@ test('dependency setup does not require or forward agent credentials', () => {
   assert.equal(env.PATH, '/usr/bin');
   assert.equal(env.ANTHROPIC_API_KEY, undefined);
   assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, undefined);
+});
+
+test('read-only and model-free controller commands do not require agent credentials', () => {
+  for (const [command, args] of [
+    ['init-deps', []], ['verify-deps', []], ['test', []],
+    ['qualify-reference', []], ['qualify-null', []], ['qualification', ['status']],
+    ['pack-budget', ['recommend']], ['campaign', ['validate']], ['campaign', ['show']],
+    ['campaign', ['prepare']], ['campaign', ['trial']], ['campaign', ['status']],
+    ['campaign', ['report']], ['campaign', ['reconcile']], ['repair', ['status']],
+    ['repair', ['grant']], ['verify-release', []], ['recover', []],
+  ]) assert.equal(controllerCommandRequiresAgentAuth(command, args), false,
+    `${command} ${args[0] ?? ''}`);
+  for (const [command, args] of [['run', []], ['preflight', []], ['dashboard', []],
+    ['campaign', ['run']]]) {
+    assert.equal(controllerCommandRequiresAgentAuth(command, args), true,
+      `${command} ${args[0] ?? ''}`);
+  }
 });
