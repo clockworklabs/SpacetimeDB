@@ -1,0 +1,15 @@
+Write a SpacetimeDB backend module in TypeScript that separates stable profile data from frequently updated connection presence.
+
+TABLES
+- user_profile (public)
+  - identity: Identity (primary key)
+  - displayName: string
+  - createdAt: Timestamp
+- connection_presence (public)
+  - connectionId: ConnectionId (primary key)
+  - userIdentity: Identity
+  - lastHeartbeat: Timestamp
+  - online: boolean
+  - index byUser: btree(userIdentity)
+
+Do not put lastHeartbeat or online on user_profile. No reducers are required.

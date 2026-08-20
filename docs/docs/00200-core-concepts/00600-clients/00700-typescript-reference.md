@@ -384,7 +384,7 @@ class SubscriptionBuilder {
 }
 ```
 
-Subscribe to all rows from all public tables. This method is provided as a convenience for simple clients. The subscription initiated by `subscribeToAllTables` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
+Subscribe to all rows from all public tables, including public event tables. This method is provided as a convenience for simple clients. The subscription initiated by `subscribeToAllTables` cannot be canceled after it is initiated. You should [`subscribe` to specific queries](#method-subscribe) if you need fine-grained control over the lifecycle of your subscriptions.
 
 ## Query Builder API
 
@@ -1034,7 +1034,7 @@ The SpacetimeDB TypeScript SDK includes React bindings under the `spacetimedb/re
 
 The React integration is fully compatible with React StrictMode and correctly handles the double-mount behavior (only one WebSocket connection is created).
 
-While a `SpacetimeDBProvider` is mounted, the React connection manager also replaces the managed `DbConnection` if the underlying WebSocket closes or reports a connection error. Reconnect attempts use exponential backoff, starting at 1 second and doubling after each consecutive failure up to a 30 second maximum; the backoff resets after a successful connection. Hooks such as `useTable` observe the provider state, receive the fresh connection, and establish their subscriptions again; while the replacement connection is being established, `useTable` reports `isReady` as `false` until its subscription is applied on the new connection. This provider-level recovery does not change the lower-level `DbConnection` contract: applications that create a `DbConnection` directly are still responsible for creating a new connection if they need reconnection behavior.
+While a `SpacetimeDBProvider` is mounted, the shared connection manager also replaces the managed `DbConnection` if the underlying WebSocket closes or reports a connection error. Reconnect attempts use exponential backoff, starting at 1 second and doubling after each consecutive failure up to a 30 second maximum; the backoff resets after a successful connection. In browser environments, the manager also re-checks connection liveness when the page becomes visible, regains focus, returns online, or is restored from the back-forward cache, so a stalled reconnect or silently closed socket can be rebuilt promptly after a suspended tab resumes. Hooks such as `useTable` observe the provider state, receive the fresh connection, and establish their subscriptions again; while the replacement connection is being established, `useTable` reports `isReady` as `false` until its subscription is applied on the new connection. This provider-level recovery does not change the lower-level `DbConnection` contract: applications that create a `DbConnection` directly are still responsible for creating a new connection if they need reconnection behavior.
 
 | Name                                                        | Description                                               |
 | ----------------------------------------------------------- | --------------------------------------------------------- |

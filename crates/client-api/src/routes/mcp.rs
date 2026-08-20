@@ -14,8 +14,8 @@ use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::sats;
 
 use super::database::{
-    client_connected_error_to_response, client_disconnected_error_to_response, find_leader_and_database,
-    find_module_and_database, map_reducer_error, sql_direct, SqlParams, SqlQueryParams,
+    client_connected_error_to_response, client_disconnected_error_to_response, find_database_leader,
+    find_database_module, find_database_or_404, map_reducer_error, sql_direct, SqlQueryParams,
 };
 use crate::auth::SpacetimeAuth;
 use crate::routes::subscribe::generate_random_connection_id;
@@ -44,6 +44,13 @@ pub struct McpParams {
 }
 
 /// handle MCP JSON-RPC request for the database named in the URL
+//
+// Due to different name resolution and error handling behavior in different branches,
+// this route handler does not use [`super::database::resolve_database_name_and_count_response_egress_middleware`].
+// This is unfortunate, as we probably would like to count egress bytes from MCP calls,
+// but I (pgoldman 2026-08-07) do not have the wherewithal
+// to significantly rewrite this file in order to make it compatible with the middleware,
+// and do not know which of its error-handling behaviors are safe to change.
 pub async fn mcp<S>(
     State(ctx): State<S>,
     Path(McpParams { name_or_identity }): Path<McpParams>,
@@ -316,7 +323,8 @@ async fn tool_get_schema<S>(ctx: &S, name_or_identity: NameOrIdentity) -> axum::
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let (leader, _) = find_leader_and_database(ctx, name_or_identity).await?;
+    let database = find_database_or_404(ctx, name_or_identity).await?;
+    let leader = find_database_leader(ctx, &database).await?;
     let module = leader.wait_for_module(MODULE_WAIT_TIMEOUT).await.map_err(log_and_500)?;
     let raw = RawModuleDefV9::from(module.info.module_def.as_ref().clone());
     let json = serde_json::to_string(&sats::serde::SerdeWrapper(raw)).map_err(log_and_500)?;
@@ -335,9 +343,10 @@ where
 {
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
+    let database = find_database_or_404(ctx, name_or_identity).await?;
     let rows = sql_direct(
         ctx.clone(),
-        SqlParams { name_or_identity },
+        database,
         SqlQueryParams { confirmed },
         caller_identity,
         caller_auth,
@@ -360,7 +369,8 @@ where
 {
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
-    let (module, _) = find_module_and_database(ctx, name_or_identity).await?;
+    let database = find_database_or_404(ctx, name_or_identity).await?;
+    let module = find_database_module(ctx, &database).await?;
 
     let connection_id = generate_random_connection_id();
     module

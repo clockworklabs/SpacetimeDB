@@ -1,4 +1,7 @@
 ﻿using System;
+#if UNITY_5_3_OR_NEWER
+using UnityEngine;
+#endif
 
 namespace SpacetimeDB
 {
@@ -23,6 +26,23 @@ namespace SpacetimeDB
             new GodotDebugLogger();
 #else
             new ConsoleLogger();
+#endif
+
+#if UNITY_5_3_OR_NEWER
+        /// <summary>
+        /// Resets the static instance to prevent data persistence when Enter Play Mode Options (Disable Domain Reloading) is active.
+        /// RuntimeInitializeOnLoadMethod is used since it is supported in older versions of Unity.
+        /// AutoStaticsCleanup and NoAutoStaticsCleanup is only supported in Unity 6+
+        /// </summary>
+        /// <remarks>
+        /// See the <see href="https://docs.unity3d.com/6000.5/Documentation/Manual/domain-reloading.html">Unity Domain Reloading Manual</see> 
+        /// and the <see href="https://docs.unity3d.com/6000.5/Documentation/ScriptReference/RuntimeInitializeOnLoadMethodAttribute.html">RuntimeInitializeOnLoadMethodAttribute API Docs</see> for details.
+        /// </remarks>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticFields()
+        {
+            Current = new UnityDebugLogger();
+        }
 #endif
 
         public static void Debug(string message) => Current.Debug(message);

@@ -302,6 +302,14 @@ pub enum AutoMigrateStep<'def> {
     /// When this step is present, no `ChangeColumns` steps will be, for the same table.
     AddColumns(<TableDef as ModuleDefLookup>::Key<'def>),
 
+    /// Change the source-name alias of an existing index.
+    ChangeIndexSourceName(<IndexDef as ModuleDefLookup>::Key<'def>),
+
+    /// Change the accessor name alias of an existing table.
+    ChangeTableAccessorName(<TableDef as ModuleDefLookup>::Key<'def>),
+    /// Change the accessor name alias of an existing column.
+    ChangeColumnAccessorName(<TableDef as ModuleDefLookup>::Key<'def>, &'def Identifier),
+
     /// Add a table, including all indexes, constraints, and sequences.
     /// There will NOT be separate steps in the plan for adding indexes, constraints, and sequences.
     AddTable(<TableDef as ModuleDefLookup>::Key<'def>),
@@ -765,6 +773,9 @@ fn auto_migrate_table<'def>(
     if old.primary_key != new.primary_key {
         plan.steps.push(AutoMigrateStep::ChangePrimaryKey(key));
     }
+    if old.accessor_name != new.accessor_name {
+        plan.steps.push(AutoMigrateStep::ChangeTableAccessorName(key));
+    }
     if old.schedule != new.schedule {
         if let Some(old_schedule) = &old.schedule {
             plan.steps.push(AutoMigrateStep::RemoveSchedule(old_schedule.key()));
@@ -830,6 +841,10 @@ fn auto_migrate_table<'def>(
                         }
                         .into())
                     };
+                    if old_col.accessor_name != new_col.accessor_name {
+                        plan.steps
+                            .push(AutoMigrateStep::ChangeColumnAccessorName(key, &old_col.name));
+                    }
                     (types_ok, positions_ok)
                         .combine_errors()
                         // `row_type_changed`, `columns_added`, `event_schema_changed`
@@ -1128,6 +1143,8 @@ fn auto_migrate_indexes<'def>(
                 if old_idx.algorithm != new_idx.algorithm {
                     plan.steps.push(AutoMigrateStep::RemoveIndex(index_key));
                     plan.steps.push(AutoMigrateStep::AddIndex(index_key));
+                } else if old_idx.source_name != new_idx.source_name {
+                    plan.steps.push(AutoMigrateStep::ChangeIndexSourceName(index_key));
                 }
                 Ok(())
             }
@@ -2258,6 +2275,108 @@ mod tests {
         );
         assert!(
             !steps.contains(&AutoMigrateStep::RemoveView(key("", "Level2Person"))),
+            "steps: {steps:?}"
+        );
+    }
+
+    #[test]
+    fn migrate_index_with_changed_source_name() {
+        fn module_def(source_name: &str) -> ModuleDef {
+            create_module_def_v10(|builder| {
+                builder
+                    .build_table_with_new_type(
+                        "FruitBasket",
+                        ProductType::from([("basket_id", AlgebraicType::U64), ("fruit_name", AlgebraicType::String)]),
+                        true,
+                    )
+                    .with_index(btree([0, 1]), source_name.to_owned(), "fruitNameIndex")
+                    .finish();
+            })
+        }
+
+        let old_def = module_def("OldBasketLookup");
+        let new_def = module_def("NewBasketLookup");
+        let root = NamespacePath::root();
+        let index_name = RawIdentifier::new("fruit_basket_basket_id_fruit_name_idx_btree");
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        let steps = &plan.steps[..];
+
+        assert!(
+            steps.contains(&AutoMigrateStep::ChangeIndexSourceName((&root, &index_name))),
+            "steps: {steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::RemoveIndex((&root, &index_name))),
+            "steps: {steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::AddIndex((&root, &index_name))),
+            "steps: {steps:?}"
+        );
+    }
+
+    #[test]
+    fn migrate_table_with_changed_accessor_name() {
+        let old_def = create_module_def_v10(|builder| {
+            builder
+                .build_table_with_new_type("my_table", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .finish();
+        });
+
+        let new_def = create_module_def_v10(|builder| {
+            builder
+                .build_table_with_new_type("renamed_table", ProductType::from([("id", AlgebraicType::U64)]), true)
+                .finish();
+            let mut explicit = ExplicitNames::default();
+            explicit.insert_table("renamed_table", "my_table");
+            builder.add_explicit_names(explicit);
+        });
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        let steps = &plan.steps[..];
+        let root = NamespacePath::root();
+        let table_name = expect_identifier("my_table");
+
+        assert!(
+            steps.contains(&AutoMigrateStep::ChangeTableAccessorName((&root, &table_name))),
+            "steps: {steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::RemoveTable((&root, &table_name))),
+            "steps: {steps:?}"
+        );
+        assert!(
+            !steps.contains(&AutoMigrateStep::AddTable((&root, &table_name))),
+            "steps: {steps:?}"
+        );
+    }
+
+    #[test]
+    fn migrate_column_with_changed_accessor_name() {
+        let old_def = create_module_def_v10(|builder| {
+            builder
+                .build_table_with_new_type("my_table", ProductType::from([("my_field", AlgebraicType::U64)]), true)
+                .finish();
+        });
+
+        let new_def = create_module_def_v10(|builder| {
+            builder
+                .build_table_with_new_type("my_table", ProductType::from([("myField", AlgebraicType::U64)]), true)
+                .finish();
+        });
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        let steps = &plan.steps[..];
+        let root = NamespacePath::root();
+        let table_name = expect_identifier("my_table");
+        let col_name = expect_identifier("my_field");
+
+        assert!(
+            steps.contains(&AutoMigrateStep::ChangeColumnAccessorName(
+                (&root, &table_name),
+                &col_name
+            )),
             "steps: {steps:?}"
         );
     }
