@@ -1047,17 +1047,18 @@ jobs:
         run: |
           unity editors --installed --format json
           unity install "${UNITY_VERSION}" --yes --accept-eula --non-interactive --format ndjson
-          unity editors path "${UNITY_VERSION}"
+          UNITY_EDITOR_PATH="$(unity editors path "${UNITY_VERSION}")/Editor/Unity"
+          echo "UNITY_EDITOR_PATH=$UNITY_EDITOR_PATH" >> "$GITHUB_ENV"
+          "$UNITY_EDITOR_PATH" -version
 
       - name: Activate Unity license
         env:
-          UNITY_SERVICE_ACCOUNT_ID: ${{ secrets.UNITY_EMAIL }}
-          UNITY_SERVICE_ACCOUNT_SECRET: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
         run: |
           unity license status --format json && exit 0
-          printf '%s' "$UNITY_SERVICE_ACCOUNT_SECRET" | unity auth login --client-id "$UNITY_SERVICE_ACCOUNT_ID" --secret-from-stdin --format json
-          unity license activate --serial "$UNITY_SERIAL" --non-interactive --format json
+          "$UNITY_EDITOR_PATH" -batchmode -nographics -quit -logFile - -username "$UNITY_EMAIL" -password "$UNITY_PASSWORD" -serial "$UNITY_SERIAL"
           unity license status --format json
 
       # Keep this before generation/hydration so ignored build outputs do not affect hashFiles.
