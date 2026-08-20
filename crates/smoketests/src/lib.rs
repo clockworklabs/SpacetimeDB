@@ -56,7 +56,6 @@ pub mod modules;
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
-use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};

@@ -73,11 +73,6 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
-      - name: Cache cargo
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: ./
-
       - name: Install cargo-release
         run: |
           cargo install --path tools/release
@@ -440,3 +435,21 @@ jobs:
 
       - name: Publish GitHub release
         run: cargo-release release github-release ${{ github.event.inputs.release_tag }}
+
+      - name: Trigger release notifications
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          release_json="$(gh release view "$RELEASE_TAG" --repo clockworklabs/SpacetimeDB --json body,url)"
+          body="$(jq -r '.body' <<< "$release_json")"
+          url="$(jq -r '.url' <<< "$release_json")"
+
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg url "$url" \
+            --arg body "$body" \
+            '{release_tag: $tag, release_url: $url, release_body: $body, dry_run: "false"}' \
+          | gh workflow run tag-release.yml --repo clockworklabs/SpacetimeDB --ref master --json

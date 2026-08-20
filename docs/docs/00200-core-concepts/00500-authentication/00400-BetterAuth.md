@@ -58,7 +58,7 @@ The examples below use placeholder URLs:
 Better Auth issuer: https://app.example.com/api/auth
 OAuth client ID:    <YOUR_BETTER_AUTH_CLIENT_ID>
 SpacetimeDB URL:    <YOUR_SPACETIMEDB_URL>
-Module name:        <YOUR_MODULE_NAME>
+Database name:      <YOUR_DATABASE_NAME>
 ```
 
 Use the exact same issuer value everywhere. The issuer must match the token's
@@ -272,7 +272,7 @@ const token = await getBetterAuthOidcToken();
 
 const conn = DbConnection.builder()
   .withUri('<YOUR_SPACETIMEDB_URL>')
-  .withDatabaseName('<YOUR_MODULE_NAME>')
+  .withDatabaseName('<YOUR_DATABASE_NAME>')
   .withToken(token)
   .onConnect((_conn, identity) => {
     console.log(

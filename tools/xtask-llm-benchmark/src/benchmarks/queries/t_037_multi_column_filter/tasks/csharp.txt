@@ -1,7 +1,7 @@
 Write a SpacetimeDB backend module in C# that defines an EventLog table with a multi-column BTree index and a result table, with a reducer that filters events by both category and severity level.
 
 TABLES
-- EventLog
+- EventLog (private)
   - Struct: EventLog
   - Fields:
     - Id: ulong (primary key, AutoInc)
@@ -10,7 +10,7 @@ TABLES
     - Message: string
   - Index: multi-column btree index on (Category, Severity)
 
-- FilteredEvent
+- FilteredEvent (private)
   - Struct: FilteredEvent
   - Fields:
     - EventId: ulong (primary key)
