@@ -47,6 +47,26 @@ const SERVER_GUARANTEES = new Set([
   'ecommerce.spec.concurrency-safety.duplicate-checkout.203b',
 ]);
 
+test('the guest purchase defect uses the reference account lookup helpers', () => {
+  const mutation = manifest.mutations.find(entry =>
+    entry.id === 'guest-purchase-falls-back-to-the-admin-account');
+  assert.ok(mutation);
+  const replacement = mutation.edits.map(edit => edit.replace).join('\n');
+  assert.match(replacement, /getAccountId\(ctx\)/);
+  assert.match(replacement, /ctx\.db\.account\.id\.find\(accountId\)/);
+  assert.doesNotMatch(replacement, /findAccount/);
+});
+
+test('the order ownership defect exposes both orders and their line items', () => {
+  const mutation = manifest.mutations.find(entry =>
+    entry.id === 'order-views-return-every-customers-orders');
+  assert.ok(mutation);
+  assert.equal(mutation.edits.length, 2);
+  const replacements = mutation.edits.map(edit => edit.replace).join('\n');
+  assert.match(replacements, /customerOrder\.iter\(\)/);
+  assert.doesNotMatch(replacements, /accountId\.filter/);
+});
+
 function resolveTargets(mutation) {
   const source = mutationScenario(manifest, mutation).replaceAll('\\', '/')
     .replace(/^tracks\/ecommerce\//, '');

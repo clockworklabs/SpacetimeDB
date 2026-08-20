@@ -447,7 +447,7 @@
       "edits": [
         {
           "find": "export const buyNow = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId }) => {\n  const acc = requireAccount(ctx);",
-          "replace": "export const buyNow = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId }) => {\n  const acc = findAccount(ctx) ?? ctx.db.account.username.find('admin')!;"
+          "replace": "export const buyNow = spacetimedb.reducer({ itemId: t.u64() }, (ctx, { itemId }) => {\n  const accountId = getAccountId(ctx);\n  const acc = (accountId === null ? null : ctx.db.account.id.find(accountId))\n    ?? ctx.db.account.username.find('admin')!;"
         }
       ]
     },
@@ -556,6 +556,10 @@
         {
           "find": "    const rows = [...ctx.db.customerOrder.accountId.filter(accountId)];",
           "replace": "    const rows = [...ctx.db.customerOrder.iter()];"
+        },
+        {
+          "find": "    for (const o of ctx.db.customerOrder.accountId.filter(accountId)) {",
+          "replace": "    for (const o of ctx.db.customerOrder.iter()) {"
         }
       ]
     },
