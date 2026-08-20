@@ -1168,7 +1168,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -1187,7 +1187,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "heck 0.4.1",
  "humantime",
@@ -1198,14 +1198,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-lib"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1218,7 +1218,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "bitflags",
  "either",
@@ -1229,14 +1229,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query-builder"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "spacetimedb-lib",
 ]
 
 [[package]]
 name = "spacetimedb-sats"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "anyhow",
  "arrayvec",
