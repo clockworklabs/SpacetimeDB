@@ -155,50 +155,40 @@ impl Pages {
             .expect("pages len to be greater than number of free slots")
     }
 
-    #[cfg(test)]
-    pub fn free_empty_page(&mut self, page_index: PageIndex) {
+    /// Free the page at `page_index`, leaving `self.pages[page_index.idx()]` as `None`.
+    ///
+    /// Prior to calling this method, `self.pages[page_index.idx()]` must be:
+    /// - Present, i.e. `Some` and not `None`.
+    /// - Empty, i.e. have `page.num_rows() == 0`.
+    ///
+    /// Prior to calling this method, the page's entry should already have been deleted from `self.non_full_pages`.
+    ///
+    /// Calling when in violation of these invariants may result in a panic and/or unexpected behavior.
+    /// If a non-empty page is freed,
+    /// future `unsafe` operations which attempt to read from rows that were previously in that page
+    /// may result in Undefined Behavior.
+    ///
+    /// The freed page will be returned to the `pool`.
+    fn free_empty_page(&mut self, pool: &PagePool, page_index: PageIndex) {
         let page = self.get(page_index).expect("page to free to have been present");
 
-        assert_eq!(page.num_rows(), 0);
+        debug_assert_eq!(page.num_rows(), 0);
 
-        let free_granules = page.available_var_len_granules();
+        // The page should already have been removed from `self.non_full_pages`.
+        debug_assert!({
+            let free_granules = page.available_var_len_granules();
 
-        let removed_from_non_full = self.non_full_pages.remove(&(free_granules, page_index));
-        assert!(removed_from_non_full);
+            !self.non_full_pages.remove(&(free_granules, page_index))
+        });
 
-        self.pages[page_index.idx()] = None;
+        let page = std::mem::replace(&mut self.pages[page_index.idx()], None)
+            .expect("freed page to have been present after we already checked its presence");
+
+        pool.put(page);
 
         let newly_inserted_into_free_pages_set = self.free_page_slots.insert(page_index);
 
-        assert!(newly_inserted_into_free_pages_set)
-    }
-
-    /// Make all pages within `self` clear,
-    /// deleting all rows.
-    //
-    // TODO(delete-free-page): Determine what to do with this method.
-    // It doesn't really make sense given that it clears all pages but doesn't delete them,
-    // but it's only used in benchmarks, and those benchmarks are using it specifically to bypass allocating new pages.
-    #[doc(hidden)] // Used in benchmarks.
-    pub fn clear(&mut self) {
-        // Clear every page.
-        for page in &mut self.pages {
-            if let Some(page) = page {
-                page.clear();
-            }
-        }
-        // Mark every page non-full.
-        self.non_full_pages = (0..self.pages.len())
-            // We could probably compute the number of available granules once and use it for all pages,
-            // rather than calling the method on each page,
-            // but we'd have to do some amount of reasoning to demonstrate it was correct
-            // based on the definition of `Page::clear`,
-            // and why bother?
-            .filter_map(|idx| {
-                let idx = PageIndex(idx as u64);
-                self.get(idx).map(|page| (page.available_var_len_granules(), idx))
-            })
-            .collect();
+        debug_assert!(newly_inserted_into_free_pages_set)
     }
 
     /// Get a reference to fixed-len row data.
@@ -233,16 +223,6 @@ impl Pages {
 
             Ok(new_idx)
         }
-    }
-
-    /// Reserve a new, initially empty page.
-    // TODO(delete-free-page): Determine what to do with this method.
-    // It doesn't really make sense in a world where `Pages` doesn't contain empty `Page`s,
-    // but it's only used for tests and benches.
-    pub fn reserve_empty_page(&mut self, pool: &PagePool, fixed_row_size: Size) -> Result<PageIndex, Error> {
-        let idx = self.allocate_new_page(pool, fixed_row_size)?;
-        self.record_page_non_full(idx, fixed_row_size);
-        Ok(idx)
     }
 
     /// Call `f` with a reference to a page which satisfies
@@ -356,11 +336,12 @@ impl Pages {
         var_len_visitor: &impl VarLenMembers,
         fixed_row_size: Size,
         row_ptr: RowPointer,
+        page_pool: &PagePool,
         blob_store: &mut dyn BlobStore,
     ) -> BlobNumBytes {
         let page_index = row_ptr.page_index();
 
-        self.with_updating_non_full_pages(page_index, fixed_row_size, |this| {
+        self.with_updating_non_full_pages_and_maybe_freeing_page(page_pool, page_index, fixed_row_size, |this| {
             let page = this
                 .get_mut(page_index)
                 .expect("page containing `row_ptr` with validity safety invariant to be present");
@@ -377,60 +358,51 @@ impl Pages {
 
     /// Collect information about the page `self[page_index]` sufficient to update [`Self::non_full_pages`],
     /// then run `body` to update the page, and finally update [`Self::non_full_pages`] for its new fullness and capacity.
+    /// Free the page and return it to the `pool` if it is empty after the `body`.
     ///
     /// `body` should not update any pages other than the one identified by `page_index`.
     ///
     /// If `page_index` does not refer to a present page, i.e. `self.pages[page_index.idx]` is `None`,
     /// this method will panic.
-    fn with_updating_non_full_pages<Ret>(
+    fn with_updating_non_full_pages_and_maybe_freeing_page<Ret>(
         &mut self,
+        pool: &PagePool,
         page_index: PageIndex,
         fixed_row_size: Size,
         body: impl FnOnce(&mut Self) -> Ret,
     ) -> Ret {
         let page = self
             .get(page_index)
-            .expect("page to be present in `with_updating_non_full_pages`");
+            .expect("page to be present in `with_updating_non_full_pages_and_maybe_freeing_page`");
 
         let full_before = page.is_full(fixed_row_size);
         let available_granules_before = page.available_var_len_granules();
 
         let ret = body(self);
 
-        self.update_page_non_full(available_granules_before, full_before, page_index, fixed_row_size);
+        let page = self
+            .get(page_index)
+            .expect("page to remain present in `with_updating_non_full_pages_and_maybe_freeing_page` after it was checked earlier");
+
+        if page.is_empty() {
+            self.remove_non_full_marker(available_granules_before, full_before, page_index);
+            self.free_empty_page(pool, page_index);
+        } else {
+            self.remove_non_full_marker(available_granules_before, full_before, page_index);
+            self.record_page_non_full(page_index, fixed_row_size);
+        }
 
         ret
     }
 
-    /// Update [`Self::non_full_pages`] to change the number of var-len granules available in the page at `self[page_index]`,
-    /// first deleting any old entry and then re-inserting the new entry.
-    ///
-    /// The entry for `page` in `self.non_full_granules` should not have been deleted prior to calling this method.
-    /// If the entry has already been deleted or was never present, instead use [`Self::record_page_non_full`].
-    ///
-    /// `available_granules_before` should be the previous count from [`Page::available_var_len_granules`],
-    /// prior to whatever operation made space available in the page.
-    /// This is necessary because `non_full_pages` is a `BTreeSet` sorted by `(available_granules, page_index)`,
-    /// so locating the `page_index` without the `available_granules` would be slow.
-    ///
-    /// `full_before` should be the result of [`Page::is_full`] prior to whatever operation made space available in the page.
-    /// This is necessary because `non_full_pages` does not store full pages (as the name implies),
-    /// so we should not attempt to delete the previous entry if the page was previously full.
-    fn update_page_non_full(
-        &mut self,
-        available_granules_before: usize,
-        full_before: bool,
-        page_index: PageIndex,
-        fixed_row_size: Size,
-    ) {
+    /// Remove a page's pre-existing entry in `self.non_full_pages`.
+    fn remove_non_full_marker(&mut self, available_granules_before: usize, full_before: bool, page_index: PageIndex) {
         if full_before {
             debug_assert!(!self.non_full_pages.remove(&(available_granules_before, page_index)));
         } else {
             let _prev = self.non_full_pages.remove(&(available_granules_before, page_index));
             debug_assert!(_prev);
         }
-
-        self.record_page_non_full(page_index, fixed_row_size);
     }
 
     /// Record the number of available var-len granules in the page at `self[page_index]` into [`Self::non_full_pages`].

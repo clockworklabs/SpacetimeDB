@@ -250,14 +250,14 @@ mod test {
         let a0 = product![AlgebraicValue::sum(0, u64::MAX.into())];
         let (_, a0_rr) = table_a.insert(&pool, bs, &a0).unwrap();
         let a0_ptr = a0_rr.pointer();
-        assert!(table_a.delete(bs, a0_ptr, |_| {}).is_some());
+        assert!(table_a.delete(&pool, bs, a0_ptr, |_| {}).is_some());
 
         // Insert u64::ALTERNATING_BIT_PATTERN with tag 0 and then delete it.
         let b0 = 0b01010101_01010101_01010101_01010101_01010101_01010101_01010101_01010101u64;
         let b0 = product![AlgebraicValue::sum(0, b0.into())];
         let (_, b0_rr) = table_b.insert(&pool, bs, &b0).unwrap();
         let b0_ptr = b0_rr.pointer();
-        assert!(table_b.delete(bs, b0_ptr, |_| {}).is_some());
+        assert!(table_b.delete(&pool, bs, b0_ptr, |_| {}).is_some());
 
         // Insert two identical rows `a1` and `b2` into the tables.
         // They should occupy the spaces of the previous rows.
