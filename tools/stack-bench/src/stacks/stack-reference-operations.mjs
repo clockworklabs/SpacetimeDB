@@ -35,7 +35,7 @@ async function deployHostedReference(input, { databaseUrl, extraEnv = {}, prepar
   helpers.startDetached(container, `/app/${metadata.server.directory}`, 'reference-server', serverEnv);
   helpers.startDetached(container, `/app/${metadata.client.directory}`, 'reference-client', {
     API_PORT: String(ports.express), VITE_PORT: String(ports.vite),
-  }, { networkVisible: true });
+  }, { networkVisible: true, port: ports.vite });
   await helpers.waitFor(`http://127.0.0.1:${ports.express}${track.restartProbe}`, 180_000,
     `${args.backend} API`, () => helpers.containerLogs(container, 'reference-server'));
   helpers.phase('reference server ready');
@@ -96,7 +96,7 @@ export async function deploySpacetimeReference({ args, metadata, lease, containe
   helpers.startDetached(container, `/app/${metadata.client.directory}`, 'reference-client', {
     VITE_MODULE_NAME: module, VITE_SPACETIMEDB_URI: lease.resources.serverUri,
     VITE_PORT: String(ports.vite),
-  }, { networkVisible: true });
+  }, { networkVisible: true, port: ports.vite });
   await helpers.waitFor(`http://127.0.0.1:${ports.vite}`, 180_000, 'Spacetime client',
     () => helpers.containerLogs(container, 'reference-client'));
 }

@@ -74,9 +74,14 @@ function docker(container, cwd, command, commandArgs = [], env = {}) {
     { encoding: 'utf8', stdio: 'pipe', maxBuffer: 64 * 1024 * 1024 });
 }
 
-export function referenceDevCommand(logName, { networkVisible = false } = {}) {
+export function referenceDevCommand(logName, { networkVisible = false, port = null } = {}) {
   if (!/^[a-z0-9-]+$/.test(logName)) throw new Error(`unsafe reference log name ${logName}`);
-  const networkArgs = networkVisible ? ' -- --host 0.0.0.0' : '';
+  if (port !== null && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+    throw new Error(`invalid reference port ${port}`);
+  }
+  const cliArgs = [networkVisible ? '--host 0.0.0.0' : null,
+    port === null ? null : `--port ${port} --strictPort`].filter(Boolean);
+  const networkArgs = cliArgs.length > 0 ? ` -- ${cliArgs.join(' ')}` : '';
   return `exec npm run dev${networkArgs} > /tmp/${logName}.log 2>&1`;
 }
 

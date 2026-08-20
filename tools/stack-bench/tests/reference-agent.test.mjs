@@ -43,6 +43,10 @@ test('reference clients are explicitly reachable outside their build container',
     'exec npm run dev > /tmp/reference-server.log 2>&1');
   assert.equal(referenceDevCommand('reference-client', { networkVisible: true }),
     'exec npm run dev -- --host 0.0.0.0 > /tmp/reference-client.log 2>&1');
+  assert.equal(referenceDevCommand('reference-client', { networkVisible: true, port: 6475 }),
+    'exec npm run dev -- --host 0.0.0.0 --port 6475 --strictPort > /tmp/reference-client.log 2>&1');
+  assert.throws(() => referenceDevCommand('reference-client', { port: 0 }),
+    /invalid reference port 0/);
   assert.throws(() => referenceDevCommand('../unsafe'), /unsafe reference log name/);
 });
 
