@@ -146,6 +146,7 @@ impl Node {
 /// is considered a test hang.
 pub struct Runtime {
     executor: Arc<Executor>,
+    io: Option<io::Driver>,
 }
 
 impl Runtime {
@@ -157,14 +158,15 @@ impl Runtime {
     /// Create a simulation runtime from an explicit runtime configuration.
     pub fn with_config(config: RuntimeConfig) -> Self {
         Self {
-            executor: Arc::new(Executor::new(config)),
+            executor: Arc::new(Executor::new(config.seed)),
+            io: config.io.map(io::Driver::new),
         }
     }
 
     // TODO: This is a stopgap to allow submission of I/O tasks. We probably
     // want the user-facing API to hide this.
-    pub fn io(&self) -> Option<&SimulatorIO> {
-        self.executor.io.as_ref().map(|driver| driver.io())
+    pub fn io(&self) -> Option<SimulatorIO> {
+        self.io.as_ref().map(|driver| driver.io().clone())
     }
 
     /// Drive a top-level future to completion on the simulation executor.
@@ -172,6 +174,7 @@ impl Runtime {
     /// While the future runs, spawned tasks share the same deterministic
     /// scheduler, timer wheel, and runtime RNG.
     pub fn block_on<F: Future>(&mut self, future: F) -> F::Output {
+        let _io_guard = self.executor.enter_io_driver(self.io.as_ref());
         self.executor.block_on(future)
     }
 
@@ -321,6 +324,11 @@ impl Handle {
         self.executor.spawn_local_on(node, future)
     }
 
+    /// Drive a future on this executor, reusing the currently entered local I/O driver.
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        self.executor.block_on(future)
+    }
+
     /// Return the current virtual time for this runtime.
     pub fn now(&self) -> Duration {
         self.executor.time.now()
@@ -378,27 +386,27 @@ impl Handle {
 struct Executor {
     queue: Receiver,
     sender: Sender,
+    current_io_drivers: Mutex<Vec<usize>>,
     nodes: spin::Mutex<BTreeMap<NodeId, Arc<NodeRecord>>>,
     next_node: AtomicU64,
     rng: Rng,
     time: TimeHandle,
-    io: Option<io::Driver>,
 }
 
 impl Executor {
     /// Construct a fresh executor with one default `MAIN` node.
-    fn new(config: RuntimeConfig) -> Self {
+    fn new(seed: u64) -> Self {
         let queue = Queue::new();
         let mut nodes = BTreeMap::new();
         nodes.insert(NodeId::MAIN, Arc::new(NodeRecord::default()));
         Self {
             queue: queue.receiver(),
             sender: queue.sender(),
+            current_io_drivers: Mutex::new(Vec::new()),
             nodes: spin::Mutex::new(nodes),
             next_node: AtomicU64::new(1),
-            rng: Rng::new(config.seed),
+            rng: Rng::new(seed),
             time: TimeHandle::new(),
-            io: config.io.map(io::Driver::new),
         }
     }
 
@@ -553,11 +561,29 @@ impl Executor {
     }
 
     fn drive_io(&self) -> bool {
-        if let Some(io) = &self.io {
+        if let Some(io) = self.current_io_driver() {
             io.tick(&self.rng)
         } else {
             false
         }
+    }
+
+    fn current_io_driver(&self) -> Option<&io::Driver> {
+        let ptr = *self.current_io_drivers.lock().last()?;
+        if ptr == 0 {
+            None
+        } else {
+            // SAFETY: Driver pointers are pushed only by `enter_io_driver`.
+            // Its guard pops the pointer before the borrowed runtime driver can
+            // be dropped, and the returned reference does not escape this call.
+            Some(unsafe { &*(ptr as *const io::Driver) })
+        }
+    }
+
+    fn enter_io_driver(&self, io: Option<&io::Driver>) -> CurrentIoDriverGuard<'_> {
+        let ptr = io.map_or(0, |driver| driver as *const _ as usize);
+        self.current_io_drivers.lock().push(ptr);
+        CurrentIoDriverGuard { executor: self, ptr }
     }
 
     /// Look up the record for a node, panicking if the node is unknown.
@@ -571,6 +597,18 @@ impl Executor {
 
     fn assert_known_node(&self, node: NodeId) {
         let _ = self.node_record(node);
+    }
+}
+
+struct CurrentIoDriverGuard<'a> {
+    executor: &'a Executor,
+    ptr: usize,
+}
+
+impl Drop for CurrentIoDriverGuard<'_> {
+    fn drop(&mut self) {
+        let current = self.executor.current_io_drivers.lock().pop();
+        assert_eq!(current, Some(self.ptr), "current simulated I/O stack corrupted");
     }
 }
 

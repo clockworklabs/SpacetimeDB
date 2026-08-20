@@ -7,11 +7,11 @@
 
 #![allow(clippy::disallowed_macros)]
 
-use core::{cell::Cell, future::Future};
+use core::{cell::RefCell, future::Future, marker::PhantomData};
 use std::boxed::Box;
 use std::sync::OnceLock;
 
-use crate::sim;
+use crate::{sim, Handle};
 
 // Public entry points.
 
@@ -21,7 +21,8 @@ use crate::sim;
 /// tests that execute inside a hosted process. While the future runs, this
 /// marks the thread as inside simulation so OS thread spawns can be rejected.
 pub fn block_on<F: Future>(runtime: &mut sim::Runtime, future: F) -> F::Output {
-    let _guard = enter();
+    let _guard = enter(Handle::simulation(runtime.handle()));
+    let _io_guard = enter_io(runtime.io());
     runtime.block_on(future)
 }
 
@@ -70,31 +71,100 @@ fn panic_with_seed(seed: u64, payload: Box<dyn core::any::Any + Send>) -> ! {
 
 // Ambient hosted state used only while sim_std is driving a simulation runtime.
 //
-// The simulator itself stays explicit-handle based. This flag only marks the
-// current OS thread as simulation-owned so host thread creation and randomness
-// hooks can reject accidental escapes from deterministic simulation.
+// The simulator itself stays explicit-handle based. These thread-local slots
+// let production-shaped APIs resolve to the entered simulation context while
+// hosted DST code runs, and let OS hooks reject escapes from deterministic
+// execution.
 thread_local! {
-    static IN_SIMULATION: Cell<bool> = const { Cell::new(false) };
+    static SIM_RUNTIME: RefCell<Option<Handle>> = const { RefCell::new(None) };
+    static SIM_IO: RefCell<Option<sim::io::SimulatorIO>> = const { RefCell::new(None) };
 }
 
 #[must_use = "simulation runtime context exits immediately unless the guard is held"]
-struct EnterGuard;
+pub struct EnterGuard {
+    // `active` means this guard installed the thread-local runtime and is
+    // responsible for clearing it on drop. Reentrant enters for the same
+    // simulation runtime return an inactive guard so sync helper functions can
+    // call `runtime.enter()` inside an already-entered DST run without ending
+    // the outer context when the helper returns.
+    active: bool,
+    _not_send: PhantomData<std::rc::Rc<()>>,
+}
 
-fn enter() -> EnterGuard {
-    IN_SIMULATION.with(|current| {
-        assert!(!current.replace(true), "nested hosted simulation block_on");
+struct IoGuard {
+    previous: Option<sim::io::SimulatorIO>,
+}
+
+/// Enter a simulated runtime on the current OS thread.
+///
+/// This is hosted glue for DST and tests. It intentionally lives outside
+/// runtime-core because `thread_local!` and process hooks are std-only.
+pub(crate) fn enter(handle: Handle) -> EnterGuard {
+    assert!(
+        matches!(&handle, Handle::Simulation(_)),
+        "sim_std::enter requires a simulation runtime handle"
+    );
+    let active = SIM_RUNTIME.with(|current| {
+        let mut current = current.borrow_mut();
+        if current.is_some() {
+            return false;
+        }
+
+        *current = Some(handle);
+        true
     });
-    EnterGuard
+    EnterGuard {
+        active,
+        _not_send: PhantomData,
+    }
+}
+
+fn enter_io(io: Option<sim::io::SimulatorIO>) -> IoGuard {
+    let previous = SIM_IO.with(|current| current.replace(io));
+    IoGuard { previous }
+}
+
+/// Return the simulated runtime currently entered on this OS thread, if any.
+pub fn try_current_handle() -> Option<Handle> {
+    SIM_RUNTIME.with(|current| current.borrow().clone())
+}
+
+/// Return the simulated runtime currently entered on this OS thread.
+pub fn current_handle() -> Handle {
+    try_current_handle().expect("simulation runtime API used outside runtime.enter")
+}
+
+/// Return the simulator I/O handle entered by the current simulation runtime.
+pub fn current_io() -> sim::io::SimulatorIO {
+    try_current_io().expect("current_io called outside a simulation runtime with I/O enabled")
+}
+
+/// Return the current simulator I/O handle, if the active runtime has one.
+pub fn try_current_io() -> Option<sim::io::SimulatorIO> {
+    SIM_IO.with(|current| current.borrow().clone())
 }
 
 fn in_simulation() -> bool {
-    IN_SIMULATION.with(Cell::get)
+    try_current_handle().is_some()
 }
 
 impl Drop for EnterGuard {
     fn drop(&mut self) {
-        IN_SIMULATION.with(|current| {
-            assert!(current.replace(false), "simulation context guard dropped without enter");
+        if !self.active {
+            return;
+        }
+
+        SIM_RUNTIME.with(|current| {
+            let old = current.borrow_mut().take();
+            assert!(old.is_some(), "simulation context guard dropped without enter");
+        });
+    }
+}
+
+impl Drop for IoGuard {
+    fn drop(&mut self) {
+        SIM_IO.with(|current| {
+            current.replace(self.previous.take());
         });
     }
 }

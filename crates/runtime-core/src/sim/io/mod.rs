@@ -1,9 +1,9 @@
 use alloc::{
     boxed::Box,
     collections::{BTreeMap, VecDeque},
-    sync::Arc,
+    rc::Rc,
 };
-use core::{num::NonZeroUsize, result::Result};
+use core::{cell::RefCell, num::NonZeroUsize, result::Result};
 use futures_channel::oneshot;
 
 use crate::{
@@ -47,62 +47,56 @@ impl From<fs::Error> for Error {
 
 #[derive(Clone, Default)]
 pub struct SimulatorIO {
-    // TODO: We make `SimulatorIO` `Send + Sync` for now, because
-    // [crate::sim::executor::Handle] is just `Arc<Executor>`. This means that a
-    // future carrying a handle can't be `spawn`ed, because spawning requires
-    // the future to be `Send`.
-    //
-    // We should fix this at some point, so below can become `Rc<RefCell<_>>`.
-    inner: Arc<spin::Mutex<SimulatorIOInner>>,
+    inner: Rc<RefCell<SimulatorIOInner>>,
 }
 
 impl SimulatorIO {
     /// Returns `true` if there are entries in either the submission or
     /// completion queues.
     pub fn pending(&self) -> bool {
-        let inner = self.inner.lock();
+        let inner = self.inner.borrow();
         inner.submissions.len() + inner.completions.len() > 0
     }
 
     /// Number of entries in the submission queue.
     pub fn pending_submissions(&self) -> usize {
-        self.inner.lock().submissions.len()
+        self.inner.borrow().submissions.len()
     }
 
     /// Number of entries in the completion queue.
     pub fn pending_completions(&self) -> usize {
-        self.inner.lock().completions.len()
+        self.inner.borrow().completions.len()
     }
 
     /// Run the submission at the front of the queue (if any), and complete the
     /// completion at the front of the queue (if any).
     pub fn tick(&self) -> bool {
-        self.inner.lock().tick()
+        self.inner.borrow_mut().tick()
     }
 
     /// Execute `sqe`.
     pub fn execute(&self, sqe: Box<dyn Submission>) {
-        self.inner.lock().execute(sqe);
+        self.inner.borrow_mut().execute(sqe);
     }
 
     /// Remove and return the submission at the front of the queue, if any.
     pub fn next_submission(&self) -> Option<Box<dyn Submission>> {
-        self.inner.lock().next_submission()
+        self.inner.borrow_mut().next_submission()
     }
 
     /// Remove and return a random submission, or `None` if the queue is empty.
     pub fn random_submission(&self, rng: &Rng) -> Option<Box<dyn Submission>> {
-        self.inner.lock().random_submission(rng)
+        self.inner.borrow_mut().random_submission(rng)
     }
 
     /// Remove and return the completion at the front of the queue, if any.
     pub fn next_completion(&self) -> Option<Box<dyn Completion>> {
-        self.inner.lock().next_completion()
+        self.inner.borrow_mut().next_completion()
     }
 
     /// Remove and return a random completion, or `None` if the queue is empty.
     pub fn random_completion(&self, rng: &Rng) -> Option<Box<dyn Completion>> {
-        self.inner.lock().random_completion(rng)
+        self.inner.borrow_mut().random_completion(rng)
     }
 
     async fn submit_and_wait<T>(
@@ -110,7 +104,7 @@ impl SimulatorIO {
         op: impl FnOnce(oneshot::Sender<T>) -> Box<dyn Submission>,
     ) -> Result<T, oneshot::Canceled> {
         let (tx, rx) = oneshot::channel();
-        self.inner.lock().submit(op(tx));
+        self.inner.borrow_mut().submit(op(tx));
         rx.await
     }
 }
@@ -154,7 +148,7 @@ impl SpacetimeIO for SimulatorIO {
         } else {
             let (tx, rx) = oneshot::channel();
             for op in op::write_at(fd, buf, offset, tx) {
-                self.inner.lock().submit(op);
+                self.inner.borrow_mut().submit(op);
             }
             rx.await.expect("`write_all_at` future cancelled")
         }
@@ -183,7 +177,7 @@ impl SpacetimeIO for SimulatorIO {
         } else {
             let (tx, rx) = oneshot::channel();
             for op in op::read_at(fd, buf, offset, tx) {
-                self.inner.lock().submit(op);
+                self.inner.borrow_mut().submit(op);
             }
             rx.await.expect("`read_exact_at` future cancelled")
         }
@@ -270,7 +264,7 @@ mod tests {
     #[test]
     fn create_file() {
         let mut rt = Runtime::with_config(RuntimeConfig::default().enable_io());
-        let io = rt.io().cloned().unwrap();
+        let io = rt.io().unwrap();
 
         let fd = rt
             .block_on(io.create_file("/data/test", 2 * SECTOR_SIZE as u64))
@@ -307,7 +301,7 @@ mod tests {
     #[test]
     fn write_read_roundtrip() {
         let mut rt = Runtime::with_config(RuntimeConfig::default().enable_io());
-        let io = rt.io().cloned().unwrap();
+        let io = rt.io().unwrap();
 
         let fd = rt
             .block_on(io.create_file("/data/test", 2 * SECTOR_SIZE as u64))
@@ -323,5 +317,21 @@ mod tests {
             .unwrap();
 
         assert!(buf.0.iter().all(|&b| b == 22));
+    }
+
+    #[test]
+    fn nested_handle_block_on_drives_runtime_io() {
+        let mut rt = Runtime::with_config(RuntimeConfig::default().enable_io());
+        let handle = rt.handle();
+        let io = rt.io().unwrap();
+
+        let len = rt.block_on(async move {
+            handle
+                .block_on(io.create_file("/data/nested", 2 * SECTOR_SIZE as u64))
+                .unwrap()
+                .len()
+        });
+
+        assert_eq!(len, 2 * SECTOR_SIZE as u64);
     }
 }

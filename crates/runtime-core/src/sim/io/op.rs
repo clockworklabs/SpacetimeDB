@@ -11,7 +11,7 @@ use super::{fs, Error};
 use crate::io::{AlignedBytes, ErrorWith, SECTOR_SIZE};
 
 /// An operation that can be submitted to the [super::SimulatorIO] driver.
-pub trait Submission: Send + Any {
+pub trait Submission: Any {
     /// Run the operations with mutable access to the currently registered
     /// [fs::File]s.
     ///
@@ -36,7 +36,7 @@ pub trait Submission: Send + Any {
 
 /// An object containing the result of executing a [Submission], as well as a
 /// handle to resolve a future waiting on the outcome of the operation.
-pub trait Completion: Send {
+pub trait Completion {
     /// Resolve the future waiting on the outcome of the operation.
     fn complete(self: Box<Self>);
 }
@@ -150,11 +150,11 @@ struct GenericCompletion<T> {
     on_complete: OnComplete<T>,
 }
 
-fn completion<T: Send + 'static>(result: T, on_complete: OnComplete<T>) -> Box<dyn Completion> {
+fn completion<T: 'static>(result: T, on_complete: OnComplete<T>) -> Box<dyn Completion> {
     Box::new(GenericCompletion { result, on_complete })
 }
 
-impl<T: Send> Completion for GenericCompletion<T> {
+impl<T> Completion for GenericCompletion<T> {
     fn complete(self: Box<Self>) {
         let Self {
             result, on_complete, ..

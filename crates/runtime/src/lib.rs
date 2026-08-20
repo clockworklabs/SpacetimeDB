@@ -210,6 +210,28 @@ impl<T> Unpin for JoinHandle<T> {}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RuntimeTimeout;
 
+#[must_use = "runtime context exits immediately unless the guard is held"]
+pub struct EnterGuard<'a> {
+    _inner: EnterGuardInner<'a>,
+}
+
+#[allow(dead_code)]
+enum EnterGuardInner<'a> {
+    Tokio(tokio::runtime::EnterGuard<'a>),
+    #[cfg(feature = "simulation")]
+    Simulation(sim_std::EnterGuard),
+}
+
+impl Drop for EnterGuard<'_> {
+    fn drop(&mut self) {
+        match &self._inner {
+            EnterGuardInner::Tokio(_) => {}
+            #[cfg(feature = "simulation")]
+            EnterGuardInner::Simulation(_) => {}
+        }
+    }
+}
+
 impl fmt::Display for RuntimeTimeout {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("runtime operation timed out")
@@ -218,6 +240,75 @@ impl fmt::Display for RuntimeTimeout {
 
 impl std::error::Error for RuntimeTimeout {}
 
+impl fmt::Debug for Handle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Tokio(_) => f.write_str("Handle::Tokio"),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(_) => f.write_str("Handle::Simulation"),
+        }
+    }
+}
+
+impl JoinError {
+    pub fn is_panic(&self) -> bool {
+        match &self.inner {
+            JoinErrorInner::Tokio(err) => err.is_panic(),
+            #[cfg(feature = "simulation")]
+            JoinErrorInner::Simulation(_) => false,
+        }
+    }
+}
+
+/// Spawn a task on the current runtime.
+pub fn spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
+    Handle::current().spawn(future)
+}
+
+/// Spawn a non-`Send` task on the current runtime.
+///
+/// On Tokio, this requires a `tokio::task::LocalSet` or local runtime context.
+pub fn spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> JoinHandle<T> {
+    Handle::current().spawn_local(future)
+}
+
+/// Run a future in a local task context on the current runtime.
+pub async fn run_until_local<F: Future>(future: F) -> F::Output {
+    Handle::current().run_until_local(future).await
+}
+
+/// Run blocking work on the current runtime.
+///
+/// Tokio runs `f` on its blocking thread pool. The simulation backend runs `f`
+/// as a normal simulated task on the single executor thread, so it preserves
+/// deterministic scheduling but does not provide blocking-pool parallelism.
+pub async fn spawn_blocking<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R + Send + 'static,
+    R: Send + 'static,
+{
+    Handle::current().spawn_blocking(f).await
+}
+
+/// Spawn a task on the current Tokio runtime, bypassing simulation enter state.
+pub fn tokio_spawn<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
+    JoinHandle {
+        inner: JoinHandleInner::Tokio(tokio::spawn(future)),
+    }
+}
+
+/// Spawn a non-`Send` task on the current Tokio local task context, bypassing simulation enter state.
+pub fn tokio_spawn_local<T: 'static>(future: impl Future<Output = T> + 'static) -> JoinHandle<T> {
+    JoinHandle {
+        inner: JoinHandleInner::Tokio(tokio::task::spawn_local(future)),
+    }
+}
+
+/// Sleep on the currently active runtime.
+pub async fn sleep(duration: Duration) {
+    Handle::current().sleep(duration).await
+}
+
 impl Handle {
     pub fn tokio(handle: TokioHandle) -> Self {
         Self::Tokio(handle)
@@ -225,6 +316,16 @@ impl Handle {
 
     pub fn tokio_current() -> Self {
         Self::tokio(TokioHandle::current())
+    }
+
+    /// Return the runtime handle active on this OS thread.
+    pub fn current() -> Handle {
+        #[cfg(feature = "simulation")]
+        if let Some(handle) = sim_std::try_current_handle() {
+            return handle;
+        }
+
+        Handle::tokio_current()
     }
 }
 
@@ -236,6 +337,18 @@ impl Handle {
 }
 
 impl Handle {
+    pub fn enter(&self) -> EnterGuard<'_> {
+        match self {
+            Self::Tokio(handle) => EnterGuard {
+                _inner: EnterGuardInner::Tokio(handle.enter()),
+            },
+            #[cfg(feature = "simulation")]
+            Self::Simulation(_) => EnterGuard {
+                _inner: EnterGuardInner::Simulation(sim_std::enter(self.clone())),
+            },
+        }
+    }
+
     pub fn spawn<T: Send + 'static>(&self, future: impl Future<Output = T> + Send + 'static) -> JoinHandle<T> {
         match self {
             Self::Tokio(handle) => JoinHandle {
@@ -243,8 +356,36 @@ impl Handle {
             },
             #[cfg(feature = "simulation")]
             Self::Simulation(handle) => JoinHandle {
-                inner: JoinHandleInner::Simulation(handle.spawn_on(sim::NodeId::MAIN, future)),
+                inner: JoinHandleInner::Simulation(handle.spawn_local_on(sim::NodeId::MAIN, future)),
             },
+        }
+    }
+
+    pub fn spawn_local<T: 'static>(&self, future: impl Future<Output = T> + 'static) -> JoinHandle<T> {
+        match self {
+            Self::Tokio(_) => JoinHandle {
+                inner: JoinHandleInner::Tokio(tokio::task::spawn_local(future)),
+            },
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => JoinHandle {
+                inner: JoinHandleInner::Simulation(handle.spawn_local_on(sim::NodeId::MAIN, future)),
+            },
+        }
+    }
+
+    pub async fn run_until_local<F: Future>(&self, future: F) -> F::Output {
+        match self {
+            Self::Tokio(_) => tokio::task::LocalSet::new().run_until(future).await,
+            #[cfg(feature = "simulation")]
+            Self::Simulation(_) => future.await,
+        }
+    }
+
+    pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        match self {
+            Self::Tokio(handle) => handle.block_on(future),
+            #[cfg(feature = "simulation")]
+            Self::Simulation(handle) => handle.block_on(future),
         }
     }
 
@@ -267,7 +408,7 @@ impl Handle {
             // the simulation backend.
             #[cfg(feature = "simulation")]
             Self::Simulation(handle) => handle
-                .spawn_on(sim::NodeId::MAIN, async move { f() })
+                .spawn_local_on(sim::NodeId::MAIN, async move { f() })
                 .await
                 .expect("simulation spawn_blocking task should not be cancelled"),
         }
@@ -306,6 +447,20 @@ mod tests {
         Arc,
     };
 
+    #[test]
+    fn run_until_local_allows_tokio_spawn_local() {
+        let rt = TokioRuntimeBuilder::new_current_thread().enable_all().build().unwrap();
+
+        let value = rt.block_on(crate::run_until_local(async {
+            let captured = std::rc::Rc::new(17);
+            crate::spawn_local(async move { *captured })
+                .await
+                .expect("spawned local task should complete")
+        }));
+
+        assert_eq!(value, 17);
+    }
+
     #[cfg(feature = "simulation")]
     #[test]
     fn dropping_joinhandle_does_not_cancel_task_in_simulation() {
@@ -329,6 +484,42 @@ mod tests {
         });
 
         assert!(flag.load(Ordering::Acquire));
+    }
+
+    #[cfg(feature = "simulation")]
+    #[test]
+    fn run_until_local_allows_simulation_spawn_local() {
+        use crate::sim::Runtime;
+        let mut rt = Runtime::new(12);
+        let handle = Handle::simulation(rt.handle());
+        let _entered = handle.enter();
+
+        let value = rt.block_on(crate::run_until_local(async {
+            let captured = std::rc::Rc::new(19);
+            crate::spawn_local(async move { *captured })
+                .await
+                .expect("spawned local task should complete")
+        }));
+
+        assert_eq!(value, 19);
+    }
+
+    #[cfg(feature = "simulation")]
+    #[test]
+    fn sim_std_block_on_enters_current_io() {
+        use crate::sim::{io::SECTOR_SIZE, Runtime, RuntimeConfig};
+        use spacetimedb_runtime_core::io::SpacetimeIO;
+
+        let mut rt = Runtime::with_config(RuntimeConfig::default().enable_io());
+        let len = crate::sim_std::block_on(&mut rt, async {
+            crate::sim_std::current_io()
+                .create_file("/data/current", 2 * SECTOR_SIZE as u64)
+                .await
+                .unwrap()
+                .len()
+        });
+
+        assert_eq!(len, 2 * SECTOR_SIZE as u64);
     }
 
     #[cfg(feature = "simulation")]
