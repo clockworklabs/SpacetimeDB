@@ -62,7 +62,7 @@
       ]
     },
     {
-      "id": "correct-signin-is-refused",
+      "id": "signout-keeps-the-account-session",
       "scenario": "tracks/ecommerce/scenarios/01-account-signout-2.4.0.json",
       "targets": [
         {
@@ -70,12 +70,12 @@
           "criterion": "1d"
         }
       ],
-      "desc": "Preserve wrong-password refusal but reject every otherwise valid sign-in, preventing a signed-out account from returning.",
+      "desc": "Leave the current account session in place when the visitor signs out.",
       "file": "backend/spacetimedb/src/index.ts",
       "edits": [
         {
-          "find": "    if (!acc || acc.passwordHash !== hashPassword(password)) {\n      throw new SenderError('Incorrect username or password.');\n    }\n\n    const existingSession",
-          "replace": "    if (!acc || acc.passwordHash !== hashPassword(password)) {\n      throw new SenderError('Incorrect username or password.');\n    }\n    throw new SenderError('Sign in is unavailable.');\n\n    const existingSession"
+          "find": "  if (existingSession) ctx.db.session.identity.delete(ctx.sender);",
+          "replace": "  // mutant: sign out keeps the current account session"
         }
       ]
     },

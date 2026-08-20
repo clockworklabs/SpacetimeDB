@@ -86,6 +86,18 @@ test('SpacetimeDB L2 1.5 candidate covers every scored cumulative check honestly
   assert.match(manifest.note, /reducer atomic serialization is structural/);
   assert.match(manifest.note, /does not claim to create or detect a backend lost-update interleaving/);
 
+  const signout = manifest.mutations.find(mutation =>
+    mutation.id === 'signout-keeps-the-account-session');
+  assert(signout, 'the sign-out defect must remain explicit and source-local');
+  assert.equal(signout.scenario,
+    'tracks/ecommerce/scenarios/01-account-signout-2.4.0.json');
+  assert.deepEqual(signout.targets, [{ feature: 1, criterion: '1d' }]);
+  assert.equal(signout.file, 'backend/spacetimedb/src/index.ts');
+  assert.deepEqual(signout.edits, [{
+    find: '  if (existingSession) ctx.db.session.identity.delete(ctx.sender);',
+    replace: '  // mutant: sign out keeps the current account session',
+  }]);
+
   const covered = new Set();
   for (const mutation of manifest.mutations) {
     const targets = resolveTargets(mutation);
