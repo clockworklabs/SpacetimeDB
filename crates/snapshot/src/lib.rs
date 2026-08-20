@@ -187,6 +187,8 @@ pub const INVALID_SNAPSHOT_DIR_EXT: &str = "invalid_snapshot";
 /// File extension of snapshots which have been archived
 pub const ARCHIVED_SNAPSHOT_EXT: &str = "archived_snapshot";
 
+pub const ZERO_HASH_DENOTING_ABSENT_PAGE: blake3::Hash = blake3::Hash::from_bytes([0; _]);
+
 #[derive(Clone, Serialize, Deserialize)]
 /// The hash and refcount of a single blob in the blob store.
 struct BlobEntry {
@@ -428,7 +430,13 @@ impl Snapshot {
     ) -> Result<(), SnapshotError> {
         let pages = table
             .iter_pages_with_hashes()
-            .map(|(hash, page)| Self::write_page(object_repo, page, hash, prev_snapshot, counter))
+            .map(|option| {
+                if let Some((hash, page)) = option {
+                    Self::write_page(object_repo, page, hash, prev_snapshot, counter)
+                } else {
+                    Ok(ZERO_HASH_DENOTING_ABSENT_PAGE)
+                }
+            })
             .collect::<Result<Vec<blake3::Hash>, SnapshotError>>()?;
 
         self.tables.push(TableEntry {
@@ -592,40 +600,44 @@ impl Snapshot {
         pages: &[blake3::Hash],
         page_pool: &PagePool,
         metrics: &mut SnapshotReadKindMetrics,
-    ) -> Result<Vec<Box<Page>>, SnapshotError> {
+    ) -> Result<Vec<Option<Box<Page>>>, SnapshotError> {
         pages
             .iter()
             .map(|hash| {
-                // Read the BSATN bytes of the on-disk page object.
-                let (buf, disk_bytes) =
-                    Self::read_object_with_disk_bytes(object_repo, hash.as_bytes(), ObjectType::Page(*hash))?;
-                metrics.disk_bytes += disk_bytes;
+                if *hash == ZERO_HASH_DENOTING_ABSENT_PAGE {
+                    Ok(None)
+                } else {
+                    // Read the BSATN bytes of the on-disk page object.
+                    let (buf, disk_bytes) =
+                        Self::read_object_with_disk_bytes(object_repo, hash.as_bytes(), ObjectType::Page(*hash))?;
+                    metrics.disk_bytes += disk_bytes;
 
-                // Deserialize the bytes into a `Page`.
-                let page = page_pool.take_deserialize_from(&buf);
-                let page = page.map_err(|cause| SnapshotError::Deserialize {
-                    ty: ObjectType::Page(*hash),
-                    source_repo: object_repo.root().to_path_buf(),
-                    cause,
-                })?;
-
-                // Compute the hash of the page.
-                let hash_start = Instant::now();
-                let computed_hash = page.content_hash();
-                metrics.hash_time += hash_start.elapsed();
-
-                // Compare the computed hash to the one recorded in the `Snapshot`,
-                // and fail if they do not match.
-                if *hash != computed_hash {
-                    return Err(SnapshotError::HashMismatch {
+                    // Deserialize the bytes into a `Page`.
+                    let page = page_pool.take_deserialize_from(&buf);
+                    let page = page.map_err(|cause| SnapshotError::Deserialize {
                         ty: ObjectType::Page(*hash),
-                        expected: *hash.as_bytes(),
-                        computed: *computed_hash.as_bytes(),
                         source_repo: object_repo.root().to_path_buf(),
-                    });
-                }
+                        cause,
+                    })?;
 
-                Ok::<Box<Page>, SnapshotError>(page)
+                    // Compute the hash of the page.
+                    let hash_start = Instant::now();
+                    let computed_hash = page.content_hash();
+                    metrics.hash_time += hash_start.elapsed();
+
+                    // Compare the computed hash to the one recorded in the `Snapshot`,
+                    // and fail if they do not match.
+                    if *hash != computed_hash {
+                        return Err(SnapshotError::HashMismatch {
+                            ty: ObjectType::Page(*hash),
+                            expected: *hash.as_bytes(),
+                            computed: *computed_hash.as_bytes(),
+                            source_repo: object_repo.root().to_path_buf(),
+                        });
+                    }
+
+                    Ok::<Option<Box<Page>>, SnapshotError>(Some(page))
+                }
             })
             .collect()
     }
@@ -635,7 +647,7 @@ impl Snapshot {
         TableEntry { table_id, pages }: &TableEntry,
         page_pool: &PagePool,
         metrics: &mut SnapshotReadKindMetrics,
-    ) -> Result<(TableId, Vec<Box<Page>>), SnapshotError> {
+    ) -> Result<(TableId, Vec<Option<Box<Page>>>), SnapshotError> {
         Ok((
             *table_id,
             Self::reconstruct_one_table_pages(object_repo, pages, page_pool, metrics)?,
@@ -657,7 +669,7 @@ impl Snapshot {
         object_repo: &DirTrie,
         page_pool: &PagePool,
         metrics: &mut SnapshotReadKindMetrics,
-    ) -> Result<BTreeMap<TableId, Vec<Box<Page>>>, SnapshotError> {
+    ) -> Result<BTreeMap<TableId, Vec<Option<Box<Page>>>>, SnapshotError> {
         self.tables
             .iter()
             .map(|tbl| Self::reconstruct_one_table(object_repo, tbl, page_pool, metrics))
@@ -1550,7 +1562,7 @@ pub struct ReconstructedSnapshot {
     /// This includes the system tables,
     /// so the schema of user-defined tables can be recovered
     /// given knowledge of the schema of `st_table` and `st_column`.
-    pub tables: BTreeMap<TableId, Vec<Box<Page>>>,
+    pub tables: BTreeMap<TableId, Vec<Option<Box<Page>>>>,
     /// If the snapshot was compressed or not.
     pub compress_type: CompressType,
     /// Metrics collected while reading this snapshot from disk.

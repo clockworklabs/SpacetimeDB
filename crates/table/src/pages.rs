@@ -6,7 +6,7 @@ use super::page::Page;
 use super::page_pool::PagePool;
 use super::table::BlobNumBytes;
 use super::var_len::VarLenMembers;
-use core::ops::{ControlFlow, Deref, Index, IndexMut};
+use core::ops::{ControlFlow, Deref};
 use spacetimedb_sats::layout::Size;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::collections::BTreeSet;
@@ -21,25 +21,24 @@ pub enum Error {
     Page(#[from] super::page::Error),
 }
 
-impl Index<PageIndex> for Pages {
-    type Output = Page;
-
-    fn index(&self, pi: PageIndex) -> &Self::Output {
-        &self.pages[pi.idx()]
-    }
-}
-
-impl IndexMut<PageIndex> for Pages {
-    fn index_mut(&mut self, pi: PageIndex) -> &mut Self::Output {
-        &mut self.pages[pi.idx()]
-    }
-}
-
 /// A manager of [`Page`]s.
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct Pages {
     /// The collection of pages under management.
-    pages: Vec<Box<Page>>,
+    ///
+    /// A `None` here is a page that was previously allocated and then became empty during [`Self::delete_row`].
+    pages: Vec<Option<Box<Page>>>,
+    /// Indexes into [`self.pages`](Self::pages) which hold `None`, where newly-allocated pages can be inserted.
+    ///
+    /// When freeing a page other than the last one, resulting in a `None` in [`self.pages`](Self::pages),
+    /// we'll insert the freed page's [`PageIndex`] into this set.
+    /// When allocating a new page, we'll use [`BTreeSet::pop_first`] to insert it into the lowest-available [`PageIndex`].
+    ///
+    /// Using a `BTreeSet` and popping the lowest item means that, over time,
+    /// datastores can converge on a dense sequence of pages.
+    /// This assumes that deletes are distributed randomly.
+    /// Low-indexed pages will be quickly replaced, while high-indexed pages will remain vacant for longer.
+    free_page_slots: BTreeSet<PageIndex>,
     /// The set of pages that aren't yet full,
     /// sorted by the number of var-len granules available in each page.
     ///
@@ -59,12 +58,28 @@ pub struct Pages {
 
 impl MemoryUsage for Pages {
     fn heap_usage(&self) -> usize {
-        let Self { pages, non_full_pages } = self;
-        pages.heap_usage() + non_full_pages.heap_usage()
+        let Self {
+            pages,
+            free_page_slots,
+            non_full_pages,
+        } = self;
+        pages.heap_usage() + free_page_slots.heap_usage() + non_full_pages.heap_usage()
     }
 }
 
 impl Pages {
+    pub fn get(&self, page_index: PageIndex) -> Option<&Page> {
+        self.pages
+            .get(page_index.idx())
+            .and_then(|page_slot| page_slot.as_deref())
+    }
+
+    pub fn get_mut(&mut self, page_index: PageIndex) -> Option<&mut Page> {
+        self.pages
+            .get_mut(page_index.idx())
+            .and_then(|page_slot| page_slot.as_deref_mut())
+    }
+
     #[cfg(test)]
     pub(crate) fn assert_non_full_pages_consistent(&self, fixed_row_size: Size) {
         let mut seen_page_indexes = BTreeSet::new();
@@ -78,30 +93,45 @@ impl Pages {
 
         for (idx, page) in self.pages.iter().enumerate() {
             let page_index = PageIndex(idx as u64);
-            let is_full = page.is_full(fixed_row_size);
-            let available_granules = page.available_var_len_granules();
-            let entries_for_page: Vec<_> = self
-                .non_full_pages
-                .iter()
-                .copied()
-                .filter(|&(_, idx)| idx == page_index)
-                .collect();
+            if let Some(page) = page {
+                let is_full = page.is_full(fixed_row_size);
+                let available_granules = page.available_var_len_granules();
+                let entries_for_page: Vec<_> = self
+                    .non_full_pages
+                    .iter()
+                    .copied()
+                    .filter(|&(_, idx)| idx == page_index)
+                    .collect();
 
-            if is_full {
+                if is_full {
+                    assert!(
+                        entries_for_page.is_empty(),
+                        "page {:?} has 0 available var-len granules but appears in non_full_pages as {:?}",
+                        page_index,
+                        entries_for_page
+                    );
+                } else {
+                    assert_eq!(
+                        entries_for_page,
+                        vec![(available_granules, page_index)],
+                        "page {:?} has {} available var-len granules but non_full_pages has {:?}",
+                        page_index,
+                        available_granules,
+                        entries_for_page
+                    );
+                }
+            } else {
+                let entries_for_page: Vec<_> = self
+                    .non_full_pages
+                    .iter()
+                    .copied()
+                    .filter(|&(_free_granules, idx)| idx == page_index)
+                    .collect();
                 assert!(
                     entries_for_page.is_empty(),
-                    "page {:?} has 0 available var-len granules but appears in non_full_pages as {:?}",
+                    "page slot {:?} is None, but appears in non_full_pages as {:?}",
                     page_index,
-                    entries_for_page
-                );
-            } else {
-                assert_eq!(
                     entries_for_page,
-                    vec![(available_granules, page_index)],
-                    "page {:?} has {} available var-len granules but non_full_pages has {:?}",
-                    page_index,
-                    available_granules,
-                    entries_for_page
                 );
             }
         }
@@ -117,21 +147,45 @@ impl Pages {
         }
     }
 
-    /// Get a mutable reference to a `Page`.
-    ///
-    /// Used in benchmarks. Internal operators will prefer directly indexing into `self.pages`,
-    /// as that allows split borrows.
-    pub fn get_page_mut(&mut self, page: PageIndex) -> &mut Page {
-        &mut self.pages[page.idx()]
+    /// The number of present pages in `self`, i.e. those which have been allocated and not since freed.
+    pub fn num_present_pages(&self) -> usize {
+        self.pages
+            .len()
+            .checked_sub(self.free_page_slots.len())
+            .expect("pages len to be greater than number of free slots")
+    }
+
+    #[cfg(test)]
+    pub fn free_empty_page(&mut self, page_index: PageIndex) {
+        let page = self.get(page_index).expect("page to free to have been present");
+
+        assert_eq!(page.num_rows(), 0);
+
+        let free_granules = page.available_var_len_granules();
+
+        let removed_from_non_full = self.non_full_pages.remove(&(free_granules, page_index));
+        assert!(removed_from_non_full);
+
+        self.pages[page_index.idx()] = None;
+
+        let newly_inserted_into_free_pages_set = self.free_page_slots.insert(page_index);
+
+        assert!(newly_inserted_into_free_pages_set)
     }
 
     /// Make all pages within `self` clear,
     /// deleting all rows.
+    //
+    // TODO(delete-free-page): Determine what to do with this method.
+    // It doesn't really make sense given that it clears all pages but doesn't delete them,
+    // but it's only used in benchmarks, and those benchmarks are using it specifically to bypass allocating new pages.
     #[doc(hidden)] // Used in benchmarks.
     pub fn clear(&mut self) {
         // Clear every page.
         for page in &mut self.pages {
-            page.clear();
+            if let Some(page) = page {
+                page.clear();
+            }
         }
         // Mark every page non-full.
         self.non_full_pages = (0..self.pages.len())
@@ -140,7 +194,10 @@ impl Pages {
             // but we'd have to do some amount of reasoning to demonstrate it was correct
             // based on the definition of `Page::clear`,
             // and why bother?
-            .map(|idx| (self.pages[idx].available_var_len_granules(), PageIndex(idx as u64)))
+            .filter_map(|idx| {
+                let idx = PageIndex(idx as u64);
+                self.get(idx).map(|page| (page.available_var_len_granules(), idx))
+            })
             .collect();
     }
 
@@ -150,7 +207,9 @@ impl Pages {
     /// Higher-level code paths are expected to go through [`super::de::read_row_from_pages`].
     #[doc(hidden)] // Used in benchmarks.
     pub fn get_fixed_len_row(&self, row: RowPointer, fixed_row_size: Size) -> &Bytes {
-        self[row.page_index()].get_row_data(row.page_offset(), fixed_row_size)
+        self.get(row.page_index())
+            .expect("`get_fixed_len_row` of row in not-present page")
+            .get_row_data(row.page_offset(), fixed_row_size)
     }
 
     /// Allocates one additional page,
@@ -159,15 +218,27 @@ impl Pages {
     /// The new page is initially empty, but is not added to the non-full set.
     /// Callers should call [`Pages::record_page_non_full`] after operating on the new page.
     fn allocate_new_page(&mut self, pool: &PagePool, fixed_row_size: Size) -> Result<PageIndex, Error> {
-        let new_idx = self.can_allocate_new_page()?;
+        if let Some(idx) = self.free_page_slots.pop_first() {
+            // If `self` contains holes from previously-freed pages,
+            // fill the lowest-`PageIndex` such hole.
+            let page = pool.take_with_fixed_row_size(fixed_row_size);
+            self.pages[idx.idx()] = Some(page);
+            Ok(idx)
+        } else {
+            // If `self` is currently dense, try to put the new page at the end.
+            let new_idx = self.can_allocate_new_page()?;
 
-        let page = pool.take_with_fixed_row_size(fixed_row_size);
-        self.pages.push(page);
+            let page = pool.take_with_fixed_row_size(fixed_row_size);
+            self.pages.push(Some(page));
 
-        Ok(new_idx)
+            Ok(new_idx)
+        }
     }
 
     /// Reserve a new, initially empty page.
+    // TODO(delete-free-page): Determine what to do with this method.
+    // It doesn't really make sense in a world where `Pages` doesn't contain empty `Page`s,
+    // but it's only used for tests and benches.
     pub fn reserve_empty_page(&mut self, pool: &PagePool, fixed_row_size: Size) -> Result<PageIndex, Error> {
         let idx = self.allocate_new_page(pool, fixed_row_size)?;
         self.record_page_non_full(idx, fixed_row_size);
@@ -184,7 +255,9 @@ impl Pages {
         f: impl FnOnce(&mut Page) -> Res,
     ) -> Result<(PageIndex, Res), Error> {
         let page_index = self.find_page_with_space_for_row(pool, fixed_row_size, num_var_len_granules)?;
-        let res = f(&mut self[page_index]);
+        let res = f(&mut self
+            .get_mut(page_index)
+            .expect("page returned by `find_page_with_space_for_row` to be present in `self.pages`"));
         self.record_page_non_full(page_index, fixed_row_size);
         Ok((page_index, res))
     }
@@ -205,7 +278,11 @@ impl Pages {
             .non_full_pages
             .range((num_var_len_granules, PageIndex(0))..)
             .copied()
-            .find(|(_, page_idx)| self[*page_idx].has_space_for_row(fixed_row_size, num_var_len_granules))
+            .find(|(_, page_idx)| {
+                self.get(*page_idx)
+                    .expect("page in `self.non_full_pages` to be present in `self.pages`")
+                    .has_space_for_row(fixed_row_size, num_var_len_granules)
+            })
         {
             self.non_full_pages.remove(&(page_num_free_granules, page_idx));
             return Ok(page_idx);
@@ -284,7 +361,9 @@ impl Pages {
         let page_index = row_ptr.page_index();
 
         self.with_updating_non_full_pages(page_index, fixed_row_size, |this| {
-            let page = &mut this[page_index];
+            let page = this
+                .get_mut(page_index)
+                .expect("page containing `row_ptr` with validity safety invariant to be present");
 
             // SAFETY:
             // - `row_ptr.page_offset()` does point to a valid row in this page
@@ -300,13 +379,18 @@ impl Pages {
     /// then run `body` to update the page, and finally update [`Self::non_full_pages`] for its new fullness and capacity.
     ///
     /// `body` should not update any pages other than the one identified by `page_index`.
+    ///
+    /// If `page_index` does not refer to a present page, i.e. `self.pages[page_index.idx]` is `None`,
+    /// this method will panic.
     fn with_updating_non_full_pages<Ret>(
         &mut self,
         page_index: PageIndex,
         fixed_row_size: Size,
         body: impl FnOnce(&mut Self) -> Ret,
     ) -> Ret {
-        let page = &self[page_index];
+        let page = self
+            .get(page_index)
+            .expect("page to be present in `with_updating_non_full_pages`");
 
         let full_before = page.is_full(fixed_row_size);
         let available_granules_before = page.available_var_len_granules();
@@ -352,10 +436,15 @@ impl Pages {
     /// Record the number of available var-len granules in the page at `self[page_index]` into [`Self::non_full_pages`].
     ///
     /// Prior to calling this function, there must not be an entry for `page_index` in [`Self::non_full_pages`].
+    ///
+    /// The page must still be present, that is, `self.pages[page_index.idx()]` must be `Some`.
+    /// Otherwise this method will panic.
     fn record_page_non_full(&mut self, page_index: PageIndex, fixed_row_size: Size) {
         debug_assert!(!self.non_full_pages.iter().any(|(_, idx)| *idx == page_index));
 
-        let page = &self[page_index];
+        let page = self
+            .get(page_index)
+            .expect("page to be present when recording its fullness");
         let available_granules = page.available_var_len_granules();
 
         if !page.is_full(fixed_row_size) {
@@ -372,6 +461,8 @@ impl Pages {
     ///
     /// - The `fixed_row_size` is consistent with the `var_len_visitor`
     ///   and is equal to the value provided to all other methods on `self`.
+    // FIXME: this method appears not to correctly set `non_full_pages` on the result.
+    // It is also unused except for benchmarks, so it may be best to just remove it.
     pub unsafe fn copy_filter(
         &self,
         var_len_visitor: &impl VarLenMembers,
@@ -388,7 +479,7 @@ impl Pages {
         let mut partial_page = None;
 
         // Copy each page.
-        for from_page in &self.pages {
+        for from_page in self.pages.iter().filter_map(|page| page.as_deref()) {
             // You may require multiple calls to `Page::copy_starting_from`
             // if `partial_page` fills up;
             // the first call starts from 0.
@@ -447,7 +538,7 @@ impl Pages {
                 if copy_starting_from.is_none() {
                     partial_page = Some(to_page);
                 } else {
-                    partial_copied_pages.pages.push(to_page);
+                    partial_copied_pages.pages.push(Some(to_page));
                 }
             }
         }
@@ -465,26 +556,52 @@ impl Pages {
     /// Should only ever be called when `self.is_empty()`.
     ///
     /// Also populates `self.non_full_pages`.
-    pub fn set_contents(&mut self, pages: Vec<Box<Page>>, fixed_row_size: Size) {
+    pub fn set_contents(&mut self, pages: Vec<Option<Box<Page>>>, fixed_row_size: Size) {
         debug_assert!(self.is_empty());
         self.non_full_pages = pages
             .iter()
             .enumerate()
             .filter_map(|(idx, page)| {
-                (!page.is_full(fixed_row_size)).then_some((page.available_var_len_granules(), PageIndex(idx as _)))
+                page.as_ref().and_then(|page| {
+                    (!page.is_full(fixed_row_size)).then_some((page.available_var_len_granules(), PageIndex(idx as _)))
+                })
             })
+            .collect();
+        self.free_page_slots = pages
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, page)| page.is_none().then_some(PageIndex(idx as _)))
             .collect();
         self.pages = pages;
     }
 
     /// Consumes the page manager, returning all the pages it held.
+    ///
+    /// Indexes in the iterator will not necessarily correspond to the pages' `PageIndex`es.
     pub fn into_page_iter(self) -> impl Iterator<Item = Box<Page>> {
-        self.pages.into_iter()
+        self.pages.into_iter().filter_map(|page| page)
+    }
+
+    /// Iterate over only those pages in `self` that are present.
+    ///
+    /// Indexes in the iterator will not necessarily correspond to the pages' `PageIndex`es.
+    /// `pages.iter_present_pages().enumerate()` does not yield the correct `PageIndex`es for the yielded pages.
+    /// Use [`Self::iter_present_pages_with_page_index`] for a version that also yields correct `PageIndex`es.
+    pub fn iter_present_pages(&self) -> impl Iterator<Item = &Page> {
+        self.pages.iter().filter_map(|page| page.as_deref())
+    }
+
+    /// Iterate over only those pages in `self` that are present, paired with their `PageIndex`es.
+    pub fn iter_present_pages_with_page_index(&self) -> impl Iterator<Item = (PageIndex, &Page)> {
+        self.pages
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, page)| page.as_deref().map(|page| (PageIndex(idx as u64), page)))
     }
 }
 
 impl Deref for Pages {
-    type Target = [Box<Page>];
+    type Target = [Option<Box<Page>>];
 
     fn deref(&self) -> &Self::Target {
         &self.pages
