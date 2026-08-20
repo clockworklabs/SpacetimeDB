@@ -20,7 +20,7 @@ For pricing details, see the [pricing page](https://spacetimedb.com/pricing).
 spacetime login
 ```
 
-This opens a browser window where you sign in with your GitHub account. Once authenticated, your CLI identity is linked to your Maincloud account, and any databases you publish will appear on the web dashboard.
+This opens a browser window where you sign in with your GitHub or Google account. Once authenticated, your CLI identity is linked to your Maincloud account, and any databases you publish will appear on the web dashboard.
 
 :::tip
 If you previously published a database without logging in first, your CLI identity will not be linked to your web account. Run `spacetime logout` followed by `spacetime login` to re-authenticate.
@@ -46,7 +46,7 @@ spacetime publish my-database --server maincloud --delete-data
 
 ## Connecting Clients to Maincloud
 
-To connect your client application to a module running on Maincloud, use `https://maincloud.spacetimedb.com` as the host URL and your database name as the module name:
+To connect your client application to a module running on Maincloud, use `https://maincloud.spacetimedb.com` as the host URL and pass the database name to `withDatabaseName` / `WithDatabaseName`:
 
 <Tabs groupId="syntax" queryString>
 <TabItem value="typescript" label="TypeScript">

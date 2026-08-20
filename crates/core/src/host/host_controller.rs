@@ -21,13 +21,13 @@ use crate::subscription::module_subscription_manager::{spawn_send_worker, Subscr
 use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::util::asyncify;
 use crate::util::jobs::{AllocatedJobCore, JobCores};
-use crate::worker_metrics::WORKER_METRICS;
+use crate::worker_metrics::{record_module_host_init_attempt, record_module_host_init_failure, WORKER_METRICS};
 use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
-use scopeguard::defer;
+use scopeguard::{defer, guard};
 use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
@@ -758,8 +758,11 @@ impl HostController {
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<HostInit> {
         let database_identity = database.database_identity;
+        record_module_host_init_attempt(database_identity);
+
         Host::try_init(self, database, replica_id)
             .await
+            .inspect_err(|_| record_module_host_init_failure(database_identity))
             .with_context(|| format!("failed to init replica {} for {}", replica_id, database_identity))
     }
 }
@@ -1054,6 +1057,7 @@ impl Host {
         let replica_dir = data_dir.replica(replica_id);
         let runtime = spacetimedb_runtime::Handle::tokio_current();
         let (tx_metrics_queue, tx_metrics_recorder_task) = spawn_tx_metrics_recorder(&runtime);
+        let tx_metrics_recorder_task = guard(tx_metrics_recorder_task, |task| task.abort());
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
@@ -1270,6 +1274,7 @@ impl Host {
         let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db().clone(), &runtime);
 
         let module = watch::Sender::new(module_host);
+        let tx_metrics_recorder_task = scopeguard::ScopeGuard::into_inner(tx_metrics_recorder_task);
 
         Ok(HostInit {
             host: Host {
@@ -1573,8 +1578,13 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     .await
 }
 
-// Remove all gauges associated with a database.
-// This is useful if a database is being deleted.
+/// Removes metrics associated with a database.
+///
+/// This is called when a database's [`ModuleHost`] exits,
+/// including (but not limited to) when a database is deleted.
+///
+/// Despite the historical function name, this cleans up per-database metric
+/// series even when they are not literally `Gauge`s or `IntGauge`s.
 pub fn remove_database_gauges<'a, I>(db: &Identity, table_names: I)
 where
     I: IntoIterator<Item = &'a str>,
@@ -1604,4 +1614,5 @@ where
     V8HeapMetrics::remove_all_metric_label_values_for_database(db);
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
+    let _ = DB_METRICS.http_response_size_bytes.remove_label_values(db);
 }

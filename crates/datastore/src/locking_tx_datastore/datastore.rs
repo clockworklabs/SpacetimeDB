@@ -309,6 +309,34 @@ impl Locking {
         tx.alter_table_primary_key(table_id, primary_key)
     }
 
+    pub fn alter_index_source_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_index_source_name(index_id, source_name)
+    }
+
+    pub fn alter_table_accessor_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_table_accessor_name(table_id, new_alias)
+    }
+
+    pub fn alter_column_accessor_name_mut_tx(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_column_accessor_name(table_id, col_id, new_alias)
+    }
+
     pub fn alter_table_row_type_mut_tx(
         &self,
         tx: &mut MutTxId,
@@ -549,6 +577,34 @@ impl MutTxDatastore for Locking {
 
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> Result<()> {
         tx.drop_index(index_id)
+    }
+
+    fn alter_index_source_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_index_source_name(index_id, source_name)
+    }
+
+    fn alter_table_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<()> {
+        tx.alter_table_accessor_name(table_id, new_alias)
+    }
+
+    fn alter_column_accessor_name_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<()> {
+        tx.alter_column_accessor_name(table_id, col_id, new_alias)
     }
 
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> Result<Option<IndexId>> {
@@ -1051,7 +1107,7 @@ pub(crate) mod tests {
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::{to_vec, ToBsatn};
     use spacetimedb_sats::layout::RowTypeLayout;
-    use spacetimedb_sats::raw_identifier::RawIdentifier;
+    use spacetimedb_sats::raw_identifier::RawNamespacedIdentifier;
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType, SumTypeVariant, SumValue};
     use spacetimedb_schema::def::BTreeAlgorithm;
     use spacetimedb_schema::identifier::Identifier;
@@ -1179,7 +1235,7 @@ pub(crate) mod tests {
             Self {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
-                index_name: RawIdentifier::new(value.name),
+                index_name: RawNamespacedIdentifier::new(value.name),
                 index_algorithm: StIndexAlgorithm::BTree { columns: value.col },
             }
         }
@@ -1249,7 +1305,7 @@ pub(crate) mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: RawIdentifier::new(value.name),
+                sequence_name: RawNamespacedIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -1265,7 +1321,7 @@ pub(crate) mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: RawIdentifier::new(value.name),
+                sequence_name: RawNamespacedIdentifier::new(value.name),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -1286,7 +1342,7 @@ pub(crate) mod tests {
         fn from(value: ConstraintRow<'_>) -> Self {
             Self {
                 constraint_id: value.constraint_id.into(),
-                constraint_name: RawIdentifier::new(value.constraint_name),
+                constraint_name: RawNamespacedIdentifier::new(value.constraint_name),
                 table_id: value.table_id.into(),
                 constraint_data: StConstraintData::Unique {
                     columns: value.unique_columns.into(),
@@ -3205,7 +3261,7 @@ pub(crate) mod tests {
             table_id: TableId::SENTINEL,
             schedule_id: ScheduleId::SENTINEL,
             schedule_name: Identifier::for_test("schedule"),
-            function_name: Identifier::for_test("reducer"),
+            function_name: Identifier::for_test("reducer").into(),
             at_column: 1.into(),
         };
         let sum_ty = AlgebraicType::sum([("foo", AlgebraicType::Bool), ("bar", AlgebraicType::U16)]);

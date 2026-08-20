@@ -7,7 +7,6 @@ use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
-use crate::util::prometheus_handle::IntGaugeExt;
 use chrono::{DateTime, Utc};
 use core::mem;
 use futures::TryFutureExt;
@@ -20,13 +19,14 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, IndexScanPointOrRange, MutTxId};
 use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
+use spacetimedb_metrics::utils::IntGaugeExt;
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
     buffer::CountWriter,
     AlgebraicValue, ProductValue,
 };
-use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::identifier::NamespacedIdentifier;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
@@ -48,7 +48,7 @@ pub struct InstanceEnv {
     /// The type of the last, including current, function to be executed by this environment.
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
-    pub func_name: Option<Identifier>,
+    pub func_name: Option<NamespacedIdentifier>,
     /// Are we in an anonymous tx context?
     in_anon_tx: bool,
     /// A procedure's last known transaction offset.
@@ -246,7 +246,7 @@ impl InstanceEnv {
     }
 
     /// Signal to this `InstanceEnv` that a function call is beginning.
-    pub fn start_funcall(&mut self, name: Identifier, ts: Timestamp, func_type: FuncCallType) {
+    pub fn start_funcall(&mut self, name: NamespacedIdentifier, ts: Timestamp, func_type: FuncCallType) {
         self.start_time = ts;
         self.start_instant = Instant::now();
         self.func_type = func_type;
@@ -917,7 +917,7 @@ impl InstanceEnv {
             .map_err(http_error)?;
 
         // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
-        // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
+        // Clamp to the range `0..HTTP_MAX_TIMEOUT`.
         let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_MAX_TIMEOUT);
 
         // reqwest's timeout covers from the start of the request to the end of reading the body,
