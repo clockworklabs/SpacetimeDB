@@ -1,5 +1,6 @@
 pub mod buggify;
 mod executor;
+pub mod io;
 mod rng;
 pub mod time;
 
