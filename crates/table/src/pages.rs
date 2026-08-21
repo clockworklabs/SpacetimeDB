@@ -181,7 +181,8 @@ impl Pages {
             !self.non_full_pages.remove(&(free_granules, page_index))
         });
 
-        let page = std::mem::replace(&mut self.pages[page_index.idx()], None)
+        let page = self.pages[page_index.idx()]
+            .take()
             .expect("freed page to have been present after we already checked its presence");
 
         pool.put(page);

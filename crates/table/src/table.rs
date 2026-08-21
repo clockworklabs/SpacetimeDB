@@ -3127,15 +3127,15 @@ pub(crate) mod test {
         assert_eq!(table2.blob_store_bytes, BLOB_OBJ_LEN);
 
         // Delete `short_str` row. This should not affect the byte count.
-        table1.delete(&pool, blob_store, short_row_ptr, |_| ()).unwrap();
+        table1.delete(pool, blob_store, short_row_ptr, |_| ()).unwrap();
         assert_eq!(table1.blob_store_bytes, BLOB_OBJ_LEN_2X);
 
         // Delete the first long string row. This gets us down to `BLOB_OBJ_LEN` (we had 2x before).
-        table1.delete(&pool, blob_store, long_row_ptr, |_| ()).unwrap();
+        table1.delete(pool, blob_store, long_row_ptr, |_| ()).unwrap();
         assert_eq!(table1.blob_store_bytes, BLOB_OBJ_LEN);
 
         // Delete the first long string row. This gets us down to 0 (we've now deleted 2x).
-        table1.delete(&pool, blob_store, long_row_ptr2, |_| ()).unwrap();
+        table1.delete(pool, blob_store, long_row_ptr2, |_| ()).unwrap();
         assert_eq!(table1.blob_store_bytes, 0.into());
     }
 

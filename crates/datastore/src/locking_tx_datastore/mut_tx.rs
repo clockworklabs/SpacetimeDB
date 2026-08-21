@@ -3529,7 +3529,7 @@ pub(super) fn insert<'a, const GENERATE: bool>(
             let res = unsafe { commit_table.check_unique_constraints(tx_row_ref, |ixs| ixs, is_deleted) };
             if let Err(e) = res {
                 // There was a constraint violation, so undo the insertion.
-                tx_table.delete(&page_pool, tx_blob_store, tx_row_ptr, |_| {});
+                tx_table.delete(page_pool, tx_blob_store, tx_row_ptr, |_| {});
                 return Err(IndexError::from(e).into());
             }
 

@@ -613,6 +613,7 @@ impl CommittedState {
         pending_schema_changes: ThinVec<PendingSchemaChange>,
         truncates: &mut IntSet<TableId>,
     ) {
+        #[allow(clippy::too_many_arguments)]
         fn delete_rows(
             tx_data: &mut TxData,
             table_id: TableId,
