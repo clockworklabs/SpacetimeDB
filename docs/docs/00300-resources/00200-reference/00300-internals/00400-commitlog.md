@@ -167,6 +167,30 @@ A stated goal of the commitlog is that a database can be fully reconstructed fro
 
 To bootstrap replay, the reader must have built-in knowledge of the `st_table` and `st_columns` system table schemas. The schemas of these two tables must remain stable across versions.
 
+### System Schema Bootstrap
+
+For newly-created durable databases, SpacetimeDB writes a synthetic system-schema bootstrap transaction before the first ordinary transaction. The rows in this transaction describe the built-in system table catalog already installed in memory by database bootstrap. This lets replay from offset 0 reconstruct the schemas of built-in system tables that are newer than the replaying binary, before any later transaction mutates those tables.
+
+The bootstrap transaction contains schema descriptor rows for built-in system tables in:
+
+- `st_table`
+- `st_column`
+- `st_constraint`
+- `st_index`
+- `st_sequence`
+
+The transaction does not initialize runtime state tables such as `st_module`, `st_client`, or `st_connection_credentials`. Those are written by ordinary initialization and runtime transactions.
+
+### Stable Replay ABI
+
+Replay without a snapshot may assume only the following schema facts a priori:
+
+- The table IDs and row layouts of `st_table` and `st_column`.
+- The durable encoding of table IDs, column positions, table names, column names, and algebraic types required to decode `st_table` and `st_column` rows.
+- The transaction ordering rule that schema metadata for a table must appear before row mutations requiring that schema.
+
+Changing any of those facts requires a new replay format or an explicit compatibility migration. Other built-in system table schemas should be learned from the system-schema bootstrap transaction or from later schema metadata in the log.
+
 ## Integrity
 
 The commitlog is append-only. Commits are written in FIFO order as received from the transaction engine. The implementation may buffer commits in memory before writing to disk. Flushing and syncing (via `fsync`) is managed by a higher-level component, allowing users to trade durability for throughput.

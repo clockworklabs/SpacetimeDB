@@ -17,7 +17,8 @@ use crate::{
     execution_context::ExecutionContext,
     system_tables::{
         read_hash_from_col, read_identity_from_col, system_table_schema, StClientRow, StModuleFields, StModuleRow,
-        StTableFields, ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
+        StTableFields, ST_CLIENT_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_MODULE_ID, ST_SEQUENCE_ID,
+        ST_TABLE_ID,
     },
     traits::{
         DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData, TxDatastore,
@@ -136,6 +137,41 @@ impl Locking {
     pub fn replay<F: FnMut(u64)>(&self, progress: F, error_behavior: ErrorBehavior) -> Replay<'_, F> {
         let committed_state = self.committed_state.write();
         Replay::new(self.database_identity, committed_state, progress, error_behavior)
+    }
+
+    /// Reserve the first transaction offset for the durable system-schema
+    /// bootstrap record.
+    ///
+    /// The bootstrap record describes rows already installed by
+    /// [`Self::bootstrap`], so this only advances the offset counter. Returns
+    /// `None` if any transaction has already consumed an offset.
+    pub fn reserve_system_schema_bootstrap_tx_offset(&self) -> Option<TxOffset> {
+        let mut committed_state = self.committed_state.write();
+        if committed_state.next_tx_offset == 0 {
+            committed_state.next_tx_offset = 1;
+            Some(0)
+        } else {
+            None
+        }
+    }
+
+    /// Read the committed rows which describe built-in system table schemas.
+    ///
+    /// These are the rows installed directly by [`Self::bootstrap`] before any
+    /// transaction exists. Durable databases write these rows into the commit
+    /// log at offset 0 so replay from the beginning can reconstruct system
+    /// tables added after the replaying binary was built.
+    pub fn committed_system_table_schema_rows(&self) -> Result<Vec<(TableId, ProductValue)>> {
+        let committed_state = self.committed_state.read();
+        let mut rows = Vec::new();
+
+        for table_id in [ST_TABLE_ID, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SEQUENCE_ID] {
+            for row in committed_state.iter(table_id)? {
+                rows.push((table_id, row.to_product_value()));
+            }
+        }
+
+        Ok(rows)
     }
 
     /// Construct a new [`Locking`] datastore containing the state stored in `snapshot`.
