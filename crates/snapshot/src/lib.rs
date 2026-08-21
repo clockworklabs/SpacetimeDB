@@ -680,7 +680,18 @@ impl Snapshot {
 
     /// The number of objects in this snapshot, both blobs and pages.
     pub fn total_objects(&self) -> usize {
-        self.blobs.len() + self.tables.iter().map(|table| table.pages.len()).sum::<usize>()
+        self.blobs.len()
+            + self
+                .tables
+                .iter()
+                .map(|table| {
+                    table
+                        .pages
+                        .iter()
+                        .filter(|hash| **hash != ZERO_HASH_DENOTING_ABSENT_PAGE)
+                        .count()
+                })
+                .sum::<usize>()
     }
 
     /// Obtain an iterator over the [`blake3::Hash`]es of all objects
@@ -689,7 +700,12 @@ impl Snapshot {
         self.blobs
             .iter()
             .map(|b| blake3::Hash::from_bytes(b.hash.data))
-            .chain(self.tables.iter().flat_map(|t| t.pages.iter().copied()))
+            .chain(self.tables.iter().flat_map(|t| {
+                t.pages
+                    .iter()
+                    .filter(|hash| **hash != ZERO_HASH_DENOTING_ABSENT_PAGE)
+                    .copied()
+            }))
     }
 
     /// Obtain an iterator over the [`PathBuf`]s of all objects
