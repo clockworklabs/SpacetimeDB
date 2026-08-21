@@ -1,12 +1,12 @@
 //! Provides [`Pages`], a page manager dealing with [`Page`]s as a collection.
 
-use super::blob_store::{BlobHash, BlobStore};
+use super::blob_store::BlobStore;
 use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer};
 use super::page::Page;
 use super::page_pool::PagePool;
 use super::table::BlobNumBytes;
 use super::var_len::VarLenMembers;
-use core::ops::{ControlFlow, Deref};
+use core::ops::Deref;
 use spacetimedb_sats::layout::Size;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::collections::BTreeSet;
@@ -423,100 +423,6 @@ impl Pages {
         if !page.is_full(fixed_row_size) {
             self.non_full_pages.insert((available_granules, page_index));
         }
-    }
-
-    /// Materialize a view of rows in `self` for which the  `filter` returns `true`.
-    ///
-    /// # Safety
-    ///
-    /// - The `var_len_visitor` will visit the same set of `VarLenRef`s in the row
-    ///   as the visitor provided to all other methods on `self`.
-    ///
-    /// - The `fixed_row_size` is consistent with the `var_len_visitor`
-    ///   and is equal to the value provided to all other methods on `self`.
-    // FIXME: this method appears not to correctly set `non_full_pages` on the result.
-    // It is also unused except for benchmarks, so it may be best to just remove it.
-    pub unsafe fn copy_filter(
-        &self,
-        var_len_visitor: &impl VarLenMembers,
-        fixed_row_size: Size,
-        mut blob_policy: Option<&mut impl FnMut(BlobHash)>,
-        mut filter: impl FnMut(&Page, PageOffset) -> bool,
-    ) -> Self {
-        // Build a new container to hold the materialized view.
-        // Push pages into it later.
-        let mut partial_copied_pages = Self::default();
-
-        // A destination page that was not filled entirely,
-        // or `None` if it's time to allocate a new destination page.
-        let mut partial_page = None;
-
-        // Copy each page.
-        for from_page in self.pages.iter().filter_map(|page| page.as_deref()) {
-            // You may require multiple calls to `Page::copy_starting_from`
-            // if `partial_page` fills up;
-            // the first call starts from 0.
-            let mut copy_starting_from = Some(PageOffset(0));
-
-            // While there are unprocessed rows in `from_page`,
-            while let Some(next_offset) = copy_starting_from.take() {
-                // Grab the `partial_page` or allocate a new one.
-                let mut to_page = partial_page.take().unwrap_or_else(|| Page::new(fixed_row_size));
-
-                // Copy as many rows as will fit in `to_page`.
-                //
-                // SAFETY:
-                //
-                // - The `var_len_visitor` will visit the same set of `VarLenRef`s in the row
-                //   as the visitor provided to all other methods on `self`.
-                //   The `to_page` uses the same visitor as the `from_page`.
-                //
-                // - The `fixed_row_size` is consistent with the `var_len_visitor`
-                //   and is equal to the value provided to all other methods on `self`,
-                //   as promised by the caller.
-                //   The newly made `to_page` uses the same `fixed_row_size` as the `from_page`.
-                //
-                // - The `next_offset` is either 0,
-                //   which is always a valid starting offset for any row size,
-                //   or it came from `copy_filter_into` in a previous iteration,
-                //   which, given that `fixed_row_size` was valid,
-                //   always returns a valid starting offset in case of `Continue(_)`.
-                let cfi_ret = unsafe {
-                    from_page.copy_filter_into(
-                        next_offset,
-                        &mut to_page,
-                        fixed_row_size,
-                        var_len_visitor,
-                        blob_policy.as_mut(),
-                        &mut filter,
-                    )
-                };
-                copy_starting_from = if let ControlFlow::Continue(continue_point) = cfi_ret {
-                    // If `to_page` couldn't fit all of `from_page`,
-                    // repeat the `while_let` loop to copy the rest.
-                    Some(continue_point)
-                } else {
-                    // If `to_page` fit all of `from_page`, we can move on.
-                    None
-                };
-
-                // If `from_page` finished copying into `to_page`, then `to_page` may have extra room.
-                //
-                // If `copy_filtered_into` returns `Some`,
-                // that means at least one row didn't have space in `to_page`,
-                // so we must consider `to_page` full.
-                //
-                // Note that this is distinct from `Page::is_full`,
-                // as that method considers the optimistic case of a row with no var-len members.
-                if copy_starting_from.is_none() {
-                    partial_page = Some(to_page);
-                } else {
-                    partial_copied_pages.pages.push(Some(to_page));
-                }
-            }
-        }
-
-        partial_copied_pages
     }
 
     /// Set this [`Pages`]' contents to be the `pages`.

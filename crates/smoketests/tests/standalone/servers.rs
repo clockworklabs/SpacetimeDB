@@ -1,7 +1,7 @@
 use regex::Regex;
 use spacetimedb_smoketests::{require_local_server, Smoketest};
 
-/// Verify that we can add and list server configurations
+/// Verify that we can add and list server configurations.
 #[test]
 fn test_servers() {
     // This only covers local CLI config behavior, so it is not valuable to run
@@ -66,7 +66,8 @@ fn test_servers() {
     );
 }
 
-/// Verify that we can edit server configurations
+/// Standalone-only: this edits and reads local CLI configuration, so a remote
+/// cluster adds no coverage.
 #[test]
 fn test_edit_server() {
     let test = Smoketest::builder().autopublish(false).build();
@@ -94,7 +95,7 @@ fn test_edit_server() {
     let edited_re = Regex::new(r"(?m)^\s*edited-testnet\.spacetimedb\.com\s+https\s+edited-testnet\s*$").unwrap();
     assert!(
         edited_re.is_match(&servers),
-        "Expected edited server in list: {}",
+        "Expected edited server in server list: {}",
         servers
     );
 }

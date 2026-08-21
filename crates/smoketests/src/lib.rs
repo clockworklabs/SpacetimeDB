@@ -52,6 +52,7 @@
 
 mod csharp;
 pub mod modules;
+mod template_registry;
 
 use anyhow::{bail, Context, Result};
 use regex::Regex;

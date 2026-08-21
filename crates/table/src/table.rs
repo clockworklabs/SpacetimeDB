@@ -2615,7 +2615,6 @@ pub(crate) mod test {
         // Reserve a page so that we can check the hash.
         let (_, row_ref) = table.insert(&pool, blob_store, &product![i32::MAX, i32::MAX]).unwrap();
         let pi = row_ref.pointer().page_index();
-
         let hash_pre_ins =
             hash_unmodified_save_get(table.inner.pages.get_mut(pi).expect("reserved page to be present"));
 

@@ -5,8 +5,6 @@ use criterion::measurement::{Measurement, WallTime};
 use criterion::{
     black_box, criterion_group, criterion_main, Bencher, BenchmarkGroup, BenchmarkId, Criterion, Throughput,
 };
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
 use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
@@ -243,59 +241,12 @@ fn retrieve_one_page_fixed_len(c: &mut Criterion) {
     bench_retrieve_one_page::<U32x64>(&mut group, &U32x64::var_len_visitor(), "U32x64/VarLenVisitorProgram");
 }
 
-// insert a whole bunch of rows, then time to copy_filter materialize a view
-
-fn copy_filter_fixed_len(c: &mut Criterion) {
-    fn bench_copy_filter<R: FixedLenRow>(c: &mut Criterion, name: &str) {
-        let mut group = c.benchmark_group(format!("copy_filter_fixed_len/{name}"));
-        let row_size = black_box(row_size_for_type::<R>());
-
-        let val = R::from_u64(0xdeadbeef_0badbeef);
-        for keep_ratio in [0.1, 0.25, 0.5, 0.75, 0.9, 1.0] {
-            let visitor = &NullVarLenVisitor;
-            let pool = PagePool::new_for_test();
-            let mut pages = Pages::default();
-
-            let num_pages = 16;
-            let total_num_rows = rows_per_page::<R>() * num_pages;
-
-            for _ in 0..total_num_rows {
-                unsafe { pages.insert_row(&pool, visitor, row_size, val.as_bytes(), &[], &mut NullBlobStore) }.unwrap();
-            }
-
-            let num_to_keep = (total_num_rows as f64 * keep_ratio) as usize;
-            let num_to_keep_bytes = num_to_keep * mem::size_of::<R>();
-
-            group.throughput(Throughput::Bytes(num_to_keep_bytes as u64));
-
-            let mut rng = StdRng::seed_from_u64(0xa5a5a5a5_a5a5a5a5);
-
-            // To avoid advancing RNG in the benchmark,
-            // precompute a big vec of bools, with one bool for each value that we may or may not keep.
-            let keep_seq: Vec<bool> = (0..total_num_rows).map(|_| rng.random_bool(keep_ratio)).collect();
-
-            group.bench_function(keep_ratio.to_string(), |b| {
-                b.iter_with_large_drop(|| unsafe {
-                    let mut keep_iter = keep_seq.iter().copied();
-                    black_box(&pages).copy_filter(visitor, row_size, None::<&mut Box<dyn FnMut(_)>>, |_, _| {
-                        black_box(keep_iter.next().unwrap_or_default())
-                    })
-                });
-            });
-        }
-    }
-
-    bench_copy_filter::<u64>(c, "u64");
-    bench_copy_filter::<U32x8>(c, "U32x8");
-    bench_copy_filter::<U32x64>(c, "U32x64");
-}
-
 // TODO(bench):
 // - Duplicate above benchmarks with var-len rows of various sizes
 //   - In the insert-with-holes benchmark, randomize size of each row to simulate fragmentation.
 // - Extend above benchmarks to go through `Table` with `AlgebraicValue`.
 
-criterion_group!(pages, retrieve_one_page_fixed_len, copy_filter_fixed_len,);
+criterion_group!(pages, retrieve_one_page_fixed_len);
 
 fn schema_from_ty(ty: ProductType, name: &str) -> TableSchema {
     let mut result = TableSchema::from_product_type(ty);
