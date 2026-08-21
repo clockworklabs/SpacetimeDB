@@ -39,7 +39,7 @@ fn append_raw_submodule_v10_definitions(code: String) -> anyhow::Result<String> 
     replace_required(
         code,
         "\n};\n} // namespace SpacetimeDB::Internal\n",
-        "\n};\n\ninline void RawSubmoduleV10::bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {\n    ::SpacetimeDB::bsatn::serialize(writer, namespace_);\n    ::SpacetimeDB::bsatn::serialize(writer, *module);\n}\n\ninline bool RawSubmoduleV10::operator==(const RawSubmoduleV10& other) const {\n    return namespace_ == other.namespace_\n        && (module == other.module || (module && other.module && *module == *other.module));\n}\n\ninline bool RawSubmoduleV10::operator!=(const RawSubmoduleV10& other) const {\n    return !(*this == other);\n}\n} // namespace SpacetimeDB::Internal\n",
+        "\n};\n\ninline void RawSubmoduleV10::bsatn_serialize(::SpacetimeDB::bsatn::Writer& writer) const {\n    ::SpacetimeDB::bsatn::serialize(writer, namespace_);\n    ::SpacetimeDB::bsatn::serialize(writer, *module);\n}\n\ninline bool RawSubmoduleV10::operator==(const RawSubmoduleV10& other) const {\n    return namespace_ == other.namespace_ && module == other.module;\n}\n\ninline bool RawSubmoduleV10::operator!=(const RawSubmoduleV10& other) const {\n    return !(*this == other);\n}\n} // namespace SpacetimeDB::Internal\n",
     )
 }
 

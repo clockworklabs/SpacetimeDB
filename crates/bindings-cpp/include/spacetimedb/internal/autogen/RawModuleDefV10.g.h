@@ -31,8 +31,7 @@ inline void RawSubmoduleV10::bsatn_serialize(::SpacetimeDB::bsatn::Writer& write
 }
 
 inline bool RawSubmoduleV10::operator==(const RawSubmoduleV10& other) const {
-    return namespace_ == other.namespace_
-        && (module == other.module || (module && other.module && *module == *other.module));
+    return namespace_ == other.namespace_ && module == other.module;
 }
 
 inline bool RawSubmoduleV10::operator!=(const RawSubmoduleV10& other) const {
