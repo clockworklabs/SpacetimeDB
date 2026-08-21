@@ -10,7 +10,7 @@ use rand::{Rng, SeedableRng};
 use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
-use spacetimedb_sats::layout::{row_size_for_bytes, row_size_for_type, Size};
+use spacetimedb_sats::layout::row_size_for_type;
 use spacetimedb_sats::raw_identifier::RawIdentifier;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::BTreeAlgorithm;
@@ -18,7 +18,7 @@ use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::table_name::TableName;
 use spacetimedb_table::blob_store::NullBlobStore;
-use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowPointer, SquashedOffset, PAGE_DATA_SIZE};
+use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowPointer, SquashedOffset};
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::pages::Pages;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
@@ -176,30 +176,6 @@ fn var_len_rows_per_page(data_size_in_bytes: usize) -> usize {
     PageOffset::PAGE_END.idx() / var_object_size
 }
 
-fn reserve_empty_page(c: &mut Criterion) {
-    const RESERVE_SIZE: Size = row_size_for_bytes(8);
-
-    let mut group = c.benchmark_group("reserve_empty_page");
-    group.throughput(Throughput::Bytes(PAGE_DATA_SIZE as _));
-    group.bench_function("leave_uninit", |b| {
-        let pool = PagePool::new_for_test();
-        let mut pages = Pages::default();
-        b.iter(|| {
-            let _ = black_box(pages.reserve_empty_page(&pool, RESERVE_SIZE));
-        });
-    });
-
-    let fill_with_zeros = |_, _, pages: &mut Pages| {
-        let pool = PagePool::new_for_test();
-        let page = pages.reserve_empty_page(&pool, RESERVE_SIZE).unwrap();
-        let page = pages.get_page_mut(page);
-        unsafe { page.zero_data() };
-    };
-    group.bench_function("fill_with_zeros", |b| {
-        iter_time_with(b, &mut Pages::default(), |_, _| (), fill_with_zeros)
-    });
-}
-
 fn insert_one_page_worth_fixed_len<R: FixedLenRow>(
     pool: &PagePool,
     pages: &mut Pages,
@@ -349,85 +325,6 @@ fn retrieve_one_page_fixed_len(c: &mut Criterion) {
     bench_retrieve_one_page::<U32x64>(&mut group, &U32x64::var_len_visitor(), "U32x64/VarLenVisitorProgram");
 }
 
-// insert a bunch of rows,
-// delete some fraction of them to create holes in multiple pages,
-// then time to insert into those holes
-fn insert_with_holes_fixed_len(c: &mut Criterion) {
-    fn bench_insert_with_holes<R: FixedLenRow>(c: &mut Criterion, var_len_visitor: &impl VarLenMembers, name: &str) {
-        let mut group = c.benchmark_group(format!("insert_with_holes_fixed_len/{name}"));
-        let val = R::from_u64(0xdeadbeef_0badbeef);
-        for delete_ratio in [0.1f64, 0.25, 0.5, 0.75, 0.9, 1.0] {
-            let num_pages = 16;
-            let total_num_rows = rows_per_page::<R>() * num_pages;
-            let num_to_delete = (total_num_rows as f64 * delete_ratio) as usize;
-
-            let num_to_delete_in_bytes = num_to_delete * mem::size_of::<R>();
-
-            let row_size = row_size_for_type::<R>();
-
-            group.throughput(Throughput::Bytes(num_to_delete_in_bytes as u64));
-
-            group.bench_function(delete_ratio.to_string(), |b| {
-                let pool = PagePool::new_for_test();
-                let mut pages = Pages::default();
-
-                let mut rng = StdRng::seed_from_u64(0xa5a5a5a5_a5a5a5a5);
-
-                for _ in 0..num_pages {
-                    let page = pages.reserve_empty_page(&pool, row_size).unwrap();
-                    let page = pages.get_page_mut(page);
-
-                    unsafe { page.zero_data() };
-                }
-
-                let pre = |_, (pages, pool): &mut (Pages, PagePool)| {
-                    pages.clear();
-                    let mut ptrs_to_delete = Vec::with_capacity(num_to_delete);
-                    for _ in 0..total_num_rows {
-                        let (page_idx, offset) = unsafe {
-                            pages.insert_row(pool, var_len_visitor, row_size, val.as_bytes(), &[], &mut NullBlobStore)
-                        }
-                        .unwrap();
-
-                        if rng.random_bool(delete_ratio) {
-                            ptrs_to_delete.push(RowPointer::new(
-                                false,
-                                page_idx,
-                                offset,
-                                SquashedOffset::COMMITTED_STATE,
-                            ));
-                        }
-                    }
-                    let actual_num_deleted = ptrs_to_delete.len();
-                    for ptr in ptrs_to_delete {
-                        unsafe {
-                            pages.delete_row(var_len_visitor, row_size, ptr, &mut NullBlobStore);
-                        }
-                    }
-                    actual_num_deleted
-                };
-                let body = |actual_num_deleted, _, (pages, pool): &mut (Pages, PagePool)| {
-                    for _ in 0..actual_num_deleted {
-                        let _ = black_box(unsafe {
-                            pages.insert_row(pool, var_len_visitor, row_size, val.as_bytes(), &[], &mut NullBlobStore)
-                        });
-                    }
-                };
-                iter_time_with(b, &mut (pages, pool), pre, body);
-            });
-        }
-    }
-
-    bench_insert_with_holes::<u64>(c, &NullVarLenVisitor, "u64/NullVarLenVisitor");
-    bench_insert_with_holes::<u64>(c, &u64::var_len_visitor(), "u64/VarLenVisitorProgram");
-
-    bench_insert_with_holes::<U32x8>(c, &NullVarLenVisitor, "U32x8/NullVarLenVisitor");
-    bench_insert_with_holes::<U32x8>(c, &U32x8::var_len_visitor(), "U32x8/VarLenVisitorProgram");
-
-    bench_insert_with_holes::<U32x64>(c, &NullVarLenVisitor, "U32x64/NullVarLenVisitor");
-    bench_insert_with_holes::<U32x64>(c, &U32x64::var_len_visitor(), "U32x64/VarLenVisitorProgram");
-}
-
 // insert a whole bunch of rows, then time to copy_filter materialize a view
 
 fn copy_filter_fixed_len(c: &mut Criterion) {
@@ -482,11 +379,9 @@ fn copy_filter_fixed_len(c: &mut Criterion) {
 
 criterion_group!(
     pages,
-    reserve_empty_page,
     insert_one_page_fixed_len,
     delete_one_page_fixed_len,
     retrieve_one_page_fixed_len,
-    insert_with_holes_fixed_len,
     copy_filter_fixed_len,
 );
 

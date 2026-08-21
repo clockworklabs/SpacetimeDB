@@ -99,6 +99,8 @@ pub struct SnapshotReadMetrics {
     pub blob: SnapshotReadKindMetrics,
 }
 
+pub type TablePages = Vec<Option<Box<Page>>>;
+
 impl SnapshotReadMetrics {
     pub fn iter(&self) -> impl Iterator<Item = (&'static str, &SnapshotReadKindMetrics)> + '_ {
         [("metadata", &self.metadata), ("page", &self.page), ("blob", &self.blob)].into_iter()
@@ -600,7 +602,7 @@ impl Snapshot {
         pages: &[blake3::Hash],
         page_pool: &PagePool,
         metrics: &mut SnapshotReadKindMetrics,
-    ) -> Result<Vec<Option<Box<Page>>>, SnapshotError> {
+    ) -> Result<TablePages, SnapshotError> {
         pages
             .iter()
             .map(|hash| {
@@ -647,7 +649,7 @@ impl Snapshot {
         TableEntry { table_id, pages }: &TableEntry,
         page_pool: &PagePool,
         metrics: &mut SnapshotReadKindMetrics,
-    ) -> Result<(TableId, Vec<Option<Box<Page>>>), SnapshotError> {
+    ) -> Result<(TableId, TablePages), SnapshotError> {
         Ok((
             *table_id,
             Self::reconstruct_one_table_pages(object_repo, pages, page_pool, metrics)?,
@@ -669,7 +671,7 @@ impl Snapshot {
         object_repo: &DirTrie,
         page_pool: &PagePool,
         metrics: &mut SnapshotReadKindMetrics,
-    ) -> Result<BTreeMap<TableId, Vec<Option<Box<Page>>>>, SnapshotError> {
+    ) -> Result<BTreeMap<TableId, TablePages>, SnapshotError> {
         self.tables
             .iter()
             .map(|tbl| Self::reconstruct_one_table(object_repo, tbl, page_pool, metrics))
@@ -1562,7 +1564,7 @@ pub struct ReconstructedSnapshot {
     /// This includes the system tables,
     /// so the schema of user-defined tables can be recovered
     /// given knowledge of the schema of `st_table` and `st_column`.
-    pub tables: BTreeMap<TableId, Vec<Option<Box<Page>>>>,
+    pub tables: BTreeMap<TableId, TablePages>,
     /// If the snapshot was compressed or not.
     pub compress_type: CompressType,
     /// Metrics collected while reading this snapshot from disk.
