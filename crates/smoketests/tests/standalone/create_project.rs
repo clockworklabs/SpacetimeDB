@@ -4,6 +4,7 @@ use tempfile::tempdir;
 
 /// Ensure that the CLI is able to create a local project.
 /// This test does not depend on a running spacetimedb instance.
+/// Standalone-only: it exercises only local CLI validation and filesystem changes.
 #[test]
 fn test_create_project() {
     let cli_path = ensure_binaries_built();
