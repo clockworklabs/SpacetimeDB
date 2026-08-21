@@ -23,7 +23,7 @@
 
 #![allow(clippy::result_large_err)]
 
-use log::warn;
+use log::error;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_fs_utils::compression::{
@@ -249,7 +249,7 @@ impl Drop for UnflushedSnapshot {
         if let Some(inner) = self.inner.take()
             && let Err(e) = inner.sync_all()
         {
-            warn!("failed to sync unflushed snapshot dropped without syncing: {e}");
+            error!("failed to sync unflushed snapshot dropped without syncing: {e}");
         }
     }
 }

@@ -36,7 +36,7 @@ impl DiskStorage {
                 if actual_hash == *key {
                     Ok(Some(bytes.into()))
                 } else {
-                    log::warn!("hash mismatch: {actual_hash} stored at {key}");
+                    log::error!("hash mismatch: {actual_hash} stored at {key}");
                     if let Err(e) = self.prune(key).await {
                         log::warn!("prune error: {e}");
                     }
