@@ -3451,11 +3451,12 @@ pub(super) fn insert<'a, const GENERATE: bool>(
         is_scheduler_table: tx_table.is_scheduler(),
     };
     let ok = |row_ref| Ok((gen_cols, row_ref, insert_flags));
+    let page_pool = &committed_state.page_pool;
 
     // `CHECK_SAME_ROW = true`, as there might be an identical row already in the tx state.
     // SAFETY: `tx_table.is_row_present(row)` holds as we still haven't deleted the row,
     // in particular, the `write_gen_val_to_col` call does not remove the row.
-    let res = unsafe { tx_table.confirm_insertion::<true>(tx_blob_store, tx_row_ptr, blob_bytes) };
+    let res = unsafe { tx_table.confirm_insertion::<true>(page_pool, tx_blob_store, tx_row_ptr, blob_bytes) };
 
     match res {
         Ok((tx_row_hash, tx_row_ptr)) => {
@@ -3499,7 +3500,7 @@ pub(super) fn insert<'a, const GENERATE: bool>(
                 // - Insert Row A
                 // This is impossible to recover if `Running 2` elides its insert.
                 tx_table
-                    .delete(tx_blob_store, tx_row_ptr, |_| ())
+                    .delete(page_pool, tx_blob_store, tx_row_ptr, |_| ())
                     .expect("Failed to delete a row we just inserted");
 
                 // It's possible that `row` appears in the committed state,
@@ -3528,7 +3529,7 @@ pub(super) fn insert<'a, const GENERATE: bool>(
             let res = unsafe { commit_table.check_unique_constraints(tx_row_ref, |ixs| ixs, is_deleted) };
             if let Err(e) = res {
                 // There was a constraint violation, so undo the insertion.
-                tx_table.delete(tx_blob_store, tx_row_ptr, |_| {});
+                tx_table.delete(&page_pool, tx_blob_store, tx_row_ptr, |_| {});
                 return Err(IndexError::from(e).into());
             }
 
@@ -3601,6 +3602,8 @@ impl MutTxId {
         // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds as we just inserted it.
         let tx_row_ref = unsafe { tx_table.get_row_ref_unchecked(tx_blob_store, tx_row_ptr) };
 
+        let page_pool = &self.committed_state_write_lock.page_pool;
+
         let err = 'error: {
             // This macros can be thought of as a `throw $e` within `'error`.
             // TODO(centril): Get rid of this once we have stable `try` blocks or polonius.
@@ -3665,7 +3668,7 @@ impl MutTxId {
                 // 3. we just inserted `tx_row_ptr` into `tx_table`, so we know it is valid.
                 if unsafe { Table::eq_row_in_page(commit_table, old_ptr, tx_table, tx_row_ptr) } {
                     // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds, as noted in 3.
-                    unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) };
+                    unsafe { tx_table.delete_internal_skip_pointer_map(page_pool, tx_blob_store, tx_row_ptr) };
                     // SAFETY: `commit_table.is_row_present(old_ptr)` holds, as noted in 2.
                     let row_ref = unsafe { commit_table.get_row_ref_unchecked(commit_blob_store, old_ptr) };
                     return ok(RowRefInsertion::Existed(row_ref));
@@ -3685,7 +3688,7 @@ impl MutTxId {
                 // in particular, the `write_gen_val_to_col` call does not remove the row.
                 // On error, `tx_row_ptr` has already been removed, so don't do it again.
                 let (_, tx_row_ptr) =
-                    unsafe { tx_table.confirm_insertion::<false>(tx_blob_store, tx_row_ptr, blob_bytes) }?;
+                    unsafe { tx_table.confirm_insertion::<false>(page_pool, tx_blob_store, tx_row_ptr, blob_bytes) }?;
 
                 // Delete the old row.
                 del_table.insert(old_ptr);
@@ -3703,7 +3706,8 @@ impl MutTxId {
                 // SAFETY: `tx_table.is_row_present(tx_row_ptr)` and `tx_table.is_row_present(old_ptr)` both hold
                 // as we've deleted neither.
                 // In particular, the `write_gen_val_to_col` call does not remove the row.
-                let tx_row_ptr = unsafe { tx_table.confirm_update(tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }?;
+                let tx_row_ptr =
+                    unsafe { tx_table.confirm_update(page_pool, tx_blob_store, tx_row_ptr, old_ptr, blob_bytes) }?;
 
                 if let Some(old_commit_del_ptr) = old_commit_del_ptr {
                     // If we have an identical deleted row in the committed state,
@@ -3718,7 +3722,7 @@ impl MutTxId {
                         // It is important that we `confirm_update` first,
                         // as we must ensure that undeleting the row causes no tx state conflict.
                         tx_table
-                            .delete(tx_blob_store, tx_row_ptr, |_| ())
+                            .delete(page_pool, tx_blob_store, tx_row_ptr, |_| ())
                             .expect("Failed to delete a row we just inserted");
 
                         // Undelete.
@@ -3748,7 +3752,7 @@ impl MutTxId {
         // When we reach here, we had an error and we need to revert the insertion of `tx_row_ref`.
         // SAFETY: `tx_table.is_row_present(tx_row_ptr)` holds,
         // as we still haven't deleted the row physically.
-        unsafe { tx_table.delete_internal_skip_pointer_map(tx_blob_store, tx_row_ptr) };
+        unsafe { tx_table.delete_internal_skip_pointer_map(page_pool, tx_blob_store, tx_row_ptr) };
         Err(err)
     }
 
@@ -3770,7 +3774,7 @@ impl MutTxId {
         let (tx_table, tx_blob_store, delete_table) = self
             .tx_state
             .get_table_and_blob_store_or_create_from(table_id, commit_table);
-        let mut rows_removed = tx_table.clear(tx_blob_store);
+        let mut rows_removed = tx_table.clear(&self.committed_state_write_lock.page_pool, tx_blob_store);
 
         // Mark every row in the committed state as deleted.
         for row in commit_table.scan_rows(commit_bs) {
@@ -3796,7 +3800,9 @@ pub(super) fn delete(
             let (table, blob_store) = tx_state
                 .get_table_and_blob_store(table_id)
                 .ok_or(TableError::IdNotFoundState(table_id))?;
-            Ok(table.delete(blob_store, row_pointer, |_| ()).is_some())
+            Ok(table
+                .delete(&committed_state.page_pool, blob_store, row_pointer, |_| ())
+                .is_some())
         }
         SquashedOffset::COMMITTED_STATE => {
             let commit_table = committed_state
@@ -3855,7 +3861,7 @@ impl MutTxId {
         // Do this before actually deleting to drop the borrows on the table.
         // SAFETY: `temp_ptr` is valid because we just inserted it and haven't deleted it since.
         unsafe {
-            tx_table.delete_internal_skip_pointer_map(tx_blob_store, temp_ptr);
+            tx_table.delete_internal_skip_pointer_map(page_pool, tx_blob_store, temp_ptr);
         }
 
         // Delete the found row either by marking (commit table)

@@ -1389,16 +1389,18 @@ impl Table {
         Ok(existing_row_ptr)
     }
 
-    // /// Clears this table, removing all present rows from it.
-    // pub fn clear(&mut self, pool: &PagePool, blob_store: &mut dyn BlobStore) -> u64 {
-    //     let ptrs = self.scan_all_row_ptrs();
-    //     let len = ptrs.len() as u64;
-    //     for ptr in ptrs {
-    //         // SAFETY: `ptr` came rom `self.scan_rows(...)`, so it's present.
-    //         unsafe { self.delete_unchecked(pool, blob_store, ptr) };
-    //     }
-    //     len
-    // }
+    /// Clears this table, removing all present rows from it.
+    ///
+    /// This implements the `truncate` operation.
+    pub fn clear(&mut self, pool: &PagePool, blob_store: &mut dyn BlobStore) -> u64 {
+        let ptrs = self.scan_all_row_ptrs();
+        let len = ptrs.len() as u64;
+        for ptr in ptrs {
+            // SAFETY: `ptr` came rom `self.scan_rows(...)`, so it's present.
+            unsafe { self.delete_unchecked(pool, blob_store, ptr) };
+        }
+        len
+    }
 
     /// Returns the row type for rows in this table.
     pub fn get_row_type(&self) -> &ProductType {
