@@ -137,6 +137,7 @@ impl fmt::Display for MetadataFile {
 pub struct ConfigFile {
     pub certificate_authority: Option<CertificateAuthority>,
     pub logs: LogConfig,
+    pub module_http: ModuleHttpConfig,
     pub wasm: WasmConfig,
     pub v8: V8Config,
 }
@@ -148,6 +149,8 @@ struct ConfigFileToml {
     certificate_authority: Option<CertificateAuthority>,
     #[serde(default)]
     logs: LogConfig,
+    #[serde(default)]
+    module_http: ModuleHttpConfig,
     #[serde(default)]
     wasm: WasmConfigToml,
     #[serde(default)]
@@ -165,6 +168,7 @@ impl<'de> serde::Deserialize<'de> for ConfigFile {
         Ok(Self {
             certificate_authority: config.certificate_authority,
             logs: config.logs,
+            module_http: config.module_http,
             wasm: WasmConfig {
                 procedure_instance_pool_size: config.wasm.procedure_instance_pool_size,
             },
@@ -210,6 +214,20 @@ pub struct LogConfig {
     pub level: Option<tracing_core::LevelFilter>,
     #[serde(default)]
     pub directives: Vec<String>,
+}
+
+/// Controls outbound HTTP requests initiated by database modules.
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "kebab-case", default)]
+pub struct ModuleHttpConfig {
+    /// Whether modules may issue outbound HTTP requests.
+    pub enabled: bool,
+}
+
+impl Default for ModuleHttpConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -562,6 +580,7 @@ mod tests {
     fn v8_heap_policy_defaults_when_omitted() {
         let config: ConfigFile = toml::from_str("").unwrap();
 
+        assert!(config.module_http.enabled);
         assert_eq!(
             config.wasm.procedure_instance_pool_size,
             default_wasm_procedure_instance_pool_size()
