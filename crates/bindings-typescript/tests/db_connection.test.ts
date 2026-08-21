@@ -1069,3 +1069,79 @@ describe('DbConnection', () => {
     expect(client.db.user.count()).toEqual(2n);
   });
 });
+
+describe('DbConnectionBuilder.withReconnectOptions', () => {
+  test('getReconnectOptions is undefined by default', () => {
+    expect(DbConnection.builder().getReconnectOptions()).toBeUndefined();
+  });
+
+  test('stores the provided base and max delays', () => {
+    const options = DbConnection.builder()
+      .withReconnectOptions({ baseDelayMs: 500, maxDelayMs: 10_000 })
+      .getReconnectOptions();
+    expect(options?.baseDelayMs).toBe(500);
+    expect(options?.maxDelayMs).toBe(10_000);
+  });
+
+  test('accepts a single field, leaving the other at its default', () => {
+    const options = DbConnection.builder()
+      .withReconnectOptions({ maxDelayMs: 10_000 })
+      .getReconnectOptions();
+    expect(options?.baseDelayMs).toBeUndefined();
+    expect(options?.maxDelayMs).toBe(10_000);
+  });
+
+  test('accepts reconnect delay bounds', () => {
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({
+        baseDelayMs: 500,
+        maxDelayMs: 10_000,
+      })
+    ).not.toThrow();
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({
+        baseDelayMs: 300_000,
+        maxDelayMs: 300_000,
+      })
+    ).not.toThrow();
+  });
+
+  test('rejects delays outside reconnect delay bounds', () => {
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({ baseDelayMs: 499 })
+    ).toThrow(TypeError);
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({ maxDelayMs: 9_999 })
+    ).toThrow(TypeError);
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({ baseDelayMs: 300_001 })
+    ).toThrow(TypeError);
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({ maxDelayMs: 300_001 })
+    ).toThrow(TypeError);
+  });
+
+  test('rejects non-integer, unsafe, or base > max delays', () => {
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({ baseDelayMs: 500.5 })
+    ).toThrow(TypeError);
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({
+        maxDelayMs: Number.MAX_SAFE_INTEGER + 1,
+      })
+    ).toThrow(TypeError);
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({
+        baseDelayMs: 1_000,
+        maxDelayMs: 500,
+      })
+    ).toThrow(TypeError);
+  });
+
+  test('rejects baseDelayMs that conflicts with the default maxDelayMs', () => {
+    // baseDelayMs above the default maxDelayMs (30000).
+    expect(() =>
+      DbConnection.builder().withReconnectOptions({ baseDelayMs: 40_000 })
+    ).toThrow(TypeError);
+  });
+});
