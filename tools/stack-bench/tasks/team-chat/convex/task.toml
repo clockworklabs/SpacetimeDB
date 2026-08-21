@@ -1,0 +1,42 @@
+schema_version = "1.2"
+artifacts = []
+
+[task]
+name = "clockwork/team-chat-convex"
+description = "Build a full team-chat backend (rooms, presence, unread counters, edits/tombstones, idempotent sends, gapless per-room seq, atomic tips) on Convex; graded behaviorally incl. concurrency, restart durability, and latency."
+keywords = ["realtime", "chat", "convex", "cross-backend", "stack-bench", "durability", "acid"]
+[[task.authors]]
+name = "Clockwork Labs"
+email = ""
+
+[metadata]
+# stack-bench-specific: which backend this task variant exercises.
+backend = "convex"
+tags = ["convex"]
+category = "team-chat"
+
+[verifier]
+# The scenario runs ~44 checks including a backend restart and perf probes.
+timeout_sec = 1200.0
+# SHARED mode (default with no [verifier.environment]): the verifier runs
+# inside the agent's container and reaches the backend + backendctl directly.
+
+[agent]
+timeout_sec = 3600.0
+
+[environment]
+build_timeout_sec = 1800.0
+os = "linux"
+cpus = 2
+memory_mb = 4096
+storage_mb = 12288
+gpus = 0
+allow_internet = true
+
+# Gate the agent on the in-container Convex backend being ready.
+[environment.healthcheck]
+command = "curl -sf -o /dev/null http://127.0.0.1:3210/version"
+interval_sec = 3.0
+timeout_sec = 10.0
+start_period_sec = 5.0
+retries = 40

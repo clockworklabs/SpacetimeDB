@@ -1,0 +1,9 @@
+{
+  "name": "chat-convex-oracle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "convex": "^1.17.0"
+  }
+}
