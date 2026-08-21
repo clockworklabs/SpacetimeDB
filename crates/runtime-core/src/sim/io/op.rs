@@ -1,4 +1,4 @@
-use core::any::Any;
+use core::{any::Any, iter::Scan, ops::Range};
 
 use alloc::{
     boxed::Box,
@@ -37,6 +37,7 @@ pub trait Submission: Send + Any {
 /// An object containing the result of executing a [Submission], as well as a
 /// handle to resolve a future waiting on the outcome of the operation.
 pub trait Completion: Send {
+    fn success(&self) -> bool;
     /// Resolve the future waiting on the outcome of the operation.
     fn complete(self: Box<Self>);
 }
@@ -44,6 +45,10 @@ pub trait Completion: Send {
 /// A channel to resolve a future waiting on the outcome of a submitted
 /// operation.
 pub type OnComplete<T> = oneshot::Sender<T>;
+
+pub type ScanState<B> = (fs::File, usize, Arc<spin::Mutex<PagedOpState<B>>>);
+pub type PageWrites<B> = Scan<Range<usize>, ScanState<B>, fn(&mut ScanState<B>, usize) -> Option<Box<dyn Submission>>>;
+pub type PageReads<B> = Scan<Range<usize>, ScanState<B>, fn(&mut ScanState<B>, usize) -> Option<Box<dyn Submission>>>;
 
 pub type WriteAtResult<B> = Result<B, ErrorWith<Error, B>>;
 
@@ -57,28 +62,29 @@ pub fn write_at<B: AlignedBytes + Send + 'static>(
     fd: fs::File,
     buf: B,
     offset: u64,
-    on_complete: OnComplete<WriteAtResult<B>>,
-) -> impl Iterator<Item = Box<dyn Submission>> {
-    let first_page = (offset / SECTOR_SIZE as u64) as usize;
-    let page_count = buf.as_bytes().len() / SECTOR_SIZE;
+) -> impl FnOnce(OnComplete<WriteAtResult<B>>) -> PageWrites<B> {
+    move |on_complete| {
+        let first_page = (offset / SECTOR_SIZE as u64) as usize;
+        let page_count = buf.as_bytes().len() / SECTOR_SIZE;
 
-    let state = Arc::new(spin::Mutex::new(PagedOpState {
-        buf: Some(buf),
-        on_complete: Some(on_complete),
-        remaining: page_count,
-        first_error: None,
-    }));
+        let state = Arc::new(spin::Mutex::new(PagedOpState {
+            buf: Some(buf),
+            on_complete: Some(on_complete),
+            remaining: page_count,
+            first_error: None,
+        }));
 
-    (0..page_count).map(move |buf_page| {
-        let op = WritePage {
-            fd: fd.clone(),
-            file_page: first_page + buf_page,
-            buf_page,
-            state: state.clone(),
-        };
+        (0..page_count).scan((fd, first_page, state), |(fd, first_page, state), buf_page| {
+            let op = WritePage {
+                fd: fd.clone(),
+                file_page: *first_page + buf_page,
+                buf_page,
+                state: state.clone(),
+            };
 
-        Box::new(op) as Box<dyn Submission>
-    })
+            Some(Box::new(op))
+        })
+    }
 }
 
 pub type ReadAtResult<B> = Result<B, ErrorWith<Error, B>>;
@@ -94,67 +100,81 @@ pub fn read_at<B: AlignedBytes + Send + 'static>(
     fd: fs::File,
     buf: B,
     offset: u64,
-    on_complete: OnComplete<ReadAtResult<B>>,
-) -> impl Iterator<Item = Box<dyn Submission>> {
-    let first_page = (offset / SECTOR_SIZE as u64) as usize;
-    let page_count = buf.as_bytes().len() / SECTOR_SIZE;
+) -> impl FnOnce(OnComplete<ReadAtResult<B>>) -> PageReads<B> {
+    move |on_complete| {
+        let first_page = (offset / SECTOR_SIZE as u64) as usize;
+        let page_count = buf.as_bytes().len() / SECTOR_SIZE;
 
-    let state = Arc::new(spin::Mutex::new(PagedOpState {
-        buf: Some(buf),
-        on_complete: Some(on_complete),
-        remaining: page_count,
-        first_error: None,
-    }));
+        let state = Arc::new(spin::Mutex::new(PagedOpState {
+            buf: Some(buf),
+            on_complete: Some(on_complete),
+            remaining: page_count,
+            first_error: None,
+        }));
 
-    (0..page_count).map(move |buf_page| {
-        let op = ReadPage {
-            fd: fd.clone(),
-            file_page: first_page + buf_page,
-            buf_page,
-            state: state.clone(),
-        };
+        (0..page_count).scan((fd, first_page, state), |(fd, first_page, state), buf_page| {
+            let op = ReadPage {
+                fd: fd.clone(),
+                file_page: *first_page + buf_page,
+                buf_page,
+                state: state.clone(),
+            };
 
-        Box::new(op) as Box<dyn Submission>
-    })
+            Some(Box::new(op))
+        })
+    }
 }
 
 /// Open file at `path`.
-pub fn open_file(path: &str, on_complete: OnComplete<Result<fs::File, Error>>) -> Box<dyn Submission> {
-    Box::new(OpenFile {
-        path: path.into(),
-        on_complete,
-    })
+pub fn open_file(path: &str) -> impl FnOnce(OnComplete<Result<fs::File, Error>>) -> Box<dyn Submission> {
+    move |on_complete| {
+        Box::new(OpenFile {
+            path: path.into(),
+            on_complete,
+        })
+    }
 }
 
 /// Create a new file at `path` and allocate `len` space for it.
-pub fn create_file(path: &str, len: u64, on_complete: OnComplete<Result<fs::File, Error>>) -> Box<dyn Submission> {
-    Box::new(CreateFile {
-        path: path.into(),
-        len,
-        on_complete,
-    })
+pub fn create_file(path: &str, len: u64) -> impl FnOnce(OnComplete<Result<fs::File, Error>>) -> Box<dyn Submission> {
+    move |on_complete| {
+        Box::new(CreateFile {
+            path: path.into(),
+            len,
+            on_complete,
+        })
+    }
 }
 
 /// Get the length of the file `fd`.
-pub fn get_len(fd: fs::File, on_complete: OnComplete<Result<u64, Error>>) -> Box<dyn Submission> {
-    Box::new(GetLen { fd, on_complete })
+pub fn get_len(fd: fs::File) -> impl FnOnce(OnComplete<Result<u64, Error>>) -> Box<dyn Submission> {
+    move |on_complete| Box::new(GetLen { fd, on_complete })
 }
 
 /// Set the length of the file `fd`.
-pub fn set_len(fd: fs::File, len: u64, on_complete: OnComplete<Result<(), Error>>) -> Box<dyn Submission> {
-    Box::new(SetLen { fd, len, on_complete })
+pub fn set_len(fd: fs::File, len: u64) -> impl FnOnce(OnComplete<Result<(), Error>>) -> Box<dyn Submission> {
+    move |on_complete| Box::new(SetLen { fd, len, on_complete })
 }
 
 struct GenericCompletion<T> {
+    success: bool,
     result: T,
     on_complete: OnComplete<T>,
 }
 
-fn completion<T: Send + 'static>(result: T, on_complete: OnComplete<T>) -> Box<dyn Completion> {
-    Box::new(GenericCompletion { result, on_complete })
+fn completion<T: Send + 'static>(success: bool, result: T, on_complete: OnComplete<T>) -> Box<dyn Completion> {
+    Box::new(GenericCompletion {
+        success,
+        result,
+        on_complete,
+    })
 }
 
 impl<T: Send> Completion for GenericCompletion<T> {
+    fn success(&self) -> bool {
+        self.success
+    }
+
     fn complete(self: Box<Self>) {
         let Self {
             result, on_complete, ..
@@ -200,8 +220,107 @@ impl Submission for Ready {
 }
 
 /// An operation that is already complete with `result`.
-pub fn ready<T: Send + 'static>(result: T, on_complete: OnComplete<T>) -> Box<dyn Submission> {
-    Box::new(Ready(completion(result, on_complete)))
+pub fn ready<T: Send + 'static>(result: T) -> impl FnOnce(OnComplete<T>) -> Box<dyn Submission> {
+    move |on_complete| Box::new(Ready(completion(true, result, on_complete)))
+}
+
+/// [Submission] created by [link].
+pub(crate) struct SoftLink {
+    a: Box<dyn Submission>,
+    b: Box<dyn Submission>,
+}
+
+impl Submission for SoftLink {
+    fn execute(self: Box<Self>, files: &mut BTreeMap<Box<str>, fs::File>) -> Option<Box<dyn Completion>> {
+        let Self { a, b } = *self;
+        let result_a = a.execute(files);
+        let result_b = if result_a.as_ref().is_none_or(|result| result.success()) {
+            b.execute(files)
+        } else {
+            b.cancel()
+        };
+
+        Some(Box::new(LinkedCompletion {
+            a: result_a,
+            b: result_b,
+        }))
+    }
+
+    fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
+        let Self { a, b } = *self;
+        Some(Box::new(LinkedCompletion {
+            a: a.cancel(),
+            b: b.cancel(),
+        }))
+    }
+}
+
+/// Link `a` and `b`, such that `b` gets executed after `a`.
+///
+/// If `a` fails (i.e. its [Completion::success] returns `false`), `b` is
+/// cancelled.
+///
+/// Corresponds to io-uring's `IOSQE_IO_LINK` flag. To emulate
+/// `IOSQE_IO_HARDLINK`, see [hard_link].
+pub fn link(a: Box<dyn Submission>, b: Box<dyn Submission>) -> Box<dyn Submission> {
+    Box::new(SoftLink { a, b })
+}
+
+/// [Submission] created by [hard_link].
+pub(crate) struct HardLink {
+    a: Box<dyn Submission>,
+    b: Box<dyn Submission>,
+}
+
+impl Submission for HardLink {
+    fn execute(self: Box<Self>, files: &mut BTreeMap<Box<str>, fs::File>) -> Option<Box<dyn Completion>> {
+        let Self { a, b } = *self;
+        Some(Box::new(LinkedCompletion {
+            a: a.execute(files),
+            b: b.execute(files),
+        }))
+    }
+
+    fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
+        let Self { a, b } = *self;
+        Some(Box::new(LinkedCompletion {
+            a: a.cancel(),
+            b: b.cancel(),
+        }))
+    }
+}
+
+/// Link `a` and `b`, such that `b` gets executed after `a`.
+///
+/// Unlike [link], this executes both submissions regardless of the result. It
+/// just enforces the ordering constraint that `b` will never execute before
+/// `a`.
+///
+/// Corresponds to io-uring's `IOSQE_IO_HARDLINK` flag. To emulate
+/// `IOSQE_IO_LINK`, see [link].
+pub fn hard_link(a: Box<dyn Submission>, b: Box<dyn Submission>) -> Box<dyn Submission> {
+    Box::new(HardLink { a, b })
+}
+
+struct LinkedCompletion {
+    a: Option<Box<dyn Completion>>,
+    b: Option<Box<dyn Completion>>,
+}
+
+impl Completion for LinkedCompletion {
+    fn success(&self) -> bool {
+        self.a.as_ref().is_none_or(|result| result.success()) && self.b.as_ref().is_none_or(|result| result.success())
+    }
+
+    fn complete(self: Box<Self>) {
+        let Self { a, b } = *self;
+        if let Some(a) = a {
+            a.complete();
+        }
+        if let Some(b) = b {
+            b.complete();
+        }
+    }
 }
 
 /// [Submission] created by [open_file].
@@ -214,12 +333,12 @@ impl Submission for OpenFile {
     fn execute(self: Box<Self>, files: &mut BTreeMap<Box<str>, fs::File>) -> Option<Box<dyn Completion>> {
         let Self { path, on_complete } = *self;
         let result = files.get(&path).cloned().ok_or(Error::FileNotFound { path });
-        Some(completion(result, on_complete))
+        Some(completion(result.is_ok(), result, on_complete))
     }
 
     fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
         let Self { path: _, on_complete } = *self;
-        Some(completion(Err(Error::Cancelled), on_complete))
+        Some(completion(false, Err(Error::Cancelled), on_complete))
     }
 }
 
@@ -241,7 +360,7 @@ impl Submission for CreateFile {
             file.set_len(len)?;
             Ok(file)
         })();
-        Some(completion(result, on_complete))
+        Some(completion(result.is_ok(), result, on_complete))
     }
 
     fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
@@ -250,7 +369,7 @@ impl Submission for CreateFile {
             len: _,
             on_complete,
         } = *self;
-        Some(completion(Err(Error::Cancelled), on_complete))
+        Some(completion(false, Err(Error::Cancelled), on_complete))
     }
 }
 
@@ -264,12 +383,12 @@ impl Submission for GetLen {
     fn execute(self: Box<Self>, _files: &mut BTreeMap<Box<str>, fs::File>) -> Option<Box<dyn Completion>> {
         let Self { fd, on_complete } = *self;
         let result = Ok(fd.len());
-        Some(completion(result, on_complete))
+        Some(completion(true, result, on_complete))
     }
 
     fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
         let Self { fd: _, on_complete } = *self;
-        Some(completion(Err(Error::Cancelled), on_complete))
+        Some(completion(false, Err(Error::Cancelled), on_complete))
     }
 }
 
@@ -284,7 +403,7 @@ impl Submission for SetLen {
     fn execute(self: Box<Self>, _files: &mut BTreeMap<Box<str>, fs::File>) -> Option<Box<dyn Completion>> {
         let Self { fd, len, on_complete } = *self;
         let result = fd.set_len(len).map_err(Error::from);
-        Some(completion(result, on_complete))
+        Some(completion(result.is_ok(), result, on_complete))
     }
 
     fn cancel(self: Box<Self>) -> Option<Box<dyn Completion>> {
@@ -293,11 +412,11 @@ impl Submission for SetLen {
             len: _,
             on_complete,
         } = *self;
-        Some(completion(Err(Error::Cancelled), on_complete))
+        Some(completion(false, Err(Error::Cancelled), on_complete))
     }
 }
 
-struct PagedOpState<B> {
+pub struct PagedOpState<B> {
     buf: Option<B>,
     on_complete: Option<OnComplete<Result<B, ErrorWith<Error, B>>>>,
     remaining: usize,
@@ -329,6 +448,10 @@ struct PageOpCompletion<B> {
 }
 
 impl<B: Send + 'static> Completion for PageOpCompletion<B> {
+    fn success(&self) -> bool {
+        self.state.lock().first_error.is_none()
+    }
+
     fn complete(self: Box<Self>) {
         let (on_complete, result) = {
             let mut state = self.state.lock();

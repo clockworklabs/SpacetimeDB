@@ -3,7 +3,12 @@ use alloc::{
     collections::{BTreeMap, VecDeque},
     sync::Arc,
 };
-use core::{num::NonZeroUsize, result::Result};
+use core::{
+    num::NonZeroUsize,
+    pin::Pin,
+    result::Result,
+    task::{Context, Poll},
+};
 use futures_channel::oneshot;
 
 use crate::{
@@ -13,7 +18,6 @@ use crate::{
 
 mod fs;
 pub mod op;
-use op::{Completion, Submission};
 
 pub use crate::io::SECTOR_SIZE;
 pub use fs::File;
@@ -77,127 +81,118 @@ impl SimulatorIO {
     }
 
     /// Execute `sqe`.
-    pub fn execute(&self, sqe: Box<dyn Submission>) {
+    pub fn execute(&self, sqe: Box<dyn op::Submission>) {
         self.inner.lock().execute(sqe);
     }
 
     /// Remove and return the submission at the front of the queue, if any.
-    pub fn next_submission(&self) -> Option<Box<dyn Submission>> {
+    pub fn next_submission(&self) -> Option<Box<dyn op::Submission>> {
         self.inner.lock().next_submission()
     }
 
     /// Remove and return a random submission, or `None` if the queue is empty.
-    pub fn random_submission(&self, rng: &Rng) -> Option<Box<dyn Submission>> {
+    pub fn random_submission(&self, rng: &Rng) -> Option<Box<dyn op::Submission>> {
         self.inner.lock().random_submission(rng)
     }
 
     /// Remove and return the completion at the front of the queue, if any.
-    pub fn next_completion(&self) -> Option<Box<dyn Completion>> {
+    pub fn next_completion(&self) -> Option<Box<dyn op::Completion>> {
         self.inner.lock().next_completion()
     }
 
     /// Remove and return a random completion, or `None` if the queue is empty.
-    pub fn random_completion(&self, rng: &Rng) -> Option<Box<dyn Completion>> {
+    pub fn random_completion(&self, rng: &Rng) -> Option<Box<dyn op::Completion>> {
         self.inner.lock().random_completion(rng)
     }
 
-    async fn submit_and_wait<T>(
-        &self,
-        op: impl FnOnce(oneshot::Sender<T>) -> Box<dyn Submission>,
-    ) -> Result<T, oneshot::Canceled> {
+    fn submit<T>(&self, op: impl FnOnce(oneshot::Sender<T>) -> Box<dyn op::Submission>) -> Completion<T> {
         let (tx, rx) = oneshot::channel();
         self.inner.lock().submit(op(tx));
-        rx.await
+        Completion(rx)
+    }
+
+    fn submit_all<T, I: Iterator<Item = Box<dyn op::Submission>>>(
+        &self,
+        ops: impl FnOnce(oneshot::Sender<T>) -> I,
+    ) -> Completion<T> {
+        let (tx, rx) = oneshot::channel();
+        let mut inner = self.inner.lock();
+        ops(tx).for_each(|op| inner.submit(op));
+        Completion(rx)
+    }
+}
+
+#[must_use = "completions must be polled to completion"]
+pub struct Completion<T>(oneshot::Receiver<T>);
+
+impl<T> Future for Completion<T> {
+    type Output = T;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.as_mut().0).poll(cx).map(Result::unwrap)
     }
 }
 
 impl SpacetimeIO for SimulatorIO {
     type Fd = fs::File;
     type Error = Error;
+    type Completion<T> = Completion<T>;
 
-    async fn open_file(&self, path: &str) -> Result<Self::Fd, Self::Error> {
-        self.submit_and_wait(|tx| op::open_file(path, tx))
-            .await
-            .expect("`open_file` future cancelled")
+    fn open_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>> {
+        self.submit(op::open_file(path))
     }
 
-    async fn create_file(&self, path: &str, len: u64) -> Result<Self::Fd, Self::Error> {
-        self.submit_and_wait(|tx| op::create_file(path, len, tx))
-            .await
-            .expect("`create_file` future cancelled")
+    fn create_file(&self, path: &str, len: u64) -> Self::Completion<Result<Self::Fd, Self::Error>> {
+        self.submit(op::create_file(path, len))
     }
 
-    async fn write_all_at<B: AlignedBytes + Send + 'static>(
+    fn write_all_at<B: AlignedBytes + Send + 'static>(
         &self,
         fd: Self::Fd,
         buf: B,
         offset: u64,
-    ) -> Result<B, ErrorWith<Self::Error, B>> {
+    ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
         let () = B::ASSERT_VALID_LAYOUT;
 
         if !offset.is_multiple_of(SECTOR_SIZE as _) {
-            self.submit_and_wait(|tx| {
-                op::ready(
-                    Err(ErrorWith {
-                        error: fs::Error::UnalignedOffset.into(),
-                        with: buf,
-                    }),
-                    tx,
-                )
-            })
-            .await
-            .expect("`write_all_at` future cancelled")
+            self.submit(op::ready(Err(ErrorWith {
+                error: fs::Error::UnalignedOffset.into(),
+                with: buf,
+            })))
         } else {
-            let (tx, rx) = oneshot::channel();
-            for op in op::write_at(fd, buf, offset, tx) {
-                self.inner.lock().submit(op);
-            }
-            rx.await.expect("`write_all_at` future cancelled")
+            self.submit_all(op::write_at(fd, buf, offset))
         }
     }
 
-    async fn read_exact_at<B: AlignedBytes + Send + 'static>(
+    fn read_exact_at<B: AlignedBytes + Send + 'static>(
         &self,
         fd: Self::Fd,
         buf: B,
         offset: u64,
-    ) -> Result<B, ErrorWith<Self::Error, B>> {
+    ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>> {
         let () = B::ASSERT_VALID_LAYOUT;
 
         if !offset.is_multiple_of(SECTOR_SIZE as _) {
-            self.submit_and_wait(|tx| {
-                op::ready(
-                    Err(ErrorWith {
-                        error: fs::Error::UnalignedOffset.into(),
-                        with: buf,
-                    }),
-                    tx,
-                )
-            })
-            .await
-            .expect("`read_exact_at` future cancelled")
+            self.submit(op::ready(Err(ErrorWith {
+                error: fs::Error::UnalignedOffset.into(),
+                with: buf,
+            })))
         } else {
-            let (tx, rx) = oneshot::channel();
-            for op in op::read_at(fd, buf, offset, tx) {
-                self.inner.lock().submit(op);
-            }
-            rx.await.expect("`read_exact_at` future cancelled")
+            self.submit_all(op::read_at(fd, buf, offset))
         }
     }
 
-    async fn fsync(&self, _fd: Self::Fd) -> Result<(), Self::Error> {
-        Ok(())
+    fn fsync(&self, _fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
+        self.submit(op::ready(Ok(())))
     }
 
-    async fn fdatasync(&self, _fd: Self::Fd) -> Result<(), Self::Error> {
-        Ok(())
+    fn fdatasync(&self, _fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>> {
+        self.submit(op::ready(Ok(())))
     }
 
-    async fn reserve(&self, fd: Self::Fd, additional: u64) -> Result<(), Self::Error> {
-        let len = self.length(fd.clone()).await?;
-        self.submit_and_wait(|tx| op::set_len(fd, len + additional, tx))
-            .await
-            .expect("`set_len` future cancelled")
+    fn reserve(&self, fd: Self::Fd, total: u64) -> Self::Completion<Result<(), Self::Error>> {
+        assert!(total >= fd.len());
+        self.submit(op::set_len(fd, total))
     }
 
     fn length(&self, fd: Self::Fd) -> Self::Completion<Result<u64, Self::Error>> {
@@ -208,8 +203,8 @@ impl SpacetimeIO for SimulatorIO {
 #[derive(Default)]
 struct SimulatorIOInner {
     files: BTreeMap<Box<str>, fs::File>,
-    submissions: VecDeque<Box<dyn Submission>>,
-    completions: VecDeque<Box<dyn Completion>>,
+    submissions: VecDeque<Box<dyn op::Submission>>,
+    completions: VecDeque<Box<dyn op::Completion>>,
 }
 
 impl SimulatorIOInner {
@@ -229,31 +224,31 @@ impl SimulatorIOInner {
         progress
     }
 
-    fn execute(&mut self, sqe: Box<dyn Submission>) {
+    fn execute(&mut self, sqe: Box<dyn op::Submission>) {
         if let Some(cqe) = sqe.execute(&mut self.files) {
             self.completions.push_back(cqe);
         }
     }
 
-    fn next_submission(&mut self) -> Option<Box<dyn Submission>> {
+    fn next_submission(&mut self) -> Option<Box<dyn op::Submission>> {
         self.submissions.pop_front()
     }
 
-    fn random_submission(&mut self, rng: &Rng) -> Option<Box<dyn Submission>> {
+    fn random_submission(&mut self, rng: &Rng) -> Option<Box<dyn op::Submission>> {
         let len = NonZeroUsize::new(self.submissions.len())?;
         self.submissions.remove(rng.index(len.get()))
     }
 
-    fn next_completion(&mut self) -> Option<Box<dyn Completion>> {
+    fn next_completion(&mut self) -> Option<Box<dyn op::Completion>> {
         self.completions.pop_front()
     }
 
-    fn random_completion(&mut self, rng: &Rng) -> Option<Box<dyn Completion>> {
+    fn random_completion(&mut self, rng: &Rng) -> Option<Box<dyn op::Completion>> {
         let len = NonZeroUsize::new(self.completions.len())?;
         self.completions.remove(rng.index(len.get()))
     }
 
-    fn submit(&mut self, op: Box<dyn Submission>) {
+    fn submit(&mut self, op: Box<dyn op::Submission>) {
         self.submissions.push_back(op);
     }
 }

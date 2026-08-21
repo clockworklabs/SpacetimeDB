@@ -101,12 +101,12 @@ pub trait SpacetimeIO {
     type Error;
 
     /// Open the file at `path`.
-    fn open_file(&self, path: &str) -> impl Future<Output = Result<Self::Fd, Self::Error>>;
+    fn open_file(&self, path: &str) -> Self::Completion<Result<Self::Fd, Self::Error>>;
 
     /// Create the file at `path` and allocate `len` bytes.
     ///
     /// Returns an error if the file already exists.
-    fn create_file(&self, path: &str, len: u64) -> impl Future<Output = Result<Self::Fd, Self::Error>>;
+    fn create_file(&self, path: &str, len: u64) -> Self::Completion<Result<Self::Fd, Self::Error>>;
 
     /// Write `buf` to `fd` at `offset`.
     ///
@@ -120,7 +120,7 @@ pub trait SpacetimeIO {
         fd: Self::Fd,
         buf: B,
         offset: u64,
-    ) -> impl Future<Output = Result<B, ErrorWith<Self::Error, B>>>;
+    ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>>;
 
     /// Read `size_of::<B>()` bytes from `fd` at `offset` and interpret them at
     /// type `B`.
@@ -136,15 +136,15 @@ pub trait SpacetimeIO {
         fd: Self::Fd,
         buf: B,
         offset: u64,
-    ) -> impl Future<Output = Result<B, ErrorWith<Self::Error, B>>>;
+    ) -> Self::Completion<Result<B, ErrorWith<Self::Error, B>>>;
 
     /// Call `fsync(2)` on `fd`.
-    fn fsync(&self, fd: Self::Fd) -> impl Future<Output = Result<(), Self::Error>>;
+    fn fsync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>>;
     /// Call `fdatasync(2)` on `fd`.
-    fn fdatasync(&self, fd: Self::Fd) -> impl Future<Output = Result<(), Self::Error>>;
+    fn fdatasync(&self, fd: Self::Fd) -> Self::Completion<Result<(), Self::Error>>;
 
     /// Allocate `additional` bytes for the file `fd`.
-    fn reserve(&self, fd: Self::Fd, additional: u64) -> impl Future<Output = Result<(), Self::Error>>;
+    fn reserve(&self, fd: Self::Fd, additional: u64) -> Self::Completion<Result<(), Self::Error>>;
 
     /// Determine the length of the file `fd`.
     ///
