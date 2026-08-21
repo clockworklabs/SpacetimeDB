@@ -81,8 +81,6 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
-      TARGET_TRIPLE: x86_64-unknown-linux-gnu
-      OPENSSL_CACHE_SUFFIX: ""
     steps: &upload-build-artifact-steps
       - &find-git-ref
         name: Find Git ref
@@ -115,31 +113,51 @@ jobs:
         shell: pwsh
         run: nasm -v
 
-      # v1 is a manual schema for invalidating this cache if its layout changes.
-      # The v8 version is fixed and needs to be manually kept in sync with Cargo.lock.
-      # It should hardly ever be updated, so prefer this over more auto-derivation machinery.
-      # The target triple identifies OS and ABI.
-      # Release CI uses default features, so no other inputs are needed. Debug has a
-      # separate key because Cargo stores the native output under a different profile.
+      # These keys intentionally spell out stable native-build inputs instead of
+      # hashing the workspace. Keep the versions in sync with Cargo.lock and bump
+      # v1 if a fixed feature set or build configuration changes. This manual
+      # versioning is temporary until a better caching mechanism replaces it.
+      # - V8 uses its default features and has profile-specific native output.
+      # - OpenSSL is the vendored static build with legacy enabled. Windows uses
+      #   NASM, which is represented by a separate cache-key suffix.
+      # - jemalloc is an optimized static PIC build with profiling, stats, and
+      #   its default background-thread support.
+      # - Zstd is an optimized static build with legacy support and dictionary
+      #   APIs. It is reused across Cargo profiles.
+      - &set-native-cache-keys
+        name: Set native cache keys
+        id: native-cache-keys
+        shell: bash
+        run: |
+          target="$(rustc -vV | sed -n 's/^host: //p')"
+          openssl_suffix=""
+          if [[ "${OPENSSL_RUST_USE_NASM:-}" == "1" ]]; then
+            openssl_suffix="-nasm"
+          fi
+          echo "v8-release-key=rusty-v8-v1-145.0.0-${target}" >>"$GITHUB_OUTPUT"
+          echo "v8-debug-key=rusty-v8-debug-v1-145.0.0-${target}" >>"$GITHUB_OUTPUT"
+          echo "openssl-key=openssl-v1-300.5.3+3.5.4-${target}${openssl_suffix}" >>"$GITHUB_OUTPUT"
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            cc="${CC:-cc}"
+            cc_hash="$("$cc" --version | sha256sum | cut -c1-16)"
+            echo "jemalloc-key=jemalloc-v1-0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7-${target}-${cc_hash}" >>"$GITHUB_OUTPUT"
+            echo "zstd-key=zstd-v1-2.0.16+zstd.1.5.7-${target}-${cc_hash}" >>"$GITHUB_OUTPUT"
+          fi
+
       - &cache-rusty-v8
         name: Cache rusty_v8
         uses: actions/cache@v4
-        with:
+        with: &v8-release-cache
           path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
-          key: rusty-v8-v1-145.0.0-${{ env.TARGET_TRIPLE }}
+          key: ${{ steps.native-cache-keys.outputs.v8-release-key }}
 
-      # v1 is a manual schema for invalidating this cache if its layout changes.
-      # The openssl-src version in fixed and needs to be manually kept in sync with Cargo.lock.
-      # It should hardly ever be updated, so prefer this over more auto-derivation machinery.
-      # The Windows jobs force NASM; all other OpenSSL options are fixed by openssl-src/CI,
-      # so these inputs fully identify the native installation.
       - &cache-openssl
         name: Cache OpenSSL
         id: cache-openssl
         uses: actions/cache@v4
-        with:
+        with: &openssl-cache
           path: ${{ github.workspace }}/.ci-cache/openssl
-          key: openssl-v1-300.5.3+3.5.4-${{ env.TARGET_TRIPLE }}${{ env.OPENSSL_CACHE_SUFFIX }}
+          key: ${{ steps.native-cache-keys.outputs.openssl-key }}
 
       - &configure-cached-openssl
         name: Configure cached OpenSSL
@@ -149,6 +167,36 @@ jobs:
           # Reuse the cached vendored output as a prebuilt OpenSSL installation.
           echo "OPENSSL_NO_VENDOR=1" >>"$GITHUB_ENV"
           echo "OPENSSL_DIR=${{ github.workspace }}/.ci-cache/openssl" >>"$GITHUB_ENV"
+
+      - name: Cache jemalloc
+        id: cache-jemalloc
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with: &jemalloc-cache
+          path: ${{ github.workspace }}/.ci-cache/jemalloc
+          key: ${{ steps.native-cache-keys.outputs.jemalloc-key }}
+
+      - &configure-cached-jemalloc
+        name: Configure cached jemalloc
+        if: runner.os == 'Linux' && steps.cache-jemalloc.outputs.cache-hit == 'true'
+        shell: bash
+        run: echo "JEMALLOC_OVERRIDE=${{ github.workspace }}/.ci-cache/jemalloc/libjemalloc_pic.a" >>"$GITHUB_ENV"
+
+      - name: Cache Zstd
+        id: cache-zstd
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with: &zstd-cache
+          path: ${{ github.workspace }}/.ci-cache/zstd
+          key: ${{ steps.native-cache-keys.outputs.zstd-key }}
+
+      - &configure-cached-zstd
+        name: Configure cached Zstd
+        if: runner.os == 'Linux' && steps.cache-zstd.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          echo "ZSTD_SYS_USE_PKG_CONFIG=1" >>"$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=${{ github.workspace }}/.ci-cache/zstd/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >>"$GITHUB_ENV"
 
       - name: Build CLI and standalone
         shell: bash
@@ -171,6 +219,47 @@ jobs:
           fi
           mkdir -p .ci-cache/openssl
           cp -R "${openssl_installs[0]}/." .ci-cache/openssl/
+
+      - name: Prepare jemalloc cache
+        if: runner.os == 'Linux' && steps.cache-jemalloc.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          jemalloc_archives=(target/release/build/tikv-jemalloc-sys-*/out/lib/libjemalloc_pic.a)
+          if (( ${#jemalloc_archives[@]} != 1 )); then
+            echo "Expected one jemalloc archive, found ${#jemalloc_archives[@]}."
+            exit 1
+          fi
+          mkdir -p .ci-cache/jemalloc
+          cp "${jemalloc_archives[0]}" .ci-cache/jemalloc/
+          echo "JEMALLOC_OVERRIDE=${{ github.workspace }}/.ci-cache/jemalloc/libjemalloc_pic.a" >>"$GITHUB_ENV"
+
+      - name: Prepare Zstd cache
+        if: runner.os == 'Linux' && steps.cache-zstd.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          zstd_outputs=(target/release/build/zstd-sys-*/out)
+          if (( ${#zstd_outputs[@]} != 1 )); then
+            echo "Expected one vendored Zstd build, found ${#zstd_outputs[@]}."
+            exit 1
+          fi
+          mkdir -p .ci-cache/zstd/lib/pkgconfig .ci-cache/zstd/include
+          cp "${zstd_outputs[0]}/libzstd.a" .ci-cache/zstd/lib/
+          cp "${zstd_outputs[0]}"/include/*.h .ci-cache/zstd/include/
+          printf '%s\n' \
+            'prefix=${pcfiledir}/../..' \
+            'libdir=${prefix}/lib' \
+            'includedir=${prefix}/include' \
+            '' \
+            'Name: libzstd' \
+            'Description: Zstandard compression library' \
+            'Version: 1.5.7' \
+            'Libs: -L${libdir} -lzstd' \
+            'Cflags: -I${includedir}' \
+            > .ci-cache/zstd/lib/pkgconfig/libzstd.pc
+          echo "ZSTD_SYS_USE_PKG_CONFIG=1" >>"$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=${{ github.workspace }}/.ci-cache/zstd/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >>"$GITHUB_ENV"
 
       - name: Package build artifacts
         shell: bash
@@ -209,8 +298,6 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: windows
       EXE_SUFFIX: .exe
-      TARGET_TRIPLE: x86_64-pc-windows-msvc
-      OPENSSL_CACHE_SUFFIX: -nasm
       OPENSSL_RUST_USE_NASM: "1"
     steps: *upload-build-artifact-steps
 
@@ -224,8 +311,6 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
-      TARGET_TRIPLE: x86_64-unknown-linux-gnu
-      OPENSSL_CACHE_SUFFIX: ""
       SMOKETEST_SUITE: standalone
     steps: &smoketest-build-steps
       - *find-git-ref
@@ -235,20 +320,13 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
 
+      - *set-native-cache-keys
       - *verify-openssl-assembler
-      - &restore-rusty-v8
-        name: Restore rusty_v8
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.CARGO_TARGET_DIR }}/release/gn_out/obj
-          key: rusty-v8-v1-145.0.0-${{ env.TARGET_TRIPLE }}
       - &restore-openssl
         name: Restore OpenSSL
         id: cache-openssl
         uses: actions/cache/restore@v4
-        with:
-          path: ${{ github.workspace }}/.ci-cache/openssl
-          key: openssl-v1-300.5.3+3.5.4-${{ env.TARGET_TRIPLE }}${{ env.OPENSSL_CACHE_SUFFIX }}
+        with: *openssl-cache
       - *configure-cached-openssl
 
       - name: Install cargo-nextest
@@ -257,7 +335,7 @@ jobs:
       - name: Build smoketest dependencies and archive test binaries
         shell: bash
         run: |
-          cargo ci smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
+          cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
           shopt -s nullglob
           precompiled_modules=(target/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
@@ -301,8 +379,6 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: windows
       EXE_SUFFIX: .exe
-      TARGET_TRIPLE: x86_64-pc-windows-msvc
-      OPENSSL_CACHE_SUFFIX: -nasm
       OPENSSL_RUST_USE_NASM: "1"
       SMOKETEST_SUITE: all
     steps: *smoketest-build-steps
@@ -334,15 +410,16 @@ jobs:
         with:
           global-json-file: global.json
 
-      # nodejs and pnpm are required for the typescript quickstart smoketest
+      # Node.js and pnpm are required for the TypeScript smoketests.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
       - uses: ./.github/actions/setup-pnpm
-        with:
-          run_install: true
+
+      - name: Install TypeScript SDK dependencies
+        run: pnpm --filter spacetimedb install
 
       - name: Install emscripten (Windows)
         if: runner.os == 'Windows'
@@ -501,8 +578,6 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-      TARGET_TRIPLE: x86_64-unknown-linux-gnu
-      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - name: Find Git ref
         env:
@@ -524,13 +599,31 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - *set-native-cache-keys
+      - &restore-jemalloc
+        name: Restore jemalloc
+        id: cache-jemalloc
+        if: runner.os == 'Linux'
+        uses: actions/cache/restore@v4
+        with: *jemalloc-cache
+      - *configure-cached-jemalloc
+      - &restore-zstd
+        name: Restore Zstd
+        id: cache-zstd
+        if: runner.os == 'Linux'
+        uses: actions/cache/restore@v4
+        with: *zstd-cache
+      - *configure-cached-zstd
       - &restore-rusty-v8-debug
         name: Restore rusty_v8 (debug)
         uses: actions/cache/restore@v4
-        with:
+        with: &v8-debug-cache
           path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
-          key: rusty-v8-debug-v1-145.0.0-${{ env.TARGET_TRIPLE }}
-      - *restore-rusty-v8
+          key: ${{ steps.native-cache-keys.outputs.v8-debug-key }}
+      - &restore-rusty-v8
+        name: Restore rusty_v8
+        uses: actions/cache/restore@v4
+        with: *v8-release-cache
       - *restore-openssl
       - *configure-cached-openssl
 
@@ -607,8 +700,6 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-      TARGET_TRIPLE: x86_64-unknown-linux-gnu
-      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - name: Find Git ref
         env:
@@ -631,6 +722,11 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
       - *restore-rusty-v8
       - *restore-openssl
       - *configure-cached-openssl
@@ -646,8 +742,6 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-      TARGET_TRIPLE: x86_64-unknown-linux-gnu
-      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -657,11 +751,14 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
       - name: Cache rusty_v8 (debug)
         uses: actions/cache@v4
-        with:
-          path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
-          key: rusty-v8-debug-v1-145.0.0-${{ env.TARGET_TRIPLE }}
+        with: *v8-debug-cache
       - *restore-openssl
       - *configure-cached-openssl
 
@@ -731,8 +828,6 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-      TARGET_TRIPLE: x86_64-unknown-linux-gnu
-      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - uses: actions/checkout@v3
 
@@ -741,7 +836,11 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - *restore-rusty-v8-debug
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
       - *restore-openssl
       - *configure-cached-openssl
 
@@ -809,6 +908,10 @@ jobs:
         uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - *set-native-cache-keys
+      - *restore-zstd
+      - *configure-cached-zstd
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
@@ -975,22 +1078,17 @@ jobs:
         with:
           run_install: true
 
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - uses: actions/cache@v4
-        name: Setup pnpm cache
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - name: Check for docs change
         run: |
@@ -1017,8 +1115,6 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-      TARGET_TRIPLE: x86_64-unknown-linux-gnu
-      OPENSSL_CACHE_SUFFIX: ""
       UNITY_VERSION: 2022.3.32f1
     steps:
       - name: Checkout repository
@@ -1072,6 +1168,11 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
       - *restore-rusty-v8
       - *restore-openssl
       - *configure-cached-openssl
@@ -1153,8 +1254,6 @@ jobs:
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
-      TARGET_TRIPLE: x86_64-unknown-linux-gnu
-      OPENSSL_CACHE_SUFFIX: ""
       UseLocalBsatnRuntime: true
     steps:
       - name: Checkout repository
@@ -1196,6 +1295,11 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
       - *restore-rusty-v8
       - *restore-openssl
       - *configure-cached-openssl
@@ -1264,8 +1368,6 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-      TARGET_TRIPLE: x86_64-unknown-linux-gnu
-      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - name: Checkout repository
         id: checkout-stdb
@@ -1317,6 +1419,11 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
       - *restore-rusty-v8-debug
       - *restore-rusty-v8
       - *restore-openssl
@@ -1474,20 +1581,6 @@ jobs:
         with:
           run_install: true
 
-      - name: Get pnpm store directory
-        working-directory: sdks/typescript
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - uses: actions/cache@v4
-        name: Setup pnpm cache
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
       - uses: dsherret/rust-toolchain-file@v1
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
@@ -1511,8 +1604,6 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
-      TARGET_TRIPLE: x86_64-unknown-linux-gnu
-      OPENSSL_CACHE_SUFFIX: ""
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -1525,20 +1616,6 @@ jobs:
       - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
-
-      - name: Get pnpm store directory
-        shell: bash
-        working-directory: crates/bindings-typescript
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - uses: actions/cache@v4
-        name: Setup pnpm cache
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
 
       # - name: Extract SpacetimeDB branch name from file
       #   id: extract-branch
@@ -1570,6 +1647,11 @@ jobs:
       - name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
       - *restore-rusty-v8-debug
       - *restore-openssl
       - *configure-cached-openssl
