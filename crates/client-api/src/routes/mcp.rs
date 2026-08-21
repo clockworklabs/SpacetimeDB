@@ -1,10 +1,9 @@
 use std::time::Duration;
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::response::{ErrorResponse, IntoResponse, Response};
 use axum::{Extension, Json};
 use http::StatusCode;
-use serde::Deserialize;
 use serde_json::{json, Value};
 use spacetimedb::auth::identity::ConnectionAuthCtx;
 use spacetimedb::host::{FunctionArgs, ReducerOutcome};
@@ -15,7 +14,7 @@ use spacetimedb_lib::sats;
 
 use super::database::{
     client_connected_error_to_response, client_disconnected_error_to_response, find_database_leader,
-    find_database_module, find_database_or_404, map_reducer_error, sql_direct, SqlQueryParams,
+    find_database_module, find_database_or_404, map_reducer_error, sql_direct, ResolvedDatabase, SqlQueryParams,
 };
 use crate::auth::SpacetimeAuth;
 use crate::routes::subscribe::generate_random_connection_id;
@@ -38,29 +37,17 @@ const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
 
 type RpcError = (i64, String);
 
-#[derive(Deserialize)]
-pub struct McpParams {
-    name_or_identity: NameOrIdentity,
-}
-
 /// handle MCP JSON-RPC request for the database named in the URL
-//
-// Due to different name resolution and error handling behavior in different branches,
-// this route handler does not use [`super::database::resolve_database_name_and_count_response_egress_middleware`].
-// This is unfortunate, as we probably would like to count egress bytes from MCP calls,
-// but I (pgoldman 2026-08-07) do not have the wherewithal
-// to significantly rewrite this file in order to make it compatible with the middleware,
-// and do not know which of its error-handling behaviors are safe to change.
 pub async fn mcp<S>(
     State(ctx): State<S>,
-    Path(McpParams { name_or_identity }): Path<McpParams>,
+    Extension(ResolvedDatabase(database)): Extension<ResolvedDatabase>,
     Extension(auth): Extension<SpacetimeAuth>,
     Json(request): Json<Value>,
 ) -> axum::response::Result<Response>
 where
     S: ControlStateDelegate + NodeDelegate + Authorization + Clone + 'static,
 {
-    handle_mcp(&ctx, Some(name_or_identity), auth, request).await
+    handle_mcp(&ctx, Some(database), auth, request).await
 }
 
 pub async fn mcp_root<S>(
@@ -76,7 +63,7 @@ where
 
 async fn handle_mcp<S>(
     ctx: &S,
-    scope: Option<NameOrIdentity>,
+    scope: Option<Database>,
     auth: SpacetimeAuth,
     request: Value,
 ) -> axum::response::Result<Response>
@@ -212,7 +199,7 @@ fn tools_list(host_wide: bool) -> Value {
 
 async fn tools_call<S>(
     ctx: &S,
-    scope: Option<NameOrIdentity>,
+    scope: Option<Database>,
     auth: SpacetimeAuth,
     params: Option<&Value>,
 ) -> Result<Value, RpcError>
@@ -260,14 +247,30 @@ where
     })
 }
 
-fn target_database(scope: &Option<NameOrIdentity>, arguments: Option<&Value>) -> Result<NameOrIdentity, RpcError> {
-    if let Some(name_or_identity) = scope {
-        return Ok(name_or_identity.clone());
+enum Target {
+    Resolved(Database),
+    Named(NameOrIdentity),
+}
+
+impl Target {
+    /// an ErrorResponse here becomes an in-band tool error, an RpcError would be a protocol error
+    async fn resolve(self, ctx: &(impl ControlStateDelegate + ?Sized)) -> axum::response::Result<Database> {
+        match self {
+            Target::Resolved(database) => Ok(database),
+            Target::Named(name_or_identity) => find_database_or_404(ctx, name_or_identity).await,
+        }
+    }
+}
+
+fn target_database(scope: &Option<Database>, arguments: Option<&Value>) -> Result<Target, RpcError> {
+    if let Some(database) = scope {
+        return Ok(Target::Resolved(database.clone()));
     }
     let Some(database) = arguments.and_then(|a| a.get("database")).and_then(Value::as_str) else {
         return Err((INVALID_PARAMS, "database argument must be a string".to_owned()));
     };
     serde_json::from_value(Value::String(database.to_owned()))
+        .map(Target::Named)
         .map_err(|e| (INVALID_PARAMS, format!("invalid database '{database}': {e}")))
 }
 
@@ -319,11 +322,11 @@ where
     serde_json::to_string(&json!({ "databases": databases })).map_err(log_and_500)
 }
 
-async fn tool_get_schema<S>(ctx: &S, name_or_identity: NameOrIdentity) -> axum::response::Result<String>
+async fn tool_get_schema<S>(ctx: &S, target: Target) -> axum::response::Result<String>
 where
     S: ControlStateDelegate + NodeDelegate,
 {
-    let database = find_database_or_404(ctx, name_or_identity).await?;
+    let database = target.resolve(ctx).await?;
     let leader = find_database_leader(ctx, &database).await?;
     let module = leader.wait_for_module(MODULE_WAIT_TIMEOUT).await.map_err(log_and_500)?;
     let raw = RawModuleDefV9::from(module.info.module_def.as_ref().clone());
@@ -333,7 +336,7 @@ where
 
 async fn tool_sql<S>(
     ctx: &S,
-    name_or_identity: NameOrIdentity,
+    target: Target,
     auth: SpacetimeAuth,
     sql: String,
     confirmed: Option<bool>,
@@ -343,7 +346,7 @@ where
 {
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
-    let database = find_database_or_404(ctx, name_or_identity).await?;
+    let database = target.resolve(ctx).await?;
     let rows = sql_direct(
         ctx.clone(),
         database,
@@ -359,7 +362,7 @@ where
 
 async fn tool_call_reducer<S>(
     ctx: &S,
-    name_or_identity: NameOrIdentity,
+    target: Target,
     auth: SpacetimeAuth,
     reducer: String,
     args_json: String,
@@ -369,7 +372,7 @@ where
 {
     let caller_identity = auth.claims.identity;
     let caller_auth: ConnectionAuthCtx = auth.into();
-    let database = find_database_or_404(ctx, name_or_identity).await?;
+    let database = target.resolve(ctx).await?;
     let module = find_database_module(ctx, &database).await?;
 
     let connection_id = generate_random_connection_id();
@@ -541,18 +544,39 @@ mod tests {
         assert!(get_schema["inputSchema"]["required"].is_null());
     }
 
+    fn test_database() -> Database {
+        use spacetimedb::messages::control_db::HostType;
+        use spacetimedb_lib::Hash;
+
+        Database {
+            id: 1,
+            database_identity: Identity::from_byte_array([7; 32]),
+            owner_identity: Identity::from_byte_array([8; 32]),
+            host_type: HostType::Wasm,
+            initial_program: Hash::ZERO,
+            bootstrap_generation: 0,
+        }
+    }
+
     #[test]
     fn target_database_prefers_the_url_scope_then_the_argument() {
-        let scoped: NameOrIdentity = serde_json::from_value(json!("mydb")).unwrap();
+        let scoped = test_database();
 
-        let target = target_database(&Some(scoped), Some(&json!({ "database": "other" }))).unwrap();
-        assert_eq!(target.to_string(), "mydb");
+        let scope = Some(scoped.clone());
+        let target = target_database(&scope, Some(&json!({ "database": "other" }))).unwrap();
+        match target {
+            Target::Resolved(database) => assert_eq!(database.database_identity, scoped.database_identity),
+            Target::Named(_) => panic!("expected the database the middleware already resolved"),
+        }
 
         let target = target_database(&None, Some(&json!({ "database": "mydb" }))).unwrap();
-        assert_eq!(target.to_string(), "mydb");
+        match target {
+            Target::Named(NameOrIdentity::Name(name)) => assert_eq!(name.as_ref(), "mydb"),
+            _ => panic!("expected a name"),
+        }
 
         let target = target_database(&None, Some(&json!({ "database": "0".repeat(64) }))).unwrap();
-        assert!(matches!(target, NameOrIdentity::Identity(_)));
+        assert!(matches!(target, Target::Named(NameOrIdentity::Identity(_))));
 
         assert!(target_database(&None, None).is_err());
         assert!(target_database(&None, Some(&json!({}))).is_err());
