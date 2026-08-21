@@ -36,7 +36,6 @@ tempfile.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true, features = ["io-util"] }
-zstd-framed.workspace = true
 
 # For the 'test' feature
 env_logger = { workspace = true, optional = true }

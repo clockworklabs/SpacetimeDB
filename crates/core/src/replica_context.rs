@@ -1,6 +1,7 @@
 use spacetimedb_commitlog::SizeOnDisk;
 
 use super::database_logger::DatabaseLogger;
+use crate::config::ModuleHttpConfig;
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::messages::control_db::Database;
@@ -20,6 +21,7 @@ pub struct ReplicaContext {
     pub logger: Arc<DatabaseLogger>,
     pub subscriptions: ModuleSubscriptions,
     pub module_instance_memory_tracker: ModuleInstanceMemoryTracker,
+    pub module_http: ModuleHttpConfig,
 }
 
 impl ReplicaContext {
