@@ -235,7 +235,7 @@ impl Pages {
         f: impl FnOnce(&mut Page) -> Res,
     ) -> Result<(PageIndex, Res), Error> {
         let page_index = self.find_page_with_space_for_row(pool, fixed_row_size, num_var_len_granules)?;
-        let res = f(&mut self
+        let res = f(self
             .get_mut(page_index)
             .expect("page returned by `find_page_with_space_for_row` to be present in `self.pages`"));
         self.record_page_non_full(page_index, fixed_row_size);
@@ -551,7 +551,7 @@ impl Pages {
     ///
     /// Indexes in the iterator will not necessarily correspond to the pages' `PageIndex`es.
     pub fn into_page_iter(self) -> impl Iterator<Item = Box<Page>> {
-        self.pages.into_iter().filter_map(|page| page)
+        self.pages.into_iter().flatten()
     }
 
     /// Iterate over only those pages in `self` that are present.
