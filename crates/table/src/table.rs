@@ -2589,21 +2589,23 @@ pub(crate) mod test {
 
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
         let pool = PagePool::new_for_test();
+        let blob_store = &mut NullBlobStore;
         let cols = ColList::new(0.into());
         let algo = BTreeAlgorithm { columns: cols.clone() }.into();
 
         let index = table.new_index(&algo, true).unwrap();
         // SAFETY: Index was derived from `table`.
-        unsafe { table.insert_index(&NullBlobStore, index_schema.index_id, index) }.unwrap();
+        unsafe { table.insert_index(blob_store, index_schema.index_id, index) }.unwrap();
 
         // Reserve a page so that we can check the hash.
-        let pi = table.inner.pages.reserve_empty_page(&pool, table.row_size()).unwrap();
+        let (_, row_ref) = table.insert(&pool, blob_store, &product![i32::MAX, i32::MAX]).unwrap();
+        let pi = row_ref.pointer().page_index();
         let hash_pre_ins =
             hash_unmodified_save_get(table.inner.pages.get_mut(pi).expect("reserved page to be present"));
 
         // Insert the row (0, 0).
         table
-            .insert(&pool, &mut NullBlobStore, &product![0i32, 0i32])
+            .insert(&pool, blob_store, &product![0i32, 0i32])
             .expect("Initial insert failed");
 
         // Inserting cleared the hash.
@@ -2612,7 +2614,7 @@ pub(crate) mod test {
         assert_ne!(hash_pre_ins, hash_post_ins);
 
         // Try to insert the row (0, 1), and assert that we get the expected error.
-        match table.insert(&pool, &mut NullBlobStore, &product![0i32, 1i32]) {
+        match table.insert(&pool, blob_store, &product![0i32, 1i32]) {
             Ok(_) => panic!("Second insert with same unique value succeeded"),
             Err(InsertError::IndexError(UniqueConstraintViolation {
                 constraint_name,
