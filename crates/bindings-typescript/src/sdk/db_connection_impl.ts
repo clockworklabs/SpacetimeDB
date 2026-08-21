@@ -144,6 +144,15 @@ function getClientMessageVariantTag(name: string): number {
   return tag;
 }
 
+// Browser websocket `onerror` handlers receive an `ErrorEvent`, which does
+// not extend `Error`. Normalize before emitting so `onConnectError` and
+// `onDisconnect` callbacks always receive the documented `Error` shape.
+function toError(e: unknown): Error {
+  if (e instanceof Error) return e;
+  const message = (e as ErrorEvent | undefined)?.message || 'WebSocket error';
+  return new Error(message, { cause: e });
+}
+
 const CLIENT_MESSAGE_CALL_REDUCER_TAG =
   getClientMessageVariantTag('CallReducer');
 const CLIENT_MESSAGE_CALL_PROCEDURE_TAG =
@@ -157,9 +166,9 @@ const MAX_V3_OUTBOUND_FRAME_BYTES = 256 * 1024;
 const WS_READY_STATE_CLOSING = 2;
 const WS_READY_STATE_CLOSED = 3;
 
-export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
-  implements DbContext<RemoteModule>
-{
+export class DbConnectionImpl<
+  RemoteModule extends UntypedRemoteModule,
+> implements DbContext<RemoteModule> {
   /**
    * Whether or not the connection is active.
    */
@@ -182,11 +191,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #everConnected = false;
 
   /**
-   * The websocket error that ended an established connection, if any.
-   * Passed to the `disconnect` emit so `onDisconnect` callbacks receive
-   * the error that caused the disconnect, per their documented contract.
+   * The websocket error that ended an established connection, if any,
+   * normalized to `Error`. Passed to the `disconnect` emit so `onDisconnect`
+   * callbacks receive the documented `error?: Error` shape.
    */
-  #connectionError?: ErrorEvent = undefined;
+  #connectionError?: Error = undefined;
 
   /**
    * Whether the underlying websocket has entered `CLOSING` (2) or `CLOSED`
@@ -402,11 +411,11 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
             // failure. Record it and close the socket so the `onclose` ->
             // 'disconnect' path handles teardown, per the documented
             // `onDisconnect` contract.
-            this.#connectionError = e;
+            this.#connectionError = toError(e);
             this.ws?.close();
             return;
           }
-          this.#emitter.emit('connectError', this, e);
+          this.#emitter.emit('connectError', this, toError(e));
         };
         this.ws.onopen = this.#handleOnOpen.bind(this);
         this.ws.onmessage = this.#handleOnMessage.bind(this);
