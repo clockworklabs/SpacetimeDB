@@ -462,12 +462,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
-name = "scoped-tls"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
-
-[[package]]
 name = "second-stack"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -547,7 +541,6 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 name = "smoketest-module-add-remove-index"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -555,7 +548,6 @@ dependencies = [
 name = "smoketest-module-add-remove-index-indexed"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -595,7 +587,6 @@ dependencies = [
 name = "smoketest-module-auto-migration-drop-event-table-after"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -603,7 +594,6 @@ dependencies = [
 name = "smoketest-module-auto-migration-drop-event-table-before"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -611,7 +601,6 @@ dependencies = [
 name = "smoketest-module-auto-migration-event-table-after"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -619,7 +608,6 @@ dependencies = [
 name = "smoketest-module-auto-migration-event-table-before"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -643,7 +631,6 @@ dependencies = [
 name = "smoketest-module-auto-migration-with-primary-key"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -651,7 +638,6 @@ dependencies = [
 name = "smoketest-module-auto-migration-without-primary-key"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -659,7 +645,6 @@ dependencies = [
 name = "smoketest-module-auto-migration-without-primary-key-v2"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -685,7 +670,6 @@ dependencies = [
 name = "smoketest-module-call-empty"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -717,7 +701,6 @@ dependencies = [
 name = "smoketest-module-client-connection-disconnect-panic"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -733,7 +716,6 @@ dependencies = [
 name = "smoketest-module-client-connection-reject"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -741,7 +723,6 @@ dependencies = [
 name = "smoketest-module-confirmed-reads"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -757,7 +738,6 @@ dependencies = [
 name = "smoketest-module-delete-database"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -773,7 +753,6 @@ dependencies = [
 name = "smoketest-module-dml"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -781,7 +760,6 @@ dependencies = [
 name = "smoketest-module-fail-initial-publish-broken"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -789,7 +767,6 @@ dependencies = [
 name = "smoketest-module-fail-initial-publish-fixed"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -805,7 +782,6 @@ dependencies = [
 name = "smoketest-module-hotswap-basic"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -813,7 +789,6 @@ dependencies = [
 name = "smoketest-module-hotswap-updated"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -821,7 +796,6 @@ dependencies = [
 name = "smoketest-module-http-egress"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -829,7 +803,6 @@ dependencies = [
 name = "smoketest-module-http-routes"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -837,7 +810,6 @@ dependencies = [
 name = "smoketest-module-http-routes-example"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -845,7 +817,6 @@ dependencies = [
 name = "smoketest-module-http-routes-full-uri"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -853,7 +824,6 @@ dependencies = [
 name = "smoketest-module-http-routes-request-body"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -861,7 +831,6 @@ dependencies = [
 name = "smoketest-module-http-routes-strict-non-root"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -869,7 +838,6 @@ dependencies = [
 name = "smoketest-module-http-routes-strict-root"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -909,7 +877,6 @@ dependencies = [
 name = "smoketest-module-modules-breaking"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -933,7 +900,6 @@ dependencies = [
 name = "smoketest-module-noop"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -949,7 +915,6 @@ dependencies = [
 name = "smoketest-module-panic-error"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -957,7 +922,6 @@ dependencies = [
 name = "smoketest-module-permissions-lifecycle"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -965,7 +929,6 @@ dependencies = [
 name = "smoketest-module-permissions-private"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -973,7 +936,6 @@ dependencies = [
 name = "smoketest-module-pg-wire"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -997,7 +959,6 @@ dependencies = [
 name = "smoketest-module-rls"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -1005,7 +966,6 @@ dependencies = [
 name = "smoketest-module-rls-broken-private-table"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -1013,7 +973,6 @@ dependencies = [
 name = "smoketest-module-rls-no-filter"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -1021,7 +980,6 @@ dependencies = [
 name = "smoketest-module-rls-with-filter"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -1053,7 +1011,6 @@ dependencies = [
 name = "smoketest-module-schedule-volatile"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -1069,7 +1026,6 @@ dependencies = [
 name = "smoketest-module-sql-format"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -1129,7 +1085,6 @@ dependencies = [
 name = "smoketest-module-views-basic"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -1137,7 +1092,6 @@ dependencies = [
 name = "smoketest-module-views-broken-return-type"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -1145,7 +1099,6 @@ dependencies = [
 name = "smoketest-module-views-callable"
 version = "0.1.0"
 dependencies = [
- "log",
  "spacetimedb",
 ]
 
@@ -1215,17 +1168,15 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "anyhow",
  "bytemuck",
  "bytes",
- "derive_more",
  "getrandom 0.2.17",
  "http",
  "log",
  "rand 0.8.5",
- "scoped-tls",
  "serde_json",
  "spacetimedb-bindings-macro",
  "spacetimedb-bindings-sys",
@@ -1236,46 +1187,38 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "heck 0.4.1",
  "humantime",
  "proc-macro2",
  "quote",
- "spacetimedb-primitives",
  "syn",
 ]
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-lib"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "anyhow",
- "bitflags",
  "blake3",
- "bytes",
- "chrono",
  "derive_more",
- "enum-as-inner",
  "hex",
- "itertools",
- "log",
  "spacetimedb-bindings-macro",
  "spacetimedb-primitives",
  "spacetimedb-sats",
- "thiserror",
 ]
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "bitflags",
  "either",
@@ -1286,18 +1229,17 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-query-builder"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "spacetimedb-lib",
 ]
 
 [[package]]
 name = "spacetimedb-sats"
-version = "2.8.2"
+version = "2.8.3"
 dependencies = [
  "anyhow",
  "arrayvec",
- "bitflags",
  "bytemuck",
  "bytes",
  "chrono",

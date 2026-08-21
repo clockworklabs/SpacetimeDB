@@ -18,6 +18,8 @@ On Linux and macOS, this directory is by default `~/.local/share/spacetime/data`
 
 - [`logs`](#logs)
 
+- [`module-http`](#module-http)
+
 - [`commitlog`](#commitlog)
 
 - [`websocket`](#websocket)
@@ -31,6 +33,17 @@ jwt-pub-key-path = "/path/to/id_ecdsas.pub"
 ```
 
 The `certificate-authority` table lets you configure the public and private keys used by the database to sign tokens.
+
+### `module-http`
+
+```toml
+[module-http]
+enabled = false
+```
+
+The `module-http` table controls outbound HTTP requests initiated by database modules. Requests are enabled by default.
+Setting `enabled` to `false` blocks outbound requests from procedures and module HTTP handlers. Inbound HTTP handlers remain unaffected.
+Changing this setting requires restarting the server.
 
 ### `logs`
 

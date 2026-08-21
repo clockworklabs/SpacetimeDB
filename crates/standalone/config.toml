@@ -2,6 +2,11 @@
 # jwt-priv-key-path = "~/.config/spacetime/id_ecdsa"
 # jwt-pub-key-path = "~/.config/spacetime/id_ecdsa.pub"
 
+[module-http]
+# Whether database modules may make outbound HTTP requests. This applies to
+# procedures and module HTTP handlers. Omit to allow requests.
+# enabled = true
+
 [logs]
 # The default level filter for logging
 # level = "ERROR"

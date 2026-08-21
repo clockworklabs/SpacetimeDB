@@ -7,6 +7,7 @@ use std::process::Command;
 /// Ensure that the CLI is able to create and compile a C# project.
 /// This test does not depend on a running SpacetimeDB instance.
 /// Skips if dotnet 8.0+ is not available.
+/// Standalone-only: it exercises only local project generation and compilation.
 #[test]
 fn test_build_csharp_module() {
     require_dotnet!();

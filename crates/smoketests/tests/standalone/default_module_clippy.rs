@@ -30,12 +30,14 @@ fn check_template_clippy(template_name: &str) {
 }
 
 /// Ensure that the basic-rs template module has no clippy errors or warnings
+/// Standalone-only: this runs `cargo clippy` locally and never contacts a server.
 #[test]
 fn test_basic_rs_template_clippy() {
     check_template_clippy("basic-rs");
 }
 
 /// Ensure that the chat-console-rs template module has no clippy errors or warnings
+/// Standalone-only: this runs `cargo clippy` locally and never contacts a server.
 #[test]
 fn test_chat_console_rs_template_clippy() {
     check_template_clippy("chat-console-rs");
