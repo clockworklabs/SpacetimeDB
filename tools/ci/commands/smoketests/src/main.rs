@@ -194,13 +194,7 @@ fn archive_smoketests(archive_file: &Path, suite: SmoketestSuite) -> Result<()> 
     build_precompiled_modules()?;
 
     let status = Command::new("cargo")
-        .args([
-            "nextest",
-            "archive",
-            "--timings",
-            "-p",
-            "spacetimedb-smoketests",
-        ])
+        .args(["nextest", "archive", "--timings", "-p", "spacetimedb-smoketests"])
         .args(suite.cargo_args())
         .arg("--archive-file")
         .arg(archive_file)
