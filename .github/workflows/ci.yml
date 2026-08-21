@@ -344,16 +344,6 @@ jobs:
         with:
           run_install: true
 
-      # Install emscripten for C++ module compilation tests.
-      - name: Install emscripten (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-          cd ~/emsdk
-          ./emsdk install 4.0.21
-          ./emsdk activate 4.0.21
-
       - name: Install emscripten (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
