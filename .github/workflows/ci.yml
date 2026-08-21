@@ -311,6 +311,7 @@ jobs:
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
+      SMOKETEST_SUITE: standalone
     steps: &smoketest-build-steps
       - *find-git-ref
 
@@ -321,10 +322,6 @@ jobs:
 
       - *set-native-cache-keys
       - *verify-openssl-assembler
-      - &restore-rusty-v8
-        name: Restore rusty_v8
-        uses: actions/cache/restore@v4
-        with: *v8-release-cache
       - &restore-openssl
         name: Restore OpenSSL
         id: cache-openssl
@@ -338,7 +335,7 @@ jobs:
       - name: Build smoketest dependencies and archive test binaries
         shell: bash
         run: |
-          cargo run --timings --package ci-smoketests -- archive --archive-file smoketest-nextest.tar.zst
+          cargo run --timings --package ci-smoketests -- --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
           shopt -s nullglob
           precompiled_modules=(target/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
@@ -633,7 +630,10 @@ jobs:
         with: &v8-debug-cache
           path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
           key: ${{ steps.native-cache-keys.outputs.v8-debug-key }}
-      - *restore-rusty-v8
+      - &restore-rusty-v8
+        name: Restore rusty_v8
+        uses: actions/cache/restore@v4
+        with: *v8-release-cache
       - *restore-openssl
       - *configure-cached-openssl
 
@@ -851,7 +851,6 @@ jobs:
       - *configure-cached-jemalloc
       - *restore-zstd
       - *configure-cached-zstd
-      - *restore-rusty-v8-debug
       - *restore-openssl
       - *configure-cached-openssl
 
@@ -921,8 +920,6 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - *set-native-cache-keys
-      - *restore-jemalloc
-      - *configure-cached-jemalloc
       - *restore-zstd
       - *configure-cached-zstd
 
@@ -1100,6 +1097,8 @@ jobs:
       - *configure-cached-jemalloc
       - *restore-zstd
       - *configure-cached-zstd
+      - *restore-openssl
+      - *configure-cached-openssl
 
       - name: Check for docs change
         run: |
