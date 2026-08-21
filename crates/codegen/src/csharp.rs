@@ -553,10 +553,15 @@ impl Lang for Csharp<'_> {
                     let csharp_index_class_name = csharp_index_name.clone() + "UniqueIndex";
                     let csharp_field_name_pascal = field_name.deref().to_case(Case::Pascal);
                     let csharp_field_type = ty_fmt(module, field_type).to_string();
+                    let csharp_index_base_class_name = if matches!(field_type, AlgebraicTypeUse::Option(_)) {
+                        "NullableUniqueIndexBase"
+                    } else {
+                        "UniqueIndexBase"
+                    };
 
                     writeln!(
                         output,
-                        "public sealed class {csharp_index_class_name} : UniqueIndexBase<{csharp_field_type}>"
+                        "public sealed class {csharp_index_class_name} : {csharp_index_base_class_name}<{csharp_field_type}>"
                     );
                     indented_block(output, |output| {
                         writeln!(
@@ -592,10 +597,17 @@ impl Lang for Csharp<'_> {
                         (csharp_field_name_pascal, csharp_field_type)
                     };
 
-                    let (row_to_key, key_type) = match columns.as_singleton() {
+                    let (row_to_key, key_type, nullable_single_column) = match columns.as_singleton() {
                         Some(col_pos) => {
-                            let (field_name, field_type) = get_csharp_field_name_and_type(col_pos);
-                            (format!("row.{field_name}"), field_type.to_string())
+                            let (field_name, field_type) = &product_type.elements[col_pos.idx()];
+                            let csharp_field_name_pascal = field_name.deref().to_case(Case::Pascal);
+                            let csharp_field_type = ty_fmt(module, field_type).to_string();
+                            let nullable_single_column = matches!(field_type, AlgebraicTypeUse::Option(_));
+                            (
+                                format!("row.{csharp_field_name_pascal}"),
+                                csharp_field_type,
+                                nullable_single_column,
+                            )
                         }
                         None => {
                             let mut key_accessors = Vec::new();
@@ -607,6 +619,7 @@ impl Lang for Csharp<'_> {
                             (
                                 format!("({})", key_accessors.join(", ")),
                                 format!("({})", key_type_elems.join(", ")),
+                                false,
                             )
                         }
                     };
@@ -645,10 +658,15 @@ impl Lang for Csharp<'_> {
                     }
 
                     let csharp_index_class_name = csharp_index_name.clone() + "Index";
+                    let csharp_index_base_class_name = if nullable_single_column {
+                        "NullableBTreeIndexBase"
+                    } else {
+                        "BTreeIndexBase"
+                    };
 
                     writeln!(
                         output,
-                        "public sealed class {csharp_index_class_name} : BTreeIndexBase<{key_type}>"
+                        "public sealed class {csharp_index_class_name} : {csharp_index_base_class_name}<{key_type}>"
                     );
                     indented_block(output, |output| {
                         writeln!(
