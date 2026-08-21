@@ -1,13 +1,11 @@
 #![allow(clippy::disallowed_macros)]
 use anyhow::{bail, ensure, Context, Result};
-use ci_common::ensure_repo_root;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use duct::cmd;
 use spacetimedb_guard::ensure_binaries_built;
-use std::ffi::OsStr;
+use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::{env, fs};
 use tempfile::TempDir;
 
 #[derive(Parser)]
@@ -43,9 +41,34 @@ struct SmoketestsArgs {
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     dotnet: bool,
 
+    /// Select which smoketest suite to run or archive.
+    #[arg(long, value_enum, default_value_t = SmoketestSuite::All)]
+    suite: SmoketestSuite,
+
     /// Additional arguments to pass to the test runner
     #[arg(trailing_var_arg = true)]
     args: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+enum SmoketestSuite {
+    /// Run both cluster and standalone smoketests.
+    #[default]
+    All,
+    /// Run tests that provide useful coverage against a cluster.
+    Cluster,
+    /// Run tests assigned to standalone coverage.
+    Standalone,
+}
+
+impl SmoketestSuite {
+    fn cargo_args(self) -> &'static [&'static str] {
+        match self {
+            Self::All => &[],
+            Self::Cluster => &["--test", "cluster"],
+            Self::Standalone => &["--test", "standalone"],
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -54,7 +77,6 @@ enum SmoketestCmd {
     ///
     /// Use this before running `cargo test --all` to ensure binaries are built.
     Prepare,
-    CheckModList,
 
     /// CI build job: build dependencies and archive the smoketest binaries.
     Archive {
@@ -84,14 +106,15 @@ fn main() -> Result<()> {
             eprintln!("Binaries ready. You can now run `cargo test --all`.");
             Ok(())
         }
-        Some(SmoketestCmd::CheckModList) => {
-            check_smoketests_mod_rs_complete()?;
-            eprintln!("smoketests/mod.rs is up to date.");
-            Ok(())
-        }
-        Some(SmoketestCmd::Archive { archive_file }) => archive_smoketests(&archive_file),
+        Some(SmoketestCmd::Archive { archive_file }) => archive_smoketests(&archive_file, args.suite),
         Some(SmoketestCmd::RunArchive { archive_file, args }) => run_smoketest_archive(&archive_file, args),
-        None => run_smoketest(args.server, args.dotnet, args.auth_host.as_deref(), args.args),
+        None => run_smoketest(
+            args.server,
+            args.dotnet,
+            args.auth_host.as_deref(),
+            args.suite,
+            args.args,
+        ),
     }
 }
 
@@ -167,7 +190,7 @@ fn build_precompiled_modules() -> Result<()> {
     Ok(())
 }
 
-fn archive_smoketests(archive_file: &Path) -> Result<()> {
+fn archive_smoketests(archive_file: &Path, suite: SmoketestSuite) -> Result<()> {
     build_precompiled_modules()?;
 
     let status = Command::new("cargo")
@@ -178,8 +201,9 @@ fn archive_smoketests(archive_file: &Path) -> Result<()> {
             "--timings",
             "-p",
             "spacetimedb-smoketests",
-            "--archive-file",
         ])
+        .args(suite.cargo_args())
+        .arg("--archive-file")
         .arg(archive_file)
         .status()?;
     ensure!(status.success(), "Failed to archive smoketests");
@@ -223,7 +247,17 @@ fn run_smoketest_archive(archive_file: &Path, args: Vec<String>) -> Result<()> {
 /// 16 was found to be optimal - higher values cause OS scheduler overhead.
 const DEFAULT_PARALLELISM: &str = "16";
 
-fn run_smoketest(server: Option<String>, dotnet: bool, auth_host: Option<&str>, args: Vec<String>) -> Result<()> {
+fn run_smoketest(
+    server: Option<String>,
+    dotnet: bool,
+    auth_host: Option<&str>,
+    suite: SmoketestSuite,
+    args: Vec<String>,
+) -> Result<()> {
+    if server.is_some() && suite == SmoketestSuite::Standalone {
+        bail!("the standalone smoketest suite cannot be run with --server");
+    }
+
     // 1. Build binaries first (single process, no race). Remote tests only need the CLI;
     // local tests also need standalone to spawn their test servers.
     build_cli()?;
@@ -258,14 +292,9 @@ fn run_smoketest(server: Option<String>, dotnet: bool, auth_host: Option<&str>, 
         eprintln!("Running smoketests with cargo nextest...\n");
         let mut cmd = Command::new("cargo");
         set_env(&mut cmd, server, dotnet, auth_host.is_some(), &base_config_path);
-        cmd.args([
-            "nextest",
-            "run",
-            "--release",
-            "-p",
-            "spacetimedb-smoketests",
-            "--no-fail-fast",
-        ]);
+        cmd.args(["nextest", "run", "--release", "-p", "spacetimedb-smoketests"])
+            .args(suite.cargo_args())
+            .arg("--no-fail-fast");
 
         // Set default parallelism if user didn't specify -j
         if !args
@@ -280,7 +309,8 @@ fn run_smoketest(server: Option<String>, dotnet: bool, auth_host: Option<&str>, 
         eprintln!("Running smoketests with cargo test...\n");
         let mut cmd = Command::new("cargo");
         set_env(&mut cmd, server, dotnet, auth_host.is_some(), &base_config_path);
-        cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"]);
+        cmd.args(["test", "--release", "-p", "spacetimedb-smoketests"])
+            .args(suite.cargo_args());
         cmd
     };
     let status = cmd.args(&args).status()?;
@@ -366,66 +396,4 @@ fn set_env(cmd: &mut Command, server: Option<String>, dotnet: bool, auth_host: b
     cmd.env("SPACETIME_SMOKETEST_BASE_CONFIG_PATH", base_config_path);
     cmd.env("SPACETIME_USE_AUTH_HOST", if auth_host { "1" } else { "0" });
     cmd.env("SMOKETESTS_DOTNET", if dotnet { "1" } else { "0" });
-}
-
-fn check_smoketests_mod_rs_complete() -> Result<()> {
-    ensure_repo_root()?;
-
-    let expected_dir = Path::new("crates/smoketests/tests/smoketests");
-    let mut expected = std::collections::BTreeSet::<String>::new();
-    for entry in fs::read_dir(expected_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name == "mod.rs" {
-            continue;
-        }
-        if name.starts_with('.') {
-            continue;
-        }
-
-        let ft = entry.file_type()?;
-        if ft.is_dir() {
-            expected.insert(name.to_string());
-        } else if ft.is_file()
-            && path.extension() == Some(OsStr::new("rs"))
-            && let Some(stem) = path.file_stem()
-        {
-            expected.insert(stem.to_string_lossy().to_string());
-        }
-    }
-
-    let out = cmd!("cargo", "test", "-p", "spacetimedb-smoketests", "--", "--list",).read()?;
-
-    let mut present = std::collections::BTreeSet::<String>::new();
-    for line in out.lines() {
-        let line = line.trim();
-        let parts: Vec<&str> = line.split("::").collect();
-        if parts.len() < 2 {
-            continue;
-        }
-        if parts[0] != "smoketests" {
-            continue;
-        }
-        present.insert(parts[1].to_string());
-    }
-
-    let missing = expected
-        .into_iter()
-        .filter(|m| !present.contains(m))
-        .collect::<Vec<_>>();
-
-    if !missing.is_empty() {
-        bail!(
-            "crates/smoketests/tests/smoketests/mod.rs appears incomplete; missing modules (not present in `cargo test -- --list`):\n{}",
-            missing
-                .iter()
-                .map(|m| format!("- mod {m};"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-    }
-
-    Ok(())
 }

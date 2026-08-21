@@ -971,6 +971,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-smoketest-checks"
+version = "0.1.0"
+
+[[package]]
 name = "ci-smoketests"
 version = "0.1.0"
 dependencies = [
