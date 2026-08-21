@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Ecommerce L2 warehouse transfer totals",
+  "note": "The live warehouse-total check runs in its own state so transfer evidence cannot leak into later checks.",
+  "features": [
+    {
+      "id": 2,
+      "name": "Warehouse totals",
+      "actors": ["admin"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "click", "actor": "admin", "testid": "admin-link" }
+      ],
+      "criteria": [
+        {
+          "id": "2b",
+          "desc": "both warehouse totals move live and in opposite directions as stock is transferred",
+          "points": 2,
+          "statedBy": "the per-warehouse numbers staff and admins see both move at once",
+          "steps": [
+            { "do": "recordNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "East" }, "as": "warehouse-east-before" },
+            { "do": "recordNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "West" }, "as": "warehouse-west-before" },
+            { "do": "fill", "actor": "admin", "testid": "transfer-from", "text": "East", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
+            { "do": "fill", "actor": "admin", "testid": "transfer-to", "text": "West", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
+            { "do": "fill", "actor": "admin", "testid": "transfer-qty", "text": "10", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
+            { "do": "click", "actor": "admin", "testid": "transfer-submit", "in": { "testid": "admin-item-row", "contains": "Headphones" } },
+            { "do": "expectNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "East" }, "relativeTo": "warehouse-east-before", "plus": -10, "within": 10000 },
+            { "do": "expectNumber", "actor": "admin", "testid": "warehouse-total", "in": { "testid": "admin-warehouse-item", "contains": "West" }, "relativeTo": "warehouse-west-before", "plus": 10, "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

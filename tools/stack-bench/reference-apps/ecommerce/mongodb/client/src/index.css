@@ -1,0 +1,662 @@
+:root {
+  --primary: #00ed64;
+  --primary-hover: #00c957;
+  --secondary: #00684a;
+  --bg: #001e2b;
+  --surface: #023430;
+  --surface-2: #033d38;
+  --border: #1c2d38;
+  --text: #e8edeb;
+  --text-muted: #889397;
+  --accent: #00ed64;
+  --success: #00ed64;
+  --warning: #ffc010;
+  --danger: #ff4f4f;
+  --sp-1: 8px;
+  --sp-2: 12px;
+  --sp-3: 16px;
+  --sp-4: 24px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+.app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Header ---------- */
+
+.header {
+  position: sticky;
+  top: 0;
+  /* Stays above every panel/backdrop/admin view so header controls (search,
+     cart, orders, admin, sign out) remain usable even while another panel is
+     left open — panels here are non-modal with respect to navigation. */
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.search-input {
+  flex: 1;
+  max-width: 420px;
+}
+
+.header-spacer {
+  flex: 1;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.current-user {
+  color: var(--text);
+  font-weight: 600;
+  margin-right: var(--sp-1);
+}
+
+/* ---------- Inputs & buttons ---------- */
+
+.input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+.input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 237, 100, 0.2);
+}
+
+.btn {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 9px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #00251a;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn-danger {
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(255, 79, 79, 0.1);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 0.8rem;
+}
+
+/* ---------- Badges ---------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #00251a;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.badge-muted {
+  background: var(--border);
+  color: var(--text-muted);
+}
+
+.pill-danger {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(255, 79, 79, 0.15);
+  color: var(--danger);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.pill-warning {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(255, 192, 16, 0.15);
+  color: var(--warning);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* ---------- Layout ---------- */
+
+.content-row {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-4);
+  width: 100%;
+}
+
+.section-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0 0 var(--sp-3);
+  color: var(--text);
+}
+
+.item-list,
+.search-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--sp-3);
+}
+
+/* ---------- Item card ---------- */
+
+.item-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.item-card:hover {
+  border-color: var(--primary);
+}
+
+.item-card.out-of-stock-card {
+  opacity: 0.7;
+}
+
+.item-name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.item-price {
+  font-weight: 700;
+  text-align: right;
+  color: var(--text);
+}
+
+.item-stock {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.item-stock.low {
+  color: var(--warning);
+  font-weight: 700;
+}
+
+.item-actions {
+  display: flex;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+
+.item-actions .btn {
+  flex: 1;
+}
+
+/* ---------- Panels ---------- */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 30;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.backdrop.open {
+  opacity: 1;
+  /* Purely decorative: panels reflow the main content area away from their
+     own footprint (see .content-row inline margin), so the backdrop never
+     needs to capture clicks to protect anything underneath it — and must
+     not, since header/grid controls stay reachable while a panel is left
+     open between unrelated interactions. */
+  pointer-events: none;
+}
+
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 100%);
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  z-index: 31;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-4);
+  overflow-y: auto;
+}
+
+.panel.open {
+  transform: translateX(0);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-3);
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  color: var(--text);
+}
+
+/* ---------- Cart ---------- */
+
+.cart-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cart-item-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.cart-quantity-input {
+  width: 56px;
+  text-align: center;
+}
+
+.cart-line-price {
+  min-width: 70px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.cart-summary {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+/* ---------- Orders ---------- */
+
+.order-item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
+.order-item-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-1);
+}
+
+.order-total {
+  font-weight: 700;
+  margin-top: var(--sp-1);
+  text-align: right;
+}
+
+/* ---------- Item detail ---------- */
+
+.item-detail {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  flex-shrink: 0;
+  width: min(420px, 100%);
+  padding: var(--sp-4);
+  position: sticky;
+  top: 61px;
+  max-height: calc(100vh - 61px);
+  overflow-y: auto;
+}
+
+@media (max-width: 800px) {
+  .item-detail {
+    position: fixed;
+    top: 61px;
+    right: 0;
+    bottom: 0;
+    z-index: 25;
+    max-height: none;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+  }
+}
+
+.detail-description {
+  color: var(--text-muted);
+  margin: var(--sp-2) 0 var(--sp-3);
+}
+
+.review-item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
+.review-item-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.review-form {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.review-form select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+.review-form .input {
+  flex: 1;
+  min-width: 160px;
+}
+
+/* ---------- Admin ---------- */
+
+.admin-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  background: var(--bg);
+  overflow-y: auto;
+  padding: var(--sp-4);
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-4);
+}
+
+@media (max-width: 900px) {
+  .admin-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-item-row,
+.admin-location-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-location-row {
+  flex-wrap: wrap;
+}
+
+.admin-restock-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.restock-input {
+  width: 70px;
+}
+
+.admin-warehouse-item {
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--surface-2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  margin-right: var(--sp-1);
+  display: inline-block;
+}
+
+.admin-revenue-box {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.admin-revenue-box .value {
+  color: var(--primary);
+}
+
+/* ---------- Auth ---------- */
+
+.auth-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 220px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.auth-error {
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  padding: 0;
+  align-self: flex-start;
+}
+
+/* ---------- Feedback ---------- */
+
+.toast {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--danger);
+  color: #2a0000;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 8px;
+  z-index: 60;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.empty-state {
+  color: var(--text-muted);
+  text-align: center;
+  padding: var(--sp-4);
+}
+
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  background: var(--bg);
+  color: var(--text-muted);
+  z-index: 100;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.stars {
+  color: var(--warning);
+}

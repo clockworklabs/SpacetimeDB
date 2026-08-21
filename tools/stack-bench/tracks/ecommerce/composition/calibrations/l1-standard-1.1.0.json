@@ -1,0 +1,217 @@
+{
+  "schemaVersion": 1,
+  "kind": "calibration-manifest",
+  "id": "ecommerce.l1-standard-calibration",
+  "version": "1.1.0",
+  "state": "qualified",
+  "title": "Ecommerce L1 framework-neutral calibration",
+  "track": "ecommerce",
+  "recipe": {
+    "path": "../recipes/l1-standard-1.1.0.json",
+    "id": "ecommerce.l1-standard",
+    "version": "1.1.0",
+    "meaningSha256": "ade0f1f740da962671853fbe45b7d5f5c82a99b98ce5f88f8396768868176b4a",
+    "executionSha256": "39ab33f25e51dc474d49210190ae684e0bcec1fb2ecee5a66d6dde99fd143b25",
+    "contentSha256": "0a6554236f29c315d1bc1cf884e5f7de1d6ebbc8e5820cd605c057d4412e61cd"
+  },
+  "fixture": {
+    "id": "ecommerce.storefront",
+    "version": "1.0.0",
+    "sourceSha256": "6f7a19d7aa0dd689b6ba8bfb457c872baca4886f9af374a7908d4270f11ae471"
+  },
+  "references": {
+    "registryPath": "reference-apps/registry.json",
+    "entries": [
+      { "backend": "mongodb", "id": "ecommerce-l1-mongodb", "sourceSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a" },
+      { "backend": "postgres", "id": "ecommerce-l1-postgres", "sourceSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc" },
+      { "backend": "spacetime", "id": "ecommerce-l1-spacetime", "sourceSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1" }
+    ]
+  },
+  "mutations": [
+    { "backend": "mongodb", "path": "grader/mutations/mongodb-ecom-l1.json", "sha256": "e5a6f74c2e3b35be077e2a3f49b5bb52100458ea13bd674b268c828db286f71a", "referenceId": "ecommerce-l1-mongodb" },
+    { "backend": "postgres", "path": "grader/mutations/postgres-ecom-l1.json", "sha256": "ea0f4a2c531ec60ea6041167fceb90550a5d08fe3299f84ecd9aaf9b9bcc62d5", "referenceId": "ecommerce-l1-postgres" },
+    { "backend": "spacetime", "path": "grader/mutations/spacetime-ecom-l1.json", "sha256": "fe207a9e9e09edd3e827096296c41bef0f78dd136c1b6d12cf79ab5940dccf12", "referenceId": "ecommerce-l1-spacetime" }
+  ],
+  "nullControl": {
+    "pointBearing": "must-fail-conclusively",
+    "zeroPoint": "typed-policy",
+    "repetitions": 1
+  },
+  "controls": [
+    {
+      "stableKey": "ecommerce.catalog-inventory.last-unit-sold-once.201b",
+      "role": "promotion-gate",
+      "promotionPolicy": "must-pass-reference-and-kill-declared-mutant",
+      "mutationTargets": ["mongodb:oversell-unguarded-decrement", "postgres:oversell-no-row-lock", "spacetime:purchase-does-not-reserve-stock"]
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.last-unit-sold-once.201c",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The assertion requires an admin-facing revenue observation and has no exact mutant yet."
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.restock-during-rush.202-control",
+      "role": "precondition",
+      "promotionPolicy": "must-pass-reference",
+      "mutationTargets": []
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.restock-during-rush.202a",
+      "role": "promotion-gate",
+      "promotionPolicy": "must-pass-reference-and-kill-declared-mutant",
+      "mutationTargets": ["spacetime:purchase-does-not-reserve-stock"]
+    },
+    {
+      "stableKey": "ecommerce.cart-checkout.duplicate-checkout.203a",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The assertion has passed repeated development runs but has no exact mutant."
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.external-write-visible.901a",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The out-of-band propagation assertion has no exact cross-stack mutation evidence."
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.external-write-visible.901b",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The persistence assertion has no exact cross-stack mutation evidence."
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.external-write-visible.901d",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The disconnected-client recovery assertion still needs contrasting real builds and mutation evidence."
+    },
+    {
+      "stableKey": "ecommerce.catalog-inventory.list-open-during-change.902a",
+      "role": "diagnostic",
+      "promotionPolicy": "record-only-until-calibrated",
+      "mutationTargets": [],
+      "reason": "The enumeration-race assertion has no exact cross-stack mutation evidence."
+    }
+  ],
+  "qualification": {
+    "exactCombinationRequired": true,
+    "referenceRepetitions": 2,
+    "mutationRepetitions": 2,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64"
+    },
+    "stacks": [
+      { "id": "mongodb", "status": "qualified" },
+      { "id": "postgres", "status": "qualified" },
+      { "id": "spacetime", "status": "qualified" }
+    ],
+    "evidence": [
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-mongodb-reference.json",
+        "sha256": "570b91714005664746fbf44ac1ea299657c2494820ceaeb25ea43bea2231877d"
+      },
+      {
+        "kind": "reference",
+        "stack": "mongodb",
+        "repetition": 2,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-mongodb-reference.json",
+        "sha256": "570b91714005664746fbf44ac1ea299657c2494820ceaeb25ea43bea2231877d"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-mongodb-mutation.json",
+        "sha256": "1b64951fc02f286ee0a7658adaa9ae0f410aa12eb07c5e35638083817810b9fa"
+      },
+      {
+        "kind": "mutation",
+        "stack": "mongodb",
+        "repetition": 2,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-mongodb-mutation.json",
+        "sha256": "1b64951fc02f286ee0a7658adaa9ae0f410aa12eb07c5e35638083817810b9fa"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-postgres-reference.json",
+        "sha256": "943190c0e0bc352607d5daee6574ff7b92a30ca6b3671934f5b4a5b501e138f8"
+      },
+      {
+        "kind": "reference",
+        "stack": "postgres",
+        "repetition": 2,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-postgres-reference.json",
+        "sha256": "943190c0e0bc352607d5daee6574ff7b92a30ca6b3671934f5b4a5b501e138f8"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-postgres-mutation.json",
+        "sha256": "9b72ed4d4c608fa9c3ceb71a97dbfb0715744075a3b7963bc71cf2be22f4b504"
+      },
+      {
+        "kind": "mutation",
+        "stack": "postgres",
+        "repetition": 2,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-postgres-mutation.json",
+        "sha256": "9b72ed4d4c608fa9c3ceb71a97dbfb0715744075a3b7963bc71cf2be22f4b504"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-spacetime-reference.json",
+        "sha256": "195d66ebffe6a685d393a25d7aea55af0c4ee5f7ed69f4e684476bf8a92f515a"
+      },
+      {
+        "kind": "reference",
+        "stack": "spacetime",
+        "repetition": 2,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-spacetime-reference.json",
+        "sha256": "195d66ebffe6a685d393a25d7aea55af0c4ee5f7ed69f4e684476bf8a92f515a"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-spacetime-mutation.json",
+        "sha256": "57291ae84d7468824c90bd0e2b883164ad7d2a259044a0e4980801769c1fbe17"
+      },
+      {
+        "kind": "mutation",
+        "stack": "spacetime",
+        "repetition": 2,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-spacetime-mutation.json",
+        "sha256": "57291ae84d7468824c90bd0e2b883164ad7d2a259044a0e4980801769c1fbe17"
+      },
+      {
+        "kind": "null",
+        "repetition": 1,
+        "path": "qualification-evidence/ecommerce-l1-v1.1.0/ecommerce-l1-null.json",
+        "sha256": "acde7c398bea0b8ed8ef0fb77ab7396bc577f3163f8107fad9e44b0f42a1190b"
+      }
+    ]
+  },
+  "equivalenceDecisions": [],
+  "promotion": {
+    "catalogPath": "composition/promotions.json",
+    "catalogSha256": "756daeec316681dfde469379128e1d835565f6215be693cf2c9dc9b6b3578c22",
+    "alias": "L1",
+    "status": "retired"
+  }
+}

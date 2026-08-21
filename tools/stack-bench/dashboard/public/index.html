@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#0b1114">
+    <title>StackBench Control Room</title>
+    <meta name="description" content="Run and inspect reproducible StackBench comparisons.">
+    <link rel="preload" href="/fonts/inter-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/fonts/source-code-pro-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#overview" aria-label="StackBench overview">
+        <img class="brand-mark" src="/spacetimedb-mark.svg" alt="" width="35" height="32">
+        <span><strong>STACKBENCH</strong><small>CONTROL ROOM</small></span>
+      </a>
+      <div class="topbar-actions">
+        <span class="offline" id="refresh-state" role="status"></span>
+        <span class="mode-tag" id="mode-tag" hidden>Read only</span>
+        <button class="primary topbar-run" id="open-run" type="button">Start a run</button>
+      </div>
+    </header>
+
+    <main id="overview">
+      <div class="table-frame"><table class="campaigns">
+        <thead>
+          <tr class="group-row">
+            <td></td>
+            <th scope="colgroup" colspan="3" class="group">Cost to correct</th>
+            <td colspan="2"></td>
+          </tr>
+          <tr>
+            <th scope="col">Campaign</th>
+            <th scope="col" class="num">SpacetimeDB</th>
+            <th scope="col" class="num">PostgreSQL</th>
+            <th scope="col" class="num">MongoDB</th>
+            <th scope="col">Status</th>
+            <th scope="col" class="num">Updated</th>
+          </tr>
+        </thead>
+        <tbody id="campaign-list"></tbody>
+      </table></div>
+      <p class="table-foot"><span id="campaign-count"></span></p>
+    </main>
+
+    <dialog id="run-dialog" class="run-dialog">
+      <form method="dialog" class="dialog-shell">
+        <div class="dialog-heading">
+          <h2>Start a frozen plan</h2>
+          <button class="icon-button" value="cancel" aria-label="Close">×</button>
+        </div>
+        <p class="dialog-copy">The plan already defines the stacks, levels, checks, model, repair budget, and parallelism. Starting it does not change those choices.</p>
+        <label>Test plan<select id="plan-select" required></select></label>
+        <div id="plan-summary" class="plan-summary"></div>
+        <label>Run name<input id="output-name" required minlength="3" maxlength="120" pattern="[a-z0-9][a-z0-9.-]+" autocomplete="off"></label>
+        <p class="form-message" id="run-message" role="status"></p>
+        <div class="dialog-actions">
+          <button class="secondary" value="cancel">Cancel</button>
+          <button class="primary" id="start-run" value="default" type="button">Start campaign</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="detail-dialog" class="detail-dialog">
+      <div class="dialog-shell detail-shell">
+        <div class="dialog-heading sticky-heading">
+          <h2 id="detail-title">Run detail</h2>
+          <button class="icon-button" id="close-detail" aria-label="Close">×</button>
+        </div>
+        <div id="detail-content"></div>
+      </div>
+    </dialog>
+  </body>
+</html>

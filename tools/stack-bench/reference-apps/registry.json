@@ -1,0 +1,437 @@
+{
+  "schemaVersion": 4,
+  "fixtures": [
+    {
+      "id": "ecommerce-l1-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "active",
+      "targetPath": "reference-apps/ecommerce/mongodb",
+      "origin": {
+        "kind": "authored",
+        "note": "Maintained as a benchmark oracle; qualification relies on the checked-in source and current hash-bound evidence."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/mongodb",
+        "sourceSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a"
+      },
+      "mutationManifests": ["grader/mutations/mongodb-ecom-l1.json"],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1/."
+    },
+    {
+      "id": "ecommerce-l1-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "active",
+      "targetPath": "reference-apps/ecommerce/postgres",
+      "origin": {
+        "kind": "authored",
+        "note": "Maintained as a benchmark oracle; qualification relies on the checked-in source and current hash-bound evidence."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/postgres",
+        "sourceSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc"
+      },
+      "mutationManifests": ["grader/mutations/postgres-ecom-l1.json"],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1/."
+    },
+    {
+      "id": "ecommerce-l1-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "active",
+      "targetPath": "reference-apps/ecommerce/spacetime",
+      "origin": {
+        "kind": "authored",
+        "note": "Maintained as a benchmark oracle; qualification relies on the checked-in source and current hash-bound evidence."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/spacetime",
+        "sourceSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1"
+      },
+      "mutationManifests": ["grader/mutations/spacetime-ecom-l1.json"],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1/."
+    },
+    {
+      "id": "ecommerce-l1-direct-actions-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "active",
+      "recipes": ["ecommerce.l1-modular@2.3.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/mongodb",
+        "baseSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a",
+        "patchPath": "reference-apps/patches/ecommerce-l1-direct-actions/mongodb.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified L1 reference plus the exact direct-action test handles required by the modular 2.1 recipe."
+      },
+      "imported": {
+        "sourceSha256": "d90ea9c8326202a76bf570d0eb7c716531e3e6e3eb4a4678c677783e9d5dbb40"
+      },
+      "mutationManifests": [
+        "grader/mutations/mongodb-ecom-l1-modular-2.3.0.json"
+      ],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.3.0/."
+    },
+    {
+      "id": "ecommerce-l1-direct-actions-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "active",
+      "recipes": ["ecommerce.l1-modular@2.3.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/postgres",
+        "baseSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc",
+        "patchPath": "reference-apps/patches/ecommerce-l1-direct-actions/postgres.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified L1 reference plus the exact direct-action test handles required by the modular 2.1 recipe."
+      },
+      "imported": {
+        "sourceSha256": "ffc2192ee7bce1a5f5e60bd4158118f44dd0d5cc1fcf0bcf21bc38fbfb20d6f1"
+      },
+      "mutationManifests": [
+        "grader/mutations/postgres-ecom-l1-modular-2.3.0.json"
+      ],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.3.0/."
+    },
+    {
+      "id": "ecommerce-l1-direct-actions-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "active",
+      "recipes": ["ecommerce.l1-modular@2.3.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/spacetime",
+        "baseSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1",
+        "patchPath": "reference-apps/patches/ecommerce-l1-direct-actions/spacetime.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified L1 reference plus the exact direct-action test handles required by the modular 2.1 recipe."
+      },
+      "imported": {
+        "sourceSha256": "7deedf0dc4c17064b9a6a9bb76bc0c488cd04f21472ce7412539ac98368fd3e6"
+      },
+      "mutationManifests": [
+        "grader/mutations/spacetime-ecom-l1-modular-2.3.0.json"
+      ],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.3.0/."
+    },
+    {
+      "id": "ecommerce-l1-action-inputs-2.4-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "active",
+      "recipes": ["ecommerce.l1-modular@2.4.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/mongodb",
+        "baseSha256": "d746c28f4e31a3de93211296d8fc4e3fd7b5a52c1cb09a175e4ec1d44fade73a",
+        "patchPath": "reference-apps/patches/ecommerce-l1-action-inputs-2.4/mongodb.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified MongoDB reference plus the exact action-input handles required by L1 2.4."
+      },
+      "imported": {
+        "sourceSha256": "76810d72211fc0182aa31b663ffc153a82ff1918cd34902187873a4b53a4ebf2"
+      },
+      "mutationManifests": [
+        "grader/mutations/mongodb-ecom-l1-modular-2.4.0.json"
+      ],
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.4.0/."
+    },
+    {
+      "id": "ecommerce-l1-action-inputs-2.4-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "active",
+      "recipes": ["ecommerce.l1-modular@2.4.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/postgres",
+        "baseSha256": "7c0697efa809aed319ba14b7e72e33b3fcf6e458512504e79d5b56d935e24abc",
+        "patchPath": "reference-apps/patches/ecommerce-l1-action-inputs-2.4/postgres.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified PostgreSQL reference plus the exact action-input handles required by L1 2.4."
+      },
+      "imported": {
+        "sourceSha256": "389d778f1835377fd2f92864d6afa20851c65076c80ddecba1e860cf7f4d9ec9"
+      },
+      "mutationManifests": [
+        "grader/mutations/postgres-ecom-l1-modular-2.4.0.json"
+      ],
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.4.0/."
+    },
+    {
+      "id": "ecommerce-l1-action-inputs-2.4-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 1,
+      "status": "active",
+      "recipes": ["ecommerce.l1-modular@2.4.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/spacetime",
+        "baseSha256": "17cf4ed6d0559abf0956233259e72412fea20d3900d84833c30e052cde7912c1",
+        "patchPath": "reference-apps/patches/ecommerce-l1-action-inputs-2.4/spacetime.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified SpacetimeDB reference plus the exact action-input handles required by L1 2.4."
+      },
+      "imported": {
+        "sourceSha256": "d5cb5af9db96b3ae4ff2b0d928dec4394ac6f88dfdce83201a0d8508b69902e5"
+      },
+      "mutationManifests": [
+        "grader/mutations/spacetime-ecom-l1-modular-2.4.0.json"
+      ],
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l1-v2.4.0/."
+    },
+    {
+      "id": "ecommerce-l2-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "active",
+      "targetPath": "reference-apps/ecommerce/l2/mongodb",
+      "origin": {
+        "kind": "authored",
+        "note": "Sanitized L2 oracle maintained and qualified independently of historical benchmark scores."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/l2/mongodb",
+        "sourceSha256": "6aafa2ec888b4049a87f488469f16118cd480517bfa876e57538f751744d1c7b"
+      },
+      "mutationManifests": ["grader/mutations/mongodb-ecom-l2.json"],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2/."
+    },
+    {
+      "id": "ecommerce-l2-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "active",
+      "targetPath": "reference-apps/ecommerce/l2/postgres",
+      "origin": {
+        "kind": "authored",
+        "note": "The maintained PostgreSQL L2 oracle was forked from the qualified L1 bytes so L2 fixes cannot invalidate L1 evidence."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/l2/postgres",
+        "sourceSha256": "70e2c03771fe8eb35defb8669bfca465e86714b849534241bcd1ab83a23792b0"
+      },
+      "mutationManifests": ["grader/mutations/postgres-ecom-l2.json"],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2/."
+    },
+    {
+      "id": "ecommerce-l2-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "active",
+      "targetPath": "reference-apps/ecommerce/l2/spacetime",
+      "origin": {
+        "kind": "authored",
+        "note": "Sanitized L2 oracle maintained and qualified independently of historical benchmark scores."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/l2/spacetime",
+        "sourceSha256": "cd562347bede7943167f776bf48dde1fc8e06a963ad1a2cd111bb020c9d7a375"
+      },
+      "mutationManifests": ["grader/mutations/spacetime-ecom-l2.json"],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2/."
+    },
+    {
+      "id": "ecommerce-l2-server-actions-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "active",
+      "recipes": ["ecommerce.l2-standard@1.4.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/mongodb",
+        "baseSha256": "6aafa2ec888b4049a87f488469f16118cd480517bfa876e57538f751744d1c7b",
+        "patchPath": "reference-apps/patches/ecommerce-l2-server-actions/mongodb.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified L2 reference plus the exact action-input test handles required by the modular 1.4 candidate recipe."
+      },
+      "imported": {
+        "sourceSha256": "3c5dd399671c89d59c05f0834d3e24fe9d091fe406a1f4b23b9495411d1010cb"
+      },
+      "mutationManifests": [
+        "grader/mutations/mongodb-ecom-l2-cumulative-1.4.0.json"
+      ],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2-v1.4.0/."
+    },
+    {
+      "id": "ecommerce-l2-server-actions-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "active",
+      "recipes": ["ecommerce.l2-standard@1.4.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/postgres",
+        "baseSha256": "70e2c03771fe8eb35defb8669bfca465e86714b849534241bcd1ab83a23792b0",
+        "patchPath": "reference-apps/patches/ecommerce-l2-server-actions/postgres.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified L2 reference plus the exact action-input test handles required by the modular 1.4 candidate recipe."
+      },
+      "imported": {
+        "sourceSha256": "99c8af18eb709aebfe8bc8d22b55aa13219c0c2dcc7fef07e384ebe5aaa8677a"
+      },
+      "mutationManifests": [
+        "grader/mutations/postgres-ecom-l2-cumulative-1.4.0.json"
+      ],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2-v1.4.0/."
+    },
+    {
+      "id": "ecommerce-l2-server-actions-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "active",
+      "recipes": ["ecommerce.l2-standard@1.4.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/spacetime",
+        "baseSha256": "cd562347bede7943167f776bf48dde1fc8e06a963ad1a2cd111bb020c9d7a375",
+        "patchPath": "reference-apps/patches/ecommerce-l2-server-actions/spacetime.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The qualified L2 reference plus the exact action-input test handles required by the modular 1.4 candidate recipe."
+      },
+      "imported": {
+        "sourceSha256": "359ed185c5d9dff2754f806c1169314985baeb2bca90a09f2ab52a5ee056b8fc"
+      },
+      "mutationManifests": [
+        "grader/mutations/spacetime-ecom-l2-cumulative-1.4.0.json"
+      ],
+      "qualification": "Qualified by hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2-v1.4.0/."
+    },
+    {
+      "id": "ecommerce-l2-cumulative-1.5-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "active",
+      "recipes": ["ecommerce.l2-standard@1.5.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/mongodb",
+        "baseSha256": "6aafa2ec888b4049a87f488469f16118cd480517bfa876e57538f751744d1c7b",
+        "patchPath": "reference-apps/patches/ecommerce-l2-cumulative-1.5/mongodb.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The maintained MongoDB L2 reference plus the exact L1 2.4 and L2 action-input handles required by cumulative L2 1.5."
+      },
+      "imported": {
+        "sourceSha256": "7f2fb4f996d4a9a448d203cd48f4deedeaea7af9fbbf3bb56122b3d4cc546634"
+      },
+      "mutationManifests": [
+        "grader/mutations/mongodb-ecom-l2-cumulative-1.5.0.json"
+      ],
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2-v1.5.0/."
+    },
+    {
+      "id": "ecommerce-l2-cumulative-1.5-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "active",
+      "recipes": ["ecommerce.l2-standard@1.5.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/postgres",
+        "baseSha256": "70e2c03771fe8eb35defb8669bfca465e86714b849534241bcd1ab83a23792b0",
+        "patchPath": "reference-apps/patches/ecommerce-l2-cumulative-1.5/postgres.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The maintained PostgreSQL L2 reference plus the exact L1 2.4 and L2 action-input handles required by cumulative L2 1.5."
+      },
+      "imported": {
+        "sourceSha256": "7b3d6c936623ed8ff8b4ff3e61204c291b784c2d36c2bc1edbd5bcca47f9c952"
+      },
+      "mutationManifests": [
+        "grader/mutations/postgres-ecom-l2-cumulative-1.5.0.json"
+      ],
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2-v1.5.0/."
+    },
+    {
+      "id": "ecommerce-l2-cumulative-1.5-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 2,
+      "status": "active",
+      "recipes": ["ecommerce.l2-standard@1.5.0"],
+      "source": {
+        "basePath": "reference-apps/ecommerce/l2/spacetime",
+        "baseSha256": "cd562347bede7943167f776bf48dde1fc8e06a963ad1a2cd111bb020c9d7a375",
+        "patchPath": "reference-apps/patches/ecommerce-l2-cumulative-1.5/spacetime.json"
+      },
+      "origin": {
+        "kind": "authored",
+        "note": "The maintained SpacetimeDB L2 reference plus the exact L1 2.4 and L2 action-input handles required by cumulative L2 1.5."
+      },
+      "imported": {
+        "sourceSha256": "b0bfc4405e684511874f5a867a5dc84e28b258e46729b7199a1e8aa5e27b61ce"
+      },
+      "mutationManifests": [
+        "grader/mutations/spacetime-ecom-l2-cumulative-1.5.0.json"
+      ],
+      "qualification": "Qualified by exact hash-bound Docker reference and mutation evidence under qualification-evidence/ecommerce-l2-v1.5.0/."
+    },
+    {
+      "id": "chat-l1-mongodb",
+      "backend": "mongodb",
+      "track": "chat",
+      "level": 1,
+      "status": "blocked",
+      "targetPath": "reference-apps/chat/mongodb",
+      "mutationManifests": [],
+      "blockedReason": "No preserved canonical source and no current mutation manifest."
+    },
+    {
+      "id": "chat-l1-postgres",
+      "backend": "postgres",
+      "track": "chat",
+      "level": 1,
+      "status": "blocked",
+      "targetPath": "reference-apps/chat/postgres",
+      "mutationManifests": [
+        "grader/mutations/postgres-l1.json",
+        "grader/mutations/postgres-l1-authz.json"
+      ],
+      "blockedReason": "Preserved source exists but none of its anchors matches either historical manifest; rebuild and regenerate."
+    },
+    {
+      "id": "chat-l1-spacetime",
+      "backend": "spacetime",
+      "track": "chat",
+      "level": 1,
+      "status": "blocked",
+      "targetPath": "reference-apps/chat/spacetime",
+      "mutationManifests": [
+        "grader/mutations/spacetime-l1.json",
+        "grader/mutations/spacetime-l1-authz.json"
+      ],
+      "blockedReason": "The preserved source grades 0/49 and none of its anchors matches either historical manifest; rebuild and regenerate."
+    }
+  ]
+}

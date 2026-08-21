@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "edits": [
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"item-card\"\n      onClick={onOpen}",
+      "replace": "data-testid=\"item-card\"\n      data-buy-input={JSON.stringify({ itemId: item.id })}\n      onClick={onOpen}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"order-item\" data-entity-id={String(o.id)} key={o.id}",
+      "replace": "data-testid=\"order-item\" data-entity-id={String(o.id)} data-ship-input={JSON.stringify({ orderId: o.id })} data-cancel-input={JSON.stringify({ orderId: o.id })} key={o.id}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"admin-item-row\" key={it.id}",
+      "replace": "data-testid=\"admin-item-row\" data-price-input={it.name === \"Gaming Mouse\" ? JSON.stringify({ itemId: it.id, price: 1 }) : undefined} data-transfer-input={it.name === \"Headphones\" ? JSON.stringify({ itemId: it.id, fromWarehouseId: warehouses.find((w) => w.name === \"East\")!.id, toWarehouseId: warehouses.find((w) => w.name === \"West\")!.id, quantity: 25 }) : undefined} key={it.id}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"admin-location-row\" key={k}",
+      "replace": "data-testid=\"admin-location-row\" data-restock-input={JSON.stringify({ itemId: loc.itemId, warehouseId: loc.warehouseId, quantity: 1 })} key={k}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "<div className=\"cart-item\" data-testid=\"cart-item\" key={line.itemId}>",
+      "replace": "<div className=\"cart-item\" data-testid=\"cart-item\" data-cart-input={JSON.stringify({ itemId: line.itemId, quantity: -3 })} key={line.itemId}>"
+    }
+  ]
+}

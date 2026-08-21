@@ -1,0 +1,129 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront — duplicate checkout",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "This focused suite owns the shared cart preparation needed by both duplicate-cart and duplicate-checkout checks, so either check can run independently.",
+  "features": [
+    {
+      "id": 203,
+      "name": "One cart, two tabs, one checkout",
+      "actors": ["tab1", "tab2", "filler"],
+      "setup": [
+        { "do": "signUp", "actor": "tab1", "name": "twin" },
+        { "do": "signIn", "actor": "tab2", "name": "twin" },
+        { "do": "signIn", "actor": "filler", "name": "twin" },
+        {
+          "do": "fill",
+          "actor": "tab1",
+          "testid": "search-input",
+          "text": "Gaming Mouse",
+          "enter": true,
+          "settleMs": 1500
+        },
+        {
+          "do": "fill",
+          "actor": "tab2",
+          "testid": "search-input",
+          "text": "Gaming Mouse",
+          "enter": true,
+          "settleMs": 1500
+        },
+        {
+          "do": "clickConcurrently",
+          "testid": "add-to-cart",
+          "actors": ["tab1", "tab2"],
+          "in": { "testid": "item-card", "contains": "Gaming Mouse" },
+          "settleMs": 4000
+        },
+        { "do": "click", "actor": "tab1", "testid": "cart-toggle" }
+      ],
+      "criteria": [
+        {
+          "id": "203a",
+          "desc": "the same item added from two tabs at once becomes one line of two",
+          "points": 1,
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "tab1",
+              "testid": "cart-item",
+              "contains": "Gaming Mouse",
+              "count": 1
+            },
+            {
+              "do": "expectNumber",
+              "actor": "tab1",
+              "testid": "cart-quantity",
+              "in": { "testid": "cart-item", "contains": "Gaming Mouse" },
+              "equals": 2
+            }
+          ],
+          "statedBy": "raises its quantity rather than adding a second line"
+        },
+        {
+          "id": "203b",
+          "desc": "checking the same cart out twice at once produces one order",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "tab1", "testid": "checkout-submit" },
+            { "do": "wait", "actor": "tab1", "ms": 2500 },
+            {
+              "do": "fill",
+              "actor": "tab2",
+              "testid": "search-input",
+              "text": "Webcam",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "tab2",
+              "testid": "add-to-cart",
+              "in": { "testid": "item-card", "contains": "Webcam" }
+            },
+            { "do": "wait", "actor": "tab2", "ms": 1200 },
+            { "do": "click", "actor": "tab2", "testid": "cart-toggle" },
+            { "do": "click", "actor": "tab2", "testid": "checkout-submit" },
+            { "do": "wait", "actor": "tab2", "ms": 2500 },
+            {
+              "do": "fill",
+              "actor": "filler",
+              "testid": "search-input",
+              "text": "Keyboard",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "filler",
+              "testid": "add-to-cart",
+              "in": { "testid": "item-card", "contains": "Keyboard" }
+            },
+            { "do": "wait", "actor": "filler", "ms": 2000 },
+            {
+              "do": "callConcurrently",
+              "actors": ["tab1", "tab2"],
+              "action": "checkout",
+              "settleMs": 5000
+            },
+            { "do": "expectCallOutcomes", "accepted": 1 },
+            { "do": "click", "actor": "filler", "testid": "orders-toggle" },
+            {
+              "do": "expect",
+              "actor": "filler",
+              "testid": "order-item",
+              "contains": "Keyboard",
+              "count": 1
+            }
+          ],
+          "note": "callConcurrently resolves the track's named checkout action through the selected backend adapter and issues it at the same time with tab1 and tab2's own session credentials. The filler session prepares the shared Keyboard cart without changing either caller's browser state. The check requires exactly one server-accepted call and exactly one resulting Keyboard order.",
+          "provenBy": "The L1 2.3 candidate set binds an exact 203b defect on every reference stack: MongoDB bypasses the atomic cart claim-and-clear, while PostgreSQL and SpacetimeDB leave checked-out cart lines behind. These defects let both named checkout calls reuse the same cart, which the call-outcome and final order assertions are designed to catch. Exact Docker mutation qualification remains the promotion gate.",
+          "withheld": "The named checkout action has an HTTP route for MongoDB and PostgreSQL and a reducer mapping for SpacetimeDB. The stack adapter issues the corresponding credentialed request for each actor, giving all three stacks the same one-cart, two-call expectation.",
+          "statedBy": "checking out twice must not produce two orders"
+        }
+      ],
+      "note": "Both tabs reach the item by search rather than trusting the storefront: earlier features in this suite buy things, which re-ranks the top ten. Each tab opens its OWN cart — panel state belongs to a browser context, not to the feature."
+    }
+  ]
+}

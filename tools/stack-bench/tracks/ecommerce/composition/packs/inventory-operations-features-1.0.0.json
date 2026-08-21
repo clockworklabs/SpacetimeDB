@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.inventory-operations-features",
+  "stableId": "ecommerce.inventory-operations",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Inventory operations",
+  "description": "Warehouse transfers and live operational views.",
+  "requiresPacks": ["ecommerce.returns-pricing-features@1.0.0"],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 86000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l2.stock-transfer", "path": "prompts/02-operations.md", "order": 30, "from": "### Moving stock", "until": "### Cancelling and returning", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.operational-views", "path": "prompts/02-operations.md", "order": 50, "from": "### Live operational views", "until": "### What must stay true", "modes": ["upgrade"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l2.transfer-hooks", "path": "contracts/appendix-02.md", "order": 2030, "from": "| `transfer-from`", "until": "| `price-input`", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.operational-view-hooks", "path": "contracts/appendix-02.md", "order": 2050, "from": "| `low-stock-list`", "until": "| `order-status`", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.inventory-action-inputs", "path": "prompts/l2-action-inputs.md", "order": 2090, "from": "## Inventory contention action inputs", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "warehouse-transfer-corrected", "stableId": "warehouse-transfer", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 2, "criteria": ["2a", "2c"], "role": "feature" },
+    { "id": "warehouse-transfer-independent", "stableId": "warehouse-transfer", "source": "scenarios/02-self-contained-1.4.0.json", "feature": 2, "criteria": ["2b"], "role": "feature" },
+    { "id": "operational-views-core", "stableId": "operational-views", "source": "scenarios/02-features.json", "feature": 5, "criteria": ["5a", "5b", "5c"], "role": "feature" },
+    { "id": "operational-views-kept-purchases", "stableId": "operational-views", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 5, "criteria": ["5d"], "role": "feature" }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "kind": "benchmark-recipe",
+  "id": "ecommerce.smoke",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Ecommerce composition smoke recipe",
+  "track": "ecommerce",
+  "fixture": { "path": "../fixtures/storefront-1.0.0.json", "id": "ecommerce.storefront", "version": "1.0.0" },
+  "task": {
+    "mode": "fresh",
+    "framing": {
+      "requirements": [
+        { "id": "ecommerce.smoke.framing", "path": "composition/framing/smoke-requirements.md", "order": 20, "modes": ["fresh"] }
+      ],
+      "contracts": [
+        { "id": "ecommerce.l1.contract-heading", "path": "contracts/appendix-01.md", "order": 1000, "until": "| `app-title`", "modes": ["fresh"] },
+        { "id": "ecommerce.l1.app-title-hook", "path": "contracts/appendix-01.md", "order": 1010, "from": "| `app-title`", "until": "| `item-list`", "modes": ["fresh"] },
+        { "id": "ecommerce.l1.contract-footer", "path": "contracts/appendix-01.md", "order": 1140, "from": "Before declaring", "modes": ["fresh"] }
+      ]
+    }
+  },
+  "packs": [
+    { "path": "../packs/identity-access-1.0.0.json", "id": "ecommerce.identity-access", "version": "1.0.0", "includeRoles": ["feature"] },
+    { "path": "../packs/reviews-1.0.0.json", "id": "ecommerce.reviews", "version": "1.0.0", "includeRoles": ["feature"] }
+  ],
+  "execution": [
+    { "id": "features", "source": "scenarios/01-features.json" }
+  ],
+  "scoring": {
+    "mode": "explicit",
+    "weights": {
+      "ecommerce.identity-access.accounts.1a": 1,
+      "ecommerce.identity-access.accounts.1b": 1,
+      "ecommerce.identity-access.accounts.1c": 1,
+      "ecommerce.identity-access.accounts.1d": 1,
+      "ecommerce.reviews.reviews.6a": 2,
+      "ecommerce.reviews.reviews.6b": 1,
+      "ecommerce.reviews.reviews.6c": 1
+    }
+  }
+}

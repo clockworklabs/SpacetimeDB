@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Duplicate account refusal",
+  "features": [
+    {
+      "id": 1,
+      "name": "Accounts",
+      "actors": ["owner","impostor"],
+      "setup": [{"do":"signUp","actor":"owner","name":"ann"}],
+      "criteria": [
+        {
+          "id": "1b",
+          "desc": "a taken username is refused and does not sign the visitor in as the existing account",
+          "points": 1,
+          "steps": [
+            {"do":"signUp","actor":"impostor","name":"ann","password":"different-pw","expectFailure":true},
+            {"do":"expect","actor":"impostor","testid":"auth-error","within":6000},
+            {"do":"expect","actor":"impostor","testid":"current-user","absent":true}
+          ],
+          "statedBy": "signing up with a taken username fails with a visible error and must never sign the visitor in as the existing account"
+        }
+      ]
+    }
+  ]
+}

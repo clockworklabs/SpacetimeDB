@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Review visibility",
+  "note": "This scenario owns the complete purchase, submission, and signed-out observation needed by 6a, so it is independent of the uniqueness and average-rating checks.",
+  "features": [
+    {
+      "id": 6,
+      "name": "Reviews",
+      "actors": ["author", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "author", "name": "hal" },
+        { "do": "fill", "actor": "author", "testid": "search-input", "text": "Induction Cooktop", "enter": true, "settleMs": 1500 },
+        { "do": "click", "actor": "author", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Induction Cooktop" } },
+        { "do": "wait", "actor": "author", "ms": 800 }
+      ],
+      "criteria": [
+        {
+          "id": "6a",
+          "desc": "a customer can review an item and everyone sees it, signed out included",
+          "points": 2,
+          "steps": [
+            { "do": "click", "actor": "author", "testid": "item-name", "in": { "testid": "item-card", "contains": "Induction Cooktop" } },
+            { "do": "fill", "actor": "author", "testid": "review-rating", "text": "4" },
+            { "do": "fill", "actor": "author", "testid": "review-input", "text": "solid mold" },
+            { "do": "click", "actor": "author", "testid": "review-submit" },
+            { "do": "expect", "actor": "author", "testid": "review-item", "contains": "solid mold" },
+            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Induction Cooktop", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "visitor", "testid": "item-name", "in": { "testid": "item-card", "contains": "Induction Cooktop" } },
+            { "do": "expect", "actor": "visitor", "testid": "review-item", "contains": "solid mold", "within": 10000 }
+          ],
+          "statedBy": "reviews are visible to everyone, including signed-out visitors"
+        }
+      ]
+    }
+  ]
+}

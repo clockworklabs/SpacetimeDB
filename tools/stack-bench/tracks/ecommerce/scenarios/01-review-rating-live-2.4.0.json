@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Live review rating",
+  "note": "This scenario uses two different customers and does not depend on the outcome of the separate repeat-submission check.",
+  "features": [
+    {
+      "id": 6,
+      "name": "Reviews",
+      "actors": ["author", "other"],
+      "setup": [
+        { "do": "signUp", "actor": "author", "name": "leon" },
+        { "do": "signUp", "actor": "other", "name": "maya" },
+        { "do": "fill", "actor": "author", "testid": "search-input", "text": "Gaming Mouse", "enter": true, "settleMs": 1500 },
+        { "do": "click", "actor": "author", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
+        { "do": "wait", "actor": "author", "ms": 800 },
+        { "do": "click", "actor": "author", "testid": "item-name", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
+        { "do": "fill", "actor": "author", "testid": "review-rating", "text": "2" },
+        { "do": "fill", "actor": "author", "testid": "review-input", "text": "works for travel" },
+        { "do": "click", "actor": "author", "testid": "review-submit" },
+        { "do": "expect", "actor": "author", "testid": "review-item", "contains": "works for travel" },
+        { "do": "fill", "actor": "other", "testid": "search-input", "text": "Gaming Mouse", "enter": true, "settleMs": 1500 },
+        { "do": "click", "actor": "other", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
+        { "do": "wait", "actor": "other", "ms": 800 }
+      ],
+      "criteria": [
+        {
+          "id": "6c",
+          "desc": "the average rating reflects both reviewers and updates live",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "other", "testid": "item-name", "in": { "testid": "item-card", "contains": "Gaming Mouse" } },
+            { "do": "fill", "actor": "other", "testid": "review-rating", "text": "4" },
+            { "do": "fill", "actor": "other", "testid": "review-input", "text": "does the job" },
+            { "do": "click", "actor": "other", "testid": "review-submit" },
+            { "do": "expectNumber", "actor": "other", "testid": "review-average", "equals": 3, "within": 10000 },
+            { "do": "expectAgreement", "actors": ["author", "other"], "testid": "review-average", "numeric": true, "within": 10000 }
+          ],
+          "statedBy": "each item shows its average rating, which updates live as reviews arrive"
+        }
+      ]
+    }
+  ]
+}

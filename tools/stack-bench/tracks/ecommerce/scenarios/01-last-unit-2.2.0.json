@@ -1,0 +1,156 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — last-unit accounting",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "This focused suite keeps the stock, order-count, and revenue consequences of one purchase race together. The revenue baseline is recorded before the race, so prior benchmark activity cannot change the expected result.",
+  "features": [
+    {
+      "id": 201,
+      "name": "The last unit is sold once",
+      "actors": ["admin", "a", "b", "c", "d", "e", "f"],
+      "setup": [
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        {
+          "do": "recordNumber",
+          "actor": "admin",
+          "testid": "admin-revenue",
+          "as": "revenue-before-last-unit"
+        },
+        { "do": "signUp", "actor": "a", "name": "c1" },
+        { "do": "signUp", "actor": "b", "name": "c2" },
+        { "do": "signUp", "actor": "c", "name": "c3" },
+        { "do": "signUp", "actor": "d", "name": "c4" },
+        { "do": "signUp", "actor": "e", "name": "c5" },
+        { "do": "signUp", "actor": "f", "name": "c6" },
+        {
+          "do": "fill",
+          "actor": "a",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        },
+        {
+          "do": "fill",
+          "actor": "b",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        },
+        {
+          "do": "fill",
+          "actor": "c",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        },
+        {
+          "do": "fill",
+          "actor": "d",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        },
+        {
+          "do": "fill",
+          "actor": "e",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        },
+        {
+          "do": "fill",
+          "actor": "f",
+          "testid": "search-input",
+          "text": "Mirrorless Camera",
+          "enter": true,
+          "settleMs": 1200
+        }
+      ],
+      "criteria": [
+        {
+          "id": "201a",
+          "desc": "six customers buy the last three units at once: stock lands on exactly zero, never below",
+          "points": 1,
+          "steps": [
+            {
+              "do": "clickConcurrently",
+              "testid": "buy-now",
+              "actors": ["a", "b", "c", "d", "e", "f"],
+              "in": { "testid": "item-card", "contains": "Mirrorless Camera" },
+              "settleMs": 6000
+            },
+            {
+              "do": "expectNumber",
+              "actor": "a",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Mirrorless Camera" },
+              "equals": 0
+            },
+            {
+              "do": "expectAgreement",
+              "actors": ["a", "b", "c", "d", "e", "f"],
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Mirrorless Camera" },
+              "numeric": true
+            }
+          ],
+          "provenBy": "The existing three-stack L1 qualification catches the declared oversell or missing-reservation defect at this assertion. The new focused suite must pass its own repeated Docker qualification before promotion.",
+          "statedBy": "stock may never go negative, and two customers must never both get the last unit"
+        },
+        {
+          "id": "201b",
+          "desc": "exactly three of the six customers end up with an order, and none is charged twice",
+          "points": 1,
+          "steps": [
+            {
+              "do": "clickConcurrently",
+              "testid": "orders-toggle",
+              "actors": ["a", "b", "c", "d", "e", "f"],
+              "settleMs": 2500
+            },
+            {
+              "do": "expectActorsWith",
+              "actors": ["a", "b", "c", "d", "e", "f"],
+              "testid": "order-item",
+              "contains": "Mirrorless Camera",
+              "equals": 3,
+              "maxEach": 1
+            }
+          ],
+          "provenBy": "Qualified L1 mutation evidence already catches this exact assertion on MongoDB, PostgreSQL, and SpacetimeDB. The candidate reruns that gate against this focused suite before promotion.",
+          "statedBy": "two customers must never both get the last unit"
+        },
+        {
+          "id": "201c",
+          "desc": "revenue increases by exactly three sales, not six",
+          "points": 0,
+          "withheld": "Executable now, but remains zero until a price-or-accounting defect is proven against this exact assertion on all three stacks.",
+          "steps": [
+            {
+              "do": "expectNumber",
+              "actor": "admin",
+              "testid": "admin-revenue",
+              "relativeTo": "revenue-before-last-unit",
+              "plus": 3897,
+              "within": 10000
+            }
+          ],
+          "statedBy": "stock must never leave a warehouse without a corresponding order"
+        }
+      ]
+    }
+  ]
+}

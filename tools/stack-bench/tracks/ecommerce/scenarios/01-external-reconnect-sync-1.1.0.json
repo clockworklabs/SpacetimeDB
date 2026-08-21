@@ -1,0 +1,52 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — client reconnect synchronization",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/stock|\\/warehouses",
+  "note": "A focused reconnect probe with a known seed. West remains 45, so changing East from 55 to 7 must produce 52. It does not inherit the West=10 state from the server-restart criterion.",
+  "features": [
+    {
+      "id": 901,
+      "name": "A reconnecting storefront catches up to an external write",
+      "actors": ["viewer"],
+      "setup": [
+        {
+          "do": "expectNumber",
+          "actor": "viewer",
+          "testid": "item-stock",
+          "in": { "testid": "item-card", "contains": "Desk Lamp" },
+          "equals": 100,
+          "within": 10000
+        }
+      ],
+      "criteria": [
+        {
+          "id": "901d",
+          "desc": "while the storefront is offline, a direct database write sets Desk Lamp's East stock to 7; after reconnecting, the same page catches up from 100 to the authoritative total of 52",
+          "points": 1,
+          "note": "This proposed score remains draft until the focused pristine and mutation controls are qualified.",
+          "steps": [
+            { "do": "setOffline", "actor": "viewer", "offline": true, "settleMs": 1000 },
+            {
+              "do": "dbSetStock",
+              "item": "Desk Lamp",
+              "warehouse": "East",
+              "quantity": 7,
+              "settleMs": 4000
+            },
+            { "do": "setOffline", "actor": "viewer", "offline": false, "settleMs": 1000 },
+            {
+              "do": "expectNumber",
+              "actor": "viewer",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "equals": 52,
+              "within": 20000
+            }
+          ],
+          "statedBy": "when data changes by a path its server never saw"
+        }
+      ]
+    }
+  ]
+}

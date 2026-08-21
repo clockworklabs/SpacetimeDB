@@ -1,0 +1,12 @@
+{
+  "name": "spacetimedb-shop-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "spacetimedb": "file:/deps/spacetimedb.tgz"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2"
+  }
+}

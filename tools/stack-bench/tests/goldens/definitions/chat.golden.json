@@ -1,0 +1,3440 @@
+{
+  "definitionSchemaVersion": 1,
+  "levels": [
+    {
+      "level": 1,
+      "suites": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "scenario": "scenarios/01-basic-chat.json"
+        },
+        {
+          "id": "invariants",
+          "inherit": "all-higher-levels",
+          "scenario": "scenarios/01-invariants.json"
+        },
+        {
+          "id": "delivery",
+          "inherit": "none",
+          "scenario": "scenarios/01-delivery.json"
+        },
+        {
+          "id": "systems",
+          "inherit": "all-higher-levels",
+          "scenario": "scenarios/01-systems.json"
+        }
+      ]
+    },
+    {
+      "level": 2,
+      "suites": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "scenario": "scenarios/02-features.json"
+        },
+        {
+          "id": "invariants",
+          "inherit": "all-higher-levels",
+          "scenario": "scenarios/02-invariants.json"
+        },
+        {
+          "id": "systems",
+          "inherit": "all-higher-levels",
+          "scenario": "scenarios/02-systems.json"
+        }
+      ]
+    }
+  ],
+  "manifest": {
+    "plannedThrough": 5,
+    "portOffset": 0,
+    "restartProbe": "/api/rooms",
+    "schemaVersion": 1,
+    "slug": "",
+    "suites": {
+      "1": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "spec": "scenarios/01-basic-chat.json"
+        },
+        {
+          "id": "invariants",
+          "inherit": "all-higher-levels",
+          "spec": "scenarios/01-invariants.json"
+        },
+        {
+          "id": "delivery",
+          "inherit": "none",
+          "spec": "scenarios/01-delivery.json"
+        },
+        {
+          "id": "systems",
+          "inherit": "all-higher-levels",
+          "spec": "scenarios/01-systems.json"
+        }
+      ],
+      "2": [
+        {
+          "id": "features",
+          "inherit": "none",
+          "spec": "scenarios/02-features.json"
+        },
+        {
+          "id": "invariants",
+          "inherit": "all-higher-levels",
+          "spec": "scenarios/02-invariants.json"
+        },
+        {
+          "id": "systems",
+          "inherit": "all-higher-levels",
+          "spec": "scenarios/02-systems.json"
+        }
+      ]
+    },
+    "title": "Chat",
+    "validatedThrough": 2
+  },
+  "scenarios": [
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "Creating an account signs the user in and shows their username",
+                "id": "signup-signs-in",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "contains": "Alice",
+                    "do": "expect",
+                    "testid": "current-user",
+                    "within": 6000
+                  }
+                ]
+              },
+              {
+                "desc": "Signing up with a taken username is rejected with a visible error, and must not sign the visitor in as the existing account",
+                "id": "duplicate-username-rejected",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "bob",
+                    "do": "signUp",
+                    "expectFailure": true,
+                    "name": "Alice"
+                  },
+                  {
+                    "actor": "bob",
+                    "do": "expect",
+                    "testid": "auth-error",
+                    "within": 6000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "bob",
+                    "do": "expect",
+                    "testid": "current-user",
+                    "within": 3000
+                  }
+                ]
+              },
+              {
+                "desc": "A user can sign out and sign back in with the same credentials",
+                "id": "signout-and-signin",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "click",
+                    "testid": "signout"
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "expect",
+                    "testid": "signup-username",
+                    "within": 6000
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "signIn",
+                    "name": "Alice"
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "Alice",
+                    "do": "expect",
+                    "testid": "current-user",
+                    "within": 6000
+                  }
+                ]
+              }
+            ],
+            "id": 1,
+            "name": "Accounts",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "A sent message appears in the sender's own message list",
+                "id": "own-message-appears",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "send",
+                    "text": "hello from alice"
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "hello from alice",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 5000
+                  }
+                ]
+              },
+              {
+                "desc": "A second user in the same room receives messages live, with no reload",
+                "id": "cross-user-realtime",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "bob",
+                    "do": "enterRoom",
+                    "room": "general"
+                  },
+                  {
+                    "actor": "bob",
+                    "contains": "hello from alice",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 5000
+                  },
+                  {
+                    "actor": "bob",
+                    "do": "send",
+                    "text": "hello from bob"
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "hello from bob",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 3000
+                  }
+                ]
+              },
+              {
+                "desc": "Online users lists both participants; leaving a room works",
+                "id": "presence-and-leave",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "contains": "Bob",
+                    "do": "expect",
+                    "testid": "online-users",
+                    "within": 5000
+                  },
+                  {
+                    "actor": "bob",
+                    "do": "click",
+                    "testid": "leave-room"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "bob",
+                    "do": "expect",
+                    "testid": "message-input",
+                    "within": 5000
+                  }
+                ]
+              }
+            ],
+            "id": 2,
+            "name": "Basic Chat",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "general"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "general"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob",
+              "carol"
+            ],
+            "criteria": [
+              {
+                "desc": "Typing by another user in the same room shows an indicator live",
+                "id": "indicator-appears",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "bob",
+                    "do": "typeInto",
+                    "text": "composing a reply"
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "typing",
+                    "do": "expect",
+                    "testid": "typing-indicator",
+                    "within": 4000
+                  }
+                ]
+              },
+              {
+                "desc": "Indicator disappears within 6s once typing stops",
+                "id": "indicator-expires",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "bob",
+                    "do": "clearInput"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "alice",
+                    "contains": "typing",
+                    "do": "expect",
+                    "testid": "typing-indicator",
+                    "within": 6500
+                  }
+                ]
+              },
+              {
+                "desc": "Typing is scoped to the room — a user in another room sees nothing",
+                "id": "scoped-to-room",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "bob",
+                    "do": "typeInto",
+                    "text": "still typing here"
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "typing",
+                    "do": "expect",
+                    "testid": "typing-indicator",
+                    "within": 4000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "carol",
+                    "contains": "typing",
+                    "do": "expect",
+                    "testid": "typing-indicator",
+                    "within": 2000
+                  }
+                ]
+              }
+            ],
+            "id": 3,
+            "name": "Typing Indicators",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "carol",
+                "do": "signUp",
+                "name": "Carol"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "typing-a"
+              },
+              {
+                "actor": "carol",
+                "do": "createRoom",
+                "room": "typing-b"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "typing-a"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "typing-a"
+              },
+              {
+                "actor": "carol",
+                "do": "enterRoom",
+                "room": "typing-b"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "Receipt appears for the sender once another user views the message",
+                "id": "receipt-appears",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "bob",
+                    "do": "enterRoom",
+                    "room": "receipts"
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "expect",
+                    "testid": "read-receipt",
+                    "within": 6000
+                  }
+                ]
+              },
+              {
+                "desc": "Receipt names the user who read it",
+                "id": "receipt-names-reader",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "contains": "Bob",
+                    "do": "expect",
+                    "testid": "read-receipt",
+                    "within": 6000
+                  }
+                ]
+              },
+              {
+                "desc": "The sender is not listed as a reader of their own message",
+                "id": "sender-excluded",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "expect",
+                    "notContains": "Alice",
+                    "testid": "read-receipt",
+                    "within": 6000
+                  }
+                ]
+              }
+            ],
+            "id": 4,
+            "name": "Read Receipts",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "receipts"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "receipts"
+              },
+              {
+                "actor": "alice",
+                "do": "send",
+                "text": "did you see this"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "A badge appears live on a room with unread messages",
+                "id": "badge-appears",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "send",
+                    "text": "unread one"
+                  },
+                  {
+                    "actor": "bob",
+                    "do": "expect",
+                    "in": {
+                      "contains": "{room:unread-main}",
+                      "testid": "room-item"
+                    },
+                    "testid": "unread-badge",
+                    "within": 5000
+                  }
+                ]
+              },
+              {
+                "desc": "The badge reflects the number of unread messages (paced above the app's send rate limit)",
+                "id": "badge-counts",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "wait",
+                    "ms": 1400
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "send",
+                    "text": "unread two"
+                  },
+                  {
+                    "actor": "bob",
+                    "contains": "2",
+                    "do": "expect",
+                    "in": {
+                      "contains": "{room:unread-main}",
+                      "testid": "room-item"
+                    },
+                    "testid": "unread-badge",
+                    "within": 5000
+                  }
+                ]
+              },
+              {
+                "desc": "The badge clears when the room is opened",
+                "id": "badge-clears",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "bob",
+                    "do": "enterRoom",
+                    "room": "unread-main"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "bob",
+                    "do": "expect",
+                    "in": {
+                      "contains": "{room:unread-main}",
+                      "testid": "room-item"
+                    },
+                    "testid": "unread-badge",
+                    "within": 5000
+                  }
+                ]
+              }
+            ],
+            "id": 5,
+            "name": "Unread Message Counts",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "unread-main"
+              },
+              {
+                "actor": "bob",
+                "do": "createRoom",
+                "room": "unread-side"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "unread-main"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "unread-main"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "unread-side"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "Someone joining a room appears in its member panel without anyone reloading",
+                "id": "members-appear-live",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "bob",
+                    "do": "enterRoom",
+                    "room": "team"
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "Bob",
+                    "do": "expect",
+                    "testid": "member-item",
+                    "within": 8000
+                  }
+                ]
+              },
+              {
+                "desc": "The room's creator is marked as its owner",
+                "id": "owner-is-shown",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "expect",
+                    "testid": "member-owner",
+                    "within": 6000
+                  }
+                ]
+              },
+              {
+                "desc": "Removing a member takes them out of the panel live, for everyone still in the room",
+                "id": "removed-member-disappears",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "click",
+                    "in": {
+                      "contains": "Bob",
+                      "testid": "member-item"
+                    },
+                    "testid": "member-remove"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "alice",
+                    "contains": "Bob",
+                    "do": "expect",
+                    "testid": "member-item",
+                    "within": 8000
+                  }
+                ]
+              }
+            ],
+            "id": 6,
+            "name": "Room Members and Roles",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "team"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "team"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "A user can open a direct conversation with another user",
+                "id": "dm-can-be-started",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "click",
+                    "in": {
+                      "contains": "Bob",
+                      "testid": "online-user"
+                    },
+                    "testid": "dm-start"
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "Bob",
+                    "do": "expect",
+                    "testid": "dm-item",
+                    "within": 8000
+                  }
+                ]
+              },
+              {
+                "desc": "A direct message reaches the other participant live, with no reload",
+                "id": "dm-delivers-live",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "click",
+                    "in": {
+                      "contains": "Bob",
+                      "testid": "dm-list"
+                    },
+                    "testid": "dm-item"
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "send",
+                    "text": "a private word"
+                  },
+                  {
+                    "actor": "bob",
+                    "contains": "a private word",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "A direct conversation and its messages survive a reload",
+                "id": "dm-persists",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "bob",
+                    "do": "reload",
+                    "settleMs": 3500
+                  },
+                  {
+                    "actor": "bob",
+                    "contains": "Alice",
+                    "do": "expect",
+                    "testid": "dm-item",
+                    "within": 10000
+                  }
+                ]
+              }
+            ],
+            "id": 7,
+            "name": "Direct Messages",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "wait",
+                "ms": 2000
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "The author of a message is offered edit and delete on it",
+                "id": "author-can-edit-and-delete",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "expect",
+                    "in": {
+                      "contains": "a message of my own",
+                      "testid": "message-item"
+                    },
+                    "testid": "message-edit",
+                    "within": 6000
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "expect",
+                    "in": {
+                      "contains": "a message of my own",
+                      "testid": "message-item"
+                    },
+                    "testid": "message-delete",
+                    "within": 6000
+                  }
+                ]
+              },
+              {
+                "desc": "Nobody else is offered edit or delete on that message",
+                "id": "others-are-not",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "bob",
+                    "contains": "a message of my own",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 8000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "bob",
+                    "do": "expect",
+                    "in": {
+                      "contains": "a message of my own",
+                      "testid": "message-item"
+                    },
+                    "testid": "message-edit",
+                    "within": 5000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "bob",
+                    "do": "expect",
+                    "in": {
+                      "contains": "a message of my own",
+                      "testid": "message-item"
+                    },
+                    "testid": "message-delete",
+                    "within": 5000
+                  }
+                ]
+              }
+            ],
+            "id": 8,
+            "name": "Message Ownership",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "owned"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "owned"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "owned"
+              },
+              {
+                "actor": "alice",
+                "do": "send",
+                "text": "a message of my own"
+              }
+            ]
+          }
+        ],
+        "level": 1,
+        "note": "Level 1 is sequential's basic chat with accounts added. Accounts replace the display-name stub; typing indicators, read receipts and unread counts are sequential's, unchanged apart from signing up rather than naming yourself.",
+        "schemaVersion": 1
+      },
+      "path": "scenarios/01-basic-chat.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "Under a concurrent write storm from two clients, the sender sees every message exactly once — no drops, no double-render from optimistic insert plus broadcast echo",
+                "id": "no-loss-no-duplication-sender",
+                "points": 1,
+                "steps": [
+                  {
+                    "delayMs": 1400,
+                    "do": "sendConcurrently",
+                    "senders": [
+                      {
+                        "actor": "alice",
+                        "count": 6,
+                        "prefix": "AA"
+                      },
+                      {
+                        "actor": "bob",
+                        "count": 6,
+                        "prefix": "BB"
+                      }
+                    ]
+                  },
+                  {
+                    "actor": "alice",
+                    "count": 6,
+                    "do": "expectAllPresent",
+                    "prefix": "AA",
+                    "within": 20000
+                  }
+                ]
+              },
+              {
+                "desc": "The receiving client also observes every message from the other sender exactly once",
+                "id": "no-loss-no-duplication-receiver",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "count": 6,
+                    "do": "expectAllPresent",
+                    "prefix": "BB",
+                    "within": 20000
+                  },
+                  {
+                    "actor": "bob",
+                    "count": 6,
+                    "do": "expectAllPresent",
+                    "prefix": "AA",
+                    "within": 20000
+                  }
+                ]
+              },
+              {
+                "desc": "Both clients observe the interleaved messages in the SAME order. Non-atomic broadcast lets concurrent senders interleave differently per client.",
+                "id": "consistent-order-across-clients",
+                "points": 1,
+                "steps": [
+                  {
+                    "actors": [
+                      "alice",
+                      "bob"
+                    ],
+                    "do": "expectOrderMatches",
+                    "prefix": "AA"
+                  },
+                  {
+                    "actors": [
+                      "alice",
+                      "bob"
+                    ],
+                    "do": "expectOrderMatches",
+                    "prefix": "BB"
+                  }
+                ]
+              }
+            ],
+            "id": 201,
+            "max": 3,
+            "name": "Delivery Integrity",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "storm"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "storm"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "storm"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "A client that loses its connection and regains it must catch up on everything it missed, WITHOUT a reload. Reconnect handling is something an Express app has to implement; a SpacetimeDB subscription re-delivers state on reconnect.",
+                "id": "resync-after-disconnect",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "setOffline",
+                    "offline": true,
+                    "settleMs": 1500
+                  },
+                  {
+                    "actor": "bob",
+                    "count": 3,
+                    "delayMs": 1400,
+                    "do": "sendMany",
+                    "prefix": "OFFLINE"
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "setOffline",
+                    "offline": false,
+                    "settleMs": 3000
+                  },
+                  {
+                    "actor": "alice",
+                    "count": 3,
+                    "do": "expectAllPresent",
+                    "prefix": "OFFLINE",
+                    "within": 15000
+                  }
+                ]
+              },
+              {
+                "desc": "Catching up must not double-deliver messages the client already had (resubscribe replaying history on top of existing state)",
+                "id": "no-duplication-after-resync",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "bob",
+                    "count": 2,
+                    "delayMs": 1400,
+                    "do": "sendMany",
+                    "prefix": "AFTER"
+                  },
+                  {
+                    "actor": "alice",
+                    "count": 2,
+                    "do": "expectAllPresent",
+                    "prefix": "AFTER",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "alice",
+                    "count": 3,
+                    "do": "expectAllPresent",
+                    "prefix": "OFFLINE",
+                    "within": 5000
+                  }
+                ]
+              }
+            ],
+            "id": 202,
+            "max": 2,
+            "name": "Connection Resilience",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "resilience"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "resilience"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "resilience"
+              }
+            ]
+          }
+        ],
+        "level": 1,
+        "note": "Delivery and resilience invariants — properties of the transport, not of any feature. These are the ones a human grader cannot test at all (you cannot generate concurrency or simulate a network drop by clicking), and where the asymmetry is structural: Express stacks broadcast with io.emit() AFTER awaiting the write, so delivery is not atomic with the commit; a SpacetimeDB subscription update IS the commit. Senders pace themselves above the apps' rate limits (observed: 400ms SpacetimeDB, 350ms Mongo) — the spec requires spam prevention, so a 0-delay burst is correctly rejected and would test nothing. Concurrency comes from multiple senders overlapping, not from one sender bursting. Actors sign up with credentials, as level 1 requires.",
+        "schemaVersion": 1
+      },
+      "path": "scenarios/01-delivery.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "victim",
+              "impostor"
+            ],
+            "criteria": [
+              {
+                "desc": "Knowing a username must not grant access to that account. Signing up with a taken username, or signing in with the wrong password, must be rejected — not silently resolved to the existing account.",
+                "id": "username-is-not-a-credential",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "impostor",
+                    "do": "signUp",
+                    "expectFailure": true,
+                    "name": "Victim"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "impostor",
+                    "contains": "Victim",
+                    "do": "expect",
+                    "testid": "current-user",
+                    "within": 5000
+                  }
+                ]
+              },
+              {
+                "desc": "Signing in with a wrong password is rejected and grants nothing",
+                "id": "wrong-password-rejected",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "impostor",
+                    "do": "signIn",
+                    "expectFailure": true,
+                    "name": "Victim",
+                    "password": "not-the-password"
+                  },
+                  {
+                    "actor": "impostor",
+                    "do": "expect",
+                    "testid": "auth-error",
+                    "within": 6000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "impostor",
+                    "contains": "victim private message",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 4000
+                  }
+                ]
+              }
+            ],
+            "id": 101,
+            "max": 2,
+            "name": "Account Integrity",
+            "setup": [
+              {
+                "actor": "victim",
+                "do": "signUp",
+                "name": "Victim"
+              },
+              {
+                "actor": "victim",
+                "do": "createRoom",
+                "room": "private-notes"
+              },
+              {
+                "actor": "victim",
+                "do": "enterRoom",
+                "room": "private-notes"
+              },
+              {
+                "actor": "victim",
+                "do": "send",
+                "text": "victim private message"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice"
+            ],
+            "criteria": [
+              {
+                "desc": "Reloading keeps the user signed in as the same account",
+                "id": "session-survives-reload",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "reload",
+                    "settleMs": 3000
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "Alice",
+                    "do": "expect",
+                    "testid": "current-user",
+                    "within": 8000
+                  }
+                ]
+              },
+              {
+                "desc": "A user who loses and regains their connection while sitting on the page is still signed in as the same account. The connection drops and re-establishes on its own; re-identifying the client here would orphan everything it owns.",
+                "id": "session-survives-reconnect",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "setOffline",
+                    "offline": true,
+                    "settleMs": 3000
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "setOffline",
+                    "offline": false,
+                    "settleMs": 6000
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "Alice",
+                    "do": "expect",
+                    "testid": "current-user",
+                    "within": 20000
+                  }
+                ]
+              },
+              {
+                "desc": "After reconnecting the user still owns what they created — their room and their message are still theirs",
+                "id": "own-content-still-owned-after-reconnect",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "enterRoom",
+                    "room": "mine"
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "alice message",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 15000
+                  }
+                ]
+              }
+            ],
+            "id": 102,
+            "max": 3,
+            "name": "Session Durability",
+            "note": "Session durability is tested by dropping the client's connection, not by restarting the backend. Both force the same reconnect, but only one needs a server the harness owns — and restarting a shared host takes unrelated databases down with it. Backend restarts belong where they test storage rather than session handling (level 4).",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "mine"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "mine"
+              },
+              {
+                "actor": "alice",
+                "do": "send",
+                "text": "alice message"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "A message sent in one room never appears in another",
+                "id": "messages-scoped-to-room",
+                "points": 1,
+                "steps": [
+                  {
+                    "absent": true,
+                    "actor": "bob",
+                    "contains": "message for room a",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 5000
+                  }
+                ]
+              },
+              {
+                "desc": "A room renders exactly once in the list — an optimistic insert plus a broadcast echo duplicates it",
+                "id": "no-duplicate-rooms",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "contains": "{room:room-a}",
+                    "count": 1,
+                    "do": "expect",
+                    "testid": "room-item",
+                    "within": 5000
+                  }
+                ]
+              }
+            ],
+            "id": 103,
+            "max": 2,
+            "name": "Data Isolation",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "room-a"
+              },
+              {
+                "actor": "bob",
+                "do": "createRoom",
+                "room": "room-b"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "room-a"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "room-b"
+              },
+              {
+                "actor": "alice",
+                "do": "send",
+                "text": "message for room a"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "Your own message must never count as unread for you. (historical: a sender's own badge went to 1 on SpacetimeDB, twice)",
+                "id": "own-messages-not-unread",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "send",
+                    "text": "alice speaking"
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "wait",
+                    "ms": 1400
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "enterRoom",
+                    "room": "side"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "alice",
+                    "do": "expect",
+                    "in": {
+                      "contains": "{room:main}",
+                      "testid": "room-item"
+                    },
+                    "testid": "unread-badge",
+                    "within": 5000
+                  }
+                ]
+              },
+              {
+                "desc": "Once a room is open its badge stays clear while new messages arrive in it — you are looking at them. (historical: badges that never cleared)",
+                "id": "unread-does-not-resurrect",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "enterRoom",
+                    "room": "main"
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "wait",
+                    "ms": 1400
+                  },
+                  {
+                    "actor": "bob",
+                    "do": "send",
+                    "text": "bob speaking"
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "bob speaking",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 6000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "alice",
+                    "do": "expect",
+                    "in": {
+                      "contains": "{room:main}",
+                      "testid": "room-item"
+                    },
+                    "testid": "unread-badge",
+                    "within": 4000
+                  }
+                ]
+              },
+              {
+                "desc": "Receipts stay live for later messages, not just the first one. (historical: 'Seen by' that only appeared after leaving and re-entering the room)",
+                "id": "receipts-keep-updating",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "wait",
+                    "ms": 1400
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "send",
+                    "text": "second message from alice"
+                  },
+                  {
+                    "actor": "bob",
+                    "contains": "second message from alice",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 6000
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "Bob",
+                    "do": "expect",
+                    "testid": "read-receipt",
+                    "within": 10000
+                  }
+                ]
+              }
+            ],
+            "id": 104,
+            "max": 3,
+            "name": "Per-User State Integrity",
+            "note": "Unread counts and read receipts are per-user state derived from other people's actions. The historical grading data has more defects here than anywhere else in level 1.",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "main"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "side"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "main"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "main"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "The 'Seen by' list must not change while nothing is happening. (historical: names flipping order continuously from an unstable sort)",
+                "id": "receipt-text-does-not-flicker",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "expect",
+                    "testid": "read-receipt",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "expectStable",
+                    "intervalMs": 700,
+                    "samples": 4,
+                    "testid": "read-receipt"
+                  }
+                ]
+              },
+              {
+                "desc": "A user who signs out disappears from the online list. (historical: presence lists stale or stuck, six runs)",
+                "id": "presence-drops-signed-out-user",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "contains": "Bob",
+                    "do": "expect",
+                    "testid": "online-users",
+                    "within": 8000
+                  },
+                  {
+                    "actor": "bob",
+                    "do": "click",
+                    "testid": "signout"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "alice",
+                    "contains": "Bob",
+                    "do": "expect",
+                    "testid": "online-users",
+                    "within": 12000
+                  }
+                ]
+              }
+            ],
+            "id": 105,
+            "max": 2,
+            "name": "Presence and Display Stability",
+            "note": "Presence was wrong in six of the historically graded runs, and 'Seen by' lists were seen flickering between orderings. Neither is visible to a single assertion.",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "lobby"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "lobby"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "lobby"
+              },
+              {
+                "actor": "alice",
+                "do": "send",
+                "text": "who is here"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob"
+            ],
+            "criteria": [
+              {
+                "desc": "A message the server refused for exceeding the rate limit must not stay visible to its sender. An optimistic insert without rollback leaves the sender believing they said something nobody received.",
+                "id": "rejected-message-does-not-linger",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "send",
+                    "text": "first of a burst"
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "send",
+                    "text": "REJECTED BY RATE LIMIT"
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "wait",
+                    "ms": 4000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "bob",
+                    "contains": "REJECTED BY RATE LIMIT",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 4000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "alice",
+                    "contains": "REJECTED BY RATE LIMIT",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 4000
+                  }
+                ]
+              },
+              {
+                "desc": "A brand-new browser sees what the acting client claims. Anything visible only to the client that performed the action never reached the server.",
+                "id": "a-fresh-client-sees-the-same-thing",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "wait",
+                    "ms": 1500
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "send",
+                    "text": "durable statement"
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "durable statement",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 6000
+                  },
+                  {
+                    "actor": "bob",
+                    "do": "freshClient"
+                  },
+                  {
+                    "actor": "bob-fresh",
+                    "do": "signUp",
+                    "name": "Observer"
+                  },
+                  {
+                    "actor": "bob-fresh",
+                    "do": "enterRoom",
+                    "room": "truth"
+                  },
+                  {
+                    "actor": "bob-fresh",
+                    "contains": "durable statement",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 10000
+                  }
+                ]
+              }
+            ],
+            "id": 107,
+            "max": 2,
+            "name": "Server-Side Truth",
+            "note": "Whatever the acting client shows must actually exist on the server. Optimistic inserts that were never confirmed, and counts incremented only in one browser, are invisible to any assertion made from that same browser.",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "truth"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "truth"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "truth"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "alice",
+              "bob",
+              "snoop"
+            ],
+            "criteria": [
+              {
+                "desc": "A third party does not see the conversation in their list",
+                "id": "outsider-cannot-see-the-conversation",
+                "points": 1,
+                "steps": [
+                  {
+                    "absent": true,
+                    "actor": "snoop",
+                    "contains": "Alice",
+                    "do": "expect",
+                    "testid": "dm-item",
+                    "within": 6000
+                  }
+                ]
+              },
+              {
+                "desc": "A third party never sees the messages",
+                "id": "outsider-cannot-read-the-messages",
+                "points": 1,
+                "steps": [
+                  {
+                    "absent": true,
+                    "actor": "snoop",
+                    "contains": "SECRET between alice and bob",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 6000
+                  }
+                ]
+              },
+              {
+                "desc": "A third party's client is never SENT the private message. Hiding it in the interface is not privacy — anyone with developer tools can read what their own browser received.",
+                "id": "outsider-never-receives-it-over-the-wire",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "snoop",
+                    "contains": "a public message in the lobby",
+                    "do": "expectReceived",
+                    "within": 8000
+                  },
+                  {
+                    "actor": "bob",
+                    "do": "click",
+                    "in": {
+                      "contains": "Alice",
+                      "testid": "dm-list"
+                    },
+                    "testid": "dm-item"
+                  },
+                  {
+                    "actor": "bob",
+                    "do": "wait",
+                    "ms": 2000
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "send",
+                    "text": "SECOND SECRET for bob only"
+                  },
+                  {
+                    "actor": "alice",
+                    "do": "wait",
+                    "ms": 4000
+                  },
+                  {
+                    "actor": "bob",
+                    "contains": "SECOND SECRET for bob only",
+                    "do": "expectReceived",
+                    "within": 8000
+                  },
+                  {
+                    "actor": "snoop",
+                    "contains": "SECOND SECRET for bob only",
+                    "do": "expectNotReceived"
+                  }
+                ]
+              }
+            ],
+            "id": 109,
+            "max": 3,
+            "name": "Direct Message Privacy",
+            "note": "A direct conversation is the first data in level 1 that must not reach someone. The wire check is the one that matters: an app that broadcasts widely and filters in the browser looks perfect on screen while the data is already in every client.",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "Alice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "Bob"
+              },
+              {
+                "actor": "snoop",
+                "do": "signUp",
+                "name": "Snoop"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "lobby"
+              },
+              {
+                "actor": "alice",
+                "do": "enterRoom",
+                "room": "lobby"
+              },
+              {
+                "actor": "snoop",
+                "do": "enterRoom",
+                "room": "lobby"
+              },
+              {
+                "actor": "alice",
+                "do": "send",
+                "text": "a public message in the lobby"
+              },
+              {
+                "actor": "alice",
+                "do": "wait",
+                "ms": 2500
+              },
+              {
+                "actor": "alice",
+                "do": "click",
+                "in": {
+                  "contains": "Bob",
+                  "testid": "online-user"
+                },
+                "testid": "dm-start"
+              },
+              {
+                "actor": "alice",
+                "do": "wait",
+                "ms": 2000
+              },
+              {
+                "actor": "alice",
+                "do": "click",
+                "in": {
+                  "contains": "Bob",
+                  "testid": "dm-list"
+                },
+                "testid": "dm-item"
+              },
+              {
+                "actor": "alice",
+                "do": "send",
+                "text": "SECRET between alice and bob"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "owner",
+              "member",
+              "target",
+              "outsider"
+            ],
+            "criteria": [
+              {
+                "desc": "Someone who never joined the room cannot read its history",
+                "id": "outsider-cannot-read-the-room",
+                "points": 1,
+                "steps": [
+                  {
+                    "absent": true,
+                    "actor": "outsider",
+                    "contains": "owner message",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 6000
+                  }
+                ]
+              },
+              {
+                "desc": "Someone who never joined cannot post to the room, even by re-issuing a member's own send request",
+                "id": "outsider-cannot-post-to-the-room",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "outsider",
+                    "do": "replayAs",
+                    "from": "owner",
+                    "match": "owner message",
+                    "swap": {
+                      "find": "owner message",
+                      "with": "posted by an outsider"
+                    }
+                  },
+                  {
+                    "actor": "outsider",
+                    "do": "expectReplayRejected"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "owner",
+                    "contains": "posted by an outsider",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 6000
+                  }
+                ]
+              },
+              {
+                "desc": "A removed user stops receiving the room's messages immediately, without reloading. Revoking access has to stop the stream, not just stop the interface drawing it.",
+                "id": "removed-member-stops-receiving",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "target",
+                    "contains": "owner message",
+                    "do": "expectReceived",
+                    "within": 8000
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "click",
+                    "in": {
+                      "contains": "Target",
+                      "testid": "member-item"
+                    },
+                    "testid": "member-remove"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "wait",
+                    "ms": 3000
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "send",
+                    "text": "after the removal"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "wait",
+                    "ms": 4000
+                  },
+                  {
+                    "actor": "target",
+                    "contains": "after the removal",
+                    "do": "expectNotReceived"
+                  }
+                ]
+              },
+              {
+                "desc": "A member who is not an owner cannot remove anyone — not through the interface, and not by re-issuing the owner's own removal request against a different person",
+                "id": "only-an-owner-can-remove-a-member",
+                "points": 1,
+                "steps": [
+                  {
+                    "absent": true,
+                    "actor": "member",
+                    "do": "expect",
+                    "testid": "member-remove",
+                    "within": 5000
+                  },
+                  {
+                    "actor": "member",
+                    "do": "replayAs",
+                    "from": "owner",
+                    "match": "member",
+                    "swap": {
+                      "find": "{user:Target}",
+                      "with": "{user:Owner}"
+                    }
+                  },
+                  {
+                    "actor": "member",
+                    "do": "expectReplayRejected"
+                  },
+                  {
+                    "actor": "owner",
+                    "contains": "Owner",
+                    "do": "expect",
+                    "testid": "member-item",
+                    "within": 6000
+                  }
+                ]
+              }
+            ],
+            "id": 108,
+            "max": 4,
+            "name": "Authorization",
+            "note": "Each of these is an action the wrong person must not be able to take. Where the app writes over HTTP the request is re-issued with the wrong user's credentials, because a hidden control is not a check. Where identity comes from the live connection there is nothing to re-issue: that replay records as unverified and never scores or penalises, so the point rests on what the interface actually does.",
+            "setup": [
+              {
+                "actor": "owner",
+                "do": "signUp",
+                "name": "Owner"
+              },
+              {
+                "actor": "member",
+                "do": "signUp",
+                "name": "Member"
+              },
+              {
+                "actor": "target",
+                "do": "signUp",
+                "name": "Target"
+              },
+              {
+                "actor": "outsider",
+                "do": "signUp",
+                "name": "Outsider"
+              },
+              {
+                "actor": "owner",
+                "do": "createRoom",
+                "room": "guarded"
+              },
+              {
+                "actor": "owner",
+                "do": "enterRoom",
+                "room": "guarded"
+              },
+              {
+                "actor": "member",
+                "do": "enterRoom",
+                "room": "guarded"
+              },
+              {
+                "actor": "target",
+                "do": "enterRoom",
+                "room": "guarded"
+              },
+              {
+                "actor": "owner",
+                "do": "send",
+                "text": "owner message"
+              },
+              {
+                "actor": "owner",
+                "do": "wait",
+                "ms": 2500
+              }
+            ]
+          }
+        ],
+        "level": 1,
+        "note": "Cross-cutting properties, scored on a separate axis from features. A feature-only score cannot see these: an app can implement every listed feature and still let one user take over another's account. Each invariant is its own feature with fresh contexts, so one root defect cannot cascade into several apparent problems.",
+        "schemaVersion": 1,
+        "track": "stack-bench"
+      },
+      "path": "scenarios/01-invariants.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "alice",
+              "bob",
+              "auditor"
+            ],
+            "criteria": [
+              {
+                "desc": "a back-office script purges SysBob's messages directly in the database; a client with the room open sees them disappear without touching the page",
+                "id": "901a",
+                "note": "WITHHELD until proven against a mutant (backoffice-writes-via-server) and a real failing build. The script is the app's own scripts/backoffice.mjs, required by the spec to write to the database without the web server's help — moderation, compliance takedowns and data-retention jobs all look exactly like this.",
+                "points": 0,
+                "steps": [
+                  {
+                    "args": [
+                      "purge-user",
+                      "{user:SysBob}"
+                    ],
+                    "do": "runScript",
+                    "script": "scripts/backoffice.mjs",
+                    "settleMs": 4000
+                  },
+                  {
+                    "actor": "alice",
+                    "contains": "purge-me",
+                    "do": "expectElementCount",
+                    "equals": 0,
+                    "testid": "message-item",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "a customer arriving after the purge never sees the messages — the rows are gone from the database, not merely from one client's memory",
+                "id": "901b",
+                "note": "WITHHELD — promoted together with 901a. A fresh actor rather than a reload, so this cannot be confused by session-persistence behaviour, which invariant 105 scores separately.",
+                "points": 0,
+                "steps": [
+                  {
+                    "actor": "auditor",
+                    "do": "signUp",
+                    "name": "SysAuditor"
+                  },
+                  {
+                    "actor": "auditor",
+                    "do": "enterRoom",
+                    "room": "sysroom"
+                  },
+                  {
+                    "actor": "auditor",
+                    "contains": "purge-me",
+                    "do": "expectElementCount",
+                    "equals": 0,
+                    "testid": "message-item",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "a purge that lands while the app server is down is still reflected to an open client once the server returns — the deploy window loses nothing",
+                "id": "901c",
+                "note": "WITHHELD — same promotion rule, plus this is the anti-cheat phase: a script that talks to the app server fails here outright. NOTIFY-style event relays also fail unless the app refetches on reconnect, because a notification fired while nobody listened is gone forever.",
+                "points": 0,
+                "steps": [
+                  {
+                    "actor": "alice",
+                    "do": "send",
+                    "text": "deploy-window-msg"
+                  },
+                  {
+                    "actor": "auditor",
+                    "contains": "deploy-window-msg",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 8000
+                  },
+                  {
+                    "do": "stopAppServer"
+                  },
+                  {
+                    "args": [
+                      "purge-user",
+                      "{user:SysAlice}"
+                    ],
+                    "do": "runScript",
+                    "script": "scripts/backoffice.mjs"
+                  },
+                  {
+                    "do": "startAppServer"
+                  },
+                  {
+                    "actor": "auditor",
+                    "contains": "deploy-window-msg",
+                    "do": "expectElementCount",
+                    "equals": 0,
+                    "testid": "message-item",
+                    "within": 20000
+                  }
+                ]
+              }
+            ],
+            "id": 901,
+            "name": "A write from outside the app is visible without reload",
+            "setup": [
+              {
+                "actor": "alice",
+                "do": "signUp",
+                "name": "SysAlice"
+              },
+              {
+                "actor": "bob",
+                "do": "signUp",
+                "name": "SysBob"
+              },
+              {
+                "actor": "alice",
+                "do": "createRoom",
+                "room": "sysroom"
+              },
+              {
+                "actor": "bob",
+                "do": "enterRoom",
+                "room": "sysroom"
+              },
+              {
+                "actor": "bob",
+                "do": "send",
+                "text": "purge-me-alpha"
+              },
+              {
+                "actor": "bob",
+                "do": "send",
+                "text": "purge-me-beta"
+              },
+              {
+                "actor": "alice",
+                "contains": "purge-me-beta",
+                "do": "expect",
+                "testid": "message-item",
+                "within": 8000
+              }
+            ]
+          },
+          {
+            "actors": [
+              "host",
+              "watcher",
+              "joiner"
+            ],
+            "criteria": [
+              {
+                "desc": "one user enters the room — fetching its member list — at the same moment another joins: the fetcher ends with the joiner exactly once, not zero (stale fetch) and not twice (fetch merged with the join broadcast)",
+                "id": "902a",
+                "note": "WITHHELD until proven against a mutant (fetch-then-append-dupe) and a real failing build. The race window is real; INCONCLUSIVE on a missed race, never a false FAIL.",
+                "points": 0,
+                "steps": [
+                  {
+                    "branches": [
+                      [
+                        {
+                          "actor": "watcher",
+                          "do": "enterRoom",
+                          "room": "raceroom"
+                        }
+                      ],
+                      [
+                        {
+                          "actor": "joiner",
+                          "do": "enterRoom",
+                          "room": "raceroom"
+                        }
+                      ]
+                    ],
+                    "do": "race",
+                    "settleMs": 4000
+                  },
+                  {
+                    "actor": "watcher",
+                    "contains": "RaceJoiner",
+                    "do": "expectElementCount",
+                    "equals": 1,
+                    "testid": "member-item",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "watcher",
+                    "contains": "RaceHost",
+                    "do": "expectElementCount",
+                    "equals": 1,
+                    "testid": "member-item",
+                    "within": 10000
+                  }
+                ]
+              }
+            ],
+            "id": 902,
+            "name": "A list being opened while its contents change",
+            "setup": [
+              {
+                "actor": "host",
+                "do": "signUp",
+                "name": "RaceHost"
+              },
+              {
+                "actor": "watcher",
+                "do": "signUp",
+                "name": "RaceWatcher"
+              },
+              {
+                "actor": "joiner",
+                "do": "signUp",
+                "name": "RaceJoiner"
+              },
+              {
+                "actor": "host",
+                "do": "createRoom",
+                "room": "raceroom"
+              }
+            ]
+          }
+        ],
+        "level": 1,
+        "note": "Properties of the system, not of any one feature: what happens when the database changes underneath the app, and when two things happen at the same time. A broadcast layer only announces writes that went through it — a moderation script that deletes rows directly leaves every open client showing messages that no longer exist. Every criterion is withheld at 0 points until it demonstrably fails a real build AND its mutant is CAUGHT, the same promotion rule as contention.",
+        "schemaVersion": 1
+      },
+      "path": "scenarios/01-systems.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "owner",
+              "outsider"
+            ],
+            "criteria": [
+              {
+                "desc": "the owner sees the private badge on their room",
+                "id": "201a",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "owner",
+                    "do": "expect",
+                    "testid": "room-private-badge",
+                    "within": 8000
+                  }
+                ]
+              },
+              {
+                "desc": "a private room does not appear in a non-member's room list at all",
+                "id": "201b",
+                "points": 2,
+                "steps": [
+                  {
+                    "absent": true,
+                    "actor": "outsider",
+                    "contains": "{room:vault}",
+                    "do": "expect",
+                    "testid": "room-item",
+                    "within": 6000
+                  }
+                ]
+              }
+            ],
+            "id": 201,
+            "name": "Private Rooms",
+            "setup": [
+              {
+                "actor": "owner",
+                "do": "signUp",
+                "name": "Pria"
+              },
+              {
+                "actor": "outsider",
+                "do": "signUp",
+                "name": "Oleg"
+              },
+              {
+                "actor": "owner",
+                "do": "createRoom",
+                "private": true,
+                "room": "vault"
+              },
+              {
+                "actor": "owner",
+                "do": "send",
+                "text": "vault-secret-note"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "owner",
+              "guest"
+            ],
+            "criteria": [
+              {
+                "desc": "an invited user gains access and can read the room's history",
+                "id": "202a",
+                "points": 2,
+                "steps": [
+                  {
+                    "actor": "owner",
+                    "do": "fill",
+                    "testid": "invite-input",
+                    "text": "{user:Gina}"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "click",
+                    "settleMs": 1200,
+                    "testid": "invite-submit"
+                  },
+                  {
+                    "actor": "guest",
+                    "do": "enterRoom",
+                    "room": "committee"
+                  },
+                  {
+                    "actor": "guest",
+                    "contains": "pre-invite-history",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "removal takes effect live: the removed member stops receiving without reloading",
+                "id": "202b",
+                "points": 2,
+                "steps": [
+                  {
+                    "actor": "owner",
+                    "do": "click",
+                    "in": {
+                      "contains": "Gina",
+                      "testid": "member-item"
+                    },
+                    "settleMs": 1500,
+                    "testid": "member-remove"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "send",
+                    "text": "post-removal-note"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "absent": true,
+                    "actor": "guest",
+                    "contains": "post-removal-note",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 4000
+                  }
+                ]
+              }
+            ],
+            "id": 202,
+            "name": "Invitation and Removal",
+            "setup": [
+              {
+                "actor": "owner",
+                "do": "signUp",
+                "name": "Held"
+              },
+              {
+                "actor": "guest",
+                "do": "signUp",
+                "name": "Gina"
+              },
+              {
+                "actor": "owner",
+                "do": "createRoom",
+                "private": true,
+                "room": "committee"
+              },
+              {
+                "actor": "owner",
+                "do": "send",
+                "text": "pre-invite-history"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "subject",
+              "viewer"
+            ],
+            "criteria": [
+              {
+                "desc": "clicking a username opens that person's profile with their name and bio",
+                "id": "203a",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "viewer",
+                    "contains": "Sana",
+                    "do": "click",
+                    "settleMs": 1200,
+                    "testid": "member-item"
+                  },
+                  {
+                    "actor": "viewer",
+                    "contains": "Sana",
+                    "do": "expect",
+                    "testid": "profile-name",
+                    "within": 8000
+                  },
+                  {
+                    "actor": "viewer",
+                    "contains": "first-bio-text",
+                    "do": "expect",
+                    "testid": "profile-bio",
+                    "within": 8000
+                  }
+                ]
+              },
+              {
+                "desc": "an open profile panel is live: a bio edit appears to a viewer without reopening",
+                "id": "203b",
+                "points": 2,
+                "steps": [
+                  {
+                    "actor": "subject",
+                    "do": "fill",
+                    "testid": "bio-input",
+                    "text": "second-bio-text"
+                  },
+                  {
+                    "actor": "subject",
+                    "do": "click",
+                    "testid": "bio-save"
+                  },
+                  {
+                    "actor": "viewer",
+                    "contains": "second-bio-text",
+                    "do": "expect",
+                    "testid": "profile-bio",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "the panel closes, and reopening shows current data",
+                "id": "203c",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "viewer",
+                    "do": "click",
+                    "settleMs": 800,
+                    "testid": "profile-close"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "viewer",
+                    "do": "expect",
+                    "testid": "profile-bio",
+                    "within": 4000
+                  },
+                  {
+                    "actor": "viewer",
+                    "contains": "Sana",
+                    "do": "click",
+                    "settleMs": 1200,
+                    "testid": "member-item"
+                  },
+                  {
+                    "actor": "viewer",
+                    "contains": "second-bio-text",
+                    "do": "expect",
+                    "testid": "profile-bio",
+                    "within": 8000
+                  }
+                ]
+              }
+            ],
+            "id": 203,
+            "name": "Profiles",
+            "setup": [
+              {
+                "actor": "subject",
+                "do": "signUp",
+                "name": "Sana"
+              },
+              {
+                "actor": "viewer",
+                "do": "signUp",
+                "name": "Vero"
+              },
+              {
+                "actor": "subject",
+                "do": "createRoom",
+                "room": "profroom"
+              },
+              {
+                "actor": "viewer",
+                "do": "enterRoom",
+                "room": "profroom"
+              },
+              {
+                "actor": "subject",
+                "do": "fill",
+                "testid": "bio-input",
+                "text": "first-bio-text"
+              },
+              {
+                "actor": "subject",
+                "do": "click",
+                "settleMs": 1200,
+                "testid": "bio-save"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "asker",
+              "asked",
+              "third"
+            ],
+            "criteria": [
+              {
+                "desc": "a request reaches the recipient as pending, and accepting puts each user in the other's friends list — live, no reloads anywhere",
+                "id": "204a",
+                "points": 2,
+                "steps": [
+                  {
+                    "actor": "asker",
+                    "contains": "Freya",
+                    "do": "click",
+                    "settleMs": 1200,
+                    "testid": "member-item"
+                  },
+                  {
+                    "actor": "asker",
+                    "do": "click",
+                    "settleMs": 1200,
+                    "testid": "friend-request"
+                  },
+                  {
+                    "actor": "asked",
+                    "contains": "Finn",
+                    "do": "expect",
+                    "testid": "friend-pending",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "asked",
+                    "do": "click",
+                    "in": {
+                      "contains": "Finn",
+                      "testid": "friend-pending"
+                    },
+                    "settleMs": 1500,
+                    "testid": "friend-accept"
+                  },
+                  {
+                    "actor": "asker",
+                    "contains": "Freya",
+                    "do": "expect",
+                    "testid": "friend-item",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "asked",
+                    "contains": "Finn",
+                    "do": "expect",
+                    "testid": "friend-item",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "a declined request creates no friendship on either side",
+                "id": "204b",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "third",
+                    "contains": "Freya",
+                    "do": "click",
+                    "settleMs": 1200,
+                    "testid": "member-item"
+                  },
+                  {
+                    "actor": "third",
+                    "do": "click",
+                    "settleMs": 1200,
+                    "testid": "friend-request"
+                  },
+                  {
+                    "actor": "asked",
+                    "do": "click",
+                    "in": {
+                      "contains": "Falk",
+                      "testid": "friend-pending"
+                    },
+                    "settleMs": 1500,
+                    "testid": "friend-decline"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "third",
+                    "contains": "Freya",
+                    "do": "expect",
+                    "testid": "friend-item",
+                    "within": 5000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "asked",
+                    "contains": "Falk",
+                    "do": "expect",
+                    "testid": "friend-item",
+                    "within": 5000
+                  }
+                ]
+              },
+              {
+                "desc": "unfriending removes the row live from BOTH lists",
+                "id": "204c",
+                "points": 2,
+                "steps": [
+                  {
+                    "actor": "asker",
+                    "do": "click",
+                    "in": {
+                      "contains": "Freya",
+                      "testid": "friend-item"
+                    },
+                    "settleMs": 1500,
+                    "testid": "unfriend"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "asker",
+                    "contains": "Freya",
+                    "do": "expect",
+                    "testid": "friend-item",
+                    "within": 8000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "asked",
+                    "contains": "Finn",
+                    "do": "expect",
+                    "testid": "friend-item",
+                    "within": 8000
+                  }
+                ]
+              }
+            ],
+            "id": 204,
+            "name": "Friends",
+            "setup": [
+              {
+                "actor": "asker",
+                "do": "signUp",
+                "name": "Finn"
+              },
+              {
+                "actor": "asked",
+                "do": "signUp",
+                "name": "Freya"
+              },
+              {
+                "actor": "third",
+                "do": "signUp",
+                "name": "Falk"
+              },
+              {
+                "actor": "asker",
+                "do": "createRoom",
+                "room": "friendroom"
+              },
+              {
+                "actor": "asked",
+                "do": "enterRoom",
+                "room": "friendroom"
+              },
+              {
+                "actor": "third",
+                "do": "enterRoom",
+                "room": "friendroom"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "watcher",
+              "flapper"
+            ],
+            "criteria": [
+              {
+                "desc": "a friend's presence flips to offline live when they leave, and back when they return",
+                "id": "205a",
+                "points": 2,
+                "steps": [
+                  {
+                    "actor": "watcher",
+                    "contains": "online",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Flip",
+                      "testid": "friend-item"
+                    },
+                    "testid": "friend-presence",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "flapper",
+                    "do": "closeClient"
+                  },
+                  {
+                    "actor": "watcher",
+                    "contains": "offline",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Flip",
+                      "testid": "friend-item"
+                    },
+                    "testid": "friend-presence",
+                    "within": 15000
+                  },
+                  {
+                    "actor": "flapper",
+                    "do": "openClient"
+                  },
+                  {
+                    "actor": "flapper",
+                    "do": "ensureSignedIn",
+                    "name": "Flip"
+                  },
+                  {
+                    "actor": "watcher",
+                    "contains": "online",
+                    "do": "expect",
+                    "in": {
+                      "contains": "Flip",
+                      "testid": "friend-item"
+                    },
+                    "testid": "friend-presence",
+                    "within": 15000
+                  }
+                ]
+              }
+            ],
+            "id": 205,
+            "name": "Friend Presence",
+            "setup": [
+              {
+                "actor": "watcher",
+                "do": "signUp",
+                "name": "Wava"
+              },
+              {
+                "actor": "flapper",
+                "do": "signUp",
+                "name": "Flip"
+              },
+              {
+                "actor": "watcher",
+                "do": "createRoom",
+                "room": "presroom"
+              },
+              {
+                "actor": "flapper",
+                "do": "enterRoom",
+                "room": "presroom"
+              },
+              {
+                "actor": "watcher",
+                "contains": "Flip",
+                "do": "click",
+                "settleMs": 1200,
+                "testid": "member-item"
+              },
+              {
+                "actor": "watcher",
+                "do": "click",
+                "settleMs": 1200,
+                "testid": "friend-request"
+              },
+              {
+                "actor": "flapper",
+                "do": "click",
+                "in": {
+                  "contains": "Wava",
+                  "testid": "friend-pending"
+                },
+                "settleMs": 1500,
+                "testid": "friend-accept"
+              }
+            ]
+          }
+        ],
+        "level": 2,
+        "note": "Level 2 features: access control and the social layer. Levels are cumulative — these run against the same app as level 1's suites, after the upgrade.",
+        "schemaVersion": 1
+      },
+      "path": "scenarios/02-features.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "owner",
+              "member",
+              "outsider"
+            ],
+            "criteria": [
+              {
+                "desc": "a private message reaches a member and is never sent over the wire to a non-member — regardless of what any page renders",
+                "id": "211a",
+                "points": 2,
+                "steps": [
+                  {
+                    "actor": "owner",
+                    "do": "send",
+                    "text": "sealed-room-secret"
+                  },
+                  {
+                    "actor": "owner",
+                    "do": "wait",
+                    "ms": 4000
+                  },
+                  {
+                    "actor": "member",
+                    "contains": "sealed-room-secret",
+                    "do": "expectReceived",
+                    "within": 8000
+                  },
+                  {
+                    "actor": "outsider",
+                    "contains": "sealed-room-secret",
+                    "do": "expectNotReceived"
+                  }
+                ]
+              },
+              {
+                "desc": "a non-member's post into a private room, issued as a raw request, is rejected and appears to nobody",
+                "id": "211b",
+                "points": 2,
+                "steps": [
+                  {
+                    "actor": "outsider",
+                    "do": "replayAs",
+                    "from": "owner",
+                    "match": "sealed-room-secret",
+                    "swap": {
+                      "find": "sealed-room-secret",
+                      "with": "smuggled-outsider-post"
+                    }
+                  },
+                  {
+                    "actor": "outsider",
+                    "do": "expectReplayRejected"
+                  },
+                  {
+                    "absent": true,
+                    "actor": "member",
+                    "contains": "smuggled-outsider-post",
+                    "do": "expect",
+                    "testid": "message-item",
+                    "within": 5000
+                  }
+                ]
+              }
+            ],
+            "id": 211,
+            "name": "Private Room Privacy",
+            "setup": [
+              {
+                "actor": "owner",
+                "do": "signUp",
+                "name": "Opal"
+              },
+              {
+                "actor": "member",
+                "do": "signUp",
+                "name": "Mia"
+              },
+              {
+                "actor": "outsider",
+                "do": "signUp",
+                "name": "Xeno"
+              },
+              {
+                "actor": "owner",
+                "do": "createRoom",
+                "private": true,
+                "room": "sealed"
+              },
+              {
+                "actor": "owner",
+                "do": "fill",
+                "testid": "invite-input",
+                "text": "{user:Mia}"
+              },
+              {
+                "actor": "owner",
+                "do": "click",
+                "settleMs": 1500,
+                "testid": "invite-submit"
+              },
+              {
+                "actor": "member",
+                "do": "enterRoom",
+                "room": "sealed"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "a",
+              "b"
+            ],
+            "criteria": [
+              {
+                "desc": "after an accept, each side holds exactly one row for the other — never two, never a half-friendship",
+                "id": "212a",
+                "points": 1,
+                "steps": [
+                  {
+                    "actor": "a",
+                    "contains": "Ben",
+                    "do": "expectElementCount",
+                    "equals": 1,
+                    "testid": "friend-item",
+                    "within": 10000
+                  },
+                  {
+                    "actor": "b",
+                    "contains": "Ada",
+                    "do": "expectElementCount",
+                    "equals": 1,
+                    "testid": "friend-item",
+                    "within": 10000
+                  }
+                ]
+              },
+              {
+                "desc": "replaying the accept a second time as a raw request creates no second friendship",
+                "id": "212b",
+                "points": 2,
+                "steps": [
+                  {
+                    "actor": "b",
+                    "do": "replayAs",
+                    "from": "b",
+                    "match": "friend"
+                  },
+                  {
+                    "actor": "b",
+                    "do": "wait",
+                    "ms": 2500
+                  },
+                  {
+                    "actor": "a",
+                    "contains": "Ben",
+                    "do": "expectElementCount",
+                    "equals": 1,
+                    "testid": "friend-item",
+                    "within": 8000
+                  },
+                  {
+                    "actor": "b",
+                    "contains": "Ada",
+                    "do": "expectElementCount",
+                    "equals": 1,
+                    "testid": "friend-item",
+                    "within": 8000
+                  }
+                ]
+              }
+            ],
+            "id": 212,
+            "name": "Friendship Is One Relationship",
+            "setup": [
+              {
+                "actor": "a",
+                "do": "signUp",
+                "name": "Ada"
+              },
+              {
+                "actor": "b",
+                "do": "signUp",
+                "name": "Ben"
+              },
+              {
+                "actor": "a",
+                "do": "createRoom",
+                "room": "symroom"
+              },
+              {
+                "actor": "b",
+                "do": "enterRoom",
+                "room": "symroom"
+              },
+              {
+                "actor": "a",
+                "contains": "Ben",
+                "do": "click",
+                "settleMs": 1200,
+                "testid": "member-item"
+              },
+              {
+                "actor": "a",
+                "do": "click",
+                "settleMs": 1200,
+                "testid": "friend-request"
+              },
+              {
+                "actor": "b",
+                "do": "click",
+                "in": {
+                  "contains": "Ada",
+                  "testid": "friend-pending"
+                },
+                "settleMs": 1500,
+                "testid": "friend-accept"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "victim",
+              "attacker"
+            ],
+            "criteria": [
+              {
+                "desc": "another user's raw request to edit someone's bio is rejected, and the bio is unchanged for everyone",
+                "id": "213a",
+                "points": 2,
+                "steps": [
+                  {
+                    "actor": "attacker",
+                    "do": "replayAs",
+                    "from": "victim",
+                    "match": "authentic-bio-text",
+                    "swap": {
+                      "find": "authentic-bio-text",
+                      "with": "defaced-bio-text"
+                    }
+                  },
+                  {
+                    "actor": "attacker",
+                    "do": "expectReplayRejected"
+                  },
+                  {
+                    "actor": "attacker",
+                    "contains": "Vik",
+                    "do": "click",
+                    "settleMs": 1200,
+                    "testid": "member-item"
+                  },
+                  {
+                    "actor": "attacker",
+                    "contains": "authentic-bio-text",
+                    "do": "expect",
+                    "testid": "profile-bio",
+                    "within": 8000
+                  },
+                  {
+                    "absent": true,
+                    "actor": "attacker",
+                    "contains": "defaced-bio-text",
+                    "do": "expect",
+                    "testid": "profile-bio",
+                    "within": 4000
+                  }
+                ]
+              }
+            ],
+            "id": 213,
+            "name": "A Profile Belongs to Its Owner",
+            "setup": [
+              {
+                "actor": "victim",
+                "do": "signUp",
+                "name": "Vik"
+              },
+              {
+                "actor": "attacker",
+                "do": "signUp",
+                "name": "Axl"
+              },
+              {
+                "actor": "victim",
+                "do": "createRoom",
+                "room": "bioroom"
+              },
+              {
+                "actor": "attacker",
+                "do": "enterRoom",
+                "room": "bioroom"
+              },
+              {
+                "actor": "victim",
+                "do": "fill",
+                "testid": "bio-input",
+                "text": "authentic-bio-text"
+              },
+              {
+                "actor": "victim",
+                "do": "click",
+                "settleMs": 1500,
+                "testid": "bio-save"
+              }
+            ]
+          }
+        ],
+        "level": 2,
+        "note": "What level 2 must hold true regardless of UI: privacy is a property of the wire, not of what a page chooses to render; a friendship is one relationship; a profile belongs to its owner. Three-way verdicts follow level 1's replay conventions.",
+        "schemaVersion": 1
+      },
+      "path": "scenarios/02-invariants.json"
+    },
+    {
+      "definition": {
+        "features": [
+          {
+            "actors": [
+              "subject",
+              "viewer"
+            ],
+            "criteria": [
+              {
+                "desc": "a profile panel opened at the same moment the bio is saved converges on the NEW bio — the panel's subscription outlives its opening fetch",
+                "id": "921a",
+                "note": "WITHHELD until proven against a mutant (fetch-on-open-no-subscribe) and a real failing build. A fetch-on-open panel that races the save shows bio-before-race forever; a subscribed panel converges.",
+                "points": 0,
+                "steps": [
+                  {
+                    "branches": [
+                      [
+                        {
+                          "actor": "viewer",
+                          "contains": "Zed",
+                          "do": "click",
+                          "testid": "member-item"
+                        }
+                      ],
+                      [
+                        {
+                          "actor": "subject",
+                          "do": "click",
+                          "testid": "bio-save"
+                        }
+                      ]
+                    ],
+                    "do": "race",
+                    "settleMs": 4000
+                  },
+                  {
+                    "actor": "viewer",
+                    "contains": "bio-after-race",
+                    "do": "expect",
+                    "testid": "profile-bio",
+                    "within": 10000
+                  }
+                ]
+              }
+            ],
+            "id": 921,
+            "name": "A panel opened at the moment its contents change",
+            "setup": [
+              {
+                "actor": "subject",
+                "do": "signUp",
+                "name": "Zed"
+              },
+              {
+                "actor": "viewer",
+                "do": "signUp",
+                "name": "Yara"
+              },
+              {
+                "actor": "subject",
+                "do": "createRoom",
+                "room": "panelrace"
+              },
+              {
+                "actor": "viewer",
+                "do": "enterRoom",
+                "room": "panelrace"
+              },
+              {
+                "actor": "subject",
+                "do": "fill",
+                "testid": "bio-input",
+                "text": "bio-before-race"
+              },
+              {
+                "actor": "subject",
+                "do": "click",
+                "settleMs": 1500,
+                "testid": "bio-save"
+              },
+              {
+                "actor": "subject",
+                "do": "fill",
+                "testid": "bio-input",
+                "text": "bio-after-race"
+              }
+            ]
+          },
+          {
+            "actors": [
+              "asker",
+              "asked"
+            ],
+            "criteria": [
+              {
+                "desc": "the accept lands while the asker's client is mid-refresh: the new friend appears exactly once — not zero (stale fetch), not twice (fetch merged with the accept broadcast)",
+                "id": "922a",
+                "note": "WITHHELD until proven against a mutant (fetch-then-append-dupe) and a real failing build. The reload is what forces the asker's client into a full refetch for the accept to race.",
+                "points": 0,
+                "steps": [
+                  {
+                    "branches": [
+                      [
+                        {
+                          "actor": "asker",
+                          "do": "reload",
+                          "settleMs": 500
+                        }
+                      ],
+                      [
+                        {
+                          "actor": "asked",
+                          "do": "click",
+                          "in": {
+                            "contains": "Quin",
+                            "testid": "friend-pending"
+                          },
+                          "testid": "friend-accept"
+                        }
+                      ]
+                    ],
+                    "do": "race",
+                    "settleMs": 5000
+                  },
+                  {
+                    "actor": "asker",
+                    "do": "ensureSignedIn",
+                    "name": "Quin"
+                  },
+                  {
+                    "actor": "asker",
+                    "contains": "Rune",
+                    "do": "expectElementCount",
+                    "equals": 1,
+                    "testid": "friend-item",
+                    "within": 12000
+                  },
+                  {
+                    "actor": "asked",
+                    "contains": "Quin",
+                    "do": "expectElementCount",
+                    "equals": 1,
+                    "testid": "friend-item",
+                    "within": 12000
+                  }
+                ]
+              }
+            ],
+            "id": 922,
+            "name": "A friendship formed while the list showing it is fetched",
+            "setup": [
+              {
+                "actor": "asker",
+                "do": "signUp",
+                "name": "Quin"
+              },
+              {
+                "actor": "asked",
+                "do": "signUp",
+                "name": "Rune"
+              },
+              {
+                "actor": "asker",
+                "do": "createRoom",
+                "room": "listrace"
+              },
+              {
+                "actor": "asked",
+                "do": "enterRoom",
+                "room": "listrace"
+              },
+              {
+                "actor": "asker",
+                "contains": "Rune",
+                "do": "click",
+                "settleMs": 1200,
+                "testid": "member-item"
+              },
+              {
+                "actor": "asker",
+                "do": "click",
+                "settleMs": 1500,
+                "testid": "friend-request"
+              }
+            ]
+          }
+        ],
+        "level": 2,
+        "note": "The subscription-lifecycle races level 2's surfaces make possible: a panel that opens at the moment its contents change, and a relationship that forms while the list showing it is being fetched. Fetch-on-open architectures pass every sequential test and fail exactly here. Every criterion is withheld at 0 points until it demonstrably fails a real build AND its mutant is CAUGHT — same promotion rule as contention.",
+        "schemaVersion": 1
+      },
+      "path": "scenarios/02-systems.json"
+    }
+  ],
+  "track": "chat"
+}

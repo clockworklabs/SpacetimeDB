@@ -1,0 +1,195 @@
+{
+  "level": 2,
+  "note": "Level 2 features: access control and the social layer. Levels are cumulative — these run against the same app as level 1's suites, after the upgrade.",
+  "features": [
+    {
+      "id": 201,
+      "name": "Private Rooms",
+      "actors": ["owner", "outsider"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "Pria" },
+        { "do": "signUp", "actor": "outsider", "name": "Oleg" },
+        { "do": "createRoom", "actor": "owner", "room": "vault", "private": true },
+        { "do": "send", "actor": "owner", "text": "vault-secret-note" }
+      ],
+      "criteria": [
+        {
+          "id": "201a",
+          "desc": "the owner sees the private badge on their room",
+          "points": 1,
+          "steps": [
+            { "do": "expect", "actor": "owner", "testid": "room-private-badge", "within": 8000 }
+          ]
+        },
+        {
+          "id": "201b",
+          "desc": "a private room does not appear in a non-member's room list at all",
+          "points": 2,
+          "steps": [
+            { "do": "expect", "actor": "outsider", "testid": "room-item", "contains": "{room:vault}", "absent": true, "within": 6000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "name": "Invitation and Removal",
+      "actors": ["owner", "guest"],
+      "setup": [
+        { "do": "signUp", "actor": "owner", "name": "Held" },
+        { "do": "signUp", "actor": "guest", "name": "Gina" },
+        { "do": "createRoom", "actor": "owner", "room": "committee", "private": true },
+        { "do": "send", "actor": "owner", "text": "pre-invite-history" }
+      ],
+      "criteria": [
+        {
+          "id": "202a",
+          "desc": "an invited user gains access and can read the room's history",
+          "points": 2,
+          "steps": [
+            { "do": "fill", "actor": "owner", "testid": "invite-input", "text": "{user:Gina}" },
+            { "do": "click", "actor": "owner", "testid": "invite-submit", "settleMs": 1200 },
+            { "do": "enterRoom", "actor": "guest", "room": "committee" },
+            { "do": "expect", "actor": "guest", "testid": "message-item", "contains": "pre-invite-history", "within": 10000 }
+          ]
+        },
+        {
+          "id": "202b",
+          "desc": "removal takes effect live: the removed member stops receiving without reloading",
+          "points": 2,
+          "steps": [
+            { "do": "click", "actor": "owner", "testid": "member-remove", "in": { "testid": "member-item", "contains": "Gina" }, "settleMs": 1500 },
+            { "do": "send", "actor": "owner", "text": "post-removal-note" },
+            { "do": "wait", "actor": "owner", "ms": 2500 },
+            { "do": "expect", "actor": "guest", "testid": "message-item", "contains": "post-removal-note", "absent": true, "within": 4000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 203,
+      "name": "Profiles",
+      "actors": ["subject", "viewer"],
+      "setup": [
+        { "do": "signUp", "actor": "subject", "name": "Sana" },
+        { "do": "signUp", "actor": "viewer", "name": "Vero" },
+        { "do": "createRoom", "actor": "subject", "room": "profroom" },
+        { "do": "enterRoom", "actor": "viewer", "room": "profroom" },
+        { "do": "fill", "actor": "subject", "testid": "bio-input", "text": "first-bio-text" },
+        { "do": "click", "actor": "subject", "testid": "bio-save", "settleMs": 1200 }
+      ],
+      "criteria": [
+        {
+          "id": "203a",
+          "desc": "clicking a username opens that person's profile with their name and bio",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "viewer", "testid": "member-item", "contains": "Sana", "settleMs": 1200 },
+            { "do": "expect", "actor": "viewer", "testid": "profile-name", "contains": "Sana", "within": 8000 },
+            { "do": "expect", "actor": "viewer", "testid": "profile-bio", "contains": "first-bio-text", "within": 8000 }
+          ]
+        },
+        {
+          "id": "203b",
+          "desc": "an open profile panel is live: a bio edit appears to a viewer without reopening",
+          "points": 2,
+          "steps": [
+            { "do": "fill", "actor": "subject", "testid": "bio-input", "text": "second-bio-text" },
+            { "do": "click", "actor": "subject", "testid": "bio-save" },
+            { "do": "expect", "actor": "viewer", "testid": "profile-bio", "contains": "second-bio-text", "within": 10000 }
+          ]
+        },
+        {
+          "id": "203c",
+          "desc": "the panel closes, and reopening shows current data",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "viewer", "testid": "profile-close", "settleMs": 800 },
+            { "do": "expect", "actor": "viewer", "testid": "profile-bio", "absent": true, "within": 4000 },
+            { "do": "click", "actor": "viewer", "testid": "member-item", "contains": "Sana", "settleMs": 1200 },
+            { "do": "expect", "actor": "viewer", "testid": "profile-bio", "contains": "second-bio-text", "within": 8000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 204,
+      "name": "Friends",
+      "actors": ["asker", "asked", "third"],
+      "setup": [
+        { "do": "signUp", "actor": "asker", "name": "Finn" },
+        { "do": "signUp", "actor": "asked", "name": "Freya" },
+        { "do": "signUp", "actor": "third", "name": "Falk" },
+        { "do": "createRoom", "actor": "asker", "room": "friendroom" },
+        { "do": "enterRoom", "actor": "asked", "room": "friendroom" },
+        { "do": "enterRoom", "actor": "third", "room": "friendroom" }
+      ],
+      "criteria": [
+        {
+          "id": "204a",
+          "desc": "a request reaches the recipient as pending, and accepting puts each user in the other's friends list — live, no reloads anywhere",
+          "points": 2,
+          "steps": [
+            { "do": "click", "actor": "asker", "testid": "member-item", "contains": "Freya", "settleMs": 1200 },
+            { "do": "click", "actor": "asker", "testid": "friend-request", "settleMs": 1200 },
+            { "do": "expect", "actor": "asked", "testid": "friend-pending", "contains": "Finn", "within": 10000 },
+            { "do": "click", "actor": "asked", "testid": "friend-accept", "in": { "testid": "friend-pending", "contains": "Finn" }, "settleMs": 1500 },
+            { "do": "expect", "actor": "asker", "testid": "friend-item", "contains": "Freya", "within": 10000 },
+            { "do": "expect", "actor": "asked", "testid": "friend-item", "contains": "Finn", "within": 10000 }
+          ]
+        },
+        {
+          "id": "204b",
+          "desc": "a declined request creates no friendship on either side",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "third", "testid": "member-item", "contains": "Freya", "settleMs": 1200 },
+            { "do": "click", "actor": "third", "testid": "friend-request", "settleMs": 1200 },
+            { "do": "click", "actor": "asked", "testid": "friend-decline", "in": { "testid": "friend-pending", "contains": "Falk" }, "settleMs": 1500 },
+            { "do": "expect", "actor": "third", "testid": "friend-item", "contains": "Freya", "absent": true, "within": 5000 },
+            { "do": "expect", "actor": "asked", "testid": "friend-item", "contains": "Falk", "absent": true, "within": 5000 }
+          ]
+        },
+        {
+          "id": "204c",
+          "desc": "unfriending removes the row live from BOTH lists",
+          "points": 2,
+          "steps": [
+            { "do": "click", "actor": "asker", "testid": "unfriend", "in": { "testid": "friend-item", "contains": "Freya" }, "settleMs": 1500 },
+            { "do": "expect", "actor": "asker", "testid": "friend-item", "contains": "Freya", "absent": true, "within": 8000 },
+            { "do": "expect", "actor": "asked", "testid": "friend-item", "contains": "Finn", "absent": true, "within": 8000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 205,
+      "name": "Friend Presence",
+      "actors": ["watcher", "flapper"],
+      "setup": [
+        { "do": "signUp", "actor": "watcher", "name": "Wava" },
+        { "do": "signUp", "actor": "flapper", "name": "Flip" },
+        { "do": "createRoom", "actor": "watcher", "room": "presroom" },
+        { "do": "enterRoom", "actor": "flapper", "room": "presroom" },
+        { "do": "click", "actor": "watcher", "testid": "member-item", "contains": "Flip", "settleMs": 1200 },
+        { "do": "click", "actor": "watcher", "testid": "friend-request", "settleMs": 1200 },
+        { "do": "click", "actor": "flapper", "testid": "friend-accept", "in": { "testid": "friend-pending", "contains": "Wava" }, "settleMs": 1500 }
+      ],
+      "criteria": [
+        {
+          "id": "205a",
+          "desc": "a friend's presence flips to offline live when they leave, and back when they return",
+          "points": 2,
+          "steps": [
+            { "do": "expect", "actor": "watcher", "testid": "friend-presence", "in": { "testid": "friend-item", "contains": "Flip" }, "contains": "online", "within": 10000 },
+            { "do": "closeClient", "actor": "flapper" },
+            { "do": "expect", "actor": "watcher", "testid": "friend-presence", "in": { "testid": "friend-item", "contains": "Flip" }, "contains": "offline", "within": 15000 },
+            { "do": "openClient", "actor": "flapper" },
+            { "do": "ensureSignedIn", "actor": "flapper", "name": "Flip" },
+            { "do": "expect", "actor": "watcher", "testid": "friend-presence", "in": { "testid": "friend-item", "contains": "Flip" }, "contains": "online", "within": 15000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

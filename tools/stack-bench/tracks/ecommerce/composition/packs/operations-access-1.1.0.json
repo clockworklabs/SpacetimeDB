@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.operations-access",
+  "version": "1.1.0",
+  "state": "draft",
+  "title": "Fulfilment and operator access",
+  "description": "The fulfilment queue, direct operator authorization, and order ownership during operations.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "direct-server-call", "request-replay"],
+  "evidence": ["browser-observation", "server-refusal", "server-response"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 76000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l2.staff-fulfilment", "path": "prompts/02-operations.md", "order": 20, "from": "## New: warehouse staff", "until": "### Moving stock", "modes": ["upgrade"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.l2.fulfilment-hooks", "path": "contracts/appendix-02.md", "order": 2020, "from": "| `staff-link`", "until": "| `transfer-from`", "modes": ["upgrade"] },
+      { "id": "ecommerce.l2.operator-action-inputs", "path": "prompts/l2-action-inputs.md", "order": 2080, "until": "## Inventory contention action inputs", "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "fulfilment-queue", "source": "scenarios/02-features.json", "feature": 1, "role": "feature" },
+    { "id": "operator-authorization-baseline", "stableId": "operator-authorization", "source": "scenarios/02-invariants.json", "feature": 201, "criteria": ["201a", "201b"], "role": "guarantee" },
+    { "id": "operator-authorization-direct", "stableId": "operator-authorization", "source": "scenarios/02-server-actions-1.0.0.json", "feature": 201, "role": "guarantee" },
+    { "id": "order-owner-direct", "stableId": "order-owner", "source": "scenarios/02-server-actions-1.0.0.json", "feature": 204, "role": "guarantee" }
+  ]
+}

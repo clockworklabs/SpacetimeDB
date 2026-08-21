@@ -1,0 +1,352 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import test from 'node:test';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
+  parallelMutationChildArgv, readParallelMutationWorker, referenceQualificationPaths,
+  referenceQualificationRunner,
+  referenceQualificationSelectionArgs,
+  referenceQualificationWorkRoot, rescueSupervisedLease, runBounded } from '../src/references/reference-live.mjs';
+import { emptyArtifactIdentities, readArtifact, writeArtifact, writeRunJson }
+  from '../src/evidence/artifacts.mjs';
+import { createCheckEvidence } from '../src/evidence/check-evidence.mjs';
+import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
+
+const fixture = { backend: 'mongodb', track: 'ecommerce', level: 1,
+  imported: { sourceSha256: 'a'.repeat(64) } };
+
+test('reference qualification requires an explicit valid stack scope', () => {
+  const args = parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
+    '--track', 'ecommerce', '--level', '2']);
+  assert.equal(args.track, 'ecommerce');
+  assert.equal(args.level, 2);
+  assert.equal(args.mutations, false);
+  assert.equal(args.timeoutMinutes, 60);
+  const mutationArgs = parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
+    '--mutations']);
+  assert.equal(mutationArgs.mutations, true);
+  assert.equal(mutationArgs.timeoutMinutes, 90);
+  assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs', '--backend', 'postgres',
+    '--mutations', '--timeout-minutes', '120']).timeoutMinutes, 120);
+  assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--track', 'ecommerce', '--level', '3']).level, 3);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--track', 'ecommerce', '--level', '4']), /declared/);
+  assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--track', 'ecommerce', '--level', '1',
+    '--recipe', 'ecommerce.l1-standard@1.1.0']).recipe, 'ecommerce.l1-standard@1.1.0');
+  assert.equal(parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--repetitions', '1']).repetitions, 1);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'postgres', '--repetitions', '0']), /positive integer/);
+});
+
+test('parallel Spacetime qualification derives an isolated listener port from the run index', () => {
+  const first = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'spacetime', '--run-index', '0']);
+  const parallel = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'spacetime', '--run-index', '14']);
+  const explicit = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'spacetime', '--run-index', '14', '--spacetime-port', '4411']);
+
+  assert.equal(first.spacetimePort, 3310);
+  assert.equal(parallel.spacetimePort, 3324);
+  assert.notEqual(first.spacetimePort, parallel.spacetimePort);
+  assert.equal(explicit.spacetimePort, 4411);
+});
+
+test('parallel mutation qualification reserves bounded slots and exact child shards', () => {
+  const args = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'mongodb', '--mutations', '--mutation-workers', '4', '--run-index', '8']);
+  assert.equal(args.mutationWorkers, 4);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'mongodb', '--mutation-workers', '2']), /requires --mutations/);
+  assert.throws(() => parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'mongodb', '--mutations', '--mutation-workers', '2', '--run-index', '20']),
+  /run-index cap/);
+
+  const argv = parallelMutationChildArgv(args,
+    { binding: { release: { id: 'ecommerce.l2-standard', version: '1.5.0' } } },
+    { artifactPath: '/results/w3.json', repetition: 0, workerIndex: 2, workerCount: 4 });
+  const after = flag => argv[argv.indexOf(flag) + 1];
+  assert.equal(after('--run-index'), '10');
+  assert.equal(after('--mutation-shard-index'), '2');
+  assert.equal(after('--mutation-shard-count'), '4');
+  assert.equal(after('--repetitions'), '1');
+  assert.equal(after('--out'), '/results/w3.json');
+});
+
+test('parallel worker evidence is read only from its exact contained output', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-parallel-worker-'));
+  try {
+    const artifactPath = join(root, 'w1.json');
+    const output = join(root, 'w1.runs', 'r1');
+    mkdirSync(output, { recursive: true });
+    const identities = emptyArtifactIdentities({
+      fixture: { id: 'fixture', sha256: 'a'.repeat(64), state: 'candidate' },
+      recipe: { id: 'recipe', version: '1.0.0', sha256: 'b'.repeat(64), state: 'candidate' },
+      calibration: { id: 'calibration', version: '1.0.0', sha256: 'c'.repeat(64), state: 'draft' },
+      stackAdapter: { id: 'mongodb' },
+    });
+    const mutationIds = ['first', 'second'];
+    writeArtifact(join(output, 'mutation-control.json'), { kind: 'mutation_control', id: 'control',
+      payload: { ok: true, shard: { index: 0, count: 1, mutationIds },
+        results: mutationIds.toReversed().map(id => ({ id, status: 'CAUGHT' })) } });
+    writeArtifact(artifactPath, { kind: 'reference_qualification', id: 'worker', identities,
+      payload: { mutationControl: true, requiredRepetitions: 1, ok: true,
+        runs: [{ ok: true, output: 'w1.runs/r1' }] } });
+    const inspected = readParallelMutationWorker(artifactPath, { ok: true },
+      { ...identities, workerIndex: 0, workerCount: 1 },
+      { mutations: mutationIds.map(id => ({ id })) });
+    assert.deepEqual(inspected.failures, []);
+    assert.deepEqual(inspected.control.results.map(result => result.id), ['second', 'first']);
+
+    const escaped = readArtifact(artifactPath);
+    escaped.payload.runs[0].output = '../outside';
+    writeFileSync(artifactPath, JSON.stringify(escaped));
+    const rejected = readParallelMutationWorker(artifactPath, { ok: true },
+      { ...identities, workerIndex: 0, workerCount: 1 },
+      { mutations: mutationIds.map(id => ({ id })) });
+    assert(rejected.failures.includes('worker run output escapes its artifact directory'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reference qualification resolves the exact executable calibration identity', () => {
+  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-action-inputs-2.4-mongodb',
+    imported: { sourceSha256: '76810d72211fc0182aa31b663ffc153a82ff1918cd34902187873a4b53a4ebf2' } });
+  assert.equal(context.identity.id, 'ecommerce.l1-modular-calibration');
+  assert.equal(context.identity.sha256, context.calibration.qualificationSha256);
+});
+
+test('reference qualification resolves the requested promoted calibration', () => {
+  const context = referenceQualificationContext({ ...fixture, id: 'ecommerce-l1-action-inputs-2.4-mongodb',
+    imported: { sourceSha256: '76810d72211fc0182aa31b663ffc153a82ff1918cd34902187873a4b53a4ebf2' } },
+  'ecommerce.l1-modular@2.4.0');
+  assert.equal(context.binding.release.version, '2.4.0');
+  assert.equal(context.calibration.version, '2.4.0');
+  assert.equal(context.calibration.state, 'qualified');
+});
+
+test('modular reference qualification selects every exact check without prescribing specifications', () => {
+  const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
+    'ecommerce.l1-modular@2.4.0');
+  const argv = referenceQualificationSelectionArgs(binding);
+  const valueAfter = flag => argv[argv.indexOf(flag) + 1].split(',');
+  const featureIds = valueAfter('--feature-module');
+  const expectedSpecifications = valueAfter('--expect-spec');
+  const checkKeys = valueAfter('--check');
+
+  assert.equal(argv.includes('--request-spec'), false);
+  assert.equal(checkKeys.length, 48);
+  assert.equal(new Set(checkKeys).size, 48);
+  const task = createBoundRecipeTaskRequest(binding,
+    { featureIds, expectedSpecifications, checkKeys });
+  assert.equal(task.selection.checks.length, 48);
+  assert.equal(task.selection.scoredPoints, 58);
+  assert.equal(task.selection.checks.filter(check => check.points === 0).length, 2);
+  assert.equal(task.selection.specifications.requested.length, 0);
+  assert.equal(task.selection.specifications.expected.length, expectedSpecifications.length);
+});
+
+test('reference qualification keeps underlying runs beside the requested artifact', () => {
+  const root = join(tmpdir(), 'stack-bench-reference-output-test');
+  const paths = referenceQualificationPaths({ out: join(root, 'postgres-reference.json') }, 'ignored-id');
+  assert.equal(paths.artifactPath, join(root, 'postgres-reference.json'));
+  assert.equal(paths.artifactDirectory, root);
+  assert.equal(paths.runsRoot, join(root, 'postgres-reference.runs'));
+});
+
+test('reference qualification uses the daemon-visible appliance work root', () => {
+  assert.equal(referenceQualificationWorkRoot({ STACK_BENCH_WORK_DIR: '/var/lib/stack-bench/work' }),
+    resolve('/var/lib/stack-bench/work'));
+});
+
+test('reference qualification records whether its controller is the supported Linux appliance', () => {
+  assert.deepEqual(referenceQualificationRunner({ env: { STACK_BENCH_APPLIANCE: '1' },
+    platform: 'linux', architecture: 'x64', dockerInfo: {
+      ServerVersion: '29.1.2', OSType: 'linux', Architecture: 'x86_64',
+      KernelVersion: '6.8.0-test', NCPU: 8, MemTotal: 16_000_000_000,
+    } }), {
+    schemaVersion: 1, mode: 'appliance', platform: 'linux', architecture: 'x64',
+    dockerEngineVersion: '29.1.2', dockerOs: 'linux', dockerArchitecture: 'x86_64',
+    kernelVersion: '6.8.0-test', cpuCount: 8, memoryBytes: 16_000_000_000,
+  });
+  assert.deepEqual(referenceQualificationRunner({ env: {}, platform: 'win32', architecture: 'x64' }), {
+    schemaVersion: 1, mode: 'local-controller', platform: 'win32', architecture: 'x64',
+  });
+  assert.throws(() => referenceQualificationRunner({ env: { STACK_BENCH_APPLIANCE: '1' },
+    platform: 'linux', architecture: 'x64', dockerInfo: {} }),
+  /Docker daemon inspection did not return ServerVersion/);
+});
+
+function writeEvidence(root, { id, points, passed }) {
+  const stableKey = `test.reference.${id}`;
+  const release = { id: 'test.reference', version: '1.0.0', contentSha256: 'b'.repeat(64),
+    checkCatalog: [{ stableKey, points, source: 'scenarios/test.json', executionId: 'systems',
+      featureId: 901, criterionId: id, packId: 'test.reference', checkGroupId: 'systems' }] };
+  const identities = emptyArtifactIdentities({ recipe: { id: release.id, version: release.version,
+    sha256: release.contentSha256, state: 'qualified' } });
+  mkdirSync(join(root, 'grading'), { recursive: true });
+  writeRunJson(join(root, 'run.json'), {
+    id: 'reference-run', backend: 'mongodb', track: 'ecommerce',
+    identities,
+    setup: { isolation: { mode: 'container', imageId: 'sha256:test' } },
+    outcome: { kind: 'passed' },
+    levels: [{ level: 1, graded: true, contractPass: true, score: points, max: points }],
+    backendLease: { state: 'released', resources: {
+      buildContainer: { running: false }, locks: [{ key: 'slot:test', releasedAt: 'now' }],
+    } },
+  });
+  const setupEvidence = createCheckEvidence({ status: 'passed', code: 'completed', phase: 'setup',
+    startedAtMs: 1, completedAtMs: 2 });
+  const evidence = createCheckEvidence({ status: passed ? 'passed' : 'failed',
+    code: passed ? 'completed' : 'test_result', phase: 'assertion',
+    startedAtMs: 1, completedAtMs: 2 });
+  writeArtifact(join(root, 'grading', 'bundle.json'), { kind: 'grade_bundle', id: 'reference-bundle',
+    identities,
+    payload: { recipeRelease: release, selection: {
+      recipe: { id: release.id, version: release.version, contentSha256: release.contentSha256 },
+      checks: release.checkCatalog, reportedChecks: [stableKey], notRun: [],
+    }, suites: {
+      lint: { pass: true },
+      systems: { features: [{ id: 901, setupEvidence,
+        criteria: [{ id, stableKey, points, evidence }] }] },
+    } } });
+  return release;
+}
+
+test('reference qualification audits zero-point criteria and teardown evidence', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
+  try {
+    const release = writeEvidence(root, { id: '901a', points: 0, passed: true });
+    const audit = auditReferenceRun(root, fixture, { release });
+    assert.equal(audit.ok, true);
+    assert.equal(audit.criteria, 1);
+    assert.equal(audit.zeroPointCriteria, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reference qualification rejects a failed zero-point criterion', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
+  try {
+    const release = writeEvidence(root, { id: '901a', points: 0, passed: false });
+    const audit = auditReferenceRun(root, fixture, { release });
+    assert.equal(audit.ok, false);
+    assert.deepEqual(audit.failures, ['systems/901/901a did not pass']);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('mutation qualification requires a full baseline and every exact mutant caught', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
+  try {
+    const release = writeEvidence(root, { id: '901a', points: 0, passed: true });
+    const runPath = join(root, 'run.json');
+    const run = JSON.parse(readFileSync(runPath, 'utf8'));
+    run.payload.mutationControl = { ok: true };
+    writeFileSync(runPath, JSON.stringify(run));
+    writeArtifact(join(root, 'mutation-control.json'), { kind: 'mutation_control', id: 'mutation-run',
+      payload: { ok: true, fixtureSha256: fixture.imported.sourceSha256,
+        baseline: { total: 2, max: 2 }, summary: { caught: 1, total: 1 },
+        results: [{ id: 'known-defect', status: 'CAUGHT' }] } });
+    const passing = auditReferenceRun(root, fixture, { requireMutationControl: true, release });
+    assert.equal(passing.ok, true);
+    assert.deepEqual(passing.mutations, { caught: 1, total: 1 });
+
+    const failed = JSON.parse(readFileSync(join(root, 'mutation-control.json'), 'utf8'));
+    failed.payload.results[0].status = 'SURVIVED';
+    writeFileSync(join(root, 'mutation-control.json'), JSON.stringify(failed));
+    const audit = auditReferenceRun(root, fixture, { requireMutationControl: true, release });
+    assert.equal(audit.ok, false);
+    assert(audit.failures.includes('known-defect is SURVIVED'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reference qualification refuses identity-less or wrong same-sized check evidence', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-live-test-'));
+  try {
+    const release = writeEvidence(root, { id: '901a', points: 1, passed: true });
+    const bundlePath = join(root, 'grading', 'bundle.json');
+    const bundle = JSON.parse(readFileSync(bundlePath, 'utf8'));
+    bundle.payload.selection.checks[0].stableKey = 'wrong.same-sized.check';
+    bundle.payload.selection.reportedChecks = ['wrong.same-sized.check'];
+    bundle.payload.suites.systems.features[0].criteria[0].stableKey = 'wrong.same-sized.check';
+    writeFileSync(bundlePath, JSON.stringify(bundle));
+    const wrong = auditReferenceRun(root, fixture, { release });
+    assert.equal(wrong.ok, false);
+    assert(wrong.failures.includes('graded check catalog does not match the requested release'));
+
+    const unidentified = auditReferenceRun(root, fixture);
+    assert.equal(unidentified.ok, false);
+    assert(unidentified.failures.includes('exact recipe release was not supplied to the qualification audit'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('reference qualification terminates a child at its repetition deadline', async () => {
+  const started = Date.now();
+  const result = await runBounded(process.execPath,
+    ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore', timeoutMs: 50,
+      terminate: pid => process.kill(pid, 'SIGKILL'),
+    });
+  assert.equal(result.ok, false);
+  assert.equal(result.timedOut, true);
+  assert(Date.now() - started < 10_000, 'timed-out child was not terminated promptly');
+});
+
+test('parallel qualification cancellation terminates every bounded child', async () => {
+  const cancellation = new AbortController();
+  setTimeout(() => cancellation.abort(), 50);
+  const result = await runBounded(process.execPath,
+    ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore', timeoutMs: 10_000, signal: cancellation.signal,
+      terminate: pid => process.kill(pid, 'SIGKILL'),
+    });
+  assert.equal(result.ok, false);
+  assert.equal(result.cancelled, true);
+  assert.equal(result.timedOut, false);
+});
+
+test('bounded execution tees useful tails and caps durable process logs', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-process-log-'));
+  try {
+    const result = await runBounded(process.execPath,
+      ['-e', 'process.stdout.write("abcdefgh"); process.stderr.write("actual failure\\n")'], {
+        stdio: 'inherit', timeoutMs: 5_000,
+        logs: { stdout: join(root, 'stdout.log'), stderr: join(root, 'stderr.log'), maxBytes: 5 },
+      });
+    assert.equal(result.ok, true);
+    assert.equal(readFileSync(join(root, 'stdout.log'), 'utf8'), 'abcde');
+    assert.equal(readFileSync(join(root, 'stderr.log'), 'utf8'), 'actua');
+    assert.deepEqual({ bytes: result.logs.stdout.bytes, retainedBytes: result.logs.stdout.retainedBytes,
+      truncated: result.logs.stdout.truncated }, { bytes: 8, retainedBytes: 5, truncated: true });
+    assert.match(result.stderrTail, /actual failure/);
+    assert.equal(result.logs.stdout.sha256, createHash('sha256').update('abcde').digest('hex'));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('supervisor accepts a deleted private lease only with matching released evidence', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-supervisor-evidence-'));
+  try {
+    const state = join(root, 'supervisor.json');
+    const output = join(root, 'output');
+    mkdirSync(output);
+    const runtimeDir = join(root, 'runtime');
+    writeFileSync(state, JSON.stringify({ version: 2, runId: 'released-run', backend: 'mongodb',
+      runtimeDir, leasePath: join(runtimeDir, 'backend-lease.json'),
+      ownershipToken: 'private-token', output }));
+    writeRunJson(join(output, 'run.json'), { id: 'released-run', backendLease: {
+      runId: 'released-run', state: 'released', resources: {
+        buildContainer: { running: false }, locks: [{ releasedAt: 'now' }],
+      },
+    } });
+    assert.doesNotThrow(() => rescueSupervisedLease(state, output));
+    const run = JSON.parse(readFileSync(join(output, 'run.json'), 'utf8'));
+    run.payload.backendLease.state = 'active';
+    writeFileSync(join(output, 'run.json'), JSON.stringify(run));
+    assert.throws(() => rescueSupervisedLease(state, output), /without released run evidence/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

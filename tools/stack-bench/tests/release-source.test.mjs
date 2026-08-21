@@ -1,0 +1,89 @@
+import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import test from 'node:test';
+
+import { releaseSourceIdentity, releaseSourceRoot } from '../src/releases/release-source.mjs';
+
+test('the release-source CLI anchors itself to the repository instead of the caller cwd', () => {
+  assert.equal(releaseSourceRoot(), realpathSync(join(import.meta.dirname, '..', '..', '..')));
+});
+
+function repository() {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-source-'));
+  const files = ['licenses/BSL.txt', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
+    'crates/bindings-typescript/package.json', 'skills/typescript-server/SKILL.md',
+    'tools/stack-bench/commands/bench.mjs'];
+  for (const path of files) {
+    const absolute = join(root, ...path.split('/'));
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, `${path}\n`);
+  }
+  mkdirSync(join(root, 'tools', 'stack-bench'), { recursive: true });
+  writeFileSync(join(root, 'tools', 'stack-bench', 'JOURNAL.local.md'), 'local only\n');
+  return { root, files };
+}
+
+function git(files, { changed = '' } = {}) {
+  return (_root, args) => {
+    if (args[0] === 'rev-parse') return `${'a'.repeat(40)}\n`;
+    if (args[0] === 'status') return changed;
+    if (args[0] === 'ls-files') return `${files.join('\n')}\n`;
+    throw new Error(`unexpected git call ${args.join(' ')}`);
+  };
+}
+
+test('release source identity hashes only the exact tracked build inputs', () => {
+  const { root, files } = repository();
+  try {
+    const before = releaseSourceIdentity(root, { runGit: git(files) });
+    assert.equal(before.revision, 'a'.repeat(40));
+    assert.equal(before.files, files.length);
+    assert.equal(before.paths.includes('pnpm-lock.yaml'), true);
+    assert.equal(before.paths.includes('skills'), true);
+    assert.equal(before.paths.includes('.dockerignore'), false);
+    assert.equal(before.paths.includes('.gitattributes'), false);
+    writeFileSync(join(root, 'tools', 'stack-bench', 'JOURNAL.local.md'), 'different local notes\n');
+    assert.deepEqual(releaseSourceIdentity(root, { runGit: git(files) }), before);
+    writeFileSync(join(root, 'tools', 'stack-bench', 'commands', 'bench.mjs'), 'changed tracked input\n');
+    assert.notEqual(releaseSourceIdentity(root, { runGit: git(files) }).sha256, before.sha256);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('release source identity refuses a changed or untracked release input', () => {
+  const { root, files } = repository();
+  try {
+    assert.throws(() => releaseSourceIdentity(root, { runGit: git(files,
+      { changed: ' M tools/stack-bench/commands/bench.mjs\n?? tools/stack-bench/local.mjs\n' }) }),
+    /release source paths are not clean/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('controller build context includes every repository root copied by its Dockerfile', () => {
+  const dockerfile = readFileSync(join(import.meta.dirname, '..', 'appliance', 'Controller.Dockerfile'), 'utf8');
+  const ignore = readFileSync(join(import.meta.dirname, '..', 'appliance',
+    'Controller.Dockerfile.dockerignore'), 'utf8');
+  const roots = [...dockerfile.matchAll(/^COPY (?!-)\s*([^/\s]+)(?:\/|\s)/gm)].map(match => match[1]);
+  for (const root of new Set(roots)) {
+    assert.match(ignore, new RegExp(`^!${root}(?:\\r?\\n|/)`, 'm'),
+      `${root} is copied but excluded from the controller build context`);
+  }
+});
+
+test('controller build context excludes ignored local Stack Bench state', () => {
+  const ignore = readFileSync(join(import.meta.dirname, '..', 'appliance',
+    'Controller.Dockerfile.dockerignore'), 'utf8');
+  const rules = new Set(ignore.split(/\r?\n/));
+  const localPaths = [
+    'tools/stack-bench/local-notes',
+    'tools/stack-bench/media',
+    'tools/stack-bench/snapshot-l*',
+    'tools/stack-bench/grader/.candidates',
+    'tools/stack-bench/grader/.mutation-report.json',
+    'tools/stack-bench/tracks/*/overview.html',
+  ];
+  for (const path of localPaths) {
+    assert.equal(rules.has(path), true, `${path} can leak into the controller build context`);
+  }
+});

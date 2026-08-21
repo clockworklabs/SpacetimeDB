@@ -30,6 +30,9 @@ function Root() {
     DbConnection.builder()
       .withUri(SPACETIMEDB_URI)
       .withDatabaseName(MODULE_NAME)
+      // Paired with the setItem in App.tsx below — read here, saved there.
+      // Without the save, every reload connects anonymously and is issued a
+      // new Identity, so the signed-in account appears to vanish.
       .withToken(localStorage.getItem('auth_token') || undefined),
     []
   );
@@ -53,7 +56,8 @@ function App() {
   const { isActive, identity: myIdentity, token, getConnection } = useSpacetimeDB();
   const conn = getConnection() as DbConnection | null;
 
-  // Save auth token
+  // Save the auth token. Required: without it the withToken read in main.tsx
+  // always misses, and a reload gets a new Identity instead of the account.
   useEffect(() => { if (token) localStorage.setItem('auth_token', token); }, [token]);
 
   // Subscribe when connected. Prefer typed query builders over raw SQL

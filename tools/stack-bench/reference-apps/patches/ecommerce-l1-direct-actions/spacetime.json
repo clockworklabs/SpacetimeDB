@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "edits": [
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"item-card\"",
+      "replace": "data-testid=\"item-card\"\n        data-buy-input={JSON.stringify({ itemId: item.id.toString() })}"
+    },
+    {
+      "path": "client/src/App.tsx",
+      "find": "data-testid=\"admin-location-row\"",
+      "replace": "data-testid=\"admin-location-row\" data-restock-input={JSON.stringify({ itemId: item.id.toString(), warehouseId: w.id.toString(), quantity: 1 })}"
+    }
+  ]
+}

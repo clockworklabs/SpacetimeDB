@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "A review is a claim about a purchase",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "Every criterion receives all state it relies on from its feature setup. Security assertions include a working positive path where an empty or broken view could otherwise look secure.",
+  "features": [
+    {
+      "id": 108,
+      "name": "A review is a claim about a purchase",
+      "actors": ["owner","stranger"],
+      "setup": [{"do":"signUp","actor":"owner","name":"tam"},{"do":"signUp","actor":"stranger","name":"uma"}],
+      "criteria": [
+        {
+          "id": "108a",
+          "desc": "someone who never bought the item cannot review it",
+          "points": 2,
+          "steps": [
+            {
+              "do": "fill",
+              "actor": "stranger",
+              "testid": "search-input",
+              "text": "Webcam",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "stranger",
+              "testid": "item-name",
+              "in": {"testid":"item-card","contains":"Webcam"}
+            },
+            {"do":"fill","actor":"stranger","testid":"review-rating","text":"5"},
+            {"do":"fill","actor":"stranger","testid":"review-input","text":"never bought this"},
+            {"do":"click","actor":"stranger","testid":"review-submit"},
+            {"do":"expect","actor":"stranger","testid":"review-error","within":6000},
+            {
+              "do": "expect",
+              "actor": "stranger",
+              "testid": "review-item",
+              "contains": "never bought this",
+              "absent": true
+            }
+          ],
+          "statedBy": "the server refuses a review from someone who has never ordered the item"
+        },
+        {
+          "id": "108b",
+          "desc": "buying the item earns the right to review it",
+          "points": 1,
+          "steps": [
+            {"do":"fill","actor":"owner","testid":"search-input","text":"Webcam","enter":true,"settleMs":1500},
+            {"do":"click","actor":"owner","testid":"buy-now","in":{"testid":"item-card","contains":"Webcam"}},
+            {"do":"wait","actor":"owner","ms":2000},
+            {
+              "do": "click",
+              "actor": "owner",
+              "testid": "item-name",
+              "in": {"testid":"item-card","contains":"Webcam"}
+            },
+            {"do":"fill","actor":"owner","testid":"review-rating","text":"4"},
+            {"do":"fill","actor":"owner","testid":"review-input","text":"bought and used it"},
+            {"do":"click","actor":"owner","testid":"review-submit"},
+            {
+              "do": "expect",
+              "actor": "owner",
+              "testid": "review-item",
+              "contains": "bought and used it",
+              "within": 8000
+            }
+          ],
+          "statedBy": "a customer can review an item they bought"
+        }
+      ]
+    }
+  ]
+}

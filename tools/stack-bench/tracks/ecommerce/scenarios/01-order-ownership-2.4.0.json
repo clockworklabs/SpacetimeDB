@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "One customer's orders are not another's",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "Every criterion receives all state it relies on from its feature setup. Security assertions include a working positive path where an empty or broken view could otherwise look secure.",
+  "features": [
+    {
+      "id": 106,
+      "name": "One customer's orders are not another's",
+      "actors": ["one","two"],
+      "setup": [{"do":"signUp","actor":"one","name":"quin"},{"do":"signUp","actor":"two","name":"ros"}],
+      "criteria": [
+        {
+          "id": "106a",
+          "desc": "a working order history contains the customer's own order and not another customer's order",
+          "points": 1,
+          "steps": [
+            {
+              "do": "click",
+              "actor": "one",
+              "testid": "buy-now",
+              "in": {"testid":"item-card","contains":"Coffee Grinder"}
+            },
+            {"do":"click","actor":"two","testid":"buy-now","in":{"testid":"item-card","contains":"Desk Lamp"}},
+            {"do":"wait","actor":"two","ms":2000},
+            {"do":"click","actor":"two","testid":"orders-toggle"},
+            {"do":"expect","actor":"two","testid":"order-item","contains":"Desk Lamp","count":1},
+            {"do":"expect","actor":"two","testid":"order-item","contains":"Coffee Grinder","absent":true}
+          ],
+          "statedBy": "a customer sees only their own orders"
+        }
+      ]
+    }
+  ]
+}

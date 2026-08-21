@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "kind": "promotion-catalog",
+  "id": "ecommerce.recipe-candidates",
+  "version": "1.3.0",
+  "state": "draft",
+  "title": "Ecommerce recipe candidates",
+  "entries": []
+}

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Review uniqueness",
+  "note": "The check measures the product invariant only: a later submission may replace the review or be refused, but it must not create a second review.",
+  "features": [
+    {
+      "id": 6,
+      "name": "Reviews",
+      "actors": ["author"],
+      "setup": [
+        { "do": "signUp", "actor": "author", "name": "kira" },
+        { "do": "fill", "actor": "author", "testid": "search-input", "text": "Air Purifier", "enter": true, "settleMs": 1500 },
+        { "do": "click", "actor": "author", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Air Purifier" } },
+        { "do": "wait", "actor": "author", "ms": 800 },
+        { "do": "click", "actor": "author", "testid": "item-name", "in": { "testid": "item-card", "contains": "Air Purifier" } },
+        { "do": "fill", "actor": "author", "testid": "review-rating", "text": "4" },
+        { "do": "fill", "actor": "author", "testid": "review-input", "text": "quiet and effective" },
+        { "do": "click", "actor": "author", "testid": "review-submit" },
+        { "do": "expect", "actor": "author", "testid": "review-item", "contains": "quiet and effective" }
+      ],
+      "criteria": [
+        {
+          "id": "6b",
+          "desc": "a later review submission does not create a duplicate for the same customer and item",
+          "points": 1,
+          "steps": [
+            { "do": "fill", "actor": "author", "testid": "review-rating", "text": "2" },
+            { "do": "fill", "actor": "author", "testid": "review-input", "text": "changed my mind" },
+            { "do": "click", "actor": "author", "testid": "review-submit" },
+            { "do": "wait", "actor": "author", "ms": 1000 },
+            { "do": "reload", "actor": "author", "settleMs": 2500 },
+            { "do": "fill", "actor": "author", "testid": "search-input", "text": "Air Purifier", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "author", "testid": "item-name", "in": { "testid": "item-card", "contains": "Air Purifier" } },
+            { "do": "expect", "actor": "author", "testid": "review-item", "count": 1, "within": 10000 }
+          ],
+          "statedBy": "one customer has at most one review per item"
+        }
+      ]
+    }
+  ]
+}

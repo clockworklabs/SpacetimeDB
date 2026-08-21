@@ -1,0 +1,83 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront — an open review list stays current",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "This focused candidate checks one mechanism-neutral product behavior: the reader opens the review list first, the reviewer then commits a review, and the reader's already-open list must show it exactly once. The writer's assertion proves the review committed before the reader is graded. A stronger simultaneous snapshot-and-update stress test remains separate future coverage because it cannot be forced across arbitrary app architectures without prescribing their data transport.",
+  "features": [
+    {
+      "id": 902,
+      "name": "An open list stays current",
+      "actors": ["reader", "reviewer"],
+      "setup": [
+        { "do": "signUp", "actor": "reviewer", "name": "raceR" },
+        { "do": "signUp", "actor": "reader", "name": "raceL" },
+        {
+          "do": "recordNumber",
+          "actor": "reviewer",
+          "testid": "item-stock",
+          "in": { "testid": "item-card", "contains": "Keyboard" },
+          "as": "keyboard-before-review-purchase"
+        },
+        {
+          "do": "click",
+          "actor": "reviewer",
+          "testid": "buy-now",
+          "in": { "testid": "item-card", "contains": "Keyboard" }
+        },
+        {
+          "do": "expectNumber",
+          "actor": "reviewer",
+          "testid": "item-stock",
+          "in": { "testid": "item-card", "contains": "Keyboard" },
+          "relativeTo": "keyboard-before-review-purchase",
+          "plus": -1,
+          "within": 10000
+        },
+        {
+          "do": "click",
+          "actor": "reviewer",
+          "testid": "item-name",
+          "in": { "testid": "item-card", "contains": "Keyboard" }
+        },
+        { "do": "expect", "actor": "reviewer", "testid": "item-detail", "within": 10000 },
+        { "do": "fill", "actor": "reviewer", "testid": "review-rating", "text": "5" }
+      ],
+      "criteria": [
+        {
+          "id": "902a",
+          "desc": "one customer has the Keyboard's reviews open before another posts one; the already-open view shows that review exactly once",
+          "points": 1,
+          "note": "Candidate until the exact reference and mutation matrix is run. This deterministic check covers live list contents and exact-once rendering without assuming HTTP, WebSockets, subscriptions, or any project layout.",
+          "steps": [
+            {
+              "do": "click",
+              "actor": "reader",
+              "testid": "item-name",
+              "in": { "testid": "item-card", "contains": "Keyboard" }
+            },
+            { "do": "expect", "actor": "reader", "testid": "item-detail", "within": 10000 },
+            { "do": "fill", "actor": "reviewer", "testid": "review-input", "text": "live-review-kbd" },
+            { "do": "click", "actor": "reviewer", "testid": "review-submit" },
+            {
+              "do": "expectElementCount",
+              "actor": "reviewer",
+              "testid": "review-item",
+              "contains": "live-review-kbd",
+              "equals": 1,
+              "within": 10000
+            },
+            {
+              "do": "expectElementCount",
+              "actor": "reader",
+              "testid": "review-item",
+              "contains": "live-review-kbd",
+              "equals": 1,
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

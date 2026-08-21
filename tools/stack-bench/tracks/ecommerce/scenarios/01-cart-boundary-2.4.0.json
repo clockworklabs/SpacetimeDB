@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "A cart is nobody else's business",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/cart|\\/orders|\\/checkout|\\/buy|\\/reviews|\\/stock|\\/restock|\\/warehouses",
+  "note": "Every criterion receives all state it relies on from its feature setup. Security assertions include a working positive path where an empty or broken view could otherwise look secure.",
+  "features": [
+    {
+      "id": 109,
+      "name": "A cart is nobody else's business",
+      "actors": ["owner","stranger"],
+      "setup": [
+        {"do":"signUp","actor":"owner","name":"vic"},
+        {"do":"signUp","actor":"stranger","name":"wes"},
+        {
+          "do": "click",
+          "actor": "owner",
+          "testid": "add-to-cart",
+          "in": {"testid":"item-card","contains":"Coffee Grinder"}
+        },
+        {"do":"wait","actor":"owner","ms":1500},
+        {"do":"click","actor":"owner","testid":"cart-toggle"}
+      ],
+      "criteria": [
+        {
+          "id": "109a",
+          "desc": "the same cart action run by another customer changes only that customer's cart",
+          "points": 2,
+          "steps": [
+            {
+              "do": "callAction",
+              "actor": "stranger",
+              "from": "owner",
+              "action": "cart-add",
+              "namedAction": {
+                "id": "cart-add",
+                "path": "/api/cart",
+                "reducer": "add_to_cart",
+                "args": [0],
+                "params": [{"name":"itemId","in":"body","wireType":"u64"}]
+              },
+              "input": {"testid":"item-card","contains":"Coffee Grinder","attribute":"data-buy-input"},
+              "settleMs": 2000
+            },
+            {"do":"expectActionOutcome","actor":"stranger","outcome":"accepted"},
+            {"do":"expect","actor":"owner","testid":"cart-item","contains":"Coffee Grinder","count":1},
+            {
+              "do": "expectNumber",
+              "actor": "owner",
+              "testid": "cart-quantity",
+              "in": {"testid":"cart-item","contains":"Coffee Grinder"},
+              "equals": 1
+            },
+            {"do":"click","actor":"stranger","testid":"cart-toggle"},
+            {"do":"expect","actor":"stranger","testid":"cart-item","contains":"Coffee Grinder","count":1},
+            {
+              "do": "expectNumber",
+              "actor": "stranger",
+              "testid": "cart-quantity",
+              "in": {"testid":"cart-item","contains":"Coffee Grinder"},
+              "equals": 1
+            }
+          ],
+          "statedBy": "one customer cannot read or change another customer's cart"
+        },
+        {
+          "id": "109b",
+          "desc": "a quantity below one is refused and leaves the cart unchanged",
+          "points": 1,
+          "steps": [
+            {"do":"recordNumber","actor":"owner","testid":"cart-total","as":"cart-total-before-invalid"},
+            {
+              "do": "recordNumber",
+              "actor": "owner",
+              "testid": "cart-quantity",
+              "in": {"testid":"cart-item","contains":"Coffee Grinder"},
+              "as": "cart-quantity-before-invalid"
+            },
+            {
+              "do": "callAction",
+              "actor": "owner",
+              "action": "cart-set-quantity",
+              "namedAction": {
+                "id": "cart-set-quantity",
+                "path": "/api/cart/:itemId",
+                "method": "PATCH",
+                "reducer": "update_cart_quantity",
+                "args": [0,-3],
+                "params": [
+                  {"name":"itemId","in":"path","placeholder":":itemId","wireType":"u64"},
+                  {"name":"quantity","in":"body"}
+                ]
+              },
+              "input": {"testid":"cart-item","contains":"Coffee Grinder","attribute":"data-cart-input"},
+              "settleMs": 2000
+            },
+            {"do":"expectActionOutcome","actor":"owner","outcome":"refused"},
+            {
+              "do": "expectNumber",
+              "actor": "owner",
+              "testid": "cart-total",
+              "relativeTo": "cart-total-before-invalid",
+              "plus": 0
+            },
+            {
+              "do": "expectNumber",
+              "actor": "owner",
+              "testid": "cart-quantity",
+              "in": {"testid":"cart-item","contains":"Coffee Grinder"},
+              "relativeTo": "cart-quantity-before-invalid",
+              "plus": 0
+            }
+          ],
+          "statedBy": "a request carrying zero or a negative quantity is refused and changes nothing"
+        }
+      ]
+    }
+  ]
+}

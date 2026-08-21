@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "edits": [
+    {
+      "path": "client/src/components/ItemCard.tsx",
+      "find": "data-testid=\"item-card\">",
+      "replace": "data-testid=\"item-card\" data-buy-input={JSON.stringify({ itemId: item.id.toString() })}>"
+    },
+    {
+      "path": "client/src/components/OrdersPanel.tsx",
+      "find": "data-entity-id={String(order.orderId)}\n              key={String(order.orderId)}",
+      "replace": "data-entity-id={String(order.orderId)}\n              data-ship-input={JSON.stringify({ orderId: order.orderId.toString() })}\n              data-cancel-input={JSON.stringify({ orderId: order.orderId.toString() })}\n              key={String(order.orderId)}"
+    },
+    {
+      "path": "client/src/components/AdminPanel.tsx",
+      "find": "<tr data-testid=\"admin-item-row\" key={k}>",
+      "replace": "<tr data-testid=\"admin-item-row\" data-price-input={item.name === 'Gaming Mouse' ? JSON.stringify({ itemId: item.id.toString(), price: 1 }) : undefined} data-transfer-input={item.name === 'Headphones' ? JSON.stringify({ itemId: item.id.toString(), fromWarehouseId: warehouses.find((w) => w.name === 'East')!.id.toString(), toWarehouseId: warehouses.find((w) => w.name === 'West')!.id.toString(), quantity: 25 }) : undefined} key={k}>"
+    },
+    {
+      "path": "client/src/components/AdminPanel.tsx",
+      "find": "<tr data-testid=\"admin-location-row\" key={k}>",
+      "replace": "<tr data-testid=\"admin-location-row\" data-restock-input={JSON.stringify({ itemId: item.id.toString(), warehouseId: wh.id.toString(), quantity: 1 })} key={k}>"
+    },
+    {
+      "path": "client/src/components/CartPanel.tsx",
+      "find": "<div className=\"cart-item\" data-testid=\"cart-item\" key={String(line.itemId)}>",
+      "replace": "<div className=\"cart-item\" data-testid=\"cart-item\" data-cart-input={JSON.stringify({ itemId: line.itemId.toString(), quantity: -3 })} key={String(line.itemId)}>"
+    },
+    {
+      "path": "backend/spacetimedb/src/index.ts",
+      "find": "    if (accountId === null) {\n      const items = [...ctx.db.item.iter()];",
+      "replace": "    if (accountId === null) {\n      const items = [...ctx.db.item.iter()].filter((item) => purchaseCountOf(item.id) > 0);"
+    }
+  ]
+}

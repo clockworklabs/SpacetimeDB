@@ -1,0 +1,13 @@
+media/
+local-notes/
+*.local.md
+.loop-test/
+results/
+archive/pre-v1/results/
+snapshot-l*/
+grader/.candidates/
+.spacetime-data/
+.spacetime-data.bak-*/
+grader/.mutation-report.json
+tracks/*/overview.html
+transcripts/

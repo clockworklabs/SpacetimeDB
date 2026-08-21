@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Only an administrator can restock",
+  "note": "Refusal checks first prove the same valid route and input with an authorized actor. A missing or malformed endpoint therefore cannot earn authorization credit merely by returning an error.",
+  "features": [
+    {
+      "id": 103,
+      "name": "Only an administrator can restock",
+      "actors": ["admin","customer"],
+      "setup": [
+        {"do":"signIn","actor":"admin","name":"admin","password":"stackbench-admin-2026","exact":true},
+        {"do":"signUp","actor":"customer","name":"ned"}
+      ],
+      "criteria": [
+        {
+          "id": "103a",
+          "desc": "a valid direct restock works for the administrator but is refused for a customer",
+          "points": 2,
+          "steps": [
+            {"do":"click","actor":"admin","testid":"admin-link"},
+            {
+              "do": "recordNumber",
+              "actor": "customer",
+              "testid": "item-stock",
+              "in": {"testid":"item-card","contains":"Air Purifier"},
+              "as": "purifier-before-control"
+            },
+            {
+              "do": "callAction",
+              "actor": "admin",
+              "action": "restock",
+              "namedAction": {
+                "id": "restock",
+                "path": "/api/admin/restock",
+                "reducer": "admin_restock",
+                "args": [0,0,1],
+                "params": [
+                  {"name":"itemId","in":"body","wireType":"u64"},
+                  {"name":"warehouseId","in":"body","wireType":"u64"},
+                  {"name":"quantity","in":"body"}
+                ]
+              },
+              "input": {"testid":"admin-location-row","contains":"Air Purifier","attribute":"data-restock-input"},
+              "settleMs": 2000
+            },
+            {"do":"expectActionOutcome","actor":"admin","outcome":"accepted"},
+            {
+              "do": "expectNumber",
+              "actor": "customer",
+              "testid": "item-stock",
+              "in": {"testid":"item-card","contains":"Air Purifier"},
+              "relativeTo": "purifier-before-control",
+              "plus": 1
+            },
+            {
+              "do": "recordNumber",
+              "actor": "customer",
+              "testid": "item-stock",
+              "in": {"testid":"item-card","contains":"Air Purifier"},
+              "as": "purifier-after-control"
+            },
+            {
+              "do": "callAction",
+              "actor": "customer",
+              "from": "admin",
+              "action": "restock",
+              "namedAction": {
+                "id": "restock",
+                "path": "/api/admin/restock",
+                "reducer": "admin_restock",
+                "args": [0,0,1],
+                "params": [
+                  {"name":"itemId","in":"body","wireType":"u64"},
+                  {"name":"warehouseId","in":"body","wireType":"u64"},
+                  {"name":"quantity","in":"body"}
+                ]
+              },
+              "input": {"testid":"admin-location-row","contains":"Air Purifier","attribute":"data-restock-input"},
+              "settleMs": 2000
+            },
+            {"do":"expectActionOutcome","actor":"customer","outcome":"refused"},
+            {
+              "do": "expectNumber",
+              "actor": "customer",
+              "testid": "item-stock",
+              "in": {"testid":"item-card","contains":"Air Purifier"},
+              "relativeTo": "purifier-after-control",
+              "plus": 0
+            }
+          ],
+          "statedBy": "the server refuses warehouse writes from a non-admin account"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+<!DOCTYPE html><html><body>
+<div id="landing">
+  <input data-testid="signup-username" placeholder="username">
+  <input data-testid="signup-password" type="password">
+  <button data-testid="signup-submit">Create account</button>
+  <button data-testid="signin-toggle">Sign in instead</button>
+  <div id="signin" hidden>
+    <input data-testid="signin-username"><input data-testid="signin-password" type="password">
+    <button data-testid="signin-submit">Sign in</button>
+  </div>
+</div>
+<div id="main" hidden>
+  <span data-testid="current-user">u</span><button data-testid="signout">Sign out</button>
+  <button data-testid="room-create">+</button>
+  <div id="rf" hidden><input data-testid="room-name-input"><button data-testid="room-name-submit">Create</button></div>
+  <ul data-testid="room-list" id="rooms"></ul><ul data-testid="online-users"></ul>
+  <main id="room" hidden>
+    <ul data-testid="message-list" id="msgs"></ul>
+    <input data-testid="message-input"><button data-testid="leave-room" hidden>Leave</button>
+  </main>
+</div>
+<script>
+const $=t=>document.querySelector(`[data-testid="${t}"]`);
+$('signup-submit').onclick=()=>{landing.hidden=true;main.hidden=false};
+$('signin-toggle').onclick=()=>{signin.hidden=false};
+$('room-create').onclick=()=>{rf.hidden=false};
+$('room-name-submit').onclick=()=>{const li=document.createElement('li');li.setAttribute('data-testid','room-item');li.textContent=$('room-name-input').value;li.onclick=()=>room.hidden=false;rooms.appendChild(li)};
+$('message-input').onkeydown=e=>{if(e.key!=='Enter')return;const li=document.createElement('li');li.setAttribute('data-testid','message-item');li.textContent=e.target.value;msgs.appendChild(li);e.target.value=''};
+</script></body></html>

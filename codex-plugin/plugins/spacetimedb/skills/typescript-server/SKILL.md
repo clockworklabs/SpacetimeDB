@@ -98,6 +98,33 @@ Every column is a `t` builder value:
 
 Modifiers: `.primaryKey()`, `.autoInc()`, `.unique()`, `.index('btree')`, `.default(value)`.
 
+`.primaryKey()` and `.unique()` apply to **one column**. There is no composite
+primary key and no multi-column unique constraint — a uniqueness rule spanning
+two columns cannot be declared, and the database will not enforce it for you.
+
+For a table that is naturally keyed by a pair — stock per item per warehouse,
+membership per group per user — give it a surrogate key, add a multi-column
+index for lookups, and enforce the pair's uniqueness in the reducer that
+inserts:
+
+```typescript
+export const stock = table(
+  { name: 'stock', indexes: [{ accessor: 'by_item_warehouse', algorithm: 'btree',
+                               columns: ['itemId', 'warehouseId'] }] },
+  {
+    id: t.u64().primaryKey().autoInc(),   // surrogate: the pair cannot be the key
+    itemId: t.u64(),
+    warehouseId: t.u64(),
+    quantity: t.i32(),
+  }
+);
+
+// The reducer is what keeps the pair unique:
+const existing = [...ctx.db.stock.by_item_warehouse.filter([itemId, warehouseId])][0];
+if (existing) ctx.db.stock.id.update({ ...existing, quantity: existing.quantity + n });
+else ctx.db.stock.insert({ id: 0n, itemId, warehouseId, quantity: n });
+```
+
 Use `.default(value)` only for a newly appended migration-safe field. Do not put defaults on primary-key, unique, or auto-increment columns.
 
 Optional columns: `nickname: t.option(t.string())`
@@ -130,7 +157,7 @@ export { default } from './schema';   // re-export the schema for the module ent
 
 ## Reducers
 
-Reducers are created with `spacetimedb.reducer(...)`; the export name becomes the reducer name:
+Reducers are created with `spacetimedb.reducer(...)`; the export name becomes the reducer name. Clients call it by that name, but the **wire name is snake_case**, so `spacetime call` and `describe` want `sign_up` for an exported `signUp`:
 
 ```typescript
 export const createEntity = spacetimedb.reducer(
@@ -278,8 +305,26 @@ const Shape = t.enum('Shape', {
 A client subscribing to a view receives only the rows it returns. Use a per-user view
 (keyed on `ctx.sender`) for per-viewer access control: deleting a row it depends on
 (e.g. a membership row) automatically drops the rows it was exposing from that client.
+Index accessors keep a view's work proportional to the rows it returns. A view covering
+several keys reads the index once per key: `for (const roomId of myRoomIds) for (const m
+of ctx.db.message.roomId.filter(roomId)) out.push(m);`.
 
 `t.row(...)` and `t.object(...)` return schema builders, not TypeScript runtime row types. Let a view callback infer its result, or annotate a separately declared structural type such as `Array<{ sku: bigint; label: string }>`. A named output type must not reuse the generated PascalCase name of its view accessor (for example, reserve `DiscountedProduct` for a `discounted_product` view).
+
+A view context is `ViewCtx<S>` (and `AnonymousViewCtx<S>`), both exported from
+`spacetimedb/server`. It carries `sender`, a read-only `db`, and `from`; it is
+not a `ReducerCtx`, so a helper shared between a reducer and a view must accept
+either:
+
+```typescript
+import type { ReducerCtx, ViewCtx, InferSchema } from 'spacetimedb/server';
+type S = InferSchema<typeof spacetimedb>;
+function stockOf(ctx: ReducerCtx<S> | ViewCtx<S>, itemId: bigint) { ... }
+```
+
+Passing a view context where a `ReducerCtx` is expected reports the mismatch as
+a fully expanded structural type, not as the name `ViewCtx` — so read the
+parameter, not the error.
 
 Both `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take three arguments: view options, the declared return schema, and the callback.
 
@@ -288,7 +333,7 @@ Both `spacetimedb.view(...)` and `spacetimedb.anonymousView(...)` take three arg
 export const activeUsers = spacetimedb.anonymousView(
   { name: 'active_users', public: true },
   t.array(entity.rowType),
-  (ctx) => [...ctx.db.entity.iter()].filter(e => e.active)
+  (ctx) => [...ctx.db.entity.active.filter(true)]        // active: t.bool().index('btree')
 );
 
 // Per-user view (varies by ctx.sender):

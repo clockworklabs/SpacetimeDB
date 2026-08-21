@@ -1,0 +1,51 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — external write reload persistence",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/stock|\\/warehouses",
+  "note": "A self-contained supporting probe. It performs its own direct database write before reloading, so it can be selected or rerun without depending on the live-propagation check.",
+  "features": [
+    {
+      "id": 901,
+      "name": "A direct database write survives reload",
+      "actors": ["viewer"],
+      "setup": [
+        {
+          "do": "expectNumber",
+          "actor": "viewer",
+          "testid": "item-stock",
+          "in": { "testid": "item-card", "contains": "Desk Lamp" },
+          "equals": 100,
+          "within": 10000
+        }
+      ],
+      "criteria": [
+        {
+          "id": "901b",
+          "desc": "after a direct database write sets Desk Lamp's East stock to 5, a reload reads the persisted total of 50",
+          "points": 0,
+          "note": "Supporting evidence for 901a rather than a second score. It rules out a page-only patch but has no distinct calibrated failure mode.",
+          "steps": [
+            {
+              "do": "dbSetStock",
+              "item": "Desk Lamp",
+              "warehouse": "East",
+              "quantity": 5,
+              "settleMs": 1000
+            },
+            { "do": "reload", "actor": "viewer", "settleMs": 3000 },
+            {
+              "do": "expectNumber",
+              "actor": "viewer",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "equals": 50,
+              "within": 10000
+            }
+          ],
+          "statedBy": "when data changes by a path its server never saw"
+        }
+      ]
+    }
+  ]
+}

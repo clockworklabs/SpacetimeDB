@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Ecommerce L2 low-stock boundary",
+  "note": "This scenario owns only the low-stock boundary check so a failure cannot prevent unrelated operational-view checks from running.",
+  "features": [
+    {
+      "id": 5,
+      "name": "The low-stock view",
+      "actors": ["admin", "customer"],
+      "setup": [
+        {
+          "do": "signIn",
+          "actor": "admin",
+          "name": "admin",
+          "password": "stackbench-admin-2026",
+          "exact": true
+        },
+        { "do": "signUp", "actor": "customer", "name": "low-stock-focused" },
+        { "do": "click", "actor": "admin", "testid": "admin-link" }
+      ],
+      "criteria": [
+        {
+          "id": "5a",
+          "desc": "an item falling to ten units or fewer joins the low-stock list, live",
+          "points": 3,
+          "statedBy": "items enter and leave this list as stock moves, sells, is restocked, cancelled or returned",
+          "steps": [
+            {
+              "do": "expect",
+              "actor": "admin",
+              "testid": "low-stock-item",
+              "contains": "Mirrorless Camera",
+              "within": 8000
+            },
+            {
+              "do": "fill",
+              "actor": "admin",
+              "testid": "restock-input",
+              "text": "8",
+              "in": { "testid": "admin-location-row", "contains": "Mirrorless Camera" }
+            },
+            {
+              "do": "click",
+              "actor": "admin",
+              "testid": "restock-submit",
+              "in": { "testid": "admin-location-row", "contains": "Mirrorless Camera" }
+            },
+            {
+              "do": "expect",
+              "actor": "admin",
+              "testid": "low-stock-item",
+              "contains": "Mirrorless Camera",
+              "absent": true,
+              "within": 10000
+            },
+            {
+              "do": "fill",
+              "actor": "customer",
+              "testid": "search-input",
+              "text": "Mirrorless Camera",
+              "enter": true,
+              "settleMs": 1500
+            },
+            {
+              "do": "click",
+              "actor": "customer",
+              "testid": "buy-now",
+              "in": { "testid": "item-card", "contains": "Mirrorless Camera" }
+            },
+            {
+              "do": "expect",
+              "actor": "admin",
+              "testid": "low-stock-item",
+              "contains": "Mirrorless Camera",
+              "within": 10000
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "level": 2,
+  "note": "The subscription-lifecycle races level 2's surfaces make possible: a panel that opens at the moment its contents change, and a relationship that forms while the list showing it is being fetched. Fetch-on-open architectures pass every sequential test and fail exactly here. Every criterion is withheld at 0 points until it demonstrably fails a real build AND its mutant is CAUGHT — same promotion rule as contention.",
+  "features": [
+    {
+      "id": 921,
+      "name": "A panel opened at the moment its contents change",
+      "actors": ["subject", "viewer"],
+      "setup": [
+        { "do": "signUp", "actor": "subject", "name": "Zed" },
+        { "do": "signUp", "actor": "viewer", "name": "Yara" },
+        { "do": "createRoom", "actor": "subject", "room": "panelrace" },
+        { "do": "enterRoom", "actor": "viewer", "room": "panelrace" },
+        { "do": "fill", "actor": "subject", "testid": "bio-input", "text": "bio-before-race" },
+        { "do": "click", "actor": "subject", "testid": "bio-save", "settleMs": 1500 },
+        { "do": "fill", "actor": "subject", "testid": "bio-input", "text": "bio-after-race" }
+      ],
+      "criteria": [
+        {
+          "id": "921a",
+          "desc": "a profile panel opened at the same moment the bio is saved converges on the NEW bio — the panel's subscription outlives its opening fetch",
+          "points": 0,
+          "note": "WITHHELD until proven against a mutant (fetch-on-open-no-subscribe) and a real failing build. A fetch-on-open panel that races the save shows bio-before-race forever; a subscribed panel converges.",
+          "steps": [
+            {
+              "do": "race",
+              "branches": [
+                [
+                  { "do": "click", "actor": "viewer", "testid": "member-item", "contains": "Zed" }
+                ],
+                [
+                  { "do": "click", "actor": "subject", "testid": "bio-save" }
+                ]
+              ],
+              "settleMs": 4000
+            },
+            { "do": "expect", "actor": "viewer", "testid": "profile-bio", "contains": "bio-after-race", "within": 10000 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 922,
+      "name": "A friendship formed while the list showing it is fetched",
+      "actors": ["asker", "asked"],
+      "setup": [
+        { "do": "signUp", "actor": "asker", "name": "Quin" },
+        { "do": "signUp", "actor": "asked", "name": "Rune" },
+        { "do": "createRoom", "actor": "asker", "room": "listrace" },
+        { "do": "enterRoom", "actor": "asked", "room": "listrace" },
+        { "do": "click", "actor": "asker", "testid": "member-item", "contains": "Rune", "settleMs": 1200 },
+        { "do": "click", "actor": "asker", "testid": "friend-request", "settleMs": 1500 }
+      ],
+      "criteria": [
+        {
+          "id": "922a",
+          "desc": "the accept lands while the asker's client is mid-refresh: the new friend appears exactly once — not zero (stale fetch), not twice (fetch merged with the accept broadcast)",
+          "points": 0,
+          "note": "WITHHELD until proven against a mutant (fetch-then-append-dupe) and a real failing build. The reload is what forces the asker's client into a full refetch for the accept to race.",
+          "steps": [
+            {
+              "do": "race",
+              "branches": [
+                [
+                  { "do": "reload", "actor": "asker", "settleMs": 500 }
+                ],
+                [
+                  { "do": "click", "actor": "asked", "testid": "friend-accept", "in": { "testid": "friend-pending", "contains": "Quin" } }
+                ]
+              ],
+              "settleMs": 5000
+            },
+            { "do": "ensureSignedIn", "actor": "asker", "name": "Quin" },
+            { "do": "expectElementCount", "actor": "asker", "testid": "friend-item", "contains": "Rune", "equals": 1, "within": 12000 },
+            { "do": "expectElementCount", "actor": "asked", "testid": "friend-item", "contains": "Quin", "equals": 1, "within": 12000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "level": 1,
+  "track": "ecommerce",
+  "name": "Storefront and warehouse — server restart synchronization",
+  "writeUrlPattern": "\\/api\\/|\\/items|\\/stock|\\/warehouses",
+  "note": "A self-contained preservation of the already-scored server-restart check. East remains 55, so changing West from 45 to 10 while the server is stopped must produce 65 after reconnect.",
+  "features": [
+    {
+      "id": 901,
+      "name": "An open storefront catches up after its server restarts",
+      "actors": ["viewer"],
+      "setup": [
+        {
+          "do": "expectNumber",
+          "actor": "viewer",
+          "testid": "item-stock",
+          "in": { "testid": "item-card", "contains": "Desk Lamp" },
+          "equals": 100,
+          "within": 10000
+        }
+      ],
+      "criteria": [
+        {
+          "id": "901c",
+          "desc": "a stock correction lands while the app server is stopped, and the already-open storefront shows the authoritative total of 65 after the server returns without a reload",
+          "points": 1,
+          "note": "Preserves the previously promoted score while removing its dependency on 901a changing East stock first.",
+          "steps": [
+            { "do": "stopAppServer" },
+            {
+              "do": "dbSetStock",
+              "item": "Desk Lamp",
+              "warehouse": "West",
+              "quantity": 10,
+              "settleMs": 4000
+            },
+            { "do": "startAppServer" },
+            {
+              "do": "expectNumber",
+              "actor": "viewer",
+              "testid": "item-stock",
+              "in": { "testid": "item-card", "contains": "Desk Lamp" },
+              "equals": 65,
+              "within": 20000
+            }
+          ],
+          "statedBy": "a restart must end up showing the current numbers once the server is back"
+        }
+      ]
+    }
+  ]
+}

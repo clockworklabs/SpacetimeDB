@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "status": "candidate",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Warehouse administration",
+  "note": "Access and inventory coverage share one browser safely: the access check only observes the closed state, then the inventory check opens the admin view.",
+  "features": [
+    {
+      "id": 7,
+      "name": "Admin and warehouses",
+      "actors": ["admin", "customer", "visitor"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "jon" },
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }
+      ],
+      "criteria": [
+        {
+          "id": "7a",
+          "desc": "the admin area is for admins only",
+          "points": 1,
+          "steps": [
+            { "do": "expect", "actor": "admin", "testid": "admin-link" },
+            { "do": "expectUnavailable", "actor": "customer", "testid": "admin-link" },
+            { "do": "expect", "actor": "customer", "testid": "admin-panel", "absent": true }
+          ],
+          "statedBy": "admin accounts see an admin area; customers do not"
+        },
+        {
+          "id": "7b",
+          "desc": "admin lists every item, every warehouse, and what each warehouse holds",
+          "points": 1,
+          "steps": [
+            { "do": "click", "actor": "admin", "testid": "admin-link" },
+            { "do": "expect", "actor": "admin", "testid": "admin-item-row", "count": 12 },
+            { "do": "expect", "actor": "admin", "testid": "admin-location-row", "count": 24 },
+            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "East" },
+            { "do": "expect", "actor": "admin", "testid": "admin-warehouse-item", "contains": "West" },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" }, "equals": 100 }
+          ],
+          "statedBy": "admin lists every item with its stock, every warehouse, and the stock of each item in each warehouse"
+        }
+      ]
+    }
+  ]
+}
