@@ -45,7 +45,10 @@ use std::{
     fs::File,
     io::Write,
     path::PathBuf,
-    sync::{atomic::AtomicU32, Arc, Mutex as StdMutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        Arc, Mutex as StdMutex, OnceLock,
+    },
 };
 #[cfg(not(feature = "browser"))]
 use tokio::{
@@ -54,6 +57,15 @@ use tokio::{
 };
 
 pub(crate) type SharedCell<T> = Arc<StdMutex<T>>;
+
+/// Describes the intent associated with an established connection closing without an SDK error.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DisconnectIntent {
+    /// The client explicitly requested the connection to close.
+    Requested,
+    /// The connection closed without a local request or SDK error.
+    Lost,
+}
 
 #[cfg(not(feature = "browser"))]
 type SharedAsyncCell<T> = Arc<TokioMutex<T>>;
@@ -74,6 +86,9 @@ pub struct DbContextImpl<M: SpacetimeModule> {
 
     /// None if we have disconnected.
     pub(crate) send_chan: SharedCell<Option<mpsc::UnboundedSender<ws::v2::ClientMessage>>>,
+
+    /// Whether this connection was explicitly asked to disconnect.
+    disconnect_requested: Arc<AtomicBool>,
 
     /// The client cache, which stores subscribed rows.
     cache: SharedCell<ClientCache<M>>,
@@ -116,6 +131,7 @@ impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
             // and we need it to be fast.
             inner: Arc::clone(&self.inner),
             send_chan: Arc::clone(&self.send_chan),
+            disconnect_requested: Arc::clone(&self.disconnect_requested),
             cache: Arc::clone(&self.cache),
             recv: Arc::clone(&self.recv),
             pending_mutations_send: self.pending_mutations_send.clone(),
@@ -328,6 +344,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
         // Set `send_chan` to `None`, since `Self::is_active` checks that.
         *self.send_chan.lock().unwrap() = None;
+        let disconnect_requested = self.disconnect_requested.swap(false, Ordering::AcqRel);
 
         match lifecycle {
             ConnectionLifecycle::Connecting => {
@@ -342,7 +359,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             }
             ConnectionLifecycle::Connected => {
                 let ctx: M::ErrorContext = self.make_event_ctx(callback_error.clone());
-                if let Some(disconnect_callback) = inner.on_disconnect.take() {
+                if let Some(disconnect_callback) = inner.on_disconnect_with_intent.take() {
+                    disconnect_callback(&ctx, disconnect_result(disconnect_requested, callback_error.clone()));
+                } else if let Some(disconnect_callback) = inner.on_disconnect.take() {
                     disconnect_callback(&ctx, callback_error.clone());
                 }
 
@@ -714,6 +733,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         if !self.is_active() {
             return Err(crate::Error::Disconnected);
         }
+        self.disconnect_requested.store(true, Ordering::Release);
         self.pending_mutations_send
             .unbounded_send(PendingMutation::Disconnect)
             .unwrap();
@@ -811,6 +831,9 @@ type OnConnectErrorCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorCo
 type OnDisconnectCallback<M> =
     Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext, Option<crate::Error>) + Send + 'static>;
 
+type OnDisconnectWithIntentCallback<M> =
+    Box<dyn FnOnce(&<M as SpacetimeModule>::ErrorContext, Result<DisconnectIntent, crate::Error>) + Send + 'static>;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ConnectionLifecycle {
     /// Waiting for the server's initial connection message.
@@ -837,6 +860,7 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     on_connect: Option<OnConnectCallback<M>>,
     on_connect_error: Option<OnConnectErrorCallback<M>>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
+    on_disconnect_with_intent: Option<OnDisconnectWithIntentCallback<M>>,
 
     procedure_callbacks: ProcedureCallbacks<M>,
 }
@@ -857,6 +881,7 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     on_connect: Option<OnConnectCallback<M>>,
     on_connect_error: Option<OnConnectErrorCallback<M>>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
+    on_disconnect_with_intent: Option<OnDisconnectWithIntentCallback<M>>,
 
     additional_logging_path: Option<PathBuf>,
 
@@ -916,6 +941,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             on_connect: None,
             on_connect_error: None,
             on_disconnect: None,
+            on_disconnect_with_intent: None,
             additional_logging_path: None,
             params: <_>::default(),
         }
@@ -998,7 +1024,13 @@ but you must call one of them, or else the connection will never progress.
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let pending_mutations_recv = Arc::new(TokioMutex::new(pending_mutations_recv));
 
-        let inner_ctx = build_db_ctx_inner(runtime, self.on_connect, self.on_connect_error, self.on_disconnect);
+        let inner_ctx = build_db_ctx_inner(
+            runtime,
+            self.on_connect,
+            self.on_connect_error,
+            self.on_disconnect,
+            self.on_disconnect_with_intent,
+        );
         Ok(build_db_ctx(
             handle,
             inner_ctx,
@@ -1042,7 +1074,12 @@ but you must call one of them, or else the connection will never progress.
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
         let pending_mutations_recv = Arc::new(StdMutex::new(pending_mutations_recv));
 
-        let inner_ctx = build_db_ctx_inner(self.on_connect, self.on_connect_error, self.on_disconnect);
+        let inner_ctx = build_db_ctx_inner(
+            self.on_connect,
+            self.on_connect_error,
+            self.on_disconnect,
+            self.on_disconnect_with_intent,
+        );
         Ok(build_db_ctx(
             inner_ctx,
             raw_msg_send,
@@ -1177,18 +1214,43 @@ Instead of registering multiple `on_connect_error` callbacks, register a single 
     /// The connection is established after the initial connection message is
     /// received from the host. Connection failures before that point invoke
     /// [`Self::on_connect_error`] instead.
+    // TODO(v3): Replace this callback with the detailed disconnect-intent API.
     pub fn on_disconnect(
         mut self,
         callback: impl FnOnce(&M::ErrorContext, Option<crate::Error>) + Send + 'static,
     ) -> Self {
-        if self.on_disconnect.is_some() {
+        if self.on_disconnect.is_some() || self.on_disconnect_with_intent.is_some() {
             panic!(
-                "DbConnectionBuilder can only register a single `on_disconnect` callback.
+                "DbConnectionBuilder can only register a single disconnect callback.
 
-Instead of registering multiple `on_disconnect` callbacks, register a single callback which does multiple operations."
+Use either `on_disconnect` or `on_disconnect_with_intent`, not both."
             );
         }
         self.on_disconnect = Some(Box::new(callback));
+        self
+    }
+
+    /// Register a callback with the intent or error associated with an established connection closing.
+    ///
+    /// The callback receives `Ok(DisconnectIntent::Requested)` when the client explicitly called
+    /// [`DbContext::disconnect`], `Ok(DisconnectIntent::Lost)` when the connection closed without
+    /// an SDK error, and `Err` when the SDK reported a disconnect error.
+    /// Connection failures before the initial connection message invoke
+    /// [`Self::on_connect_error`] instead.
+    ///
+    /// This is mutually exclusive with [`Self::on_disconnect`].
+    pub fn on_disconnect_with_intent(
+        mut self,
+        callback: impl FnOnce(&M::ErrorContext, Result<DisconnectIntent, crate::Error>) + Send + 'static,
+    ) -> Self {
+        if self.on_disconnect.is_some() || self.on_disconnect_with_intent.is_some() {
+            panic!(
+                "DbConnectionBuilder can only register a single disconnect callback.
+
+Use either `on_disconnect` or `on_disconnect_with_intent`, not both."
+            );
+        }
+        self.on_disconnect_with_intent = Some(Box::new(callback));
         self
     }
 }
@@ -1200,6 +1262,7 @@ fn build_db_ctx_inner<M: SpacetimeModule>(
     on_connect_cb: Option<OnConnectCallback<M>>,
     on_connect_error_cb: Option<OnConnectErrorCallback<M>>,
     on_disconnect_cb: Option<OnDisconnectCallback<M>>,
+    on_disconnect_with_intent_cb: Option<OnDisconnectWithIntentCallback<M>>,
 ) -> Arc<StdMutex<DbContextImplInner<M>>> {
     Arc::new(StdMutex::new(DbContextImplInner {
         #[cfg(not(feature = "browser"))]
@@ -1213,6 +1276,7 @@ fn build_db_ctx_inner<M: SpacetimeModule>(
         on_connect: on_connect_cb,
         on_connect_error: on_connect_error_cb,
         on_disconnect: on_disconnect_cb,
+        on_disconnect_with_intent: on_disconnect_with_intent_cb,
 
         procedure_callbacks: ProcedureCallbacks::default(),
     }))
@@ -1240,6 +1304,7 @@ fn build_db_ctx<M: SpacetimeModule>(
         runtime: runtime_handle,
         inner: inner_ctx,
         send_chan: Arc::new(StdMutex::new(Some(raw_msg_send))),
+        disconnect_requested: Arc::new(AtomicBool::new(false)),
         cache,
         recv: parsed_msg_recv,
         pending_mutations_send,
@@ -1603,8 +1668,44 @@ enum Message<M: SpacetimeModule> {
     Local(PendingMutation<M>),
 }
 
+fn disconnect_result(
+    disconnect_requested: bool,
+    callback_error: Option<crate::Error>,
+) -> Result<DisconnectIntent, crate::Error> {
+    if disconnect_requested {
+        Ok(DisconnectIntent::Requested)
+    } else if let Some(error) = callback_error {
+        Err(error)
+    } else {
+        Ok(DisconnectIntent::Lost)
+    }
+}
+
 fn error_is_normal_disconnect(e: &crate::Error) -> bool {
     matches!(e, crate::Error::Disconnected)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{disconnect_result, DisconnectIntent};
+
+    #[test]
+    fn requested_disconnect_is_reported_as_requested() {
+        assert!(matches!(disconnect_result(true, None), Ok(DisconnectIntent::Requested)));
+    }
+
+    #[test]
+    fn clean_disconnect_is_reported_as_lost() {
+        assert!(matches!(disconnect_result(false, None), Ok(DisconnectIntent::Lost)));
+    }
+
+    #[test]
+    fn errored_disconnect_preserves_the_sdk_error() {
+        assert!(matches!(
+            disconnect_result(false, Some(crate::Error::Disconnected)),
+            Err(crate::Error::Disconnected)
+        ));
+    }
 }
 
 static NEXT_REQUEST_ID: AtomicU32 = AtomicU32::new(1);
