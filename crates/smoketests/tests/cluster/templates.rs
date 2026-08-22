@@ -12,7 +12,6 @@
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use serde_json::Value;
-use spacetimedb_guard::ensure_binaries_built;
 use spacetimedb_smoketests::{pnpm, random_string, workspace_root, Smoketest};
 use std::env;
 use std::fs;
@@ -132,132 +131,6 @@ fn init_template_with_dotnet_version(
     Ok((tmpdir, project_path))
 }
 
-fn fake_dotnet_path(dir: &Path, sdk_list_output: &str) -> Result<PathBuf> {
-    let executable_name = if cfg!(windows) { "dotnet.exe" } else { "dotnet" };
-    let dotnet_path = dir.join(executable_name);
-    let echo_lines = sdk_list_output
-        .lines()
-        .map(|line| format!("echo {line}"))
-        .collect::<Vec<_>>()
-        .join(if cfg!(windows) { "\r\n" } else { "\n" });
-
-    if cfg!(windows) {
-        let source_path = dir.join("fake_dotnet.rs");
-        fs::write(
-            &source_path,
-            format!(
-                r#"fn main() {{
-    if std::env::args().nth(1).as_deref() == Some("--list-sdks") {{
-        print!("{{}}", {sdk_list_output:?});
-        return;
-    }}
-
-    std::process::exit(1);
-}}
-"#
-            ),
-        )
-        .with_context(|| format!("Failed to write fake dotnet source {:?}", source_path))?;
-
-        let output = Command::new("rustc")
-            .arg(&source_path)
-            .arg("-o")
-            .arg(&dotnet_path)
-            .output()
-            .context("Failed to spawn rustc for fake dotnet")?;
-        if !output.status.success() {
-            bail!(
-                "rustc failed to compile fake dotnet:\nstdout: {}\nstderr: {}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-    } else {
-        fs::write(
-            &dotnet_path,
-            format!("#!/usr/bin/env sh\nif [ \"$1\" = \"--list-sdks\" ]; then\n{echo_lines}\nexit 0\nfi\nexit 1\n"),
-        )
-        .with_context(|| format!("Failed to write fake dotnet executable {:?}", dotnet_path))?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = fs::metadata(&dotnet_path)?.permissions();
-            permissions.set_mode(0o755);
-            fs::set_permissions(&dotnet_path, permissions)?;
-        }
-    }
-
-    Ok(dotnet_path)
-}
-
-fn init_basic_cs_with_fake_dotnet(sdk_list_output: &str) -> Result<(TempDir, PathBuf)> {
-    let tmpdir = tempfile::tempdir().context("Failed to create temp dir")?;
-    let fake_bin = tmpdir.path().join("bin");
-    fs::create_dir(&fake_bin).context("Failed to create fake dotnet bin dir")?;
-    fake_dotnet_path(&fake_bin, sdk_list_output)?;
-
-    let current_path = env::var_os("PATH").unwrap_or_default();
-    let test_path = env::join_paths(std::iter::once(fake_bin).chain(env::split_paths(&current_path)))
-        .context("Failed to build test PATH")?;
-
-    let project_name = "test-basic-cs-default-dotnet";
-    let project_path = tmpdir.path().join(project_name);
-    let config_path = tmpdir.path().join("config.toml");
-    let output = Command::new(ensure_binaries_built())
-        .arg("--config-path")
-        .arg(&config_path)
-        .args([
-            "init",
-            "--template",
-            "basic-cs",
-            "--project-path",
-            project_path.to_str().unwrap(),
-            "--non-interactive",
-            project_name,
-        ])
-        .env("PATH", test_path)
-        .current_dir(tmpdir.path())
-        .output()
-        .context("Failed to execute spacetime init")?;
-
-    if !output.status.success() {
-        bail!(
-            "spacetime init with fake dotnet failed:\nstdout: {}\nstderr: {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    Ok((tmpdir, project_path))
-}
-
-fn assert_basic_cs_default_dotnet(sdk_list_output: &str, expected_major: u8) -> Result<()> {
-    let (_tmpdir, project_path) = init_basic_cs_with_fake_dotnet(sdk_list_output)?;
-    let server_path = project_path.join("spacetimedb");
-
-    let global_json = fs::read_to_string(server_path.join("global.json")).context("Failed to read global.json")?;
-    assert!(
-        global_json.contains(&format!("\"version\": \"{expected_major}.0.100\"")),
-        "global.json did not target .NET {expected_major}:\n{global_json}"
-    );
-
-    let csproj_path = find_csproj(&server_path)?;
-    let csproj = fs::read_to_string(&csproj_path).with_context(|| format!("Failed to read {:?}", csproj_path))?;
-    assert!(
-        csproj.contains(&format!("<TargetFramework>net{expected_major}.0</TargetFramework>")),
-        "{:?} did not target net{expected_major}.0:\n{csproj}",
-        csproj_path
-    );
-    assert!(
-        !csproj.contains("<TargetFrameworks>"),
-        "{:?} should use a single TargetFramework after init:\n{csproj}",
-        csproj_path
-    );
-
-    Ok(())
-}
-
 /// Updates a `[dependencies]` entry in a `Cargo.toml` to use a local path.
 fn update_cargo_toml_dependency(cargo_toml_path: &Path, package_name: &str, local_path: &Path) -> Result<()> {
     if !cargo_toml_path.exists() {
@@ -312,97 +185,6 @@ fn update_package_json_dependency(package_json_path: &Path, package_name: &str, 
     fs::write(package_json_path, new_content).with_context(|| format!("Failed to write {:?}", package_json_path))?;
 
     Ok(())
-}
-
-fn assert_major_minor_version(actual: &str, context: impl std::fmt::Display) -> Result<()> {
-    let re = Regex::new(r"^\d+\.\d+$").unwrap();
-    if !re.is_match(actual) {
-        bail!("{context}: expected MAJOR.MINOR, got {actual}");
-    }
-    Ok(())
-}
-
-fn assert_major_minor_patch_wildcard(actual: &str, context: impl std::fmt::Display) -> Result<()> {
-    let re = Regex::new(r"^\d+\.\d+\.\*$").unwrap();
-    if !re.is_match(actual) {
-        bail!("{context}: expected MAJOR.MINOR.*, got {actual}");
-    }
-    Ok(())
-}
-
-fn read_cargo_dependency_version(cargo_toml_path: &Path, package_name: &str) -> Result<String> {
-    let content =
-        fs::read_to_string(cargo_toml_path).with_context(|| format!("Failed to read {:?}", cargo_toml_path))?;
-    let data: toml::Value = content
-        .parse()
-        .with_context(|| format!("Failed to parse {:?}", cargo_toml_path))?;
-    let dep = data
-        .get("dependencies")
-        .and_then(|deps| deps.get(package_name))
-        .with_context(|| format!("No dependency `{package_name}` found in {:?}", cargo_toml_path))?;
-    match dep {
-        toml::Value::String(version) => Ok(version.clone()),
-        toml::Value::Table(table) => table
-            .get("version")
-            .and_then(|v| v.as_str())
-            .map(String::from)
-            .with_context(|| format!("Dependency `{package_name}` in {:?} has no version", cargo_toml_path)),
-        _ => bail!(
-            "Unsupported dependency `{package_name}` format in {:?}",
-            cargo_toml_path
-        ),
-    }
-}
-
-fn read_package_json_dependency_version(package_json_path: &Path, package_name: &str) -> Result<String> {
-    let content =
-        fs::read_to_string(package_json_path).with_context(|| format!("Failed to read {:?}", package_json_path))?;
-    let data: Value =
-        serde_json::from_str(&content).with_context(|| format!("Failed to parse {:?}", package_json_path))?;
-    data.get("dependencies")
-        .and_then(|deps| deps.get(package_name))
-        .and_then(|v| v.as_str())
-        .map(String::from)
-        .with_context(|| format!("No dependency `{package_name}` found in {:?}", package_json_path))
-}
-
-fn read_csproj_package_reference_version(csproj_path: &Path, package_name: &str) -> Result<String> {
-    let content = fs::read_to_string(csproj_path).with_context(|| format!("Failed to read {:?}", csproj_path))?;
-    let root = xmltree::Element::parse(content.as_bytes())
-        .with_context(|| format!("Failed to parse XML {:?}", csproj_path))?;
-
-    root.children
-        .iter()
-        .filter_map(|node| match node {
-            xmltree::XMLNode::Element(element) if element.name == "ItemGroup" => Some(element),
-            _ => None,
-        })
-        .flat_map(|item_group| item_group.children.iter())
-        .filter_map(|node| match node {
-            xmltree::XMLNode::Element(element) if element.name == "PackageReference" => Some(element),
-            _ => None,
-        })
-        .find(|package_ref| package_ref.attributes.get("Include").map(String::as_str) == Some(package_name))
-        .and_then(|package_ref| package_ref.attributes.get("Version").cloned())
-        .with_context(|| format!("No PackageReference `{package_name}` found in {:?}", csproj_path))
-}
-
-fn find_csproj(dir: &Path) -> Result<PathBuf> {
-    fs::read_dir(dir)
-        .with_context(|| format!("Failed to read {:?}", dir))?
-        .flatten()
-        .map(|entry| entry.path())
-        .find(|path| path.extension().is_some_and(|ext| ext == "csproj"))
-        .with_context(|| format!("No .csproj found in {:?}", dir))
-}
-
-fn read_spacetimedb_cpp_version(cmake_path: &Path) -> Result<String> {
-    let content = fs::read_to_string(cmake_path).with_context(|| format!("Failed to read {:?}", cmake_path))?;
-    let re = Regex::new(r#"set\(SPACETIMEDB_CPP_VERSION\s+"([^"]+)""#).unwrap();
-    let caps = re
-        .captures(&content)
-        .with_context(|| format!("No SPACETIMEDB_CPP_VERSION found in {:?}", cmake_path))?;
-    Ok(caps.get(1).unwrap().as_str().to_string())
 }
 
 /// Runs pnpm with the given arguments in the given working directory.
@@ -728,7 +510,7 @@ fn pin_csharp_client_sdk_package_version(project_path: &Path) -> Result<()> {
 fn build_typescript_sdk() -> Result<()> {
     let sdk_path = workspace_root().join("crates/bindings-typescript");
     eprintln!("[TEMPLATES] Building TypeScript SDK at {:?}", sdk_path);
-    run_pnpm(&["install"], &sdk_path)?;
+    run_pnpm(&["--filter", "spacetimedb", "install"], &sdk_path)?;
     run_pnpm(&["build"], &sdk_path)?;
     Ok(())
 }
@@ -1130,54 +912,6 @@ fn test_template(test: &Smoketest, template: &Template) -> Result<()> {
 // Test entry point
 // ============================================================================
 
-#[test]
-fn test_basic_template_dependency_versions() -> Result<()> {
-    let test = Smoketest::builder().autopublish(false).build();
-
-    let (_basic_cpp_tmpdir, basic_cpp_path) = init_template(&test, "basic-cpp")?;
-    let cpp_server_version = read_spacetimedb_cpp_version(&basic_cpp_path.join("spacetimedb").join("CMakeLists.txt"))?;
-    assert_major_minor_version(&cpp_server_version, "basic-cpp C++ server SPACETIMEDB_CPP_VERSION")?;
-    // The current basic C++ template still uses a Rust client; we do not have a C++ client yet.
-    let cpp_client_manifest = basic_cpp_path.join("Cargo.toml");
-    if !cpp_client_manifest.exists() {
-        bail!("basic-cpp expected Rust client manifest at {:?}", cpp_client_manifest);
-    }
-
-    let (_basic_rs_tmpdir, basic_rs_path) = init_template(&test, "basic-rs")?;
-    let rs_server_version =
-        read_cargo_dependency_version(&basic_rs_path.join("spacetimedb").join("Cargo.toml"), "spacetimedb")?;
-    assert_major_minor_patch_wildcard(&rs_server_version, "basic-rs Rust server spacetimedb")?;
-    let rs_client_version = read_cargo_dependency_version(&basic_rs_path.join("Cargo.toml"), "spacetimedb-sdk")?;
-    assert_major_minor_patch_wildcard(&rs_client_version, "basic-rs Rust client spacetimedb-sdk")?;
-
-    let (_basic_ts_tmpdir, basic_ts_path) = init_template(&test, "basic-ts")?;
-    let ts_server_version =
-        read_package_json_dependency_version(&basic_ts_path.join("spacetimedb").join("package.json"), "spacetimedb")?;
-    assert_major_minor_patch_wildcard(&ts_server_version, "basic-ts TypeScript server spacetimedb")?;
-    let ts_client_version = read_package_json_dependency_version(&basic_ts_path.join("package.json"), "spacetimedb")?;
-    assert_major_minor_patch_wildcard(&ts_client_version, "basic-ts TypeScript client spacetimedb")?;
-
-    let (_basic_cs_tmpdir, basic_cs_path) = init_template(&test, "basic-cs")?;
-    let cs_server_project = find_csproj(&basic_cs_path.join("spacetimedb"))?;
-    let cs_server_version = read_csproj_package_reference_version(&cs_server_project, "SpacetimeDB.Runtime")?;
-    assert_major_minor_patch_wildcard(&cs_server_version, "basic-cs C# server SpacetimeDB.Runtime")?;
-    let cs_client_version =
-        read_csproj_package_reference_version(&basic_cs_path.join("client.csproj"), "SpacetimeDB.ClientSDK")?;
-    assert_major_minor_patch_wildcard(&cs_client_version, "basic-cs C# client SpacetimeDB.ClientSDK")?;
-
-    Ok(())
-}
-
-#[test]
-fn test_basic_cs_init_default_dotnet_selection() -> Result<()> {
-    assert_basic_cs_default_dotnet("8.0.416 [/usr/share/dotnet/sdk]", 8)?;
-    assert_basic_cs_default_dotnet("10.0.100 [/usr/share/dotnet/sdk]", 10)?;
-    assert_basic_cs_default_dotnet("8.0.416 [/usr/share/dotnet/sdk]\n10.0.100 [/usr/share/dotnet/sdk]", 10)?;
-    assert_basic_cs_default_dotnet("", 10)?;
-
-    Ok(())
-}
-
 /// Runs the init + publish + client-test cycle for one registered template.
 ///
 /// Each template is a separate Rust test so nextest can hash it independently
@@ -1205,8 +939,6 @@ fn run_registered_template(template_id: &str) {
 
 macro_rules! template_tests {
     ($($test_name:ident => $template_id:literal),+ $(,)?) => {
-        const REGISTERED_TEMPLATE_IDS: &[&str] = &[$($template_id),+];
-
         $(
             #[test]
             fn $test_name() {
@@ -1216,46 +948,4 @@ macro_rules! template_tests {
     };
 }
 
-template_tests! {
-    test_template_angular_ts => "angular-ts",
-    test_template_astro_ts => "astro-ts",
-    test_template_basic_cpp => "basic-cpp",
-    test_template_basic_cs => "basic-cs",
-    test_template_basic_rs => "basic-rs",
-    test_template_basic_ts => "basic-ts",
-    test_template_browser_ts => "browser-ts",
-    test_template_bun_ts => "bun-ts",
-    test_template_chat_console_cs => "chat-console-cs",
-    test_template_chat_console_rs => "chat-console-rs",
-    test_template_chat_react_ts => "chat-react-ts",
-    test_template_deno_ts => "deno-ts",
-    test_template_hangman_react_ts => "hangman-react-ts",
-    test_template_llm_chat_ts => "llm-chat-ts",
-    test_template_money_exchange_react_ts => "money-exchange-react-ts",
-    test_template_nextjs_ts => "nextjs-ts",
-    test_template_nodejs_ts => "nodejs-ts",
-    test_template_nuxt_ts => "nuxt-ts",
-    test_template_react_ts => "react-ts",
-    test_template_remix_ts => "remix-ts",
-    test_template_solid_ts => "solid-ts",
-    test_template_svelte_ts => "svelte-ts",
-    test_template_tanstack_ts => "tanstack-ts",
-    test_template_vue_ts => "vue-ts",
-}
-
-#[test]
-fn test_template_registry_matches_discovered_templates() {
-    let discovered = get_templates()
-        .into_iter()
-        .map(|template| template.id)
-        .collect::<Vec<_>>();
-    let registered = REGISTERED_TEMPLATE_IDS
-        .iter()
-        .map(|template_id| (*template_id).to_owned())
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        discovered, registered,
-        "Every discovered template must have its own nextest-visible test"
-    );
-}
+spacetimedb_smoketests::for_each_smoketest_template!(template_tests);

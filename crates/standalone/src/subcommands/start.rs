@@ -189,6 +189,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
                 commitlog: config.commitlog,
             },
             websocket: config.websocket,
+            module_http: config.common.module_http,
             wasm: config.common.wasm,
             v8: config.common.v8,
         },
@@ -521,6 +522,9 @@ mod tests {
                 "banana_shake=strawberry",
             ]
 
+            [module-http]
+            enabled = false
+
             [websocket]
             idle-timeout = "1min"
             close-handshake-timeout = "500ms"
@@ -553,6 +557,7 @@ mod tests {
         // so check `common` in a pedestrian way.
         assert_eq!(&config.common.logs.directives, &["banana_shake=strawberry"]);
         assert!(config.common.certificate_authority.is_none());
+        assert!(!config.common.module_http.enabled);
         assert_eq!(config.common.wasm.procedure_instance_pool_size.get(), 4);
         assert_eq!(config.common.v8.procedure_instance_pool_size.get(), 3);
         assert_eq!(config.common.v8.heap_policy.heap_check_request_interval, None);
