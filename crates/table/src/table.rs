@@ -191,7 +191,7 @@ impl TableInner {
     }
 
     fn try_page_and_offset(&self, ptr: RowPointer) -> Option<(&Page, PageOffset)> {
-        (ptr.page_index().idx() < self.pages.len()).then(|| (&self.pages[ptr.page_index()], ptr.page_offset()))
+        self.pages.get(ptr.page_index()).map(|page| (page, ptr.page_offset()))
     }
 
     /// Returns the page and page offset that `ptr` points to.
@@ -200,7 +200,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 264);
+static_assert_size!(Table, 288);
 
 impl MemoryUsage for Table {
     fn heap_usage(&self) -> usize {
@@ -783,7 +783,12 @@ impl Table {
         };
 
         let fixed_row_size = self.inner.row_layout.size();
-        let fixed_buf = self.inner.pages[ptr.page_index()].get_fixed_row_data_mut(ptr.page_offset(), fixed_row_size);
+        let fixed_buf = self
+            .inner
+            .pages
+            .get_mut(ptr.page_index())
+            .expect("page for row with validity safety constraint to be present")
+            .get_fixed_row_data_mut(ptr.page_offset(), fixed_row_size);
 
         fn write<const N: usize>(dst: &mut [u8], offset: u16, bytes: [u8; N]) {
             let offset = offset as usize;
@@ -1687,7 +1692,7 @@ impl Table {
     /// # Safety
     ///
     /// The schema of rows stored in the `pages` must exactly match `self.schema` and `self.inner.row_layout`.
-    pub unsafe fn set_pages(&mut self, pages: Vec<Box<Page>>, blob_store: &dyn BlobStore) {
+    pub unsafe fn set_pages(&mut self, pages: Vec<Option<Box<Page>>>, blob_store: &dyn BlobStore) {
         self.inner.pages.set_contents(pages, self.inner.row_layout.size());
 
         // Recompute table metadata based on the new pages.
@@ -1697,6 +1702,9 @@ impl Table {
     }
 
     /// Consumes the table, returning some constituents needed for merge.
+    ///
+    /// The returned iterator of `Page`s will not necessarily yield pages in their `PageIndex` order.
+    /// It is intended for reclaiming pages to a pool, not for reading data out of the pages.
     pub fn consume_for_merge(
         self,
     ) -> (
@@ -1716,7 +1724,10 @@ impl Table {
 
     #[cfg(test)]
     fn reconstruct_num_rows(&self) -> u64 {
-        self.pages().iter().map(|page| page.reconstruct_num_rows() as u64).sum()
+        self.pages()
+            .iter_present_pages()
+            .map(|page| page.reconstruct_num_rows() as u64)
+            .sum()
     }
 
     /// Returns the number of bytes used by rows resident in this table.
@@ -1739,7 +1750,7 @@ impl Table {
     // so that this runs in constant time rather than O(|Pages|).
     pub fn bytes_used_by_rows(&self) -> u64 {
         self.pages()
-            .iter()
+            .iter_present_pages()
             .map(|page| page.bytes_used_by_rows(self.inner.row_layout.size()) as u64)
             .sum()
     }
@@ -1747,7 +1758,7 @@ impl Table {
     #[cfg(test)]
     fn reconstruct_bytes_used_by_rows(&self) -> u64 {
         self.pages()
-            .iter()
+            .iter_present_pages()
             .map(|page| unsafe {
                 // Safety: `page` is in `self`, and was constructed using `self.innser.row_layout` and `self.inner.visitor_prog`,
                 // so the three are mutually consistent.
@@ -2136,8 +2147,9 @@ pub struct TableScanIter<'table> {
     /// The current page we're yielding rows from.
     /// When `None`, the iterator will attempt to advance to the next page, if any.
     current_page: Option<FixedLenRowsIter<'table>>,
-    /// The current page index we are or will visit.
+    /// The current page index we visiting.
     current_page_idx: PageIndex,
+
     /// The table the iterator is yielding rows from.
     pub(crate) table: &'table Table,
     /// The `BlobStore` that row references may refer into.
@@ -2177,11 +2189,27 @@ impl<'a> Iterator for TableScanIter<'a> {
                 // already incremented `self.current_page_idx`,
                 // or we're just beginning and so it was initialized as 0.
                 None => {
+                    // Search for another page to yield from until we run past `self.pages.len`.
                     // If there's another page, set `self.current_page` to it,
                     // and go to the `Some` case in the match.
-                    let next_page = self.table.pages().get(self.current_page_idx.idx())?;
-                    let iter = next_page.iter_fixed_len(self.table.row_size());
-                    self.current_page = Some(iter);
+
+                    'find_next_page: loop {
+                        if self.current_page_idx.idx() >= self.table.pages().len() {
+                            // We're past the end of the pages.
+                            return None;
+                        }
+
+                        if let Some(next_page) = self.table.pages().get(self.current_page_idx) {
+                            // There's another page, so start yielding from it.
+                            let iter = next_page.iter_fixed_len(self.table.row_size());
+                            self.current_page = Some(iter);
+                            break 'find_next_page;
+                        } else {
+                            // The next page slot is not occupied by a page,
+                            // so continue past it to the next page slot.
+                            self.current_page_idx.0 += 1;
+                        }
+                    }
                 }
             }
         }
@@ -2457,19 +2485,26 @@ impl Table {
         &self.inner.pages
     }
 
+    #[cfg(test)]
+    fn pages_mut(&mut self) -> &mut Pages {
+        &mut self.inner.pages
+    }
+
     /// Iterates over each [`Page`] in this table, ensuring that its hash is computed before yielding it.
     ///
     /// Used when capturing a snapshot.
-    pub fn iter_pages_with_hashes(&mut self) -> impl Iterator<Item = (blake3::Hash, &Page)> {
+    pub fn iter_pages_with_hashes(&mut self) -> impl Iterator<Item = Option<(blake3::Hash, &Page)>> {
         self.inner.pages.iter_mut().map(|page| {
-            let hash = page.save_or_get_content_hash();
-            (hash, &**page)
+            page.as_mut().map(|page| {
+                let hash = page.save_or_get_content_hash();
+                (hash, &**page)
+            })
         })
     }
 
     /// Returns the number of pages storing the physical rows of this table.
     fn num_pages(&self) -> usize {
-        self.inner.pages.len()
+        self.inner.pages.num_present_pages()
     }
 
     /// Returns the [`StaticLayout`] for this table,
@@ -2554,28 +2589,32 @@ pub(crate) mod test {
 
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
         let pool = PagePool::new_for_test();
+        let blob_store = &mut NullBlobStore;
         let cols = ColList::new(0.into());
         let algo = BTreeAlgorithm { columns: cols.clone() }.into();
 
         let index = table.new_index(&algo, true).unwrap();
         // SAFETY: Index was derived from `table`.
-        unsafe { table.insert_index(&NullBlobStore, index_schema.index_id, index) }.unwrap();
+        unsafe { table.insert_index(blob_store, index_schema.index_id, index) }.unwrap();
 
         // Reserve a page so that we can check the hash.
-        let pi = table.inner.pages.reserve_empty_page(&pool, table.row_size()).unwrap();
-        let hash_pre_ins = hash_unmodified_save_get(&mut table.inner.pages[pi]);
+        let (_, row_ref) = table.insert(&pool, blob_store, &product![i32::MAX, i32::MAX]).unwrap();
+        let pi = row_ref.pointer().page_index();
+        let hash_pre_ins =
+            hash_unmodified_save_get(table.inner.pages.get_mut(pi).expect("reserved page to be present"));
 
         // Insert the row (0, 0).
         table
-            .insert(&pool, &mut NullBlobStore, &product![0i32, 0i32])
+            .insert(&pool, blob_store, &product![0i32, 0i32])
             .expect("Initial insert failed");
 
         // Inserting cleared the hash.
-        let hash_post_ins = hash_unmodified_save_get(&mut table.inner.pages[pi]);
+        let hash_post_ins =
+            hash_unmodified_save_get(table.inner.pages.get_mut(pi).expect("reserved page to be present"));
         assert_ne!(hash_pre_ins, hash_post_ins);
 
         // Try to insert the row (0, 1), and assert that we get the expected error.
-        match table.insert(&pool, &mut NullBlobStore, &product![0i32, 1i32]) {
+        match table.insert(&pool, blob_store, &product![0i32, 1i32]) {
             Ok(_) => panic!("Second insert with same unique value succeeded"),
             Err(InsertError::IndexError(UniqueConstraintViolation {
                 constraint_name,
@@ -2593,7 +2632,15 @@ pub(crate) mod test {
 
         // Second insert did clear the hash while we had a constraint violation,
         // as constraint checking is done after insertion and then rolled back.
-        assert_eq!(table.inner.pages[pi].unmodified_hash(), None);
+        assert_eq!(
+            table
+                .inner
+                .pages
+                .get(pi)
+                .expect("reserved page to be present")
+                .unmodified_hash(),
+            None
+        );
     }
 
     fn insert_retrieve_body(ty: impl Into<ProductType>, val: impl Into<ProductValue>) -> TestCaseResult {
@@ -2608,7 +2655,7 @@ pub(crate) mod test {
         prop_assert_eq!(table.pointers_for(hash), &[ptr]);
 
         prop_assert_eq!(table.inner.pages.len(), 1);
-        prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 1);
+        prop_assert_eq!(table.inner.pages.get(PageIndex(0)).map(|page| page.num_rows()), Some(1));
 
         let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
         prop_assert_eq!(row_ref.to_product_value(), val.clone());
@@ -2738,21 +2785,23 @@ pub(crate) mod test {
             prop_assert_eq!(table.pointers_for(hash), &[ptr]);
 
             prop_assert_eq!(table.inner.pages.len(), 1);
-            prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 1);
+            prop_assert_eq!(table.inner.pages.get(PageIndex(0)).map(|page| page.num_rows()), Some(1));
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
             prop_assert_eq!(table.row_count, 1);
 
-            let hash_pre_del = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
+            let hash_pre_del = hash_unmodified_save_get(table.inner.pages.get_mut(ptr.page_index()).expect("page containing row to be present"));
 
             table.delete(&mut blob_store, ptr, |_| ());
 
-            let hash_post_del = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
+            // FIXME(delete-free-page): Page will no longer be present here after deleting its only row.
+            // Amend this test to insert two rows and only delete one of them.
+            let hash_post_del = hash_unmodified_save_get(table.inner.pages.get_mut(ptr.page_index()).expect("page to remain present after delete, until we move to freeing empty pages"));
             assert_ne!(hash_pre_del, hash_post_del);
 
             prop_assert_eq!(table.pointers_for(hash), &[]);
 
             prop_assert_eq!(table.inner.pages.len(), 1);
-            prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 0);
+            prop_assert_eq!(table.inner.pages.get(PageIndex(0)).map(|page| page.num_rows()), Some(0));
             prop_assert_eq!(table.row_count, 0);
 
             prop_assert!(&table.scan_rows(&blob_store).next().is_none());
@@ -2775,12 +2824,12 @@ pub(crate) mod test {
 
             let blob_uses = blob_store.usage_counter();
 
-            let hash_pre_ins = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
+            let hash_pre_ins = hash_unmodified_save_get(table.inner.pages.get_mut(ptr.page_index()).expect("page containing row to be present"));
 
             prop_assert!(table.insert(&pool, &mut blob_store, &val).is_err());
 
             // Hash was cleared and is different despite failure to insert.
-            let hash_post_ins = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
+            let hash_post_ins = hash_unmodified_save_get(table.inner.pages.get_mut(ptr.page_index()).expect("page containing row to be present"));
             assert_ne!(hash_pre_ins, hash_post_ins);
 
             prop_assert_eq!(table.row_count, 1);
@@ -2790,7 +2839,7 @@ pub(crate) mod test {
             let blob_uses_after = blob_store.usage_counter();
 
             prop_assert_eq!(blob_uses_after, blob_uses);
-            prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 1);
+            prop_assert_eq!(table.inner.pages.get(PageIndex(0)).map(|page| page.num_rows()), Some(1));
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
         }
 
@@ -2916,9 +2965,8 @@ pub(crate) mod test {
         let simple = table
             .inner
             .pages
-            .iter()
-            .zip((0..).map(PageIndex))
-            .flat_map(|(page, pi)| {
+            .iter_present_pages_with_page_index()
+            .flat_map(|(pi, page)| {
                 page.iter_fixed_len(table.row_size())
                     .map(move |po| RowPointer::new(false, pi, po, table.squashed_offset))
             });
@@ -2950,8 +2998,16 @@ pub(crate) mod test {
             next_value += 1;
         }
 
-        let first_page = &table.inner.pages[PageIndex(0)];
-        let second_page = &table.inner.pages[PageIndex(1)];
+        let first_page = &table
+            .inner
+            .pages
+            .get(PageIndex(0))
+            .expect("page zero to be present after inserting many rows");
+        let second_page = &table
+            .inner
+            .pages
+            .get(PageIndex(1))
+            .expect("page one to be present after inserting many rows");
         assert!(first_page.is_full(table.row_size()));
         assert_eq!(first_page.available_var_len_granules(), 0);
         assert!(!second_page.is_full(table.row_size()));
@@ -2960,7 +3016,11 @@ pub(crate) mod test {
         let first_ptr = inserted_ptrs[0];
         table.delete(&mut blob_store, first_ptr, |_| ());
 
-        let first_page = &table.inner.pages[PageIndex(0)];
+        let first_page = &table
+            .inner
+            .pages
+            .get(PageIndex(0))
+            .expect("page zero to still be present after a delete that does not empty it");
         assert!(!first_page.is_full(table.row_size()));
         assert_eq!(first_page.available_var_len_granules(), 0);
 
@@ -2969,7 +3029,11 @@ pub(crate) mod test {
         assert_eq!(new_ptr.page_index(), first_ptr.page_index());
         assert_eq!(new_ptr.page_offset(), first_ptr.page_offset());
 
-        let first_page = &table.inner.pages[PageIndex(0)];
+        let first_page = &table
+            .inner
+            .pages
+            .get(PageIndex(0))
+            .expect("page zero to still be present after an insert");
         assert!(first_page.is_full(table.row_size()));
         assert_eq!(first_page.available_var_len_granules(), 0);
     }
@@ -3068,5 +3132,116 @@ pub(crate) mod test {
                 RowPointer::new(false, PageIndex(0), PageOffset(0), SquashedOffset::COMMITTED_STATE),
             )
             .is_none());
+    }
+
+    #[test]
+    fn table_iter_skips_absent_pages() {
+        let pool = PagePool::new_for_test();
+        let blob_store = &mut NullBlobStore;
+        let mut table = table([AlgebraicType::I32].into());
+
+        let mut next_value = 0i32;
+        let mut row_ptrs = vec![];
+        loop {
+            let (_, row_ref) = table.insert(&pool, blob_store, &product![next_value]).unwrap();
+            next_value += 1;
+            let pointer = row_ref.pointer();
+            row_ptrs.push(pointer);
+            if pointer.page_index() == PageIndex(1) {
+                break;
+            }
+        }
+        assert_eq!(table.pages().len(), 2);
+
+        let scanned_rows = table
+            .scan_rows(blob_store)
+            .map(|row| row.read_col::<i32>(0).unwrap())
+            .collect::<Vec<_>>();
+        let expected_contents = (0..next_value).collect::<Vec<_>>();
+        assert_eq!(scanned_rows, expected_contents);
+
+        // Delete all the rows from page 0 before freeing it, to avoid leaving stale entries in the pointer map.
+        for ptr in row_ptrs.into_iter().take_while(|ptr| ptr.page_index() == PageIndex(0)) {
+            table
+                .delete(blob_store, ptr, |_| ())
+                .expect("deleted row to have been present");
+        }
+
+        table.pages_mut().free_empty_page(PageIndex(0));
+
+        let scanned_rows = table
+            .scan_rows(blob_store)
+            .map(|row| row.read_col::<i32>(0).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(scanned_rows.len(), 1);
+        assert_eq!(scanned_rows[0], next_value - 1);
+    }
+
+    #[test]
+    fn alloc_new_page_fills_hole() {
+        let pool = PagePool::new_for_test();
+        let blob_store = &mut NullBlobStore;
+        let mut table = table([AlgebraicType::I32].into());
+
+        fn has_two_full_pages(table: &Table) -> bool {
+            table.pages().len() >= 2
+                && table
+                    .pages()
+                    .get(PageIndex(0))
+                    .map(|page| page.is_full(table.inner.row_layout.size()))
+                    .unwrap_or(false)
+                && table
+                    .pages()
+                    .get(PageIndex(1))
+                    .map(|page| page.is_full(table.inner.row_layout.size()))
+                    .unwrap_or(false)
+        }
+
+        let mut next_value = 0i32;
+        let mut row_ptrs = vec![];
+        loop {
+            let (_, row_ref) = table.insert(&pool, blob_store, &product![next_value]).unwrap();
+            next_value += 1;
+            row_ptrs.push(row_ref.pointer());
+            if has_two_full_pages(&table) {
+                break;
+            }
+        }
+
+        // Delete all the rows from page 0 before freeing it, to avoid leaving stale entries in the pointer map.
+        for ptr in row_ptrs.into_iter().take_while(|ptr| ptr.page_index() == PageIndex(0)) {
+            table
+                .delete(blob_store, ptr, |_| ())
+                .expect("deleted row to have been present");
+        }
+
+        assert_eq!(
+            table
+                .pages()
+                .get(PageIndex(0))
+                .expect("empty page to still be present")
+                .num_rows(),
+            0
+        );
+        assert!(table
+            .pages()
+            .get(PageIndex(1))
+            .expect("full page to still be present")
+            .is_full(table.inner.row_layout.size()));
+
+        assert_eq!(table.num_pages(), 2);
+
+        table.pages_mut().free_empty_page(PageIndex(0));
+
+        assert_eq!(table.num_pages(), 1);
+        assert_eq!(table.pages().len(), 2);
+
+        let (_, row_ref) = table.insert(&pool, blob_store, &product![next_value]).unwrap();
+        let ptr = row_ref.pointer();
+        assert_eq!(ptr.page_index(), PageIndex(0));
+
+        assert_eq!(table.num_pages(), 2);
+        assert_eq!(table.pages().len(), 2);
+        assert!(table.pages().get(PageIndex(0)).is_some());
     }
 }
