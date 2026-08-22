@@ -1,6 +1,6 @@
 //! CLI auth command tests (`login` / `logout`)
 
-use spacetimedb_smoketests::{require_local_server, Smoketest};
+use spacetimedb_smoketests::{require_server_issued_login, Smoketest};
 use std::fs;
 use std::process::Output;
 use std::time::{Duration, Instant};
@@ -34,7 +34,7 @@ fn write_config(test: &Smoketest, config: &toml::Table) {
 
 #[test]
 fn cli_logout_removes_cached_tokens() {
-    require_local_server!();
+    require_server_issued_login!();
     let test = Smoketest::builder().autopublish(false).build();
 
     let login = test.spacetime_cmd(&["login", "--server-issued-login", &test.server_url]);
@@ -72,7 +72,7 @@ fn cli_logout_removes_cached_tokens() {
 #[test]
 // Even if there's no web session, logout still removes the SpacetimeDB token
 fn cli_logout_removes_cached_tokens_without_web_token() {
-    require_local_server!();
+    require_server_issued_login!();
     let test = Smoketest::builder().autopublish(false).build();
 
     let login = test.spacetime_cmd(&["login", "--server-issued-login", &test.server_url]);
@@ -101,7 +101,7 @@ fn cli_logout_removes_cached_tokens_without_web_token() {
 
 #[test]
 fn cli_logout_is_idempotent() {
-    require_local_server!();
+    require_server_issued_login!();
     let test = Smoketest::builder().autopublish(false).build();
 
     let login = test.spacetime_cmd(&["login", "--server-issued-login", &test.server_url]);
@@ -126,7 +126,7 @@ fn cli_logout_is_idempotent() {
 
 #[test]
 fn cli_direct_login_works_and_shows_core_messages() {
-    require_local_server!();
+    require_server_issued_login!();
     let test = Smoketest::builder().autopublish(false).build();
 
     let login = test.spacetime_cmd(&["login", "--server-issued-login", &test.server_url]);
@@ -150,7 +150,7 @@ fn cli_direct_login_works_and_shows_core_messages() {
 
 #[test]
 fn cli_logging_in_twice_works() {
-    require_local_server!();
+    require_server_issued_login!();
     let test = Smoketest::builder().autopublish(false).build();
 
     let first = test.spacetime_cmd(&["login", "--server-issued-login", &test.server_url]);

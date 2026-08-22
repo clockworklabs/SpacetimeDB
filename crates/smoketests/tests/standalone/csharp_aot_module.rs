@@ -26,6 +26,8 @@ fn dotnet_major_version() -> Option<u8> {
 /// NativeAOT-LLVM targets WASI and uses WASI SDK (clang), not the wasi-experimental
 /// workload or emscripten. WASI SDK is auto-downloaded by SpacetimeDB.Runtime.targets.
 /// The user must set EXPERIMENTAL_WASM_AOT=1 to enable the AOT build path.
+///
+/// Standalone-only: this invokes the local .NET toolchain and never contacts a server.
 #[test]
 fn test_build_csharp_module_aot() {
     require_dotnet!();
