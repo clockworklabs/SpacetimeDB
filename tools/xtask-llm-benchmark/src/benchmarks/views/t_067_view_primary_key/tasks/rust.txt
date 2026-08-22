@@ -1,0 +1,18 @@
+Write a SpacetimeDB backend module in Rust that defines a procedural view with a primary key.
+
+TABLE
+- source_row (public), struct SourceRow
+  - Fields:
+    - id: u64 (primary key)
+    - value: String
+    - visible: bool (btree index)
+
+REDUCERS
+- seed()
+  - Insert row 1 with value "shown" and visible true
+  - Insert row 2 with value "hidden" and visible false
+
+VIEW
+- source_view (anonymous procedural, public)
+  - Return visible source_row rows
+  - Explicitly declare id as the view primary key

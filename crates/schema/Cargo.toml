@@ -15,7 +15,6 @@ spacetimedb-primitives = { workspace = true, features = ["memory-usage"] }
 spacetimedb-sats = { workspace = true, features = ["memory-usage"] }
 spacetimedb-data-structures.workspace = true
 spacetimedb-memory-usage.workspace = true
-spacetimedb-sql-parser.workspace = true
 anyhow.workspace = true
 derive_more.workspace = true
 indexmap.workspace = true
@@ -26,7 +25,6 @@ thiserror.workspace = true
 unicode-ident.workspace = true
 unicode-normalization.workspace = true
 petgraph.workspace = true
-serde_json.workspace = true
 smallvec.workspace = true
 enum-as-inner.workspace = true
 enum-map.workspace = true

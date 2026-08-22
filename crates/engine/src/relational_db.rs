@@ -470,6 +470,19 @@ impl RelationalDB {
         Ok(self.with_read_only(Workload::Internal, |tx| self.inner.program(tx))?)
     }
 
+    /// Obtain the module associated with this database and the transaction
+    /// offset visible to the read.
+    ///
+    /// Waiting for the returned offset to become durable proves that the
+    /// `st_module` row observed by this read is durable.
+    pub fn program_with_tx_offset(&self) -> Result<(Option<Program>, TxOffset), DBError> {
+        self.with_read_only(Workload::Internal, |tx| {
+            let program = self.inner.program(tx)?;
+            let tx_offset = tx.tx_offset().into_inner().saturating_sub(1);
+            Ok((program, tx_offset))
+        })
+    }
+
     /// Read the set of clients currently connected to the database.
     pub fn connected_clients(&self) -> Result<ConnectedClients, DBError> {
         self.with_read_only(Workload::Internal, |tx| {
@@ -520,6 +533,11 @@ impl RelationalDB {
                 .map_err(Box::new)?;
 
             let elapsed_time = start.elapsed();
+
+            ENGINE_METRICS
+                .replay_snapshot_num_absent_pages
+                .with_label_values(database_identity)
+                .set(u64_to_i64(snapshot.read_metrics.absent_pages));
 
             for (kind, metrics) in snapshot.read_metrics.iter() {
                 ENGINE_METRICS
@@ -1057,6 +1075,36 @@ impl RelationalDB {
         primary_key: Option<ColId>,
     ) -> Result<(), DBError> {
         Ok(self.inner.alter_table_primary_key_mut_tx(tx, name, primary_key)?)
+    }
+
+    pub(crate) fn alter_index_source_name(
+        &self,
+        tx: &mut MutTx,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_index_source_name_mut_tx(tx, index_id, source_name)?)
+    }
+
+    pub(crate) fn alter_table_accessor_name(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_accessor_name_mut_tx(tx, table_id, new_alias)?)
+    }
+
+    pub(crate) fn alter_column_accessor_name(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<(), DBError> {
+        Ok(self
+            .inner
+            .alter_column_accessor_name_mut_tx(tx, table_id, col_id, new_alias)?)
     }
 
     pub(crate) fn alter_table_row_type(

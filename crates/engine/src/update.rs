@@ -360,10 +360,93 @@ fn auto_migrate_database(
                     .indexes
                     .iter()
                     .find(|index| index.index_name == stored_name)
-                    .unwrap();
+                    .ok_or_else(|| anyhow::anyhow!("Index `{index_name}` not found in table `{table_full_name}`"))?;
 
                 log!(logger, "Dropping index `{index_name}` on table `{table_full_name}`");
                 stdb.drop_index(tx, index_schema.index_id)?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeTableAccessorName(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (_, new_table_def): (&ModuleDef, &spacetimedb_schema::def::TableDef) =
+                    plan.new.find_table(table_name_key).ok_or_else(|| {
+                        anyhow::anyhow!("ChangeTableAccessorName: `{table_name}` not found in new module def")
+                    })?;
+
+                let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
+                let new_alias = namespace.join(new_table_def.accessor_name.clone());
+
+                log!(
+                    logger,
+                    "Changing table accessor name for `{table_name}` to `{new_alias}`",
+                );
+                stdb.alter_table_accessor_name(tx, table_id, new_alias)?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeColumnAccessorName(table_name_key, col_name) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (_, new_table_def): (&ModuleDef, &spacetimedb_schema::def::TableDef) =
+                    plan.new.find_table(table_name_key).ok_or_else(|| {
+                        anyhow::anyhow!("ChangeColumnAccessorName: `{table_name}` not found in new module def")
+                    })?;
+                let new_col_def = new_table_def
+                    .columns
+                    .iter()
+                    .find(|col| &col.name == col_name)
+                    .ok_or_else(|| anyhow::anyhow!("Column `{col_name}` not found in table `{table_name}`"))?;
+
+                let table_id = stdb.table_id_from_name_mut(tx, &table_name)?.unwrap();
+                let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
+                let col_schema = table_schema
+                    .columns
+                    .iter()
+                    .find(|col| &col.col_name == col_name)
+                    .ok_or_else(|| anyhow::anyhow!("Column `{col_name}` not found in table `{table_name}`"))?;
+
+                log!(
+                    logger,
+                    "Changing column accessor name for `{}`.`{}` to `{}`",
+                    table_name,
+                    col_name,
+                    new_col_def.accessor_name,
+                );
+                stdb.alter_column_accessor_name(tx, table_id, col_schema.col_pos, new_col_def.accessor_name.clone())?;
+            }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeIndexSourceName(key) => {
+                let (namespace, index_name) = key;
+                let (_old_owning_def, old_table_def) =
+                    plan.old.find_storing_table(namespace, index_name).ok_or_else(|| {
+                        anyhow::anyhow!("ChangeIndexSourceName: `{index_name}` not found in old module def")
+                    })?;
+                let (_new_owning_def, new_table_def) =
+                    plan.new.find_storing_table(namespace, index_name).ok_or_else(|| {
+                        anyhow::anyhow!("ChangeIndexSourceName: `{index_name}` not found in new module def")
+                    })?;
+                let table_full_name = joined(namespace, &old_table_def.name);
+                let stored_name = namespace.join_raw(&index_name.clone().into());
+                let new_index_def = new_table_def
+                    .indexes
+                    .get(index_name)
+                    .ok_or_else(|| anyhow::anyhow!("Index `{index_name}` not found in table `{table_full_name}`"))?;
+
+                let table_id = stdb.table_id_from_name_mut(tx, &table_full_name)?.unwrap();
+                let table_schema = stdb.schema_for_table_mut(tx, table_id)?;
+                let index_schema = table_schema
+                    .indexes
+                    .iter()
+                    .find(|index| index.index_name == stored_name)
+                    .ok_or_else(|| anyhow::anyhow!("Index `{index_name}` not found in table `{table_full_name}`"))?;
+                let new_source_name = namespace.join_raw(&new_index_def.source_name.clone().into());
+
+                log!(
+                    logger,
+                    "Changing index source name for `{}` on table `{}` from `{}` to `{}`",
+                    index_name,
+                    table_full_name,
+                    index_schema.alias.as_deref().unwrap_or(""),
+                    new_source_name,
+                );
+                stdb.alter_index_source_name(tx, index_schema.index_id, new_source_name)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveConstraint(key) => {
                 let (namespace, constraint_name) = key;
@@ -651,13 +734,13 @@ mod test {
     use spacetimedb_datastore::system_tables::ST_EVENT_TABLE_ID;
     use spacetimedb_lib::{
         db::raw_def::{
-            v10::{RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10},
+            v10::{ExplicitNames, RawModuleDefV10Builder, RawModuleDefV10Section, RawSubmoduleV10},
             v9::{btree, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess},
         },
         Identity,
     };
-    use spacetimedb_sats::{product, AlgebraicType, AlgebraicType::U64, ProductType};
-    use spacetimedb_schema::{auto_migrate::ponder_migrate, def::ModuleDef};
+    use spacetimedb_sats::{product, raw_identifier::RawIdentifier, AlgebraicType, AlgebraicType::U64, ProductType};
+    use spacetimedb_schema::auto_migrate::ponder_migrate;
 
     struct TestLogger;
     impl UpdateLogger for TestLogger {
@@ -735,6 +818,111 @@ mod test {
             tx.pending_schema_changes(),
             [PendingSchemaChange::IndexAdded(t_id, idx_b_id, None)]
         );
+
+        Ok(())
+    }
+
+    #[test]
+    fn update_db_change_index_source_name_updates_lookup_and_persists() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        fn module_def(table_source_name: &str, index_source_name: &str) -> ModuleDef {
+            let mut builder = RawModuleDefV10Builder::new();
+            builder
+                .build_table_with_new_type(
+                    table_source_name.to_owned(),
+                    ProductType::from([("id", U64), ("emailAddress", AlgebraicType::String)]),
+                    true,
+                )
+                .with_access(TableAccess::Public)
+                .with_index(btree(1), index_source_name.to_owned(), "emailAddress")
+                .finish();
+
+            if table_source_name != "users" {
+                let mut explicit_names = ExplicitNames::default();
+                explicit_names.insert_table(table_source_name.to_owned(), "users");
+                builder.add_explicit_names(explicit_names);
+            }
+
+            builder
+                .finish()
+                .try_into()
+                .expect("builder should create a valid database definition")
+        }
+
+        let old_source_name = "users_emailAddress_idx_btree";
+        let new_source_name = "appUsers_emailAddress_idx_btree";
+        let old = module_def("users", old_source_name);
+        let new = module_def("appUsers", new_source_name);
+
+        let mut tx = begin_mut_tx(&stdb);
+        for def in old.tables() {
+            create_table_from_def(&stdb, &mut tx, &old, def)?;
+        }
+        stdb.commit_tx(tx)?;
+
+        let tx = begin_mut_tx(&stdb);
+        let table_id = stdb
+            .table_id_from_name_mut(&tx, "users")?
+            .expect("there should be a table named users");
+        let table_schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        let index_schema = table_schema
+            .indexes
+            .first()
+            .expect("there should be a single index")
+            .clone();
+        let canonical_index_name = index_schema.index_name.to_string();
+        let index_id = index_schema.index_id;
+        assert_eq!(stdb.index_id_from_name_mut(&tx, old_source_name)?, Some(index_id));
+        assert_eq!(stdb.index_id_from_name_mut(&tx, new_source_name)?, None);
+        assert_eq!(stdb.index_id_from_name_mut(&tx, &canonical_index_name)?, Some(index_id));
+        drop(tx);
+
+        let MigratePlan::Auto(plan) = ponder_migrate(&old, &new)? else {
+            panic!("expected automatic migration");
+        };
+        let root = NamespacePath::root();
+        let index_name = RawIdentifier::new(canonical_index_name.as_str());
+        assert!(
+            plan.steps
+                .contains(&AutoMigrateStep::ChangeIndexSourceName((&root, &index_name))),
+            "plan steps: {:?}",
+            plan.steps
+        );
+        assert!(
+            !plan.steps.contains(&AutoMigrateStep::RemoveIndex((&root, &index_name))),
+            "plan steps: {:?}",
+            plan.steps
+        );
+        assert!(
+            !plan.steps.contains(&AutoMigrateStep::AddIndex((&root, &index_name))),
+            "plan steps: {:?}",
+            plan.steps
+        );
+        let mut tx = begin_mut_tx(&stdb);
+        let res = update_database(&stdb, &mut tx, auth_ctx, MigratePlan::Auto(plan), &TestLogger)?;
+        assert!(matches!(res, UpdateResult::Success));
+
+        assert_eq!(stdb.index_id_from_name_mut(&tx, old_source_name)?, None);
+        assert_eq!(stdb.index_id_from_name_mut(&tx, new_source_name)?, Some(index_id));
+        assert_eq!(stdb.index_id_from_name_mut(&tx, &canonical_index_name)?, Some(index_id));
+        assert!(
+            tx.pending_schema_changes().iter().any(|change| matches!(
+                change,
+                PendingSchemaChange::IndexAlterSourceName(tid, iid, Some(old_alias))
+                    if *tid == table_id && *iid == index_id && old_alias.as_ref() == old_source_name
+            )),
+            "pending schema changes: {:?}",
+            tx.pending_schema_changes()
+        );
+        stdb.commit_tx(tx)?;
+
+        let stdb = stdb.reopen()?;
+        let tx = begin_mut_tx(&stdb);
+        assert_eq!(stdb.index_id_from_name_mut(&tx, old_source_name)?, None);
+        assert_eq!(stdb.index_id_from_name_mut(&tx, new_source_name)?, Some(index_id));
+        assert_eq!(stdb.index_id_from_name_mut(&tx, &canonical_index_name)?, Some(index_id));
 
         Ok(())
     }

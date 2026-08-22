@@ -156,3 +156,33 @@ describe('BinaryReader/Writer', () => {
     expect(deserializedTransactionUpdate).toEqual(transactionUpdate);
   });
 });
+
+describe('readUInt8Array buffer ownership', () => {
+  // BSATN layout for `array<u8>`: u32 length (LE) followed by that many bytes.
+  const encode = (bytes: number[]): Uint8Array =>
+    new Uint8Array([bytes.length, 0, 0, 0, ...bytes]);
+
+  test('returns an owned copy that survives later mutation of the reader buffer', () => {
+    const buffer = encode([1, 2, 3]);
+    const value = new BinaryReader(buffer).readUInt8Array();
+    expect([...value]).toEqual([1, 2, 3]);
+
+    // Simulate the runtime reusing the scan buffer for a subsequent table scan:
+    // it overwrites the bytes the value was read from. A view would change here;
+    // an owned copy must not.
+    buffer.fill(0xff);
+    expect([...value]).toEqual([1, 2, 3]);
+  });
+
+  test('does not share the reader backing ArrayBuffer', () => {
+    const buffer = encode([1, 2, 3]);
+    const value = new BinaryReader(buffer).readUInt8Array();
+    expect(value.buffer).not.toBe(buffer.buffer);
+  });
+
+  test('readString still decodes correctly', () => {
+    const bytes = [...new TextEncoder().encode('héllo ☃')];
+    const value = new BinaryReader(encode(bytes)).readString();
+    expect(value).toBe('héllo ☃');
+  });
+});

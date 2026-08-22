@@ -1,0 +1,11 @@
+[package]
+name = "smoketest-module-auto-migration-with-primary-key"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb.workspace = true
