@@ -212,66 +212,87 @@ fn auto_migrate_database(
     // Schema should be queries only when needed to ensure that any schema changes made during earlier migration steps are visible
     // to later steps.
 
-    for precheck in plan.prechecks {
-        match precheck {
-            spacetimedb_schema::auto_migrate::AutoMigratePrecheck::CheckAddSequenceRangeValid(key) => {
-                let (namespace, sequence_name) = key;
-                let (_, table_def) = plan.new.find_storing_table(namespace, sequence_name).ok_or_else(|| {
-                    anyhow::anyhow!("Precheck: sequence `{sequence_name}` not found in new module def")
-                })?;
-                let sequence_def: &SequenceDef = plan.new.lookup(key).ok_or_else(|| {
-                    anyhow::anyhow!("Precheck: sequence `{sequence_name}` not found in new module def")
-                })?;
-                let table_full_name = joined(namespace, &table_def.name);
-                let table_id = stdb.table_id_from_name_mut(tx, &table_full_name)?.unwrap();
+    // Run all prechecks before failing, so a publish with several offending
+    // tables reports every failure at once instead of one per publish attempt.
+    let mut precheck_failures: Vec<anyhow::Error> = Vec::new();
+    for precheck in &plan.prechecks {
+        let result: anyhow::Result<()> = (|| {
+            match precheck {
+                spacetimedb_schema::auto_migrate::AutoMigratePrecheck::CheckAddSequenceRangeValid(key) => {
+                    let (namespace, sequence_name) = *key;
+                    let (_, table_def) = plan.new.find_storing_table(namespace, sequence_name).ok_or_else(|| {
+                        anyhow::anyhow!("Precheck: sequence `{sequence_name}` not found in new module def")
+                    })?;
+                    let sequence_def: &SequenceDef = plan.new.lookup(*key).ok_or_else(|| {
+                        anyhow::anyhow!("Precheck: sequence `{sequence_name}` not found in new module def")
+                    })?;
+                    let table_full_name = joined(namespace, &table_def.name);
+                    let table_id = stdb.table_id_from_name_mut(tx, &table_full_name)?.unwrap();
 
-                let ty = table_def
-                    .get_column(sequence_def.column)
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} refers to unknown column")
-                    })?
-                    .ty
-                    .clone();
+                    let ty = table_def
+                        .get_column(sequence_def.column)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Precheck failed: added sequence {sequence_name} refers to unknown column")
+                        })?
+                        .ty
+                        .clone();
 
-                // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
-                let min = ty
-                    .saturating_value_from_i128(sequence_def.min_value.unwrap_or(1))
+                    // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
+                    let min = ty
+                        .saturating_value_from_i128(sequence_def.min_value.unwrap_or(1))
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
+                        })?;
+
+                    let max = match sequence_def.max_value {
+                        Some(max) => ty.saturating_value_from_i128(max),
+                        None => ty.saturating_value_from_i128(i128::MAX),
+                    }
                     .ok_or_else(|| {
-                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
+                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
                     })?;
 
-                let max = match sequence_def.max_value {
-                    Some(max) => ty.saturating_value_from_i128(max),
-                    None => ty.saturating_value_from_i128(i128::MAX),
+                    let range = min..=max;
+                    if stdb
+                        .iter_by_col_range_mut(tx, table_id, sequence_def.column, range)?
+                        .next()
+                        .is_some()
+                    {
+                        anyhow::bail!("Precheck failed: added sequence {sequence_name} already has values in range",);
+                    }
                 }
-                .ok_or_else(|| {
-                    anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
-                })?;
-
-                let range = min..=max;
-                if stdb
-                    .iter_by_col_range_mut(tx, table_id, sequence_def.column, range)?
-                    .next()
-                    .is_some()
-                {
-                    anyhow::bail!("Precheck failed: added sequence {sequence_name} already has values in range",);
-                }
-            }
-            spacetimedb_schema::auto_migrate::AutoMigratePrecheck::CheckTableEmpty(table_name_key) => {
-                let (namespace, local) = table_name_key;
-                let table_name = joined(namespace, local);
-                let table_id = stdb
-                    .table_id_from_name_mut(tx, &table_name)?
-                    .ok_or_else(|| anyhow::anyhow!("Precheck: table `{table_name}` not found in database"))?;
-                let row_count = stdb.table_row_count_mut(tx, table_id).unwrap_or(0);
-                if row_count > 0 {
-                    anyhow::bail!(
-                        "Precheck failed: table `{table_name}` contains data ({row_count} rows), \
+                spacetimedb_schema::auto_migrate::AutoMigratePrecheck::CheckTableEmpty(table_name_key) => {
+                    let (namespace, local) = *table_name_key;
+                    let table_name = joined(namespace, local);
+                    let table_id = stdb
+                        .table_id_from_name_mut(tx, &table_name)?
+                        .ok_or_else(|| anyhow::anyhow!("Precheck: table `{table_name}` not found in database"))?;
+                    let row_count = stdb.table_row_count_mut(tx, table_id).unwrap_or(0);
+                    if row_count > 0 {
+                        anyhow::bail!(
+                            "Precheck failed: table `{table_name}` contains data ({row_count} rows), \
                          but this migration requires it to be empty. \
                          Clear the table's rows (e.g. via a reducer) before publishing."
-                    );
+                        );
+                    }
                 }
             }
+            Ok(())
+        })();
+        if let Err(e) = result {
+            precheck_failures.push(e);
+        }
+    }
+    match precheck_failures.len() {
+        0 => {}
+        // A single failure is returned as-is.
+        1 => return Err(precheck_failures.remove(0)),
+        n => {
+            let mut msg = format!("{n} prechecks failed:");
+            for e in &precheck_failures {
+                msg.push_str(&format!("\n- {e}"));
+            }
+            return Err(anyhow::anyhow!(msg));
         }
     }
 
@@ -1915,6 +1936,51 @@ mod test {
     #[test]
     fn replay_generally_reschemaed_table_after_snapshot() -> anyhow::Result<()> {
         replay_generally_reschemaed_table(TakeSnapshot::BeforeAutomigration)
+    }
+
+    #[test]
+    fn precheck_failures_report_all_offending_tables() -> anyhow::Result<()> {
+        // Two tables, both incompatibly retyped, both populated:
+        // the failed publish must name both, not just the first.
+        let build = |v2: bool| -> ModuleDef {
+            let mut builder = RawModuleDefV9Builder::new();
+            let ty = if v2 { AlgebraicType::U32 } else { AlgebraicType::String };
+            for name in ["alpha", "beta"] {
+                builder
+                    .build_table_with_new_type(name, ProductType::from([("id", U64), ("x", ty.clone())]), true)
+                    .with_access(TableAccess::Public)
+                    .finish();
+            }
+            builder
+                .finish()
+                .try_into()
+                .expect("should be a valid module definition")
+        };
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+        let old = build(false);
+        let new = build(true);
+
+        let alpha_id = create_table_for_module(&stdb, &old, "alpha")?;
+        let mut tx = begin_mut_tx(&stdb);
+        let beta_id = stdb
+            .table_id_from_name_mut(&tx, "beta")?
+            .expect("`beta` table should exist");
+        insert(&stdb, &mut tx, alpha_id, &product![1u64, "a"])?;
+        insert(&stdb, &mut tx, beta_id, &product![2u64, "b"])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let err = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)
+            .err()
+            .expect("migrating two populated tables should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("2 prechecks failed"), "got: {msg}");
+        assert!(msg.contains("`alpha`"), "got: {msg}");
+        assert!(msg.contains("`beta`"), "got: {msg}");
+        assert_eq!(tx.pending_schema_changes(), []);
+        Ok(())
     }
 
     /// A single-table module whose `events` table's `is_event` flag is `is_event`.
