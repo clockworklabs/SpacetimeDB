@@ -325,6 +325,20 @@ impl MigrationFormatter for TermColorFormatter {
         self.buffer.write_all(b")\n")
     }
 
+    fn format_change_event_flag(&mut self, table_name: &NamespacedIdentifier, new_is_event: bool) -> io::Result<()> {
+        let direction = if new_is_event {
+            "non-event \u{2192} event"
+        } else {
+            "event \u{2192} non-event"
+        };
+        self.write_action_prefix(&Action::Changed)?;
+        self.buffer.write_all(b" event flag for table ")?;
+        self.write_colored(table_name, Some(self.colors.table_name), true)?;
+        self.buffer.write_all(b" (")?;
+        self.write_colored(direction, Some(self.colors.access), false)?;
+        self.buffer.write_all(b")\n")
+    }
+
     fn format_change_primary_key(
         &mut self,
         table_name: &NamespacedIdentifier,

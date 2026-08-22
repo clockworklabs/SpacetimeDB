@@ -820,6 +820,14 @@ impl<'cs> ReplayCommittedState<'cs> {
             self.st_column_changed(referenced_table_id)?;
         }
 
+        if table_id == ST_EVENT_TABLE_ID {
+            // An `st_event_table` row was inserted; flip `is_event = true`
+            // on the referenced table's cached schema.
+            // The `table_id` is the first (and only) field in `StEventTableRow`.
+            let referenced_table_id = Self::read_table_id(row);
+            self.reschema_table_for_st_event_table_update(referenced_table_id, true);
+        }
+
         Ok(())
     }
 
@@ -1019,7 +1027,33 @@ impl<'cs> ReplayCommittedState<'cs> {
             }
         }
 
+        if table_id == ST_EVENT_TABLE_ID {
+            // An `st_event_table` row was deleted; flip `is_event = false`
+            // on the referenced table's cached schema.
+            // The `table_id` is the first (and only) field in `StEventTableRow`.
+            // If the referenced table was dropped in this transaction, its in-memory
+            // structure is already gone and there is nothing to update.
+            let referenced_table_id = Self::read_table_id(row);
+            if !self.replay_table_dropped.contains(&referenced_table_id) {
+                self.reschema_table_for_st_event_table_update(referenced_table_id, false);
+            }
+        }
+
         Ok(())
+    }
+
+    /// Update the in-memory table structure's `is_event` flag in response to
+    /// replay of an `st_event_table` mutation.
+    fn reschema_table_for_st_event_table_update(&mut self, table_id: TableId, is_event: bool) {
+        // We only need to update if we've already constructed the in-memory table structure.
+        // If we haven't yet, then `get_table_and_blob_store_or_create` will see the correct
+        // schema (via a live `st_event_table` lookup) when it eventually runs.
+        if let Ok((table, ..)) = self.get_table_and_blob_store_mut(table_id) {
+            assert_eq!(table.row_count, 0);
+            table.with_mut_schema(|schema| {
+                schema.is_event = is_event;
+            });
+        }
     }
 
     fn is_event_table_for_replay(&self, table_id: TableId) -> Result<bool> {
@@ -1040,6 +1074,27 @@ impl<'cs> ReplayCommittedState<'cs> {
         // (1) Table dropped? Avoid an error and just ignore the row instead.
         if self.replay_table_dropped.contains(&table_id) {
             return Ok(());
+        }
+
+        if table_id == ST_EVENT_TABLE_ID {
+            // A delete which empties a table is persisted as a truncation,
+            // so an `is_event = false` flip which empties `st_event_table`
+            // reaches replay as a truncation of `st_event_table`.
+            // Flip `is_event = false` on every table its rows reference.
+            let unmarked: Vec<TableId> = self
+                .table_scan(ST_EVENT_TABLE_ID)
+                .expect("`st_event_table` should exist when replaying its truncation")
+                .map(|row_ref| {
+                    row_ref
+                        .read_col::<TableId>(StEventTableFields::TableId)
+                        .expect("`st_event_table` row should conform to `st_event_table` schema")
+                })
+                .collect();
+            for referenced_table_id in unmarked {
+                if !self.replay_table_dropped.contains(&referenced_table_id) {
+                    self.reschema_table_for_st_event_table_update(referenced_table_id, false);
+                }
+            }
         }
 
         // Get the table for mutation.

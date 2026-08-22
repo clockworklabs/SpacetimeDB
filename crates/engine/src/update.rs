@@ -606,6 +606,21 @@ fn auto_migrate_database(
                 };
                 stdb.alter_table_access(tx, &table_name, access.into())?;
             }
+            spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeEventFlag(table_name_key) => {
+                let (namespace, local) = table_name_key;
+                let table_name = joined(namespace, local);
+                let (_owning_def, table_def) = plan.new.find_table(table_name_key).ok_or_else(|| {
+                    anyhow::anyhow!("ChangeEventFlag: table `{table_name}` not found in new module def")
+                })?;
+                log!(
+                    logger,
+                    "Changing `event` flag on table `{table_name}` to `{}`",
+                    table_def.is_event
+                );
+                // Emptiness was already validated by the matching `CheckTableEmpty` precheck;
+                // the datastore re-checks it as a backstop.
+                stdb.alter_table_event_flag(tx, &table_name, table_def.is_event)?;
+            }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangePrimaryKey(table_name_key) => {
                 let (namespace, local) = table_name_key;
                 let table_name = joined(namespace, local);
@@ -1900,6 +1915,159 @@ mod test {
     #[test]
     fn replay_generally_reschemaed_table_after_snapshot() -> anyhow::Result<()> {
         replay_generally_reschemaed_table(TakeSnapshot::BeforeAutomigration)
+    }
+
+    /// A single-table module whose `events` table's `is_event` flag is `is_event`.
+    fn eventable_module(is_event: bool) -> ModuleDef {
+        let mut builder = RawModuleDefV10Builder::new();
+        builder
+            .build_table_with_new_type("events", ProductType::from([("id", U64)]), true)
+            .with_event(is_event)
+            .with_access(TableAccess::Public)
+            .finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    fn assert_is_event(stdb: &TestDB, tx: &MutTx, table_id: TableId, expected: bool) -> anyhow::Result<()> {
+        let schema = stdb.schema_for_table_mut(tx, table_id)?;
+        assert_eq!(schema.is_event, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn change_event_flag_empty_table_succeeds() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = eventable_module(false);
+        let new = eventable_module(true);
+        let table_id = create_table_for_module(&stdb, &old, "events")?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        assert_is_event(&stdb, &tx, table_id, false)?;
+
+        let plan = ponder_migrate(&old, &new)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx.clone(), plan, &TestLogger)?;
+        assert!(
+            matches!(res, UpdateResult::RequiresClientDisconnect),
+            "flipping the `event` flag should disconnect clients"
+        );
+        assert_is_event(&stdb, &tx, table_id, true)?;
+        assert_eq!(
+            tx.pending_schema_changes(),
+            [PendingSchemaChange::TableAlterEventFlag(table_id, false)]
+        );
+        stdb.commit_tx(tx)?;
+
+        // And flip back.
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&new, &old)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        assert!(matches!(res, UpdateResult::RequiresClientDisconnect));
+        assert_is_event(&stdb, &tx, table_id, false)?;
+        stdb.commit_tx(tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn change_event_flag_nonempty_table_fails() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = eventable_module(false);
+        let new = eventable_module(true);
+        let table_id = create_table_for_module(&stdb, &old, "events")?;
+
+        // Insert a row in a separate tx so the pre-flip table state is committed.
+        let mut tx = begin_mut_tx(&stdb);
+        insert(&stdb, &mut tx, table_id, &product![42u64])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let err = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)
+            .err()
+            .expect("flipping `is_event` on a non-empty table should fail");
+        assert!(
+            err.to_string().contains("contains data"),
+            "error should mention that the table contains data, got: {err}"
+        );
+        assert_is_event(&stdb, &tx, table_id, false)?;
+        assert_eq!(tx.pending_schema_changes(), []);
+        Ok(())
+    }
+
+    /// Flips `events` from non-event to event and back to non-event across commits,
+    /// inserting rows before the first flip (deleted) and after the second,
+    /// then replays the commitlog and verifies flag and rows.
+    fn replay_event_flag_flip(snapshot: TakeSnapshot) -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let with_snapshot = matches!(snapshot, TakeSnapshot::BeforeAutomigration);
+        let stdb = with_snapshotting(with_snapshot)?;
+
+        let non_event = eventable_module(false);
+        let event = eventable_module(true);
+        let table_id = create_table_for_module(&stdb, &non_event, "events")?;
+
+        // Commitlog contains writes to the table while it was a regular table.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            insert(&stdb, &mut tx, table_id, &product![7u64])?;
+            stdb.commit_tx(tx)?;
+
+            let mut tx = begin_mut_tx(&stdb);
+            assert_eq!(stdb.delete_by_rel(&mut tx, table_id, [product![7u64]]), 1);
+            stdb.commit_tx(tx)?;
+        }
+
+        if with_snapshot {
+            take_snapshot(&stdb)?;
+        }
+
+        // Flip to event...
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&non_event, &event)?;
+            let _ = update_database(&stdb, &mut tx, auth_ctx.clone(), plan, &TestLogger)?;
+            stdb.commit_tx(tx)?;
+        }
+
+        // ...and back to non-event.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&event, &non_event)?;
+            let _ = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+            stdb.commit_tx(tx)?;
+        }
+
+        // Insert a row now that the table is a regular table again.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            insert(&stdb, &mut tx, table_id, &product![42u64])?;
+            stdb.commit_tx(tx)?;
+        }
+
+        // Replay the commitlog and verify the flag and the rows survived.
+        let stdb = stdb.reopen()?;
+        let tx = begin_mut_tx(&stdb);
+        assert_is_event(&stdb, &tx, table_id, false)?;
+        assert_eq!(collect_rows(&stdb, &tx, table_id)?, [product![42u64]]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn replay_event_flag_flip_no_snapshot() -> anyhow::Result<()> {
+        replay_event_flag_flip(TakeSnapshot::None)
+    }
+
+    #[test]
+    fn replay_event_flag_flip_after_snapshot() -> anyhow::Result<()> {
+        replay_event_flag_flip(TakeSnapshot::BeforeAutomigration)
     }
 
     #[test]

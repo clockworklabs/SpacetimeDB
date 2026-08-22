@@ -28,6 +28,7 @@ fn step_namespace<'a, 'def>(step: &'a AutoMigrateStep<'def>) -> Option<&'a Names
         | AutoMigrateStep::AddSchedule((ns, _))
         | AutoMigrateStep::AddView((ns, _))
         | AutoMigrateStep::ChangeAccess((ns, _))
+        | AutoMigrateStep::ChangeEventFlag((ns, _))
         | AutoMigrateStep::ChangePrimaryKey((ns, _))
         | AutoMigrateStep::UpdateView((ns, _))
         | AutoMigrateStep::RemoveIndex((ns, _))

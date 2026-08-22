@@ -856,6 +856,12 @@ impl CommittedState {
                 let table = self.tables.get_mut(&table_id)?;
                 table.with_mut_schema(|s| s.table_access = access);
             }
+            // A table's `is_event` flag was changed. Change back to the old one.
+            TableAlterEventFlag(table_id, old_is_event) => {
+                let table = self.tables.get_mut(&table_id)?;
+                assert_eq!(table.row_count, 0);
+                table.with_mut_schema(|s| s.is_event = old_is_event);
+            }
             // A table's primary key was changed. Change back to the old one.
             TableAlterPrimaryKey(table_id, old_pk) => {
                 let table = self.tables.get_mut(&table_id)?;

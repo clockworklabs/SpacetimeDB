@@ -97,6 +97,12 @@ fn format_step<F: MigrationFormatter>(
             let access_info = extract_access_change_info(*table, plan)?;
             f.format_change_access(&access_info)
         }
+        AutoMigrateStep::ChangeEventFlag(table) => {
+            let name = joined(*table);
+            let not_found = || FormattingErrors::TableNotFound { table: (&*name).into() };
+            let (_, new_table) = plan.new.find_table(*table).ok_or_else(not_found)?;
+            f.format_change_event_flag(&name, new_table.is_event)
+        }
         AutoMigrateStep::ChangePrimaryKey(table) => {
             let name = joined(*table);
             let not_found = || FormattingErrors::TableNotFound { table: (&*name).into() };
@@ -189,6 +195,7 @@ pub trait MigrationFormatter {
     fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action) -> io::Result<()>;
     fn format_sequence(&mut self, sequence_info: &SequenceInfo, action: Action) -> io::Result<()>;
     fn format_change_access(&mut self, access_info: &AccessChangeInfo) -> io::Result<()>;
+    fn format_change_event_flag(&mut self, table_name: &NamespacedIdentifier, new_is_event: bool) -> io::Result<()>;
     fn format_change_primary_key(
         &mut self,
         table_name: &NamespacedIdentifier,

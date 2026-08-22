@@ -956,8 +956,7 @@ impl MutTxId {
 
         // Insert into st_event_table if this is an event table.
         if is_event {
-            let row = StEventTableRow { table_id };
-            self.insert_via_serialize_bsatn(ST_EVENT_TABLE_ID, &row)?;
+            self.insert_st_event_table_row(table_id)?;
         }
 
         // Create the indexes for the table.
@@ -1385,6 +1384,56 @@ impl MutTxId {
         self.update_st_table_row(table_id, |st| st.table_access = access)?;
 
         Ok(())
+    }
+
+    /// Change the `is_event` flag of the table identified by `table_id`.
+    ///
+    /// Updates both the in-memory schema and the `st_event_table` system table.
+    /// This is only valid on a table with no resident rows (the committed-state
+    /// semantics of the table flip); errors with [`TableError::TableNotEmpty`] otherwise.
+    /// The flip is a breaking change for subscribed clients,
+    /// so callers must arrange a `DisconnectAllUsers`.
+    pub(crate) fn alter_table_event_flag(&mut self, table_id: TableId, is_event: bool) -> Result<()> {
+        // Write to the table in the tx state (and clone into commit state).
+        let ((tx_table, ..), (commit_table, ..)) = self.get_or_create_insert_table_mut(table_id)?;
+        let old_is_event = tx_table.get_schema().is_event;
+        if old_is_event == is_event {
+            // Idempotent no-op; do not record a pending change or it would confuse rollback.
+            return Ok(());
+        }
+        if tx_table.row_count != 0 || commit_table.row_count != 0 {
+            // N.b. the delete table must also be empty, 'cause the committed table is empty.
+            return Err(TableError::TableNotEmpty(table_id).into());
+        }
+        tx_table.with_mut_schema_and_clone(commit_table, |s| s.is_event = is_event);
+
+        // Remember the pending change so we can undo it if a later system-table update fails.
+        self.push_schema_change(PendingSchemaChange::TableAlterEventFlag(table_id, old_is_event));
+
+        // Update `st_event_table`.
+        if is_event {
+            self.insert_st_event_table_row(table_id)?;
+        } else {
+            self.delete_st_event_table_row(table_id)?;
+        }
+
+        Ok(())
+    }
+
+    /// Inserts a row into `st_event_table` marking `table_id` as an event table.
+    fn insert_st_event_table_row(&mut self, table_id: TableId) -> Result<()> {
+        let row = StEventTableRow { table_id };
+        self.insert_via_serialize_bsatn(ST_EVENT_TABLE_ID, &row)?;
+        Ok(())
+    }
+
+    /// Drops the row in `st_event_table` for this `table_id`.
+    fn delete_st_event_table_row(&mut self, table_id: TableId) -> Result<()> {
+        self.delete_col_eq(
+            ST_EVENT_TABLE_ID,
+            StEventTableFields::TableId.col_id(),
+            &table_id.into(),
+        )
     }
 
     /// Change the primary key of the table identified by `table_id`.
