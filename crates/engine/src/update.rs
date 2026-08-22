@@ -1540,15 +1540,15 @@ mod test {
             .expect("should be a valid module definition")
     }
 
-    /// Creates the tables of `module` in `stdb`, returning the [`TableId`] of `points`.
-    fn create_points_table(stdb: &TestDB, module: &ModuleDef) -> anyhow::Result<TableId> {
+    /// Creates the tables of `module` in `stdb`, returning the [`TableId`] of `table_name`.
+    fn create_table_for_module(stdb: &TestDB, module: &ModuleDef, table_name: &str) -> anyhow::Result<TableId> {
         let mut tx = begin_mut_tx(stdb);
         for def in module.tables() {
             create_table_from_def(stdb, &mut tx, module, def)?;
         }
         let table_id = stdb
-            .table_id_from_name_mut(&tx, "points")?
-            .expect("`points` table should exist");
+            .table_id_from_name_mut(&tx, table_name)?
+            .unwrap_or_else(|| panic!("`{table_name}` table should exist"));
         stdb.commit_tx(tx)?;
         Ok(table_id)
     }
@@ -1581,7 +1581,7 @@ mod test {
 
         let old = points_module(false);
         let new = points_module(true);
-        let table_id = create_points_table(&stdb, &old)?;
+        let table_id = create_table_for_module(&stdb, &old, "points")?;
 
         // Insert a row and delete it again: a table which previously contained rows
         // keeps residual (row-empty) pages, which the reschema must handle.
@@ -1636,7 +1636,7 @@ mod test {
 
         let old = points_module(false);
         let new = points_module(true);
-        let table_id = create_points_table(&stdb, &old)?;
+        let table_id = create_table_for_module(&stdb, &old, "points")?;
 
         let mut tx = begin_mut_tx(&stdb);
         insert(&stdb, &mut tx, table_id, &product![7u64, "p1"])?;
@@ -1671,7 +1671,7 @@ mod test {
 
         let old = points_module(false);
         let new = points_module(true);
-        let table_id = create_points_table(&stdb, &old)?;
+        let table_id = create_table_for_module(&stdb, &old, "points")?;
 
         // Insert a row and delete it again, so the commitlog contains writes to the
         // table in the old layout, while the table is empty at migration time.
@@ -1725,6 +1725,181 @@ mod test {
     #[test]
     fn replay_reordered_table_after_snapshot() -> anyhow::Result<()> {
         replay_reordered_table(TakeSnapshot::BeforeAutomigration)
+    }
+
+    /// A module whose `fruits` table changes shape between versions:
+    /// v1 = (id: U64, name: String, count: U16); v2 = (id: U64, label: String, weight: U32).
+    /// Relative to v1, v2 removes `count`, renames `name` to `label` (remove+add),
+    /// and adds `weight` without a default -- all only valid on an empty table.
+    fn fruits_module(v2: bool) -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        let product_type = if v2 {
+            ProductType::from([
+                ("id", U64),
+                ("label", AlgebraicType::String),
+                ("weight", AlgebraicType::U32),
+            ])
+        } else {
+            ProductType::from([
+                ("id", U64),
+                ("name", AlgebraicType::String),
+                ("count", AlgebraicType::U16),
+            ])
+        };
+        builder
+            .build_table_with_new_type("fruits", product_type, true)
+            .with_unique_constraint(0)
+            .with_index(btree(0), "fruits_id_idx")
+            .with_primary_key(0)
+            .with_access(TableAccess::Public)
+            .finish();
+        builder
+            .finish()
+            .try_into()
+            .expect("should be a valid module definition")
+    }
+
+    #[test]
+    fn general_reschema_empty_table_succeeds() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = fruits_module(false);
+        let new = fruits_module(true);
+        let table_id = create_table_for_module(&stdb, &old, "fruits")?;
+
+        // Insert a row and delete it again: a table which previously contained rows
+        // keeps residual (row-empty) pages, which the reschema must handle.
+        let mut tx = begin_mut_tx(&stdb);
+        insert(&stdb, &mut tx, table_id, &product![7u64, "gone", 1u16])?;
+        stdb.commit_tx(tx)?;
+        let mut tx = begin_mut_tx(&stdb);
+        assert_eq!(stdb.delete_by_rel(&mut tx, table_id, [product![7u64, "gone", 1u16]]), 1);
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+        assert!(
+            matches!(res, UpdateResult::RequiresClientDisconnect),
+            "an empty-table reschema should disconnect clients"
+        );
+
+        // The stored schema now has the new columns; the sub-objects on the
+        // unchanged `id` column survive, so the reschema is the only pending change.
+        assert_column_order(&stdb, &tx, table_id, &["id", "label", "weight"], Some(ColId(0)))?;
+        assert!(
+            matches!(
+                tx.pending_schema_changes(),
+                [PendingSchemaChange::ReschemaEmptyTable(..)]
+            ),
+            "{:?}",
+            tx.pending_schema_changes()
+        );
+        stdb.commit_tx(tx)?;
+
+        // The table is usable with the new layout: insert a row and read it back.
+        let mut tx = begin_mut_tx(&stdb);
+        insert(&stdb, &mut tx, table_id, &product![42u64, "f1", 9u32])?;
+        assert_eq!(collect_rows(&stdb, &tx, table_id)?, [product![42u64, "f1", 9u32]]);
+        stdb.commit_tx(tx)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn general_reschema_nonempty_table_fails() -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let stdb = TestDB::durable()?;
+
+        let old = fruits_module(false);
+        let new = fruits_module(true);
+        let table_id = create_table_for_module(&stdb, &old, "fruits")?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        insert(&stdb, &mut tx, table_id, &product![7u64, "f1", 1u16])?;
+        stdb.commit_tx(tx)?;
+
+        let mut tx = begin_mut_tx(&stdb);
+        let plan = ponder_migrate(&old, &new)?;
+        let result = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger);
+        let err = result.err().expect("reschemaing a non-empty table should fail");
+        assert!(
+            err.to_string().contains("contains data"),
+            "error should mention that the table contains data, got: {err}"
+        );
+        assert_eq!(tx.pending_schema_changes(), []);
+
+        // The table keeps its old layout and contents.
+        assert_column_order(&stdb, &tx, table_id, &["id", "name", "count"], Some(ColId(0)))?;
+        assert_eq!(collect_rows(&stdb, &tx, table_id)?, [product![7u64, "f1", 1u16]]);
+
+        Ok(())
+    }
+
+    /// Applies the general reschema (remove + rename + add-without-default) to the
+    /// (empty) `fruits` table, then replays the commitlog.
+    fn replay_generally_reschemaed_table(snapshot: TakeSnapshot) -> anyhow::Result<()> {
+        let auth_ctx = AuthCtx::for_testing();
+        let with_snapshot = matches!(snapshot, TakeSnapshot::BeforeAutomigration);
+        let stdb = with_snapshotting(with_snapshot)?;
+
+        let old = fruits_module(false);
+        let new = fruits_module(true);
+        let table_id = create_table_for_module(&stdb, &old, "fruits")?;
+
+        // Insert a row and delete it again, so the commitlog contains writes to the
+        // table in the old layout, while the table is empty at migration time.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            insert(&stdb, &mut tx, table_id, &product![7u64, "gone", 1u16])?;
+            stdb.commit_tx(tx)?;
+
+            let mut tx = begin_mut_tx(&stdb);
+            assert_eq!(stdb.delete_by_rel(&mut tx, table_id, [product![7u64, "gone", 1u16]]), 1);
+            stdb.commit_tx(tx)?;
+        }
+
+        if with_snapshot {
+            take_snapshot(&stdb)?;
+        }
+
+        // Migrate `fruits` to the v2 shape.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            let plan = ponder_migrate(&old, &new)?;
+            let res = update_database(&stdb, &mut tx, auth_ctx, plan, &TestLogger)?;
+            assert!(
+                matches!(res, UpdateResult::RequiresClientDisconnect),
+                "an empty-table reschema should disconnect clients"
+            );
+            stdb.commit_tx(tx)?;
+        }
+
+        // Insert a row in the new layout.
+        {
+            let mut tx = begin_mut_tx(&stdb);
+            insert(&stdb, &mut tx, table_id, &product![42u64, "f1", 9u32])?;
+            stdb.commit_tx(tx)?;
+        }
+
+        // Replay the commitlog and verify the new schema and its rows survived.
+        let stdb = stdb.reopen()?;
+        let tx = begin_mut_tx(&stdb);
+        assert_column_order(&stdb, &tx, table_id, &["id", "label", "weight"], Some(ColId(0)))?;
+        assert_eq!(collect_rows(&stdb, &tx, table_id)?, [product![42u64, "f1", 9u32]]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn replay_generally_reschemaed_table_no_snapshot() -> anyhow::Result<()> {
+        replay_generally_reschemaed_table(TakeSnapshot::None)
+    }
+
+    #[test]
+    fn replay_generally_reschemaed_table_after_snapshot() -> anyhow::Result<()> {
+        replay_generally_reschemaed_table(TakeSnapshot::BeforeAutomigration)
     }
 
     #[test]
