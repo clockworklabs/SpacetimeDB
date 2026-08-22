@@ -1230,13 +1230,17 @@ Use either `on_disconnect` or `on_disconnect_with_intent`, not both."
         self
     }
 
-    /// Register a callback with the intent or error associated with an established connection closing.
+    /// Register a callback to run when an established connection is closed,
+    /// with its disconnect intent.
     ///
-    /// The callback receives `Ok(DisconnectIntent::Requested)` when the client explicitly called
-    /// [`DbContext::disconnect`], `Ok(DisconnectIntent::Lost)` when the connection closed without
-    /// an SDK error, and `Err` when the SDK reported a disconnect error.
-    /// Connection failures before the initial connection message invoke
+    /// The connection is established after the initial connection message is
+    /// received from the host. Connection failures before that point invoke
     /// [`Self::on_connect_error`] instead.
+    ///
+    /// The callback receives `Ok(DisconnectIntent::Requested)` when the client
+    /// explicitly called [`DbContext::disconnect`], `Ok(DisconnectIntent::Lost)`
+    /// when the connection closed without an SDK error, and `Err` when the SDK
+    /// reports a disconnect error.
     ///
     /// This is mutually exclusive with [`Self::on_disconnect`].
     pub fn on_disconnect_with_intent(
