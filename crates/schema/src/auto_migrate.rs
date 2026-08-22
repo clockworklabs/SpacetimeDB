@@ -2,7 +2,6 @@ use core::{cmp::Ordering, ops::BitOr};
 
 use crate::{
     def::*,
-    error::PrettyAlgebraicType,
     identifier::{Identifier, NamespacePath},
 };
 use formatter::format_plan;
@@ -369,101 +368,9 @@ pub enum AutoMigrateStep<'def> {
     DisconnectAllUsers,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ChangeColumnTypeParts {
-    pub table: Identifier,
-    pub column: Identifier,
-    pub type1: PrettyAlgebraicType,
-    pub type2: PrettyAlgebraicType,
-}
-
 /// Something that might prevent an automatic migration.
 #[derive(thiserror::Error, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AutoMigrateError {
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?} requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnType(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing a type within column {} in table {} from {:?} to {:?} requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnType(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with fewer variants, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeFewerVariants(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing a type within column {} in table {} from {:?} to {:?}, with fewer variants, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeFewerVariants(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed variant, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeRenamedVariant(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed variant, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeRenamedVariant(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, requires a manual migration, due to size mismatch",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeSizeMismatch(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing a type within column {} in table {} from {:?} to {:?}, requires a manual migration, due to size mismatch",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeSizeMismatch(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, requires a manual migration, due to alignment mismatch",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeAlignMismatch(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing a type within column {} in table {} from {:?} to {:?}, requires a manual migration, due to alignment mismatch",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeAlignMismatch(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with fewer fields, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeFewerFields(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing a type within column {} in table {} from {:?} to {:?}, with fewer fields, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeFewerFields(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed field, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeColumnTypeRenamedField(ChangeColumnTypeParts),
-
-    #[error(
-        "Changing the type of column {} in table {} from {:?} to {:?}, with a renamed field, requires a manual migration",
-        .0.column, .0.table, .0.type1, .0.type2
-    )]
-    ChangeWithinColumnTypeRenamedField(ChangeColumnTypeParts),
-
     #[error("Changing the table type of table {table} from {type1:?} to {type2:?} requires a manual migration")]
     ChangeTableType {
         table: Identifier,
@@ -618,9 +525,6 @@ fn auto_migrate_view<'def>(
                     return Any(true);
                 }
                 ensure_old_ty_upgradable_to_new(
-                    false,
-                    &|| old_col.view_name.clone(),
-                    &|| old_col.name.clone(),
                     &WithTypespace::new(old_owning.typespace(), &old_col.ty)
                         .resolve_refs()
                         .expect("valid ViewDefs must have valid type refs"),
@@ -653,9 +557,6 @@ fn auto_migrate_view<'def>(
                     return Any(true);
                 }
                 ensure_old_ty_upgradable_to_new(
-                    false,
-                    &|| old_col.view_name.clone(),
-                    &|| old_col.name.clone(),
                     &WithTypespace::new(old_owning.typespace(), &old_col.ty)
                         .resolve_refs()
                         .expect("valid ViewDefs must have valid type refs"),
@@ -826,18 +727,12 @@ fn auto_migrate_table<'def>(
                     let new_ty = WithTypespace::new(new_owning.typespace(), &new_col.ty)
                         .resolve_refs()
                         .expect("valid TableDef must have valid type refs");
-                    // `Ok(changed)` = the type change (if any) is layout-compatible and valid
-                    // on a table with resident rows; `Err` = it would require rewriting rows,
-                    // which is only possible when the table is empty.
-                    let (types_changed, types_incompatible) = match ensure_old_ty_upgradable_to_new(
-                        false,
-                        &|| old_col.table_name.clone(),
-                        &|| old_col.name.clone(),
-                        &old_ty,
-                        &new_ty,
-                    ) {
-                        Ok(changed) => (changed, Any(false)),
-                        Err(_) => (Any(false), Any(true)),
+                    // `Some(changed)` = the type change (if any) is layout-compatible and
+                    // valid on a table with resident rows; `None` = it would require rewriting
+                    // rows, which is only possible when the table is empty.
+                    let (types_changed, types_incompatible) = match ensure_old_ty_upgradable_to_new(&old_ty, &new_ty) {
+                        Some(changed) => (changed, Any(false)),
+                        None => (Any(false), Any(true)),
                     };
                     if old_col.accessor_name != new_col.accessor_name {
                         plan.steps
@@ -970,26 +865,14 @@ where
     }
 }
 
-fn ensure_old_ty_upgradable_to_new(
-    within: bool,
-    old_container_name: &impl Fn() -> Identifier,
-    old_column_name: &impl Fn() -> Identifier,
-    old_ty: &AlgebraicType,
-    new_ty: &AlgebraicType,
-) -> Result<Any> {
-    use AutoMigrateError::*;
-    // Ensures an `old_ty` within `old` is upgradable to `new_ty`.
-    let ensure =
-        |(old_ty, new_ty)| ensure_old_ty_upgradable_to_new(true, old_container_name, old_column_name, old_ty, new_ty);
-
-    // Returns a `ChangeColumnTypeParts` error using the current `old_ty` and `new_ty`.
-    let parts_for_error = || ChangeColumnTypeParts {
-        table: old_container_name(),
-        column: old_column_name(),
-        type1: old_ty.clone().into(),
-        type2: new_ty.clone().into(),
-    };
-
+/// Is `old_ty` upgradable to `new_ty` without rewriting existing rows?
+///
+/// Returns `Some(Any(changed))` when the change (if any) is layout-compatible
+/// and valid on a table with resident rows
+/// (`changed` is whether the types differ at all, e.g. a sum type gained variants),
+/// and `None` when upgrading would require rewriting rows,
+/// which is only possible when the table is empty.
+fn ensure_old_ty_upgradable_to_new(old_ty: &AlgebraicType, new_ty: &AlgebraicType) -> Option<Any> {
     match (old_ty, new_ty) {
         // For sums, we allow the variants in `old_ty` to be a prefix of `new_ty`.
         (AlgebraicType::Sum(old_ty), AlgebraicType::Sum(new_ty)) => {
@@ -997,113 +880,62 @@ fn ensure_old_ty_upgradable_to_new(
             let new_vars = &*new_ty.variants;
 
             // The number of variants in `new_ty` cannot decrease.
-            let var_lens_ok = match old_vars.len().cmp(&new_vars.len()) {
-                Ordering::Less => Ok(Any(true)),
-                Ordering::Equal => Ok(Any(false)),
-                Ordering::Greater if within => Err(ChangeWithinColumnTypeFewerVariants(parts_for_error()).into()),
-                Ordering::Greater => Err(ChangeColumnTypeFewerVariants(parts_for_error()).into()),
+            let len_changed = match old_vars.len().cmp(&new_vars.len()) {
+                Ordering::Less => Any(true),
+                Ordering::Equal => Any(false),
+                Ordering::Greater => return None,
             };
 
-            // The variants in `old_ty` must be upgradable to those in `old_ty`.
+            // The variants in `old_ty` must be upgradable to those in `new_ty`,
+            // and their names must not change.
             // Strict equality is *not* imposed in the prefix!
-            let prefix_ok = old_vars
-                .iter()
-                .zip(new_vars)
-                .map(|(o, n)| {
-                    // Ensure type compatibility.
-                    let res_ty = ensure((&o.algebraic_type, &n.algebraic_type));
-                    // Ensure name doesn't change.
-                    let res_name = if o.name() == n.name() {
-                        Ok(())
-                    } else if within {
-                        Err(ChangeWithinColumnTypeRenamedVariant(parts_for_error()).into())
-                    } else {
-                        Err(ChangeColumnTypeRenamedVariant(parts_for_error()).into())
-                    };
-                    (res_ty, res_name).combine_errors().map(|(c, ())| c)
-                })
-                .collect_all_errors::<Any>();
+            let mut prefix_changed = Any(false);
+            for (o, n) in old_vars.iter().zip(new_vars) {
+                if o.name() != n.name() {
+                    return None;
+                }
+                prefix_changed =
+                    prefix_changed | ensure_old_ty_upgradable_to_new(&o.algebraic_type, &n.algebraic_type)?;
+            }
 
             // The old and the new sum types must have matching layout sizes and alignments.
-            let old_ty = SumTypeLayout::from(old_ty.clone());
-            let new_ty = SumTypeLayout::from(new_ty.clone());
-            let old_layout = old_ty.layout();
-            let new_layout = new_ty.layout();
-            let size_ok = if old_layout.size == new_layout.size {
-                Ok(())
-            } else if within {
-                Err(ChangeWithinColumnTypeSizeMismatch(parts_for_error()).into())
-            } else {
-                Err(ChangeColumnTypeSizeMismatch(parts_for_error()).into())
-            };
-            let align_ok = if old_layout.align == new_layout.align {
-                Ok(())
-            } else if within {
-                Err(ChangeWithinColumnTypeAlignMismatch(parts_for_error()).into())
-            } else {
-                Err(ChangeColumnTypeAlignMismatch(parts_for_error()).into())
-            };
+            let old_layout_ty = SumTypeLayout::from(old_ty.clone());
+            let new_layout_ty = SumTypeLayout::from(new_ty.clone());
+            let old_layout = old_layout_ty.layout();
+            let new_layout = new_layout_ty.layout();
+            if old_layout.size != new_layout.size || old_layout.align != new_layout.align {
+                return None;
+            }
 
-            let (len_changed, prefix_changed, ..) = (var_lens_ok, prefix_ok, size_ok, align_ok).combine_errors()?;
-            Ok(len_changed | prefix_changed)
+            Some(len_changed | prefix_changed)
         }
 
         // For products,
         // we need to check each field's upgradability due to sums,
-        // and there must be as many fields.
-        // Note that we don't care about field names.
+        // there must be as many fields, and their names must not change.
         (AlgebraicType::Product(old_ty), AlgebraicType::Product(new_ty)) => {
-            // The number of variants in `new_ty` cannot decrease.
-            let len_eq_ok = if old_ty.len() == new_ty.len() {
-                Ok(())
-            } else {
-                Err(if within {
-                    ChangeWithinColumnTypeFewerFields(parts_for_error())
-                } else {
-                    ChangeColumnTypeFewerFields(parts_for_error())
+            if old_ty.len() != new_ty.len() {
+                return None;
+            }
+
+            let mut changed = Any(false);
+            for (o, n) in old_ty.iter().zip(new_ty.iter()) {
+                if o.name() != n.name() {
+                    return None;
                 }
-                .into())
-            };
-
-            // The fields in `old_ty` must be upgradable to those in `old_ty`.
-            let fields_ok = old_ty
-                .iter()
-                .zip(new_ty.iter())
-                .map(|(o, n)| {
-                    // Ensure type compatibility.
-                    let res_ty = ensure((&o.algebraic_type, &n.algebraic_type));
-                    // Ensure name doesn't change.
-                    let res_name = if o.name() == n.name() {
-                        Ok(())
-                    } else if within {
-                        Err(ChangeWithinColumnTypeRenamedField(parts_for_error()).into())
-                    } else {
-                        Err(ChangeColumnTypeRenamedField(parts_for_error()).into())
-                    };
-                    (res_ty, res_name).combine_errors().map(|(c, ())| c)
-                })
-                .collect_all_errors::<Any>();
-
-            (len_eq_ok, fields_ok).combine_errors().map(|(_, x)| x)
+                changed = changed | ensure_old_ty_upgradable_to_new(&o.algebraic_type, &n.algebraic_type)?;
+            }
+            Some(changed)
         }
 
-        // For arrays, we need to check each field's upgradability due to sums.
-        (AlgebraicType::Array(old_ty), AlgebraicType::Array(new_ty)) => ensure_old_ty_upgradable_to_new(
-            true,
-            old_container_name,
-            old_column_name,
-            &old_ty.elem_ty,
-            &new_ty.elem_ty,
-        ),
+        // For arrays, we need to check the element type's upgradability due to sums.
+        (AlgebraicType::Array(old_ty), AlgebraicType::Array(new_ty)) => {
+            ensure_old_ty_upgradable_to_new(&old_ty.elem_ty, &new_ty.elem_ty)
+        }
 
         // We only have the simple cases left, and there, no change is good change.
-        (old_ty, new_ty) if old_ty == new_ty => Ok(Any(false)),
-        _ => Err(if within {
-            ChangeWithinColumnType(parts_for_error())
-        } else {
-            ChangeColumnType(parts_for_error())
-        }
-        .into()),
+        (old_ty, new_ty) if old_ty == new_ty => Some(Any(false)),
+        _ => None,
     }
 }
 
