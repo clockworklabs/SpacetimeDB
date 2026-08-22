@@ -1,4 +1,4 @@
-use core::{cmp::Ordering, ops::BitOr};
+use core::{cmp::Ordering, fmt, ops::BitOr};
 
 use crate::{
     def::*,
@@ -216,6 +216,10 @@ pub struct AutoMigratePlan<'def> {
     /// The migration steps to perform.
     /// Order matters: `Remove`s of a particular `Def` must be ordered before `Add`s.
     pub steps: Vec<AutoMigrateStep<'def>>,
+    /// For each [`AutoMigratePrecheck::CheckTableEmpty`] in `prechecks`,
+    /// why the migration requires that table to be empty.
+    /// Used to explain the precheck's failure; not itself a check or a step.
+    pub empty_reschema_reasons: Vec<(<TableDef as ModuleDefLookup>::Key<'def>, EmptyReschemaReason<'def>)>,
 }
 
 impl<'def> AutoMigratePlan<'def> {
@@ -241,6 +245,53 @@ impl<'def> AutoMigratePlan<'def> {
         let check = AutoMigratePrecheck::CheckTableEmpty(table);
         if !self.prechecks.contains(&check) {
             self.prechecks.push(check);
+        }
+    }
+
+    /// Requires `table` to be empty at execution time because of `reason`:
+    /// ensures the [`AutoMigratePrecheck::CheckTableEmpty`] precheck for it
+    /// and records the reason for the precheck's error message.
+    fn require_empty(&mut self, table: <TableDef as ModuleDefLookup>::Key<'def>, reason: EmptyReschemaReason<'def>) {
+        self.ensure_check_table_empty(table);
+        self.empty_reschema_reasons.push((table, reason));
+    }
+}
+
+/// Why a migration requires a table to be empty.
+///
+/// Recorded in [`AutoMigratePlan::empty_reschema_reasons`] alongside each
+/// [`AutoMigratePrecheck::CheckTableEmpty`], and used to explain a failed precheck.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmptyReschemaReason<'def> {
+    /// The table itself was removed from the module.
+    TableRemoved,
+    /// The column was removed. A renamed column diffs as a remove and an add.
+    ColumnRemoved(&'def Identifier),
+    /// The column's type changed in a layout-incompatible way.
+    ColumnRetyped(&'def Identifier),
+    /// The column changed position.
+    ColumnMoved(&'def Identifier),
+    /// The column was added without a default value.
+    ColumnAddedWithoutDefault(&'def Identifier),
+    /// The unique constraint changed, e.g. because a column it covers moved.
+    UniqueConstraintChanged(&'def RawIdentifier),
+    /// The table's `is_event` flag changed.
+    EventFlagChanged,
+}
+
+impl fmt::Display for EmptyReschemaReason<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TableRemoved => write!(f, "the table was removed from the module"),
+            Self::ColumnRemoved(col) => write!(f, "column `{col}` was removed (a rename is a remove plus an add)"),
+            Self::ColumnRetyped(col) => write!(f, "column `{col}` changed type incompatibly"),
+            Self::ColumnMoved(col) => write!(f, "column `{col}` changed position"),
+            Self::ColumnAddedWithoutDefault(col) => write!(
+                f,
+                "column `{col}` was added without a default value (adding a default instead migrates without emptying the table)"
+            ),
+            Self::UniqueConstraintChanged(constraint) => write!(f, "unique constraint `{constraint}` changed"),
+            Self::EventFlagChanged => write!(f, "the table's `event` flag changed"),
         }
     }
 }
@@ -414,6 +465,7 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
         new,
         steps: Vec::new(),
         prechecks: Vec::new(),
+        empty_reschema_reasons: Vec::new(),
     };
 
     let views_ok = auto_migrate_views(&mut plan);
@@ -621,7 +673,7 @@ fn auto_migrate_tables<'def>(plan: &mut AutoMigratePlan<'def>) -> Result<()> {
 
     for key in old_tables.keys() {
         if !new_tables.contains_key(key) {
-            plan.ensure_check_table_empty(*key);
+            plan.require_empty(*key, EmptyReschemaReason::TableRemoved);
             plan.steps.push(AutoMigrateStep::RemoveTable(*key));
             plan.ensure_disconnect_all_users();
         }
@@ -677,7 +729,7 @@ fn auto_migrate_table<'def>(
         // Flipping `is_event` changes the committed-state semantics of the table, which is
         // only possible when there are no committed rows; emptiness is validated at
         // execution time. The flip is observable to subscribers, so clients must reconnect.
-        plan.ensure_check_table_empty(key);
+        plan.require_empty(key, EmptyReschemaReason::EventFlagChanged);
         plan.ensure_disconnect_all_users();
         plan.steps.push(AutoMigrateStep::ChangeEventFlag(key));
     }
@@ -709,104 +761,95 @@ fn auto_migrate_table<'def>(
     let new_col_by_name: HashMap<&Identifier, &ColumnDef> = new.columns.iter().map(|c| (&c.name, c)).collect();
     let old_col_by_name: HashMap<&Identifier, &ColumnDef> = old.columns.iter().map(|c| (&c.name, c)).collect();
 
-    let columns_ok = old
-        .columns
-        .iter()
-        .map(|old_col| -> Result<ArrayMonoid<Any, 4>> {
-            match new_col_by_name.get(&old_col.name) {
-                None => {
-                    if is_event {
-                        // Event tables never have any resident rows, so removing a column is not a
-                        // data migration. However, changing the schema will break clients.
-                        // `row_type_changed`, `columns_added`, `event_schema_changed`, `needs_empty_reschema`
-                        Ok(ArrayMonoid([Any(false), Any(false), Any(true), Any(false)]))
-                    } else {
-                        // Removing a column is a data migration on a table with rows, but is
-                        // fine on an empty one; emptiness is validated at execution time.
-                        // `row_type_changed`, `columns_added`, `event_schema_changed`, `needs_empty_reschema`
-                        Ok(ArrayMonoid([Any(false), Any(false), Any(false), Any(true)]))
-                    }
-                }
-                Some(new_col) => {
-                    let old_ty = WithTypespace::new(old_owning.typespace(), &old_col.ty)
-                        .resolve_refs()
-                        .expect("valid TableDef must have valid type refs");
-                    let new_ty = WithTypespace::new(new_owning.typespace(), &new_col.ty)
-                        .resolve_refs()
-                        .expect("valid TableDef must have valid type refs");
-                    // `Some(changed)` = the type change (if any) is layout-compatible and
-                    // valid on a table with resident rows; `None` = it would require rewriting
-                    // rows, which is only possible when the table is empty.
-                    let (types_changed, types_incompatible) = match ensure_old_ty_upgradable_to_new(&old_ty, &new_ty) {
-                        Some(changed) => (changed, Any(false)),
-                        None => (Any(false), Any(true)),
-                    };
-                    if old_col.accessor_name != new_col.accessor_name {
-                        plan.steps
-                            .push(AutoMigrateStep::ChangeColumnAccessorName(key, &old_col.name));
-                    }
-                    // Reordering existing columns changes the row layout, which is only
-                    // possible when the table has no resident rows. Event tables are
-                    // rowless by construction; other tables get an emptiness precheck.
-                    let positions_changed = Any(old_col.col_id != new_col.col_id);
-                    // `row_type_changed`, `columns_added`, `event_schema_changed`, `needs_empty_reschema`
-                    Ok(if is_event {
-                        ArrayMonoid([
-                            Any(false),
-                            Any(false),
-                            types_changed | types_incompatible | positions_changed,
-                            Any(false),
-                        ])
-                    } else {
-                        ArrayMonoid([
-                            types_changed,
-                            Any(false),
-                            Any(false),
-                            types_incompatible | positions_changed,
-                        ])
-                    })
-                }
-            }
-        })
-        .chain(new.columns.iter().map(|new_col| -> Result<ArrayMonoid<Any, 4>> {
-            if old_col_by_name.contains_key(&new_col.name) {
-                Ok(ArrayMonoid([Any(false), Any(false), Any(false), Any(false)]))
-            } else if is_event {
-                // Event tables never have any resident rows, so adding a column is not a data
-                // migration. However, changing the schema will break clients.
-                // `row_type_changed`, `columns_added`, `event_schema_changed`, `needs_empty_reschema`
-                Ok(ArrayMonoid([Any(false), Any(false), Any(true), Any(false)]))
-            } else if new_col.default_value.is_some() {
-                // `row_type_changed`, `columns_added`, `event_schema_changed`, `needs_empty_reschema`
-                Ok(ArrayMonoid([Any(false), Any(true), Any(false), Any(false)]))
-            } else {
-                // Adding a column without a default value is only possible when there are
-                // no resident rows to fill; emptiness is validated at execution time.
-                // `row_type_changed`, `columns_added`, `event_schema_changed`, `needs_empty_reschema`
-                Ok(ArrayMonoid([Any(false), Any(false), Any(false), Any(true)]))
-            }
-        }))
-        .collect_all_errors::<ArrayMonoid<Any, 4>>();
+    // The column diff itself is infallible: changes that used to be errors are
+    // planned as an empty-table reschema, with each contributing change recorded
+    // as an `EmptyReschemaReason` for the precheck's error message.
+    let mut row_type_changed = false;
+    let mut columns_added = false;
+    let mut event_schema_changed = false;
+    let mut reschema_reasons: Vec<EmptyReschemaReason<'def>> = Vec::new();
 
-    let (
-        (),
-        ArrayMonoid([Any(row_type_changed), Any(columns_added), Any(event_schema_changed), Any(needs_empty_reschema)]),
-    ) = (type_ok, columns_ok).combine_errors()?;
+    for old_col in &old.columns {
+        match new_col_by_name.get(&old_col.name) {
+            None => {
+                if is_event {
+                    // Event tables never have any resident rows, so removing a column is not a
+                    // data migration. However, changing the schema will break clients.
+                    event_schema_changed = true;
+                } else {
+                    // Removing a column is a data migration on a table with rows, but is
+                    // fine on an empty one; emptiness is validated at execution time.
+                    reschema_reasons.push(EmptyReschemaReason::ColumnRemoved(&old_col.name));
+                }
+            }
+            Some(new_col) => {
+                let old_ty = WithTypespace::new(old_owning.typespace(), &old_col.ty)
+                    .resolve_refs()
+                    .expect("valid TableDef must have valid type refs");
+                let new_ty = WithTypespace::new(new_owning.typespace(), &new_col.ty)
+                    .resolve_refs()
+                    .expect("valid TableDef must have valid type refs");
+                // `Some(changed)` = the type change (if any) is layout-compatible and
+                // valid on a table with resident rows; `None` = it would require rewriting
+                // rows, which is only possible when the table is empty.
+                let types_compatible = ensure_old_ty_upgradable_to_new(&old_ty, &new_ty);
+                if old_col.accessor_name != new_col.accessor_name {
+                    plan.steps
+                        .push(AutoMigrateStep::ChangeColumnAccessorName(key, &old_col.name));
+                }
+                // Reordering existing columns changes the row layout, which is only
+                // possible when the table has no resident rows. Event tables are
+                // rowless by construction; other tables get an emptiness precheck.
+                let position_changed = old_col.col_id != new_col.col_id;
+                if is_event {
+                    event_schema_changed |= position_changed || !matches!(types_compatible, Some(Any(false)));
+                } else {
+                    match types_compatible {
+                        Some(Any(changed)) => row_type_changed |= changed,
+                        None => reschema_reasons.push(EmptyReschemaReason::ColumnRetyped(&old_col.name)),
+                    }
+                    if position_changed {
+                        reschema_reasons.push(EmptyReschemaReason::ColumnMoved(&old_col.name));
+                    }
+                }
+            }
+        }
+    }
+    for new_col in &new.columns {
+        if old_col_by_name.contains_key(&new_col.name) {
+            continue;
+        }
+        if is_event {
+            // Event tables never have any resident rows, so adding a column is not a data
+            // migration. However, changing the schema will break clients.
+            event_schema_changed = true;
+        } else if new_col.default_value.is_some() {
+            columns_added = true;
+        } else {
+            // Adding a column without a default value is only possible when there are
+            // no resident rows to fill; emptiness is validated at execution time.
+            reschema_reasons.push(EmptyReschemaReason::ColumnAddedWithoutDefault(&new_col.name));
+        }
+    }
+    type_ok?;
 
     if event_schema_changed {
         // If we're rewriting an event table, there's no data migration to do.
         // But incompatibly changing the schema can break clients.
         plan.ensure_disconnect_all_users();
         plan.steps.push(AutoMigrateStep::ReschemaEventTable(key));
-    } else if needs_empty_reschema {
+    } else if !reschema_reasons.is_empty() {
         // A layout-incompatible change (reordering, removing, renaming, or incompatibly
         // retyping columns, or adding a column without a default) rewrites the row layout
         // in place, which is only valid on an empty table. The planner cannot see table
-        // contents, so emptiness is validated at execution time, before any mutations.
-        // This subsumes any `ChangeColumns` or `AddColumns` for the same table: the
-        // reschema rebuilds the full new layout, and with no resident rows there is no
-        // data to migrate or default-fill.
-        plan.ensure_check_table_empty(key);
+        // contents, so emptiness is validated at execution time, before any mutations,
+        // with the collected reasons explaining a failure. This subsumes any
+        // `ChangeColumns` or `AddColumns` for the same table: the reschema rebuilds the
+        // full new layout, and with no resident rows there is no data to migrate or
+        // default-fill.
+        for reason in reschema_reasons {
+            plan.require_empty(key, reason);
+        }
         plan.ensure_disconnect_all_users();
         plan.steps.push(AutoMigrateStep::ReschemaEmptyTable(key));
     } else if columns_added {
@@ -835,39 +878,6 @@ impl BitOr for Any {
     type Output = Self;
     fn bitor(self, rhs: Self) -> Self::Output {
         Self(self.0 | rhs.0)
-    }
-}
-
-/// A monoid that allows running a number of `Any`s in parallel.
-struct ArrayMonoid<Monoid, const N: usize>([Monoid; N]);
-
-impl<Monoid, const N: usize> Default for ArrayMonoid<Monoid, N>
-where
-    [Monoid; N]: Default,
-{
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
-
-impl<Monoid: BitOr<Output = Monoid> + Copy, const N: usize> BitOr for ArrayMonoid<Monoid, N> {
-    type Output = Self;
-
-    fn bitor(mut self, rhs: Self) -> Self::Output {
-        for n in 0..N {
-            self.0[n] = self.0[n] | rhs.0[n]
-        }
-        self
-    }
-}
-
-impl<Monoid: BitOr<Output = Monoid> + Copy, const N: usize> FromIterator<ArrayMonoid<Monoid, N>>
-    for ArrayMonoid<Monoid, N>
-where
-    ArrayMonoid<Monoid, N>: Default,
-{
-    fn from_iter<T: IntoIterator<Item = ArrayMonoid<Monoid, N>>>(iter: T) -> Self {
-        iter.into_iter().reduce(|p1, p2| p1 | p2).unwrap_or_default()
     }
 }
 
@@ -1109,7 +1119,10 @@ fn auto_migrate_constraints<'def>(
             // name but changes its column ids) is removed and re-added against the new
             // definition. Re-adding is trivially valid on a table with no rows; emptiness
             // is validated at execution time by the precheck.
-            plan.ensure_check_table_empty(*table_key);
+            plan.require_empty(
+                *table_key,
+                EmptyReschemaReason::UniqueConstraintChanged(&new_constraint.name),
+            );
             plan.steps.push(AutoMigrateStep::RemoveConstraint(*constraint_key));
             plan.steps.push(AutoMigrateStep::AddConstraint(*constraint_key));
         }
@@ -1762,6 +1775,19 @@ mod tests {
             &[
                 AutoMigrateStep::ReschemaEmptyTable(apples),
                 AutoMigrateStep::DisconnectAllUsers,
+            ],
+        );
+
+        // Each contributing change is recorded for the precheck's error message.
+        let name = expect_identifier("name");
+        let count = expect_identifier("count");
+        let weight = expect_identifier("weight");
+        assert_eq!(
+            &plan.empty_reschema_reasons[..],
+            &[
+                (apples, EmptyReschemaReason::ColumnRetyped(&name)),
+                (apples, EmptyReschemaReason::ColumnRemoved(&count)),
+                (apples, EmptyReschemaReason::ColumnAddedWithoutDefault(&weight)),
             ],
         );
     }
@@ -2617,6 +2643,10 @@ mod tests {
             let plan = ponder_auto_migrate(&old, &new).expect("toggling `is_event` on an empty table should plan");
             // The flip is only valid on an empty table, validated before any mutations.
             assert_eq!(&plan.prechecks[..], &[AutoMigratePrecheck::CheckTableEmpty(events)]);
+            assert_eq!(
+                &plan.empty_reschema_reasons[..],
+                &[(events, EmptyReschemaReason::EventFlagChanged)],
+            );
             assert_eq!(
                 &plan.steps[..],
                 &[

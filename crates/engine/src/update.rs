@@ -56,6 +56,7 @@ pub fn stale_view_backing_table_recreate_plan<'def>(
         new: module_def,
         prechecks: Vec::new(),
         steps,
+        empty_reschema_reasons: Vec::new(),
     })))
 }
 
@@ -269,9 +270,21 @@ fn auto_migrate_database(
                         .ok_or_else(|| anyhow::anyhow!("Precheck: table `{table_name}` not found in database"))?;
                     let row_count = stdb.table_row_count_mut(tx, table_id).unwrap_or(0);
                     if row_count > 0 {
+                        let reasons = plan
+                            .empty_reschema_reasons
+                            .iter()
+                            .filter(|(table, _)| table == table_name_key)
+                            .map(|(_, reason)| reason.to_string())
+                            .collect::<Vec<_>>()
+                            .join("; ");
+                        let because = if reasons.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" because: {reasons}")
+                        };
                         anyhow::bail!(
                             "Precheck failed: table `{table_name}` contains data ({row_count} rows), \
-                         but this migration requires it to be empty. \
+                         but this migration requires it to be empty{because}. \
                          Clear the table's rows (e.g. via a reducer) before publishing."
                         );
                     }
@@ -1864,6 +1877,14 @@ mod test {
             err.to_string().contains("contains data"),
             "error should mention that the table contains data, got: {err}"
         );
+        assert!(
+            err.to_string().contains("column `name` was removed")
+                && err.to_string().contains("column `count` was removed")
+                && err
+                    .to_string()
+                    .contains("column `weight` was added without a default value"),
+            "error should name each offending change, got: {err}"
+        );
         assert_eq!(tx.pending_schema_changes(), []);
 
         // The table keeps its old layout and contents.
@@ -2059,8 +2080,8 @@ mod test {
             .err()
             .expect("flipping `is_event` on a non-empty table should fail");
         assert!(
-            err.to_string().contains("contains data"),
-            "error should mention that the table contains data, got: {err}"
+            err.to_string().contains("contains data") && err.to_string().contains("the table's `event` flag changed"),
+            "error should mention the data and the flag change, got: {err}"
         );
         assert_is_event(&stdb, &tx, table_id, false)?;
         assert_eq!(tx.pending_schema_changes(), []);
