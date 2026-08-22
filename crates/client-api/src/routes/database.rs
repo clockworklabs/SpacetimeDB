@@ -1539,6 +1539,7 @@ where
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
+            .route("/mcp", self.mcp_post)
             .route("/unstable/timestamp", self.timestamp_get)
             .route("/pre_publish", self.pre_publish)
             .route("/reset", self.db_reset)
@@ -1556,10 +1557,7 @@ where
         // so we don't mind that we don't measure them.
         let db_router = db_router
             .route("/", self.db_delete)
-            .route("/identity", self.identity_get)
-            // I (pgoldman 2026-08-07) am actually somewhat concerned that we do care about measuring egress for MCP requests,
-            // but the MCP handler's name resolution and error handling are significantly incompatible with the middleware.
-            .route("/mcp", self.mcp_post);
+            .route("/identity", self.identity_get);
 
         // Add the subscribe route after `resolving_egress_metrics_middleware`
         // so that its egress bytes don't get counted into `http_response_size_bytes`;
@@ -2311,6 +2309,70 @@ mod tests {
         assert_eq!(http_response_size_metric(database_identity), 0);
 
         remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
+    async fn http_response_egress_metric_counts_mcp() {
+        let database_identity = test_identity(20);
+        remove_http_response_size_metric(database_identity);
+
+        let state = DummyState::new().with_database(database_identity);
+        let app = DatabaseRoutes::<DummyState> {
+            mcp_post: axum::routing::post(|| async {
+                ([(http::header::CONTENT_TYPE, "application/json")], r#"{"result":{}}"#)
+            }),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::POST)
+                    .uri(format!("/{database_identity}/mcp"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+
+        assert_eq!(body, r#"{"result":{}}"#);
+        assert_eq!(
+            http_response_size_metric(database_identity),
+            "content-type".len() as u64 + "application/json".len() as u64 + r#"{"result":{}}"#.len() as u64
+        );
+
+        remove_http_response_size_metric(database_identity);
+    }
+
+    #[tokio::test]
+    async fn mcp_handshake_returns_not_found_for_an_unknown_database() {
+        let state = DummyState::new();
+        let app = DatabaseRoutes::<DummyState> {
+            mcp_post: axum::routing::post(|| async { "not reached" }),
+            ..Default::default()
+        }
+        .into_router(state.clone())
+        .with_state(state);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(http::Method::POST)
+                    .uri("/unregistered-name/mcp")
+                    .body(Body::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            response.into_body().collect().await.unwrap().to_bytes(),
+            "`unregistered-name` not found"
+        );
     }
 
     #[tokio::test]
