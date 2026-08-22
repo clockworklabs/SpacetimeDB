@@ -257,7 +257,7 @@ SPACETIMEDB_REDUCER(update_score, ReducerContext ctx, uint32_t new_score) {
 The connection ID identifies the specific client connection that invoked the reducer. This is useful for tracking sessions or implementing per-connection state.
 
 :::note
-The connection ID may be absent for reducers invoked by the system (such as scheduled reducers or lifecycle reducers) or when called via the CLI without specifying a connection. In TypeScript modules, `ctx.connectionId` is `ConnectionId | null`.
+The connection ID may be absent for reducers invoked without a client connection, such as `init`, scheduled reducers, or CLI calls without an explicit connection. Client-connected and client-disconnected reducers receive the connection ID for the connection being opened or closed. In TypeScript modules, `ctx.connectionId` is still typed as `ConnectionId | null`, so shared helper code should handle the nullable type.
 :::
 
 ### Timestamp
@@ -324,7 +324,7 @@ Scheduled reducers and procedures are private by default in SpacetimeDB 2.x, so 
 ```typescript
 import { schema, table, t } from 'spacetimedb/server';
 
-const scheduledTask = table(
+const scheduled_task = table(
   { name: 'scheduled_task' },
   {
     taskId: t.u64().primaryKey().autoInc(),
@@ -333,12 +333,12 @@ const scheduledTask = table(
   }
 );
 
-const spacetimedb = schema({ scheduledTask });
+const spacetimedb = schema({ scheduled_task });
 export default spacetimedb;
 
 export const sendReminder = spacetimedb.reducer(
-  { onSchedule: scheduledTask },
-  { arg: scheduledTask.rowType },
+  { onSchedule: scheduled_task },
+  { arg: scheduled_task.rowType },
   (_ctx, { arg }) => {
     console.log(`Reminder: ${arg.message}`);
   }

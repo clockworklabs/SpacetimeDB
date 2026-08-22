@@ -31,14 +31,15 @@ export const add_two_numbers = spacetimedb.procedure(
 ```
 
 The `spacetimedb.procedure` function takes:
-* the procedure name,
-* (optional) an object representing its parameter types,
+* optional procedure options, such as `onSchedule`,
+* an optional object representing its parameter types,
 * its return type,
 * and the procedure function itself.
 
-The function will receive a `ProcedureContext` and an object of its arguments, and it must return
-a value corresponding to its return type. This return value will be sent to the caller, but will
-not be broadcast to any other clients.
+The exported value's name becomes the procedure name. The callback receives a `ProcedureContext`
+and, when the procedure has parameters, an object of its arguments. It must return a value
+corresponding to its return type. This return value will be sent to the caller, but will not be
+broadcast to any other clients.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -128,7 +129,7 @@ This means there's no `ctx.db` field to access the database.
 Instead, procedure code must manage transactions explicitly with `ProcedureCtx.withTx`.
 
 ```typescript
-const myTable = table(
+const my_table = table(
     { name: "my_table" },
     {
         a: t.u32(),
@@ -136,12 +137,12 @@ const myTable = table(
     },
 )
 
-const spacetimedb = schema({ myTable });
+const spacetimedb = schema({ my_table });
 export default spacetimedb;
 
 export const insertAValue = spacetimedb.procedure({ a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
     ctx.withTx(ctx => {
-        ctx.db.myTable.insert({ a, b });
+        ctx.db.my_table.insert({ a, b });
     });
     return {};
 })
@@ -235,8 +236,8 @@ struct MyTable {
 
 #[spacetimedb::procedure]
 fn insert_a_value(ctx: &mut ProcedureContext, a: u32, b: String) {
-    ctx.with_tx(|ctx| {
-        ctx.my_table().insert(MyTable { a, b });
+    ctx.with_tx(|tx| {
+        tx.db.my_table().insert(MyTable { a, b });
     });
 }
 ```
@@ -328,7 +329,7 @@ export const maybeInsertAValue = spacetimedb.procedure({ a: t.u32(), b: t.string
         if (a < 10) {
             throw new SenderError("a is less than 10!");
         }
-        ctx.db.myTable.insert({ a, b });
+        ctx.db.my_table.insert({ a, b });
     });
 })
 ```
@@ -368,11 +369,11 @@ For fallible database operations, instead use `ProcedureContext::try_with_tx`:
 ```rust
 #[spacetimedb::procedure]
 fn maybe_insert_a_value(ctx: &mut ProcedureContext, a: u32, b: String) {
-    ctx.try_with_tx(|ctx| {
+    ctx.try_with_tx(|tx| {
         if a < 10 {
             return Err("a is less than 10!");
         }
-        ctx.my_table().insert(MyTable { a, b });
+        tx.db.my_table().insert(MyTable { a, b });
         Ok(())
     });
 }
@@ -1190,7 +1191,7 @@ A common use case for procedures is integrating with external APIs like OpenAI's
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 import { TimeDuration } from 'spacetimedb';
 
-const aiMessage = table(
+const ai_message = table(
   { name: 'ai_message', public: true },
   {
     user: t.identity(),
@@ -1200,7 +1201,7 @@ const aiMessage = table(
   }
 );
 
-const spacetimedb = schema({ aiMessage });
+const spacetimedb = schema({ ai_message });
 export default spacetimedb;
 
 export const askAi = spacetimedb.procedure(
@@ -1235,7 +1236,7 @@ export const askAi = spacetimedb.procedure(
 
     // Store the conversation in the database
     ctx.withTx(txCtx => {
-      txCtx.db.aiMessage.insert({
+      txCtx.db.ai_message.insert({
         user: txCtx.sender,
         prompt,
         response: aiResponse,

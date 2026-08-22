@@ -21,7 +21,7 @@ To declare a table as an event table, add the `event` attribute to the table def
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const damageEvent = table({
+const damage_event = table({
   name: 'damage_event',
   public: true,
   event: true,
@@ -32,7 +32,7 @@ const damageEvent = table({
 });
 
 const spacetimedb = schema({
-  damageEvent,
+  damage_event,
 });
 export default spacetimedb;
 ```
@@ -98,7 +98,7 @@ export const attack = spacetimedb.reducer(
     // Game logic...
 
     // Publish the event
-    ctx.db.damageEvent.insert({
+    ctx.db.damage_event.insert({
       entityId: targetId,
       damage,
       source: "melee_attack",
