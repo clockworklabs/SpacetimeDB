@@ -1585,23 +1585,6 @@ impl CtxDbRead for AnonymousViewContext {
     }
 }
 
-/// Contexts which provide access to the view query builder.
-pub trait CtxWithQueryBuilder {
-    fn query_builder(&self) -> &QueryBuilder;
-}
-
-impl CtxWithQueryBuilder for ViewContext {
-    fn query_builder(&self) -> &QueryBuilder {
-        &self.from
-    }
-}
-
-impl CtxWithQueryBuilder for AnonymousViewContext {
-    fn query_builder(&self) -> &QueryBuilder {
-        &self.from
-    }
-}
-
 /// Contexts which provide read-write access to the database.
 ///
 /// This trait is useful for writing reusable logic which is generic over the context type,
