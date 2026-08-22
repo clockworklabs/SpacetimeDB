@@ -579,36 +579,20 @@ jobs:
       - name: Skip duplicate merge queue smoketest
         run: echo "Merge queue commit has the same tree as the PR head; smoketest already ran for the PR."
 
-  test:
+  test_build:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: Test Suite
+    name: Prepare Test Suite
     runs-on: spacetimedb-new-runner-2
-
+    timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
     steps:
-      - name: Find Git ref
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-          if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-          else
-            GIT_REF="${{ github.ref }}"
-          fi
-          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
-
-      - name: Checkout sources
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.GIT_REF }}
-
+      - *find-git-ref
+      - *checkout-sources
       - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - *set-default-rust-toolchain
       - *set-native-cache-keys
       - &restore-jemalloc
         name: Restore jemalloc
@@ -630,14 +614,10 @@ jobs:
         with: &v8-debug-cache
           path: ${{ env.CARGO_TARGET_DIR }}/debug/gn_out/obj
           key: ${{ steps.native-cache-keys.outputs.v8-debug-key }}
-      - &restore-rusty-v8
-        name: Restore rusty_v8
-        uses: actions/cache/restore@v4
-        with: *v8-release-cache
       - *restore-openssl
       - *configure-cached-openssl
 
-      - uses: actions/setup-dotnet@v3
+      - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
 
@@ -650,8 +630,114 @@ jobs:
         with:
           run_install: true
 
-      # Install cmake and emscripten for C++ module compilation tests.
-      - name: Install cmake and emscripten
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Prepare core test suite
+        run: |
+          cargo ci test archive-core \
+            --archive-file test-suite-nextest.tar.zst \
+            --unstable-archive-file test-suite-unstable-nextest.tar.zst
+
+      - name: Upload core test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-suite-build
+          path: |
+            test-suite-nextest.tar.zst
+            test-suite-unstable-nextest.tar.zst
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Upload timing reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings-test-build
+          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          if-no-files-found: warn
+          retention-days: 14
+
+  test_partitions:
+    needs: [test_build]
+    name: Test Suite (${{ matrix.partition }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2]
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 30
+    env:
+      RUST_BACKTRACE: full
+      PARTITION_COUNT: 2
+    steps:
+      - *find-git-ref
+      - *checkout-sources
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Download core test build
+        uses: actions/download-artifact@v4
+        with:
+          name: test-suite-build
+
+      - name: Run core test partition
+        run: |
+          cargo nextest run \
+            --archive-file test-suite-nextest.tar.zst \
+            --workspace-remap "${GITHUB_WORKSPACE}" \
+            --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }} \
+            --no-fail-fast --no-tests pass -j 2 \
+            -E 'not test(/unreal/)'
+          cargo nextest run \
+            --archive-file test-suite-unstable-nextest.tar.zst \
+            --workspace-remap "${GITHUB_WORKSPACE}" \
+            --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }} \
+            --no-fail-fast --no-tests pass -j 2
+          bash tools/check-diff.sh
+
+  sdk_test_build:
+    needs: [merge_queue_noop, lints]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: Prepare SDK Tests
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      RUST_BACKTRACE: full
+    steps:
+      - *find-git-ref
+      - *checkout-sources
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+      - *set-native-cache-keys
+      - *restore-jemalloc
+      - *configure-cached-jemalloc
+      - *restore-zstd
+      - *configure-cached-zstd
+      - *restore-rusty-v8-debug
+      - *restore-openssl
+      - *configure-cached-openssl
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      # SDK preparation compiles TypeScript, C#, and C++ test modules once.
+      - name: Install module toolchains
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake
@@ -684,19 +770,120 @@ jobs:
 
           wasm-bindgen --version
 
-        # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
-      - name: Run tests
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Prepare SDK tests
         run: |
           source ~/emsdk/emsdk_env.sh
-          cargo ci test
+          cargo ci test archive-sdk \
+            --native-archive-file sdk-tests-native-nextest.tar.zst \
+            --browser-archive-file sdk-tests-browser-nextest.tar.zst \
+            --support-archive-file sdk-test-support.tar.gz
+
+      - name: Upload SDK test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-test-build
+          path: |
+            sdk-tests-native-nextest.tar.zst
+            sdk-tests-browser-nextest.tar.zst
+            sdk-test-support.tar.gz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
 
       - name: Upload timing reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cargo-timings-test
+          name: cargo-timings-sdk-test-build
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
+          if-no-files-found: warn
           retention-days: 14
+
+  sdk_test_partitions:
+    needs: [sdk_test_build, upload-build-artifacts-linux]
+    name: SDK Tests (${{ matrix.partition }}/2)
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: [1, 2]
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_BUILD_PROFILE: release
+      RUST_BACKTRACE: full
+      PARTITION_COUNT: 2
+      SPACETIME_SDK_TEST_MODE: prebuilt
+      SPACETIME_SDK_TEST_ARTIFACT_DIR: ${{ github.workspace }}/sdk-test-support
+    steps:
+      - *find-git-ref
+      - *checkout-sources
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-linux
+          path: build-artifacts
+
+      - name: Extract build artifacts
+        run: |
+          tar -xzf build-artifacts/build-support.tar.gz
+          test -f target/release/spacetimedb-cli
+          test -f target/release/spacetimedb-standalone
+
+      - name: Download SDK test build
+        uses: actions/download-artifact@v4
+        with:
+          name: sdk-test-build
+
+      - name: Extract SDK support files
+        run: tar -xzf sdk-test-support.tar.gz
+
+      - name: Run SDK test partition
+        run: |
+          cargo nextest run \
+            --archive-file sdk-tests-native-nextest.tar.zst \
+            --workspace-remap "${GITHUB_WORKSPACE}" \
+            --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }} \
+            --no-fail-fast --no-tests pass -j 2 \
+            -E 'not test(/unreal/)'
+          cargo nextest run \
+            --archive-file sdk-tests-browser-nextest.tar.zst \
+            --workspace-remap "${GITHUB_WORKSPACE}" \
+            --partition hash:${{ matrix.partition }}/${{ env.PARTITION_COUNT }} \
+            --no-fail-fast --no-tests pass -j 2 \
+            -E 'not test(/unreal/)'
+
+  tests_noop:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip == 'true' }}
+    name: ${{ matrix.name }}
+    strategy:
+      matrix:
+        name:
+          - Prepare Test Suite
+          - Test Suite (1/2)
+          - Test Suite (2/2)
+          - Prepare SDK Tests
+          - SDK Tests (1/2)
+          - SDK Tests (2/2)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip duplicate merge queue tests
+        run: echo "Merge queue commit has the same tree as the PR head; tests already ran for the PR."
 
   index_scan_bench:
     needs: [merge_queue_noop, lints]
@@ -737,7 +924,10 @@ jobs:
       - *configure-cached-jemalloc
       - *restore-zstd
       - *configure-cached-zstd
-      - *restore-rusty-v8
+      - &restore-rusty-v8
+        name: Restore rusty_v8
+        uses: actions/cache/restore@v4
+        with: *v8-release-cache
       - *restore-openssl
       - *configure-cached-openssl
 
