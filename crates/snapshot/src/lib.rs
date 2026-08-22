@@ -97,9 +97,24 @@ pub struct SnapshotReadMetrics {
     pub metadata: SnapshotReadKindMetrics,
     pub page: SnapshotReadKindMetrics,
     pub blob: SnapshotReadKindMetrics,
+    /// Number of files skipped due to having [`ZERO_HASH_DENOTING_ABSENT_PAGE`] as their hash.
+    ///
+    /// This is only meaningful for pages, so is stored separate from the other metrics.
+    pub absent_pages: u64,
 }
 
 pub type TablePages = Vec<Option<Box<Page>>>;
+
+fn table_present_pages(pages: &[blake3::Hash]) -> impl Iterator<Item = blake3::Hash> {
+    pages
+        .iter()
+        .copied()
+        .filter(|hash| *hash != ZERO_HASH_DENOTING_ABSENT_PAGE)
+}
+
+fn table_num_present_pages(pages: &[blake3::Hash]) -> u64 {
+    table_present_pages(pages).count() as u64
+}
 
 impl SnapshotReadMetrics {
     pub fn iter(&self) -> impl Iterator<Item = (&'static str, &SnapshotReadKindMetrics)> + '_ {
@@ -684,13 +699,7 @@ impl Snapshot {
             + self
                 .tables
                 .iter()
-                .map(|table| {
-                    table
-                        .pages
-                        .iter()
-                        .filter(|hash| **hash != ZERO_HASH_DENOTING_ABSENT_PAGE)
-                        .count()
-                })
+                .map(|table| table_num_present_pages(&table.pages) as usize)
                 .sum::<usize>()
     }
 
@@ -700,12 +709,7 @@ impl Snapshot {
         self.blobs
             .iter()
             .map(|b| blake3::Hash::from_bytes(b.hash.data))
-            .chain(self.tables.iter().flat_map(|t| {
-                t.pages
-                    .iter()
-                    .filter(|hash| **hash != ZERO_HASH_DENOTING_ABSENT_PAGE)
-                    .copied()
-            }))
+            .chain(self.tables.iter().flat_map(|t| table_present_pages(&t.pages)))
     }
 
     /// Obtain an iterator over the [`PathBuf`]s of all objects
@@ -1071,7 +1075,22 @@ impl SnapshotRepository {
             ..Default::default()
         };
         read_metrics.blob.files = snapshot.blobs.len() as u64;
-        read_metrics.page.files = snapshot.tables.iter().map(|table| table.pages.len() as u64).sum();
+        read_metrics.page.files = snapshot
+            .tables
+            .iter()
+            .map(|table| table_num_present_pages(&table.pages))
+            .sum();
+        read_metrics.absent_pages = snapshot
+            .tables
+            .iter()
+            .map(|table| {
+                table
+                    .pages
+                    .iter()
+                    .filter(|page| **page == ZERO_HASH_DENOTING_ABSENT_PAGE)
+                    .count() as u64
+            })
+            .sum();
 
         if snapshot.magic != MAGIC {
             return Err(SnapshotError::BadMagic {
