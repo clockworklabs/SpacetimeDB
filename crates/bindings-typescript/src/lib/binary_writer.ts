@@ -1,5 +1,8 @@
 import { fromByteArray } from 'base64-js';
 
+// Shared encoder: `writeString` is called once per string column per row.
+const textEncoder = new TextEncoder();
+
 const ArrayBufferPrototypeTransfer =
   ArrayBuffer.prototype.transfer ??
   function (this: ArrayBuffer, newByteLength) {
@@ -206,8 +209,26 @@ export default class BinaryWriter {
   }
 
   writeString(value: string): void {
-    const encoder = new TextEncoder();
-    const encodedString = encoder.encode(value);
-    this.writeUInt8Array(encodedString);
+    // Fast path: pure-ASCII strings are written straight into the buffer,
+    // one byte per char, with no intermediate allocation. Non-ASCII input
+    // falls back to the shared encoder. This method runs once per string
+    // column per row on every insert/update, so per-call allocations
+    // (a fresh TextEncoder and a temporary Uint8Array) dominated its cost.
+    const len = value.length;
+    this.expandBuffer(4 + len);
+    const bytes = new Uint8Array(this.buffer.buffer);
+    let offset = this.offset + 4;
+    let i = 0;
+    for (; i < len; i++) {
+      const c = value.charCodeAt(i);
+      if (c >= 0x80) break;
+      bytes[offset++] = c;
+    }
+    if (i === len) {
+      this.view.setUint32(this.offset, len, true);
+      this.offset = offset;
+      return;
+    }
+    this.writeUInt8Array(textEncoder.encode(value));
   }
 }
