@@ -72,6 +72,14 @@
           "requiresFeatures": [
             "ecommerce.feature.warehouse-admin"
           ]
+        },
+        {
+          "id": "ecommerce.l1-modular.startup-probe",
+          "path": "prompts/fragments/startup-probe-1.0.0.md",
+          "order": 2600,
+          "modes": [
+            "fresh"
+          ]
         }
       ]
     }
