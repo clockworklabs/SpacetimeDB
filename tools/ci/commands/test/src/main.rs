@@ -1,8 +1,9 @@
 #![allow(clippy::disallowed_macros)]
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use ci_common::pnpm;
 use clap::Parser;
 use duct::cmd;
+use std::{env, path::PathBuf};
 
 /// Runs tests
 ///
@@ -10,10 +11,40 @@ use duct::cmd;
 /// This does not include Unreal tests.
 /// This expects to run in a clean git state.
 #[derive(Parser)]
-struct Cli {}
+struct Cli {
+    /// Use release CLI and standalone binaries already present in the Cargo target directory.
+    #[arg(long)]
+    prebuilt_runtime: bool,
+}
+
+fn runtime_binary_path(binary_name: &str) -> PathBuf {
+    let target_dir = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| ci_common::repo_root().join("target"));
+    target_dir
+        .join("release")
+        .join(binary_name)
+        .with_extension(env::consts::EXE_EXTENSION)
+}
+
+fn verify_prebuilt_runtime() -> Result<()> {
+    for binary_name in ["spacetimedb-cli", "spacetimedb-standalone"] {
+        let binary_path = runtime_binary_path(binary_name);
+        ensure!(
+            binary_path.is_file(),
+            "--prebuilt-runtime requires {binary_name} at {}",
+            binary_path.display()
+        );
+    }
+    Ok(())
+}
 
 fn main() -> Result<()> {
-    Cli::parse();
+    let cli = Cli::parse();
+
+    if cli.prebuilt_runtime {
+        verify_prebuilt_runtime()?;
+    }
 
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
 
@@ -53,18 +84,20 @@ fn main() -> Result<()> {
     .run()?;
     // The SDK test harness uses the same child-process server guard as smoketests,
     // which expects release CLI/standalone binaries to already exist.
-    cmd!(
-        "cargo",
-        "build",
-        "--release",
-        "-p",
-        "spacetimedb-cli",
-        "-p",
-        "spacetimedb-standalone",
-        "--features",
-        "spacetimedb-standalone/allow_loopback_http_for_tests",
-    )
-    .run()?;
+    if !cli.prebuilt_runtime {
+        cmd!(
+            "cargo",
+            "build",
+            "--release",
+            "-p",
+            "spacetimedb-cli",
+            "-p",
+            "spacetimedb-standalone",
+            "--features",
+            "spacetimedb-standalone/allow_loopback_http_for_tests",
+        )
+        .run()?;
+    }
     // SDK procedure tests intentionally make localhost HTTP requests.
     cmd!(
         "cargo",

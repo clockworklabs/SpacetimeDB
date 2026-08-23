@@ -9,6 +9,8 @@ SDK_PATH="$(realpath "$SDK_PATH")"
 STDB_PATH="$SDK_PATH/../.."
 SPACETIMEDB_SERVER_URL="${SPACETIMEDB_SERVER_URL:-local}"
 
+source "$SDK_PATH/tools~/spacetime-command.sh"
+
 DOTNET_VERSIONS=("$@")
 if [ ${#DOTNET_VERSIONS[@]} -eq 0 ]; then
     DOTNET_VERSIONS=(8 10)
@@ -99,8 +101,8 @@ run_client() {
 
 trap restore_global_jsons EXIT
 
-# Build and run SpacetimeDB server
-cargo build --manifest-path "$STDB_PATH/crates/standalone/Cargo.toml"
+# Ensure the CLI and standalone used by the regression tests are available.
+prepare_spacetime "$STDB_PATH"
 
 for dotnet_version in "${DOTNET_VERSIONS[@]}"; do
     echo "Running C# regression tests with .NET $dotnet_version"
@@ -111,13 +113,13 @@ for dotnet_version in "${DOTNET_VERSIONS[@]}"; do
     "$SDK_PATH/tools~/gen-regression-tests.sh" "$dotnet_version"
 
     # Publish module for btree test
-    cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish --dotnet-version "$dotnet_version" -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$SDK_PATH/examples~/regression-tests/server" btree-repro
+    "${SPACETIME[@]}" publish --dotnet-version "$dotnet_version" -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$SDK_PATH/examples~/regression-tests/server" btree-repro
 
     # Publish module for republishing module test
-    cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish --dotnet-version "$dotnet_version" -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$SDK_PATH/examples~/regression-tests/republishing/server-initial" republish-test
-    cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server "$SPACETIMEDB_SERVER_URL" republish-test insert 1
-    cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish --dotnet-version "$dotnet_version" --server "$SPACETIMEDB_SERVER_URL" -p "$SDK_PATH/examples~/regression-tests/republishing/server-republish" --break-clients republish-test
-    cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server "$SPACETIMEDB_SERVER_URL" republish-test insert 2
+    "${SPACETIME[@]}" publish --dotnet-version "$dotnet_version" -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$SDK_PATH/examples~/regression-tests/republishing/server-initial" republish-test
+    "${SPACETIME[@]}" call --server "$SPACETIMEDB_SERVER_URL" republish-test insert 1
+    "${SPACETIME[@]}" publish --dotnet-version "$dotnet_version" --server "$SPACETIMEDB_SERVER_URL" -p "$SDK_PATH/examples~/regression-tests/republishing/server-republish" --break-clients republish-test
+    "${SPACETIME[@]}" call --server "$SPACETIMEDB_SERVER_URL" republish-test insert 2
 
     echo "Cleanup obj~ folders generated in $SDK_PATH/examples~/regression-tests/procedure-client"
     # There is a bug in the code generator that creates obj~ folders in the output directory using a Rust project.
@@ -125,7 +127,7 @@ for dotnet_version in "${DOTNET_VERSIONS[@]}"; do
     rm -rf "$SDK_PATH/examples~/regression-tests/procedure-client/module_bindings"/*/obj~
 
     # Publish module for procedure tests
-    cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish --dotnet-version "$dotnet_version" -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$STDB_PATH/modules/sdk-test-procedure" procedure-tests
+    "${SPACETIME[@]}" publish --dotnet-version "$dotnet_version" -c -y --server "$SPACETIMEDB_SERVER_URL" -p "$STDB_PATH/modules/sdk-test-procedure" procedure-tests
 
     # Run clients against the modules published with this .NET version.
     run_client "$SDK_PATH/examples~/regression-tests/client" "$dotnet_version"
