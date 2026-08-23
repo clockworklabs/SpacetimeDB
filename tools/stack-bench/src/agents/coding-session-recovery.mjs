@@ -2,6 +2,25 @@ function text(value) {
   return Buffer.isBuffer(value) ? value.toString('utf8') : String(value ?? '');
 }
 
+// Provider statuses that mean "the account cannot accept work right now", not
+// "this session is broken": 429 is the account rate/usage limit and 529 is
+// provider overload. Both are transient by definition, so the recovery loop
+// waits them out instead of spending its bounded interruption retries — an
+// immediate resume against a throttled account fails in milliseconds and a
+// nine-way campaign burns every retry it has while the window is still closed.
+const THROTTLE_STATUSES = new Set([429, 529]);
+// Escalating waits, then a steady 15-minute probe. A subscription usage window
+// can stay closed for hours; the budget below bounds the total, not the count.
+const THROTTLE_DELAYS_MS = [60_000, 120_000, 300_000, 600_000, 900_000];
+export const DEFAULT_THROTTLE_MAX_WAIT_MS = 300 * 60_000;
+
+// Synchronous by design: the surrounding loop drives execFileSync invocations,
+// and each chunk is at most 15 minutes so a pending SIGTERM is honoured at the
+// next chunk boundary rather than never.
+function synchronousSleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 export function parseCodingSessionResult(raw) {
   const value = text(raw).trim();
   if (!value) return null;
@@ -21,6 +40,16 @@ function codingProcessDiagnostic(error) {
 }
 
 export function codingSessionInterruption(error, result) {
+  if (result?.terminal_reason === 'api_error'
+    && THROTTLE_STATUSES.has(result.api_error_status ?? null)) {
+    // A throttled first request has no session yet; a null resumeSession makes
+    // the retry restart from the existing files instead of resuming.
+    return { kind: 'provider-throttled',
+      resumeSession: typeof result.session_id === 'string' && result.session_id
+        ? result.session_id : null,
+      recoverStoppedContainer: false, terminalReason: 'api_error',
+      providerStatus: result.api_error_status };
+  }
   if (result?.terminal_reason === 'api_error' && typeof result.session_id === 'string'
     && result.session_id) {
     return { kind: 'provider-api-error', resumeSession: result.session_id,
@@ -80,18 +109,30 @@ export function codingSessionFailure(error) {
     + `${stderrTail ? `\ninner stderr tail:\n${stderrTail}` : ''}`;
 }
 
-export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBudgetUsd = null }) {
+export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBudgetUsd = null,
+  throttleMaxWaitMs = DEFAULT_THROTTLE_MAX_WAIT_MS, sleep = synchronousSleep, log = null }) {
   if (typeof invoke !== 'function') throw new Error('coding session invoke function is required');
   if (!Number.isInteger(retryLimit) || retryLimit < 0 || retryLimit > 3) {
     throw new Error('coding interruption retry limit must be an integer from 0 to 3');
   }
+  if (!Number.isInteger(throttleMaxWaitMs) || throttleMaxWaitMs < 0) {
+    throw new Error('provider throttle wait budget must be a non-negative integer of milliseconds');
+  }
+  const say = log ?? (message => console.error(message));
   let raw = '';
   let spawnError = null;
   const sessionResults = [];
   const interruptions = [];
   let resumeSession = null;
   let recoverStoppedContainer = false;
-  for (let invocation = 0; invocation <= retryLimit; invocation++) {
+  // Interruption retries are a bounded count; throttle waits are a bounded
+  // TIME. A throttled provider can reject dozens of near-free probe requests
+  // before the window reopens, and counting those against the retry limit
+  // converts a transient account condition into a terminal harness failure.
+  let interruptionRetries = 0;
+  let throttleWaits = 0;
+  let throttleWaitedMs = 0;
+  for (let invocation = 0; ; invocation++) {
     const priorCost = sessionResults.reduce((sum, item) =>
       sum + Number(item.total_cost_usd ?? 0), 0);
     const invocationBudget = maxBudgetUsd == null ? null
@@ -118,12 +159,37 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
     if (result) sessionResults.push(result);
     if (!error && result?.is_error === false) break;
     const interruption = codingSessionInterruption(error, result);
-    if (!interruption || invocation === retryLimit) {
+    if (interruption?.kind === 'provider-throttled') {
+      const delay = THROTTLE_DELAYS_MS[Math.min(throttleWaits, THROTTLE_DELAYS_MS.length - 1)];
+      if (throttleWaitedMs + delay > throttleMaxWaitMs) {
+        spawnError = `provider stayed throttled (status ${interruption.providerStatus}) after `
+          + `${Math.round(throttleWaitedMs / 60_000)} minutes of waiting across `
+          + `${throttleWaits} retry attempt(s)`;
+        break;
+      }
+      say(`provider throttled (status ${interruption.providerStatus}); waiting `
+        + `${Math.round(delay / 1000)}s before `
+        + `${interruption.resumeSession ? `resuming session ${interruption.resumeSession}`
+          : 'restarting the coding session'} `
+        + `(${Math.round((throttleWaitedMs + delay) / 60_000)} of `
+        + `${Math.round(throttleMaxWaitMs / 60_000)} wait minutes used)`);
+      sleep(delay);
+      throttleWaits += 1;
+      throttleWaitedMs += delay;
+      interruptions.push({ ...interruption, invocation: invocation + 1,
+        sessionId: result?.session_id ?? null, waitedMs: delay,
+        costUsd: Number((result?.total_cost_usd ?? 0).toFixed(6)) });
+      resumeSession = interruption.resumeSession;
+      recoverStoppedContainer = interruption.recoverStoppedContainer;
+      continue;
+    }
+    if (!interruption || interruptionRetries === retryLimit) {
       spawnError = codingSessionFailure(error ?? {
         status: 1, stdout: raw, stderr: result?.result ?? 'coding session reported failure',
       });
       break;
     }
+    interruptionRetries += 1;
     interruptions.push({ ...interruption, invocation: invocation + 1,
       sessionId: result?.session_id ?? null,
       costUsd: Number((result?.total_cost_usd ?? 0).toFixed(6)) });
@@ -131,5 +197,7 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
     recoverStoppedContainer = interruption.recoverStoppedContainer;
   }
   return { raw, spawnError, sessionResults, interruptions,
+    throttle: { waits: throttleWaits, waitedMs: throttleWaitedMs,
+      maxWaitMs: throttleMaxWaitMs },
     result: aggregateCodingSessionResults(sessionResults) };
 }

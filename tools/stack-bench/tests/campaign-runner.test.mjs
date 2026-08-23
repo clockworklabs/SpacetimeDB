@@ -16,6 +16,11 @@ const example = join(import.meta.dirname, '..', 'appliance', 'campaign.example.j
 const productBrief = join(import.meta.dirname, '..', 'appliance',
   'campaign.product-brief-reference.json');
 
+// A valid run artifact carries the exact planned selection for each level; the
+// modular example selection made this mandatory for level-1 fixtures.
+const plannedSelection = (attempt, level) => structuredClone(
+  attempt.condition.requested.levels.find(item => item.level === level).selection);
+
 test('parallel SpacetimeDB slots receive distinct dedicated host ports', () => {
   assert.equal(campaignSlotEnvironment({}, 'spacetime', 0).STACK_BENCH_STDB_URI,
     'http://127.0.0.1:3210');
@@ -106,7 +111,8 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   track: plan.definition.track, backend: attempt.stack, model: attempt.model,
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
-  runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 }, levels: [{ level: 1 }],
+  runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
+  levels: [{ level: 1, selection: plannedSelection(attempt, 1) }],
   outcome: { kind: 'harness_failure', reason: 'provider-session-error' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
   assert.throws(() => validateCampaignRun(plan, attempt,
@@ -117,7 +123,8 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   const gated = { ...run,
     validation: { ladder: { policy: 'pass-before-next-level', requestedLevels: [1, 2],
       completedLevels: [1], stoppedAfterLevel: 1, blockedLevels: [2] } },
-    levels: [{ level: 1, graded: true, score: 57, max: 58, fixRounds: 3,
+    levels: [{ level: 1, selection: plannedSelection(attempt, 1),
+      graded: true, score: 57, max: 58, fixRounds: 3,
       firstBuild: { score: 31, max: 58, outcome: appFailure },
       repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3,
         stopReason: 'budget-exhausted' }, outcome: appFailure }],
@@ -165,7 +172,7 @@ test('campaign validation rejects an application result that stopped before its 
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
-  levels: [{ level: 1, score: 0, max: 58, fixRounds: 1,
+  levels: [{ level: 1, selection: plannedSelection(attempt, 1), score: 0, max: 58, fixRounds: 1,
     firstBuild: { score: 0, max: 58, outcome: { kind: 'app_failure' } },
     repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 1, stopReason: null },
     outcome: { kind: 'app_failure' } }], outcome: { kind: 'app_failure' } };
@@ -208,7 +215,7 @@ test('campaign validation requires complete first-build and final measurement co
   guidance: attempt.guidance, condition: attempt.condition,
   selectionRequest: plan.definition.selection, skills: attempt.skills,
   runtime: { buildImage: 'test-build-image' }, totals: { costUsd: 0 },
-  levels: [{ level: 1, score: 58, max: 58, fixRounds: 0,
+  levels: [{ level: 1, selection: plannedSelection(attempt, 1), score: 58, max: 58, fixRounds: 0,
     firstBuild: { score: 58, max: 58, outcome },
     repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
     outcome }], outcome: { kind: 'passed' } };
@@ -342,7 +349,7 @@ test('campaign trials accept only non-billable draft plans with zero pricing', a
     }), /admission failed/);
 
     const paid = JSON.parse(readFileSync(example, 'utf8'));
-    paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.11.0', model: 'claude-sonnet-5' }];
+    paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.12.0', model: 'claude-sonnet-5' }];
     paid.pricing.models = { 'claude-sonnet-5': {
       inputPerMillion: 0, outputPerMillion: 0,
       cacheWritePerMillion: 0, cacheReadPerMillion: 0,
@@ -444,10 +451,10 @@ test('model-free campaign execution checkpoints a retry and every completed atte
           skills: attempt.skills, runtime: { buildImage: options.env.STACK_BENCH_IMAGE },
           totals: { costUsd: 0 },
           levels: attempt.levels.map(level => {
-            const max = attempt.condition.requested.levels
-              .find(item => item.level === level).selection.scoredPoints;
+            const selection = plannedSelection(attempt, level);
+            const max = selection.scoredPoints;
             const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
-            return { level, score: max, max, fixRounds: 0,
+            return { level, selection, score: max, max, fixRounds: 0,
               firstBuild: { score: max, max, outcome },
             repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
               outcome };
@@ -510,10 +517,10 @@ test('one campaign runs multiple attempts of the same stack concurrently in isol
           selectionRequest: planned.definition.selection, skills: attempt.skills,
           runtime: { buildImage: options.env.STACK_BENCH_IMAGE }, totals: { costUsd: 0 },
           levels: attempt.levels.map(level => {
-            const max = attempt.condition.requested.levels
-              .find(item => item.level === level).selection.scoredPoints;
+            const selection = plannedSelection(attempt, level);
+            const max = selection.scoredPoints;
             const outcome = { kind: 'passed', inconclusive: [], harnessFailures: [] };
-            return { level, score: max, max, fixRounds: 0,
+            return { level, selection, score: max, max, fixRounds: 0,
               firstBuild: { score: max, max, outcome },
               repair: { status: 'not-needed', budgetRounds: 3, roundsUsed: 0, stopReason: null },
               outcome };

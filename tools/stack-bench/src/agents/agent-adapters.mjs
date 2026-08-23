@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 
 import { AGENT_ADAPTER_SCHEMA_VERSION, createAgentAdapterRegistry } from './agent-adapter-contract.mjs';
+import { AGENT_PROCESS_TIMEOUT_MS } from './coding-session-timeouts.mjs';
+import { DEFAULT_THROTTLE_MAX_WAIT_MS } from './coding-session-recovery.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
@@ -21,7 +23,14 @@ const adapter = (id, entrypoint, defaultModel,
   id, version, entrypoint: join(ROOT, entrypoint), modes, defaultModel,
   apiKeyEnvironmentVariable, credentialEnvironmentVariables, credentialFiles,
   outboundDestinations, requiredExecutables, credentialStatusCommand, usesStackSkills, costLimit,
-  deadlineMs: 75 * 60_000,
+  // The supervisor's backstop for one agent invocation. It must exceed one
+  // full coding session PLUS the provider-throttle wait budget: the old
+  // 75-minute value sat BELOW the 123-minute session bound, and because the
+  // agent blocks in a synchronous container call, the supervisor's SIGTERM
+  // pended until that call returned — the declared deadline was never really
+  // enforced, and its eventual delivery reported a live session as
+  // "Command failed". Work beyond one session is the attempt budget's job.
+  deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000,
 });
 
 export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
@@ -34,7 +43,7 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       // `loggedIn:false`; the adapter command must turn semantic logout into a
       // failed preflight without making a provider request.
       credentialStatusCommand: CLAUDE_SUBSCRIPTION_STATUS_COMMAND,
-      usesStackSkills: true, version: '1.11.0' }),
+      usesStackSkills: true, version: '1.12.0' }),
   adapter('deterministic', join('fixtures', 'stub-agent.mjs'), 'deterministic',
     { costLimit: 'non-billable', version: '1.1.0' }),
   adapter('fault-injection', join('fixtures', 'fault-agent.mjs'), 'fault-injection',

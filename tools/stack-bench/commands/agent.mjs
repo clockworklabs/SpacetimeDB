@@ -32,7 +32,8 @@ import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { dockerMountArguments } from '../src/runtime/container-mount.mjs';
 import { normalizePromptText, readAgentSkillDocuments, selectAgentSkills } from '../src/agents/agent-materials.mjs';
-import { codingSessionFailure, runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
+import { codingSessionFailure, DEFAULT_THROTTLE_MAX_WAIT_MS,
+  runCodingSessionWithRecovery } from '../src/agents/coding-session-recovery.mjs';
 import { AGENT_PROCESS_TIMEOUT_MS } from '../src/agents/coding-session-timeouts.mjs';
 import { assertNewOrEmptyDirectory } from '../src/runtime/path-safety.mjs';
 
@@ -684,6 +685,18 @@ async function main() {
   if (!Number.isInteger(retryLimit) || retryLimit < 0 || retryLimit > 3) {
     throw new Error('STACK_BENCH_CODING_INTERRUPTION_RETRIES must be an integer from 0 to 3');
   }
+  // Bounded above by the adapter deadline: bench.mjs kills this whole process
+  // at deadlineMs, so a wait budget past that point would promise time the
+  // supervisor never grants. DEFAULT_THROTTLE_MAX_WAIT_MINUTES is sized to
+  // span one full subscription usage-window reset.
+  const throttleWaitRaw = process.env.STACK_BENCH_PROVIDER_THROTTLE_MAX_WAIT_MINUTES
+    ?? String(DEFAULT_THROTTLE_MAX_WAIT_MS / 60_000);
+  const throttleMaxWaitMinutes = Number(throttleWaitRaw);
+  if (!Number.isInteger(throttleMaxWaitMinutes) || throttleMaxWaitMinutes < 0
+    || throttleMaxWaitMinutes > DEFAULT_THROTTLE_MAX_WAIT_MS / 60_000) {
+    throw new Error('STACK_BENCH_PROVIDER_THROTTLE_MAX_WAIT_MINUTES must be an integer from 0 to '
+      + `${DEFAULT_THROTTLE_MAX_WAIT_MS / 60_000}`);
+  }
   let coding;
   try {
     // The prompt goes in on stdin, not as an argument. Windows caps a command
@@ -717,6 +730,7 @@ async function main() {
     // container path is a separate script so that what a build can reach is
     // stated in one place — see container/run-build.mjs.
     coding = runCodingSessionWithRecovery({ prompt, retryLimit, maxBudgetUsd: args.maxBudgetUsd,
+      throttleMaxWaitMs: throttleMaxWaitMinutes * 60_000,
       invoke: ({ input, maxBudgetUsd, resumeSession, recoverStoppedContainer }) =>
         execFileSync(process.execPath, [
           join(ROOT, 'container', 'run-build.mjs'),
@@ -736,7 +750,8 @@ async function main() {
     });
   } catch (err) {
     coding = { raw: '', spawnError: codingSessionFailure(err), sessionResults: [],
-      interruptions: [], result: {} };
+      interruptions: [], result: {},
+      throttle: { waits: 0, waitedMs: 0, maxWaitMs: throttleMaxWaitMinutes * 60_000 } };
   }
 
   // The session is over, so the lint endpoint has no reason to stay open — and
@@ -744,7 +759,7 @@ async function main() {
   // result.
   killTree(lintServer.pid);
 
-  const { raw, spawnError, sessionResults, interruptions, result } = coding;
+  const { raw, spawnError, sessionResults, interruptions, result, throttle } = coding;
   // A session that never started produced no code. Reject it instead of grading
   // an empty directory as a real backend result.
   if (spawnError || (!result.session_id && !raw.trim())) {
@@ -787,7 +802,13 @@ async function main() {
       // cache tier is unknown cannot be compared with one taken later.
       cacheTier: '5m',
       autoUpdater: 'disabled',
-      codingInterruptionRetries: { limit: retryLimit, used: interruptions.length },
+      codingInterruptionRetries: { limit: retryLimit,
+        used: interruptions.filter(item => item.kind !== 'provider-throttled').length },
+      // Waiting out a provider throttle is time the model did not work; a
+      // duration compared without this figure blames the backend for the
+      // account's usage window.
+      providerThrottle: { maxWaitMinutes: throttleMaxWaitMinutes,
+        waits: throttle?.waits ?? 0, waitedMs: throttle?.waitedMs ?? 0 },
       // In a container the host CLI is not the one that ran, so the version is
       // read from the image. Reporting the host's would attribute a number to
       // software that took no part in producing it.

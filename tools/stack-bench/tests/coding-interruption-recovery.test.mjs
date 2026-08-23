@@ -20,6 +20,85 @@ test('provider mid-response errors resume the exact paid session', () => {
   });
 });
 
+test('a provider throttle is classified as waitable, with or without a session', () => {
+  const throttled = parseCodingSessionResult(JSON.stringify({ type: 'result', is_error: true,
+    terminal_reason: 'api_error', api_error_status: 429, session_id: 'paid-session' }));
+  assert.deepEqual(codingSessionInterruption(Object.assign(new Error('exit'), { status: 1 }), throttled), {
+    kind: 'provider-throttled', resumeSession: 'paid-session', recoverStoppedContainer: false,
+    terminalReason: 'api_error', providerStatus: 429,
+  });
+  const beforeSession = parseCodingSessionResult(JSON.stringify({ type: 'result', is_error: true,
+    terminal_reason: 'api_error', api_error_status: 529 }));
+  assert.deepEqual(codingSessionInterruption(null, beforeSession), {
+    kind: 'provider-throttled', resumeSession: null, recoverStoppedContainer: false,
+    terminalReason: 'api_error', providerStatus: 529,
+  });
+});
+
+test('throttle waits back off, resume the paid session, and do not spend interruption retries', () => {
+  const calls = [];
+  const waits = [];
+  const logs = [];
+  const coding = runCodingSessionWithRecovery({ prompt: 'build the app', retryLimit: 0,
+    sleep: ms => waits.push(ms), log: message => logs.push(message),
+    invoke(request) {
+      calls.push(request);
+      if (calls.length <= 2) {
+        return JSON.stringify({ is_error: true, terminal_reason: 'api_error',
+          api_error_status: 429, session_id: 'paid-session', total_cost_usd: 0.001 });
+      }
+      return JSON.stringify({ is_error: false, session_id: 'paid-session',
+        total_cost_usd: 2, num_turns: 3, usage: {} });
+    } });
+  assert.equal(coding.spawnError, null);
+  assert.equal(calls.length, 3);
+  assert.deepEqual(waits, [60_000, 120_000]);
+  assert.equal(calls[1].resumeSession, 'paid-session');
+  assert.equal(calls[2].resumeSession, 'paid-session');
+  assert.deepEqual(coding.throttle, { waits: 2, waitedMs: 180_000, maxWaitMs: 300 * 60_000 });
+  assert.equal(coding.interruptions.length, 2);
+  assert.ok(coding.interruptions.every(item => item.kind === 'provider-throttled'));
+  assert.match(logs[0], /provider throttled \(status 429\)/);
+});
+
+test('a throttle before any session restarts from the existing files after waiting', () => {
+  const calls = [];
+  const waits = [];
+  const coding = runCodingSessionWithRecovery({ prompt: 'full original prompt', retryLimit: 0,
+    sleep: ms => waits.push(ms), log: () => {},
+    invoke(request) {
+      calls.push(request);
+      if (calls.length === 1) {
+        return JSON.stringify({ is_error: true, terminal_reason: 'api_error',
+          api_error_status: 429 });
+      }
+      return JSON.stringify({ is_error: false, session_id: 'fresh', total_cost_usd: 1,
+        num_turns: 1, usage: {} });
+    } });
+  assert.equal(coding.spawnError, null);
+  assert.deepEqual(waits, [60_000]);
+  assert.equal(calls[1].resumeSession, null);
+  assert.match(calls[1].input, /Continue this task from the existing files/);
+});
+
+test('an unbroken throttle stops at the wait budget with a throttle-specific failure', () => {
+  const waits = [];
+  let calls = 0;
+  const coding = runCodingSessionWithRecovery({ prompt: 'build the app', retryLimit: 3,
+    throttleMaxWaitMs: 5 * 60_000, sleep: ms => waits.push(ms), log: () => {},
+    invoke() {
+      calls += 1;
+      return JSON.stringify({ is_error: true, terminal_reason: 'api_error',
+        api_error_status: 429, session_id: 'paid-session',
+        result: 'API Error: Request rejected (429)' });
+    } });
+  // 60s + 120s fit inside five minutes; the 300s third wait would exceed it.
+  assert.deepEqual(waits, [60_000, 120_000]);
+  assert.equal(calls, 3);
+  assert.match(coding.spawnError, /provider stayed throttled \(status 429\) after 3 minutes/);
+  assert.deepEqual(coding.throttle, { waits: 2, waitedMs: 180_000, maxWaitMs: 5 * 60_000 });
+});
+
 test('only a non-OOM forced exit is eligible for container recovery', () => {
   const failure = diagnostic => Object.assign(new Error('killed'), { status: 137,
     stderr: `STACK_BENCH_CODING_PROCESS_DIAGNOSTIC ${JSON.stringify(diagnostic)}\n` });
