@@ -22,7 +22,7 @@ const recipePath = name => join(ECOMMERCE, 'composition', 'recipes', name);
 
 test('the ecommerce composition tree validates as one source set', () => {
   assert.deepEqual(checkCompositions({ trackName: 'ecommerce' }), [{
-      track: 'ecommerce', packs: 51, fixtures: 2, recipes: 13, checks: 677, aliases: 8,
+      track: 'ecommerce', packs: 54, fixtures: 2, recipes: 15, checks: 801, aliases: 8,
   }]);
 });
 

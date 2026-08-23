@@ -147,6 +147,10 @@ test('named action input is exact and a missing route is not mistaken for a refu
   const checked = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused' }, missing);
   assert.equal(checked.status, 'failed');
   assert.match(checked.summary, /does not prove/);
+  // A 404 names the operation the testing interface requires, so a repair
+  // round can create the missing endpoint instead of chasing authorization.
+  assert.match(checked.summary, /reducer `admin_restock`/);
+  assert.match(checked.summary, /POST \/api\/admin\/restock/);
 
   const privateResource = await run({ do: 'expectActionOutcome', actor: 'customer', outcome: 'refused',
     routeProvenBy: 'route' }, missing);

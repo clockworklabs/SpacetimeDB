@@ -624,10 +624,29 @@ async function callAction({ input, capabilities, signal }) {
     url: request.url,
     method: request.method ?? 'POST',
     applicationRejected: (request.applicationRejectionStatuses ?? []).includes(response.status),
+    // Retained so a 404 can name the operation the testing interface requires;
+    // "not found" is otherwise indistinguishable from a wrongly-named endpoint
+    // and a repair round has nothing to act on.
+    operation: { reducer: action.reducer ?? null, path: action.path ?? null,
+      method: action.method ?? 'POST' },
   };
   await transport.sleep(input.settleMs ?? 2000, signal);
   return { action: input.action, accepted: caller.actionCall.accepted,
     status: caller.actionCall.status };
+}
+
+// A 404 usually means the declared operation does not exist under its required
+// name. Say what the testing interface calls, or the failure reads as an
+// authorization verdict when it is a naming one and no repair can target it.
+function missingOperationHint(call) {
+  if (call.status !== 404 || !call.operation) return '';
+  const identities = [
+    call.operation.reducer ? `SpacetimeDB reducer \`${call.operation.reducer}\`` : null,
+    call.operation.path ? `\`${call.operation.method} ${call.operation.path}\`` : null,
+  ].filter(Boolean).join(' or ');
+  return identities
+    ? ` — the public testing interface calls ${identities}, which must exist and apply the ordinary rules to this caller`
+    : '';
 }
 
 async function expectActionOutcome({ input, capabilities }) {
@@ -638,7 +657,8 @@ async function expectActionOutcome({ input, capabilities }) {
   if (input.outcome === 'accepted') {
     if (!call.accepted) {
       fail(`server did not accept action "${call.action}" as ${actor.name} `
-        + `(${call.status ? `HTTP ${call.status}` : 'no server response'})`);
+        + `(${call.status ? `HTTP ${call.status}` : 'no server response'})`
+        + missingOperationHint(call));
     }
   } else {
     if (call.accepted) {
@@ -653,7 +673,8 @@ async function expectActionOutcome({ input, capabilities }) {
       || call.applicationRejected === true;
     if (!deliberateRefusal) {
       fail(`action "${call.action}" failed with ${call.status ? `HTTP ${call.status}` : 'no server response'}; `
-        + 'that does not prove the server refused the caller');
+        + 'that does not prove the server refused the caller'
+        + missingOperationHint(call));
     }
   }
   transport.verification.verified(
