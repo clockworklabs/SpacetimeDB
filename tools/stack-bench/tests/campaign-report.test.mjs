@@ -23,8 +23,12 @@ function run(id, attempt, { score = 8, max = 10, first = 5, cost = 2, durationSe
   const fixRounds = passed ? (score === first ? 0 : 1) : 3;
   const status = passed ? (fixRounds ? 'corrected' : 'not-needed') : 'budget-exhausted';
   const outcome = { kind: passed ? 'passed' : 'app_failure' };
+  // A valid run artifact carries the exact planned selection for each level.
+  const selection = structuredClone(attempt.condition?.requested?.levels
+    ?.find(item => item.level === 1)?.selection ?? null);
   return { id, parentAttemptId: attempt.id, outcome,
-    levels: [{ level: 1, firstBuild: { score: first, max, outcome }, score, max,
+    levels: [{ level: 1, ...(selection ? { selection } : {}),
+      firstBuild: { score: first, max, outcome }, score, max,
       fixCostUsd: fixRounds ? cost / 2 : 0, fixRounds,
       repair: { status, budgetRounds: 3, roundsUsed: fixRounds, stopReason: null }, outcome }],
     totals: { score, max, costUsd: cost, durationSec, fixRounds } };
@@ -249,7 +253,7 @@ test('HTML escapes caller-controlled labels and reports exact scope', () => {
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /Study condition/);
-  assert.match(html, /prescribed@1\.0\.0/);
+  assert.match(html, /prescribed@1\.1\.0/);
   const malformedScope = structuredClone(report);
   malformedScope.scope.surprise = true;
   const { contentSha256: _old, ...body } = malformedScope;

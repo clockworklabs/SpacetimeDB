@@ -117,16 +117,22 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
       const projectChecks = checks => checks?.map(check => ({
         stableKey: check?.stableKey, points: check?.points, treatment: check?.treatment,
       }));
+      // A run that omits a selection field entirely must register as a
+      // mismatch, not crash canonicalization: the crash message names no
+      // field, and a validator that throws for a reason other than its own
+      // verdict hides which identity actually diverged.
+      const canonicalOrMissing = value => value === undefined
+        ? '"<missing>"' : canonicalDefinitionJson(value);
       mismatch(level.selection?.schemaVersion !== 3, `${selectionAt}.schemaVersion`);
       mismatch(level.selection?.sha256 !== plannedLevel.selection.sha256,
         `${selectionAt}.sha256`);
-      mismatch(canonicalDefinitionJson(level.selection?.specifications)
+      mismatch(canonicalOrMissing(level.selection?.specifications)
         !== canonicalDefinitionJson(plannedLevel.selection.specifications),
       `${selectionAt}.specifications`);
-      mismatch(canonicalDefinitionJson(projectChecks(level.selection?.scoredChecks))
+      mismatch(canonicalOrMissing(projectChecks(level.selection?.scoredChecks))
         !== canonicalDefinitionJson(plannedLevel.selection.scoredChecks),
       `${selectionAt}.scoredChecks`);
-      mismatch(canonicalDefinitionJson(projectChecks(level.selection?.observedChecks))
+      mismatch(canonicalOrMissing(projectChecks(level.selection?.observedChecks))
         !== canonicalDefinitionJson(plannedLevel.selection.observedChecks),
       `${selectionAt}.observedChecks`);
       mismatch(level.selection?.scoredPoints !== plannedLevel.selection.scoredPoints,
