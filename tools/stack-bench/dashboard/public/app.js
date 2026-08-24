@@ -14,7 +14,7 @@ const MIN_REPETITIONS = 3;
 const ARCHIVE_AFTER_MS = 72 * 3600 * 1000;
 
 const state = { overview: null, csrfToken: null, selectedPlan: null, showArchived: false,
-  openCampaign: null };
+  openCampaign: null, expanded: new Set(), collapsed: new Set() };
 
 const $ = selector => document.querySelector(selector);
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -247,38 +247,67 @@ function campaignRow(campaign) {
   const status = running ? `${live} of ${campaign.attempts.length} running`
     : escapeHtml(statusLabel(campaign.status));
   return `<td class="campaign-cell">
-      <button data-campaign="${escapeHtml(campaign.key)}">${escapeHtml(campaign.title)}</button>
-      <i>${escapeHtml(campaign.key)}</i>
-      ${campaign.error ? `<i class="row-error">${escapeHtml(campaign.error)}</i>` : ''}
+      <span class="chevron${isExpanded(campaign) ? ' open' : ''}" aria-hidden="true"></span>
+      <div class="campaign-title">
+        <button data-campaign="${escapeHtml(campaign.key)}">${escapeHtml(campaign.title)}</button>
+        <i>${escapeHtml(campaign.key)}</i>
+        ${campaign.error ? `<i class="row-error">${escapeHtml(campaign.error)}</i>` : ''}
+      </div>
     </td>
     ${STACK_ORDER.map(stack => stackCell(summary, stack, running)).join('')}
     <td class="state-cell"><span class="status ${escapeHtml(campaign.status)}">${status}</span></td>
     <td class="num"><time datetime="${escapeHtml(campaign.updatedAt ?? '')}" title="${escapeHtml(campaign.updatedAt ?? '')}">${escapeHtml(relativeTime(campaign.updatedAt))}</time></td>`;
 }
 
-// While a campaign runs, its row grows a strip with each attempt's phase,
-// score, elapsed time and spend — the facts an operator otherwise tails the
-// controller log for.
-function liveStrip(campaign) {
+// Whether a campaign's rows are open: running campaigns start expanded so the
+// live picture needs no click; anything can be toggled either way, and the
+// choice survives every poll.
+function isExpanded(campaign) {
+  if (state.collapsed.has(campaign.key)) return false;
+  return state.expanded.has(campaign.key) || campaign.status === 'running';
+}
+
+// One row per attempt, always available: the run-level facts an operator
+// otherwise opens the modal and expands each attempt for. While an attempt
+// runs, its phase, score, elapsed time and spend update on every poll.
+function attemptRows(campaign) {
   const attempts = [...(campaign.attempts ?? [])]
     .sort((left, right) => STACK_ORDER.indexOf(left.stack) - STACK_ORDER.indexOf(right.stack)
       || (left.repetition ?? 1) - (right.repetition ?? 1));
-  const chips = attempts.map(attempt => {
-    const score = attempt.progress?.latestScore;
-    const spend = attemptSpend(attempt);
-    const done = attempt.status === 'completed';
-    const parts = [
-      done ? statusLabel(attempt.status) : (attempt.progress?.phase ?? statusLabel(attempt.status)),
-      score ? `${score.score}/${score.max}` : null,
-      attempt.status === 'running' ? elapsedTime(attempt.execution?.startedAt) : null,
-      spend != null ? money(spend) : null,
-    ].filter(Boolean);
-    return `<span class="live-chip ${escapeHtml(attempt.status)}">
-      <b>${escapeHtml(title(attempt.stack))} r${escapeHtml(attempt.repetition ?? 1)}</b>
-      ${parts.map(part => `<i>${escapeHtml(part)}</i>`).join('')}
-    </span>`;
+  const rows = attempts.map(attempt => {
+    const metrics = attemptMetrics(attempt);
+    const reason = attemptExcluded(attempt);
+    const running = attempt.status === 'running';
+    const queued = attempt.status === 'pending';
+    const first = metrics?.raw.first ? `${metrics.raw.first.score}/${metrics.raw.first.max}` : '—';
+    const score = metrics?.raw.final ? `${metrics.raw.final.score}/${metrics.raw.final.max}`
+      : attempt.progress?.latestScore
+        ? `${attempt.progress.latestScore.score}/${attempt.progress.latestScore.max}` : '—';
+    const level = attempt.progress?.level;
+    const middle = reason ? `excluded — ${reason}`
+      : running || queued ? (attempt.progress?.phase ?? '') : '';
+    const duration = attempt.result?.durationSec != null
+      ? durationFromSeconds(attempt.result.durationSec)
+      : running ? elapsedTime(attempt.execution?.startedAt) : '—';
+    return `<tr class="attempt-row">
+      <th scope="row">${escapeHtml(title(attempt.stack))} <i>rep ${escapeHtml(attempt.repetition ?? 1)}</i></th>
+      <td class="attempt-middle">${middle ? `<span>${escapeHtml(middle)}</span>`
+        : `<span class="status ${escapeHtml(attempt.status)}">${escapeHtml(statusLabel(attempt.status))}</span>`}</td>
+      <td class="num">${level ? `L${escapeHtml(level)}` : '—'}</td>
+      <td class="num">${escapeHtml(first)}</td>
+      <td class="num">${escapeHtml(score)}</td>
+      <td class="num">${metrics ? metrics.rounds : (attempt.progress?.repair?.round || '—')}</td>
+      <td class="num">${escapeHtml(duration)}</td>
+      <td class="num">${money(attemptSpend(attempt))}</td>
+    </tr>`;
   }).join('');
-  return `<td colspan="6"><div class="live-strip">${chips}</div></td>`;
+  return `<td colspan="6"><table class="attempt-grid">
+    <thead><tr><th scope="col">Attempt</th><th scope="col">State</th>
+      <th class="num" scope="col">Level</th><th class="num" scope="col">First</th>
+      <th class="num" scope="col">Latest</th><th class="num" scope="col">Rounds</th>
+      <th class="num" scope="col">Time</th><th class="num" scope="col">Cost</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></td>`;
 }
 
 // Refresh updates rows in place instead of replacing the table, so an element
@@ -301,8 +330,8 @@ function reconcileRows(tbody, desired) {
       row.dataset.html = entry.html;
     }
     if (row.className !== entry.className) row.className = entry.className;
-    if (entry.campaign) row.dataset.campaign = entry.campaign;
-    else delete row.dataset.campaign;
+    if (entry.toggles) row.dataset.toggles = entry.toggles;
+    else delete row.dataset.toggles;
     const expected = cursor ? cursor.nextElementSibling : tbody.firstElementChild;
     if (row !== expected) tbody.insertBefore(row, expected);
     cursor = row;
@@ -333,12 +362,12 @@ function renderHistory() {
   } else {
     const desired = new Map();
     for (const campaign of visible) {
-      // The whole row is the click target; the button inside stays for
-      // keyboard and assistive access.
+      // The whole row toggles the attempt rows; the title button opens the
+      // evidence modal and stays for keyboard and assistive access.
       desired.set(campaign.key, { html: campaignRow(campaign), className: '',
-        campaign: campaign.key });
-      if (campaign.status === 'running') {
-        desired.set(`${campaign.key}::live`, { html: liveStrip(campaign), className: 'live-row' });
+        toggles: campaign.key });
+      if (isExpanded(campaign)) {
+        desired.set(`${campaign.key}::attempts`, { html: attemptRows(campaign), className: 'live-row' });
       }
     }
     reconcileRows(tbody, desired);
@@ -580,8 +609,16 @@ async function refresh({ quiet = false } = {}) {
 }
 
 document.addEventListener('click', event => {
-  const target = event.target.closest('[data-campaign]');
-  if (target?.dataset.campaign) showDetail(target.dataset.campaign);
+  const detail = event.target.closest('[data-campaign]');
+  if (detail?.dataset.campaign) { showDetail(detail.dataset.campaign); return; }
+  const toggle = event.target.closest('[data-toggles]');
+  if (toggle?.dataset.toggles) {
+    const key = toggle.dataset.toggles;
+    const campaign = state.overview?.campaigns.find(item => item.key === key);
+    if (isExpanded(campaign ?? { key })) { state.expanded.delete(key); state.collapsed.add(key); }
+    else { state.collapsed.delete(key); state.expanded.add(key); }
+    renderHistory();
+  }
 });
 $('#close-detail').addEventListener('click', closeDetail);
 $('#detail-dialog').addEventListener('cancel', () => { state.openCampaign = null;

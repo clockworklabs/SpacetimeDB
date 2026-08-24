@@ -147,7 +147,7 @@ th.num, td.num { text-align: right; font-family: var(--font-source); font-varian
 td.num i { color: var(--muted); font-style: normal; }
 
 table.campaigns { min-width: 860px; }
-table.campaigns tbody tr[data-campaign] { cursor: pointer; }
+table.campaigns tbody tr[data-toggles] { cursor: pointer; }
 table.campaigns tbody tr:hover { background: var(--raised); }
 .group-row > * { padding: 10px var(--row-x) 3px; border-bottom: 0; }
 th.group { color: var(--muted); font: 11px/1.2 var(--font-source); letter-spacing: 0.5px; text-transform: none; text-align: center; }
@@ -189,14 +189,23 @@ td.band small.incomparable { cursor: help; }
 td.band small.vacant-small { color: var(--line-bright); }
 .campaign-cell .row-error { color: var(--yellow); }
 
-/* One line per attempt while a campaign runs: phase, score, elapsed, spend. */
-tr.live-row > td { padding: 0 var(--row-x) 10px; border-bottom: 1px solid var(--line); }
-.live-strip { display: flex; flex-wrap: wrap; gap: 6px 14px; }
-.live-chip { display: inline-flex; align-items: baseline; gap: 8px; padding: 3px 0; font: 11.7px var(--font-source); color: var(--muted); white-space: nowrap; }
-.live-chip b { color: var(--copy); font-weight: 500; }
-.live-chip.running b { color: var(--green); }
-.live-chip.completed b { color: var(--blue); }
-.live-chip i { font-style: normal; }
+/* One row per attempt beneath an expanded campaign: status or live phase,
+ * level, first and latest score, rounds, time and spend. */
+tr.live-row > td { padding: 0 0 6px calc(var(--row-x) + 18px); border-bottom: 1px solid var(--line); }
+table.attempt-grid { width: 100%; }
+table.attempt-grid th, table.attempt-grid td { padding: 4px var(--row-x); border-bottom: 0; font-size: 12.5px; }
+table.attempt-grid thead th { font-size: 10.5px; letter-spacing: 0.8px; }
+table.attempt-grid tbody th { color: var(--copy); font-weight: 500; white-space: nowrap; }
+table.attempt-grid tbody th i { margin-left: 6px; color: var(--muted); font: 11px var(--font-source); font-style: normal; }
+table.attempt-grid td.num { font-size: 12.5px; color: var(--copy); }
+.attempt-middle { max-width: 340px; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.attempt-row:hover { background: var(--panel); }
+
+/* Row expansion affordance. */
+.campaign-cell { display: flex; align-items: baseline; gap: 10px; }
+.chevron { flex: 0 0 auto; width: 7px; height: 7px; margin-top: 2px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); transition: transform 0.15s; }
+.chevron.open { transform: rotate(45deg); }
+.campaign-title { min-width: 0; }
 
 /* --------------------------------------------------------------- loading */
 
