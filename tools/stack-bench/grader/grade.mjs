@@ -53,6 +53,7 @@ import {
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_WITHIN = 5000;
+const SETUP_WITHIN = 20000;
 const REGISTERED_ACTIONS = new Set([
   ...BROWSER_ACTION_IDS,
   ...ACTOR_TRANSPORT_ACTION_IDS,
@@ -384,9 +385,10 @@ function abortableSleep(ms, signal) {
 }
 
 function browserActionCapabilities(actors, ctx) {
+  const defaultWithin = ctx.defaultWithin ?? DEFAULT_WITHIN;
   const actorAccess = Object.freeze({ get: name => actors.get(name) });
   const runtimeValues = Object.freeze({
-    defaultWithin: DEFAULT_WITHIN,
+    defaultWithin,
     expand: value => expand(value, ctx),
     legacyScopedUser: name => `${name}-${ctx.scope}`,
     roomName: base => ctx.roomName(base),
@@ -400,7 +402,7 @@ function browserActionCapabilities(actors, ctx) {
     clients: Object.freeze({
       async open(actor, settleMs, signal) {
         const fresh = await actor.context.newPage();
-        fresh.setDefaultTimeout(DEFAULT_WITHIN);
+        fresh.setDefaultTimeout(defaultWithin);
         actor.attach(fresh);
         await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
         await abortableSleep(settleMs, signal);
@@ -412,7 +414,7 @@ function browserActionCapabilities(actors, ctx) {
         // Register teardown ownership before navigation. If goto fails, the
         // partially opened context must still be closed with the feature.
         ctx.extraContexts?.push({ context, name, page: fresh });
-        fresh.setDefaultTimeout(DEFAULT_WITHIN);
+        fresh.setDefaultTimeout(defaultWithin);
         await fresh.goto(ctx.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
         const observer = new Actor(`${actor.name}-fresh`, fresh, context);
         observer.annotate = actor.annotate;
@@ -422,7 +424,7 @@ function browserActionCapabilities(actors, ctx) {
     }),
   });
   const transportObservation = Object.freeze({
-    defaultWithin: DEFAULT_WITHIN,
+    defaultWithin,
     expand: value => expand(value, ctx),
     sleep: abortableSleep,
     verification: Object.freeze({
@@ -452,7 +454,7 @@ function browserActionCapabilities(actors, ctx) {
     sleep: abortableSleep,
   });
   const concurrency = Object.freeze({
-    defaultWithin: DEFAULT_WITHIN,
+    defaultWithin,
     dispatch: (step, signal) => runRegisteredAction(step, actors, ctx, signal),
     expand: value => expand(value, ctx),
     sleep: abortableSleep,
@@ -630,7 +632,7 @@ async function gradeFeature(browser, feature, args, runCtx) {
       if (args.trace) await context.tracing.start({ screenshots: true, snapshots: true });
       const page = await context.newPage();
       contexts[contexts.length - 1].page = page;
-      page.setDefaultTimeout(DEFAULT_WITHIN);
+      page.setDefaultTimeout(SETUP_WITHIN);
       await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
       const actor = new Actor(name, page, context);
       actor.annotate = Boolean(args.media);
@@ -668,6 +670,7 @@ async function gradeFeature(browser, feature, args, runCtx) {
   };
 
   const setupStartedAtMs = evidenceNowMs();
+  ctx.defaultWithin = SETUP_WITHIN;
   ctx.actionEvidence = [];
   try {
     // Setup is not scored, but a failure makes the feature untestable (0).
@@ -705,6 +708,8 @@ async function gradeFeature(browser, feature, args, runCtx) {
     return result;
   }
   result.setupEvidence = buildCheckEvidence({ ctx, phase: 'setup', startedAtMs: setupStartedAtMs });
+  ctx.defaultWithin = DEFAULT_WITHIN;
+  for (const actor of actors.values()) actor.page.setDefaultTimeout(DEFAULT_WITHIN);
 
   for (const criterion of feature.criteria) {
     let failure = null, detail = null, activeActor = null;

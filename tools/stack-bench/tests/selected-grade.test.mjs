@@ -128,6 +128,69 @@ test('the live grader executes account setup through the registered actor execut
   }
 });
 
+test('setup can wait for app readiness without relaxing scored checks', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-ready-grade-'));
+  const out = join(root, 'grade.json');
+  const spec = join(root, 'scenario.json');
+  writeFileSync(spec, JSON.stringify({
+    level: 1,
+    features: [{
+      id: 1,
+      name: 'delayed app readiness',
+      actors: ['a'],
+      setup: [{ do: 'signUp', actor: 'a', name: 'Alice' }],
+      criteria: [
+        { id: '1a', desc: 'setup completed', points: 1,
+          steps: [{ do: 'expect', actor: 'a', testid: 'current-user' }] },
+        { id: '1b', desc: 'scored checks keep the normal deadline', points: 1,
+          steps: [
+            { do: 'click', actor: 'a', testid: 'slow-action' },
+            { do: 'expect', actor: 'a', testid: 'slow-result' },
+          ] },
+      ],
+    }],
+  }));
+  const server = startBlankApp(`<!doctype html><html><body>
+    <div id="app"></div>
+    <script>
+      setTimeout(() => {
+        document.querySelector('#app').innerHTML = \`
+          <input data-testid="signup-username"><input data-testid="signup-password">
+          <button data-testid="signup-submit">Sign up</button>
+          <div data-testid="current-user" hidden></div>
+          <button data-testid="slow-action">Start</button>
+        \`;
+        document.querySelector('[data-testid="signup-submit"]').onclick = () => {
+          const current = document.querySelector('[data-testid="current-user"]');
+          current.textContent = document.querySelector('[data-testid="signup-username"]').value;
+          current.hidden = false;
+        };
+        document.querySelector('[data-testid="slow-action"]').onclick = () => {
+          setTimeout(() => {
+            const result = document.createElement('div');
+            result.dataset.testid = 'slow-result';
+            document.body.append(result);
+          }, 6000);
+        };
+      }, 6000);
+    </script>
+  </body></html>`);
+  try {
+    const port = await server.port;
+    await run(GRADER, ['--url', `http://127.0.0.1:${port}`, '--level', '1',
+      '--spec', spec, '--out', out]);
+    const report = readArtifactPayload(out, { expectedKind: 'grade' });
+    assert.equal(report.features[0].setupEvidence.status, 'passed');
+    assert.equal(report.total, 1);
+    assert.equal(report.max, 2);
+    assert.equal(report.features[0].criteria[0].evidence.status, 'passed');
+    assert.equal(report.features[0].criteria[1].evidence.status, 'failed');
+  } finally {
+    server.child.kill('SIGTERM');
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('an inconclusive check keeps the recipe denominator fixed', async () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-fixed-denominator-'));
   const app = join(root, 'app');
