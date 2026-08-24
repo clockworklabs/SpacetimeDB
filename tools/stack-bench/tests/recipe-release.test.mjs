@@ -187,9 +187,9 @@ test('the qualified modular release is the promoted default and retired releases
 
 test('the promoted L2 release binds modular L1 exactly and keeps all L2-only checks', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.5.0');
+  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
   const l1 = buildRecipeRelease(
-    join(ECOMMERCE, 'composition', 'recipes', 'l1-modular-2.4.0.json'),
+    join(ECOMMERCE, 'composition', 'recipes', 'l1-modular-2.5.0.json'),
     { trackRoot: ECOMMERCE },
   );
   const previous = buildRecipeRelease(
@@ -262,14 +262,14 @@ test('the first cumulative level bootstraps only from the exact promoted lower l
   try {
     const recipe = join(box.root, 'composition', 'recipes', 'l3-bootstrap-1.0.0.json');
     const source = JSON.parse(readFileSync(
-      join(box.root, 'composition', 'recipes', 'l2-standard-1.5.0.json'), 'utf8'));
+      join(box.root, 'composition', 'recipes', 'l2-standard-1.6.0.json'), 'utf8'));
     source.id = 'ecommerce.l3-bootstrap';
     source.version = '1.0.0';
     source.state = 'draft';
     source.title = 'L3 bootstrap fixture';
     source.compatibility = { legacyLevel: 3, mode: 'cumulative' };
-    source.task.baseRecipe = { path: 'l2-standard-1.5.0.json',
-      id: 'ecommerce.l2-standard', version: '1.5.0' };
+    source.task.baseRecipe = { path: 'l2-standard-1.6.0.json',
+      id: 'ecommerce.l2-standard', version: '1.6.0' };
     writeFileSync(recipe, `${JSON.stringify(source, null, 2)}\n`);
     writeFileSync(join(box.root, 'composition', 'candidates.json'), `${JSON.stringify({
       schemaVersion: 1,
@@ -301,8 +301,8 @@ test('the first cumulative level bootstraps only from the exact promoted lower l
 
     editJson(recipe, value => {
       value.state = 'qualified';
-      value.task.baseRecipe = { path: 'l2-standard-1.5.0.json',
-        id: 'ecommerce.l2-standard', version: '1.5.0' };
+      value.task.baseRecipe = { path: 'l2-standard-1.6.0.json',
+        id: 'ecommerce.l2-standard', version: '1.6.0' };
     });
     editJson(join(box.root, 'composition', 'promotions.json'), value => {
       value.entries.push({ alias: 'L3', status: 'promoted', recipe: {
@@ -311,7 +311,7 @@ test('the first cumulative level bootstraps only from the exact promoted lower l
     });
     const promoted = resolveRecipeRelease(copiedTrack, 3);
     assert.equal(promoted.status, 'promoted');
-    assert.equal(promoted.release.task.baseRecipe.version, '1.5.0');
+    assert.equal(promoted.release.task.baseRecipe.version, '1.6.0');
   } finally { rmSync(box.temp, { recursive: true, force: true }); }
 });
 

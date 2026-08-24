@@ -101,7 +101,7 @@ test('the promoted L2 release prepares the exact seven action inputs for every b
   try {
     for (const [backend, sourceSha256] of Object.entries(expected)) {
       const args = { backend, track: 'ecommerce', level: 2,
-        recipe: 'ecommerce.l2-standard@1.5.0', app: join(root, backend) };
+        recipe: 'ecommerce.l2-standard@1.6.0', app: join(root, backend) };
       const seeded = prepareReferenceSource(args);
       assert.equal(seeded.fixture.id, `ecommerce-l2-cumulative-1.5-${backend}`);
       assert.equal(seeded.sourceSha256, sourceSha256);

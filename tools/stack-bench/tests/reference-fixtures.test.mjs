@@ -52,7 +52,7 @@ test('default reference tooling follows the promoted recipe instead of an unscop
   const promotedL2 = resolveReferenceSelection(registry, {
     backend: 'mongodb', track: 'ecommerce', level: 2,
   });
-  assert.equal(promotedL2.recipe, 'ecommerce.l2-standard@1.5.0');
+  assert.equal(promotedL2.recipe, 'ecommerce.l2-standard@1.6.0');
   assert.equal(promotedL2.binding.status, 'promoted');
   assert.equal(promotedL2.fixture.id, 'ecommerce-l2-cumulative-1.5-mongodb');
 
@@ -68,7 +68,7 @@ test('the promoted L2 recipe selects one derived fixture per backend without rep
     assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2 }).id,
       `ecommerce-l2-${backend}`);
     assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
-      recipe: 'ecommerce.l2-standard@1.5.0' }).id,
+      recipe: 'ecommerce.l2-standard@1.6.0' }).id,
     `ecommerce-l2-cumulative-1.5-${backend}`);
     assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level: 2,
       recipe: 'ecommerce.l2-standard@1.2.0' }).id,

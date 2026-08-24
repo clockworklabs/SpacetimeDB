@@ -11,15 +11,15 @@ import { loadReferenceRegistry, validateReferenceRegistry } from '../src/referen
 
 const BENCH = join(import.meta.dirname, '..');
 const TRACK_ROOT = join(BENCH, 'tracks', 'ecommerce');
-const RECIPE = join(TRACK_ROOT, 'composition', 'recipes', 'l2-standard-1.5.0.json');
+const RECIPE = join(TRACK_ROOT, 'composition', 'recipes', 'l2-standard-1.6.0.json');
 const release = buildRecipeRelease(RECIPE, { trackRoot: TRACK_ROOT });
-const calibration = compileCalibrationFile('composition/calibrations/l2-standard-1.5.0.json', {
+const calibration = compileCalibrationFile('composition/calibrations/l2-standard-1.6.0.json', {
   trackRoot: TRACK_ROOT,
   stackBenchRoot: BENCH,
   release,
 });
 
-test('L2 1.5 calibration binds every scored check to an exact defect per backend', () => {
+test('L2 1.6 calibration binds every scored check to an exact defect per backend', () => {
   const scoredKeys = release.checkCatalog.filter(check => check.points > 0)
     .map(check => check.stableKey).sort();
   assert.equal(scoredKeys.length, 74);
@@ -38,7 +38,7 @@ test('L2 1.5 calibration binds every scored check to an exact defect per backend
   ]);
 });
 
-test('L2 1.5 is qualified and promoted by its exact evidence set', () => {
+test('L2 1.6 is qualified and promoted by its exact evidence set', () => {
   assert.equal(release.state, 'qualified');
   assert.equal(calibration.state, 'qualified');
   assert.equal(calibration.promotion.status, 'promoted');
@@ -54,13 +54,13 @@ test('L2 1.5 is qualified and promoted by its exact evidence set', () => {
 
   const track = loadTrack('ecommerce');
   const promoted = resolveRecipeRelease(track, 2);
-  const exact = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.5.0');
-  assert.deepEqual([promoted.release.version, promoted.status], ['1.5.0', 'promoted']);
-  assert.deepEqual([exact.release.version, exact.status], ['1.5.0', 'promoted']);
+  const exact = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
+  assert.deepEqual([promoted.release.version, promoted.status], ['1.6.0', 'promoted']);
+  assert.deepEqual([exact.release.version, exact.status], ['1.6.0', 'promoted']);
 });
 
-test('L2 1.5 is promotion ready with complete defect and qualification evidence', () => {
-  const readiness = qualificationReadiness('ecommerce', 2, 'ecommerce.l2-standard@1.5.0');
+test('L2 1.6 is promotion ready with complete defect and qualification evidence', () => {
+  const readiness = qualificationReadiness('ecommerce', 2, 'ecommerce.l2-standard@1.6.0');
   assert.equal(readiness.launch.ok, true);
   assert.deepEqual(readiness.defectChecks.stacks.map(stack => ({
     stack: stack.stack,
@@ -75,16 +75,11 @@ test('L2 1.5 is promotion ready with complete defect and qualification evidence'
   assert.deepEqual(readiness.promotion.blockers, []);
 });
 
-test('the catalogs and registry keep the L2 1.5 release active while L2 1.6 is a candidate', () => {
+test('the catalogs and registry promote L2 1.6 and retain its exact reference inputs', () => {
   const catalog = compilePromotionFile(join(TRACK_ROOT, 'composition', 'candidates.json'), {
     trackRoot: TRACK_ROOT,
   });
-  assert.deepEqual(catalog.entries.filter(entry => entry.alias === 'L2'), [{
-    alias: 'L2',
-    status: 'candidate',
-    recipe: { path: 'recipes/l2-standard-1.6.0.json',
-      id: 'ecommerce.l2-standard', version: '1.6.0' },
-  }]);
+  assert.deepEqual(catalog.entries.filter(entry => entry.alias === 'L2'), []);
   const promotions = compilePromotionFile(join(TRACK_ROOT, 'composition', 'promotions.json'), {
     trackRoot: TRACK_ROOT,
   });
@@ -93,9 +88,9 @@ test('the catalogs and registry keep the L2 1.5 release active while L2 1.6 is a
     alias: 'L2',
     status: 'promoted',
     recipe: {
-      path: 'recipes/l2-standard-1.5.0.json',
+      path: 'recipes/l2-standard-1.6.0.json',
       id: 'ecommerce.l2-standard',
-      version: '1.5.0',
+      version: '1.6.0',
     },
   }]);
 

@@ -185,7 +185,7 @@ test('hardened modular grading isolates the four direct server checks', () => {
 
 test('recipe execution keeps inherited suites out of the current-level score', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.5.0');
+  const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
   const suites = suitesForRecipe(track, binding);
 
   const inherited = suites.filter(suite => suite.inherited);
@@ -199,7 +199,7 @@ test('cumulative ownership survives inherited execution id renames', () => {
   const root = join(temp, 'ecommerce');
   try {
     cpSync(ECOMMERCE, root, { recursive: true });
-    const recipe = join(root, 'composition', 'recipes', 'l2-standard-1.5.0.json');
+    const recipe = join(root, 'composition', 'recipes', 'l2-standard-1.6.0.json');
     const value = JSON.parse(readFileSync(recipe, 'utf8'));
     for (const execution of value.execution) {
       if (execution.id.endsWith('@L1')) execution.id = `${execution.id.slice(0, -3)}-base`;
@@ -207,7 +207,7 @@ test('cumulative ownership survives inherited execution id renames', () => {
     writeFileSync(recipe, `${JSON.stringify(value, null, 2)}\n`);
     const track = { ...loadTrack('ecommerce'), dir: root,
       suites: JSON.parse(readFileSync(join(root, 'track.json'), 'utf8')).suites };
-    const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.5.0');
+    const binding = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
     const suites = suitesForRecipe(track, binding);
     const inherited = suites.filter(suite => suite.inherited);
 
