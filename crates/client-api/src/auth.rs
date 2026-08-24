@@ -8,9 +8,8 @@ use http::{request, HeaderValue, StatusCode};
 use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::{ConnectionAuthCtx, SpacetimeIdentityClaims};
 use spacetimedb::auth::identity::{JwtError, JwtErrorKind};
-use spacetimedb::auth::token_validation::{
-    new_validator, DefaultValidator, TokenSigner, TokenValidationError, TokenValidator,
-};
+use spacetimedb::auth::token_validation::{new_validator, DefaultValidator, TokenSigner, TokenValidator};
+pub use spacetimedb::auth::token_validation::{TokenValidationError, TokenValidationErrorCategory};
 use spacetimedb::auth::JwtKeys;
 use spacetimedb::energy::FunctionBudget;
 use spacetimedb::identity::Identity;

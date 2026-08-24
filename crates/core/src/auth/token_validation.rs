@@ -20,7 +20,7 @@ use super::JwtKeys;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TokenValidationError {
-    // TODO: Add real error types.
+    // TODO: Replace the remaining dependency-specific and catch-all variants with domain errors.
 
     // TODO: If we had our own errors defined we wouldn't be locked into this lib.
     #[error("Invalid token: {0}")]
@@ -29,13 +29,48 @@ pub enum TokenValidationError {
     #[error("Specified key ID not found in JWKs")]
     KeyIDNotFound,
 
+    /// The token was decoded, but its claims are not acceptable.
+    #[error(transparent)]
+    InvalidClaims(anyhow::Error),
+
     #[error(transparent)]
     JwkError(#[from] jwks::JwkError),
     #[error(transparent)]
     JwksError(#[from] jwks::JwksError),
+
+    /// The identity provider's validation material could not be obtained.
+    #[error(transparent)]
+    IdentityProviderUnavailable(anyhow::Error),
+
     // The other case is a catch-all for unexpected errors.
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+/// The operational category of a token validation failure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TokenValidationErrorCategory {
+    /// The supplied token is invalid and the client may retry with different credentials.
+    InvalidCredentials,
+    /// Validation failed because identity-provider data could not be obtained or used.
+    IdentityProvider,
+    /// Validation failed because of an unexpected local condition.
+    Internal,
+}
+
+impl TokenValidationError {
+    /// Classifies this failure for operational handling such as log severity.
+    pub fn category(&self) -> TokenValidationErrorCategory {
+        match self {
+            Self::TokenError(_) | Self::KeyIDNotFound | Self::InvalidClaims(_) => {
+                TokenValidationErrorCategory::InvalidCredentials
+            }
+            Self::JwkError(_) | Self::JwksError(_) | Self::IdentityProviderUnavailable(_) => {
+                TokenValidationErrorCategory::IdentityProvider
+            }
+            Self::Other(_) => TokenValidationErrorCategory::Internal,
+        }
+    }
 }
 
 // A token signer is responsible for signing tokens without doing any validation.
@@ -158,7 +193,7 @@ impl TokenValidator for DecodingKey {
 
         let data = decode::<IncomingClaims>(token, self, &validation)?;
         let claims = data.claims;
-        claims.try_into().map_err(TokenValidationError::Other)
+        claims.try_into().map_err(TokenValidationError::InvalidClaims)
     }
 }
 
@@ -170,7 +205,7 @@ impl TokenValidator for BasicTokenValidator {
         if let Some(expected_issuer) = &self.issuer
             && *claims.issuer != **expected_issuer
         {
-            return Err(TokenValidationError::Other(anyhow::anyhow!(
+            return Err(TokenValidationError::InvalidClaims(anyhow::anyhow!(
                 "Issuer mismatch: got {:?}, expected {:?}",
                 claims.issuer,
                 expected_issuer
@@ -233,7 +268,11 @@ impl TokenValidator for CachingOidcTokenValidator {
             .cache
             .get(String::from(raw_issuer.clone()).into())
             .await
-            .ok_or_else(|| anyhow::anyhow!("Error fetching public key for issuer {raw_issuer}"))?;
+            .ok_or_else(|| {
+                TokenValidationError::IdentityProviderUnavailable(anyhow::anyhow!(
+                    "Error fetching public key for issuer {raw_issuer}"
+                ))
+            })?;
         validator.validate_token(token).await
     }
 }
@@ -300,7 +339,7 @@ impl TokenValidator for JwksValidator {
         log::debug!("No key id in header. Trying all keys.");
         // TODO: Consider returning an error if no kid is given?
         // For now, lets just try all the keys.
-        let mut last_error = TokenValidationError::Other(anyhow::anyhow!("No kid found"));
+        let mut last_error = TokenValidationError::InvalidClaims(anyhow::anyhow!("No kid found"));
         for (kid, key) in &self.keyset.keys {
             log::debug!("Trying key {kid}");
             let validator = BasicTokenValidator {
@@ -328,13 +367,30 @@ mod tests {
     use crate::auth::identity::{IncomingClaims, SpacetimeIdentityClaims};
     use crate::auth::token_validation::{
         BasicTokenValidator, CachingOidcTokenValidator, FullTokenValidator, OidcTokenValidator, TokenSigner,
-        TokenValidator,
+        TokenValidationError, TokenValidationErrorCategory, TokenValidator,
     };
     use crate::auth::JwtKeys;
     use base64::Engine;
     use openssl::ec::{EcGroup, EcKey};
     use serde_json;
     use spacetimedb_lib::Identity;
+
+    #[test]
+    fn token_validation_error_categories_distinguish_authentication_failures() {
+        assert_eq!(
+            TokenValidationError::KeyIDNotFound.category(),
+            TokenValidationErrorCategory::InvalidCredentials
+        );
+        assert_eq!(
+            TokenValidationError::IdentityProviderUnavailable(anyhow::anyhow!("controlled provider failure"))
+                .category(),
+            TokenValidationErrorCategory::IdentityProvider
+        );
+        assert_eq!(
+            TokenValidationError::Other(anyhow::anyhow!("controlled internal failure")).category(),
+            TokenValidationErrorCategory::Internal
+        );
+    }
 
     #[tokio::test]
     async fn test_local_validator_checks_issuer() -> anyhow::Result<()> {
