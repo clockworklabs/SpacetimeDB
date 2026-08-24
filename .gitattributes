@@ -2,4 +2,5 @@
 **/ModuleBindings/** linguist-generated=true eol=lf
 /docs/llms/** linguist-generated=true
 /docs/llms/*-details.json linguist-generated=false
-/tools/stack-bench/reference-apps/** text eol=lf
+/tools/stack-bench/** text eol=lf
+/tools/stack-bench/**/*.woff2 -text -diff
