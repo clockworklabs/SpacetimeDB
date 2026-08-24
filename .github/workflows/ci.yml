@@ -291,7 +291,7 @@ jobs:
     needs: [merge_queue_noop, lints]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Upload build artifacts (Windows)
-    runs-on: spacetimedb-windows-runner-staging
+    runs-on: windows-latest
     timeout-minutes: 15
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
