@@ -65,7 +65,7 @@ jobs:
       - name: Build CLI and standalone
         shell: bash
         run: |
-          cargo build --timings --release \
+          cargo build -vv --timings --release \
             -p spacetimedb-cli \
             -p spacetimedb-standalone \
             --features spacetimedb-standalone/allow_loopback_http_for_tests
