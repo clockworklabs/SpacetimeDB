@@ -65,8 +65,8 @@ jobs:
         run: pwd -P
       - name: find files
         run: find ~ -maxdepth 3
-      - name: look for openssl stuff
-        run: find ${CARGO_TARGET_DIR}/release/build/openssl-* -type f || true
+      - name: look for target dir
+        run: find ${CARGO_TARGET_DIR}
 
       - name: Build CLI and standalone
         shell: bash
