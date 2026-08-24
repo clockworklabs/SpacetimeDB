@@ -3,6 +3,7 @@ use anyhow::{ensure, Context, Result};
 use ci_common::pnpm;
 use clap::{Parser, Subcommand};
 use duct::{cmd, Expression};
+use spacetimedb_testing::modules::{prepare_module_artifacts, CompilationMode};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -26,6 +27,8 @@ enum Command {
         archive_file: PathBuf,
         #[arg(long)]
         unstable_archive_file: PathBuf,
+        #[arg(long)]
+        support_archive_file: PathBuf,
     },
     /// CI build job: prepare SDK modules/clients and archive native and browser tests.
     ArchiveSdk {
@@ -44,7 +47,8 @@ fn main() -> Result<()> {
         Some(Command::ArchiveCore {
             archive_file,
             unstable_archive_file,
-        }) => archive_core(&archive_file, &unstable_archive_file),
+            support_archive_file,
+        }) => archive_core(&archive_file, &unstable_archive_file, &support_archive_file),
         Some(Command::ArchiveSdk {
             native_archive_file,
             browser_archive_file,
@@ -203,8 +207,49 @@ fn run_all_locally() -> Result<()> {
     run_csharp_bindings_checks()
 }
 
-fn archive_core(archive_file: &Path, unstable_archive_file: &Path) -> Result<()> {
+fn archive_core(archive_file: &Path, unstable_archive_file: &Path, support_archive_file: &Path) -> Result<()> {
+    // Keep this inventory in sync with CompiledModule uses in the archived core suites.
+    // A missing entry fails in a shard rather than silently compiling there.
+    const CORE_TEST_MODULES: &[&str] = &[
+        "benchmarks",
+        "benchmarks-cpp",
+        "benchmarks-cs",
+        "benchmarks-ts",
+        "module-test",
+        "module-test-cpp",
+        "module-test-cs",
+        "module-test-ts",
+        "sdk-test",
+        "sdk-test-cs",
+        "sdk-test-ts",
+        "sdk-test-case-conversion",
+        "sdk-test-case-conversion-ts",
+        "sdk-test-connect-disconnect",
+        "sdk-test-connect-disconnect-cs",
+        "sdk-test-connect-disconnect-ts",
+    ];
+
     run_typescript_bindings_build()?;
+    let artifact_dir = PathBuf::from("target/test-module-support");
+    prepare_module_artifacts(&artifact_dir, CORE_TEST_MODULES, CompilationMode::Debug)
+        .context("failed to prepare core test modules")?;
+    let artifact_parent = artifact_dir
+        .parent()
+        .context("test module support directory has no parent")?;
+    let artifact_name = artifact_dir
+        .file_name()
+        .context("test module support directory has no filename")?;
+    run(
+        cmd!(
+            "tar",
+            "-czf",
+            support_archive_file,
+            "-C",
+            artifact_parent,
+            artifact_name
+        ),
+        "failed to package core test module artifacts",
+    )?;
     run(
         cmd!(
             "cargo",

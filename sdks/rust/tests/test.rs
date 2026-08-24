@@ -633,17 +633,24 @@ view_tests!(rust_view, "");
 //view_tests!(cpp_view, "-cpp");
 
 mod case_conversion_ts {
-    use spacetimedb_testing::sdk::Test;
+    use spacetimedb_testing::sdk::{PrebuiltClient, Test};
 
     const MODULE: &str = "sdk-test-case-conversion-ts";
     const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/case-conversion-client");
 
     fn make_test(subcommand: &str) -> Test {
-        super::platform_test_builder(CLIENT, Some(subcommand))
+        Test::builder()
+            .with_client(CLIENT)
             .with_name(subcommand)
             .with_module(MODULE)
             .with_language("rust")
             .with_bindings_dir("src/module_bindings")
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {subcommand}"))
+            .with_prebuilt_client(PrebuiltClient::NativeRust {
+                binary_name: "case-conversion-client".into(),
+                args: vec![subcommand.into()],
+            })
             .build()
     }
 
@@ -679,17 +686,24 @@ mod case_conversion_ts {
 }
 
 mod case_conversion_rust {
-    use spacetimedb_testing::sdk::Test;
+    use spacetimedb_testing::sdk::{PrebuiltClient, Test};
 
     const MODULE: &str = "sdk-test-case-conversion";
     const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/case-conversion-client");
 
     fn make_test(subcommand: &str) -> Test {
-        super::platform_test_builder(CLIENT, Some(subcommand))
+        Test::builder()
+            .with_client(CLIENT)
             .with_name(subcommand)
             .with_module(MODULE)
             .with_language("rust")
             .with_bindings_dir("src/module_bindings")
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {subcommand}"))
+            .with_prebuilt_client(PrebuiltClient::NativeRust {
+                binary_name: "case-conversion-client".into(),
+                args: vec![subcommand.into()],
+            })
             .build()
     }
 

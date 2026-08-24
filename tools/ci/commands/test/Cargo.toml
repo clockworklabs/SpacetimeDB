@@ -8,3 +8,4 @@ anyhow.workspace = true
 clap.workspace = true
 duct.workspace = true
 ci-common = { path = "../../common" }
+spacetimedb-testing = { path = "../../../../crates/testing" }

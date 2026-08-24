@@ -1,4 +1,6 @@
+use std::collections::BTreeMap;
 use std::env;
+use std::fs;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
@@ -228,14 +230,62 @@ pub struct CompiledModule {
     program_bytes: OnceLock<Bytes>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+pub const TEST_MODULE_ARTIFACT_DIR_ENV: &str = "SPACETIME_TEST_MODULE_ARTIFACT_DIR";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CompilationMode {
     Debug,
     Release,
 }
 
+impl CompilationMode {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Debug => "debug",
+            Self::Release => "release",
+        }
+    }
+}
+
+#[derive(Default, serde::Deserialize, serde::Serialize)]
+struct ModuleArtifactManifest {
+    modules: BTreeMap<String, ModuleArtifact>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct ModuleArtifact {
+    path: PathBuf,
+    host_type: String,
+}
+
+fn module_artifact_key(name: &str, mode: CompilationMode) -> String {
+    format!("{}:{name}", mode.name())
+}
+
+fn host_type_name(host_type: HostType) -> &'static str {
+    match host_type {
+        HostType::Wasm => "wasm",
+        HostType::Js => "js",
+    }
+}
+
+fn parse_host_type(host_type: &str) -> HostType {
+    match host_type {
+        "wasm" => HostType::Wasm,
+        "js" => HostType::Js,
+        value => panic!("invalid test module host type {value:?}"),
+    }
+}
+
 impl CompiledModule {
     pub fn compile(name: &str, mode: CompilationMode) -> Self {
+        if let Some(artifact_dir) = env::var_os(TEST_MODULE_ARTIFACT_DIR_ENV) {
+            return Self::from_artifact(Path::new(&artifact_dir), name, mode);
+        }
+        Self::compile_locally(name, mode)
+    }
+
+    fn compile_locally(name: &str, mode: CompilationMode) -> Self {
         let (path, host_type) = spacetimedb_cli::build(
             &module_path(name),
             Some(PathBuf::from("src")).as_deref(),
@@ -249,6 +299,41 @@ impl CompiledModule {
             name: name.to_owned(),
             path,
             host_type: host_type.parse().unwrap(),
+            program_bytes: OnceLock::new(),
+        }
+    }
+
+    fn from_artifact(artifact_dir: &Path, name: &str, mode: CompilationMode) -> Self {
+        let manifest_path = artifact_dir.join("manifest.json");
+        let manifest: ModuleArtifactManifest =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap_or_else(|err| {
+                panic!("failed to read test module manifest {}: {err}", manifest_path.display())
+            }))
+            .unwrap_or_else(|err| {
+                panic!(
+                    "failed to parse test module manifest {}: {err}",
+                    manifest_path.display()
+                )
+            });
+        let key = module_artifact_key(name, mode);
+        let artifact = manifest
+            .modules
+            .get(&key)
+            .unwrap_or_else(|| panic!("test module manifest has no {mode:?} artifact for {name}"));
+        assert!(
+            artifact.path.is_relative(),
+            "test module manifest path for {key} must be relative"
+        );
+        let path = artifact_dir.join(&artifact.path);
+        assert!(
+            path.is_file(),
+            "test module artifact for {key} is missing at {}",
+            path.display()
+        );
+        Self {
+            name: name.to_owned(),
+            path,
+            host_type: parse_host_type(&artifact.host_type),
             program_bytes: OnceLock::new(),
         }
     }
@@ -386,6 +471,47 @@ impl CompiledModule {
             db_identity,
         }
     }
+}
+
+/// Compiles the modules needed by the sharded core test suite and writes a
+/// relocatable support directory. Local tests continue to compile on demand;
+/// CI shards opt into these artifacts with [`TEST_MODULE_ARTIFACT_DIR_ENV`].
+pub fn prepare_module_artifacts(
+    artifact_dir: &Path,
+    module_names: &[&str],
+    mode: CompilationMode,
+) -> anyhow::Result<()> {
+    if artifact_dir.exists() {
+        fs::remove_dir_all(artifact_dir)?;
+    }
+    let modules_dir = artifact_dir.join("modules").join(mode.name());
+    fs::create_dir_all(&modules_dir)?;
+
+    let mut manifest = ModuleArtifactManifest::default();
+    for &name in module_names {
+        let module = CompiledModule::compile_locally(name, mode);
+        let filename = module
+            .path
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("compiled module {name} has no filename"))?;
+        let relative_path = PathBuf::from("modules").join(mode.name()).join(name).join(filename);
+        let destination = artifact_dir.join(&relative_path);
+        fs::create_dir_all(destination.parent().unwrap())?;
+        fs::copy(&module.path, &destination)?;
+        manifest.modules.insert(
+            module_artifact_key(name, mode),
+            ModuleArtifact {
+                path: relative_path,
+                host_type: host_type_name(module.host_type).to_owned(),
+            },
+        );
+    }
+
+    fs::write(
+        artifact_dir.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )?;
+    Ok(())
 }
 
 /// These standalone module tests run a `StandaloneEnv` in-process.

@@ -630,14 +630,27 @@ jobs:
         with:
           run_install: true
 
+      # Core tests exercise modules written in TypeScript, C#, and C++ at runtime.
+      - &install-test-module-toolchains
+        name: Install test module toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+          cd ~/emsdk
+          ./emsdk install 4.0.21
+          ./emsdk activate 4.0.21
+
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
       - name: Prepare core test suite
         run: |
+          source ~/emsdk/emsdk_env.sh
           cargo ci test archive-core \
             --archive-file test-suite-nextest.tar.zst \
-            --unstable-archive-file test-suite-unstable-nextest.tar.zst
+            --unstable-archive-file test-suite-unstable-nextest.tar.zst \
+            --support-archive-file test-module-support.tar.gz
 
       - name: Upload core test build
         uses: actions/upload-artifact@v4
@@ -646,6 +659,7 @@ jobs:
           path: |
             test-suite-nextest.tar.zst
             test-suite-unstable-nextest.tar.zst
+            test-module-support.tar.gz
           if-no-files-found: error
           overwrite: true
           retention-days: 14
@@ -671,6 +685,7 @@ jobs:
     env:
       RUST_BACKTRACE: full
       PARTITION_COUNT: 2
+      SPACETIME_TEST_MODULE_ARTIFACT_DIR: ${{ github.workspace }}/test-module-support
     steps:
       - *find-git-ref
       - *checkout-sources
@@ -684,6 +699,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: test-suite-build
+
+      - name: Extract test module artifacts
+        run: tar -xzf test-module-support.tar.gz
 
       - name: Run core test partition
         run: |
@@ -737,14 +755,7 @@ jobs:
           run_install: true
 
       # SDK preparation compiles TypeScript, C#, and C++ test modules once.
-      - name: Install module toolchains
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake
-          git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
-          cd ~/emsdk
-          ./emsdk install 4.0.21
-          ./emsdk activate 4.0.21
+      - *install-test-module-toolchains
 
       - name: Install wasm-bindgen CLI
         run: |
