@@ -185,6 +185,8 @@ namespace SpacetimeDB
 
         private void FailPendingOperations(Exception error)
         {
+            stats.ClearRequestsAwaitingResponse();
+
             foreach (var (requestId, _) in waitingOneOffQueries.ToArray())
             {
                 if (waitingOneOffQueries.TryRemove(requestId, out var resultSource))
@@ -753,6 +755,8 @@ namespace SpacetimeDB
                             {
                                 Log.Exception(e);
                             }
+
+                            subscriptions.Remove(subscriptionError.QuerySetId.Id);
                         }
                         else
                         {
@@ -944,15 +948,31 @@ namespace SpacetimeDB
 
         async Task<T[]> IDbConnection.RemoteQuery<T>(string query)
         {
+            if (!webSocket.IsConnected)
+            {
+                var error = "Cannot run one-off query, not connected to server!";
+                Log.Error(error);
+                throw new InvalidOperationException(error);
+            }
+
             var requestId = stats.OneOffRequestTracker.StartTrackingRequest();
             var resultSource = new TaskCompletionSource<OneOffQueryResult>();
             waitingOneOffQueries[requestId] = resultSource;
 
-            webSocket.Send(new ClientMessage.OneOffQuery(new OneOffQuery
+            try
             {
-                RequestId = requestId,
-                QueryString = query,
-            }));
+                webSocket.Send(new ClientMessage.OneOffQuery(new OneOffQuery
+                {
+                    RequestId = requestId,
+                    QueryString = query,
+                }));
+            }
+            catch
+            {
+                waitingOneOffQueries.TryRemove(requestId, out _);
+                stats.OneOffRequestTracker.RemoveRequestAwaitingResponse(requestId);
+                throw;
+            }
 
             var result = await resultSource.Task;
 
