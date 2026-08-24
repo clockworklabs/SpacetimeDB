@@ -56,6 +56,11 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
+      - &restore-source-mtimes
+        name: Restore source mtimes from git history
+        shell: bash
+        run: git restore-mtime --quiet
+
       - uses: dsherret/rust-toolchain-file@v1
       - &set-default-rust-toolchain
         name: Set default rust toolchain
@@ -118,6 +123,8 @@ jobs:
       - *find-git-ref
 
       - *checkout-sources
+
+      - *restore-source-mtimes
 
       - uses: dsherret/rust-toolchain-file@v1
       - *set-default-rust-toolchain
