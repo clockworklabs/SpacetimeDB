@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in TypeScript that fetches external data before storing a result in a transaction.
+
+TABLE
+- fetched_record (public)
+  - Fields:
+    - id: u64 (primary key)
+    - status: u16
+    - validBody: bool
+
+PROCEDURE
+- fetch_and_store(url: string)
+  - Perform an outbound GET to the supplied public URL before opening a transaction
+  - Inside a short transaction, store id 1 and the response status
+  - Set validBody based on whether the response body contains "Example Domain"

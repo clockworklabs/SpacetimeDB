@@ -1,0 +1,25 @@
+Write a SpacetimeDB backend module in C# that exposes a safe per-user projection of private rows.
+
+TYPES
+- SafeNote
+  - Id: ulong
+  - Title: string
+
+TABLE
+- SecretNote (private, accessor SecretNote)
+  - Fields:
+    - Id: ulong (primary key)
+    - Owner: Identity (btree index)
+    - Title: string
+    - SecretBody: string
+
+REDUCERS
+- SeedPrivateNote()
+  - Insert Id 1 for the caller
+  - Set Title to "Visible title"
+  - Set SecretBody to "never expose this"
+
+VIEW
+- MySafeNote (per-user, public)
+  - Return IEnumerable<SafeNote> for only the caller
+  - Never expose Owner or SecretBody

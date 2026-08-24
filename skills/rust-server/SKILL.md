@@ -17,8 +17,9 @@ metadata:
 
 ```rust
 use spacetimedb::{
-    reducer, table, Identity, ReducerContext, SpacetimeType, Table,
-    ConnectionId, ScheduleAt, TimeDuration, Timestamp, Uuid,
+    procedure, reducer, table, Filter, Identity, ProcedureContext, Query,
+    ReducerContext, SpacetimeType, Table, ConnectionId, ScheduleAt,
+    TimeDuration, Timestamp, Uuid,
 };
 ```
 
@@ -36,6 +37,7 @@ pub struct Entity {
     pub id: u64,
     pub owner: Identity,
     pub name: String,
+    #[index(btree)]
     pub active: bool,
 }
 ```
@@ -50,6 +52,7 @@ Options: `accessor = snake_case` (required), `public`, `scheduled(reducer_fn)`, 
 |-----------|-------|
 | `u8` / `u16` / `u32` / `u64` / `u128` | unsigned integers |
 | `i8` / `i16` / `i32` / `i64` / `i128` | signed integers |
+| `spacetimedb::sats::u256` / `spacetimedb::sats::i256` | 256-bit integers |
 | `f32` / `f64` | floats |
 | `bool` | boolean |
 | `String` | text |
@@ -68,7 +71,10 @@ Options: `accessor = snake_case` (required), `public`, `scheduled(reducer_fn)`, 
 #[auto_inc]             // auto-increment (use 0 as placeholder on insert)
 #[unique]               // unique constraint
 #[index(btree)]         // btree index (enables .filter() on this column)
+#[default(true)]        // migration-safe default for a newly appended column
 ```
+
+Defaults support compatible addition of a newly appended field. Do not place `#[default(...)]` on primary-key, unique, or auto-increment columns.
 
 ## Indexes
 
@@ -122,12 +128,14 @@ ctx.db.entity().iter();                                            // All rows â
 ctx.db.entity().count();                                           // Count rows
 ctx.db.entity().id().update(Entity { name: new_name, ..existing }); // Update (override + spread)
 ctx.db.entity().id().delete(entity_id);                            // Delete by PK
-ctx.db.entity().name().delete("Alice");                            // Delete by indexed column
+ctx.db.entity().name().delete("Alice".to_string());                // Delete by indexed String column
 ```
 
 Note: `iter()` and `filter()` return iterators. Collect to Vec if you need `.sort()`, `.filter()`, `.map()`.
 
 Range queries on btree indexes: `filter(18..=65)`, `filter(18..)`, `filter(..18)`.
+
+String column accessors operate on the column's owned `String` type, not `&str`. Pass a `String` or `&String` to `find` and `delete`; index filters borrow the key, as in `ctx.db.product().category().filter(&"hardware".to_string())`.
 
 ## Lifecycle Hooks
 
@@ -142,6 +150,8 @@ pub fn on_connect(ctx: &ReducerContext) { ... }
 pub fn on_disconnect(ctx: &ReducerContext) { ... }
 ```
 
+The current connection ID is available through `ctx.connection_id()` (not a public field) and may be absent outside connection-scoped calls.
+
 ## Views
 
 ```rust
@@ -150,7 +160,7 @@ use spacetimedb::{view, AnonymousViewContext};
 
 #[view(accessor = active_users, public)]
 fn active_users(ctx: &AnonymousViewContext) -> Vec<Entity> {
-    ctx.db.entity().iter().filter(|e| e.active).collect()
+    ctx.db.entity().active().filter(true).collect()
 }
 
 // Per-user view (result varies by sender):
@@ -160,6 +170,39 @@ use spacetimedb::{view, ViewContext};
 fn my_profile(ctx: &ViewContext) -> Option<Entity> {
     ctx.db.entity().identity().find(ctx.sender())
 }
+```
+
+Procedural-view table handles support indexed `find` and `filter` access, but not full-table `iter()`. Start a procedural view from an appropriate table index.
+
+Declare a procedural view primary key in the view attribute:
+
+```rust
+#[view(accessor = catalog_entry, public, primary_key = sku)]
+fn catalog_entry(ctx: &AnonymousViewContext) -> Vec<CatalogEntry> { ... }
+```
+
+Procedural-view primary keys are explicit schema metadata. Add one only when the view itself is required to expose a primary key; a source table's primary key is not inherited by the view.
+
+Query-builder views use `ViewContext`, `ctx.from`, and return `impl Query<Row>`. Use `filter` for predicates and `right_semijoin` when the result should contain right-side rows that have a matching left-side row:
+
+```rust
+ctx.from.article().filter(|article| article.published.eq(true))
+ctx.from.subscription().right_semijoin(
+    ctx.from.account(),
+    |subscription, account| subscription.account_id.eq(account.id),
+)
+```
+
+Query-builder comparisons against a `String` column take an owned `String`, for example `row.label.eq("active".to_string())`.
+
+## Client Visibility Filters
+
+```rust
+use spacetimedb::Filter;
+
+#[spacetimedb::client_visibility_filter]
+const PRIVATE_NOTE_FILTER: Filter =
+    Filter::Sql("SELECT * FROM owned_row WHERE owner = :sender");
 ```
 
 ## Reducer Context API
@@ -211,6 +254,57 @@ let at = ScheduleAt::Interval(std::time::Duration::from_secs(5).into());
 
 ctx.db.tick_timer().insert(TickTimer { scheduled_id: 0, scheduled_at: at });
 ```
+
+Construct a connection ID from a numeric representation with `ConnectionId::from_u128(value)`.
+
+## Procedures and HTTP
+
+Procedures use `&mut ProcedureContext` and may return typed values:
+
+```rust
+use spacetimedb::{procedure, ProcedureContext, SpacetimeType};
+
+#[derive(SpacetimeType)]
+pub struct ResultValue { pub value: String }
+
+#[procedure]
+pub fn inspect(_ctx: &mut ProcedureContext, input: String) -> ResultValue {
+    ResultValue { value: input }
+}
+```
+
+Outbound HTTP is available through `ctx.http`. Convenience methods such as `get` return a response, and other methods use `Request::builder()` with `ctx.http.send(request)`. `response.status()` returns a `StatusCode`; use `is_success()` to test it or `as_u16()` when a numeric status is needed. Responses are not cloneable, so inspect status and headers before consuming the body with `response.into_body().into_string_lossy()`. Header values use the fallible `to_str()` conversion; they do not provide `as_str()`.
+
+Open short database transactions with `ctx.with_tx(|tx| ...)`. Access tables inside the callback through `tx.db`, not directly on `tx`. It returns the callback's value directly, so do not call `unwrap` or `expect` on the result unless the callback itself returns a `Result`. The callback implements `Fn`, so clone captured owned values when storing them rather than moving them out of the closure. Perform network I/O before opening the transaction.
+
+For an outbound request without a convenience method:
+
+```rust
+let request = Request::builder()
+    .method("POST")
+    .uri(url)
+    .body(Body::from_bytes(data))
+    .unwrap();
+let response = ctx.http.send(request).expect("request failed");
+```
+
+Scheduled procedures use the ordinary scheduled-table shape, but the scheduled function is marked `#[procedure]` and receives `&mut ProcedureContext` plus the scheduled row.
+
+Inbound HTTP uses handler functions and one router:
+
+```rust
+use spacetimedb::http::{handler, router, Body, HandlerContext, Request, Response, Router};
+
+#[handler]
+fn health(_ctx: &mut HandlerContext, _request: Request) -> Response {
+    Response::builder().status(200).body(Body::from_bytes("ok")).unwrap()
+}
+
+#[router]
+fn routes() -> Router { Router::new().get("/health", health) }
+```
+
+`HandlerContext` does not expose `db`; open database access with `ctx.with_tx(|tx| ...)`. HTTP response bodies must own their data or borrow `'static` data, so convert dynamic borrowed text to an owned `String` before passing it to `Body::from_bytes`.
 
 ## Logging
 

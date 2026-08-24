@@ -1,6 +1,7 @@
 use spacetimedb_commitlog::SizeOnDisk;
 
 use super::database_logger::DatabaseLogger;
+use crate::config::ModuleHttpConfig;
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::messages::control_db::Database;
@@ -20,6 +21,7 @@ pub struct ReplicaContext {
     pub logger: Arc<DatabaseLogger>,
     pub subscriptions: ModuleSubscriptions,
     pub module_instance_memory_tracker: ModuleInstanceMemoryTracker,
+    pub module_http: ModuleHttpConfig,
 }
 
 impl ReplicaContext {
@@ -43,7 +45,7 @@ impl ReplicaContext {
             durability: self
                 .durability_size_on_disk()
                 .inspect_err(|e| {
-                    log::error!(
+                    log::warn!(
                         "database={} replica={}: failed to obtain durability size on disk: {:#}",
                         self.database.database_identity,
                         self.replica_id,
@@ -54,7 +56,7 @@ impl ReplicaContext {
             logs: self
                 .log_file_size()
                 .inspect_err(|e| {
-                    log::error!(
+                    log::warn!(
                         "database={} replica={}: failed to obtain log file size: {:#}",
                         self.database.database_identity,
                         self.replica_id,

@@ -4,7 +4,7 @@ use super::v8::V8HeapMetrics;
 use super::wasmtime::{WasmMemoryBytesMetric, WasmtimeRuntime};
 use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
-use crate::config::{V8Config, WasmConfig};
+use crate::config::{ModuleHttpConfig, V8Config, WasmConfig};
 use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
@@ -203,17 +203,19 @@ pub struct HostController {
 pub(crate) struct HostRuntimes {
     wasmtime: WasmtimeRuntime,
     v8: V8Runtime,
+    module_http: ModuleHttpConfig,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HostRuntimeConfig {
     pub wasm: WasmConfig,
     pub v8: V8Config,
+    pub module_http: ModuleHttpConfig,
 }
 
 impl HostRuntimeConfig {
-    pub fn new(wasm: WasmConfig, v8: V8Config) -> Self {
-        Self { wasm, v8 }
+    pub fn new(wasm: WasmConfig, v8: V8Config, module_http: ModuleHttpConfig) -> Self {
+        Self { wasm, v8, module_http }
     }
 }
 
@@ -221,7 +223,12 @@ impl HostRuntimes {
     fn new(data_dir: Option<&ServerDataDir>, config: HostRuntimeConfig) -> Arc<Self> {
         let wasmtime = WasmtimeRuntime::new(data_dir, config.wasm);
         let v8 = V8Runtime::new(config.v8);
-        Arc::new(Self { wasmtime, v8 })
+        let module_http = config.module_http;
+        Arc::new(Self {
+            wasmtime,
+            v8,
+            module_http,
+        })
     }
 }
 
@@ -779,6 +786,7 @@ async fn make_replica_ctx(
     relational_db: Arc<RelationalDB>,
     bsatn_rlb_pool: BsatnRowListBuilderPool,
     memory_observer: Arc<dyn MemoryObserver>,
+    module_http: ModuleHttpConfig,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = match module_logs {
         Some(path) => asyncify(move || Arc::new(DatabaseLogger::open_today(path))).await,
@@ -814,6 +822,7 @@ async fn make_replica_ctx(
         logger,
         subscriptions,
         module_instance_memory_tracker,
+        module_http,
     })
 }
 
@@ -915,6 +924,7 @@ impl<F: Fn() + Send + Sync + 'static> ModuleLauncher<F> {
             self.relational_db,
             self.bsatn_rlb_pool,
             self.memory_observer,
+            self.runtimes.module_http,
         )
         .await
         .map(Arc::new)?;
@@ -1578,8 +1588,13 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     .await
 }
 
-// Remove all gauges associated with a database.
-// This is useful if a database is being deleted.
+/// Removes metrics associated with a database.
+///
+/// This is called when a database's [`ModuleHost`] exits,
+/// including (but not limited to) when a database is deleted.
+///
+/// Despite the historical function name, this cleans up per-database metric
+/// series even when they are not literally `Gauge`s or `IntGauge`s.
 pub fn remove_database_gauges<'a, I>(db: &Identity, table_names: I)
 where
     I: IntoIterator<Item = &'a str>,
@@ -1609,4 +1624,5 @@ where
     V8HeapMetrics::remove_all_metric_label_values_for_database(db);
 
     let _ = WORKER_METRICS.v8_request_queue_length.remove_label_values(db);
+    let _ = DB_METRICS.http_response_size_bytes.remove_label_values(db);
 }

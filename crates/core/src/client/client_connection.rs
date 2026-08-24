@@ -451,7 +451,7 @@ impl ClientConnectionSender {
                 log::warn!(
                     "Client {:?} exceeded channel capacity of {}, kicking",
                     self.id,
-                    self.sendtx.capacity(),
+                    self.sendtx.max_capacity(),
                 );
                 if let Some(metrics) = &self.metrics {
                     metrics.outgoing_queue_disconnects.inc();

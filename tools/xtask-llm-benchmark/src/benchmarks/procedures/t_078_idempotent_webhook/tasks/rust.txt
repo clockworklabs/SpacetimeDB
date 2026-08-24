@@ -1,0 +1,22 @@
+Write a SpacetimeDB backend module in Rust that handles idempotent, ordered webhook events.
+
+TABLES
+- processed_event (private), struct ProcessedEvent
+  - Fields:
+    - event_id: String (primary key)
+- webhook_state (public), struct WebhookState
+  - Fields:
+    - key: String (primary key)
+    - last_sequence: u64
+    - value: String
+
+HANDLER
+- POST /webhook
+  - Accept a pipe-delimited body: event_id|sequence|value
+  - Store state under key "account"
+  - For a newly applied event, return status 200 and body "applied"
+  - For a duplicate event_id, return status 200 and body "duplicate" without applying twice
+  - When sequence is not newer, return status 200 and body "stale" without replacing state
+
+ROUTER
+- Register POST /webhook through an HTTP router

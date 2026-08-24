@@ -52,11 +52,11 @@
 
 mod csharp;
 pub mod modules;
+mod template_registry;
 
 use anyhow::{bail, Context, Result};
 use regex::Regex;
 use spacetimedb_guard::{ensure_binaries_built, SpacetimeDbGuard};
-use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -393,7 +393,7 @@ pub fn pnpm(args: &[&str], cwd: &Path) -> Result<String> {
 pub fn build_typescript_sdk() -> Result<()> {
     let workspace = workspace_root();
     let ts_bindings = workspace.join("crates/bindings-typescript");
-    pnpm(&["install"], &ts_bindings)?;
+    pnpm(&["--filter", "spacetimedb", "install"], &ts_bindings)?;
     pnpm(&["build"], &ts_bindings)?;
     Ok(())
 }

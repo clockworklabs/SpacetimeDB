@@ -57,10 +57,10 @@ Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, w
 
 ```bash
 mkdir -p src/module_bindings
-spacetime generate --lang rust --out-dir client/src/module_bindings --module-path PATH-TO-MODULE-DIRECTORY
+spacetime generate --lang rust --out-dir src/module_bindings --module-path PATH-TO-MODULE-DIRECTORY
 ```
 
-This generates Rust files in `client/src/module_bindings/`. Import them in your client with:
+This generates Rust files in `src/module_bindings/`. Import them in your client with:
 
 ```rust
 mod module_bindings;
@@ -234,9 +234,7 @@ conn.reducers().on_create_user(|ctx, name, email| {
 Context.Reducers->CreateUser(TEXT("Alice"), TEXT("alice@example.com"));
 
 // Register a callback to observe reducer invocations
-FOnCreateUserDelegate Callback;
-BIND_DELEGATE_SAFE(Callback, this, AMyActor, OnCreateUser);
-Context.Reducers->OnCreateUser(Callback);
+Context.Reducers->OnCreateUser.AddDynamic(this, &AMyActor::OnCreateUser);
 
 // Callback function (must be UFUNCTION)
 UFUNCTION()

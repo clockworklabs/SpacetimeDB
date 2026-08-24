@@ -592,7 +592,7 @@ const publicUserProfile = t.row('PublicUserProfile', {
 });
 
 // Public view that returns the caller's profile without sensitive data
-export const my_profile = spacetimedb.view(
+export const myProfile = spacetimedb.view(
   { name: 'my_profile', public: true },
   t.option(publicUserProfile),
   (ctx) => {

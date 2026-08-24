@@ -1,0 +1,23 @@
+Write a SpacetimeDB backend module in Rust that tracks presence separately for each connection.
+
+TABLE
+- presence_session (public), struct PresenceSession
+  - Fields:
+    - connection_id: ConnectionId (primary key)
+    - identity: Identity (btree index)
+    - connected_at: Timestamp
+
+LIFECYCLE HOOKS
+- client_connected
+  - Export with this exact identifier
+  - Insert one row for the connected connection
+- client_disconnected
+  - Export with this exact identifier
+  - Delete only the disconnected connection's row
+
+REDUCERS
+- exercise_presence()
+  - Insert synthetic connection IDs 1 and 2 for the caller
+  - Use the 128-bit numeric values 1 and 2
+  - Remove connection ID 1
+  - Leave connection ID 2 intact

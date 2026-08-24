@@ -441,9 +441,16 @@ public static class Module
 
     public static byte[] Consume(this BytesSource source)
     {
+        var buffer = Array.Empty<byte>();
+        using var stream = source.Consume(ref buffer);
+        return stream.ToArray();
+    }
+
+    internal static MemoryStream Consume(this BytesSource source, ref byte[] buffer)
+    {
         if (source == BytesSource.INVALID)
         {
-            return [];
+            return new();
         }
 
         var len = (uint)0;
@@ -458,36 +465,32 @@ public static class Module
                 throw new UnknownException(ret);
         }
 
-        var buffer = new byte[checked((int)len)];
+        var requiredLen = checked((int)len);
+        if (buffer.Length < requiredLen)
+        {
+            Array.Resize(ref buffer, requiredLen);
+        }
+
         var written = 0;
-        // Because we've reserved space in our buffer already, this loop should be unnecessary.
-        // We expect the first call to `bytes_source_read` to always return `-1`.
-        // I (pgoldman 2025-09-26) am leaving the loop here because there's no downside to it,
-        // and in the future we may want to support `BytesSource`s which don't have a known length ahead of time
-        // (i.e. put arbitrary streams in `BytesSource` on the host side rather than just `Bytes` buffers),
-        // at which point the loop will become useful again.
         while (true)
         {
-            // Write into the spare capacity of the buffer.
             var spare = buffer.AsSpan(written);
             var buf_len = spare.Length;
             ret = FFI.bytes_source_read(source, spare, ref buf_len);
             written += buf_len;
             switch (ret)
             {
-                // Host side source exhausted, we're done.
                 case Errno.EXHAUSTED:
-                    Array.Resize(ref buffer, written);
-                    return buffer;
-                // Wrote the entire spare capacity.
-                // Need to reserve more space in the buffer.
+                    return new MemoryStream(
+                        buffer,
+                        0,
+                        written,
+                        writable: false,
+                        publiclyVisible: true
+                    );
                 case Errno.OK when written == buffer.Length:
                     Array.Resize(ref buffer, buffer.Length + 1024);
                     break;
-                // Host didn't write as much as possible.
-                // Try to read some more.
-                // The host will likely not trigger this branch (current host doesn't),
-                // but a module should be prepared for it.
                 case Errno.OK:
                     break;
                 case Errno.NO_SUCH_BYTES:
@@ -507,6 +510,14 @@ public static class Module
             bytes = bytes[written..];
         }
     }
+
+    // __call_reducer__ is not invoked in parallel because modules do not support multithreading in Wasm.
+    private static byte[] reducerArgsBuffer = new byte[0x10_000];
+    private static byte[] procedureArgsBuffer = new byte[0x10_000];
+    private static byte[] httpRequestBuffer = new byte[0x10_000];
+    private static byte[] httpRequestBodyBuffer = new byte[0x10_000];
+    private static byte[] viewArgsBuffer = new byte[0x10_000];
+    private static byte[] anonymousViewArgsBuffer = new byte[0x10_000];
 
 #pragma warning disable IDE1006 // Naming Styles - methods below are meant for FFI.
 
@@ -550,7 +561,7 @@ public static class Module
 
             var ctx = newReducerContext!(senderIdentity, connectionId, random, time);
 
-            using var stream = new MemoryStream(args.Consume());
+            using var stream = args.Consume(ref reducerArgsBuffer);
             using var reader = new BinaryReader(stream);
             reducers[id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
@@ -592,7 +603,7 @@ public static class Module
 
             var ctx = newProcedureContext!(sender, connectionId, random, time);
 
-            using var stream = new MemoryStream(args.Consume());
+            using var stream = args.Consume(ref procedureArgsBuffer);
             using var reader = new BinaryReader(stream);
             var bytes = procedures[id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
@@ -628,8 +639,7 @@ public static class Module
             var time = timestamp.ToStd();
             var ctx = newHandlerContext!(random, time);
 
-            var requestBytes = request.Consume();
-            using var stream = new MemoryStream(requestBytes);
+            using var stream = request.Consume(ref httpRequestBuffer);
             using var reader = new BinaryReader(stream);
             var requestWire = new HttpRequestWire.BSATN().Read(reader);
             if (stream.Position != stream.Length)
@@ -637,8 +647,12 @@ public static class Module
                 throw new Exception("Unrecognised extra bytes in the HTTP handler request");
             }
 
+            using var requestBodyStream = requestBody.Consume(ref httpRequestBodyBuffer);
             var response = httpHandlers[id]
-                .Invoke(ctx, SpacetimeDB.HttpClient.FromWire(requestWire, requestBody.Consume()));
+                .Invoke(
+                    ctx,
+                    SpacetimeDB.HttpClient.FromWire(requestWire, requestBodyStream.ToArray())
+                );
             var (responseWire, responseBody) = SpacetimeDB.HttpClient.ToWire(response);
             responseSink.Write(
                 IStructuralReadWrite.ToBytes(new HttpResponseWire.BSATN(), responseWire)
@@ -694,7 +708,7 @@ public static class Module
                 MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3])
             );
             var ctx = newViewContext!(sender);
-            using var stream = new MemoryStream(args.Consume());
+            using var stream = args.Consume(ref viewArgsBuffer);
             using var reader = new BinaryReader(stream);
             var bytes = viewDispatchers[id].Invoke(reader, ctx);
             rows.Write(bytes);
@@ -732,7 +746,7 @@ public static class Module
         try
         {
             var ctx = newAnonymousViewContext!();
-            using var stream = new MemoryStream(args.Consume());
+            using var stream = args.Consume(ref anonymousViewArgsBuffer);
             using var reader = new BinaryReader(stream);
             var bytes = anonymousViewDispatchers[id].Invoke(reader, ctx);
             rows.Write(bytes);

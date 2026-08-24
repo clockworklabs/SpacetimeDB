@@ -534,6 +534,11 @@ impl RelationalDB {
 
             let elapsed_time = start.elapsed();
 
+            ENGINE_METRICS
+                .replay_snapshot_num_absent_pages
+                .with_label_values(database_identity)
+                .set(u64_to_i64(snapshot.read_metrics.absent_pages));
+
             for (kind, metrics) in snapshot.read_metrics.iter() {
                 ENGINE_METRICS
                     .replay_snapshot_read_time_seconds
@@ -1070,6 +1075,36 @@ impl RelationalDB {
         primary_key: Option<ColId>,
     ) -> Result<(), DBError> {
         Ok(self.inner.alter_table_primary_key_mut_tx(tx, name, primary_key)?)
+    }
+
+    pub(crate) fn alter_index_source_name(
+        &self,
+        tx: &mut MutTx,
+        index_id: IndexId,
+        source_name: spacetimedb_sats::raw_identifier::RawNamespacedIdentifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_index_source_name_mut_tx(tx, index_id, source_name)?)
+    }
+
+    pub(crate) fn alter_table_accessor_name(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        new_alias: spacetimedb_schema::identifier::NamespacedIdentifier,
+    ) -> Result<(), DBError> {
+        Ok(self.inner.alter_table_accessor_name_mut_tx(tx, table_id, new_alias)?)
+    }
+
+    pub(crate) fn alter_column_accessor_name(
+        &self,
+        tx: &mut MutTx,
+        table_id: TableId,
+        col_id: ColId,
+        new_alias: spacetimedb_schema::identifier::Identifier,
+    ) -> Result<(), DBError> {
+        Ok(self
+            .inner
+            .alter_column_accessor_name_mut_tx(tx, table_id, col_id, new_alias)?)
     }
 
     pub(crate) fn alter_table_row_type(
