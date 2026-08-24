@@ -9,8 +9,8 @@ import { emptyArtifactIdentities, writeArtifact } from '../src/evidence/artifact
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
 import { createCampaignState } from '../src/campaigns/campaign-scheduler.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
-import { campaignDetail, parseRunProgress, readCampaignArtifactBody, resolveCampaignArtifact,
-  summarizeCampaign,
+import { campaignDetail, campaignFacts, firstGradeAbort, parseRunProgress,
+  readCampaignArtifactBody, resolveCampaignArtifact, summarizeCampaign,
 } from '../dashboard/dashboard-model.mjs';
 import { createDashboardServer, parseDashboardArgs } from '../dashboard/dashboard-server.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
@@ -48,6 +48,42 @@ test('dashboard follows the actual level when a completed L1 advances to the fir
   assert.equal(progress.phase, 'Repairing L2 · round 1 of 10');
   assert.deepEqual(progress.firstScore, { score: 52, max: 58 });
   assert.deepEqual(progress.latestScore, { score: 52, max: 59 });
+});
+
+test('an aborted first grade is classified, not treated as a scored zero', () => {
+  // The postgres r3 shape from the 20260823 cohort: the seed probe stopped the
+  // grade before any suite ran, so 0/58 must read as an abort with its reason.
+  assert.deepEqual(firstGradeAbort({ score: 0, max: 58, outcome: { kind: 'app_failure',
+    phase: 'application-seed', reason: 'startup data is missing: items contains 0 entries' } }),
+  { phase: 'application-seed', reason: 'startup data is missing: items contains 0 entries' });
+  // A graded first build — even a zero — is a score, not an abort.
+  assert.equal(firstGradeAbort({ score: 0, max: 58,
+    outcome: { kind: 'app_failure', phase: 'grading', reason: null } }), null);
+  assert.equal(firstGradeAbort({ score: 31, max: 58,
+    outcome: { kind: 'passed', phase: 'grading' } }), null);
+  assert.equal(firstGradeAbort(null), null);
+  assert.equal(firstGradeAbort({ score: 31, max: 58 }), null);
+});
+
+test('campaign facts surface the identity an operator otherwise reads plan.json for', () => {
+  const facts = campaignFacts({
+    agents: [{ adapter: 'claude-code', adapterVersion: '1.12.0', model: 'claude-sonnet-5' }],
+    attempts: [{ condition: { requested: { levels: [
+      { level: 1, recipe: { id: 'ecommerce.l1-modular', version: '2.4.0' } },
+      { level: 2, recipe: { id: 'ecommerce.l2-standard', version: '1.5.0' } },
+    ] } } }],
+    definition: { runtime: { controllerImage: 'stack-bench-controller@sha256:' + 'a'.repeat(64),
+      buildImage: null } },
+  });
+  assert.deepEqual(facts.agents, [{ adapter: 'claude-code', version: '1.12.0', model: 'claude-sonnet-5' }]);
+  assert.deepEqual(facts.recipes, [
+    { level: 1, id: 'ecommerce.l1-modular', version: '2.4.0' },
+    { level: 2, id: 'ecommerce.l2-standard', version: '1.5.0' },
+  ]);
+  assert.equal(facts.runtime.controllerImage, 'stack-bench-controller@sha256:' + 'a'.repeat(64));
+  // A schema-1 plan predates most of this; every field degrades to empty.
+  assert.deepEqual(campaignFacts({ definition: {} }),
+    { agents: [], recipes: [], runtime: null });
 });
 
 test('a prepared attempt is waiting rather than finished', () => {

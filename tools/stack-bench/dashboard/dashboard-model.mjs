@@ -212,12 +212,24 @@ export function parseRunProgress(log, { fixRounds = 0, running = true, status = 
   };
 }
 
+// A first grade that never ran is not a zero. The run records the phase that
+// stopped it (for example application-seed); surfacing that keeps an aborted
+// grade from being averaged into first-build scores as if the app scored 0.
+export function firstGradeAbort(firstBuild) {
+  const outcome = firstBuild?.outcome;
+  if (!outcome || outcome.kind === 'passed') return null;
+  if (!outcome.phase || outcome.phase === 'grading') return null;
+  return { phase: outcome.phase, reason: outcome.reason ?? null };
+}
+
 function readRun(path) {
   if (!existsSync(path)) return null;
   try {
     const run = readArtifactPayload(path, { expectedKind: 'benchmark_run' });
     return {
       outcome: run.outcome?.kind ?? 'ungraded',
+      outcomePhase: run.outcome?.phase ?? null,
+      outcomeReason: run.outcome?.reason ?? null,
       score: run.totals ? { score: run.totals.score, max: run.totals.max } : null,
       costUsd: run.totals?.costUsd ?? null,
       durationSec: run.totals?.durationSec ?? null,
@@ -225,22 +237,51 @@ function readRun(path) {
       levels: (run.levels ?? []).map(level => ({
         level: level.level,
         firstScore: level.firstBuild ? { score: level.firstBuild.score, max: level.firstBuild.max } : null,
+        firstAbort: firstGradeAbort(level.firstBuild),
         finalScore: level.graded ? { score: level.score, max: level.max } : null,
         roundsUsed: level.repair?.roundsUsed ?? 0,
         repairStatus: level.repair?.status ?? null,
         outcome: level.outcome?.kind ?? null,
+        durationSec: level.durationSec ?? null,
         // Level records carry spend as it is incurred, while run.totals only
         // appears once an attempt finishes. Reporting both lets a view show
         // what a still-running attempt has already cost.
         costUsd: level.buildCostUsd == null && level.fixCostUsd == null
           ? null : (level.buildCostUsd ?? 0) + (level.fixCostUsd ?? 0),
-        failures: (level.missed ?? level.firstBuild?.missed ?? []).map(item =>
+        // The FINAL failing set. level.outcome.appFailures is authoritative for
+        // a graded level; the older fallbacks describe the first build and must
+        // not be shown as "still failing" on an attempt that repaired them.
+        failures: (level.outcome?.appFailures
+          ?? (level.graded ? [] : level.missed ?? level.firstBuild?.missed ?? [])).map(item =>
           typeof item === 'string' ? item : item?.stableKey ?? item?.description ?? 'Failed check'),
       })),
     };
   } catch (error) {
     return { unreadable: error.message };
   }
+}
+
+// The identity an operator otherwise opens plan.json to find: what model and
+// adapter ran, which exact recipes were graded, and which pinned images did
+// the work. Every field is optional because schema-1 plans predate some of it.
+export function campaignFacts(plan) {
+  const requested = plan.attempts?.[0]?.condition?.requested?.levels;
+  return {
+    agents: (plan.agents ?? []).map(agent => ({
+      adapter: agent.adapter ?? agent.identity?.id ?? null,
+      version: agent.adapterVersion ?? agent.identity?.version ?? null,
+      model: agent.model ?? null,
+    })),
+    recipes: Array.isArray(requested) ? requested.map(level => ({
+      level: level.level,
+      id: level.recipe?.id ?? null,
+      version: level.recipe?.version ?? null,
+    })) : [],
+    runtime: plan.definition?.runtime ? {
+      controllerImage: plan.definition.runtime.controllerImage ?? null,
+      buildImage: plan.definition.runtime.buildImage ?? null,
+    } : null,
+  };
 }
 
 function readDashboardCampaignState(directory) {
@@ -355,6 +396,7 @@ export function summarizeCampaign(directory, {
     interrupted,
     ...(interrupted ? { statusReason: 'The campaign controller is no longer running.' } : {}),
     budgets: plan.definition.budgets,
+    facts: campaignFacts(plan),
     attempts,
     ...(includePackage ? { package: campaignPackage(directory, state.attempts) } : {}),
   };

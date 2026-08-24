@@ -147,6 +147,7 @@ th.num, td.num { text-align: right; font-family: var(--font-source); font-varian
 td.num i { color: var(--muted); font-style: normal; }
 
 table.campaigns { min-width: 860px; }
+table.campaigns tbody tr[data-campaign] { cursor: pointer; }
 table.campaigns tbody tr:hover { background: var(--raised); }
 .group-row > * { padding: 10px var(--row-x) 3px; border-bottom: 0; }
 th.group { color: var(--muted); font: 11px/1.2 var(--font-source); letter-spacing: 0.5px; text-transform: none; text-align: center; }
@@ -172,7 +173,30 @@ td.vacant b { color: var(--muted); font-size: 15px; }
 .state-cell { color: var(--muted); font: 11.7px var(--font-source); white-space: nowrap; }
 .vacant-row { padding: 34px !important; color: var(--muted); text-align: center !important; }
 time { color: var(--muted); font: 11.7px var(--font-source); }
-.table-foot { margin: 10px 2px 0; color: var(--muted); font: 11.7px var(--font-source); letter-spacing: 0.468px; text-transform: uppercase; }
+.table-foot { display: flex; align-items: center; gap: 16px; margin: 10px 2px 0; color: var(--muted); font: 11.7px var(--font-source); letter-spacing: 0.468px; text-transform: uppercase; }
+.linklike { all: unset; cursor: pointer; color: var(--copy); font: 11.7px var(--font-source); letter-spacing: 0.468px; text-transform: uppercase; }
+/* all:unset also unsets the user-agent [hidden] rule; restore it. */
+.linklike[hidden] { display: none; }
+.linklike:hover { color: var(--green); }
+.linklike:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+/* The landing stat: first-build large because it is the primary metric, the
+ * repaired score and spend as context. An asterisked cost is one the detail
+ * view itself would refuse to compare. */
+td.band .arrow { margin-left: 6px; color: var(--muted); font-style: normal; font-size: 12px; }
+td.band small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+td.band small.incomparable { cursor: help; }
+td.band small.vacant-small { color: var(--line-bright); }
+.campaign-cell .row-error { color: var(--yellow); }
+
+/* One line per attempt while a campaign runs: phase, score, elapsed, spend. */
+tr.live-row > td { padding: 0 var(--row-x) 10px; border-bottom: 1px solid var(--line); }
+.live-strip { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.live-chip { display: inline-flex; align-items: baseline; gap: 8px; padding: 3px 0; font: 11.7px var(--font-source); color: var(--muted); white-space: nowrap; }
+.live-chip b { color: var(--copy); font-weight: 500; }
+.live-chip.running b { color: var(--green); }
+.live-chip.completed b { color: var(--blue); }
+.live-chip i { font-style: normal; }
 
 /* --------------------------------------------------------------- loading */
 
@@ -321,11 +345,35 @@ input { font-family: var(--font-source); }
 .attempt-name { color: var(--ink); font-weight: 500; }
 .attempt-name i { margin-left: 8px; color: var(--muted); font: 11.5px var(--font-source); font-style: normal; }
 .attempt-phase-inline { overflow: hidden; color: var(--muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
-.attempt-figs { color: var(--ink); font: 13px var(--font-source); font-variant-numeric: tabular-nums; text-align: right; }
-.attempt-figs b { display: inline-block; min-width: 5em; text-align: right; font-weight: 400; }
-.attempt-figs i { display: inline-block; min-width: 4.6em; margin-left: 10px; color: var(--muted); font-style: normal; text-align: right; }
+.attempt-figs { color: var(--ink); font: 13px var(--font-source); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.attempt-figs b { display: inline-block; min-width: 6.2em; text-align: right; font-weight: 400; }
+.attempt-figs i { display: inline-block; margin-left: 10px; color: var(--muted); font-style: normal; text-align: right; }
 .attempt-body { padding: 14px; display: grid; gap: 12px; }
 .failures { margin: 0; padding-left: 15px; color: var(--copy); font: 11.7px/1.6 var(--font-source); }
+.fail-chip {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 2px 7px;
+  border: 1px solid var(--yellow-25);
+  border-radius: 999px;
+  color: var(--yellow);
+  font: 10.8px var(--font-source);
+  white-space: nowrap;
+}
+.fail-chip.more { color: var(--muted); border-color: var(--line-bright); }
+.aborted { color: var(--yellow); font-size: 12px; cursor: help; }
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  background: var(--line);
+  overflow: hidden;
+}
+.facts p { padding: 10px 12px; background: var(--base); min-width: 0; }
+.facts .tag { display: block; margin-bottom: 6px; }
+.facts strong { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--ink); font-size: 12.5px; font-weight: 500; white-space: nowrap; }
 
 .evidence-package { border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--base); }
 .evidence-package > summary {

@@ -8,8 +8,13 @@ const EXCLUDED_OUTCOMES = new Set(['harness_failure', 'inconclusive', 'ungraded'
 // Below this many usable repetitions there is no spread worth reporting, so the
 // summary says so rather than implying a settled difference.
 const MIN_REPETITIONS = 3;
+// A finished campaign nobody needs to act on leaves the default view after
+// this long. Running and completed campaigns never archive: one is live, the
+// other is the record.
+const ARCHIVE_AFTER_MS = 72 * 3600 * 1000;
 
-const state = { overview: null, csrfToken: null, selectedPlan: null };
+const state = { overview: null, csrfToken: null, selectedPlan: null, showArchived: false,
+  openCampaign: null };
 
 const $ = selector => document.querySelector(selector);
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -26,6 +31,16 @@ const relativeTime = value => {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   return new Date(value).toLocaleDateString();
+};
+const elapsedTime = since => {
+  if (!since) return '—';
+  const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(since)) / 60000));
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+};
+const durationFromSeconds = seconds => {
+  if (seconds == null) return '—';
+  const minutes = Math.round(seconds / 60);
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 };
 const plural = (count, noun) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 const money = value => value == null ? '—' : `$${value.toFixed(2)}`;
@@ -70,14 +85,17 @@ function attemptSpend(attempt) {
 }
 
 // Two numbers per attempt, because they answer different questions: what the
-// model got right unaided, and what the whole correction cost.
+// model got right unaided, and what the whole correction cost. A first grade
+// that aborted before grading contributes nothing to the first-build figure —
+// an app the grader never scored did not score zero.
 function attemptMetrics(attempt) {
   const run = attempt.result;
   if (!run || run.unreadable) return null;
   const levels = (run.levels ?? []).filter(level => level.finalScore);
   if (!levels.length) return null;
   const sum = (list, pick) => list.reduce((total, item) => total + pick(item), 0);
-  const scored = levels.filter(level => level.firstScore);
+  const scored = levels.filter(level => level.firstScore && !level.firstAbort);
+  const abortedFirst = levels.filter(level => level.firstAbort).length;
   const firstMax = sum(scored, level => level.firstScore.max);
   const finalMax = sum(levels, level => level.finalScore.max);
   return {
@@ -86,6 +104,7 @@ function attemptMetrics(attempt) {
     rounds: sum(levels, level => level.roundsUsed ?? 0),
     spend: attemptSpend(attempt),
     levelsGraded: levels.length,
+    abortedFirst,
     // Raw sums over the same set of levels, so a first and a final score shown
     // side by side are always out of the same total.
     raw: { first: firstMax ? { score: sum(scored, l => l.firstScore.score), max: firstMax } : null,
@@ -109,7 +128,7 @@ function compareCampaign(campaign) {
   const byStack = new Map();
   for (const attempt of campaign.attempts ?? []) {
     const entry = byStack.get(attempt.stack)
-      ?? { stack: attempt.stack, runs: [], excluded: [], pending: 0, spendSoFar: null };
+      ?? { stack: attempt.stack, runs: [], excluded: [], pending: 0, spendSoFar: null, abortedFirst: 0 };
     byStack.set(attempt.stack, entry);
     // Every attempt's spend counts toward burn, including ones excluded from
     // the result: a contaminated run still cost money.
@@ -118,7 +137,10 @@ function compareCampaign(campaign) {
     const reason = attemptExcluded(attempt);
     if (reason) { entry.excluded.push({ attempt, reason }); continue; }
     const metrics = attempt.status === 'completed' ? attemptMetrics(attempt) : null;
-    if (metrics) entry.runs.push({ attempt, metrics }); else entry.pending += 1;
+    if (metrics) {
+      entry.runs.push({ attempt, metrics });
+      entry.abortedFirst += metrics.abortedFirst;
+    } else entry.pending += 1;
   }
   const rows = [...byStack.values()]
     .sort((left, right) => STACK_ORDER.indexOf(left.stack) - STACK_ORDER.indexOf(right.stack))
@@ -162,6 +184,9 @@ function comparisonTable(campaign) {
   if (priced.length < 2) notes.push(`Only ${plural(priced.length, 'stack')} recorded spend here, so there is no cost comparison to draw.`);
   else if (mixedScope) notes.push('Stacks graded different numbers of levels in this campaign. Their costs measure different amounts of work and are not comparable.');
   if (thin && comparable) notes.push(`Fewer than ${MIN_REPETITIONS} usable runs on at least one stack. Repetitions of the same build have varied by more than the gaps shown here, so read this as a reading, not a result.`);
+  for (const row of usable) {
+    if (row.abortedFirst) notes.push(`${title(row.stack)}: ${plural(row.abortedFirst, 'first grade')} aborted before scoring — excluded from its first-try figure.`);
+  }
   const spread = (range, format) => range && range.min !== range.max
     ? `<small>${format(range.min)}–${format(range.max)}</small>` : '';
   return `<div class="compare-wrap">
@@ -190,42 +215,139 @@ function comparisonTable(campaign) {
     `<li><strong>${escapeHtml(title(row.stack))} rep ${escapeHtml(item.attempt.repetition ?? '?')}</strong> — ${escapeHtml(item.reason)}</li>`)).join('')}</ul>` : ''}`;
 }
 
+// The landing figure is the primary metric first: what each stack scored
+// unaided, then what repair reached, then the median spend. Cost stops being
+// shown as a comparison when the campaign's own detail view would refuse to
+// compare it.
+function stackCell(summary, stack, running) {
+  const row = summary.usable.find(item => item.stack === stack);
+  const burn = summary.burn.get(stack);
+  if (!row) {
+    if (running && burn != null) {
+      return `<td class="band num partial"><b>…</b><small>${money(burn)} so far</small></td>`;
+    }
+    return burn != null
+      ? `<td class="band num partial"><b>—</b><small>${money(burn)} spent</small></td>`
+      : '<td class="band num vacant"><b>—</b></td>';
+  }
+  const cost = row.spend == null ? '' : summary.comparable
+    ? `<small>${money(row.spend)}</small>`
+    : `<small class="incomparable" title="Stacks graded different amounts of work; costs are not comparable">${money(row.spend)}*</small>`;
+  return `<td class="band num">
+    <b>${percent(row.first)}</b><i class="arrow">→ ${percent(row.final)}</i>
+    ${cost || '<small class="vacant-small">no cost</small>'}
+  </td>`;
+}
+
 function campaignRow(campaign) {
   const summary = compareCampaign(campaign);
-  const rows = new Map(summary.usable.map(row => [row.stack, row]));
-  const cheapest = summary.comparable
-    ? [...summary.priced].sort((left, right) => left.spend - right.spend)[0] : null;
-  const cost = stack => {
-    const row = rows.get(stack);
-    const partial = summary.burn.get(stack);
-    if (!row) {
-      return partial != null
-        ? `<td class="band num partial"><b>${money(partial)}</b></td>`
-        : '<td class="band num vacant"><b>—</b></td>';
-    }
-    if (row.spend == null) return '<td class="band num vacant"><b>no cost</b></td>';
-    return `<td class="band num${row === cheapest ? ' lead' : ''}"><b>${money(row.spend)}</b></td>`;
-  };
-  const live = (campaign.attempts ?? []).filter(attempt => attempt.status === 'running').length;
-  return `<tr>
-    <td class="campaign-cell">
+  const running = campaign.status === 'running';
+  const live = (campaign.attempts ?? []).filter(attempt =>
+    ['running', 'pending'].includes(attempt.status)).length;
+  const status = running ? `${live} of ${campaign.attempts.length} running`
+    : escapeHtml(statusLabel(campaign.status));
+  return `<td class="campaign-cell">
       <button data-campaign="${escapeHtml(campaign.key)}">${escapeHtml(campaign.title)}</button>
-      ${campaign.error ? `<i>${escapeHtml(campaign.error)}</i>` : ''}
+      <i>${escapeHtml(campaign.key)}</i>
+      ${campaign.error ? `<i class="row-error">${escapeHtml(campaign.error)}</i>` : ''}
     </td>
-    ${STACK_ORDER.map(cost).join('')}
-    <td class="state-cell">${live ? `${live} of ${campaign.attempts.length} running`
-      : campaign.status === 'completed' ? '' : escapeHtml(statusLabel(campaign.status))}</td>
-    <td class="num"><time datetime="${escapeHtml(campaign.updatedAt ?? '')}">${escapeHtml(relativeTime(campaign.updatedAt))}</time></td>
-  </tr>`;
+    ${STACK_ORDER.map(stack => stackCell(summary, stack, running)).join('')}
+    <td class="state-cell"><span class="status ${escapeHtml(campaign.status)}">${status}</span></td>
+    <td class="num"><time datetime="${escapeHtml(campaign.updatedAt ?? '')}" title="${escapeHtml(campaign.updatedAt ?? '')}">${escapeHtml(relativeTime(campaign.updatedAt))}</time></td>`;
+}
+
+// While a campaign runs, its row grows a strip with each attempt's phase,
+// score, elapsed time and spend — the facts an operator otherwise tails the
+// controller log for.
+function liveStrip(campaign) {
+  const attempts = [...(campaign.attempts ?? [])]
+    .sort((left, right) => STACK_ORDER.indexOf(left.stack) - STACK_ORDER.indexOf(right.stack)
+      || (left.repetition ?? 1) - (right.repetition ?? 1));
+  const chips = attempts.map(attempt => {
+    const score = attempt.progress?.latestScore;
+    const spend = attemptSpend(attempt);
+    const done = attempt.status === 'completed';
+    const parts = [
+      done ? statusLabel(attempt.status) : (attempt.progress?.phase ?? statusLabel(attempt.status)),
+      score ? `${score.score}/${score.max}` : null,
+      attempt.status === 'running' ? elapsedTime(attempt.execution?.startedAt) : null,
+      spend != null ? money(spend) : null,
+    ].filter(Boolean);
+    return `<span class="live-chip ${escapeHtml(attempt.status)}">
+      <b>${escapeHtml(title(attempt.stack))} r${escapeHtml(attempt.repetition ?? 1)}</b>
+      ${parts.map(part => `<i>${escapeHtml(part)}</i>`).join('')}
+    </span>`;
+  }).join('');
+  return `<td colspan="6"><div class="live-strip">${chips}</div></td>`;
+}
+
+// Refresh updates rows in place instead of replacing the table, so an element
+// under the pointer survives the poll and a click cannot land on a node that
+// was just thrown away.
+function reconcileRows(tbody, desired) {
+  // Skeleton and placeholder rows carry no key and never survive a real render.
+  for (const row of [...tbody.children]) if (!row.dataset.rowKey) row.remove();
+  const existing = new Map([...tbody.children].map(row => [row.dataset.rowKey, row]));
+  let cursor = null;
+  for (const [key, entry] of desired) {
+    let row = existing.get(key);
+    if (!row) {
+      row = document.createElement('tr');
+      row.dataset.rowKey = key;
+    }
+    existing.delete(key);
+    if (row.dataset.html !== entry.html) {
+      row.innerHTML = entry.html;
+      row.dataset.html = entry.html;
+    }
+    if (row.className !== entry.className) row.className = entry.className;
+    if (entry.campaign) row.dataset.campaign = entry.campaign;
+    else delete row.dataset.campaign;
+    const expected = cursor ? cursor.nextElementSibling : tbody.firstElementChild;
+    if (row !== expected) tbody.insertBefore(row, expected);
+    cursor = row;
+  }
+  for (const row of existing.values()) row.remove();
+}
+
+// Running campaigns first, then the record by recency. History nobody acted on
+// leaves the default view after ARCHIVE_AFTER_MS; the toggle brings it back.
+function partitionCampaigns(campaigns) {
+  const age = campaign => Date.now() - (Date.parse(campaign.updatedAt ?? '') || 0);
+  const archived = campaign => campaign.status !== 'running' && campaign.status !== 'completed'
+    && age(campaign) > ARCHIVE_AFTER_MS;
+  const order = (left, right) => (right.status === 'running') - (left.status === 'running')
+    || String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? ''));
+  return {
+    visible: campaigns.filter(campaign => state.showArchived || !archived(campaign)).sort(order),
+    archivedCount: campaigns.filter(archived).length,
+  };
 }
 
 function renderHistory() {
-  const campaigns = state.overview.campaigns;
-  $('#campaign-list').innerHTML = campaigns.length
-    ? campaigns.map(campaignRow).join('')
-    : '<tr><td colspan="6" class="vacant-row">No campaign history yet.</td></tr>';
-  $('#campaign-count').textContent = campaigns.length
-    ? `${plural(campaigns.length, 'campaign')}` : '';
+  const { visible, archivedCount } = partitionCampaigns(state.overview.campaigns);
+  const tbody = $('#campaign-list');
+  if (!visible.length) {
+    tbody.replaceChildren();
+    tbody.innerHTML = '<tr><td colspan="6" class="vacant-row">No campaign history yet.</td></tr>';
+  } else {
+    const desired = new Map();
+    for (const campaign of visible) {
+      // The whole row is the click target; the button inside stays for
+      // keyboard and assistive access.
+      desired.set(campaign.key, { html: campaignRow(campaign), className: '',
+        campaign: campaign.key });
+      if (campaign.status === 'running') {
+        desired.set(`${campaign.key}::live`, { html: liveStrip(campaign), className: 'live-row' });
+      }
+    }
+    reconcileRows(tbody, desired);
+  }
+  $('#campaign-count').textContent = visible.length ? plural(visible.length, 'campaign') : '';
+  const toggle = $('#toggle-archived');
+  toggle.hidden = !archivedCount && !state.showArchived;
+  toggle.textContent = state.showArchived
+    ? 'Hide stale campaigns' : `Show ${plural(archivedCount, 'stale campaign')}`;
 }
 
 function render() {
@@ -270,19 +392,24 @@ function renderExecutionPackage(campaign, evidence) {
 }
 
 // Where a score becomes explicable: what the first build scored, how many
-// repairs it took, what that cost, and which checks were still failing.
+// repairs it took, how long it ran, what that cost, and which checks were
+// still failing.
 function levelTable(attempt) {
   const levels = attempt.result?.levels ?? [];
   if (!levels.length) return '<p class="package-empty">No level has been graded yet.</p>';
   return `<div class="compare-wrap"><table class="levels">
     <thead><tr><th scope="col">Level</th><th scope="col" class="num">First try</th>
       <th scope="col" class="num">After repair</th><th scope="col" class="num">Repairs</th>
+      <th scope="col" class="num">Time</th>
       <th scope="col" class="num">Cost</th><th scope="col">Still failing</th></tr></thead>
     <tbody>${levels.map(level => `<tr>
       <th scope="row">L${escapeHtml(level.level)}</th>
-      <td class="num">${level.firstScore ? `${level.firstScore.score}/${level.firstScore.max}` : '—'}</td>
+      <td class="num">${level.firstAbort
+        ? `<span class="aborted" title="${escapeHtml(level.firstAbort.reason ?? '')}">aborted (${escapeHtml(level.firstAbort.phase)})</span>`
+        : level.firstScore ? `${level.firstScore.score}/${level.firstScore.max}` : '—'}</td>
       <td class="num">${level.finalScore ? `${level.finalScore.score}/${level.finalScore.max}` : '—'}</td>
       <td class="num">${level.roundsUsed ?? 0}${level.repairStatus ? ` <i>${escapeHtml(level.repairStatus)}</i>` : ''}</td>
+      <td class="num">${durationFromSeconds(level.durationSec)}</td>
       <td class="num">${money(level.costUsd)}</td>
       <td>${level.failures?.length
         ? `<ul class="failures">${level.failures.map(failure => `<li>${escapeHtml(failure)}</li>`).join('')}</ul>`
@@ -291,20 +418,78 @@ function levelTable(attempt) {
   </table></div>`;
 }
 
+// The identity an operator otherwise opens plan.json for. Only facts the plan
+// actually carries are shown; a schema-1 campaign shows what it has.
+function factsBlock(campaign) {
+  const facts = campaign.facts;
+  if (!facts) return '';
+  const digest = reference => {
+    const match = /@sha256:([a-f0-9]{12})/.exec(String(reference ?? ''));
+    return match ? `sha256:${match[1]}…` : reference ?? null;
+  };
+  const entries = [
+    ...facts.agents.map(agent => ['Agent', [agent.adapter, agent.version ? `@${agent.version}` : '',
+      agent.model ? ` · ${agent.model}` : ''].join('')]),
+    ...facts.recipes.filter(recipe => recipe.id).map(recipe =>
+      [`L${recipe.level}`, `${recipe.id}@${recipe.version ?? '?'}`]),
+    facts.runtime?.controllerImage ? ['Controller', digest(facts.runtime.controllerImage)] : null,
+    facts.runtime?.buildImage ? ['Build image', digest(facts.runtime.buildImage)] : null,
+    campaign.createdAt ? ['Started', new Date(campaign.createdAt).toLocaleString()] : null,
+  ].filter(entry => entry && entry[1]);
+  if (!entries.length) return '';
+  return `<section class="detail-block"><div class="facts">${entries.map(([label, value]) =>
+    `<p><span class="tag">${escapeHtml(label)}</span><strong class="mono">${escapeHtml(value)}</strong></p>`).join('')}</div></section>`;
+}
+
+// A collapsed attempt already answers the questions that matter: what it
+// scored unaided, what repair reached, how many rounds and how long, and which
+// checks are open. Phase text only appears while there is a phase to report.
+function attemptSummaryLine(attempt) {
+  const metrics = attemptMetrics(attempt);
+  const reason = attemptExcluded(attempt);
+  const queued = attempt.status === 'pending';
+  const active = ['running', 'interrupted'].includes(attempt.status) || queued;
+  const stillFailing = (attempt.result?.levels ?? []).flatMap(level => level.failures ?? []);
+  const chips = stillFailing.slice(0, 3).map(failure =>
+    `<span class="fail-chip" title="${escapeHtml(failure)}">${escapeHtml(failure.split('/').pop())}</span>`).join('')
+    + (stillFailing.length > 3 ? `<span class="fail-chip more">+${stillFailing.length - 3}</span>` : '');
+  const first = metrics?.raw.first ? `${metrics.raw.first.score}/${metrics.raw.first.max}` : '—';
+  const final = metrics?.raw.final ? `${metrics.raw.final.score}/${metrics.raw.final.max}` : '—';
+  const duration = attempt.result?.durationSec != null
+    ? durationFromSeconds(attempt.result.durationSec)
+    : attempt.status === 'running' ? elapsedTime(attempt.execution?.startedAt) : '—';
+  return `<summary>
+    <span class="attempt-name">${escapeHtml(title(attempt.stack))}<i>rep ${escapeHtml(attempt.repetition ?? 1)}</i></span>
+    <span class="attempt-phase-inline">${active
+    ? escapeHtml(reason || attempt.progress?.phase || '') : chips}</span>
+    <span class="status ${escapeHtml(reason ? 'invalid' : attempt.status)}">${escapeHtml(reason ? 'Excluded' : statusLabel(attempt.status))}</span>
+    <span class="attempt-figs">
+      <b title="first build → after repair">${escapeHtml(first)} → ${escapeHtml(final)}</b>
+      <i title="repair rounds">${metrics ? plural(metrics.rounds, 'round') : '—'}</i>
+      <i title="duration">${escapeHtml(duration)}</i>
+      <i title="normalized cost">${queued ? '—' : money(attemptSpend(attempt))}</i>
+    </span>
+  </summary>`;
+}
+
 async function showDetail(key) {
+  state.openCampaign = key;
+  if (location.hash !== `#campaign=${key}`) history.replaceState(null, '', `#campaign=${encodeURIComponent(key)}`);
   const dialog = $('#detail-dialog');
   $('#detail-title').textContent = 'Campaign';
   $('#detail-content').innerHTML = `<div class="loading-block">
     <span class="skeleton short"></span><span class="skeleton mid"></span>
     <span class="skeleton"></span><span class="skeleton mid"></span>
   </div>`;
-  dialog.showModal();
+  if (!dialog.open) dialog.showModal();
   try {
     const campaign = await request(`/api/campaigns/${encodeURIComponent(key)}`);
+    if (state.openCampaign !== key) return;
     $('#detail-title').textContent = campaign.title;
     const graded = compareCampaign(campaign).usable.length;
     const summary = (campaign.statusReason
         ? `<p class="package-notice">${escapeHtml(campaign.statusReason)}</p>` : '')
+      + factsBlock(campaign)
       + (graded ? `<section class="detail-block"><h3>Comparison</h3>${comparisonTable(campaign)}</section>` : '');
     const files = campaign.package?.campaign ?? [];
     const campaignPackage = files.length ? `<section class="detail-block file-row">
@@ -316,19 +501,8 @@ async function showDetail(key) {
       || STACK_ORDER.indexOf(left.stack) - STACK_ORDER.indexOf(right.stack)).map(attempt => {
       const evidence = (campaign.package?.executions ?? []).filter(item => item.attemptId === attempt.id);
       const reason = attemptExcluded(attempt);
-      const metrics = attemptMetrics(attempt);
-      // A queued attempt's figures belong to an earlier execution, so they are
-      // not shown against this one.
-      const queued = attempt.status === 'pending';
-      const grade = !queued && metrics?.raw.final
-        ? `${metrics.raw.final.score}/${metrics.raw.final.max}` : '—';
       return `<details class="attempt">
-        <summary>
-          <span class="attempt-name">${escapeHtml(title(attempt.stack))}<i>rep ${escapeHtml(attempt.repetition ?? 1)}</i></span>
-          <span class="attempt-phase-inline">${escapeHtml(reason || (queued ? 'Waiting to start' : (attempt.progress?.phase ?? '')))}</span>
-          <span class="status ${escapeHtml(reason ? 'invalid' : attempt.status)}">${escapeHtml(reason ? 'Excluded' : statusLabel(attempt.status))}</span>
-          <span class="attempt-figs"><b>${escapeHtml(grade)}</b><i>${queued ? '—' : money(attemptSpend(attempt))}</i></span>
-        </summary>
+        ${attemptSummaryLine(attempt)}
         <div class="attempt-body">
           ${reason ? `<p class="package-notice">Excluded from the comparison — ${escapeHtml(reason)}</p>` : ''}
           ${levelTable(attempt)}
@@ -344,6 +518,18 @@ async function showDetail(key) {
   } catch (error) {
     $('#detail-content').innerHTML = `<p class="form-message">${escapeHtml(error.message)}</p>`;
   }
+}
+
+function closeDetail() {
+  state.openCampaign = null;
+  if (location.hash.startsWith('#campaign=')) history.replaceState(null, '', '#overview');
+  $('#detail-dialog').close();
+}
+
+function openFromHash() {
+  const match = /^#campaign=(.+)$/.exec(location.hash);
+  if (match) showDetail(decodeURIComponent(match[1]));
+  else if ($('#detail-dialog').open) closeDetail();
 }
 
 // ------------------------------------------------------------------- plumbing
@@ -397,7 +583,14 @@ document.addEventListener('click', event => {
   const target = event.target.closest('[data-campaign]');
   if (target?.dataset.campaign) showDetail(target.dataset.campaign);
 });
-$('#close-detail').addEventListener('click', () => $('#detail-dialog').close());
+$('#close-detail').addEventListener('click', closeDetail);
+$('#detail-dialog').addEventListener('cancel', () => { state.openCampaign = null;
+  if (location.hash.startsWith('#campaign=')) history.replaceState(null, '', '#overview'); });
+$('#toggle-archived').addEventListener('click', () => {
+  state.showArchived = !state.showArchived;
+  renderHistory();
+});
+window.addEventListener('hashchange', openFromHash);
 $('#open-run').addEventListener('click', () => { populatePlans(); $('#run-message').textContent = ''; $('#run-dialog').showModal(); });
 $('#plan-select').addEventListener('change', event => {
   state.selectedPlan = state.overview.plans.find(plan => plan.id === event.target.value) ?? null;
@@ -419,4 +612,5 @@ $('#start-run').addEventListener('click', async () => {
 
 $('#campaign-list').innerHTML = skeletonRows(6);
 await refresh();
+openFromHash();
 setInterval(() => refresh({ quiet: true }), 5000);
