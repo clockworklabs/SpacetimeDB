@@ -179,8 +179,10 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
 `campaign status /var/lib/stack-bench/results/campaign-001` reads the durable
 state. Two controllers cannot own the directory at once. Failed harness or
 inconclusive measurement attempts remain visible and retries append new
-execution records. Multiple running attempts are checkpointed independently;
-after an interrupted controller, reconciliation proves cleanup for every live
+execution records. Multiple running attempts are checkpointed independently.
+All controller processes also share persistent resource locks, so another
+campaign or qualification command cannot claim a live run slot. After an
+interrupted controller, reconciliation proves cleanup for every live
 slot before changing any of their records. A comparison attempt is completed
 only when every selected check produced pass-or-fail evidence on both the first and final build and each
 score denominator equals the campaign's declared points. An inconclusive check

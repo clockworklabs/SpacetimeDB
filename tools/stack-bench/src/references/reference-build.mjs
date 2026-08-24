@@ -12,8 +12,9 @@ import { basename, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { writeRunJson } from '../evidence/artifacts.mjs';
-import { acquireResourceLock, createBackendLease, publicBackendLease,
-  readBackendLease, releaseResourceLocks, updateBackendLease, writeBackendLease } from '../runtime/backend-lease.mjs';
+import { acquireResourceLocks, backendResourceLockKeys, createBackendLease,
+  publicBackendLease, readBackendLease, releaseResourceLocks, resourceLockScope,
+  updateBackendLease, writeBackendLease } from '../runtime/backend-lease.mjs';
 import { resolveContainerImage } from '../runtime/container-image.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
@@ -127,8 +128,8 @@ function qualify(fixture, imageIdentity) {
     lease = createBackendLease({ runId: basename(work), backend: fixture.backend,
       track: fixture.track, runIndex: 0,
       ...preparedLease.lease });
-    lease.resources.locks.push(acquireResourceLock({ root: join(tmpdir(), 'stack-bench-resource-locks'),
-      key: `reference-build:${fixture.id}`, lease }));
+    lease.resources.locks.push(...acquireResourceLocks({ ...resourceLockScope(),
+      keys: backendResourceLockKeys(lease, preparedLease.lockKeys), lease }));
     lease.state = 'active';
     writeBackendLease(leasePath, lease);
     const prepared = execFileSync(process.execPath,

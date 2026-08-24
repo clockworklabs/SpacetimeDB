@@ -1,6 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { chmodSync, readFileSync, writeFileSync, renameSync, mkdirSync, rmSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { executeStackLeaseCapability } from '../stacks/stack-lease-capabilities.mjs';
 
 export const LEASE_VERSION = 1;
@@ -156,12 +157,42 @@ export function publicBackendLease(lease) {
 
 const tokenHash = token => createHash('sha256').update(token).digest('hex');
 
+export function resourceLockScope(env = process.env, { temporaryDirectory = tmpdir() } = {}) {
+  const configured = env.STACK_BENCH_RESOURCE_LOCK_DIR;
+  if (configured !== undefined) {
+    if (typeof configured !== 'string' || configured !== configured.trim()
+      || !configured || !isAbsolute(configured)) {
+      fail('STACK_BENCH_RESOURCE_LOCK_DIR must be an absolute path without surrounding whitespace');
+    }
+  }
+  const appliance = env.STACK_BENCH_APPLIANCE === '1';
+  return {
+    root: configured ?? (appliance
+      ? '/var/lib/stack-bench/controller-home/resource-locks'
+      : join(temporaryDirectory, 'stack-bench-resource-locks')),
+    // Controller containers do not share a PID namespace. A PID that appears
+    // absent in one container can still own a lock in another container. The
+    // appliance therefore leaves stale-lock release to authenticated recovery.
+    reclaimStale: !appliance,
+  };
+}
+
+export function backendResourceLockKeys(lease, additionalKeys = []) {
+  validateBackendLease(lease);
+  if (!Array.isArray(additionalKeys)) fail('additional resource lock keys must be an array');
+  for (const key of additionalKeys) requireString(key, 'resource lock key');
+  return [...new Set([
+    `slot:${lease.track}:${lease.backend}:run${lease.runIndex}`,
+    ...additionalKeys,
+  ])].sort();
+}
+
 function processAlive(pid) {
   try { process.kill(pid, 0); return true; }
   catch (error) { return error.code === 'EPERM'; }
 }
 
-export function acquireResourceLock({ root, key, lease }) {
+export function acquireResourceLock({ root, key, lease, reclaimStale = true }) {
   validateBackendLease(lease);
   requireString(root, 'lock root');
   requireString(key, 'lock key');
@@ -191,6 +222,9 @@ export function acquireResourceLock({ root, key, lease }) {
       if (processAlive(existing.ownerPid)) {
         fail(`resource ${key} is already leased by ${existing.runId} (pid ${existing.ownerPid})`);
       }
+      if (!reclaimStale) {
+        fail(`resource ${key} remains leased by ${existing.runId}; run authenticated recovery before reuse`);
+      }
       // Move the exact stale inode out of the acquisition path. If another
       // contender won that race, rename fails and the next iteration rereads
       // the new owner's record rather than deleting it.
@@ -204,6 +238,27 @@ export function acquireResourceLock({ root, key, lease }) {
     }
   }
   fail(`could not acquire resource ${key} after stale-lock contention`);
+}
+
+export function acquireResourceLocks({ root, keys, lease, reclaimStale = true }) {
+  validateBackendLease(lease);
+  if (!Array.isArray(keys) || keys.length === 0) fail('resource lock keys must be a non-empty array');
+  const acquired = [];
+  try {
+    for (const key of [...new Set(keys)].sort()) {
+      acquired.push(acquireResourceLock({ root, key, lease, reclaimStale }));
+    }
+    return acquired;
+  } catch (error) {
+    const rollbackLease = structuredClone(lease);
+    rollbackLease.resources.locks = acquired;
+    try { releaseResourceLocks(rollbackLease); }
+    catch (rollbackError) {
+      throw new AggregateError([error, rollbackError],
+        `resource lock acquisition failed and rollback was incomplete: ${error.message}`);
+    }
+    throw error;
+  }
 }
 
 export function releaseResourceLocks(lease) {

@@ -32,7 +32,8 @@ import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinu
 import { summarizeSessions } from '../src/evidence/session-metrics.mjs';
 import { hashDirectory } from '../src/evidence/provenance.mjs';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
-  acquireResourceLock, releaseResourceLocks, updateBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
+  acquireResourceLocks, backendResourceLockKeys, releaseResourceLocks, resourceLockScope,
+  updateBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { captureBackendDiagnostics } from '../src/runtime/backend-control.mjs';
 import { releaseBackendLease } from '../src/runtime/backend-teardown.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
@@ -569,14 +570,13 @@ async function main() {
     runIndex: args.runIndex,
     ...preparedLease.lease,
   });
-  const lockRoot = join(tmpdir(), 'stack-bench-resource-locks');
-  const lockKeys = [`slot:${args.track}:${args.backend}:run${args.runIndex}`,
-    ...preparedLease.lockKeys];
+  const lockScope = resourceLockScope();
+  const lockKeys = backendResourceLockKeys(initialLease, preparedLease.lockKeys);
   let privateSupervisorStatePath = null;
   try {
-    for (const key of lockKeys.sort()) {
-      initialLease.resources.locks.push(acquireResourceLock({ root: lockRoot, key, lease: initialLease }));
-    }
+    initialLease.resources.locks.push(...acquireResourceLocks({
+      ...lockScope, keys: lockKeys, lease: initialLease,
+    }));
     writeBackendLease(leasePath, initialLease);
     const supervisorState = process.env.STACK_BENCH_SUPERVISOR_STATE
       ?? (process.env.STACK_BENCH_SUPERVISOR_DIR

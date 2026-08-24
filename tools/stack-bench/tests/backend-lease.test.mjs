@@ -9,10 +9,13 @@ import { fileURLToPath } from 'node:url';
 import {
   createBackendLease,
   acquireResourceLock,
+  acquireResourceLocks,
+  backendResourceLockKeys,
   newRunId,
   publicBackendLease,
   readBackendLease,
   releaseResourceLocks,
+  resourceLockScope,
   updateBackendLease,
   writeBackendLease,
 } from '../src/runtime/backend-lease.mjs';
@@ -233,6 +236,81 @@ test('resource locks exclude a concurrent run and release only for their owner',
     second.resources.locks.push(acquireResourceLock({ root, key: 'slot:loop:stub:run0', lease: second }));
     releaseResourceLocks(second);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('bench and reference leases use the same canonical slot and backend keys', () => {
+  const input = { backend: 'spacetime', track: 'ecommerce', runIndex: 0,
+    serverUri: 'http://127.0.0.1:3310', module: 'stackbench-ecom-run0',
+    dataDir: tmpdir() };
+  const bench = createBackendLease({ ...input, runId: 'bench' });
+  const reference = createBackendLease({ ...input, runId: 'reference' });
+  const preparedKeys = ['listener:http://127.0.0.1:3310'];
+  const expected = [
+    'listener:http://127.0.0.1:3310',
+    'slot:ecommerce:spacetime:run0',
+  ];
+  assert.deepEqual(backendResourceLockKeys(bench, preparedKeys), expected);
+  assert.deepEqual(backendResourceLockKeys(reference, preparedKeys), expected);
+});
+
+test('multi-lock acquisition rolls back earlier keys when a later key is busy', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-lock-rollback-'));
+  const held = createBackendLease({ runId: 'held', backend: 'stub', track: 'loop', runIndex: 0 });
+  const target = createBackendLease({ runId: 'target', backend: 'stub', track: 'loop', runIndex: 1 });
+  const probe = createBackendLease({ runId: 'probe', backend: 'stub', track: 'loop', runIndex: 2 });
+  try {
+    held.resources.locks.push(acquireResourceLock({ root, key: 'b-held', lease: held }));
+    assert.throws(() => acquireResourceLocks({
+      root, keys: ['a-rollback', 'b-held'], lease: target,
+    }), /already leased by held/);
+    probe.resources.locks.push(acquireResourceLock({ root, key: 'a-rollback', lease: probe }));
+    releaseResourceLocks(probe);
+    releaseResourceLocks(held);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('appliance controllers share locks and require recovery after an owner exits', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-shared-lock-'));
+  const helper = join(HERE, 'fixtures', 'resource-lock-process.mjs');
+  const owner = spawn(process.execPath, [helper, root, 'first-controller', 'hold'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      let stderr = '';
+      owner.stderr.on('data', chunk => { stderr += chunk; });
+      owner.stdout.once('data', chunk => {
+        if (String(chunk).includes('acquired')) resolve();
+        else reject(new Error(`lock helper returned unexpected output: ${chunk}`));
+      });
+      owner.once('error', reject);
+      owner.once('exit', code => reject(new Error(`lock helper exited ${code}: ${stderr}`)));
+    });
+    assert.throws(() => execFileSync(process.execPath,
+      [helper, root, 'second-controller'], { encoding: 'utf8', stdio: 'pipe' }),
+    error => /already leased by first-controller/.test(String(error.stderr)));
+
+    owner.kill('SIGTERM');
+    await new Promise(resolve => owner.once('exit', resolve));
+    assert.throws(() => execFileSync(process.execPath,
+      [helper, root, 'second-controller'], { encoding: 'utf8', stdio: 'pipe' }),
+    error => /remains leased by first-controller; run authenticated recovery/.test(String(error.stderr)));
+  } finally {
+    if (owner.exitCode === null) owner.kill('SIGKILL');
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('resource lock scope is shared only for the appliance', () => {
+  const temporaryDirectory = join(tmpdir(), 'scope-test');
+  assert.deepEqual(resourceLockScope({}, { temporaryDirectory }), {
+    root: join(temporaryDirectory, 'stack-bench-resource-locks'), reclaimStale: true,
+  });
+  assert.deepEqual(resourceLockScope({ STACK_BENCH_APPLIANCE: '1' }), {
+    root: '/var/lib/stack-bench/controller-home/resource-locks', reclaimStale: false,
+  });
+  assert.throws(() => resourceLockScope({ STACK_BENCH_RESOURCE_LOCK_DIR: 'relative' }),
+    /must be an absolute path/);
 });
 
 test('resource acquisition reclaims a lock whose owner process is gone', () => {
