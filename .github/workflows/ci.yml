@@ -34,7 +34,7 @@ jobs:
       - &set-cargo-target-dir
         name: Set Cargo target directory
         shell: bash
-        run: echo "CARGO_TARGET_DIR=${HOME}/actions-runner/target" >>"${GITHUB_ENV}"
+        run: echo "CARGO_TARGET_DIR=${HOME}/actions-runner/_work/target" >>"${GITHUB_ENV}"
 
       - &find-git-ref
         name: Find Git ref
@@ -66,12 +66,12 @@ jobs:
       - name: find files
         run: find ~ -maxdepth 3
       - name: look for openssl stuff
-        run: find ${CARGO_TARGET_DIR}/release/build/openssl-* -type f
+        run: find ${CARGO_TARGET_DIR}/release/build/openssl-* -type f || true
 
       - name: Build CLI and standalone
         shell: bash
         run: |
-          cargo build --timings --release \
+          cargo build -vv --timings --release \
             -p spacetimedb-cli \
             -p spacetimedb-standalone \
             --features spacetimedb-standalone/allow_loopback_http_for_tests
@@ -128,7 +128,7 @@ jobs:
       - name: Build smoketest dependencies and archive test binaries
         shell: bash
         run: |
-          cargo run --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
+          cargo run -vv --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
           shopt -s nullglob
           precompiled_modules=(${CARGET_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
