@@ -37,53 +37,50 @@ name = "summarize"
 bench = false
 
 [dependencies]
-spacetimedb-client-api = { path = "../client-api" }
-spacetimedb-client-api-messages = { path = "../client-api-messages" }
 spacetimedb-core = { path = "../core", features = ["test"] }
 spacetimedb-data-structures.workspace = true
 spacetimedb-datastore.workspace = true
-spacetimedb-execution = { path = "../execution" }
 spacetimedb-lib = { path = "../lib" }
 spacetimedb-paths.workspace = true
 spacetimedb-primitives = { path = "../primitives" }
-spacetimedb-query = { path = "../query" }
 spacetimedb-sats = { path = "../sats" }
 spacetimedb-schema = { workspace = true, features = ["test"] }
-spacetimedb-standalone = { path = "../standalone" }
-spacetimedb-table = { path = "../table" }
 spacetimedb-testing = { path = "../testing" }
 
-ahash.workspace = true
 anyhow.workspace = true
 convert_case.workspace = true
-anymap.workspace = true
-byte-unit.workspace = true
 clap.workspace = true
 criterion.workspace = true
-futures.workspace = true
-foldhash.workspace = true
-hashbrown.workspace = true
 lazy_static.workspace = true
 log.workspace = true
-mimalloc.workspace = true
-rand.workspace = true
 regex.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serial_test.workspace = true
-smallvec.workspace = true
 tempdir.workspace = true
 tokio.workspace = true
 tracing-subscriber.workspace = true
 walkdir.workspace = true
+
+[dev-dependencies]
+spacetimedb-client-api-messages = { path = "../client-api-messages" }
+spacetimedb-execution = { path = "../execution" }
+spacetimedb-query = { path = "../query" }
+spacetimedb-table = { path = "../table" }
+
+ahash.workspace = true
+foldhash.workspace = true
+hashbrown.workspace = true
 itertools.workspace = true
+mimalloc.workspace = true
+rand.workspace = true
+smallvec.workspace = true
 
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
+[target.'cfg(not(target_env = "msvc"))'.dev-dependencies]
 tikv-jemallocator = { workspace = true }
-tikv-jemalloc-ctl = { workspace = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(target_os = "linux")'.dev-dependencies]
 # only try to build these on linux
 
 # also:
@@ -92,8 +89,6 @@ tikv-jemalloc-ctl = { workspace = true }
 
 # iai-callgrind = "0.7.2"
 iai-callgrind = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
-iai-callgrind-runner = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
-iai-callgrind-macros = { git = "https://github.com/clockworklabs/iai-callgrind.git", branch = "main" }
 
 [lints]
 workspace = true

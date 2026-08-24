@@ -7,6 +7,7 @@ fn cli_cmd() -> Command {
     Command::new(ensure_binaries_built())
 }
 
+/// Standalone-only: this builds a local module and generates bindings without contacting a server.
 #[test]
 fn cli_generate_with_config_but_no_match_uses_cli_args() {
     // Test that when config exists but doesn't match CLI args, we use CLI args
