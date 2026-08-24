@@ -55,8 +55,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
+          # Full history lets git restore-mtime recover each file's actual
+          # last-change timestamp instead of using the shallow checkout's timestamp.
           fetch-depth: 0
 
+      # Cargo checks source mtimes for freshness, so restore committed mtimes to
+      # avoid invalidating otherwise reusable artifacts in the prebuilt target cache.
       - &restore-source-mtimes
         name: Restore source mtimes from git history
         shell: bash
