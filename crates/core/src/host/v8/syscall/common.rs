@@ -466,8 +466,8 @@ pub fn console_log<'scope>(
     };
 
     let env = get_env(scope).inspect_err(|_| {
-        tracing::warn!(
-            "{}:{} {msg}",
+        tracing::error!(
+            "`JsInstanceEnv` unavailable while processing guest log at {}:{}: {msg}",
             filename.as_deref().unwrap_or("unknown"),
             frame.get_line_number()
         );
