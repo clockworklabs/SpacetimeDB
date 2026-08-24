@@ -73,10 +73,6 @@ jobs:
 
       - name: print dir
         run: pwd -P
-      - name: find files
-        run: find ~ -maxdepth 3
-      - name: look for target dir
-        run: find ${CARGO_TARGET_DIR}
 
       - name: Build CLI and standalone
         shell: bash
