@@ -27,11 +27,15 @@ jobs:
     runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 15
     env:
-      CARGO_TARGET_DIR: $HOME/actions-runner/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
     steps: &upload-build-artifact-steps
+      - &set-cargo-target-dir
+        name: Set Cargo target directory
+        shell: bash
+        run: echo "CARGO_TARGET_DIR=${HOME}/actions-runner/target" >>"${GITHUB_ENV}"
+
       - &find-git-ref
         name: Find Git ref
         env:
@@ -104,12 +108,13 @@ jobs:
     runs-on: spacetimedb-new-runner-2
     timeout-minutes: 15
     env:
-      CARGO_TARGET_DIR: $HOME/actions-runner/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
       SMOKETEST_SUITE: standalone
     steps: &smoketest-build-steps
+      - *set-cargo-target-dir
+
       - *find-git-ref
 
       - *checkout-sources
