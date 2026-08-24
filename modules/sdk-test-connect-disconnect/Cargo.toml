@@ -11,4 +11,3 @@ crate-type = ["cdylib"]
 
 [dependencies]
 spacetimedb.workspace = true
-log = "0.4"
