@@ -252,7 +252,7 @@
               "within": 15000
             }
           ],
-          "statedBy": "the entry leaves the pending list, and it appears in the stock ledger\nwith the time it actually ran"
+          "statedBy": "the entry leaves the pending list, and it appears in the stock ledger"
         },
         {
           "id": "302c",

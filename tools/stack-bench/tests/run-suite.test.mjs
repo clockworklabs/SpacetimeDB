@@ -141,7 +141,7 @@ test('a new grade removes only prior outputs that it owns', () => {
 
 test('observed-only scope is modular, disjoint, and contributes no score', () => {
   const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
-    'ecommerce.l1-modular@2.4.0');
+    'ecommerce.l1-modular@2.5.0');
   const selected = createBoundRecipeTaskRequest(binding, {
     featureIds: ['ecommerce.feature.accounts'],
     observedSpecifications: ['ecommerce.spec.state-durability@1.1.0'],
@@ -159,7 +159,7 @@ test('observed-only scope is modular, disjoint, and contributes no score', () =>
 
 test('recipe-bound grading uses the recipe execution sources', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.4.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.5.0');
   const suites = suitesForRecipe(track, binding);
 
   assert.match(suites.find(suite => suite.id === 'duplicate-checkout').spec,
@@ -169,7 +169,7 @@ test('recipe-bound grading uses the recipe execution sources', () => {
 
 test('hardened modular grading isolates the four direct server checks', () => {
   const track = loadTrack('ecommerce');
-  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.4.0');
+  const binding = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.5.0');
   const suites = suitesForRecipe(track, binding);
 
   const expected = new Map([

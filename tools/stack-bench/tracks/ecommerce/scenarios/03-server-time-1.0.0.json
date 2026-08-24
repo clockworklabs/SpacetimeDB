@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Server-controlled time",
+  "note": "These checks distinguish server work from browser timers and restart-time replay.",
+  "features": [
+    {
+      "id": 312,
+      "name": "Restart does not run work early",
+      "actors": ["admin", "watcher"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }, { "do": "click", "actor": "admin", "testid": "admin-link" }, { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "as": "before" },
+        { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Espresso Machine" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "West" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "4" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "120" }, { "do": "click", "actor": "admin", "testid": "schedule-restock-submit" },
+        { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "contains": "Espresso Machine", "within": 10000 },
+        { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "relativeTo": "before", "plus": 0 },
+        { "do": "restartBackend", "settleMs": 15000 }, { "do": "reload", "actor": "watcher", "settleMs": 3000 }, { "do": "reload", "actor": "admin", "settleMs": 3000 }
+      ],
+      "criteria": [{ "id": "312a", "desc": "restart preserves the due time and the work later completes", "points": 3, "statedBy": "A pending restock does not run early after a restart.", "steps": [{ "do": "wait", "actor": "watcher", "ms": 30000 }, { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "relativeTo": "before", "plus": 0 }, { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "contains": "Espresso Machine" }, { "do": "expectNumber", "actor": "admin", "testid": "pending-restock-remaining", "in": { "testid": "pending-restock-item", "contains": "Espresso Machine" }, "atLeast": 55 }, { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Espresso Machine" }, "relativeTo": "before", "plus": 4, "within": 100000 }, { "do": "reload", "actor": "admin", "settleMs": 2000 }, { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "contains": "Espresso Machine", "absent": true }] }]
+    },
+    {
+      "id": 313,
+      "name": "A browser is not the clock",
+      "actors": ["customer", "watcher"],
+      "setup": [{ "do": "signUp", "actor": "customer", "name": "server-clock" }, { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "before" }, { "do": "click", "actor": "customer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Air Purifier" } }, { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "before", "plus": -1, "within": 10000 }, { "do": "closeClient", "actor": "customer" }],
+      "criteria": [{ "id": "313a", "desc": "a reservation expires while its browser is closed", "points": 3, "statedBy": "A reservation expires without an open browser.", "steps": [{ "do": "wait", "actor": "watcher", "ms": 100000 }, { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "before", "plus": 0, "within": 30000 }] }]
+    }
+  ]
+}

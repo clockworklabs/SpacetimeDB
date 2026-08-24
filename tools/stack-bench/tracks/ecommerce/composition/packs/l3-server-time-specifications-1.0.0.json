@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.l3.server-time-specifications",
+  "stableId": "ecommerce.l3.server-time",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "specification",
+  "title": "Server-controlled time",
+  "description": "Deferred work does not require a browser and does not run early.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "backend-lifecycle"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 300000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.l3.server-timed-restocks", "path": "prompts/modular/l3-specifications-1.0.0.md", "order": 3120, "from": "## Server-timed restocks", "until": "## Server-timed reservations", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.scheduled-restocks-features"] },
+      { "id": "ecommerce.l3.server-timed-reservations", "path": "prompts/modular/l3-specifications-1.0.0.md", "order": 3121, "from": "## Server-timed reservations", "until": "## Deferred-work access", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l3.reservations-features"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "not-early", "stableId": "server-time", "source": "scenarios/03-server-time-1.0.0.json", "feature": 312, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.scheduled-restocks-features"] },
+    { "id": "no-browser", "stableId": "server-time", "source": "scenarios/03-server-time-1.0.0.json", "feature": 313, "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l3.reservations-features"] }
+  ]
+}

@@ -9,9 +9,9 @@ base release.
 
 | Level | Product scope | Release status |
 |---|---|---|
-| L1 | storefront, accounts, carts, purchases, reviews, warehouses | `ecommerce.l1-modular@2.4.0` is promoted and qualified |
+| L1 | storefront, accounts, carts, purchases, reviews, warehouses | `ecommerce.l1-modular@2.5.0` is promoted and qualified |
 | L2 | fulfilment, transfers, cancellations, returns, and pricing | `ecommerce.l2-standard@1.5.0` is promoted and qualified |
-| L3 | reservations and scheduled work | scenario definitions exist; no qualified modular release |
+| L3 | reservations and scheduled work | modular checks exist; no qualified release |
 | L4 | customer-specific ranking and catalogue search | design target only |
 | L5 | correctness and efficiency under load | design target only |
 
@@ -38,7 +38,7 @@ rows, ratings are derived from reviews, rankings are derived from purchases,
 and revenue is derived from orders. The grader verifies the relevant values in
 multiple views rather than accepting element presence as proof.
 
-The promoted L1 2.4 recipe contains 48 checks worth 58 points. Forty-six checks
+The promoted L1 2.5 recipe contains 48 checks worth 58 points. Forty-six checks
 are scored. The restock precondition and external-write reload assertion run as
 supporting controls with zero points.
 
@@ -64,8 +64,9 @@ to its qualified calibration.
 
 The L3 product target covers reservations, scheduled restocks, order-state
 transitions, abandoned carts, and work that must survive process restarts and
-execute exactly once. Existing scenario files are development inputs, not a
-qualified cumulative release. They must not be reported as L3 benchmark data.
+execute exactly once. Its modular check definitions are draft inputs. L3 has no
+candidate recipe, reference evidence, mutation evidence, or qualified release.
+It must not be reported as benchmark data yet.
 
 ## L4 — Per-customer derivation
 

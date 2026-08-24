@@ -41,7 +41,7 @@ test('qualification status reports complete L2 defect coverage', () => {
 });
 
 test('the promoted L1 release discloses complete defect coverage and exact evidence', () => {
-  const status = qualificationReadiness('ecommerce', 1, 'ecommerce.l1-modular@2.4.0');
+  const status = qualificationReadiness('ecommerce', 1, 'ecommerce.l1-modular@2.5.0');
   assert.equal(status.defectChecks.totalChecks, 46);
   assert.equal(status.defectChecks.totalPoints, 58);
   assert.deepEqual(status.defectChecks.stacks.map(item => [item.stack, item.coveredChecks]), [
@@ -58,19 +58,19 @@ test('the promoted L1 release discloses complete defect coverage and exact evide
 
 test('qualification resolves the promoted modular L1 release exactly and by default', () => {
   const parsed = parseQualificationArgs(['node', 'qualification-cli.mjs', 'status',
-    '--track', 'ecommerce', '--level', '1', '--recipe', 'ecommerce.l1-modular@2.4.0']);
-  assert.equal(parsed.recipe, 'ecommerce.l1-modular@2.4.0');
+    '--track', 'ecommerce', '--level', '1', '--recipe', 'ecommerce.l1-modular@2.5.0']);
+  assert.equal(parsed.recipe, 'ecommerce.l1-modular@2.5.0');
   const status = qualificationReadiness(parsed.track, parsed.level, parsed.recipe);
-  assert.equal(status.scope.recipe.version, '2.4.0');
-  assert.equal(status.scope.calibration.version, '2.4.0');
+  assert.equal(status.scope.recipe.version, '2.5.0');
+  assert.equal(status.scope.calibration.version, '2.5.0');
   assert.equal(status.launch.ok, true);
   assert.equal(status.requiredEvidence.length, 7);
   assert.equal(status.promotion.ready, true);
   assert.deepEqual(status.promotion.blockers, []);
   assert(status.promotion.governance.some(item => item.path === 'promotion.status'
     && item.state === 'promoted' && item.target === 'promoted'));
-  assert(status.commands.every(command => command.includes('--recipe ecommerce.l1-modular@2.4.0')));
-  assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '2.4.0');
+  assert(status.commands.every(command => command.includes('--recipe ecommerce.l1-modular@2.5.0')));
+  assert.equal(qualificationReadiness('ecommerce', 1).scope.recipe.version, '2.5.0');
   assert.throws(() => qualificationReadiness('ecommerce', 1, 'ecommerce.l1-modular@2.3.0'),
     /no recipe release|retired|requires exactly one catalogued/);
   assert.throws(() => qualificationReadiness('ecommerce', 1, 'ecommerce.l1-standard@1.1.0'),

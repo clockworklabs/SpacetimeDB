@@ -12,7 +12,7 @@ import { prepareReferenceSource } from '../src/references/reference-agent.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
-const RECIPE = 'ecommerce.l1-modular@2.4.0';
+const RECIPE = 'ecommerce.l1-modular@2.5.0';
 const FIXTURE_SHA256 = 'd5cb5af9db96b3ae4ff2b0d928dec4394ac6f88dfdce83201a0d8508b69902e5';
 const MANIFEST = join(ROOT, 'grader', 'mutations',
   'spacetime-ecom-l1-modular-2.4.0.json');
@@ -47,7 +47,7 @@ function targetStableKey(release, mutation, target) {
     && check.criterionId === target.slice(target.indexOf(':') + 1))?.stableKey;
 }
 
-test('Spacetime L1 2.4 candidate mutations bind every honest defect to exact source', t => {
+test('Spacetime shared L1 mutations bind every honest defect to the current source', t => {
   const work = mkdtempSync(join(tmpdir(), 'stack-bench-l1-24-spacetime-mutations-'));
   try {
     const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',

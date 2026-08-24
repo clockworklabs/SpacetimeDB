@@ -12,7 +12,7 @@ import { prepareReferenceSource } from '../src/references/reference-agent.mjs';
 
 const ROOT = join(import.meta.dirname, '..');
 const TRACK = join(ROOT, 'tracks', 'ecommerce');
-const RECIPE = 'ecommerce.l1-modular@2.4.0';
+const RECIPE = 'ecommerce.l1-modular@2.5.0';
 const MANIFEST = join(ROOT, 'grader', 'mutations',
   'mongodb-ecom-l1-modular-2.4.0.json');
 const FIXTURE_SHA256 = '76810d72211fc0182aa31b663ffc153a82ff1918cd34902187873a4b53a4ebf2';
@@ -147,7 +147,7 @@ test('cart-boundary mutants exercise the named server actions', () => {
     'the shared-cart defect must ignore the empty second session without breaking checkout cleanup');
 });
 
-test('MongoDB L1 2.4 candidate is bound to the exact derived fixture and compiles', t => {
+test('MongoDB shared L1 mutations bind to the current derived fixture and compile', t => {
   const work = mkdtempSync(join(tmpdir(), 'stack-bench-mongodb-l1-2.4-mutations-'));
   try {
     const app = join(work, 'app');

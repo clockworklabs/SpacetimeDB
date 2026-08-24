@@ -117,7 +117,7 @@ npm run bench -- --backend postgres --track ecommerce --levels 1 \
   --pack ecommerce.feature.accounts \
   --check ecommerce.feature.accounts.accounts.1a
 npm run bench -- --backend postgres --track ecommerce --levels 1 \
-  --recipe ecommerce.l1-modular@2.4.0
+  --recipe ecommerce.l1-modular@2.5.0
 
 # Inspect an exhausted level, then grant at most four more correction rounds.
 npm run repair -- status <run-directory> --level 1
@@ -258,7 +258,7 @@ Tracks are isolated by a port offset and a name slug, so two can run at the same
 
 ## Levels
 
-The five-level ladder below is the production target. Ecommerce L1 2.4 and L2
+The five-level ladder below is the production target. Ecommerce L1 2.5 and L2
 1.5 are the current qualified releases. L2 1.5 contains 74 scored checks. Each
 scored check has an exact known-defect test on all three supported stacks. Chat
 definitions remain available through L2, but their reference fixtures must be

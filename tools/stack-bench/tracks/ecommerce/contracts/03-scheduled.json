@@ -48,7 +48,7 @@
       "id": "schedule-restock-submit",
       "element": "control that schedules the restock",
       "stage": "scenario",
-      "note": "admin only"
+      "note": "admin only; data-action-input is a JSON object with item, warehouse, quantity, and delaySeconds"
     },
     {
       "id": "pending-restock-item",
@@ -68,16 +68,21 @@
       "note": "inside a pending-restock-item"
     },
     {
-      "id": "order-status",
-      "element": "the current status of an order: pending, shipped, delivered or cancelled",
+      "id": "stock-ledger-entry",
+      "element": "one entry per completed stock movement, containing the item name",
       "stage": "scenario",
-      "note": "inside an order-item; changes live as the order advances on its own"
+      "note": "admin view; a completed scheduled restock appears here"
     },
     {
-      "id": "stock-ledger-entry",
-      "element": "one entry per stock movement (repeated testid), containing the item name and the time it was applied",
+      "id": "completed-order-item",
+      "element": "one completed order in the staff view",
+      "stage": "scenario"
+    },
+    {
+      "id": "completed-order-status",
+      "element": "the current state of a completed order",
       "stage": "scenario",
-      "note": "admin view; a scheduled restock appears here with the time it actually ran, not when it was scheduled"
+      "note": "inside a completed-order-item"
     }
   ]
 }

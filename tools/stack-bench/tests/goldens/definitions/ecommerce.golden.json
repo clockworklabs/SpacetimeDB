@@ -5322,7 +5322,7 @@
                 "desc": "when the delay elapses it applies itself: stock rises for a viewer who did nothing, and it leaves the pending list",
                 "id": "302b",
                 "points": 3,
-                "statedBy": "the entry leaves the pending list, and it appears in the stock ledger\nwith the time it actually ran",
+                "statedBy": "the entry leaves the pending list, and it appears in the stock ledger",
                 "steps": [
                   {
                     "actor": "admin",

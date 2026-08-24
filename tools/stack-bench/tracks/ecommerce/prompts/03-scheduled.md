@@ -28,19 +28,15 @@ never really scheduled.
 - The **pending restocks** list shows each one with its remaining time, live
 - When the delay elapses the restock applies itself — stock rises for every
   viewer, the entry leaves the pending list, and it appears in the stock ledger
-  with the time it actually ran
 - An admin can cancel a pending restock before it fires; cancelled restocks
   never apply
 
 ## Orders that advance themselves
 
-- An order placed in `pending` moves to `shipped` **60 seconds** after it is
-  fulfilled by staff, without anyone acting
-- A shipped order moves to `delivered` **60 seconds** after that
-- Each transition is visible live in the customer's order history and in the
-  staff queue
-- A cancelled order stops advancing — cancellation wins over any pending
-  transition, whenever it arrives
+- Shipping remains the immediate staff action introduced at level 2
+- A shipped order moves to `delivered` **60 seconds** after shipping
+- Delivery is visible live in the customer's order history and the staff view
+- A cancelled order never advances
 
 ## Abandoned carts
 
@@ -54,8 +50,8 @@ never really scheduled.
 - **Deferred work survives a restart.** Everything above must still happen if
   the backend restarts between the scheduling and the firing. Work scheduled
   before a restart fires after it, once, at the right time.
-- **Exactly once.** A restart, a reconnect, or two servers must never double-apply
-  a scheduled restock or advance an order twice. If it fired, it fired once.
+- **Exactly once.** A backend restart must never double-apply a scheduled
+  restock or advance an order twice. If it fired, it fired once.
 - **Nothing fires early.** A restart must not cause pending work to run
   immediately just because it is being re-read.
 - **The clock is the database's, not the browser's.** Countdowns shown in the UI

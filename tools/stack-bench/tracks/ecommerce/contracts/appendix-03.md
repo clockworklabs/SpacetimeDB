@@ -102,8 +102,7 @@ Rules:
 | `pending-restock-item` | undefined |
 | `pending-restock-remaining` | inside a pending-restock-item |
 | `pending-restock-cancel` | inside a pending-restock-item |
-| `order-status` | inside an order-item; changes live as the order advances on its own |
-| `stock-ledger-entry` | admin view; a scheduled restock appears here with the time it actually ran, not when it was scheduled |
+| `stock-ledger-entry` | admin view; a completed scheduled restock appears here |
 
 Before declaring DEPLOY_COMPLETE, verify the hooks by running the contract
 linter (command provided in your build instructions) and fix any failures.

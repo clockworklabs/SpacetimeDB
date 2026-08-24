@@ -45,7 +45,7 @@ test('default reference tooling follows the promoted recipe instead of an unscop
   const promoted = resolveReferenceSelection(registry, {
     backend: 'mongodb', track: 'ecommerce', level: 1,
   });
-  assert.equal(promoted.recipe, 'ecommerce.l1-modular@2.4.0');
+  assert.equal(promoted.recipe, 'ecommerce.l1-modular@2.5.0');
   assert.equal(promoted.binding.status, 'promoted');
   assert.equal(promoted.fixture.id, 'ecommerce-l1-action-inputs-2.4-mongodb');
 

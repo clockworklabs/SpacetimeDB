@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Deferred-work durability",
+  "note": "Each check restarts the backend while one kind of work is pending.",
+  "features": [
+    {
+      "id": 311,
+      "name": "A scheduled restock survives restart",
+      "actors": ["admin", "watcher"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true }, { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "as": "before" },
+        { "do": "fill", "actor": "admin", "testid": "schedule-restock-item", "text": "Air Purifier" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-warehouse", "text": "East" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-qty", "text": "5" }, { "do": "fill", "actor": "admin", "testid": "schedule-restock-delay", "text": "45" }, { "do": "click", "actor": "admin", "testid": "schedule-restock-submit" },
+        { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "contains": "Air Purifier", "within": 10000 },
+        { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "before", "plus": 0 },
+        { "do": "restartBackend", "settleMs": 15000 }, { "do": "reload", "actor": "watcher", "settleMs": 3000 }
+      ],
+      "criteria": [{ "id": "311a", "desc": "a restock scheduled before restart still applies", "points": 4, "statedBy": "Pending restocks survive a backend restart.", "steps": [{ "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "relativeTo": "before", "plus": 5, "within": 70000 }, { "do": "reload", "actor": "admin", "settleMs": 2000 }, { "do": "expect", "actor": "admin", "testid": "pending-restock-item", "contains": "Air Purifier", "absent": true }] }]
+    },
+    {
+      "id": 314,
+      "name": "A reservation survives restart",
+      "actors": ["customer", "watcher"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "durable-reservation" }, { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "as": "before" },
+        { "do": "click", "actor": "customer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Desk Lamp" } }, { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "relativeTo": "before", "plus": -1, "within": 10000 }, { "do": "wait", "actor": "customer", "ms": 30000 }, { "do": "restartBackend", "settleMs": 15000 }, { "do": "reload", "actor": "watcher", "settleMs": 3000 }
+      ],
+      "criteria": [{ "id": "314a", "desc": "a reservation pending before restart still expires and returns stock", "points": 4, "statedBy": "Pending reservations survive a backend restart.", "steps": [{ "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "relativeTo": "before", "plus": 0, "within": 85000 }] }]
+    },
+    {
+      "id": 315,
+      "name": "An order transition survives restart",
+      "actors": ["customer", "staff"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "durable-delivery" }, { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true }, { "do": "click", "actor": "staff", "testid": "staff-link" },
+        { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } }, { "do": "expect", "actor": "staff", "testid": "queue-item", "contains": "Keyboard", "within": 10000 }, { "do": "click", "actor": "staff", "testid": "ship-submit", "in": { "testid": "queue-item", "contains": "Keyboard" } },
+        { "do": "click", "actor": "customer", "testid": "orders-toggle" }, { "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "hipped", "within": 10000 },
+        { "do": "wait", "actor": "customer", "ms": 20000 }, { "do": "restartBackend", "settleMs": 15000 }, { "do": "reload", "actor": "customer", "settleMs": 3000 }, { "do": "click", "actor": "customer", "testid": "orders-toggle" }
+      ],
+      "criteria": [{ "id": "315a", "desc": "an order shipped before restart still becomes delivered", "points": 4, "statedBy": "Pending order delivery survives a backend restart.", "steps": [{ "do": "expect", "actor": "customer", "testid": "order-status", "in": { "testid": "order-item", "contains": "Keyboard" }, "contains": "elivered", "within": 65000 }] }]
+    },
+    {
+      "id": 316,
+      "name": "Cart expiration survives restart",
+      "actors": ["customer", "watcher"],
+      "setup": [
+        { "do": "signUp", "actor": "customer", "name": "durable-cart" }, { "do": "recordNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" }, "as": "before" }, { "do": "click", "actor": "customer", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } }, { "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" }, "relativeTo": "before", "plus": -1, "within": 10000 },
+        { "do": "wait", "actor": "customer", "ms": 120000 }, { "do": "restartBackend", "settleMs": 15000 }, { "do": "reload", "actor": "watcher", "settleMs": 3000 }
+      ],
+      "criteria": [{ "id": "316a", "desc": "a cart inactive before restart still expires at five minutes", "points": 4, "statedBy": "Pending cart expiration survives a backend restart.", "steps": [{ "do": "expectNumber", "actor": "watcher", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" }, "relativeTo": "before", "plus": 0, "within": 220000 }, { "do": "reload", "actor": "customer", "settleMs": 3000 }, { "do": "expect", "actor": "customer", "testid": "cart-expired-notice", "within": 10000 }, { "do": "expectNumber", "actor": "customer", "testid": "cart-count", "equals": 0 }] }]
+    }
+  ]
+}

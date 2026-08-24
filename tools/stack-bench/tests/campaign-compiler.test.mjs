@@ -68,7 +68,7 @@ const modularFeatures = [
 function modularDefinition({ requested = [], expected = [], observed = [] } = {}) {
   return definition({
     repetitions: 1,
-    selection: { levels: [{ level: 1, recipe: 'ecommerce.l1-modular@2.4.0',
+    selection: { levels: [{ level: 1, recipe: 'ecommerce.l1-modular@2.5.0',
       features: modularFeatures, checks: [] }] },
     conditions: [{ ...definition().conditions[0], specifications: { levels: [{ level: 1,
       requested, expected, observed }] } }],

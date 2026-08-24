@@ -155,11 +155,11 @@ test('promoted runner binding fails closed on drift and emits only the selected 
 test('the qualified modular release is the promoted default and retired releases cannot launch', () => {
   const track = loadTrack('ecommerce');
   const promoted = resolveRecipeRelease(track, 1);
-  const exact = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.4.0');
+  const exact = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.5.0');
   assert.equal(promoted.release.id, 'ecommerce.l1-modular');
-  assert.equal(promoted.release.version, '2.4.0');
+  assert.equal(promoted.release.version, '2.5.0');
   assert.equal(promoted.status, 'promoted');
-  assert.equal(exact.release.version, '2.4.0');
+  assert.equal(exact.release.version, '2.5.0');
   assert.equal(exact.status, 'promoted');
   assert.equal(promoted.release.checkCatalog.length, 48);
   assert.equal(promoted.release.scoring.points, 58);

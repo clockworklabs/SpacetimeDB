@@ -25,10 +25,10 @@ test('the shared adapter request forwards the exact recipe into reference select
   const command = agentRequestArgv(AGENT_ADAPTER_REGISTRY.get('reference-fixture'), {
     mode: 'build', backend: 'mongodb', level: 1, app: '/work/reference',
     track: 'ecommerce', runIndex: 0, model: 'reference-fixture',
-    guidance: 'prescribed', recipe: 'ecommerce.l1-modular@2.4.0',
+    guidance: 'prescribed', recipe: 'ecommerce.l1-modular@2.5.0',
   });
   const parsed = parseReferenceAgentArgs(['node', ...command]);
-  assert.equal(parsed.recipe, 'ecommerce.l1-modular@2.4.0');
+  assert.equal(parsed.recipe, 'ecommerce.l1-modular@2.5.0');
 });
 
 test('the model-free reference builder rejects unsupported modes and malformed scope', () => {
@@ -74,11 +74,11 @@ test('a retired recipe-specific reference cannot be launched', () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('the promoted L1 2.4 release uses its separately bound action-input fixture', () => {
+test('the promoted L1 2.5 release uses its separately bound action-input fixture', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-reference-agent-l1-2.4-'));
   try {
     const args = { backend: 'mongodb', track: 'ecommerce', level: 1,
-      recipe: 'ecommerce.l1-modular@2.4.0', app: join(root, 'app') };
+      recipe: 'ecommerce.l1-modular@2.5.0', app: join(root, 'app') };
     const seeded = prepareReferenceSource(args);
     assert.equal(seeded.fixture.id, 'ecommerce-l1-action-inputs-2.4-mongodb');
     assert.equal(seeded.sourceSha256,

@@ -11,7 +11,7 @@
     "levels": [
       {
         "level": 1,
-        "recipe": "ecommerce.l1-modular@2.4.0",
+        "recipe": "ecommerce.l1-modular@2.5.0",
         "features": [
           "ecommerce.feature.accounts",
           "ecommerce.feature.cart-checkout",
