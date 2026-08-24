@@ -55,18 +55,28 @@ const median = values => {
 
 const skeletonRows = count => Array.from({ length: count }, () => `<tr class="loading">
   <td class="campaign-cell"><span class="skeleton mid"></span></td>
-  <td class="band num"><span class="skeleton num"></span></td>
-  <td class="band num"><span class="skeleton num"></span></td>
-  <td class="band num"><span class="skeleton num"></span></td>
+  <td><span class="skeleton mid"></span></td>
   <td><span class="skeleton short"></span></td>
   <td class="num"><span class="skeleton num"></span></td>
 </tr>`).join('');
 
+// The load bar reflects requests actually in flight, so it appears for the
+// first paint and for a detail fetch, and never runs on a timer pretending to
+// know how long something takes.
+let inflight = 0;
+function trackLoading(delta) {
+  inflight = Math.max(0, inflight + delta);
+  $('#loadbar').classList.toggle('active', inflight > 0);
+}
+
 async function request(path, options) {
-  const response = await fetch(path, options);
-  const value = await response.json();
-  if (!response.ok) throw new Error(value.error ?? `Request failed (${response.status})`);
-  return value;
+  trackLoading(1);
+  try {
+    const response = await fetch(path, options);
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error ?? `Request failed (${response.status})`);
+    return value;
+  } finally { trackLoading(-1); }
 }
 
 // ---------------------------------------------------------------- measurement
@@ -380,46 +390,43 @@ function comparisonTable(campaign) {
     `<li><strong>${escapeHtml(title(row.stack))} rep ${escapeHtml(item.attempt.repetition ?? '?')}</strong> — ${escapeHtml(item.reason)}</li>`)).join('')}</ul>` : ''}`;
 }
 
-// The landing figure is the primary metric first: what each stack scored
-// unaided, then what repair reached, then the median spend. Cost stops being
-// shown as a comparison when the campaign's own detail view would refuse to
-// compare it.
-function stackCell(summary, stack, running) {
-  const row = summary.usable.find(item => item.stack === stack);
-  const burn = summary.burn.get(stack);
-  if (!row) {
-    if (running && burn != null) {
-      return `<td class="band num partial"><b>…</b><small>${money(burn)} so far</small></td>`;
-    }
-    return burn != null
-      ? `<td class="band num partial"><b>—</b><small>${money(burn)} spent</small></td>`
-      : '<td class="band num vacant"><b>—</b></td>';
+// One headline sized to what the campaign was. Per-stack figures appear only
+// for stacks that took part, so a single-stack smoke run stops rendering as a
+// comparison with two holes in it. Cost is the campaign's total burn — always
+// well-defined — while cost COMPARISON stays in the verdict and detail views,
+// which know when it is honest.
+function resultHeadline(campaign) {
+  const summary = compareCampaign(campaign);
+  const parts = summary.usable.map(row =>
+    `<span class="result-stack"><b>${escapeHtml(title(row.stack))}</b> ${percent(row.first)}→${percent(row.final)}</span>`);
+  const burn = [...summary.burn.values()].reduce((total, value) => total + (value ?? 0), 0);
+  if (!parts.length) {
+    const graded = (campaign.attempts ?? []).some(attempt => attemptMetrics(attempt));
+    return `<span class="result-empty">${graded ? 'no usable runs' : 'no graded runs'}${burn ? ` · ${money(burn)} spent` : ''}</span>`;
   }
-  const cost = row.spend == null ? '' : summary.comparable
-    ? `<small>${money(row.spend)}</small>`
-    : `<small class="incomparable" title="Stacks graded different amounts of work; costs are not comparable">${money(row.spend)}*</small>`;
-  return `<td class="band num">
-    <b>${percent(row.first)}</b><i class="arrow">→ ${percent(row.final)}</i>
-    ${cost || '<small class="vacant-small">no cost</small>'}
-  </td>`;
+  return `${parts.join('')}<span class="result-burn">${burn ? money(burn) : 'no cost'}</span>`;
 }
 
 function campaignRow(campaign) {
-  const summary = compareCampaign(campaign);
   const running = campaign.status === 'running';
   const live = (campaign.attempts ?? []).filter(attempt =>
     ['running', 'pending'].includes(attempt.status)).length;
   const status = running ? `${live} of ${campaign.attempts.length} running`
     : escapeHtml(statusLabel(campaign.status));
+  const stacks = STACK_ORDER.filter(stack =>
+    (campaign.attempts ?? []).some(attempt => attempt.stack === stack));
+  const shape = stacks.length
+    ? `${stacks.map(title).join(' · ')}${campaign.repetitions > 1 ? ` ×${campaign.repetitions}` : ''}`
+    : '';
   return `<td class="campaign-cell">
       <span class="chevron${isExpanded(campaign) ? ' open' : ''}" aria-hidden="true"></span>
       <div class="campaign-title">
         <button data-campaign="${escapeHtml(campaign.key)}">${escapeHtml(campaign.title)}</button>
-        <i>${escapeHtml(campaign.key)}</i>
+        <i>${escapeHtml(campaign.key)}${shape ? ` · ${escapeHtml(shape)}` : ''}</i>
         ${campaign.error ? `<i class="row-error">${escapeHtml(campaign.error)}</i>` : ''}
       </div>
     </td>
-    ${STACK_ORDER.map(stack => stackCell(summary, stack, running)).join('')}
+    <td class="result-cell">${resultHeadline(campaign)}</td>
     <td class="state-cell"><span class="status ${escapeHtml(campaign.status)}">${status}</span></td>
     <td class="num"><time datetime="${escapeHtml(campaign.updatedAt ?? '')}" title="${escapeHtml(campaign.updatedAt ?? '')}">${escapeHtml(relativeTime(campaign.updatedAt))}</time></td>`;
 }
@@ -466,7 +473,7 @@ function attemptRows(campaign) {
       <td class="num">${money(attemptSpend(attempt))}</td>
     </tr>`;
   }).join('');
-  return `<td colspan="6"><table class="attempt-grid">
+  return `<td colspan="4"><table class="attempt-grid">
     <thead><tr><th scope="col">Attempt</th><th scope="col">State</th>
       <th class="num" scope="col">Level</th><th class="num" scope="col">First</th>
       <th class="num" scope="col">Latest</th><th class="num" scope="col">Rounds</th>
@@ -525,7 +532,7 @@ function renderHistory() {
   const tbody = $('#campaign-list');
   if (!visible.length) {
     tbody.replaceChildren();
-    tbody.innerHTML = '<tr><td colspan="6" class="vacant-row">No campaign history yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="vacant-row">No campaign history yet.</td></tr>';
   } else {
     const desired = new Map();
     for (const campaign of visible) {
@@ -800,6 +807,11 @@ document.addEventListener('click', event => {
   }
 });
 $('#close-detail').addEventListener('click', closeDetail);
+// A click on the dialog element itself is a click on the backdrop — the
+// panel's own content sits inside .detail-shell.
+$('#detail-dialog').addEventListener('click', event => {
+  if (event.target === event.currentTarget) closeDetail();
+});
 $('#detail-dialog').addEventListener('cancel', () => { state.openCampaign = null;
   if (location.hash.startsWith('#campaign=')) history.replaceState(null, '', '#overview'); });
 $('#toggle-archived').addEventListener('click', () => {

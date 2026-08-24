@@ -18,6 +18,7 @@
         <img class="brand-mark" src="/spacetimedb-mark.svg" alt="" width="35" height="32">
         <span><strong>STACKBENCH</strong><small>CONTROL ROOM</small></span>
       </a>
+      <div class="loadbar" id="loadbar" aria-hidden="true"><div></div></div>
       <div class="topbar-actions">
         <span class="tick" id="refresh-tick" aria-hidden="true"></span>
         <span class="offline" id="refresh-state" role="status"></span>
@@ -40,16 +41,9 @@
       <p class="zone-label">History</p>
       <div class="table-frame"><table class="campaigns">
         <thead>
-          <tr class="group-row">
-            <td></td>
-            <th scope="colgroup" colspan="3" class="group">First build → after repair · median cost</th>
-            <td colspan="2"></td>
-          </tr>
           <tr>
             <th scope="col">Campaign</th>
-            <th scope="col" class="num">SpacetimeDB</th>
-            <th scope="col" class="num">PostgreSQL</th>
-            <th scope="col" class="num">MongoDB</th>
+            <th scope="col">Result</th>
             <th scope="col">Status</th>
             <th scope="col" class="num">Updated</th>
           </tr>

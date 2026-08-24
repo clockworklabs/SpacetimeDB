@@ -76,6 +76,11 @@ p { margin: 0; }
 
 /* ---------------------------------------------------------------- chrome */
 
+.loadbar { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; pointer-events: none; }
+.loadbar > div { width: 30%; height: 100%; background: var(--green); border-radius: 1px; transform: translateX(-110%); }
+.loadbar.active > div { animation: loadbar-slide 1.1s ease-in-out infinite; }
+@keyframes loadbar-slide { 0% { transform: translateX(-110%); } 60% { transform: translateX(180%); } 100% { transform: translateX(340%); } }
+
 .topbar {
   position: sticky;
   top: 0;
@@ -325,9 +330,21 @@ dialog {
 }
 dialog::backdrop { background: rgba(5, 5, 5, 0.8); backdrop-filter: blur(8px); }
 .run-dialog { width: min(520px, calc(100% - 32px)); }
-.detail-dialog { width: min(1080px, calc(100% - 32px)); max-height: calc(100vh - 48px); }
+/* The detail view is a side panel, not a window: full height on the right,
+ * click anywhere outside (or Escape) to leave. */
+@keyframes panel-in { from { transform: translateX(24px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+.detail-dialog {
+  margin: 0 0 0 auto;
+  width: min(860px, 94vw);
+  height: 100dvh;
+  max-height: 100dvh;
+  border: 0;
+  border-left: 1px solid var(--line-bright);
+  border-radius: 0;
+}
+.detail-dialog[open] { animation: panel-in 0.18s ease-out; }
 .dialog-shell { padding: 24px; }
-.detail-shell { padding-top: 0; overflow: auto; max-height: calc(100vh - 48px); }
+.detail-shell { padding-top: 0; overflow: auto; height: 100dvh; max-height: 100dvh; }
 .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .sticky-heading {
   position: sticky;
