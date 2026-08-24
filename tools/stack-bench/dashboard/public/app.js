@@ -55,7 +55,6 @@ const median = values => {
 
 const skeletonRows = count => Array.from({ length: count }, () => `<tr class="loading">
   <td class="campaign-cell"><span class="skeleton mid"></span></td>
-  <td><span class="skeleton mid"></span></td>
   <td><span class="skeleton short"></span></td>
   <td class="num"><span class="skeleton num"></span></td>
 </tr>`).join('');
@@ -390,24 +389,6 @@ function comparisonTable(campaign) {
     `<li><strong>${escapeHtml(title(row.stack))} rep ${escapeHtml(item.attempt.repetition ?? '?')}</strong> — ${escapeHtml(item.reason)}</li>`)).join('')}</ul>` : ''}`;
 }
 
-// One headline sized to what the campaign was. Per-stack figures appear only
-// for stacks that took part, so a single-stack smoke run stops rendering as a
-// comparison with two holes in it. Cost is the campaign's total burn — always
-// well-defined — while cost COMPARISON stays in the verdict and detail views,
-// which know when it is honest.
-function resultHeadline(campaign) {
-  const summary = compareCampaign(campaign);
-  const burn = [...summary.burn.values()].reduce((total, value) => total + (value ?? 0), 0);
-  if (!summary.usable.length) {
-    const graded = (campaign.attempts ?? []).some(attempt => attemptMetrics(attempt));
-    return `<span class="result-empty">${graded ? 'no usable runs' : 'no graded runs'}${burn ? ` · ${money(burn)} spent` : ''}</span>`;
-  }
-  const lines = summary.usable.map(row => `<span>${escapeHtml(title(row.stack))}</span>
-    <b>${percent(row.first)} <i>→ ${percent(row.final)}</i></b>`).join('');
-  return `<div class="result-lines">${lines}</div>
-    <div class="result-burn">${burn ? `${money(burn)} total` : 'no cost'}</div>`;
-}
-
 function campaignRow(campaign) {
   const running = campaign.status === 'running';
   const live = (campaign.attempts ?? []).filter(attempt =>
@@ -427,7 +408,6 @@ function campaignRow(campaign) {
         ${campaign.error ? `<i class="row-error">${escapeHtml(campaign.error)}</i>` : ''}
       </div>
     </td>
-    <td class="result-cell">${resultHeadline(campaign)}</td>
     <td class="state-cell"><span class="status ${escapeHtml(campaign.status)}">${status}</span></td>
     <td class="num"><time datetime="${escapeHtml(campaign.updatedAt ?? '')}" title="${escapeHtml(campaign.updatedAt ?? '')}">${escapeHtml(relativeTime(campaign.updatedAt))}</time></td>`;
 }
@@ -474,7 +454,7 @@ function attemptRows(campaign) {
       <td class="num">${money(attemptSpend(attempt))}</td>
     </tr>`;
   }).join('');
-  return `<td colspan="4"><table class="attempt-grid">
+  return `<td colspan="3"><table class="attempt-grid">
     <thead><tr><th scope="col">Attempt</th><th scope="col">State</th>
       <th class="num" scope="col">Level</th><th class="num" scope="col">First</th>
       <th class="num" scope="col">Latest</th><th class="num" scope="col">Rounds</th>
@@ -533,7 +513,7 @@ function renderHistory() {
   const tbody = $('#campaign-list');
   if (!visible.length) {
     tbody.replaceChildren();
-    tbody.innerHTML = '<tr><td colspan="4" class="vacant-row">No campaign history yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" class="vacant-row">No campaign history yet.</td></tr>';
   } else {
     const desired = new Map();
     for (const campaign of visible) {

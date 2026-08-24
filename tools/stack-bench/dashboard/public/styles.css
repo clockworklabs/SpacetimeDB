@@ -194,15 +194,6 @@ td.band small.incomparable { cursor: help; }
 td.band small.vacant-small { color: var(--line-bright); }
 .campaign-cell .row-error { color: var(--yellow); }
 
-/* One line per graded stack, figures in their own column so nine rows scan as
- * a table, not a sentence. */
-.result-cell { white-space: nowrap; }
-.result-lines { display: grid; grid-template-columns: max-content max-content; gap: 2px 14px; }
-.result-lines span { color: var(--muted); font-size: 12px; }
-.result-lines b { color: var(--ink); font: 12.5px var(--font-source); font-variant-numeric: tabular-nums; font-weight: 500; text-align: right; }
-.result-lines b i { color: var(--muted); font-style: normal; font-weight: 400; }
-.result-burn { margin-top: 4px; color: var(--muted); font: 11.5px var(--font-source); }
-.result-empty { color: var(--muted); font-size: 12px; }
 
 /* One row per attempt beneath an expanded campaign: status or live phase,
  * level, first and latest score, rounds, time and spend. */
