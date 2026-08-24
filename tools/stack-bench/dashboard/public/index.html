@@ -19,6 +19,7 @@
         <span><strong>STACKBENCH</strong><small>CONTROL ROOM</small></span>
       </a>
       <div class="topbar-actions">
+        <span class="tick" id="refresh-tick" aria-hidden="true"></span>
         <span class="offline" id="refresh-state" role="status"></span>
         <span class="mode-tag" id="mode-tag" hidden>Read only</span>
         <button class="primary topbar-run" id="open-run" type="button">Start a run</button>
@@ -26,6 +27,17 @@
     </header>
 
     <main id="overview">
+      <section id="now-zone" hidden>
+        <p class="zone-label">Now</p>
+        <div id="now-cards"></div>
+      </section>
+
+      <section id="verdict-zone" hidden>
+        <p class="zone-label">Latest verdict</p>
+        <div id="verdict-card" class="verdict-card"></div>
+      </section>
+
+      <p class="zone-label">History</p>
       <div class="table-frame"><table class="campaigns">
         <thead>
           <tr class="group-row">

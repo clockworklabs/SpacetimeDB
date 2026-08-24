@@ -14,7 +14,8 @@ const MIN_REPETITIONS = 3;
 const ARCHIVE_AFTER_MS = 72 * 3600 * 1000;
 
 const state = { overview: null, csrfToken: null, selectedPlan: null, showArchived: false,
-  openCampaign: null, expanded: new Set(), collapsed: new Set() };
+  openCampaign: null, expanded: new Set(), collapsed: new Set(),
+  lastRefreshAt: null, prevScores: new Map() };
 
 const $ = selector => document.querySelector(selector);
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({
@@ -164,6 +165,170 @@ function compareCampaign(campaign) {
     // Costs are only comparable when every stack graded the same amount of work.
     mixedScope: scopes.size > 1,
     comparable: priced.length > 1 && scopes.size === 1 };
+}
+
+// ------------------------------------------------------------- live rendering
+
+// The attempt's climb, one point per completed grade, normalized by each
+// grade's own maximum so L1 and L2 points share a scale.
+function sparkline(series, color) {
+  if (!series || series.length < 2) return '<span class="spark-empty"></span>';
+  const points = series.map((total, index) => {
+    const x = (index / (series.length - 1)) * 116 + 2;
+    const y = 19 - (total.max ? (total.score / total.max) * 16 : 0);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `<svg viewBox="0 0 120 22" class="spark" aria-hidden="true">
+    <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
+}
+
+// A trailing run of identical grades is the repair loop treading water.
+function stallRounds(series) {
+  if (!series || series.length < 4) return 0;
+  const last = series.at(-1);
+  let flat = 0;
+  for (let index = series.length - 2; index >= 0; index--) {
+    if (series[index].score === last.score && series[index].max === last.max) flat += 1;
+    else break;
+  }
+  return flat >= 3 ? flat : 0;
+}
+
+function outputSilentMinutes(attempt) {
+  if (attempt.status !== 'running' || !attempt.logUpdatedAt) return 0;
+  return Math.floor((Date.now() - Date.parse(attempt.logUpdatedAt)) / 60000);
+}
+
+function laneColor(attempt, stalled) {
+  if (stalled || attempt.status === 'interrupted' || attemptExcluded(attempt)) return 'var(--yellow)';
+  if (attempt.status === 'completed') return 'var(--blue)';
+  if (attempt.status === 'running') return 'var(--green)';
+  return 'var(--muted)';
+}
+
+function nowLane(attempt) {
+  const score = attempt.progress?.latestScore;
+  const fraction = score?.max ? score.score / score.max : 0;
+  const stalled = attempt.status === 'running' ? stallRounds(attempt.progress?.series) : 0;
+  const silent = outputSilentMinutes(attempt);
+  const color = laneColor(attempt, stalled || silent >= 10);
+  const spend = attemptSpend(attempt);
+  const key = `${attempt.id}`;
+  const previous = state.prevScores.get(key);
+  const changed = score && previous != null && previous !== score.score;
+  if (score) state.prevScores.set(key, score.score);
+  const notes = [
+    stalled ? `flat ${stalled} rounds` : null,
+    silent >= 10 ? `no output ${silent}m` : null,
+  ].filter(Boolean).join(' · ');
+  const detail = attempt.status === 'completed'
+    ? `${statusLabel(attempt.status)} · ${attempt.result?.outcome === 'passed' ? 'passed' : 'ended'}`
+    : attempt.progress?.phase ?? statusLabel(attempt.status);
+  return `<div class="lane">
+    <div class="lane-name">${escapeHtml(title(attempt.stack))} <i>r${escapeHtml(attempt.repetition ?? 1)}</i></div>
+    <div class="lane-main">
+      <div class="lane-bar"><div style="width:${(fraction * 100).toFixed(1)}%;background:${color}"></div></div>
+      <div class="lane-detail${notes ? ' warn' : ''}">
+        ${escapeHtml(detail)}
+        ${score ? ` · <b class="${changed ? 'flash' : ''}">${score.score}/${score.max}</b>` : ''}
+        ${notes ? ` · ${escapeHtml(notes)}` : ''}
+        ${attempt.status === 'running' ? ` · ${escapeHtml(elapsedTime(attempt.execution?.startedAt))}` : ''}
+        ${spend != null ? ` · ${money(spend)}` : ''}
+      </div>
+    </div>
+    ${sparkline(attempt.progress?.series, color)}
+  </div>`;
+}
+
+function nowEvents(campaign) {
+  const events = [];
+  for (const attempt of campaign.attempts ?? []) {
+    const execution = attempt.execution;
+    if (!execution) continue;
+    if (execution.completedAt) {
+      const score = attempt.progress?.latestScore;
+      events.push({ at: execution.completedAt,
+        text: `${title(attempt.stack)} r${attempt.repetition ?? 1} finished${score ? ` — ${score.score}/${score.max}` : ''}` });
+    } else if (execution.startedAt) {
+      events.push({ at: execution.startedAt,
+        text: `${title(attempt.stack)} r${attempt.repetition ?? 1} started` });
+    }
+  }
+  const recent = events.sort((left, right) => right.at.localeCompare(left.at)).slice(0, 3);
+  if (!recent.length) return '';
+  return `<div class="now-events">${recent.map(event =>
+    `<div>${escapeHtml(new Date(event.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))} · ${escapeHtml(event.text)}</div>`).join('')}</div>`;
+}
+
+function nowCard(campaign) {
+  const attempts = [...(campaign.attempts ?? [])]
+    .sort((left, right) => STACK_ORDER.indexOf(left.stack) - STACK_ORDER.indexOf(right.stack)
+      || (left.repetition ?? 1) - (right.repetition ?? 1));
+  const done = attempts.filter(attempt => attempt.status === 'completed').length;
+  const burn = attempts.reduce((total, attempt) => total + (attemptSpend(attempt) ?? 0), 0);
+  const ceiling = campaign.budgets?.maxCostUsdPerAttempt
+    ? campaign.budgets.maxCostUsdPerAttempt * attempts.length : null;
+  return `<article class="now-card" data-campaign-card="${escapeHtml(campaign.key)}">
+    <header>
+      <div><button data-campaign="${escapeHtml(campaign.key)}">${escapeHtml(campaign.title)}</button>
+        <i class="mono">${escapeHtml(campaign.key)}</i></div>
+      <div class="now-figs">${done} of ${attempts.length} done
+        · <span class="mono">${money(burn)}${ceiling ? ` / ${money(ceiling)}` : ''}</span>
+        · ${escapeHtml(elapsedTime(campaign.createdAt))}</div>
+    </header>
+    <div class="lanes">${attempts.map(nowLane).join('')}</div>
+    ${nowEvents(campaign)}
+  </article>`;
+}
+
+function renderNow() {
+  const running = state.overview.campaigns.filter(campaign => campaign.status === 'running');
+  const zone = $('#now-zone');
+  zone.hidden = !running.length;
+  if (running.length) $('#now-cards').innerHTML = running.map(nowCard).join('');
+}
+
+// One dot per stack on a shared 0-100% first-build axis, whiskers for the
+// min-max spread, the repaired score as text. The most recent completed
+// campaign with graded runs is the verdict until a newer one lands.
+function verdictCard(campaign) {
+  const summary = compareCampaign(campaign);
+  const rows = summary.usable;
+  const footnotes = [];
+  for (const row of rows) {
+    if (row.abortedFirst) footnotes.push(`${title(row.stack)}: ${plural(row.abortedFirst, 'first grade')} aborted before scoring`);
+    if (row.excluded.length) footnotes.push(`${title(row.stack)}: ${plural(row.excluded.length, 'attempt')} excluded`);
+  }
+  if (summary.mixedScope) footnotes.push('stacks graded different amounts of work; costs are not comparable');
+  return `<header>
+      <button data-campaign="${escapeHtml(campaign.key)}">${escapeHtml(campaign.title)}</button>
+      <span>first build, median of runs · whisker = min–max · <time datetime="${escapeHtml(campaign.updatedAt ?? '')}">${escapeHtml(relativeTime(campaign.updatedAt))}</time></span>
+    </header>
+    <div class="verdict-rows">${rows.map(row => {
+    const dot = row.first == null ? null : row.first * 100;
+    const min = (row.firstRange?.min ?? row.first ?? 0) * 100;
+    const max = (row.firstRange?.max ?? row.first ?? 0) * 100;
+    return `<div class="verdict-row">
+        <span>${escapeHtml(title(row.stack))}</span>
+        <div class="axis">
+          <div class="axis-line"></div>
+          ${dot == null ? '' : `<div class="whisker" style="left:${min.toFixed(1)}%;width:${Math.max(max - min, 0).toFixed(1)}%"></div>
+          <div class="dot" style="left:calc(${dot.toFixed(1)}% - 5px)"></div>`}
+        </div>
+        <span class="mono">${percent(row.first)} → ${percent(row.final)}${row.spend != null ? ` · ${money(row.spend)}` : ''}</span>
+      </div>`;
+  }).join('')}</div>
+    ${footnotes.length ? `<p class="verdict-notes">${escapeHtml(footnotes.join(' · '))}</p>` : ''}`;
+}
+
+function renderVerdict() {
+  const latest = state.overview.campaigns
+    .filter(campaign => campaign.status === 'completed')
+    .sort((left, right) => String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? '')))
+    .find(campaign => compareCampaign(campaign).usable.length);
+  const zone = $('#verdict-zone');
+  zone.hidden = !latest;
+  if (latest) $('#verdict-card').innerHTML = verdictCard(latest);
 }
 
 // ------------------------------------------------------------------ rendering
@@ -345,10 +510,12 @@ function partitionCampaigns(campaigns) {
   const age = campaign => Date.now() - (Date.parse(campaign.updatedAt ?? '') || 0);
   const archived = campaign => campaign.status !== 'running' && campaign.status !== 'completed'
     && age(campaign) > ARCHIVE_AFTER_MS;
-  const order = (left, right) => (right.status === 'running') - (left.status === 'running')
-    || String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? ''));
+  const order = (left, right) =>
+    String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? ''));
+  // Running campaigns live in the Now zone, not the history table.
   return {
-    visible: campaigns.filter(campaign => state.showArchived || !archived(campaign)).sort(order),
+    visible: campaigns.filter(campaign => campaign.status !== 'running'
+      && (state.showArchived || !archived(campaign))).sort(order),
     archivedCount: campaigns.filter(archived).length,
   };
 }
@@ -381,6 +548,8 @@ function renderHistory() {
 
 function render() {
   const overview = state.overview;
+  renderNow();
+  renderVerdict();
   renderHistory();
   const startable = overview.canStart && overview.plans.some(plan => plan.state === 'frozen');
   $('#open-run').disabled = !startable;
@@ -599,6 +768,7 @@ async function refresh({ quiet = false } = {}) {
     const overview = await request('/api/overview');
     state.overview = overview;
     state.csrfToken = overview.csrfToken;
+    state.lastRefreshAt = Date.now();
     render();
     // Silence is the healthy state. A permanent "connected" light reports
     // nothing, so this only speaks when a refresh fails.
@@ -606,6 +776,15 @@ async function refresh({ quiet = false } = {}) {
   } catch (error) {
     $('#refresh-state').textContent = quiet ? 'Not updating' : error.message;
   }
+}
+
+// The liveness tick only appears while something is running; a static page
+// claiming freshness every second is noise.
+function renderTick() {
+  const tick = $('#refresh-tick');
+  const live = state.overview?.campaigns.some(campaign => campaign.status === 'running');
+  if (!live || !state.lastRefreshAt) { tick.textContent = ''; return; }
+  tick.textContent = `updated ${Math.max(0, Math.round((Date.now() - state.lastRefreshAt) / 1000))}s ago`;
 }
 
 document.addEventListener('click', event => {
@@ -651,3 +830,4 @@ $('#campaign-list').innerHTML = skeletonRows(6);
 await refresh();
 openFromHash();
 setInterval(() => refresh({ quiet: true }), 5000);
+setInterval(renderTick, 1000);

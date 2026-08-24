@@ -209,6 +209,10 @@ export function parseRunProgress(log, { fixRounds = 0, running = true, status = 
     firstScore: totals[0] ? { score: totals[0].score, max: totals[0].max } : null,
     latestScore: latestTotal ? { score: latestTotal.score, max: latestTotal.max } : null,
     completedGrades: totals.length,
+    // Every completed grade in order — the attempt's trajectory. A view can
+    // draw the climb, and a flat tail is the stall an operator otherwise
+    // discovers by diffing round logs.
+    series: totals.map(total => ({ score: total.score, max: total.max })),
   };
 }
 
@@ -327,9 +331,14 @@ function summarizeAttempt(attempt, campaignDirectory, fixRounds, { includeLog = 
   let executionDirectory = null;
   let log = '';
   let run = null;
+  let logUpdatedAt = null;
   if (execution) {
     executionDirectory = contained(campaignDirectory, execution.output, 'campaign execution');
-    log = readTextTail(join(executionDirectory, 'process.stdout.log'));
+    const logPath = join(executionDirectory, 'process.stdout.log');
+    log = readTextTail(logPath);
+    // When the run last wrote anything. A running attempt whose output has
+    // been silent for a long time is wedged in a way no score can show.
+    if (existsSync(logPath)) logUpdatedAt = new Date(statSync(logPath).mtimeMs).toISOString();
     run = readRun(join(executionDirectory, 'run.json'));
   }
   const progress = parseRunProgress(log, { fixRounds, running: attempt.status === 'running',
@@ -354,6 +363,7 @@ function summarizeAttempt(attempt, campaignDirectory, fixRounds, { includeLog = 
       runIndex: execution.runIndex ?? null,
     } : null,
     progress,
+    logUpdatedAt,
     result: run,
     ...(includeLog ? { log: log.split(/\r?\n/).slice(-160).join('\n') } : {}),
   };
