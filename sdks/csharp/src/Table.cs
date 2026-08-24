@@ -187,7 +187,7 @@ namespace SpacetimeDB
         {
             IsEventTable = isEventTable;
         }
-            
+
 #if UNITY_5_3_OR_NEWER
         /// <summary>
         /// Resets the static instance to prevent data persistence when Enter Play Mode Options (Disable Domain Reloading) is active.
@@ -195,7 +195,7 @@ namespace SpacetimeDB
         /// AutoStaticsCleanup and NoAutoStaticsCleanup is only supported in Unity 6+
         /// </summary>
         /// <remarks>
-        /// See the <see href="https://docs.unity3d.com/6000.5/Documentation/Manual/domain-reloading.html">Unity Domain Reloading Manual</see> 
+        /// See the <see href="https://docs.unity3d.com/6000.5/Documentation/Manual/domain-reloading.html">Unity Domain Reloading Manual</see>
         /// and the <see href="https://docs.unity3d.com/6000.5/Documentation/ScriptReference/RuntimeInitializeOnLoadMethodAttribute.html">RuntimeInitializeOnLoadMethodAttribute API Docs</see> for details.
         /// </remarks>
         static RemoteTableHandleBase()
@@ -687,7 +687,7 @@ namespace SpacetimeDB
     /// Provides a mechanism for registering and invoking static reset callbacks
     /// during Unity's subsystem registration phase.
     /// This is because Unity's RuntimeInitializeOnLoadMethod can't be used in generic classes
-    /// One way we can get around this in the future is using <see href="https://docs.unity3d.com/6000.5/Documentation/ScriptReference/Unity.Scripting.LifecycleManagement.AutoStaticsCleanupAttribute.html">AutoStaticsCleanup</see> 
+    /// One way we can get around this in the future is using <see href="https://docs.unity3d.com/6000.5/Documentation/ScriptReference/Unity.Scripting.LifecycleManagement.AutoStaticsCleanupAttribute.html">AutoStaticsCleanup</see>
     /// But that requires Unity 6.5
     /// </summary>
     /// <remarks>
