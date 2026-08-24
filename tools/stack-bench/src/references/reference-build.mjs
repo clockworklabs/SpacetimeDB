@@ -21,6 +21,7 @@ import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
 import { loadTrack } from '../composition/tracks.mjs';
 import { inspectImportedReference, loadReferenceRegistry,
   prepareReferenceFixtureSource, validateReferenceRegistry } from './reference-fixtures.mjs';
+import { referenceInstallSteps } from './reference-install.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const RUN_BUILD = join(ROOT, 'container', 'run-build.mjs');
@@ -67,7 +68,9 @@ function buildCommands(metadata, container, commands) {
   for (const directory of metadata.installDirectories) {
     run(container, `/app/${directory}`, 'node', ['-e',
       "const fs=require('node:fs'); for(const f of ['package.json','package-lock.json']) if(!fs.existsSync(f)) throw new Error(`${process.cwd()}/${f} is missing`);"], commands);
-    run(container, `/app/${directory}`, 'npm', ['ci', '--no-audit', '--no-fund'], commands);
+  }
+  for (const step of referenceInstallSteps(metadata)) {
+    run(container, `/app/${step.directory}`, step.command, step.args, commands);
   }
   if (metadata.kind === 'node-api') {
     run(container, `/app/${metadata.server.directory}`, 'npm', ['exec', 'tsc', '--', '--noEmit'], commands);

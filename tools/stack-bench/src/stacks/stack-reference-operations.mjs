@@ -2,6 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { dockerHostServiceAddress } from '../runtime/docker-network.mjs';
 import { containerReachableSpacetimeUri } from '../runtime/spacetime-target.mjs';
+import { referenceInstallSteps } from '../references/reference-install.mjs';
 
 function validateHostedDatabase({ args, lease, track, helpers }) {
   const expected = helpers.dbName(track, args.runIndex);
@@ -82,8 +83,8 @@ export function deployMongoDbReference(input) {
 
 export async function deploySpacetimeReference({ args, metadata, lease, container, ports,
   buildNetworkMode, helpers }) {
-  for (const directory of metadata.installDirectories) {
-    helpers.docker(container, `/app/${directory}`, 'npm', ['ci', '--no-audit', '--no-fund']);
+  for (const step of referenceInstallSteps(metadata)) {
+    helpers.docker(container, `/app/${step.directory}`, step.command, step.args);
   }
   const module = helpers.moduleName(helpers.loadTrack(args.track), args.runIndex);
   if (lease.resources.module !== module) throw new Error(`lease module is not ${module}`);
