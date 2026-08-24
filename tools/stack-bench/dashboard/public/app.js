@@ -397,14 +397,15 @@ function comparisonTable(campaign) {
 // which know when it is honest.
 function resultHeadline(campaign) {
   const summary = compareCampaign(campaign);
-  const parts = summary.usable.map(row =>
-    `<span class="result-stack"><b>${escapeHtml(title(row.stack))}</b> ${percent(row.first)}→${percent(row.final)}</span>`);
   const burn = [...summary.burn.values()].reduce((total, value) => total + (value ?? 0), 0);
-  if (!parts.length) {
+  if (!summary.usable.length) {
     const graded = (campaign.attempts ?? []).some(attempt => attemptMetrics(attempt));
     return `<span class="result-empty">${graded ? 'no usable runs' : 'no graded runs'}${burn ? ` · ${money(burn)} spent` : ''}</span>`;
   }
-  return `${parts.join('')}<span class="result-burn">${burn ? money(burn) : 'no cost'}</span>`;
+  const lines = summary.usable.map(row => `<span>${escapeHtml(title(row.stack))}</span>
+    <b>${percent(row.first)} <i>→ ${percent(row.final)}</i></b>`).join('');
+  return `<div class="result-lines">${lines}</div>
+    <div class="result-burn">${burn ? `${money(burn)} total` : 'no cost'}</div>`;
 }
 
 function campaignRow(campaign) {
