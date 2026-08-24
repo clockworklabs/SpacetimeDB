@@ -57,6 +57,11 @@ jobs:
         name: Set default rust toolchain
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
+      - name: print some debug info
+        run: |
+          pwd -P
+          find ~ -maxdepth 2
+
       - name: Build CLI and standalone
         shell: bash
         run: |
