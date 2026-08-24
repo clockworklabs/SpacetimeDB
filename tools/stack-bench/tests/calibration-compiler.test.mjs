@@ -78,12 +78,14 @@ test('the current L1 calibration deterministically binds recipe, fixture, refere
     .map(result => `${result.id}@${result.version}:${result.state}`), [
     'ecommerce.l1-modular-calibration@2.3.0:qualified',
     'ecommerce.l1-modular-calibration@2.4.0:qualified',
+    'ecommerce.l1-modular-calibration@2.5.0:draft',
     'ecommerce.l1-standard-calibration@1.0.0:qualified',
     'ecommerce.l1-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.1.0:qualified',
     'ecommerce.l2-standard-calibration@1.2.0:qualified',
     'ecommerce.l2-standard-calibration@1.4.0:qualified',
     'ecommerce.l2-standard-calibration@1.5.0:qualified',
+    'ecommerce.l2-standard-calibration@1.6.0:draft',
   ]);
 });
 
