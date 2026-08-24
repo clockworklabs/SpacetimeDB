@@ -27,7 +27,7 @@ namespace SpacetimeDB.SappyIntegration
             }
             else
             {
-                listeners.Add(value.Callback);
+                listeners.Remove(value.Callback);
             }
         }
     }

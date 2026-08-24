@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 
 namespace SpacetimeDB.EventHandling
 {
-    internal class EventListeners<T> : IEventListeners<T> where T : Delegate
+    internal sealed class EventListeners<T> : IEventListeners<T> where T : Delegate
     {
         private const int SmallListenerThreshold = 8;
         private const int CollisionBucket = -1;
@@ -13,23 +13,30 @@ namespace SpacetimeDB.EventHandling
 
         private int[] _hashes;
         private T?[] _listeners;
-        private int _capacity;
         private int _count;
         private Dictionary<int, int>? _indices;
         private Dictionary<int, List<int>>? _collisions;
         private Stack<List<int>>? _collisionsPool;
 
-        public int Count => _count;
+        public int Count
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _count;
+        }
 
-        public T this[int index] => _listeners[index]!;
+        public T this[int index]
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => _listeners[index]!;
+        }
 
         public EventListeners() : this(4) { }
 
         public EventListeners(int initialSize)
         {
-            _capacity = Math.Max(1, initialSize);
-            _hashes = new int[_capacity];
-            _listeners = new T[_capacity];
+            var capacity = Math.Max(1, initialSize);
+            _hashes = new int[capacity];
+            _listeners = new T[capacity];
         }
 
         public void Add(T listener)
@@ -40,8 +47,6 @@ namespace SpacetimeDB.EventHandling
 
             if (_count <= SmallListenerThreshold)
             {
-                if (FindLinear(listener) >= 0) return;
-
                 AddRaw(hashCode, listener);
 
                 if (_count > SmallListenerThreshold)
@@ -52,19 +57,17 @@ namespace SpacetimeDB.EventHandling
                 return;
             }
 
+            var newIndex = AddRaw(hashCode, listener);
             var indices = _indices!;
 
             if (!indices.TryGetValue(hashCode, out var index))
             {
-                indices.Add(hashCode, AddRaw(hashCode, listener));
+                indices.Add(hashCode, newIndex);
                 return;
             }
 
             if (index != CollisionBucket)
             {
-                if (DelegateEquals(_listeners[index]!, listener)) return;
-
-                var newIndex = AddRaw(hashCode, listener);
                 _collisions ??= new Dictionary<int, List<int>>();
                 _collisions[hashCode] = GetCollisionsListFromPool(index, newIndex);
                 indices[hashCode] = CollisionBucket;
@@ -72,20 +75,12 @@ namespace SpacetimeDB.EventHandling
             }
 
             var bucket = _collisions![hashCode];
-
-            for (var i = 0; i < bucket.Count; i++)
-            {
-                if (DelegateEquals(_listeners[bucket[i]]!, listener)) return;
-            }
-
-            bucket.Add(AddRaw(hashCode, listener));
+            bucket.Add(newIndex);
         }
 
         public void Remove(T listener)
         {
             if (listener == null || _count <= 0) return;
-
-            var hashCode = listener.GetHashCode();
 
             if (_count <= SmallListenerThreshold)
             {
@@ -93,13 +88,14 @@ namespace SpacetimeDB.EventHandling
                 if (index >= 0)
                 {
                     RemoveAtSwapBackRaw(index);
-                    ClearIndex();
                 }
 
                 return;
             }
 
-            var indices = _indices!;
+            var hashCode = listener.GetHashCode();
+            var indices = _indices;
+            if (indices == null) return;
 
             if (!indices.TryGetValue(hashCode, out var mappedIndex)) return;
 
@@ -158,7 +154,6 @@ namespace SpacetimeDB.EventHandling
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int FindLinear(T listener)
         {
             for (var i = 0; i < _count; i++)
@@ -169,7 +164,6 @@ namespace SpacetimeDB.EventHandling
             return -1;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private int AddRaw(int hashCode, T listener)
         {
             EnsureCapacity();
@@ -181,7 +175,6 @@ namespace SpacetimeDB.EventHandling
             return index;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void RemoveAtSwapBackRaw(int index)
         {
             var lastIndex = _count - 1;
@@ -197,21 +190,56 @@ namespace SpacetimeDB.EventHandling
             _count = lastIndex;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void EnsureCapacity()
         {
-            if (_count < _capacity) return;
+            var capacity = _listeners.Length;
+            if (_count < capacity) return;
 
-            _capacity *= 2;
-            Array.Resize(ref _hashes, _capacity);
-            Array.Resize(ref _listeners, _capacity);
+            capacity *= 2;
+            Array.Resize(ref _hashes, capacity);
+            Array.Resize(ref _listeners, capacity);
+        }
+
+        private void UpdateMovedIndex(int hashCode, int oldIndex, int newIndex)
+        {
+            var indices = _indices!;
+            var mappedIndex = indices[hashCode];
+
+            if (mappedIndex != CollisionBucket)
+            {
+                indices[hashCode] = newIndex;
+                return;
+            }
+
+            var bucket = _collisions![hashCode];
+
+            for (var i = 0; i < bucket.Count; i++)
+            {
+                if (bucket[i] == oldIndex)
+                {
+                    bucket[i] = newIndex;
+                    return;
+                }
+            }
+        }
+
+        private static void RemoveBucketSlot(List<int> bucket, int slot)
+        {
+            var lastSlot = bucket.Count - 1;
+
+            if (slot != lastSlot)
+            {
+                bucket[slot] = bucket[lastSlot];
+            }
+
+            bucket.RemoveAt(lastSlot);
         }
 
         private void RebuildIndex()
         {
             if (_indices == null)
             {
-                _indices = new Dictionary<int, int>(_capacity);
+                _indices = new Dictionary<int, int>(_listeners.Length);
             }
             else
             {
@@ -243,42 +271,6 @@ namespace SpacetimeDB.EventHandling
             }
         }
 
-        private void UpdateMovedIndex(int hashCode, int oldIndex, int newIndex)
-        {
-            var indices = _indices!;
-            var mappedIndex = indices[hashCode];
-
-            if (mappedIndex != CollisionBucket)
-            {
-                indices[hashCode] = newIndex;
-                return;
-            }
-
-            var bucket = _collisions![hashCode];
-
-            for (var i = 0; i < bucket.Count; i++)
-            {
-                if (bucket[i] == oldIndex)
-                {
-                    bucket[i] = newIndex;
-                    return;
-                }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void RemoveBucketSlot(List<int> bucket, int slot)
-        {
-            var lastSlot = bucket.Count - 1;
-
-            if (slot != lastSlot)
-            {
-                bucket[slot] = bucket[lastSlot];
-            }
-
-            bucket.RemoveAt(lastSlot);
-        }
-
         private void ClearIndex()
         {
             _indices?.Clear();
@@ -293,7 +285,6 @@ namespace SpacetimeDB.EventHandling
             _collisions.Clear();
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private List<int> GetCollisionsListFromPool(int a, int b)
         {
             if (_collisionsPool == null || _collisionsPool.Count <= 0) return new List<int>(2) { a, b };

@@ -5,9 +5,9 @@ using Xunit;
 public class EventListenersTests
 {
     [Fact]
-    public void BasicEventListenersDeduplicatesRemovesAndResubscribes()
+    public void EventListenersAllowDuplicatesAndRemoveOneSubscriptionAtATime()
     {
-        var eventListeners = new BasicEventListeners<Action>();
+        var eventListeners = new EventListeners<Action>();
         var callCount = 0;
         var listeners = new Action[12];
 
@@ -18,26 +18,28 @@ public class EventListenersTests
         }
 
         eventListeners.Add(listeners[3]);
-        Assert.Equal(listeners.Length, eventListeners.Count);
+        Assert.Equal(listeners.Length + 1, eventListeners.Count);
 
         InvokeAll(eventListeners);
-        Assert.Equal(listeners.Length, callCount);
+        Assert.Equal(listeners.Length + 1, callCount);
 
         eventListeners.Remove(listeners[3]);
         eventListeners.Remove(listeners[9]);
-        eventListeners.Remove(listeners[3]);
-        Assert.Equal(listeners.Length - 2, eventListeners.Count);
+        Assert.Equal(listeners.Length - 1, eventListeners.Count);
 
         callCount = 0;
         InvokeAll(eventListeners);
-        Assert.Equal(listeners.Length - 2, callCount);
+        Assert.Equal(listeners.Length - 1, callCount);
+
+        eventListeners.Remove(listeners[3]);
+        Assert.Equal(listeners.Length - 2, eventListeners.Count);
 
         eventListeners.Add(listeners[3]);
         eventListeners.Add(listeners[9]);
         Assert.Equal(listeners.Length, eventListeners.Count);
     }
 
-    private static void InvokeAll(BasicEventListeners<Action> listeners)
+    private static void InvokeAll(EventListeners<Action> listeners)
     {
         for (var i = listeners.Count - 1; i >= 0; i--)
         {
