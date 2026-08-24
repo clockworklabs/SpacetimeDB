@@ -1,4 +1,8 @@
-## Startup data probe
+## Startup data
+
+The server seeds the starting data at startup whenever it is missing. A reset
+or restored database must come back as a working store with the full
+catalogue, not an empty one; seeding only on first install is not enough.
 
 On server-based stacks (MongoDB/PostgreSQL), expose `GET /api/items` returning
 HTTP 200 with a JSON object whose `items` key is an array of the catalogue
