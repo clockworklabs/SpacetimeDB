@@ -95,3 +95,52 @@ jobs:
           if-no-files-found: error
           overwrite: true
           retention-days: 14
+
+  smoketest_build_linux:
+    needs: [upload-build-artifacts-linux]
+    name: Build smoketests (Linux)
+    runs-on: spacetimedb-new-runner-2
+    timeout-minutes: 15
+    env:
+      CARGO_TARGET_DIR: $HOME/actions-runner/target
+      RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
+      EXE_SUFFIX: ""
+      SMOKETEST_SUITE: standalone
+    steps: &smoketest-build-steps
+      - *find-git-ref
+
+      - *checkout-sources
+
+      - uses: dsherret/rust-toolchain-file@v1
+      - *set-default-rust-toolchain
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Build smoketest dependencies and archive test binaries
+        shell: bash
+        run: |
+          cargo run -vv --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
+
+          shopt -s nullglob
+          precompiled_modules=(${CARGET_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
+          if (( ${#precompiled_modules[@]} == 0 )); then
+            echo "No precompiled smoketest modules were produced."
+            exit 1
+          fi
+
+          tar -czf smoketest-support.tar.gz \
+            "${CARGO_TARGET_DIR}/debug/ci-smoketests${EXE_SUFFIX}" \
+            "${precompiled_modules[@]}"
+
+      - name: Upload smoketest build
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoketest-build-${{ env.ARTIFACT_SUFFIX }}
+          path: |
+            smoketest-nextest.tar.zst
+            smoketest-support.tar.gz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
