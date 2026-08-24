@@ -12,6 +12,8 @@ test('Spacetime references refresh the release SDK lock before a clean install',
     { directory: 'backend/spacetimedb', command: 'npm',
       args: ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'] },
     { directory: 'backend/spacetimedb', command: 'npm', args: ['ci', '--no-audit', '--no-fund'] },
+    { directory: 'client', command: 'npm',
+      args: ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'] },
     { directory: 'client', command: 'npm', args: ['ci', '--no-audit', '--no-fund'] },
   ]);
 });

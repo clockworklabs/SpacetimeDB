@@ -1,7 +1,7 @@
 export function referenceInstallSteps(metadata) {
   return metadata.installDirectories.flatMap(directory => {
     const steps = [];
-    if (metadata.kind === 'spacetime' && directory === metadata.moduleDirectory) {
+    if (metadata.kind === 'spacetime') {
       steps.push({ directory, command: 'npm',
         args: ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'] });
     }
