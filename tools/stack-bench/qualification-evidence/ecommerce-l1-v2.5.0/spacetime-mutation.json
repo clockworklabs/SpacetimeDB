@@ -1,0 +1,341 @@
+{
+  "artifactSchemaVersion": 2,
+  "kind": "reference_qualification",
+  "id": "reference-live-spacetime-20260824140502-14",
+  "attempt": {
+    "id": "reference-live-spacetime-20260824140502-14",
+    "parentId": null
+  },
+  "timestamps": {
+    "startedAt": "2026-08-24T14:05:02.358Z",
+    "completedAt": "2026-08-24T14:25:28.530Z"
+  },
+  "identities": {
+    "engine": {
+      "id": "stack-bench",
+      "version": null,
+      "sha256": "24291a78c9565f88a047af38a584cb421343fc411c61306eec86b0f31b61127a",
+      "state": null
+    },
+    "recipe": {
+      "id": "ecommerce.l1-modular",
+      "version": "2.5.0",
+      "sha256": "7e28daeaa5a60e9cfbd5ee40e8d2ed2fd121b1ab24fb3d259976b82cb806767d",
+      "state": "draft"
+    },
+    "fixture": {
+      "id": "ecommerce-l1-action-inputs-2.4-spacetime",
+      "version": null,
+      "sha256": "d5cb5af9db96b3ae4ff2b0d928dec4394ac6f88dfdce83201a0d8508b69902e5",
+      "state": "active"
+    },
+    "calibration": {
+      "id": "ecommerce.l1-modular-calibration",
+      "version": "2.5.0",
+      "sha256": "e69dc4bbd3066ae60317a8f8bc0050ae43e09791722a7002d05c729b1800db9f",
+      "state": "draft"
+    },
+    "experiment": null,
+    "agentAdapter": null,
+    "stackAdapter": {
+      "id": "spacetime",
+      "version": null,
+      "sha256": null,
+      "state": null
+    },
+    "packs": []
+  },
+  "payload": {
+    "fixture": "ecommerce-l1-action-inputs-2.4-spacetime",
+    "fixtureSha256": "d5cb5af9db96b3ae4ff2b0d928dec4394ac6f88dfdce83201a0d8508b69902e5",
+    "requiredRepetitions": 1,
+    "isolation": "docker",
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64",
+      "dockerEngineVersion": "29.6.2",
+      "dockerOs": "linux",
+      "dockerArchitecture": "x86_64",
+      "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
+      "cpuCount": 32,
+      "memoryBytes": 49232842752
+    },
+    "mutationControl": true,
+    "runs": [
+      {
+        "repetition": 1,
+        "output": "spacetime-mutation-3422109.runs/r1-workers",
+        "durationMs": 1226084,
+        "processError": null,
+        "harnessSha256Before": "8a3eb71879d213be88f7a67755883c7321b97825c4e73f1afb339eee6c88821d",
+        "harnessSha256After": "8a3eb71879d213be88f7a67755883c7321b97825c4e73f1afb339eee6c88821d",
+        "ok": true,
+        "failures": [],
+        "runId": "reference-live-spacetime-20260824140502-14",
+        "score": "58/58",
+        "imageId": "sha256:b404d26138ea16be07a672389981e7e8b89d7740570f9baa3ddd4d0e96336c10",
+        "criteria": 48,
+        "zeroPointCriteria": 2,
+        "fingerprint": "d242c446206e0e0059346ce5a08b0ac30ce0e0a597b1de41ef96df63c35491b3",
+        "outcome": "passed",
+        "packRuntime": {
+          "schemaVersion": 1,
+          "metric": "pack-check-wall-clock-sum-v1",
+          "packs": [
+            {
+              "id": "ecommerce.feature.accounts",
+              "checkCount": 4,
+              "setupRuntimeMs": 362,
+              "criterionRuntimeMs": 4510,
+              "measuredRuntimeMs": 4872,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 18000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.cart-checkout",
+              "checkCount": 2,
+              "setupRuntimeMs": 348,
+              "criterionRuntimeMs": 3044,
+              "measuredRuntimeMs": 3392,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 42000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.catalog",
+              "checkCount": 3,
+              "setupRuntimeMs": 111,
+              "criterionRuntimeMs": 3122,
+              "measuredRuntimeMs": 3233,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.purchasing",
+              "checkCount": 1,
+              "setupRuntimeMs": 185,
+              "criterionRuntimeMs": 1614,
+              "measuredRuntimeMs": 1799,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 24000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.reviews",
+              "checkCount": 1,
+              "setupRuntimeMs": 2476,
+              "criterionRuntimeMs": 1924,
+              "measuredRuntimeMs": 4400,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 22000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.feature.warehouse-admin",
+              "checkCount": 1,
+              "setupRuntimeMs": 231,
+              "criterionRuntimeMs": 78,
+              "measuredRuntimeMs": 309,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 30000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.access-control",
+              "checkCount": 10,
+              "setupRuntimeMs": 2994,
+              "criterionRuntimeMs": 22333,
+              "measuredRuntimeMs": 25327,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 90000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.concurrency-safety",
+              "checkCount": 8,
+              "setupRuntimeMs": 22240,
+              "criterionRuntimeMs": 45227,
+              "measuredRuntimeMs": 67467,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 125000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.external-data-sync",
+              "checkCount": 4,
+              "setupRuntimeMs": 332,
+              "criterionRuntimeMs": 29924,
+              "measuredRuntimeMs": 30256,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 105000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.live-state",
+              "checkCount": 6,
+              "setupRuntimeMs": 8218,
+              "criterionRuntimeMs": 3288,
+              "measuredRuntimeMs": 11506,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 85000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.state-durability",
+              "checkCount": 4,
+              "setupRuntimeMs": 902,
+              "criterionRuntimeMs": 24581,
+              "measuredRuntimeMs": 25483,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 48000
+              },
+              "exceeded": false
+            },
+            {
+              "id": "ecommerce.spec.transactional-integrity",
+              "checkCount": 4,
+              "setupRuntimeMs": 6327,
+              "criterionRuntimeMs": 7496,
+              "measuredRuntimeMs": 13823,
+              "budget": {
+                "status": "bounded",
+                "maxRuntimeMs": 75000
+              },
+              "exceeded": false
+            }
+          ]
+        },
+        "mutations": {
+          "caught": 46,
+          "total": 46
+        },
+        "workers": [
+          {
+            "index": 0,
+            "runIndex": 8,
+            "artifact": "spacetime-mutation-3422109.runs/r1-workers/w1.json",
+            "mutationIds": [
+              "signup-binds-the-new-account-to-the-admin-session",
+              "session-token-is-not-persisted-for-reload",
+              "search-only-examines-the-visible-top-ten",
+              "checkout-accepts-more-items-than-remain",
+              "checkout-does-not-empty-the-basic-cart",
+              "every-signed-in-customer-is-treated-as-an-admin",
+              "direct-purchases-are-attributed-to-the-system-account",
+              "reconnect-discards-the-visible-account-state",
+              "review-purchase-eligibility-is-not-checked",
+              "purchase-does-not-reserve-stock-last-unit",
+              "checkout-does-not-empty-cart",
+              "open-review-list-snapshots-on-selection"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime-mutation-3422109.runs/r1-workers/w1.stdout.log",
+              "stderr": "spacetime-mutation-3422109.runs/r1-workers/w1.stderr.log"
+            }
+          },
+          {
+            "index": 1,
+            "runIndex": 9,
+            "artifact": "spacetime-mutation-3422109.runs/r1-workers/w2.json",
+            "mutationIds": [
+              "duplicate-signup-is-silently-ignored",
+              "catalog-seeds-the-wrong-air-purifier-price",
+              "purchase-controls-are-rendered-for-signed-out-visitors",
+              "existing-cart-line-does-not-increment-basic-cart",
+              "new-review-is-accepted-without-being-stored",
+              "warehouse-view-omits-west",
+              "direct-restock-does-not-require-an-admin",
+              "order-views-return-every-customers-orders",
+              "eligible-review-is-accepted-without-being-stored",
+              "purchase-does-not-reserve-stock-restock-race",
+              "stock-subscription-snapshotted-once",
+              "open-review-list-renders-each-review-twice"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime-mutation-3422109.runs/r1-workers/w2.stdout.log",
+              "stderr": "spacetime-mutation-3422109.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 10,
+            "artifact": "spacetime-mutation-3422109.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "signin-does-not-verify-the-password",
+              "catalog-tie-breaks-in-reverse-alphabetical-order",
+              "buy-now-creates-orders-without-reserving-stock",
+              "cart-owner-token-is-not-restored-after-reload",
+              "repeat-review-inserts-a-second-row",
+              "admin-restock-preserves-existing-stock",
+              "direct-purchase-ignores-the-stored-price",
+              "admin-revenue-double-counts-every-order",
+              "cart-line-lookup-ignores-cart-ownership",
+              "restock-does-not-increase-stock",
+              "stock-view-ignores-update-across-app-server-stop"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime-mutation-3422109.runs/r1-workers/w3.stdout.log",
+              "stderr": "spacetime-mutation-3422109.runs/r1-workers/w3.stderr.log"
+            }
+          },
+          {
+            "index": 3,
+            "runIndex": 11,
+            "artifact": "spacetime-mutation-3422109.runs/r1-workers/w4.json",
+            "mutationIds": [
+              "correct-signin-is-refused",
+              "purchase-does-not-update-ranking-count",
+              "buy-now-records-the-wrong-order-total",
+              "signin-binds-the-second-client-to-a-different-account",
+              "review-average-counts-rows-instead-of-ratings",
+              "guest-purchase-falls-back-to-the-admin-account",
+              "account-state-token-is-not-restored-after-reload",
+              "purchases-do-not-leave-the-warehouses",
+              "nonpositive-cart-quantity-is-treated-as-removal",
+              "existing-cart-line-does-not-increment",
+              "stock-view-keeps-pre-reconnect-snapshot"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "spacetime-mutation-3422109.runs/r1-workers/w4.stdout.log",
+              "stderr": "spacetime-mutation-3422109.runs/r1-workers/w4.stderr.log"
+            }
+          }
+        ]
+      }
+    ],
+    "stable": true,
+    "sameImage": true,
+    "sameHarness": true,
+    "harnessSha256": "8a3eb71879d213be88f7a67755883c7321b97825c4e73f1afb339eee6c88821d",
+    "ok": true
+  }
+}

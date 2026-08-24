@@ -9,8 +9,8 @@ import { buildRecipeRelease } from '../src/composition/recipe-release.mjs';
 const BENCH = join(import.meta.dirname, '..');
 const TRACK = join(BENCH, 'tracks', 'ecommerce');
 const release = buildRecipeRelease(join(TRACK, 'composition', 'recipes',
-  'l1-modular-2.4.0.json'));
-const calibration = compileCalibrationFile('composition/calibrations/l1-modular-2.4.0.json', {
+  'l1-modular-2.5.0.json'));
+const calibration = compileCalibrationFile('composition/calibrations/l1-modular-2.5.0.json', {
   trackRoot: TRACK,
   stackBenchRoot: BENCH,
   release,
