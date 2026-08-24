@@ -27,7 +27,7 @@ jobs:
     runs-on: spacetimedb-new-runner-2-staging
     timeout-minutes: 15
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_TARGET_DIR: $HOME/actions-runner/target
       RUST_BACKTRACE: full
       ARTIFACT_SUFFIX: linux
       EXE_SUFFIX: ""
@@ -60,7 +60,7 @@ jobs:
       - name: print some debug info
         run: |
           pwd -P
-          find ~ -maxdepth 2
+          find ~ -maxdepth 3
 
       - name: Build CLI and standalone
         shell: bash
@@ -74,8 +74,8 @@ jobs:
         shell: bash
         run: |
           tar -czf build-support.tar.gz \
-            "target/release/spacetimedb-cli${EXE_SUFFIX}" \
-            "target/release/spacetimedb-standalone${EXE_SUFFIX}"
+            "${CARGO_TARGET_DIR}/release/spacetimedb-cli${EXE_SUFFIX}" \
+            "${CARGO_TARGET_DIR}/release/spacetimedb-standalone${EXE_SUFFIX}"
 
       - name: Upload Cargo timing reports
         if: always()
