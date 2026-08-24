@@ -71,7 +71,7 @@ jobs:
       - name: Build CLI and standalone
         shell: bash
         run: |
-          cargo build --timings --release \
+          cargo build -vv --timings --release \
             -p spacetimedb-cli \
             -p spacetimedb-standalone \
             --features spacetimedb-standalone/allow_loopback_http_for_tests
@@ -128,7 +128,7 @@ jobs:
       - name: Build smoketest dependencies and archive test binaries
         shell: bash
         run: |
-          cargo run --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
+          cargo run -vv --timings --package ci -- smoketests --suite "${SMOKETEST_SUITE}" archive --archive-file smoketest-nextest.tar.zst
 
           shopt -s nullglob
           precompiled_modules=(${CARGET_TARGET_DIR}/wasm32-unknown-unknown/release/smoketest_module_*.wasm)
