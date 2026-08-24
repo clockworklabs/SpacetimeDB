@@ -110,13 +110,17 @@ export function codingSessionFailure(error) {
 }
 
 export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBudgetUsd = null,
-  throttleMaxWaitMs = DEFAULT_THROTTLE_MAX_WAIT_MS, sleep = synchronousSleep, log = null }) {
+  throttleMaxWaitMs = DEFAULT_THROTTLE_MAX_WAIT_MS, throttleJitterMs = 0,
+  sleep = synchronousSleep, log = null }) {
   if (typeof invoke !== 'function') throw new Error('coding session invoke function is required');
   if (!Number.isInteger(retryLimit) || retryLimit < 0 || retryLimit > 3) {
     throw new Error('coding interruption retry limit must be an integer from 0 to 3');
   }
   if (!Number.isInteger(throttleMaxWaitMs) || throttleMaxWaitMs < 0) {
     throw new Error('provider throttle wait budget must be a non-negative integer of milliseconds');
+  }
+  if (!Number.isInteger(throttleJitterMs) || throttleJitterMs < 0 || throttleJitterMs > 60_000) {
+    throw new Error('provider throttle jitter must be an integer from 0 to 60000 milliseconds');
   }
   const say = log ?? (message => console.error(message));
   let raw = '';
@@ -160,7 +164,8 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
     if (!error && result?.is_error === false) break;
     const interruption = codingSessionInterruption(error, result);
     if (interruption?.kind === 'provider-throttled') {
-      const delay = THROTTLE_DELAYS_MS[Math.min(throttleWaits, THROTTLE_DELAYS_MS.length - 1)];
+      const delay = THROTTLE_DELAYS_MS[Math.min(throttleWaits, THROTTLE_DELAYS_MS.length - 1)]
+        + throttleJitterMs;
       if (throttleWaitedMs + delay > throttleMaxWaitMs) {
         spawnError = `provider stayed throttled (status ${interruption.providerStatus}) after `
           + `${Math.round(throttleWaitedMs / 60_000)} minutes of waiting across `
@@ -198,6 +203,6 @@ export function runCodingSessionWithRecovery({ invoke, prompt, retryLimit, maxBu
   }
   return { raw, spawnError, sessionResults, interruptions,
     throttle: { waits: throttleWaits, waitedMs: throttleWaitedMs,
-      maxWaitMs: throttleMaxWaitMs },
+      maxWaitMs: throttleMaxWaitMs, jitterMs: throttleJitterMs },
     result: aggregateCodingSessionResults(sessionResults) };
 }

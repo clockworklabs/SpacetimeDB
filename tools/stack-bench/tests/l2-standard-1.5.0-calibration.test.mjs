@@ -75,11 +75,16 @@ test('L2 1.5 is promotion ready with complete defect and qualification evidence'
   assert.deepEqual(readiness.promotion.blockers, []);
 });
 
-test('the promotion catalog and registry own exactly the L2 1.5 qualified inputs', () => {
+test('the catalogs and registry keep the L2 1.5 release active while L2 1.6 is a candidate', () => {
   const catalog = compilePromotionFile(join(TRACK_ROOT, 'composition', 'candidates.json'), {
     trackRoot: TRACK_ROOT,
   });
-  assert.deepEqual(catalog.entries.filter(entry => entry.alias === 'L2'), []);
+  assert.deepEqual(catalog.entries.filter(entry => entry.alias === 'L2'), [{
+    alias: 'L2',
+    status: 'candidate',
+    recipe: { path: 'recipes/l2-standard-1.6.0.json',
+      id: 'ecommerce.l2-standard', version: '1.6.0' },
+  }]);
   const promotions = compilePromotionFile(join(TRACK_ROOT, 'composition', 'promotions.json'), {
     trackRoot: TRACK_ROOT,
   });
@@ -101,7 +106,8 @@ test('the promotion catalog and registry own exactly the L2 1.5 qualified inputs
       entry.id === `ecommerce-l2-cumulative-1.5-${backend}`);
     assert(fixture);
     assert.equal(fixture.status, 'active');
-    assert.deepEqual(fixture.recipes, ['ecommerce.l2-standard@1.5.0']);
+    assert.deepEqual(fixture.recipes,
+      ['ecommerce.l2-standard@1.5.0', 'ecommerce.l2-standard@1.6.0']);
     assert.deepEqual(fixture.mutationManifests,
       [`grader/mutations/${backend}-ecom-l2-cumulative-1.5.0.json`]);
   }

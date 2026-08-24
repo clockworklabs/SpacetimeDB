@@ -116,6 +116,12 @@ test('campaign validation accepts only an explicit pass-before-next-level applic
   outcome: { kind: 'harness_failure', reason: 'provider-session-error' } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
   assert.throws(() => validateCampaignRun(plan, attempt,
+    { ...run, levels: [{ level: 1 }] }, { buildImage: 'test-build-image' }), error => {
+    assert.match(error.message, /levels\.L1\.selection/);
+    assert.doesNotMatch(error.message, /canonical JSON data/);
+    return true;
+  });
+  assert.throws(() => validateCampaignRun(plan, attempt,
     { ...run, outcome: { kind: 'app_failure' } }, { buildImage: 'test-build-image' }),
   /does not match.*levels/);
   const appFailure = { kind: 'app_failure', phase: 'grading', reason: null,
@@ -349,7 +355,7 @@ test('campaign trials accept only non-billable draft plans with zero pricing', a
     }), /admission failed/);
 
     const paid = JSON.parse(readFileSync(example, 'utf8'));
-    paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.12.0', model: 'claude-sonnet-5' }];
+    paid.agents = [{ adapter: 'claude-code', adapterVersion: '1.13.0', model: 'claude-sonnet-5' }];
     paid.pricing.models = { 'claude-sonnet-5': {
       inputPerMillion: 0, outputPerMillion: 0,
       cacheWritePerMillion: 0, cacheReadPerMillion: 0,

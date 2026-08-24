@@ -79,6 +79,9 @@
           "order": 2600,
           "modes": [
             "fresh"
+          ],
+          "requiresFeatures": [
+            "ecommerce.feature.catalog"
           ]
         }
       ]

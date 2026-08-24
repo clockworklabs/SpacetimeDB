@@ -32,7 +32,7 @@ test('L2 1.5 references deterministically compose L1 2.4 and L2 action inputs', 
       });
       assert.equal(fixture.id, `ecommerce-l2-cumulative-1.5-${backend}`);
       assert.equal(fixture.status, 'active');
-      assert.deepEqual(fixture.recipes, [recipe]);
+      assert.deepEqual(fixture.recipes, [recipe, 'ecommerce.l2-standard@1.6.0']);
       assert.equal(fixture.imported.sourceSha256, sourceSha256);
 
       const first = join(root, `${backend}-first`);

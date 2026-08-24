@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "kind": "calibration-manifest",
+  "id": "ecommerce.l1-modular-calibration",
+  "version": "2.5.0",
+  "state": "draft",
+  "title": "Ecommerce L1 independent-check calibration",
+  "track": "ecommerce",
+  "recipe": {
+    "path": "../recipes/l1-modular-2.5.0.json",
+    "id": "ecommerce.l1-modular",
+    "version": "2.5.0",
+    "meaningSha256": "18fa952b0bf62c32e57a5332ba554e9bd9a368d19248bba52f12a0ea2bacf21b",
+    "executionSha256": "10992b4835a0db160b0e4dac505405a23f54e47e10927bfc9e25f7d8cc97b846",
+    "contentSha256": "7e28daeaa5a60e9cfbd5ee40e8d2ed2fd121b1ab24fb3d259976b82cb806767d"
+  },
+  "fixture": {
+    "id": "ecommerce.storefront",
+    "version": "1.0.0",
+    "sourceSha256": "6f7a19d7aa0dd689b6ba8bfb457c872baca4886f9af374a7908d4270f11ae471"
+  },
+  "references": {
+    "registryPath": "reference-apps/registry.json",
+    "entries": [
+      {
+        "backend": "mongodb",
+        "id": "ecommerce-l1-action-inputs-2.4-mongodb",
+        "sourceSha256": "76810d72211fc0182aa31b663ffc153a82ff1918cd34902187873a4b53a4ebf2"
+      },
+      {
+        "backend": "postgres",
+        "id": "ecommerce-l1-action-inputs-2.4-postgres",
+        "sourceSha256": "389d778f1835377fd2f92864d6afa20851c65076c80ddecba1e860cf7f4d9ec9"
+      },
+      {
+        "backend": "spacetime",
+        "id": "ecommerce-l1-action-inputs-2.4-spacetime",
+        "sourceSha256": "d5cb5af9db96b3ae4ff2b0d928dec4394ac6f88dfdce83201a0d8508b69902e5"
+      }
+    ]
+  },
+  "mutations": [
+    {
+      "backend": "mongodb",
+      "path": "grader/mutations/mongodb-ecom-l1-modular-2.4.0.json",
+      "sha256": "2820e3f08c74d940bf3436b23631573d4cfe79d5d3a5aa5431b0eb32a826cefb",
+      "referenceId": "ecommerce-l1-action-inputs-2.4-mongodb"
+    },
+    {
+      "backend": "postgres",
+      "path": "grader/mutations/postgres-ecom-l1-modular-2.4.0.json",
+      "sha256": "412ca1f241c20fe3b5383e175bc1fdb6e4b16d3f9c640ee9777f3f1810ad2951",
+      "referenceId": "ecommerce-l1-action-inputs-2.4-postgres"
+    },
+    {
+      "backend": "spacetime",
+      "path": "grader/mutations/spacetime-ecom-l1-modular-2.4.0.json",
+      "sha256": "b722365972260beaf79cdc45f3524fe787d4f9076084bb5f74b27abcd8c81751",
+      "referenceId": "ecommerce-l1-action-inputs-2.4-spacetime"
+    }
+  ],
+  "nullControl": {
+    "pointBearing": "must-fail-conclusively",
+    "zeroPoint": "typed-policy",
+    "repetitions": 1
+  },
+  "controls": [
+    {
+      "stableKey": "ecommerce.spec.concurrency-safety.restock-race.202-control",
+      "role": "precondition",
+      "promotionPolicy": "must-pass-reference",
+      "mutationTargets": [],
+      "reason": "This proves that ordinary restock works before the contended restock check; it does not duplicate the existing scored restock behavior."
+    },
+    {
+      "stableKey": "ecommerce.spec.external-data-sync.external-stock.901b",
+      "role": "precondition",
+      "promotionPolicy": "must-pass-reference",
+      "mutationTargets": [],
+      "reason": "This reload assertion confirms that the scored live update came from persisted data rather than a page-only patch."
+    }
+  ],
+  "qualification": {
+    "exactCombinationRequired": true,
+    "referenceRepetitions": 1,
+    "mutationRepetitions": 1,
+    "runner": {
+      "schemaVersion": 1,
+      "mode": "appliance",
+      "platform": "linux",
+      "architecture": "x64"
+    },
+    "stacks": [
+      {
+        "id": "mongodb",
+        "status": "candidate"
+      },
+      {
+        "id": "postgres",
+        "status": "candidate"
+      },
+      {
+        "id": "spacetime",
+        "status": "candidate"
+      }
+    ],
+    "evidence": []
+  },
+  "equivalenceDecisions": [],
+  "promotion": {
+    "catalogPath": "composition/candidates.json",
+    "catalogSha256": "3095a3821bf14dd3f67b9dd7a90f8391434f34b0888a41751a4bf7f86fd168b9",
+    "alias": "L1",
+    "status": "candidate"
+  }
+}

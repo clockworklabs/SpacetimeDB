@@ -55,7 +55,8 @@ test('throttle waits back off, resume the paid session, and do not spend interru
   assert.deepEqual(waits, [60_000, 120_000]);
   assert.equal(calls[1].resumeSession, 'paid-session');
   assert.equal(calls[2].resumeSession, 'paid-session');
-  assert.deepEqual(coding.throttle, { waits: 2, waitedMs: 180_000, maxWaitMs: 300 * 60_000 });
+  assert.deepEqual(coding.throttle,
+    { waits: 2, waitedMs: 180_000, maxWaitMs: 300 * 60_000, jitterMs: 0 });
   assert.equal(coding.interruptions.length, 2);
   assert.ok(coding.interruptions.every(item => item.kind === 'provider-throttled'));
   assert.match(logs[0], /provider throttled \(status 429\)/);
@@ -96,7 +97,24 @@ test('an unbroken throttle stops at the wait budget with a throttle-specific fai
   assert.deepEqual(waits, [60_000, 120_000]);
   assert.equal(calls, 3);
   assert.match(coding.spawnError, /provider stayed throttled \(status 429\) after 3 minutes/);
-  assert.deepEqual(coding.throttle, { waits: 2, waitedMs: 180_000, maxWaitMs: 5 * 60_000 });
+  assert.deepEqual(coding.throttle,
+    { waits: 2, waitedMs: 180_000, maxWaitMs: 5 * 60_000, jitterMs: 0 });
+});
+
+test('a stable throttle offset spreads concurrent retries without changing retry accounting', () => {
+  const waits = [];
+  let calls = 0;
+  const coding = runCodingSessionWithRecovery({ prompt: 'build', retryLimit: 0,
+    throttleJitterMs: 17_000, sleep: ms => waits.push(ms), log: () => {},
+    invoke() {
+      calls += 1;
+      return calls === 1
+        ? JSON.stringify({ is_error: true, terminal_reason: 'api_error', api_error_status: 429 })
+        : JSON.stringify({ is_error: false, session_id: 'done', usage: {} });
+    } });
+  assert.deepEqual(waits, [77_000]);
+  assert.deepEqual(coding.throttle,
+    { waits: 1, waitedMs: 77_000, maxWaitMs: 300 * 60_000, jitterMs: 17_000 });
 });
 
 test('only a non-OOM forced exit is eligible for container recovery', () => {

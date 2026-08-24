@@ -687,7 +687,7 @@ async function main() {
   }
   // Bounded above by the adapter deadline: bench.mjs kills this whole process
   // at deadlineMs, so a wait budget past that point would promise time the
-  // supervisor never grants. DEFAULT_THROTTLE_MAX_WAIT_MINUTES is sized to
+  // supervisor never grants. DEFAULT_THROTTLE_MAX_WAIT_MS is sized to
   // span one full subscription usage-window reset.
   const throttleWaitRaw = process.env.STACK_BENCH_PROVIDER_THROTTLE_MAX_WAIT_MINUTES
     ?? String(DEFAULT_THROTTLE_MAX_WAIT_MS / 60_000);
@@ -697,6 +697,10 @@ async function main() {
     throw new Error('STACK_BENCH_PROVIDER_THROTTLE_MAX_WAIT_MINUTES must be an integer from 0 to '
       + `${DEFAULT_THROTTLE_MAX_WAIT_MS / 60_000}`);
   }
+  // Concurrent campaign slots must not wake and retry as one burst. This
+  // stable offset keeps retries reproducible while spreading them over 45s.
+  const throttleJitterMs = parseInt(sha256(Buffer.from(
+    `${args.backend}:${args.runIndex}:${args.level}:${args.mode}`)).slice(0, 8), 16) % 45_001;
   let coding;
   try {
     // The prompt goes in on stdin, not as an argument. Windows caps a command
@@ -731,6 +735,7 @@ async function main() {
     // stated in one place — see container/run-build.mjs.
     coding = runCodingSessionWithRecovery({ prompt, retryLimit, maxBudgetUsd: args.maxBudgetUsd,
       throttleMaxWaitMs: throttleMaxWaitMinutes * 60_000,
+      throttleJitterMs,
       invoke: ({ input, maxBudgetUsd, resumeSession, recoverStoppedContainer }) =>
         execFileSync(process.execPath, [
           join(ROOT, 'container', 'run-build.mjs'),
@@ -751,7 +756,8 @@ async function main() {
   } catch (err) {
     coding = { raw: '', spawnError: codingSessionFailure(err), sessionResults: [],
       interruptions: [], result: {},
-      throttle: { waits: 0, waitedMs: 0, maxWaitMs: throttleMaxWaitMinutes * 60_000 } };
+      throttle: { waits: 0, waitedMs: 0, maxWaitMs: throttleMaxWaitMinutes * 60_000,
+        jitterMs: throttleJitterMs } };
   }
 
   // The session is over, so the lint endpoint has no reason to stay open — and
@@ -760,19 +766,14 @@ async function main() {
   killTree(lintServer.pid);
 
   const { raw, spawnError, sessionResults, interruptions, result, throttle } = coding;
-  // A session that never started produced no code. Reject it instead of grading
-  // an empty directory as a real backend result.
-  if (spawnError || (!result.session_id && !raw.trim())) {
-    console.error(`\nAGENT DID NOT RUN — ${spawnError ?? 'the session produced no output'}`);
-    process.exitCode = 1;
-    return;
-  }
+  const noOutput = !result.session_id && !raw.trim();
+  const failed = Boolean(spawnError || noOutput);
   const usage = result.usage ?? {};
   const input = usage.input_tokens ?? 0;
   const output = usage.output_tokens ?? 0;
   const cacheWrite = usage.cache_creation_input_tokens ?? 0;
   const cacheRead = usage.cache_read_input_tokens ?? 0;
-  const turns = result.num_turns ?? null;
+  const turns = result.num_turns ?? 0;
 
   // A single total cannot say WHY one backend cost more, and the answer is
   // almost never the database. Cost here is roughly (turns × prompt size):
@@ -808,7 +809,8 @@ async function main() {
       // duration compared without this figure blames the backend for the
       // account's usage window.
       providerThrottle: { maxWaitMinutes: throttleMaxWaitMinutes,
-        waits: throttle?.waits ?? 0, waitedMs: throttle?.waitedMs ?? 0 },
+        waits: throttle?.waits ?? 0, waitedMs: throttle?.waitedMs ?? 0,
+        jitterMs: throttle?.jitterMs ?? throttleJitterMs },
       // In a container the host CLI is not the one that ran, so the version is
       // read from the image. Reporting the host's would attribute a number to
       // software that took no part in producing it.
@@ -853,8 +855,16 @@ async function main() {
     thinking: combinedThinkingVolume(args.app, sessionResults.map(item => item.session_id)),
     durationMs: Date.now() - started,
     sessionId: result.session_id ?? null,
-    ok: result.is_error === false,
-    providerMetadata: { failureCode: result.is_error === true ? 'provider-session-error' : null,
+    ok: !failed && result.is_error === false,
+    providerMetadata: { failureCode: failed
+      ? String(spawnError ?? '').startsWith('provider stayed throttled')
+        ? 'provider-throttle-exhausted' : noOutput ? 'coding-session-no-output' : 'coding-session-failed'
+      : result.is_error === true ? 'provider-session-error' : null,
+      failure: failed ? {
+        providerStatus: result.api_error_status ?? null,
+        waitedMs: throttle?.waitedMs ?? 0,
+        waits: throttle?.waits ?? 0,
+      } : null,
       interruptions, invocations: sessionResults.length,
       sessionIds: [...new Set(sessionResults.map(item => item.session_id).filter(Boolean))] },
   };

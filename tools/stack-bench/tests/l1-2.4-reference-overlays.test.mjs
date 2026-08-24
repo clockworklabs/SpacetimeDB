@@ -23,7 +23,8 @@ test('L1 2.4 references expose exact buy, restock, and cart action inputs', () =
     for (const [backend, sourceSha256] of expected) {
       const fixture = fixtures.get(backend);
       assert(fixture, `missing ${backend} L1 2.4 fixture`);
-      assert.deepEqual(fixture.recipes, ['ecommerce.l1-modular@2.4.0']);
+      assert.deepEqual(fixture.recipes,
+        ['ecommerce.l1-modular@2.4.0', 'ecommerce.l1-modular@2.5.0']);
       const first = join(root, `${backend}-first`);
       const second = join(root, `${backend}-second`);
       assert.equal(prepareReferenceFixtureSource(fixture, first).sha256, sourceSha256);

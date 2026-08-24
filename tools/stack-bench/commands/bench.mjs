@@ -807,6 +807,7 @@ async function main() {
       console.log(`  ABORTED: ${buildFailure.reason} — see ${join(appDir, `.session-*-l${level}.json`)}`);
       const failedSession = { sessionId: build.sessionId ?? null, costUsd: build.costUsd,
         durationMs: build.durationMs, usage: build.usage ?? null,
+        providerThrottle: build.setup?.providerThrottle ?? null,
         transcript: build.transcript ?? null, provenance: build.provenance ?? null,
         providerMetadata: build.providerMetadata ?? null };
       run.levels.push({ level, score: null, max: null, error: buildFailure.reason,
@@ -985,6 +986,7 @@ async function main() {
       fixCost += fix.costUsd;
       fixSessions.push({ round: fixRounds, sessionId: fix.sessionId ?? null,
         costUsd: fix.costUsd, durationMs: fix.durationMs, usage: fix.usage ?? null,
+        providerThrottle: fix.setup?.providerThrottle ?? null,
         tokens: fix.tokens ?? null, outputTokens: fix.outputTokens ?? null,
         turns: fix.turns ?? null, promptBytes: fix.promptBytes ?? null,
         thinking: fix.thinking ?? null, transcript: fix.transcript ?? null,
@@ -1102,6 +1104,7 @@ async function main() {
     }
     const buildSession = { sessionId: build.sessionId, costUsd: build.costUsd,
       durationMs: build.durationMs, usage: build.usage ?? null,
+      providerThrottle: build.setup?.providerThrottle ?? null,
       tokens: build.tokens ?? null, outputTokens: build.outputTokens ?? null,
       turns: build.turns ?? null, promptBytes: build.promptBytes ?? null,
       thinking: build.thinking ?? null, transcript: build.transcript ?? null,

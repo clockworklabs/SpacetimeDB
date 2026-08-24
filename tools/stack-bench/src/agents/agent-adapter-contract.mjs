@@ -174,6 +174,7 @@ export function agentSessionFailure(result) {
   return { kind: 'harness_failure', phase: 'coding-session',
     reason: typeof failureCode === 'string' && failureCode ? failureCode
       : result.sessionId ? 'coding session reported failure' : 'coding session did not run',
+    provider: result.providerMetadata?.failure ?? null,
     appFailures: [], inconclusive: [], harnessFailures: [] };
 }
 
