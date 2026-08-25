@@ -34,7 +34,8 @@ function contained(root, path, label) {
   return absolute;
 }
 
-export function attemptArgv(plan, attempt, output, runIndex, progressionPath = null) {
+export function attemptArgv(plan, attempt, output, runIndex, progressionPath = null,
+  progressionResumeFrom = null) {
   if (!Number.isInteger(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
     throw new Error(`attempt ${attempt.id} requires a run slot from 0 through ${RUN_INDEX_CAP}`);
   }
@@ -62,7 +63,16 @@ export function attemptArgv(plan, attempt, output, runIndex, progressionPath = n
       '--progression-sha256', attempt.progression.sha256,
       '--campaign-sha256', plan.contentSha256,
       '--campaign-attempt-id', attempt.id);
+    if (progressionResumeFrom !== null) {
+      if (typeof progressionResumeFrom !== 'string' || !progressionResumeFrom) {
+        throw new Error(`attempt ${attempt.id} has an invalid progression resume directory`);
+      }
+      args.push('--progression-resume-from', resolve(progressionResumeFrom));
+    }
   } else {
+    if (progressionResumeFrom !== null) {
+      throw new Error(`strict attempt ${attempt.id} cannot resume dependency progression state`);
+    }
     args.push('--levels', levels);
   }
   args.push('--run-index', String(runIndex),
@@ -799,7 +809,10 @@ export async function executeCampaign(campaignFile, directory,
       let processResult;
       try {
         processResult = await execute(process.execPath,
-        attemptArgv(plan, claim.attempt, output, claim.runIndex, initialized.paths.plan), {
+        attemptArgv(plan, claim.attempt, output, claim.runIndex, initialized.paths.plan,
+          claim.attempt.mode?.id !== 'dependency' || claim.resumeFrom === null ? null
+            : contained(initialized.paths.root, claim.resumeFrom,
+              'progression resume directory')), {
           cwd: ROOT,
           env: { ...campaignSlotEnvironment(executionEnv, claim.attempt.stack, claim.runIndex),
             STACK_BENCH_SUPERVISOR_STATE: supervisorState },

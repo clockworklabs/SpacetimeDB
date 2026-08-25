@@ -196,6 +196,8 @@ export function claimNextAttempt(input, { now = new Date().toISOString(), admiss
   if (runIndex === undefined) return { state, claim: null, capacityFull: true };
   const attempt = state.attempts.find(candidate => candidate.status === 'pending');
   if (!attempt) return { state, claim: null, capacityFull: false };
+  const previous = attempt.executions.at(-1) ?? null;
+  const resumeFrom = previous?.retry?.scheduled === true ? previous.output : null;
   const ordinal = attempt.executions.length + 1;
   const id = `${attempt.plan.id}-execution${ordinal}`;
   const output = `attempts/${attempt.plan.id}/execution-${ordinal}`;
@@ -204,7 +206,8 @@ export function claimNextAttempt(input, { now = new Date().toISOString(), admiss
     completedAt: null, exitCode: null, outcome: null, reason: null, retry: null,
     admissionId, runIndex });
   return { state: validateCampaignState(recalculate(state, now)),
-    claim: { attempt: structuredClone(attempt.plan), executionId: id, output, runIndex },
+    claim: { attempt: structuredClone(attempt.plan), executionId: id, output, runIndex,
+      resumeFrom },
     capacityFull: false };
 }
 

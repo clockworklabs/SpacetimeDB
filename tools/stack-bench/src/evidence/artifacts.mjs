@@ -47,7 +47,8 @@ const ENVELOPE_KEYS = new Set([
 const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'track', 'backend', 'model', 'guidance',
   'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
   'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
-  'skills', 'runtime', 'progression', 'progressionOwner', 'progressionStatus']);
+  'skills', 'runtime', 'progression', 'progressionOwner', 'progressionStatus',
+  'progressionResume']);
 const PAYLOAD_FIELDS = Object.freeze({
   action_check: new Set(['backend', 'results', 'missing']),
   backend_lease_evidence: new Set(['version', 'runId', 'backend', 'track', 'runIndex', 'ownerPid',
@@ -81,7 +82,7 @@ const PAYLOAD_FIELDS = Object.freeze({
     'cpuSecondsPer1kDelivered']),
   preflight: new Set(['schemaVersion', 'generatedAt', 'request', 'ok', 'summary', 'checks']),
   progression_state: new Set(['schemaVersion', 'owner', 'progression', 'events', 'snapshot',
-    'snapshotSha256']),
+    'resume', 'snapshotSha256']),
   repair_continuation: new Set([...BENCHMARK_RUN_PAYLOAD_FIELDS, 'continuation']),
   repair_process: new Set(['schemaVersion', 'parentRunId', 'level', 'roundsGranted',
     'exitCode', 'signal', 'timedOut', 'streams']),
@@ -233,6 +234,41 @@ function validatePayload(kind, payload) {
       fail(`${kind} payload.progressionStatus.score must be an object`);
     }
   }
+  if (kind === 'benchmark_run' && payload.progressionResume !== undefined) {
+    if (!isObject(payload.progressionResume)) {
+      fail('benchmark_run payload.progressionResume must be an object');
+    }
+    const fields = new Set(['priorRunId', 'priorRunSha256', 'stateSnapshotSha256',
+      'action', 'inheritedLevels', 'priorTotals']);
+    for (const key of Object.keys(payload.progressionResume)) {
+      if (!fields.has(key)) fail(`benchmark_run payload.progressionResume.${key} is unknown`);
+    }
+    if (typeof payload.progressionResume.priorRunId !== 'string'
+      || !payload.progressionResume.priorRunId) {
+      fail('benchmark_run payload.progressionResume.priorRunId is invalid');
+    }
+    for (const field of ['priorRunSha256', 'stateSnapshotSha256']) {
+      if (!HASH.test(payload.progressionResume[field] ?? '')) {
+        fail(`benchmark_run payload.progressionResume.${field} is invalid`);
+      }
+    }
+    if (!isObject(payload.progressionResume.action)
+      || !['build', 'repair', 'terminal'].includes(payload.progressionResume.action.type)
+      || (payload.progressionResume.action.type !== 'terminal'
+        && (!Number.isSafeInteger(payload.progressionResume.action.level)
+          || payload.progressionResume.action.level < 1))) {
+      fail('benchmark_run payload.progressionResume.action is invalid');
+    }
+    if (!Array.isArray(payload.progressionResume.inheritedLevels)
+      || payload.progressionResume.inheritedLevels.some(level =>
+        !Number.isSafeInteger(level) || level < 1)) {
+      fail('benchmark_run payload.progressionResume.inheritedLevels is invalid');
+    }
+    if (payload.progressionResume.priorTotals !== null
+      && !isObject(payload.progressionResume.priorTotals)) {
+      fail('benchmark_run payload.progressionResume.priorTotals is invalid');
+    }
+  }
   if (kind === 'progression_state') {
     if (payload.schemaVersion !== 1) fail('progression_state payload.schemaVersion must be 1');
     objectWhenPresent('owner');
@@ -241,6 +277,34 @@ function validatePayload(kind, payload) {
     arrayWhenPresent('events');
     if (!HASH.test(payload.snapshotSha256 ?? '')) {
       fail('progression_state payload.snapshotSha256 is invalid');
+    }
+    if (payload.resume !== undefined) {
+      if (!isObject(payload.resume)) fail('progression_state payload.resume must be an object');
+      const resumeFields = new Set(['actionSha256', 'source']);
+      for (const key of Object.keys(payload.resume)) {
+        if (!resumeFields.has(key)) fail(`progression_state payload.resume.${key} is unknown`);
+      }
+      if (!HASH.test(payload.resume.actionSha256 ?? '')) {
+        fail('progression_state payload.resume.actionSha256 is invalid');
+      }
+      if (!isObject(payload.resume.source)) {
+        fail('progression_state payload.resume.source must be an object');
+      }
+      const sourceFields = new Set(['directory', 'sha256', 'files']);
+      for (const key of Object.keys(payload.resume.source)) {
+        if (!sourceFields.has(key)) fail(`progression_state payload.resume.source.${key} is unknown`);
+      }
+      if (typeof payload.resume.source.directory !== 'string'
+        || !payload.resume.source.directory) {
+        fail('progression_state payload.resume.source.directory is invalid');
+      }
+      if (!HASH.test(payload.resume.source.sha256 ?? '')) {
+        fail('progression_state payload.resume.source.sha256 is invalid');
+      }
+      if (!Number.isSafeInteger(payload.resume.source.files)
+        || payload.resume.source.files < 0) {
+        fail('progression_state payload.resume.source.files is invalid');
+      }
     }
   }
   if (kind === 'repair_continuation') {

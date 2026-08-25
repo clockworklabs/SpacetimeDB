@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { gradeArgv, parseArgs, repairHistoryEntry, repairProgressState } from '../commands/bench.mjs';
+import { finalizeRunTotals, gradeArgv, parseArgs, repairHistoryEntry, repairProgressState }
+  from '../commands/bench.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { compileProgressionInput } from '../src/progression/progression-definition.mjs';
@@ -14,6 +15,22 @@ test('direct runs default to ten repair rounds while an explicit budget still wi
   assert.equal(parseArgs(['node', 'bench', '--backend', 'postgres']).fixRounds, 10);
   assert.equal(parseArgs(['node', 'bench', '--backend', 'postgres',
     '--fix-rounds', '4']).fixRounds, 4);
+});
+
+test('resumed dependency costs separate prior, current, and cumulative execution usage', () => {
+  const run = { levels: [
+    { level: 1, graded: true, score: 1, max: 1, buildCostUsd: 4,
+      sessionTotals: { sessions: 1, tokens: 10, outputTokens: 2, turns: 1, durationMs: 100 } },
+    { level: 2, graded: true, score: 1, max: 1, fixCostUsd: 2,
+      sessionTotals: { sessions: 1, tokens: 5, outputTokens: 1, turns: 1, durationMs: 50 } },
+  ], progressionResume: { inheritedLevels: [1],
+    priorTotals: { costUsd: 4, costComplete: true } } };
+  finalizeRunTotals(run, 1_000, { now: 3_000 });
+  assert.equal(run.totals.priorExecutionCostUsd, 4);
+  assert.equal(run.totals.currentExecutionCostUsd, 2);
+  assert.equal(run.totals.cumulativeCostUsd, 6);
+  assert.equal(run.totals.costUsd, 6);
+  assert.equal(run.totals.costComplete, true);
 });
 
 test('dependency run levels come only from the compiled progression graph', () => {

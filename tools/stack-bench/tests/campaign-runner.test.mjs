@@ -126,6 +126,10 @@ test('dependency attempts pass one progression input and no separate level range
   assert.equal(argv[argv.indexOf('--progression-sha256') + 1], progression.identity.sha256);
   assert.equal(argv[argv.indexOf('--campaign-sha256') + 1], dependencyPlan.contentSha256);
   assert.equal(argv[argv.indexOf('--campaign-attempt-id') + 1], attempt.id);
+  const resumedArgv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency-2', 0,
+    '/campaign/plan.json', '/campaign/dependency-1');
+  assert.equal(resumedArgv[resumedArgv.indexOf('--progression-resume-from') + 1],
+    resolve('/campaign/dependency-1'));
   assert.throws(() => attemptArgv(dependencyPlan, attempt, '/campaign/dependency', 0),
     /requires its compiled campaign plan path/);
   assert.throws(() => attemptArgv(dependencyPlan, { ...attempt,

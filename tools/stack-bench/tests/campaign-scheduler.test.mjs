@@ -81,6 +81,7 @@ test('invalid executions remain visible and retries append rather than overwrite
   const second = claimNextAttempt(retryable, { now: '2026-08-12T00:03:00.000Z',
     admissionId: 'admission-1' });
   assert.equal(second.claim.executionId, `${campaign.attempts[0].id}-execution2`);
+  assert.equal(second.claim.resumeFrom, retryable.attempts[0].executions[0].output);
   const complete = finishCampaignExecution(second.state, second.claim.executionId, {
     exitCode: 0, run: { outcome: { kind: 'passed' } },
   }, { retries: 1, retryOn: ['harness_failure'], now: '2026-08-12T00:04:00.000Z' });

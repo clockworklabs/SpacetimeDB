@@ -70,7 +70,7 @@ export function validateProgressionOwner(input, { requireWorkspace = false } = {
   return owner;
 }
 
-function storedPayload(progression, owner, state) {
+function storedPayload(progression, owner, state, resume = null) {
   progression = validateProgressionInput(progression);
   owner = validateProgressionOwner(owner, { requireWorkspace: true });
   state = progressionEngine.resume(state);
@@ -82,7 +82,8 @@ function storedPayload(progression, owner, state) {
   const events = snapshot.events;
   delete snapshot.definition;
   delete snapshot.events;
-  const content = { owner, progression: progression.identity, events, snapshot };
+  const content = { owner, progression: progression.identity, events, snapshot,
+    ...(resume === null ? {} : { resume: structuredClone(resume) }) };
   return { schemaVersion: 1, ...content,
     snapshotSha256: sha256(canonicalDefinitionJson(content)) };
 }
@@ -103,7 +104,8 @@ function restorePayload(payload, progression, owner) {
     throw new Error('progression state artifact has the wrong campaign attempt owner');
   }
   const content = { owner: payload.owner, progression: payload.progression, events: payload.events,
-    snapshot: payload.snapshot };
+    snapshot: payload.snapshot,
+    ...(payload.resume === undefined ? {} : { resume: payload.resume }) };
   if (sha256(canonicalDefinitionJson(content)) !== payload.snapshotSha256) {
     throw new Error('progression state snapshot identity does not match its contents');
   }
@@ -112,13 +114,14 @@ function restorePayload(payload, progression, owner) {
   }
   const state = { ...structuredClone(payload.snapshot), definition: progression.definition,
     events: structuredClone(payload.events) };
-  return { state: progressionEngine.resume(state), snapshotSha256: payload.snapshotSha256 };
+  return { state: progressionEngine.resume(state), snapshotSha256: payload.snapshotSha256,
+    resume: payload.resume === undefined ? null : structuredClone(payload.resume) };
 }
 
 export function writeProgressionState(path, { progression, state,
-  owner, id = 'progression-state' } = {}) {
+  owner, resume = null, id = 'progression-state' } = {}) {
   owner = validateProgressionOwner(owner, { requireWorkspace: true });
-  const payload = storedPayload(progression, owner, state);
+  const payload = storedPayload(progression, owner, state, resume);
   const artifact = writeArtifact(resolve(path), { kind: 'progression_state', id,
     attempt: { id: owner.attempt.id, parentId: owner.campaign.id },
     identities: emptyArtifactIdentities({ experiment: {

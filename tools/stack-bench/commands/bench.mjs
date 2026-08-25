@@ -30,7 +30,7 @@ import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifa
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
   mutationControlEligible, runExitCode } from '../src/evidence/outcomes.mjs';
 import { summarizeSessions } from '../src/evidence/session-metrics.mjs';
-import { hashDirectory } from '../src/evidence/provenance.mjs';
+import { hashDirectory, sha256 } from '../src/evidence/provenance.mjs';
 import { createBackendLease, newRunId, publicBackendLease, readBackendLease,
   acquireResourceLocks, backendResourceLockKeys, releaseResourceLocks, resourceLockScope,
   updateBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
@@ -85,6 +85,7 @@ export function parseArgs(argv) {
       case '--progression-sha256': a.progressionSha256 = argv[++i]; break;
       case '--campaign-sha256': a.campaignSha256 = argv[++i]; break;
       case '--campaign-attempt-id': a.campaignAttemptId = argv[++i]; break;
+      case '--progression-resume-from': a.progressionResumeFrom = resolve(argv[++i]); break;
       case '--recipe': a.recipe = argv[++i]; break;
       case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--check': a.checkKeys.push(...argv[++i].split(',').filter(Boolean)); break;
@@ -148,6 +149,9 @@ export function parseArgs(argv) {
   }
   if (!a.progressionFile && (a.campaignSha256 || a.campaignAttemptId)) {
     throw new Error('campaign progression binding requires --progression-file');
+  }
+  if (a.progressionResumeFrom && !a.progressionFile) {
+    throw new Error('--progression-resume-from requires a compiled campaign progression');
   }
   if (a.progressionFile) {
     const unsupported = [
@@ -371,13 +375,25 @@ function runAgent(args, adapter, mode, level, appDir) {
 }
 
 export function finalizeRunTotals(run, started, { now = Date.now(), costComplete = true } = {}) {
+  const inherited = new Set(run.progressionResume?.inheritedLevels ?? []);
+  const currentLevels = run.levels.filter(level => !inherited.has(level.level));
+  const currentExecutionCostUsd = Number(currentLevels.reduce((n, level) => n
+    + (level.buildCostUsd ?? level.resumeCostUsd ?? 0)
+    + (level.fixCostUsd ?? 0), 0).toFixed(4));
+  const priorExecutionCostUsd = run.progressionResume?.priorTotals?.costUsd ?? null;
+  const cumulativeCostUsd = run.progressionResume
+    ? (typeof priorExecutionCostUsd === 'number'
+      ? Number((priorExecutionCostUsd + currentExecutionCostUsd).toFixed(4)) : null)
+    : currentExecutionCostUsd;
   run.totals = {
     score: run.levels.reduce((n, level) => n + (level.score ?? 0), 0),
     max: run.levels.reduce((n, level) => n + (level.max ?? 0), 0),
-    costUsd: Number(run.levels.reduce((n, level) => n
-      + (level.buildCostUsd ?? level.resumeCostUsd ?? 0)
-      + (level.fixCostUsd ?? 0), 0).toFixed(4)),
-    costComplete,
+    costUsd: cumulativeCostUsd,
+    costComplete: costComplete && (!run.progressionResume
+      || (typeof priorExecutionCostUsd === 'number'
+        && run.progressionResume.priorTotals?.costComplete !== false)),
+    ...(run.progressionResume ? { priorExecutionCostUsd, currentExecutionCostUsd,
+      cumulativeCostUsd } : {}),
     fixRounds: run.levels.reduce((n, level) => n + (level.fixRounds ?? 0), 0),
     sessions: run.levels.reduce((n, level) => n + (level.sessionTotals?.sessions ?? 0), 0),
     tokens: run.levels.reduce((n, level) => n + (level.sessionTotals?.tokens ?? 0), 0),
@@ -928,6 +944,7 @@ async function main() {
       backend: args.backend,
       identities: run.identities,
       recipeBindings: args.recipeBindings,
+      resumeFrom: args.progressionResumeFrom ?? null,
       getRunArtifact: () => {
         writeRunJson(join(args.out, 'run.json'), run);
         return readArtifact(join(args.out, 'run.json'));
@@ -937,7 +954,29 @@ async function main() {
         writeRunJson(join(args.out, 'run.json'), run);
       },
     }) : null;
-  progressionExecution?.initialize();
+  const progressionStart = progressionExecution?.initialize() ?? null;
+  if (progressionStart?.resumed) {
+    const prior = progressionStart.priorRun;
+    const actionLevel = progressionStart.action.type === 'terminal'
+      ? Number.MAX_SAFE_INTEGER : progressionStart.action.level;
+    const inheritedLevels = (prior.payload.levels ?? [])
+      .filter(level => level.level < actionLevel).map(level => level.level);
+    run.levels = (prior.payload.levels ?? [])
+      .filter(level => inheritedLevels.includes(level.level)).map(level => structuredClone(level));
+    run.validation.ladder.completedLevels = [...inheritedLevels];
+    run.progressionResume = {
+      priorRunId: prior.id,
+      priorRunSha256: sha256(canonicalDefinitionJson(prior)),
+      stateSnapshotSha256: progressionStart.snapshotSha256,
+      action: progressionStart.action.type === 'terminal'
+        ? { type: 'terminal' }
+        : { type: progressionStart.action.type, level: progressionStart.action.level },
+      inheritedLevels,
+      priorTotals: prior.payload.totals ?? null,
+    };
+    run.progressionStatus = progressionStart.status;
+    writeRunJson(join(args.out, 'run.json'), run);
+  }
 
   const bindProgressionAction = level => {
     if (!progressionExecution) return null;
@@ -987,16 +1026,28 @@ async function main() {
   };
 
   for (const level of args.levelList) {
+    if (progressionExecution && level < progressionExecution.state.level) continue;
     const t0 = Date.now();
     const continuing = Boolean(args.repairGrant);
     console.log(`\n================ ${args.backend} — level ${level} ================`);
 
     let progressionSelection = bindProgressionAction(level);
     if (progressionSelection?.action.type === 'terminal') break;
+    const resumedRepair = progressionStart?.resumed === true
+      && progressionStart.action.type === 'repair'
+      && progressionStart.action.level === level;
+    const priorRepairRounds = resumedRepair
+      ? Math.max(0, progressionStart.action.strikes.used - 1) : 0;
+    if (resumedRepair) {
+      sh('node', [join(ROOT, 'commands', 'report-bugs.mjs'), '--app', appDir,
+        '--history-json', '[]', '--archive', join(appDir, 'stack-bench', 'records',
+          `bug-report-l${level}-resume.md`)], { stdio: 'pipe' });
+    }
 
-    const firstMode = continuing ? 'resume' : args.seedFrom ? 'upgrade' : 'build';
+    const firstMode = resumedRepair ? 'fix'
+      : continuing ? 'resume' : args.seedFrom ? 'upgrade' : 'build';
     const build = await runAgentForLevel(
-      level === args.levelList[0] ? firstMode : 'upgrade', level, appDir);
+      resumedRepair || level === args.levelList[0] ? firstMode : 'upgrade', level, appDir);
     const buildLeak = auditContamination(appDir);
     if (buildLeak) abortContaminated(`level ${level} ${firstMode}`, buildLeak);
     // Carry the agent's own record of the setup up to the run. Comparing two
@@ -1105,7 +1156,7 @@ async function main() {
     }
 
     const selectedObservedChecks = args.recipeTasks?.get(level)?.selection?.observedChecks ?? [];
-    if (!continuing && selectedObservedChecks.length) {
+    if (!continuing && !resumedRepair && selectedObservedChecks.length) {
       const observationOut = join(args.out, `first-build-l${level}-observed`);
       let observationBundle = null;
       let observationOutcome;
@@ -1152,9 +1203,16 @@ async function main() {
       console.log(`  !! could not keep the first build: ${String(e.message).split('\n')[0]}`);
     }
 
-    let fixRounds = 0;
-    let fixCost = 0;
-    const fixSessions = [];
+    let fixRounds = resumedRepair ? 1 : 0;
+    let fixCost = resumedRepair ? build.costUsd : 0;
+    const fixSessions = resumedRepair ? [{ round: priorRepairRounds + 1,
+      sessionId: build.sessionId ?? null, costUsd: build.costUsd,
+      durationMs: build.durationMs, usage: build.usage ?? null,
+      providerThrottle: build.setup?.providerThrottle ?? null,
+      tokens: build.tokens ?? null, outputTokens: build.outputTokens ?? null,
+      turns: build.turns ?? null, promptBytes: build.promptBytes ?? null,
+      thinking: build.thinking ?? null, transcript: build.transcript ?? null,
+      provenance: build.provenance ?? null, providerMetadata: build.providerMetadata ?? null }] : [];
     const repairHistory = [];
     let regressed = false;
     let repairStopReason = null;
@@ -1182,10 +1240,11 @@ async function main() {
       level,
       repair: {
         status: !initialGradeUsable ? 'ungraded'
+          : resumedRepair ? (initialBundleOutcome.kind === 'passed' ? 'corrected' : 'incomplete')
           : initialBundleOutcome.kind === 'passed' ? 'not-needed' : 'incomplete',
         budgetRounds: progressionSelection
           ? Math.max(0, progressionSelection.action.strikes.budget - 1) : args.fixRounds,
-        roundsUsed: 0,
+        roundsUsed: priorRepairRounds + (resumedRepair ? 1 : 0),
         ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
         stopReason: !initialGradeUsable ? 'initial-grading-failed'
           : initialBundleOutcome.kind === 'passed' ? 'not-needed' : null,
@@ -1202,7 +1261,7 @@ async function main() {
           status: classifyBundle(bundle).kind === 'passed' ? 'corrected' : 'incomplete',
           budgetRounds: progressionSelection
             ? Math.max(0, progressionSelection.action.strikes.budget - 1) : args.fixRounds,
-          roundsUsed: fixRounds,
+          roundsUsed: priorRepairRounds + fixRounds,
           ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
           stopReason: null,
         },
@@ -1249,7 +1308,7 @@ async function main() {
       console.log(`--- fix round ${fixRounds}/${displayedRepairBudget} ---`);
       const fix = await runAgentForLevel('fix', level);
       fixCost += fix.costUsd;
-      fixSessions.push({ round: fixRounds, sessionId: fix.sessionId ?? null,
+      fixSessions.push({ round: priorRepairRounds + fixRounds, sessionId: fix.sessionId ?? null,
         costUsd: fix.costUsd, durationMs: fix.durationMs, usage: fix.usage ?? null,
         providerThrottle: fix.setup?.providerThrottle ?? null,
         tokens: fix.tokens ?? null, outputTokens: fix.outputTokens ?? null,
@@ -1364,7 +1423,7 @@ async function main() {
     const repair = {
       status: repairStatus,
       budgetRounds: repairBudgetRounds,
-      roundsUsed: fixRounds,
+      roundsUsed: priorRepairRounds + fixRounds,
       ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
       stopReason,
       ...(progressionStrikes ? {
@@ -1404,7 +1463,8 @@ async function main() {
       turns: build.turns ?? null, promptBytes: build.promptBytes ?? null,
       thinking: build.thinking ?? null, transcript: build.transcript ?? null,
       provenance: build.provenance ?? null, providerMetadata: build.providerMetadata ?? null };
-    const sessionTotals = summarizeSessions([buildSession, ...fixSessions]);
+    const sessionTotals = summarizeSessions(resumedRepair ? fixSessions
+      : [buildSession, ...fixSessions]);
     run.levels.push({
       level,
       graded,
@@ -1416,7 +1476,9 @@ async function main() {
       // missing from the durable record.
       regression: bundle?.totals?.regression ?? null,
       selection: bundle?.selection ?? null,
-      ...(continuing
+      ...(resumedRepair
+        ? { resumedRepair: firstBuild }
+        : continuing
         ? { baseline: firstBuild, resumeCostUsd: build.costUsd, resumeSession: buildSession }
         : { firstBuild, buildCostUsd: build.costUsd, buildSession }),
       contractPass: bundle?.totals?.contractPass ?? null,
@@ -1439,6 +1501,8 @@ async function main() {
       // level record was dropping it, so the guarantee was not holding.
       thinking: sessionTotals.thinking,
       fixRounds,
+      ...(resumedRepair ? { priorRepairRounds,
+        cumulativeFixRounds: priorRepairRounds + fixRounds } : {}),
       repair,
       checkpoint,
       // Keep the summary flag derived from the typed status so the two cannot drift.
