@@ -441,9 +441,29 @@ async function checkExampleInteraction(example, page) {
       await page.waitForFunction(
         () => document.querySelector('#connChip')?.dataset.state === 'connected'
       );
-      await page.locator('#rosterBtn').click();
+      await page.locator('#shareBtn').click();
+      await page.locator('#keyNameInput').fill('Browser smoke');
+      await page.locator('#createKeyBtn').click();
       await page.waitForFunction(
-        () => !document.querySelector('#rosterPanel')?.hasAttribute('hidden')
+        () =>
+          !document.querySelector('#linkBox')?.hasAttribute('hidden') &&
+          document.querySelectorAll('#keyList [data-key]').length === 1
+      );
+      {
+        const firstLink = await page
+          .locator('#linkBox .link-code')
+          .textContent();
+        await page.locator('#keyList [data-rotate]').click();
+        await page.waitForFunction(
+          previous =>
+            document.querySelector('#linkBox .link-code')?.textContent !==
+            previous,
+          firstLink
+        );
+      }
+      await page.locator('#keyList [data-revoke]').click();
+      await page.waitForFunction(
+        () => document.querySelectorAll('#keyList [data-key]').length === 0
       );
       return;
 
@@ -470,6 +490,21 @@ async function checkExampleInteraction(example, page) {
         () =>
           document.querySelectorAll('[data-file].selected').length === 3 &&
           document.querySelector('#bulk-count')?.textContent === '3 selected'
+      );
+      await page.locator('#bulk-public').click();
+      await page.waitForFunction(
+        () =>
+          document.querySelectorAll(
+            '[data-file] .vis-dot.public, [data-file] .badge.public'
+          ).length === 3
+      );
+      await page.locator('#bulk-delete').click();
+      await page.waitForFunction(() =>
+        document.querySelector('#dialog')?.classList.contains('open')
+      );
+      await page.locator('#dialog-ok').click();
+      await page.waitForFunction(
+        () => document.querySelectorAll('[data-file]').length === 0
       );
       return;
 
