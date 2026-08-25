@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Staff roles",
+  "features": [
+    {
+      "id": 621,
+      "name": "Staff roles",
+      "actors": ["admin", "staff"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "621a",
+          "desc": "an administrator can assign a staff role",
+          "points": 2,
+          "statedBy": "An administrator can assign a role to an existing staff account.",
+          "steps": [
+            { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
+            { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
+            { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
+            { "do": "expect", "actor": "admin", "testid": "staff-link", "within": 6000 },
+            { "do": "click", "actor": "admin", "testid": "staff-link" },
+            { "do": "fill", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-row", "contains": "staff" }, "text": "inventory" },
+            { "do": "click", "actor": "admin", "testid": "staff-role-save", "in": { "testid": "staff-role-row", "contains": "staff" } },
+            { "do": "expect", "actor": "admin", "testid": "staff-role-row", "contains": "inventory", "within": 10000 }
+          ]
+        },
+        {
+          "id": "621b",
+          "desc": "a staff member cannot assign roles through the UI or a replayed request",
+          "points": 2,
+          "statedBy": "A staff member cannot assign or change roles.",
+          "steps": [
+            { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
+            { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
+            { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
+            { "do": "expect", "actor": "admin", "testid": "staff-link", "within": 6000 },
+            { "do": "click", "actor": "admin", "testid": "staff-link" },
+            { "do": "fill", "actor": "admin", "testid": "staff-role-select", "in": { "testid": "staff-role-row", "contains": "staff" }, "text": "inventory" },
+            { "do": "click", "actor": "admin", "testid": "staff-role-save", "in": { "testid": "staff-role-row", "contains": "staff" } },
+            { "do": "fill", "actor": "staff", "testid": "staff-signin-username", "text": "staff" },
+            { "do": "fill", "actor": "staff", "testid": "staff-signin-password", "text": "stackbench-staff-2026" },
+            { "do": "click", "actor": "staff", "testid": "staff-signin-submit" },
+            { "do": "expect", "actor": "staff", "testid": "staff-current-user", "contains": "staff", "within": 6000 },
+            { "do": "click", "actor": "staff", "testid": "staff-link" },
+            { "do": "expect", "actor": "staff", "testid": "staff-role-save", "absent": true },
+            { "do": "replayAs", "actor": "staff", "from": "admin", "match": "role", "settleMs": 1500 },
+            { "do": "expectReplayRejected", "actor": "staff" }
+          ]
+        }
+      ]
+    }
+  ]
+}

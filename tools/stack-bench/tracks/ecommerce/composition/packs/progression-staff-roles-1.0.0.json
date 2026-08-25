@@ -4,8 +4,8 @@
   "requiresPacks": ["ecommerce.progression.staff-access@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.progression.staff-roles", "path": "prompts/modular/core-business-features-1.0.0.md", "order": 1250, "from": "## Staff roles", "until": "## Catalog management", "modes": ["upgrade"] }],
-    "contracts": [{ "id": "ecommerce.progression.staff-role-hooks", "path": "contracts/core-business-hooks-1.0.md", "order": 1960, "from": "## Staff role hooks", "until": "## Catalog management hooks", "modes": ["upgrade"] }]
+    "requirements": [{ "id": "ecommerce.progression.staff-roles", "path": "prompts/modular/staff-roles-1.0.0.md", "order": 1250, "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.staff-role-hooks", "path": "contracts/staff-roles-1.0.md", "order": 1960, "modes": ["upgrade"] }]
   },
-  "checks": [{ "id": "roles", "stableId": "staff-roles", "source": "scenarios/progression-core-business-1.0.0.json", "feature": 621, "criteria": ["621a", "621b"], "role": "feature" }]
+  "checks": [{ "id": "roles", "stableId": "staff-roles", "source": "scenarios/progression-staff-roles-1.0.0.json", "feature": 621, "criteria": ["621a", "621b"], "role": "feature" }]
 }

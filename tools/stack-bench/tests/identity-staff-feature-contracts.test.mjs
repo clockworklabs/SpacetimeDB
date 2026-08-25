@@ -46,7 +46,7 @@ test('identity and staff feature packs have exact dependencies and isolated prom
   assert.deepEqual(packs.accounts.requiresPacks, []);
   assert.deepEqual(packs.accounts.task.requirements[0].modes, ['fresh', 'upgrade']);
   assert.deepEqual(packs.accounts.task.contracts[0].modes, ['fresh', 'upgrade']);
-  assert.deepEqual(packs.profile.requiresPacks, ['ecommerce.feature.accounts@1.1.0']);
+  assert.deepEqual(packs.profile.requiresPacks, ['ecommerce.feature.accounts@1.2.0']);
   assert.deepEqual(packs.access.requiresPacks, []);
   assert.deepEqual(packs.roles.requiresPacks, ['ecommerce.progression.staff-access@1.0.0']);
 
@@ -56,6 +56,20 @@ test('identity and staff feature packs have exact dependencies and isolated prom
   assert.doesNotMatch(fragmentText(packs.profile.task.requirements[0]), /Staff roles/);
   assert.doesNotMatch(fragmentText(packs.access.task.requirements[0]), /Support intake/);
   assert.doesNotMatch(fragmentText(packs.roles.task.requirements[0]), /Catalog management/);
+
+  assert.equal(packs.profile.task.requirements[0].path,
+    'prompts/modular/customer-profile-1.0.0.md');
+  assert.equal(packs.profile.task.contracts[0].path, 'contracts/customer-profile-1.0.md');
+  assert.equal(packs.roles.task.requirements[0].path, 'prompts/modular/staff-roles-1.0.0.md');
+  assert.equal(packs.roles.task.contracts[0].path, 'contracts/staff-roles-1.0.md');
+  for (const pack of [packs.profile, packs.roles]) {
+    for (const fragment of [...pack.task.requirements, ...pack.task.contracts]) {
+      assert.equal(fragment.from, undefined);
+      assert.equal(fragment.until, undefined);
+    }
+    assert.doesNotMatch(fragmentText(pack.task.requirements[0]),
+      /framework|ORM|database|MongoDB|PostgreSQL|SpacetimeDB|endpoint|reducer/i);
+  }
 });
 
 test('each feature pack owns exact, bounded criteria without shared setup failures', () => {
@@ -94,4 +108,35 @@ test('staff access is self-contained and staff-role checks inherit its interface
   assert(roles.every(criterion => criterion.steps[0].testid === 'staff-signin-username'));
   assert.equal(roles.find(criterion => criterion.id === '621b').steps
     .some(step => step.do === 'replayAs'), true);
+});
+
+test('profile and staff roles use focused scenarios and dedicated interfaces', () => {
+  assert.equal(packs.profile.checks[0].source,
+    'scenarios/progression-customer-profile-1.0.0.json');
+  assert.equal(packs.roles.checks[0].source,
+    'scenarios/progression-staff-roles-1.0.0.json');
+  for (const pack of [packs.profile, packs.roles]) {
+    const scenario = compileScenarioDefinition(
+      readJson(join(trackRoot, pack.checks[0].source)), { source: pack.checks[0].source });
+    assert.deepEqual(scenario.features.map(feature => feature.id), [pack.checks[0].feature]);
+  }
+
+  const profileContract = fragmentText(packs.profile.task.contracts[0]);
+  for (const hook of ['profile-link', 'profile-name', 'profile-address', 'profile-save',
+    'profile-address-summary']) assert.match(profileContract, new RegExp(`\\b${hook}\\b`));
+
+  const roleContract = fragmentText(packs.roles.task.contracts[0]);
+  for (const hook of ['staff-role-row', 'staff-role-select', 'staff-role-save']) {
+    assert.match(roleContract, new RegExp(`\\b${hook}\\b`));
+  }
+
+  const definition = readJson(join(trackRoot, 'progression', 'ecommerce-1.0.0.json'));
+  const profileNode = definition.nodes.find(node => node.id === 'customer-profile');
+  const rolesNode = definition.nodes.find(node => node.id === 'staff-roles');
+  assert.deepEqual(profileNode.dependencies.map(item => item.id), ['accounts']);
+  assert.deepEqual(rolesNode.dependencies.map(item => item.id), ['staff-access']);
+  assert.deepEqual(profileNode.gradingGroups,
+    ['ecommerce.progression.customer-profile@1.0.0#profile']);
+  assert.deepEqual(rolesNode.gradingGroups,
+    ['ecommerce.progression.staff-roles@1.0.0#roles']);
 });

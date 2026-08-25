@@ -4,8 +4,8 @@
   "requiresPacks": ["ecommerce.feature.accounts@1.2.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.progression.customer-profile", "path": "prompts/modular/core-business-features-1.0.0.md", "order": 1200, "from": "## Customer profile", "until": "## Staff roles", "modes": ["upgrade"] }],
-    "contracts": [{ "id": "ecommerce.progression.customer-profile-hooks", "path": "contracts/core-business-hooks-1.0.md", "order": 1950, "from": "## Customer profile hooks", "until": "## Staff role hooks", "modes": ["upgrade"] }]
+    "requirements": [{ "id": "ecommerce.progression.customer-profile", "path": "prompts/modular/customer-profile-1.0.0.md", "order": 1200, "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.customer-profile-hooks", "path": "contracts/customer-profile-1.0.md", "order": 1950, "modes": ["upgrade"] }]
   },
-  "checks": [{ "id": "profile", "stableId": "customer-profile", "source": "scenarios/progression-core-business-1.0.0.json", "feature": 620, "criteria": ["620a", "620b"], "role": "feature" }]
+  "checks": [{ "id": "profile", "stableId": "customer-profile", "source": "scenarios/progression-customer-profile-1.0.0.json", "feature": 620, "criteria": ["620a", "620b"], "role": "feature" }]
 }
