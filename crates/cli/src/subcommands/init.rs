@@ -203,7 +203,7 @@ pub fn cli() -> clap::Command {
             Arg::new("native-aot")
                 .long("native-aot")
                 .action(clap::ArgAction::SetTrue)
-                .help("Configure C# project for NativeAOT-LLVM compilation (experimental, Windows only)"),
+                .help("Configure C# project for NativeAOT-LLVM compilation (experimental; supported on Windows, and on Linux with .NET 10)"),
         )
         .arg(
             common_args::dotnet_version().help("Target .NET SDK major version for C# projects (e.g. 8 or 10). Defaults to 10 except on macOS or when only .NET 8 is installed."),
