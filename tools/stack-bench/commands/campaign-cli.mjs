@@ -5,9 +5,40 @@ import { pathToFileURL } from 'node:url';
 
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
 import { CAMPAIGN_MODE_REGISTRY } from '../src/campaigns/campaign-mode.mjs';
-import { executeCampaign, inspectCampaign, prepareCampaign, reconcileCampaign } from '../src/campaigns/campaign-runner.mjs';
+import { executeCampaign, inspectCampaign, prepareCampaign, reconcileCampaign }
+  from '../src/campaigns/campaign-runner.mjs';
 import { inspectCampaignSummary } from '../src/campaigns/campaign-inspection.mjs';
 import { generateCampaignReport } from '../src/campaigns/campaign-report.mjs';
+import { auditProgressionReferenceCampaign, formatProgressionReferenceCampaignAudit }
+  from '../src/campaigns/progression-reference-campaign-audit.mjs';
+
+export function campaignStateSummary(plan, state) {
+  const failures = state.attempts.flatMap(attempt => {
+    const execution = attempt.executions.at(-1);
+    if (!execution || execution.outcome === null || execution.outcome === 'passed') return [];
+    return [{
+      attempt: attempt.plan.id,
+      status: attempt.status,
+      execution: execution.id,
+      outcome: execution.outcome,
+      reason: execution.reason,
+    }];
+  });
+  return {
+    campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
+    status: state.status,
+    summary: state.summary,
+    failures,
+  };
+}
+
+export function auditCompletedReferenceCampaign(directory, plan, state, {
+  audit = auditProgressionReferenceCampaign,
+} = {}) {
+  const hasReferenceProgression = plan.attempts.some(attempt =>
+    attempt.mode?.id === 'dependency' && attempt.agentAdapter === 'reference-fixture');
+  return state.status === 'completed' && hasReferenceProgression ? audit(directory) : null;
+}
 
 export function validateResumeCampaignState(requested, existing) {
   if (requested.contentSha256 !== existing.plan.contentSha256) {
@@ -34,14 +65,16 @@ export function parseCampaignArgs(argv) {
   if (['validate', 'show'].includes(command) && path && rest.length === 0) {
     return { command, path: resolve(path) };
   }
-  if (['status', 'inspect', 'report'].includes(command) && path && rest.length === 0) {
+  if (['status', 'inspect', 'report', 'audit'].includes(command) && path && rest.length === 0) {
     return { command, directory: resolve(path) };
   }
   if (['prepare', 'trial', 'run', 'resume', 'reconcile'].includes(command)
     && path && rest.length === 2 && rest[0] === '--out') {
     return { command, path: resolve(path), directory: resolve(rest[1]) };
   }
-  throw new Error('usage: campaign-cli.mjs modes | validate|show <campaign.json> | prepare|trial|run|resume|reconcile <campaign.json> --out <directory> | status|inspect|report <directory>');
+  throw new Error('usage: campaign-cli.mjs modes | validate|show <campaign.json> '
+    + '| prepare|trial|run|resume|reconcile <campaign.json> --out <directory> '
+    + '| status|inspect|report|audit <directory>');
 }
 
 async function main() {
@@ -66,22 +99,32 @@ async function main() {
     console.log(`${generated.reportPath}\n${generated.htmlPath}\n${generated.report.contentSha256}`);
     return;
   }
+  if (args.command === 'audit') {
+    const report = auditProgressionReferenceCampaign(args.directory);
+    if (report === null) throw new Error('campaign has no dependency reference attempts to audit');
+    console.log(formatProgressionReferenceCampaignAudit(report));
+    if (!report.ok) process.exitCode = 1;
+    return;
+  }
   if (args.command === 'prepare') {
     const prepared = prepareCampaign(args.path, args.directory);
-    console.log(JSON.stringify(prepared.state, null, 2));
+    console.log(JSON.stringify(campaignStateSummary(prepared.plan, prepared.state), null, 2));
     return;
   }
   const plan = compileCampaignFile(args.path);
   if (args.command === 'reconcile') {
-    console.log(JSON.stringify(reconcileCampaign(args.path, args.directory), null, 2));
+    const state = reconcileCampaign(args.path, args.directory);
+    console.log(JSON.stringify(campaignStateSummary(plan, state), null, 2));
     return;
   }
   if (['trial', 'run', 'resume'].includes(args.command)) {
     if (args.command === 'resume') validateResumeCampaign(args.path, args.directory);
     const state = await executeCampaign(args.path, args.directory,
       { mode: args.command === 'trial' ? 'model-free-trial' : 'frozen' });
-    console.log(JSON.stringify(state, null, 2));
-    if (state.status !== 'completed') process.exitCode = 1;
+    console.log(JSON.stringify(campaignStateSummary(plan, state), null, 2));
+    const audit = auditCompletedReferenceCampaign(args.directory, plan, state);
+    if (audit !== null) console.log(formatProgressionReferenceCampaignAudit(audit));
+    if (state.status !== 'completed' || audit?.ok === false) process.exitCode = 1;
     return;
   }
   if (args.command === 'show') console.log(JSON.stringify(plan, null, 2));

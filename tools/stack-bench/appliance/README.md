@@ -134,6 +134,16 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
 `campaign trial` refuses paid adapters and frozen plans. It exists to validate
 draft orchestration and evidence without model spend; its output is not
 comparative benchmark data. `campaign run` remains restricted to frozen plans.
+After a dependency reference campaign completes, the command also replays its
+progression evidence. It reports graph coverage separately from the full recipe
+catalog. The catalog status remains `not-run` until a separate full-catalog
+audit exists. Repeat the evidence replay without rerunning the campaign:
+
+```sh
+docker compose --env-file /var/lib/stack-bench/operator.env \
+  -f appliance/docker-compose.yaml run --rm controller \
+  campaign audit /var/lib/stack-bench/results/ecommerce-progression-reference-trial
+```
 
 Run counts and concurrency are explicit campaign inputs. `repetitions` is the
 default for every selected stack; a stack can override it independently.
