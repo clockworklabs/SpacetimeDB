@@ -99,9 +99,31 @@
   .graph-canvas {
     position: relative;
     min-width: 850px;
-    min-height: 760px;
+    min-height: 680px;
     padding: 22px;
   }
+
+  #edges {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .edge {
+    fill: none;
+    stroke-width: 1.5;
+    opacity: .2;
+    transition: opacity 120ms ease, stroke-width 120ms ease;
+  }
+
+  .edge.qualified { stroke: var(--green); }
+  .edge.draft { stroke: var(--yellow); }
+  .edge.muted { opacity: .035; }
+  .edge.active { opacity: 1; stroke-width: 2.5; }
 
   .levels {
     position: relative;
@@ -127,7 +149,7 @@
 
   .node {
     width: 100%;
-    min-height: 82px;
+    min-height: 68px;
     margin-bottom: 16px;
     padding: 12px 14px;
     display: grid;
@@ -139,17 +161,19 @@
     background: var(--panel-raised);
     color: var(--text);
     text-align: left;
-    cursor: default;
+    cursor: pointer;
+    transition: opacity 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
   }
 
   .node .name { min-width: 0; font: 600 13px/1.25 var(--mono); }
-  .node .depends { min-width: 0; color: #b9c4c1; font: 10px/1.35 var(--mono); }
-  .node .state { grid-row: 1 / span 2; grid-column: 2; font: 700 13px/1 var(--mono); }
+  .node .state { grid-column: 2; font: 700 13px/1 var(--mono); }
 
   .node.qualified { border-color: #287b55; background: var(--green-bg); }
   .node.qualified .state { color: var(--green); }
   .node.draft { border-color: #766329; background: var(--yellow-bg); }
   .node.draft .state { color: var(--yellow); }
+  .node.muted { opacity: .2; }
+  .node.active { box-shadow: 0 0 0 1px currentColor; }
 
   .footnote { margin: 14px 2px 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
@@ -168,7 +192,7 @@
   <header>
     <div>
       <h1>Ecommerce dependency graph</h1>
-      <p class="subtitle">Six L1 features, five L2 features, and four draft L3 features.</p>
+      <p class="subtitle">Select a feature to trace its prerequisites and the features it unlocks.</p>
     </div>
   </header>
 
@@ -181,6 +205,16 @@
 
   <section class="graph-panel" aria-label="Feature graph">
     <div class="graph-canvas" id="graph-canvas">
+      <svg id="edges" aria-hidden="true">
+        <defs>
+          <marker id="arrow-qualified" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L7,3.5 L0,7 Z" fill="#21f38a"></path>
+          </marker>
+          <marker id="arrow-draft" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L7,3.5 L0,7 Z" fill="#f3c959"></path>
+          </marker>
+        </defs>
+      </svg>
       <div class="levels" id="levels"></div>
     </div>
   </section>
@@ -210,6 +244,8 @@
 
   const byId = new Map(features.map(feature => [feature.id, feature]));
   const levels = document.getElementById('levels');
+  const canvas = document.getElementById('graph-canvas');
+  const edges = document.getElementById('edges');
 
   for (let level = 1; level <= 3; level += 1) {
     const column = document.createElement('div');
@@ -217,19 +253,117 @@
     column.innerHTML = `<div class="level-head"><span>Level ${level}</span><b>${items.length} features</b></div>`;
 
     for (const feature of items) {
-      const node = document.createElement('div');
+      const node = document.createElement('button');
+      node.type = 'button';
       node.className = `node ${feature.state}`;
       node.dataset.id = feature.id;
-      node.setAttribute('aria-label', `${feature.name}, ${feature.state}`);
-      const dependencies = feature.parents.length
-        ? `Needs: ${feature.parents.map(parent => byId.get(parent).name).join(' + ')}`
-        : 'Starts here';
-      node.innerHTML = `<span class="name">${feature.name}</span><span class="depends">${dependencies}</span><span class="state" title="${feature.state}">●</span>`;
+      node.setAttribute('aria-label', `Trace dependencies for ${feature.name}`);
+      node.setAttribute('aria-pressed', 'false');
+      node.innerHTML = `<span class="name">${feature.name}</span><span class="state" title="${feature.state}">●</span>`;
       column.appendChild(node);
     }
 
     levels.appendChild(column);
   }
+
+  function drawEdges() {
+    edges.querySelectorAll('.edge').forEach(edge => edge.remove());
+    const canvasBox = canvas.getBoundingClientRect();
+
+    for (const child of features) {
+      const childNode = document.querySelector(`[data-id="${child.id}"]`);
+      const childBox = childNode.getBoundingClientRect();
+
+      for (const parentId of child.parents) {
+        const parentNode = document.querySelector(`[data-id="${parentId}"]`);
+        const parentBox = parentNode.getBoundingClientRect();
+        const x1 = parentBox.right - canvasBox.left;
+        const y1 = parentBox.top + parentBox.height / 2 - canvasBox.top;
+        const x2 = childBox.left - canvasBox.left;
+        const y2 = childBox.top + childBox.height / 2 - canvasBox.top;
+        const bend = Math.max(36, (x2 - x1) * .46);
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.classList.add('edge', child.state);
+        path.dataset.parent = parentId;
+        path.dataset.child = child.id;
+        path.setAttribute('d', `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`);
+        path.setAttribute('marker-end', `url(#arrow-${child.state})`);
+        edges.appendChild(path);
+      }
+    }
+  }
+
+  let selectedId = null;
+
+  function dependencyChain(featureId) {
+    const connected = new Set([featureId]);
+    const connectedEdges = new Set();
+    const visitParents = id => {
+      const feature = byId.get(id);
+      for (const parentId of feature.parents) {
+        connectedEdges.add(`${parentId}:${id}`);
+        if (!connected.has(parentId)) {
+          connected.add(parentId);
+          visitParents(parentId);
+        }
+      }
+    };
+    const visitChildren = id => {
+      for (const child of features.filter(candidate => candidate.parents.includes(id))) {
+        connectedEdges.add(`${id}:${child.id}`);
+        if (!connected.has(child.id)) {
+          connected.add(child.id);
+          visitChildren(child.id);
+        }
+      }
+    };
+    visitParents(featureId);
+    visitChildren(featureId);
+    return { connected, connectedEdges };
+  }
+
+  function trace(featureId) {
+    const { connected, connectedEdges } = dependencyChain(featureId);
+    document.querySelectorAll('.edge').forEach(edge => {
+      const matches = connectedEdges.has(`${edge.dataset.parent}:${edge.dataset.child}`);
+      edge.classList.toggle('active', matches);
+      edge.classList.toggle('muted', !matches);
+    });
+    document.querySelectorAll('.node').forEach(node => {
+      node.classList.toggle('active', node.dataset.id === featureId);
+      node.classList.toggle('muted', !connected.has(node.dataset.id));
+    });
+  }
+
+  function clearTrace() {
+    document.querySelectorAll('.edge, .node').forEach(element => element.classList.remove('active', 'muted'));
+  }
+
+  function showSelection() {
+    document.querySelectorAll('.node').forEach(node => node.setAttribute('aria-pressed', String(node.dataset.id === selectedId)));
+    selectedId ? trace(selectedId) : clearTrace();
+  }
+
+  document.querySelectorAll('.node').forEach(node => {
+    node.addEventListener('mouseenter', () => trace(node.dataset.id));
+    node.addEventListener('mouseleave', () => selectedId ? trace(selectedId) : clearTrace());
+    node.addEventListener('focus', () => trace(node.dataset.id));
+    node.addEventListener('blur', () => selectedId ? trace(selectedId) : clearTrace());
+    node.addEventListener('click', () => {
+      selectedId = selectedId === node.dataset.id ? null : node.dataset.id;
+      showSelection();
+    });
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      selectedId = null;
+      showSelection();
+    }
+  });
+
+  drawEdges();
+  new ResizeObserver(drawEdges).observe(canvas);
 
 </script>
 </body>
