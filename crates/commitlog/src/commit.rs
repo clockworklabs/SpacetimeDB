@@ -340,7 +340,7 @@ impl StoredCommit {
         })?;
 
         if chk != crc {
-            return Err(invalid_data(ChecksumMismatch));
+            return Err(invalid_data(ChecksumMismatch { commit_pos: pos }));
         }
 
         Ok(Some(Self {
