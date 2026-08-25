@@ -1,34 +1,34 @@
 {
   "artifactSchemaVersion": 2,
   "kind": "null_control",
-  "id": "null-control-2026-08-24T18-10-57-621Z",
+  "id": "null-control-2026-08-25T03-08-49-726Z",
   "attempt": {
-    "id": "null-control-2026-08-24T18-10-57-621Z",
+    "id": "null-control-2026-08-25T03-08-49-726Z",
     "parentId": null
   },
   "timestamps": {
-    "startedAt": "2026-08-24T18:10:57.622Z",
-    "completedAt": "2026-08-24T18:31:31.527Z"
+    "startedAt": "2026-08-25T03:08:49.726Z",
+    "completedAt": "2026-08-25T03:29:26.319Z"
   },
   "identities": {
     "engine": {
       "id": "stack-bench",
       "version": null,
-      "sha256": "f8d5192930b4b4d0b032bc53ceb61e6b9f2e2a64ed596fec683acb87ee89c854",
+      "sha256": "926f60e3b5397c1d0dcef98050094693a109a97810e954d74292bce1edf60cab",
       "state": null
     },
     "recipe": {
       "id": "ecommerce.l2-standard",
       "version": "1.6.0",
       "sha256": "1ccbde2f20ac70bd6adb4a98cd20b80b8e6deba381e4487b267298a5870ef5a4",
-      "state": "draft"
+      "state": "qualified"
     },
     "fixture": null,
     "calibration": {
       "id": "ecommerce.l2-standard-calibration",
       "version": "1.6.0",
       "sha256": "96e0ed03c13790865a243318bfdeba2b3003ceb0edeee932ac182918b463489d",
-      "state": "draft"
+      "state": "qualified"
     },
     "experiment": null,
     "agentAdapter": null,
@@ -36,7 +36,7 @@
     "packs": []
   },
   "payload": {
-    "durationMs": 1233905,
+    "durationMs": 1236593,
     "runner": {
       "schemaVersion": 1,
       "mode": "appliance",
@@ -48,6 +48,20 @@
       "kernelVersion": "6.6.87.2-microsoft-standard-WSL2",
       "cpuCount": 32,
       "memoryBytes": 49232842752
+    },
+    "qualificationScope": {
+      "checksSha256": "e36c9354963b2a9f47eadea81434e45c1f524ce74405cc5759b49fd4eee90dc7",
+      "executableSha256": "a96ef687b211a452cfc74f9532764d1e02cf529c5b869d1d916df088df6eb0b3",
+      "kind": "null",
+      "mutationSha256": null,
+      "recipe": {
+        "contentSha256": "1ccbde2f20ac70bd6adb4a98cd20b80b8e6deba381e4487b267298a5870ef5a4",
+        "id": "ecommerce.l2-standard",
+        "version": "1.6.0"
+      },
+      "schemaVersion": 1,
+      "stack": null,
+      "sha256": "c69ba7a0a96e6ab67eec80ee993d20977a7e6f30a67e71c8354f420a7cab7855"
     },
     "tracks": [
       "ecommerce"

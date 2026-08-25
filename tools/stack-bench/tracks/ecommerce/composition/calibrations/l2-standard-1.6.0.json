@@ -110,48 +110,48 @@
         "stack": "mongodb",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-l2-v1.6.0/mongodb-reference.json",
-        "sha256": "035e3c49454c8b9bfab6ef01d09fb60ab2a225a6dfb15921f4a342be905a8f74"
+        "sha256": "fd4eb4aaa45da6e86e23a021f92b64d675133fa168582946ee303847cf295e82"
       },
       {
         "kind": "mutation",
         "stack": "mongodb",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-l2-v1.6.0/mongodb-mutation.json",
-        "sha256": "d31ced2dd25fc7d44c0ed3f49d2046d31dd95f2f9e3aad847264d4e1b28607e7"
+        "sha256": "be14bf2b70c3df68ba75437a9b800bba4632a922d4ac7ccd34fc5b0182c956c7"
       },
       {
         "kind": "reference",
         "stack": "postgres",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-l2-v1.6.0/postgres-reference.json",
-        "sha256": "8023b05020c99bcb12841d965df873c71748b266e6c855fd08c92ad7c6bda11e"
+        "sha256": "36779a27eb784b15928aa9cd2e476dda93b22c4fafd356e774bf287a0667e475"
       },
       {
         "kind": "mutation",
         "stack": "postgres",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-l2-v1.6.0/postgres-mutation.json",
-        "sha256": "e2b67505adb94d3ce621cd85ed9ef85757a9d87c7893a03d9ab321d67fa2d64e"
+        "sha256": "14edbd0094eff3192008a747337500dc12caecbb82e8e89802dbcdcb32ba1b8e"
       },
       {
         "kind": "reference",
         "stack": "spacetime",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-l2-v1.6.0/spacetime-reference.json",
-        "sha256": "c912721bf560de2068cc97321d3f21b96004f6b6f57179eb15cbb6d90b12ddc7"
+        "sha256": "dc42b676fd36f643124f5b41ee1ea26cb0863aad14b832f4d49a5a7d8d80e71b"
       },
       {
         "kind": "mutation",
         "stack": "spacetime",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-l2-v1.6.0/spacetime-mutation.json",
-        "sha256": "7516e63f7b84eca6de44cbb7d0dc2cb255b15c2b67b782956683c707fcbeae0b"
+        "sha256": "c2764bcdac8e6c070fb1b85c8e30075d8a1c4da63850777e3ce6642ed2654310"
       },
       {
         "kind": "null",
         "repetition": 1,
         "path": "qualification-evidence/ecommerce-l2-v1.6.0/null.json",
-        "sha256": "ea3cd3c8cb939db72698f4b78bef97a1df9b39aa96f0631534ca57ecf4e6d2b3"
+        "sha256": "14a88d765a8d2d79a0d512947e17952f20f41230dddbf606b8c73b105782adc3"
       }
     ]
   },

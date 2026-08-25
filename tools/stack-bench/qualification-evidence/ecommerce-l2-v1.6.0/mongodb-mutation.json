@@ -1,27 +1,27 @@
 {
   "artifactSchemaVersion": 2,
   "kind": "reference_qualification",
-  "id": "reference-live-mongodb-20260824183328-14",
+  "id": "reference-live-mongodb-20260825032339-14",
   "attempt": {
-    "id": "reference-live-mongodb-20260824183328-14",
+    "id": "reference-live-mongodb-20260825032339-14",
     "parentId": null
   },
   "timestamps": {
-    "startedAt": "2026-08-24T18:33:28.839Z",
-    "completedAt": "2026-08-24T19:20:12.112Z"
+    "startedAt": "2026-08-25T03:23:39.674Z",
+    "completedAt": "2026-08-25T03:56:54.274Z"
   },
   "identities": {
     "engine": {
       "id": "stack-bench",
       "version": null,
-      "sha256": "f8d5192930b4b4d0b032bc53ceb61e6b9f2e2a64ed596fec683acb87ee89c854",
+      "sha256": "926f60e3b5397c1d0dcef98050094693a109a97810e954d74292bce1edf60cab",
       "state": null
     },
     "recipe": {
       "id": "ecommerce.l2-standard",
       "version": "1.6.0",
       "sha256": "1ccbde2f20ac70bd6adb4a98cd20b80b8e6deba381e4487b267298a5870ef5a4",
-      "state": "draft"
+      "state": "qualified"
     },
     "fixture": {
       "id": "ecommerce-l2-cumulative-1.5-mongodb",
@@ -33,7 +33,7 @@
       "id": "ecommerce.l2-standard-calibration",
       "version": "1.6.0",
       "sha256": "96e0ed03c13790865a243318bfdeba2b3003ceb0edeee932ac182918b463489d",
-      "state": "draft"
+      "state": "qualified"
     },
     "experiment": null,
     "agentAdapter": null,
@@ -62,18 +62,39 @@
       "cpuCount": 32,
       "memoryBytes": 49232842752
     },
+    "qualificationScope": {
+      "checksSha256": "e36c9354963b2a9f47eadea81434e45c1f524ce74405cc5759b49fd4eee90dc7",
+      "executableSha256": "f423c24f81659a645f7fa0681171dc883c05b18e58425c9fc46fa0042464408c",
+      "kind": "mutation",
+      "mutationSha256": "ad861f4d4ffc3ca1d99f15926257042786e2fab61b90d0fa364298a04323058e",
+      "recipe": {
+        "contentSha256": "1ccbde2f20ac70bd6adb4a98cd20b80b8e6deba381e4487b267298a5870ef5a4",
+        "id": "ecommerce.l2-standard",
+        "version": "1.6.0"
+      },
+      "schemaVersion": 1,
+      "stack": {
+        "id": "mongodb",
+        "reference": {
+          "id": "ecommerce-l2-cumulative-1.5-mongodb",
+          "sourceSha256": "7f2fb4f996d4a9a448d203cd48f4deedeaea7af9fbbf3bb56122b3d4cc546634"
+        },
+        "version": "1.2.0"
+      },
+      "sha256": "b52ca404793065c74972283a68550c6488e331fd7c7850aeccbf932e90448174"
+    },
     "mutationControl": true,
     "runs": [
       {
         "repetition": 1,
-        "output": "ecommerce-l2-1.6-mongodb-mutation-fixed.runs/r1-workers",
-        "durationMs": 2803223,
+        "output": "ecommerce-l2-mongodb-mutation.runs/r1-workers",
+        "durationMs": 1994540,
         "processError": null,
-        "harnessSha256Before": "f76b1b9413ced76beb3fb504058f0a5e55b0ae1e21fd2bd8d5cccdf85a000f13",
-        "harnessSha256After": "f76b1b9413ced76beb3fb504058f0a5e55b0ae1e21fd2bd8d5cccdf85a000f13",
+        "harnessSha256Before": "28c0bf85af736e75beb6e4bf7db82146df0a59ff1264d546e158dfdd23bc7f95",
+        "harnessSha256After": "28c0bf85af736e75beb6e4bf7db82146df0a59ff1264d546e158dfdd23bc7f95",
         "ok": true,
         "failures": [],
-        "runId": "reference-live-mongodb-20260824183328-14",
+        "runId": "reference-live-mongodb-20260825032339-14",
         "score": "59/59",
         "imageId": "sha256:b404d26138ea16be07a672389981e7e8b89d7740570f9baa3ddd4d0e96336c10",
         "criteria": 76,
@@ -87,9 +108,9 @@
             {
               "id": "ecommerce.feature.accounts",
               "checkCount": 4,
-              "setupRuntimeMs": 486,
-              "criterionRuntimeMs": 4542,
-              "measuredRuntimeMs": 5028,
+              "setupRuntimeMs": 492,
+              "criterionRuntimeMs": 4568,
+              "measuredRuntimeMs": 5060,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 18000
@@ -99,9 +120,9 @@
             {
               "id": "ecommerce.feature.cart-checkout",
               "checkCount": 2,
-              "setupRuntimeMs": 543,
-              "criterionRuntimeMs": 3142,
-              "measuredRuntimeMs": 3685,
+              "setupRuntimeMs": 568,
+              "criterionRuntimeMs": 3127,
+              "measuredRuntimeMs": 3695,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 42000
@@ -111,8 +132,8 @@
             {
               "id": "ecommerce.feature.catalog",
               "checkCount": 3,
-              "setupRuntimeMs": 135,
-              "criterionRuntimeMs": 3111,
+              "setupRuntimeMs": 132,
+              "criterionRuntimeMs": 3114,
               "measuredRuntimeMs": 3246,
               "budget": {
                 "status": "bounded",
@@ -123,9 +144,9 @@
             {
               "id": "ecommerce.feature.purchasing",
               "checkCount": 1,
-              "setupRuntimeMs": 269,
-              "criterionRuntimeMs": 1591,
-              "measuredRuntimeMs": 1860,
+              "setupRuntimeMs": 277,
+              "criterionRuntimeMs": 1609,
+              "measuredRuntimeMs": 1886,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 24000
@@ -135,9 +156,9 @@
             {
               "id": "ecommerce.feature.reviews",
               "checkCount": 1,
-              "setupRuntimeMs": 2494,
-              "criterionRuntimeMs": 1712,
-              "measuredRuntimeMs": 4206,
+              "setupRuntimeMs": 2498,
+              "criterionRuntimeMs": 1711,
+              "measuredRuntimeMs": 4209,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 22000
@@ -147,9 +168,9 @@
             {
               "id": "ecommerce.feature.warehouse-admin",
               "checkCount": 1,
-              "setupRuntimeMs": 319,
-              "criterionRuntimeMs": 98,
-              "measuredRuntimeMs": 417,
+              "setupRuntimeMs": 305,
+              "criterionRuntimeMs": 87,
+              "measuredRuntimeMs": 392,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 30000
@@ -159,9 +180,9 @@
             {
               "id": "ecommerce.inventory-operations-features",
               "checkCount": 7,
-              "setupRuntimeMs": 3455,
-              "criterionRuntimeMs": 20060,
-              "measuredRuntimeMs": 23515,
+              "setupRuntimeMs": 3085,
+              "criterionRuntimeMs": 19736,
+              "measuredRuntimeMs": 22821,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 86000
@@ -171,9 +192,9 @@
             {
               "id": "ecommerce.inventory-operations-specifications",
               "checkCount": 4,
-              "setupRuntimeMs": 4192,
-              "criterionRuntimeMs": 22073,
-              "measuredRuntimeMs": 26265,
+              "setupRuntimeMs": 3946,
+              "criterionRuntimeMs": 21901,
+              "measuredRuntimeMs": 25847,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 52000
@@ -183,9 +204,9 @@
             {
               "id": "ecommerce.operations-access-features",
               "checkCount": 5,
-              "setupRuntimeMs": 1231,
-              "criterionRuntimeMs": 13239,
-              "measuredRuntimeMs": 14470,
+              "setupRuntimeMs": 1170,
+              "criterionRuntimeMs": 13190,
+              "measuredRuntimeMs": 14360,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 76000
@@ -195,9 +216,9 @@
             {
               "id": "ecommerce.operations-access-specifications",
               "checkCount": 4,
-              "setupRuntimeMs": 11612,
-              "criterionRuntimeMs": 13294,
-              "measuredRuntimeMs": 24906,
+              "setupRuntimeMs": 11427,
+              "criterionRuntimeMs": 13285,
+              "measuredRuntimeMs": 24712,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 44000
@@ -207,9 +228,9 @@
             {
               "id": "ecommerce.returns-pricing-features",
               "checkCount": 6,
-              "setupRuntimeMs": 3801,
-              "criterionRuntimeMs": 26929,
-              "measuredRuntimeMs": 30730,
+              "setupRuntimeMs": 3757,
+              "criterionRuntimeMs": 27022,
+              "measuredRuntimeMs": 30779,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 94000
@@ -219,9 +240,9 @@
             {
               "id": "ecommerce.returns-pricing-specifications",
               "checkCount": 2,
-              "setupRuntimeMs": 371,
-              "criterionRuntimeMs": 14719,
-              "measuredRuntimeMs": 15090,
+              "setupRuntimeMs": 363,
+              "criterionRuntimeMs": 14723,
+              "measuredRuntimeMs": 15086,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 36000
@@ -231,9 +252,9 @@
             {
               "id": "ecommerce.spec.access-control",
               "checkCount": 10,
-              "setupRuntimeMs": 3924,
-              "criterionRuntimeMs": 22028,
-              "measuredRuntimeMs": 25952,
+              "setupRuntimeMs": 3750,
+              "criterionRuntimeMs": 21949,
+              "measuredRuntimeMs": 25699,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 90000
@@ -243,9 +264,9 @@
             {
               "id": "ecommerce.spec.concurrency-safety",
               "checkCount": 8,
-              "setupRuntimeMs": 22919,
-              "criterionRuntimeMs": 45535,
-              "measuredRuntimeMs": 68454,
+              "setupRuntimeMs": 22907,
+              "criterionRuntimeMs": 45543,
+              "measuredRuntimeMs": 68450,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 125000
@@ -255,9 +276,9 @@
             {
               "id": "ecommerce.spec.external-data-sync",
               "checkCount": 4,
-              "setupRuntimeMs": 296,
-              "criterionRuntimeMs": 31436,
-              "measuredRuntimeMs": 31732,
+              "setupRuntimeMs": 266,
+              "criterionRuntimeMs": 30850,
+              "measuredRuntimeMs": 31116,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 105000
@@ -267,9 +288,9 @@
             {
               "id": "ecommerce.spec.live-state",
               "checkCount": 6,
-              "setupRuntimeMs": 8510,
-              "criterionRuntimeMs": 3368,
-              "measuredRuntimeMs": 11878,
+              "setupRuntimeMs": 8497,
+              "criterionRuntimeMs": 3356,
+              "measuredRuntimeMs": 11853,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 85000
@@ -279,9 +300,9 @@
             {
               "id": "ecommerce.spec.state-durability",
               "checkCount": 4,
-              "setupRuntimeMs": 1275,
-              "criterionRuntimeMs": 24419,
-              "measuredRuntimeMs": 25694,
+              "setupRuntimeMs": 1289,
+              "criterionRuntimeMs": 24407,
+              "measuredRuntimeMs": 25696,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 48000
@@ -291,9 +312,9 @@
             {
               "id": "ecommerce.spec.transactional-integrity",
               "checkCount": 4,
-              "setupRuntimeMs": 6402,
-              "criterionRuntimeMs": 7477,
-              "measuredRuntimeMs": 13879,
+              "setupRuntimeMs": 6244,
+              "criterionRuntimeMs": 7439,
+              "measuredRuntimeMs": 13683,
               "budget": {
                 "status": "bounded",
                 "maxRuntimeMs": 75000
@@ -310,96 +331,120 @@
           {
             "index": 0,
             "runIndex": 0,
-            "artifact": "ecommerce-l2-1.6-mongodb-mutation-fixed.runs/r1-workers/w1.json",
+            "artifact": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w1.json",
             "mutationIds": [
               "signup-does-not-expose-created-account",
-              "signin-skips-password-verification",
               "session-token-not-persisted",
-              "initial-top-ten-is-reversed",
               "search-requires-an-exact-name",
-              "espresso-stock-row-ignores-live-updates",
               "checkout-can-reserve-below-zero",
-              "reload-hydrates-an-empty-cart",
               "checkout-does-not-clear-cart",
-              "repeat-review-uses-a-new-owner-key",
               "admin-navigation-is-visible-to-customers",
-              "restock-does-not-increase-stock",
               "desk-lamp-purchase-is-attributed-to-another-account",
-              "direct-purchase-total-ignores-store-price",
               "reconnect-hydration-loses-account-state",
-              "revenue-aggregation-ignores-order-totals",
               "unpurchased-review-is-accepted",
-              "cart-add-is-scoped-by-item-instead-of-owner",
               "oversell-unguarded-decrement",
-              "existing-cart-line-does-not-increment-concurrently",
               "external-stock-polling-disabled",
-              "reconnect-generation-ignores-current-catalog",
               "cancel-does-not-restore-stock-feature",
-              "cancel-restores-stock-but-keeps-pending-status",
               "cancelled-order-remains-in-revenue-invariant",
-              "customer-can-change-price-focused",
               "customer-can-cancel-foreign-order-1-1",
-              "ship-acknowledges-without-changing-status",
               "customer-can-ship-order-focused",
-              "transfer-warehouse-totals-omit-destination-credit",
               "catalog-price-change-not-broadcast-to-visitors",
-              "low-stock-excludes-boundary-ten",
               "recommendations-ignore-pending-purchases",
-              "catalog-price-rewrites-receipts",
-              "queue-warehouse-reports-west",
-              "transfer-overwrites-concurrent-purchase-with-stale-stock"
+              "queue-warehouse-reports-west"
             ],
             "ok": true,
             "logs": {
-              "stdout": "ecommerce-l2-1.6-mongodb-mutation-fixed.runs/r1-workers/w1.stdout.log",
-              "stderr": "ecommerce-l2-1.6-mongodb-mutation-fixed.runs/r1-workers/w1.stderr.log"
+              "stdout": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w1.stdout.log",
+              "stderr": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w1.stderr.log"
             }
           },
           {
             "index": 1,
             "runIndex": 1,
-            "artifact": "ecommerce-l2-1.6-mongodb-mutation-fixed.runs/r1-workers/w2.json",
+            "artifact": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w2.json",
             "mutationIds": [
               "duplicate-signup-reports-success",
-              "signout-keeps-current-account",
               "seeded-air-purifier-price-is-wrong",
-              "purchase-counts-never-affect-ranking",
               "signed-out-visitors-see-purchase-controls",
-              "purchase-order-uses-zero-price",
               "existing-cart-line-does-not-increment",
-              "shared-cart-live-events-ignored",
               "review-comment-is-not-persisted",
-              "live-review-average-uses-an-extra-divisor",
               "warehouse-view-omits-one-location",
-              "unauthenticated-purchase-defaults-to-admin",
               "customer-can-restock-directly",
-              "cart-hydration-loses-account-state",
               "order-history-is-not-owner-scoped",
-              "sales-do-not-decrement-warehouse-stock",
               "purchased-review-eligibility-query-never-matches",
-              "negative-cart-quantity-is-accepted",
               "purchase-does-not-reserve-stock-restock-race",
-              "checkout-not-idempotent",
               "server-restart-disables-catalog-recovery",
-              "open-review-list-ignores-live-update",
               "cancel-does-not-restore-stock-fresh-client",
-              "cancelled-order-remains-in-revenue-feature",
               "customer-can-transfer-stock-focused",
-              "customer-can-ship-order-direct-1-1",
               "queue-depth-lags-one-order",
-              "customer-sees-fulfilment-navigation",
               "transfer-debits-source-without-crediting-existing-destination",
-              "transfer-overdraft-guard-removed",
               "catalog-price-change-not-broadcast-to-open-carts",
-              "category-totals-ignore-pending-purchases",
               "cancelled-purchases-remain-in-best-sellers",
-              "catalog-price-rewrites-earned-revenue",
               "returned-line-marker-omitted"
             ],
             "ok": true,
             "logs": {
-              "stdout": "ecommerce-l2-1.6-mongodb-mutation-fixed.runs/r1-workers/w2.stdout.log",
-              "stderr": "ecommerce-l2-1.6-mongodb-mutation-fixed.runs/r1-workers/w2.stderr.log"
+              "stdout": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w2.stdout.log",
+              "stderr": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w2.stderr.log"
+            }
+          },
+          {
+            "index": 2,
+            "runIndex": 2,
+            "artifact": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w3.json",
+            "mutationIds": [
+              "signin-skips-password-verification",
+              "initial-top-ten-is-reversed",
+              "espresso-stock-row-ignores-live-updates",
+              "reload-hydrates-an-empty-cart",
+              "repeat-review-uses-a-new-owner-key",
+              "restock-does-not-increase-stock",
+              "direct-purchase-total-ignores-store-price",
+              "revenue-aggregation-ignores-order-totals",
+              "cart-add-is-scoped-by-item-instead-of-owner",
+              "existing-cart-line-does-not-increment-concurrently",
+              "reconnect-generation-ignores-current-catalog",
+              "cancel-restores-stock-but-keeps-pending-status",
+              "customer-can-change-price-focused",
+              "ship-acknowledges-without-changing-status",
+              "transfer-warehouse-totals-omit-destination-credit",
+              "low-stock-excludes-boundary-ten",
+              "catalog-price-rewrites-receipts",
+              "transfer-overwrites-concurrent-purchase-with-stale-stock"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w3.stdout.log",
+              "stderr": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w3.stderr.log"
+            }
+          },
+          {
+            "index": 3,
+            "runIndex": 3,
+            "artifact": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w4.json",
+            "mutationIds": [
+              "signout-keeps-current-account",
+              "purchase-counts-never-affect-ranking",
+              "purchase-order-uses-zero-price",
+              "shared-cart-live-events-ignored",
+              "live-review-average-uses-an-extra-divisor",
+              "unauthenticated-purchase-defaults-to-admin",
+              "cart-hydration-loses-account-state",
+              "sales-do-not-decrement-warehouse-stock",
+              "negative-cart-quantity-is-accepted",
+              "checkout-not-idempotent",
+              "open-review-list-ignores-live-update",
+              "cancelled-order-remains-in-revenue-feature",
+              "customer-can-ship-order-direct-1-1",
+              "customer-sees-fulfilment-navigation",
+              "transfer-overdraft-guard-removed",
+              "category-totals-ignore-pending-purchases",
+              "catalog-price-rewrites-earned-revenue"
+            ],
+            "ok": true,
+            "logs": {
+              "stdout": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w4.stdout.log",
+              "stderr": "ecommerce-l2-mongodb-mutation.runs/r1-workers/w4.stderr.log"
             }
           }
         ]
@@ -408,7 +453,7 @@
     "stable": true,
     "sameImage": true,
     "sameHarness": true,
-    "harnessSha256": "f76b1b9413ced76beb3fb504058f0a5e55b0ae1e21fd2bd8d5cccdf85a000f13",
+    "harnessSha256": "28c0bf85af736e75beb6e4bf7db82146df0a59ff1264d546e158dfdd23bc7f95",
     "ok": true
   }
 }
