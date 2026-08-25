@@ -3,12 +3,22 @@ use anyhow::Result;
 use ci_common::pnpm;
 use clap::Parser;
 use duct::cmd;
+use std::path::PathBuf;
 
 /// Tests Wasm bindings
 ///
 /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
 #[derive(Parser)]
 struct Cli {}
+
+fn cargo_target_dir() -> PathBuf {
+    let repo_root = ci_common::repo_root();
+    match std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from) {
+        Some(path) if path.is_absolute() => path,
+        Some(path) => repo_root.join(path),
+        None => repo_root.join("target"),
+    }
+}
 
 fn main() -> Result<()> {
     Cli::parse();
@@ -32,8 +42,8 @@ fn main() -> Result<()> {
     //
     // For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
     cmd!("cargo", "update", "-vv").run()?;
-    let cli_path = ci_common::repo_root()
-        .join("target/debug/spacetimedb-cli")
+    let cli_path = cargo_target_dir()
+        .join("debug/spacetimedb-cli")
         .with_extension(std::env::consts::EXE_EXTENSION);
     cmd!(cli_path, "build", "--module-path", "modules/module-test",).run()?;
 
