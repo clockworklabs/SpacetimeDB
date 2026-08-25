@@ -14,13 +14,15 @@ test('built-in agent adapters are statically registered and content identified',
   for (const id of AGENT_ADAPTER_REGISTRY.ids) {
     const identity = agentAdapterIdentity(AGENT_ADAPTER_REGISTRY.get(id));
     assert.equal(identity.id, id);
-    const expectedVersion = id === 'claude-code' ? '1.14.0'
-      : ['deterministic', 'reference-fixture'].includes(id) ? '1.1.0' : '1.0.0';
+    const expectedVersion = id === 'claude-code' ? '1.15.0'
+      : ['deterministic', 'reference-fixture'].includes(id) ? '1.2.0' : '1.1.0';
     assert.equal(identity.version, expectedVersion);
     assert.match(identity.sha256, /^[a-f0-9]{64}$/);
   }
   assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').requiredExecutables, ['claude']);
   assert.equal(AGENT_ADAPTER_REGISTRY.get('claude-code').usesStackSkills, true);
+  assert.equal(AGENT_ADAPTER_REGISTRY.get('claude-code').sandboxProbe, 'direct-cli');
+  assert.equal(AGENT_ADAPTER_REGISTRY.get('reference-fixture').sandboxProbe, 'none');
   assert.deepEqual(AGENT_ADAPTER_REGISTRY.get('claude-code').credentialEnvironmentVariables,
     ['CLAUDE_CODE_OAUTH_TOKEN']);
   assert(AGENT_ADAPTER_REGISTRY.get('claude-code').modes.includes('resume'));
@@ -104,7 +106,7 @@ test('malformed and duplicate agent adapters fail at registry construction', () 
     defaultModel: 'fake-model', apiKeyEnvironmentVariable: null,
     credentialEnvironmentVariables: [], credentialFiles: [], outboundDestinations: [],
     requiredExecutables: [],
-    credentialStatusCommand: null, usesStackSkills: false,
+    credentialStatusCommand: null, usesStackSkills: false, sandboxProbe: 'none',
     costLimit: 'unsupported' };
   assert.equal(defineAgentAdapter(source).id, 'fake');
   assert.throws(() => createAgentAdapterRegistry([source, source]), /duplicate/);

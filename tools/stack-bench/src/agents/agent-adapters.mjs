@@ -18,12 +18,13 @@ const adapter = (id, entrypoint, defaultModel,
     credentialEnvironmentVariables = [], credentialFiles = [], outboundDestinations = [],
     requiredExecutables = [],
     credentialStatusCommand = null, usesStackSkills = false,
-    costLimit = 'unsupported', version = '1.0.0', deadlineMs = 75 * 60_000 } = {}) => ({
+    costLimit = 'unsupported', sandboxProbe = 'none', version = '1.0.0',
+    deadlineMs = 75 * 60_000 } = {}) => ({
   schemaVersion: AGENT_ADAPTER_SCHEMA_VERSION,
   id, version, entrypoint: join(ROOT, entrypoint), modes, defaultModel,
   apiKeyEnvironmentVariable, credentialEnvironmentVariables, credentialFiles,
   outboundDestinations, requiredExecutables, credentialStatusCommand, usesStackSkills, costLimit,
-  deadlineMs,
+  sandboxProbe, deadlineMs,
 });
 
 export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
@@ -36,16 +37,16 @@ export const AGENT_ADAPTER_REGISTRY = createAgentAdapterRegistry([
       // `loggedIn:false`; the adapter command must turn semantic logout into a
       // failed preflight without making a provider request.
       credentialStatusCommand: CLAUDE_SUBSCRIPTION_STATUS_COMMAND,
-      usesStackSkills: true, version: '1.14.0',
+      usesStackSkills: true, sandboxProbe: 'direct-cli', version: '1.15.0',
       // Claude can wait through an account throttle. Local adapters keep the
       // shorter default deadline because they have no provider wait state.
       deadlineMs: AGENT_PROCESS_TIMEOUT_MS + DEFAULT_THROTTLE_MAX_WAIT_MS + 10 * 60_000 }),
   adapter('deterministic', join('fixtures', 'stub-agent.mjs'), 'deterministic',
-    { costLimit: 'non-billable', version: '1.1.0' }),
+    { costLimit: 'non-billable', version: '1.2.0' }),
   adapter('fault-injection', join('fixtures', 'fault-agent.mjs'), 'fault-injection',
-    { modes: ['build'], costLimit: 'non-billable' }),
+    { modes: ['build'], costLimit: 'non-billable', version: '1.1.0' }),
   adapter('reference-fixture', join('src', 'references', 'reference-agent.mjs'), 'reference-fixture',
-    { modes: ['build', 'upgrade'], costLimit: 'non-billable', version: '1.1.0' }),
+    { modes: ['build', 'upgrade'], costLimit: 'non-billable', version: '1.2.0' }),
 ]);
 
 export function agentAdapterIdentity(value) {
@@ -63,7 +64,7 @@ export function agentAdapterIdentity(value) {
         outboundDestinations: value.outboundDestinations,
         requiredExecutables: value.requiredExecutables,
         credentialStatusCommand: value.credentialStatusCommand,
-        usesStackSkills: value.usesStackSkills })}\0`),
+        usesStackSkills: value.usesStackSkills, sandboxProbe: value.sandboxProbe })}\0`),
       readFileSync(value.entrypoint),
     ])),
   };

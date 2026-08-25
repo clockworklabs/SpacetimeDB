@@ -29,7 +29,7 @@ function definition(overrides = {}) {
       { id: 'postgres', adapterVersion: '1.3.0' },
       { id: 'mongodb', adapterVersion: '1.2.0' },
     ],
-    agents: [{ adapter: 'deterministic', adapterVersion: '1.1.0', model: 'deterministic' }],
+    agents: [{ adapter: 'deterministic', adapterVersion: '1.2.0', model: 'deterministic' }],
     conditions: [{ id: 'prescribed', version: '1.0.0',
       guidanceProfile: 'prescribed@1.0.0', repairPolicy: 'scored-only@1.0.0' }],
     repetitions: 3,
@@ -237,7 +237,7 @@ test('campaign identity ignores JSON formatting but changes with study semantics
 
 test('balanced rotation covers every stack-agent condition and rotates the global lead', () => {
   const agents = [
-    { adapter: 'deterministic', adapterVersion: '1.1.0', model: 'deterministic' },
+    { adapter: 'deterministic', adapterVersion: '1.2.0', model: 'deterministic' },
     { adapter: 'fault-injection', adapterVersion: '1.0.0', model: 'deterministic' },
   ];
   const plan = compile(definition({ agents, repetitions: 6 }));
@@ -360,7 +360,7 @@ test('frozen campaigns require exact runtime images', () => {
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@sha256:${'c'.repeat(64)}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.14.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.15.0',
     model: 'claude-sonnet-5' }];
   const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
     source: 'test snapshot', models: { 'claude-sonnet-5': {
@@ -387,7 +387,7 @@ test('frozen campaigns accept a resolved qualification result for every selected
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@${qualifiedBuildImage}`,
     platform: 'linux/amd64' };
-  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.14.0',
+  const claudeAgent = [{ adapter: 'claude-code', adapterVersion: '1.15.0',
     model: 'claude-sonnet-5' }];
   const claudePricing = { currency: 'USD', capturedAt: '2026-08-12T00:00:00.000Z',
     source: 'test snapshot', models: { 'claude-sonnet-5': {

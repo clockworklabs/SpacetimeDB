@@ -1,9 +1,9 @@
-export const AGENT_ADAPTER_SCHEMA_VERSION = 3;
+export const AGENT_ADAPTER_SCHEMA_VERSION = 4;
 
 const FIELDS = new Set(['schemaVersion', 'id', 'version', 'entrypoint', 'modes', 'deadlineMs',
   'defaultModel', 'apiKeyEnvironmentVariable', 'credentialEnvironmentVariables',
   'credentialFiles', 'outboundDestinations', 'requiredExecutables', 'credentialStatusCommand',
-  'usesStackSkills', 'costLimit']);
+  'usesStackSkills', 'costLimit', 'sandboxProbe']);
 const RESULT_FIELDS = new Set(['appDir', 'mode', 'level', 'track', 'backend', 'model', 'guidance',
   'stack', 'setup', 'costUsd', 'tokens', 'outputTokens', 'usage', 'provenance', 'turns',
   'promptBytes', 'tokensPerTurn', 'thinking', 'durationMs', 'sessionId', 'ok',
@@ -12,6 +12,7 @@ const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
 const MODES = new Set(['build', 'upgrade', 'resume', 'fix']);
 const COST_LIMITS = new Set(['native', 'non-billable', 'unsupported']);
+const SANDBOX_PROBES = new Set(['direct-cli', 'none']);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 export function defineAgentAdapter(value) {
@@ -40,6 +41,9 @@ export function defineAgentAdapter(value) {
   }
   if (typeof value.usesStackSkills !== 'boolean') {
     throw new Error(`agent adapter ${value.id}.usesStackSkills is invalid`);
+  }
+  if (!SANDBOX_PROBES.has(value.sandboxProbe)) {
+    throw new Error(`agent adapter ${value.id}.sandboxProbe is invalid`);
   }
   if (value.credentialStatusCommand !== null
     && (!Array.isArray(value.credentialStatusCommand) || value.credentialStatusCommand.length === 0

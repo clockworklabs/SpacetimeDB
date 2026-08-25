@@ -700,7 +700,7 @@ async function main() {
   // that is supposed to run for free stop being free.
   const probeMode = sandboxProbeMode({ appliance: process.env.STACK_BENCH_APPLIANCE === '1',
     explicitlySkipped: args.skipProbe, stackRequired: executeStackCapability(stackAdapter,
-      'run-policy', 'sandbox-probe-required') });
+      'run-policy', 'sandbox-probe-required') && agentAdapter.sandboxProbe === 'direct-cli' });
   if (probeMode === 'container-isolation') {
     console.log('  sandbox    ... coding container is isolated from the controller and grading files');
   } else if (probeMode === 'direct-cli') {
