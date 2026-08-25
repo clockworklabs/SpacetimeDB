@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stack Bench | Dependency Graph</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #050706;
+    --panel: #0b1110;
+    --panel-raised: #101716;
+    --line: #22322f;
+    --line-strong: #3b504b;
+    --text: #eef3f1;
+    --muted: #91a09d;
+    --dim: #5e6b68;
+    --green: #21f38a;
+    --green-bg: #0d2b1c;
+    --blue: #62c7ff;
+    --blue-bg: #102938;
+    --yellow: #f3c959;
+    --yellow-bg: #352b13;
+    --pink: #ff648f;
+    --pink-bg: #35151f;
+    --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { min-height: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: .12;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  button { font: inherit; }
+
+  .shell {
+    position: relative;
+    z-index: 1;
+    width: min(1440px, 100%);
+    min-height: 100vh;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 18px;
+  }
+
+  .brand-row { display: flex; align-items: center; gap: 10px; margin-bottom: 17px; }
+  .brand-row svg { width: 24px; height: 22px; }
+  .brand-row span { font: 600 12px/1 var(--mono); letter-spacing: .12em; }
+
+  h1 { margin: 0 0 7px; font-size: 28px; line-height: 1.1; letter-spacing: -.025em; }
+  .subtitle { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+  .run-meta {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding-top: 8px;
+    color: var(--muted);
+    font: 11px/1.4 var(--mono);
+  }
+
+  .run-meta strong { color: var(--text); font-weight: 600; }
+  .run-meta i { width: 1px; height: 28px; background: var(--line); }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    min-height: 52px;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: rgba(11, 17, 16, .94);
+  }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; }
+  .legend span { color: var(--muted); font: 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .07em; }
+  .legend i { display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; }
+  .legend .passed { background: var(--green); }
+  .legend .working { background: var(--yellow); }
+  .legend .open { background: var(--blue); }
+  .legend .failed { background: var(--pink); }
+  .legend .locked { background: var(--dim); }
+
+  .toolbar-note { color: var(--dim); font: 10px/1.3 var(--mono); }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 14px;
+    min-height: 650px;
+  }
+
+  .graph-panel, .details {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(11, 17, 16, .96);
+  }
+
+  .graph-panel { min-width: 0; overflow: auto; }
+
+  .graph-canvas {
+    position: relative;
+    min-width: 850px;
+    min-height: 648px;
+    padding: 22px;
+  }
+
+  #edges {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  .edge { fill: none; stroke: var(--line-strong); stroke-width: 1.4; }
+  .edge.active { stroke: var(--green); }
+  .edge.blocked { stroke: #26312f; stroke-dasharray: 4 5; }
+
+  .levels {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+    gap: 68px;
+  }
+
+  .level-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 30px;
+    margin-bottom: 13px;
+    color: var(--muted);
+    font: 10px/1 var(--mono);
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+
+  .level-head b { color: var(--dim); font-weight: 500; }
+
+  .node {
+    width: 100%;
+    height: 68px;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 5px 12px;
+    align-items: center;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--panel-raised);
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .node:hover, .node.selected { outline: 1px solid rgba(255, 255, 255, .22); outline-offset: 2px; }
+  .node .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 13px/1.2 var(--mono); }
+  .node .id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 9px/1.2 var(--mono); }
+  .node .state { grid-row: 1 / span 2; grid-column: 2; font: 700 9px/1 var(--mono); letter-spacing: .06em; }
+
+  .node.passed { border-color: var(--green); background: var(--green-bg); }
+  .node.passed .state { color: var(--green); }
+  .node.working { border-color: var(--yellow); background: var(--yellow-bg); }
+  .node.working .state { color: var(--yellow); }
+  .node.open { border-color: var(--blue); background: var(--blue-bg); }
+  .node.open .state { color: var(--blue); }
+  .node.failed { border-color: var(--pink); background: var(--pink-bg); }
+  .node.failed .state { color: var(--pink); }
+  .node.locked { opacity: .38; border-style: dashed; }
+  .node.locked .state { color: var(--dim); }
+
+  .details { padding: 21px; }
+  .details-kicker { margin-bottom: 15px; color: var(--green); font: 700 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+  .details h2 { margin: 0 0 8px; font-size: 21px; line-height: 1.2; }
+  .details-id { margin: 0 0 24px; color: var(--muted); font: 10px/1.4 var(--mono); word-break: break-word; }
+  .detail-row { padding: 14px 0; border-top: 1px solid var(--line); }
+  .detail-row span { display: block; margin-bottom: 7px; color: var(--dim); font: 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .detail-row strong { color: var(--text); font-size: 13px; font-weight: 550; line-height: 1.45; }
+  .detail-row .status { font-family: var(--mono); }
+  .details-help { margin: 24px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .summary-item {
+    padding: 15px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(11, 17, 16, .94);
+  }
+
+  .summary-item span { display: block; margin-bottom: 7px; color: var(--dim); font: 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+  .summary-item strong { font: 600 16px/1 var(--mono); }
+
+  @media (max-width: 900px) {
+    header { display: block; }
+    .run-meta { margin-top: 18px; }
+    .workspace { grid-template-columns: 1fr; }
+    .details { min-height: 250px; }
+    .summary { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  @media (max-width: 560px) {
+    .shell { padding: 16px; }
+    .run-meta { align-items: flex-start; gap: 10px; }
+    .toolbar { display: block; }
+    .toolbar-note { margin-top: 12px; }
+    .summary { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<main class="shell">
+  <header>
+    <div>
+      <div class="brand-row">
+        <svg viewBox="0 0 35 32" aria-hidden="true">
+          <path d="M28.8002 15.317C28.5535 9.53226 29.63 6.19046 35 0L24.2649 10.9106C26.8343 14.2552 26.6051 19.0995 23.5774 22.1767C20.5498 25.2538 15.7834 25.4867 12.4925 22.8754L7.35285 28.1361C9.73784 26.7321 13.4208 27.1349 15.6425 27.3779C16.2579 27.4452 16.7611 27.5003 17.0937 27.5013C20.1371 27.6534 23.2301 26.5483 25.5544 24.186C27.9465 21.7549 29.0284 18.4965 28.8002 15.317Z" fill="#D7D8D9"/>
+          <path d="M17.9063 4.49871C18.2389 4.49971 18.7421 4.55476 19.3575 4.62207C21.5792 4.86508 25.2622 5.26792 27.6472 3.86395L22.5075 9.12462C19.2166 6.51328 14.4502 6.74618 11.4226 9.82332C8.3949 12.9005 8.16574 17.7448 10.7351 21.0894L0 32C5.36996 25.8095 6.44651 22.4677 6.1998 16.683C5.97163 13.5035 7.05355 10.2451 9.44557 7.81402C11.7699 5.45167 14.8629 4.34657 17.9063 4.49871Z" fill="#D7D8D9"/>
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M24.7486 16C24.7486 20.0687 21.5033 23.367 17.5 23.367C13.4967 23.367 10.2514 20.0687 10.2514 16C10.2514 11.9313 13.4967 8.63292 17.5 8.63292C21.5033 8.63292 24.7486 11.9313 24.7486 16ZM17.5 21.6C20.5752 21.6 23.0682 19.0928 23.0682 16C23.0682 12.9072 20.5752 10.4 17.5 10.4C14.4248 10.4 11.9318 12.9072 11.9318 16C11.9318 19.0928 14.4248 21.6 17.5 21.6Z" fill="#D7D8D9"/>
+        </svg>
+        <span>STACK BENCH</span>
+      </div>
+      <h1>Feature dependency graph</h1>
+      <p class="subtitle">Passed features open their children. Failed features stop only their own paths.</p>
+    </div>
+    <div class="run-meta">
+      <span>GRAPH<br><strong>ecommerce@1.0.0</strong></span><i></i>
+      <span>LEVELS<br><strong>3</strong></span><i></i>
+      <span>FEATURES<br><strong>12</strong></span>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="legend" aria-label="Feature states">
+      <span><i class="passed"></i>Passed</span>
+      <span><i class="working"></i>Working</span>
+      <span><i class="open"></i>Open</span>
+      <span><i class="failed"></i>Failed</span>
+      <span><i class="locked"></i>Locked</span>
+    </div>
+    <div class="toolbar-note">Select a feature to inspect it</div>
+  </div>
+
+  <div class="workspace">
+    <section class="graph-panel" aria-label="Feature graph">
+      <div class="graph-canvas" id="graph-canvas">
+        <svg id="edges" aria-hidden="true"></svg>
+        <div class="levels" id="levels"></div>
+      </div>
+    </section>
+
+    <aside class="details" id="details" aria-live="polite">
+      <div class="details-kicker">Selected feature</div>
+      <h2 id="detail-name"></h2>
+      <p class="details-id" id="detail-id"></p>
+      <div class="detail-row"><span>State</span><strong class="status" id="detail-state"></strong></div>
+      <div class="detail-row"><span>Level</span><strong id="detail-level"></strong></div>
+      <div class="detail-row"><span>Depends on</span><strong id="detail-parents"></strong></div>
+      <div class="detail-row"><span>Scored checks</span><strong id="detail-checks"></strong></div>
+      <div class="detail-row"><span>Repair attempts</span><strong id="detail-attempts"></strong></div>
+      <p class="details-help" id="detail-help"></p>
+    </aside>
+  </div>
+
+  <div class="summary" aria-label="Graph summary">
+    <div class="summary-item"><span>Passed</span><strong>5</strong></div>
+    <div class="summary-item"><span>Working</span><strong>1</strong></div>
+    <div class="summary-item"><span>Open</span><strong>2</strong></div>
+    <div class="summary-item"><span>Failed</span><strong>1</strong></div>
+    <div class="summary-item"><span>Locked</span><strong>3</strong></div>
+  </div>
+</main>
+
+<script>
+  const features = [
+    { id: 'accounts', name: 'Accounts', level: 1, state: 'passed', parents: [], checks: 8, attempts: '1 of 3', help: 'This pass opens Operator access in level 2.' },
+    { id: 'catalog', name: 'Catalog', level: 1, state: 'failed', parents: [], checks: 7, attempts: '3 of 3', help: 'This path stops here. Search and Recommendations stay locked.' },
+    { id: 'cart', name: 'Cart', level: 1, state: 'passed', parents: [], checks: 9, attempts: '2 of 3', help: 'This pass opens Checkout in level 2.' },
+    { id: 'warehouse', name: 'Warehouse', level: 1, state: 'passed', parents: [], checks: 8, attempts: '1 of 3', help: 'This pass opens Stock transfers in level 2.' },
+    { id: 'operator-access', name: 'Operator access', level: 2, state: 'passed', parents: ['accounts'], checks: 6, attempts: '1 of 3', help: 'This pass opens Account recovery in level 3.' },
+    { id: 'search', name: 'Search', level: 2, state: 'locked', parents: ['catalog'], checks: 5, attempts: 'Not started', help: 'Catalog did not pass, so this feature did not open.' },
+    { id: 'checkout', name: 'Checkout', level: 2, state: 'working', parents: ['cart'], checks: 10, attempts: '2 of 3', help: 'The agent is repairing failed Checkout checks.' },
+    { id: 'stock-transfers', name: 'Stock transfers', level: 2, state: 'passed', parents: ['warehouse'], checks: 7, attempts: '1 of 3', help: 'This pass opens Scheduled restocks in level 3.' },
+    { id: 'account-recovery', name: 'Account recovery', level: 3, state: 'open', parents: ['operator-access'], checks: 8, attempts: 'Not started', help: 'All dependencies passed. This feature is ready to build.' },
+    { id: 'recommendations', name: 'Recommendations', level: 3, state: 'locked', parents: ['search'], checks: 6, attempts: 'Not started', help: 'Search is locked, so this feature stays locked.' },
+    { id: 'returns', name: 'Returns', level: 3, state: 'locked', parents: ['checkout'], checks: 9, attempts: 'Not started', help: 'Checkout has not passed, so this feature stays locked.' },
+    { id: 'scheduled-restocks', name: 'Scheduled restocks', level: 3, state: 'open', parents: ['stock-transfers'], checks: 7, attempts: 'Not started', help: 'All dependencies passed. This feature is ready to build.' }
+  ];
+
+  const byId = new Map(features.map(feature => [feature.id, feature]));
+  const levels = document.getElementById('levels');
+  const canvas = document.getElementById('graph-canvas');
+  const edges = document.getElementById('edges');
+
+  for (let level = 1; level <= 3; level += 1) {
+    const column = document.createElement('div');
+    const items = features.filter(feature => feature.level === level);
+    column.innerHTML = `<div class="level-head"><span>Level ${level}</span><b>${items.length} features</b></div>`;
+
+    for (const feature of items) {
+      const node = document.createElement('button');
+      node.type = 'button';
+      node.className = `node ${feature.state}`;
+      node.dataset.id = feature.id;
+      node.innerHTML = `<span class="name">${feature.name}</span><span class="id">${feature.id}</span><span class="state">${feature.state.toUpperCase()}</span>`;
+      node.addEventListener('click', () => selectFeature(feature.id));
+      column.appendChild(node);
+    }
+
+    levels.appendChild(column);
+  }
+
+  function selectFeature(id) {
+    const feature = byId.get(id);
+    if (!feature) return;
+
+    document.querySelectorAll('.node').forEach(node => node.classList.toggle('selected', node.dataset.id === id));
+    document.getElementById('detail-name').textContent = feature.name;
+    document.getElementById('detail-id').textContent = feature.id;
+    document.getElementById('detail-state').textContent = feature.state.toUpperCase();
+    document.getElementById('detail-level').textContent = `Level ${feature.level}`;
+    document.getElementById('detail-parents').textContent = feature.parents.length ? feature.parents.map(parent => byId.get(parent).name).join(', ') : 'None';
+    document.getElementById('detail-checks').textContent = String(feature.checks);
+    document.getElementById('detail-attempts').textContent = feature.attempts;
+    document.getElementById('detail-help').textContent = feature.help;
+  }
+
+  function drawEdges() {
+    const canvasBox = canvas.getBoundingClientRect();
+    edges.replaceChildren();
+
+    for (const child of features) {
+      for (const parentId of child.parents) {
+        const parent = byId.get(parentId);
+        const from = document.querySelector(`[data-id="${parentId}"]`).getBoundingClientRect();
+        const to = document.querySelector(`[data-id="${child.id}"]`).getBoundingClientRect();
+        const x1 = from.right - canvasBox.left;
+        const y1 = from.top + from.height / 2 - canvasBox.top;
+        const x2 = to.left - canvasBox.left;
+        const y2 = to.top + to.height / 2 - canvasBox.top;
+        const bend = x1 + (x2 - x1) / 2;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', `M${x1} ${y1} H${bend} V${y2} H${x2}`);
+        const edgeState = parent.state === 'passed' ? 'active' : 'blocked';
+        path.setAttribute('class', `edge ${edgeState}`);
+        edges.appendChild(path);
+      }
+    }
+  }
+
+  addEventListener('resize', drawEdges);
+  new ResizeObserver(drawEdges).observe(canvas);
+  selectFeature('checkout');
+  drawEdges();
+</script>
+</body>
+</html>
