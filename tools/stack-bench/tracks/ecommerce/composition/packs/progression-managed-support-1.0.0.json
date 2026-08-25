@@ -21,7 +21,6 @@
         "id": "ecommerce.progression.managed-support",
         "path": "prompts/modular/managed-support-1.0.0.md",
         "order": 3100,
-        "from": "## Managed support cases",
         "modes": ["upgrade"]
       }
     ],
@@ -30,7 +29,6 @@
         "id": "ecommerce.progression.managed-support-hooks",
         "path": "contracts/managed-support-1.0.md",
         "order": 3900,
-        "from": "## Managed support hooks",
         "modes": ["upgrade"]
       }
     ]

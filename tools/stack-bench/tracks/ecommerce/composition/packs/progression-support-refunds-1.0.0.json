@@ -21,7 +21,6 @@
         "id": "ecommerce.progression.support-refunds",
         "path": "prompts/modular/support-refunds-1.0.0.md",
         "order": 5100,
-        "from": "## Support refunds",
         "modes": ["upgrade"]
       }
     ],
@@ -30,7 +29,6 @@
         "id": "ecommerce.progression.support-refund-hooks",
         "path": "contracts/support-refunds-1.0.md",
         "order": 5900,
-        "from": "## Support refund hooks",
         "modes": ["upgrade"]
       }
     ]

@@ -21,7 +21,6 @@
         "id": "ecommerce.progression.order-support",
         "path": "prompts/modular/order-support-1.0.0.md",
         "order": 4100,
-        "from": "## Order-linked support",
         "modes": ["upgrade"]
       }
     ],
@@ -30,7 +29,6 @@
         "id": "ecommerce.progression.order-support-hooks",
         "path": "contracts/order-support-1.0.md",
         "order": 4900,
-        "from": "## Order-linked support hooks",
         "modes": ["upgrade"]
       }
     ]
