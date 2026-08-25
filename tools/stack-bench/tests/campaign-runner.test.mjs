@@ -9,7 +9,7 @@ import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
   writeArtifact } from '../src/evidence/artifacts.mjs';
 import { attemptArgv, campaignExecutionEnvironment, campaignRetryAuthority,
   campaignSlotEnvironment, executeCampaign, reconcileCampaign, runCampaignAdmission,
-  validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
+  processFailureDetail, validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
 import { compileProgressionInput } from '../src/progression/progression-definition.mjs';
 import { claimNextAttempt, initializeCampaignDirectory,
@@ -23,6 +23,19 @@ const productBrief = join(import.meta.dirname, '..', 'appliance',
 // modular example selection made this mandatory for level-1 fixtures.
 const plannedSelection = (attempt, level) => structuredClone(
   attempt.condition.requested.levels.find(item => item.level === level).selection);
+
+test('campaign failures prefer the last explicit error over stack and exit noise', () => {
+  const stderrTail = [
+    'Error: Command failed: node agent.mjs --large-private-request',
+    '[reference-agent] starting',
+    'Error: reference source contains an unsupported generated link',
+    '    at prepareReferenceSource (reference-agent.mjs:102:3)',
+    '[reference-agent] beforeExit code=1',
+    '[reference-agent] exit code=1',
+  ].join('\n');
+  assert.equal(processFailureDetail({ stderrTail }),
+    'Error: reference source contains an unsupported generated link');
+});
 
 test('parallel SpacetimeDB slots receive distinct dedicated host ports', () => {
   assert.equal(campaignSlotEnvironment({}, 'spacetime', 0).STACK_BENCH_STDB_URI,

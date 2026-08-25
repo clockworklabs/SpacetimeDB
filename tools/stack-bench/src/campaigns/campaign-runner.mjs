@@ -431,16 +431,27 @@ function readAttemptResult(plan, attempt, output, processResult) {
     }
     catch (error) { artifactError = error; }
   }
-  if (artifactError) return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut,
-    run: { outcome: { kind: 'harness_failure',
-      reason: `run.json is invalid: ${artifactError.message}` } } });
+  if (artifactError) {
+    const processDetail = processResult.code !== 0
+      ? processFailureDetail(processResult) : null;
+    return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut,
+      run: { outcome: { kind: 'harness_failure',
+        reason: `${processDetail ? `${processDetail}; ` : ''}partial run.json is invalid: ${artifactError.message}` } } });
+  }
   if (!run && processResult.code !== 0 && !processResult.timedOut) {
-    const detail = (processResult.stderrTail || processResult.stdoutTail || processResult.error?.message || '')
-      .split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(-4).join(' | ').slice(0, 800);
+    const detail = processFailureDetail(processResult);
     return withRetryAuthority({ exitCode: processResult.code, timedOut: false, run: { outcome: {
       kind: 'harness_failure', reason: detail || 'attempt ended before producing run.json' } } });
   }
   return withRetryAuthority({ exitCode: processResult.code, timedOut: processResult.timedOut, run });
+}
+
+export function processFailureDetail(processResult) {
+  const text = processResult.stderrTail || processResult.stdoutTail
+    || processResult.error?.message || '';
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const explicit = lines.filter(line => /^Error:\s+/.test(line)).at(-1);
+  return (explicit ?? lines.slice(-4).join(' | ')).slice(0, 800);
 }
 
 export function verifyCampaignRuntime(plan, env = process.env) {
