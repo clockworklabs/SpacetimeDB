@@ -14,13 +14,13 @@
   "budget": { "status": "bounded", "maxRuntimeMs": 42000 },
   "task": {
     "requirements": [
-      { "id": "ecommerce.feature.cart-checkout.requirement", "path": "prompts/modular/l1-features-1.1.0.md", "order": 400, "from": "## Cart and checkout", "until": "## Reviews", "modes": ["fresh", "upgrade"] }
+      { "id": "ecommerce.feature.cart-checkout.requirement", "path": "prompts/modular/cart-checkout-1.0.0.md", "order": 400, "modes": ["fresh", "upgrade"] }
     ],
     "contracts": [
-      { "id": "ecommerce.feature.cart-checkout.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2300, "from": "## Cart hooks", "until": "## Review hooks", "modes": ["fresh", "upgrade"] }
+      { "id": "ecommerce.feature.cart-checkout.hooks", "path": "contracts/cart-checkout-1.0.md", "order": 2300, "modes": ["fresh", "upgrade"] }
     ]
   },
   "checks": [
-    { "id": "cart", "source": "scenarios/01-cart-2.4.0.json", "feature": 4, "criteria": ["4a", "4d"], "role": "feature" }
+    { "id": "cart", "source": "scenarios/progression-cart-checkout-1.0.0.json", "feature": 4, "criteria": ["4a", "4d"], "role": "feature" }
   ]
 }

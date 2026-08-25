@@ -14,13 +14,13 @@
   "budget": { "status": "bounded", "maxRuntimeMs": 24000 },
   "task": {
     "requirements": [
-      { "id": "ecommerce.feature.purchasing.requirement", "path": "prompts/modular/l1-features.md", "order": 300, "from": "## Purchasing and orders", "until": "## Cart and checkout", "modes": ["fresh", "upgrade"] }
+      { "id": "ecommerce.feature.purchasing.requirement", "path": "prompts/modular/purchasing-1.0.0.md", "order": 300, "modes": ["fresh", "upgrade"] }
     ],
     "contracts": [
-      { "id": "ecommerce.feature.purchasing.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2200, "from": "## Purchasing hooks", "until": "## Cart hooks", "modes": ["fresh", "upgrade"] }
+      { "id": "ecommerce.feature.purchasing.hooks", "path": "contracts/purchasing-1.0.md", "order": 2200, "modes": ["fresh", "upgrade"] }
     ]
   },
   "checks": [
-    { "id": "purchase-order", "source": "scenarios/01-buying-2.4.0.json", "feature": 3, "criteria": ["3c"], "role": "feature" }
+    { "id": "purchase-order", "source": "scenarios/progression-purchasing-1.0.0.json", "feature": 3, "criteria": ["3c"], "role": "feature" }
   ]
 }
