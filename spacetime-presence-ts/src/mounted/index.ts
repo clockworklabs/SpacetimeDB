@@ -13,10 +13,11 @@ import {
 import {
   DEFAULT_PRESENCE_SWEEP_BATCH,
   DEFAULT_PRESENCE_STATUS,
-  installPresenceConfig,
+  MAX_PRESENCE_SWEEP_BATCH,
   removePresence,
   runPresenceSweep,
   sweepPresence,
+  updatePresenceConfig,
   upsertPresence,
 } from '../index';
 
@@ -116,8 +117,8 @@ function requireAdmin(ctx: Tx): void {
   }
 }
 
-function toU32(name: string, value: number): number {
-  if (!Number.isInteger(value) || value <= 0 || value > 0xffff_ffff) {
+function toU32(name: string, value: number, max = 0xffff_ffff): number {
+  if (!Number.isInteger(value) || value <= 0 || value > max) {
     throw new SenderError(`presence.invalid_${name}`);
   }
   return value;
@@ -189,9 +190,10 @@ export const run_sweep = spacetimedb.procedure(
     const maxRows =
       args.maxRows === undefined
         ? undefined
-        : toU32('sweep_batch', Number(args.maxRows));
+        : toU32('sweep_batch', Number(args.maxRows), MAX_PRESENCE_SWEEP_BATCH);
     let deleted = 0;
     ctx.withTx(tx => {
+      requireAdmin(tx);
       deleted = sweepPresence(
         tx,
         tx.db.presenceEntry.expiresAt.filter(
@@ -221,12 +223,16 @@ export const update_config = spacetimedb.reducer(
   { defaultTtlSeconds: t.u32(), sweepBatch: t.u32() },
   (ctx, args) => {
     requireAdmin(ctx);
-    installPresenceConfig(ctx, {
+    updatePresenceConfig(ctx, {
       defaultTtlSeconds: toU32(
         'default_ttl_seconds',
         Number(args.defaultTtlSeconds)
       ),
-      sweepBatch: toU32('sweep_batch', Number(args.sweepBatch)),
+      sweepBatch: toU32(
+        'sweep_batch',
+        Number(args.sweepBatch),
+        MAX_PRESENCE_SWEEP_BATCH
+      ),
     });
   }
 );

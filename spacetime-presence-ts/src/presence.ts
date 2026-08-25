@@ -5,6 +5,7 @@ const U32_MAX = 0xffff_ffff;
 
 export const DEFAULT_PRESENCE_TTL_SECONDS = 30;
 export const DEFAULT_PRESENCE_SWEEP_BATCH = 500;
+export const MAX_PRESENCE_SWEEP_BATCH = 10_000;
 export const DEFAULT_PRESENCE_STATUS = 'online';
 const MAX_SCOPE_LENGTH = 128;
 const MAX_SUBJECT_LENGTH = 256;
@@ -70,6 +71,16 @@ export interface PresenceSweepCtxLike extends PresenceTxLike {
   };
 }
 
+export interface PresenceConfigReadCtxLike {
+  db: {
+    presenceConfig: {
+      singleton: {
+        find(key: boolean): PresenceConfigRow | null | undefined;
+      };
+    };
+  };
+}
+
 export interface PresenceUpsertOpts {
   scope: string;
   subject: string;
@@ -118,7 +129,7 @@ export function installPresenceConfig(
     opts?.defaultTtlSeconds ?? DEFAULT_PRESENCE_TTL_SECONDS;
   const sweepBatch = opts?.sweepBatch ?? DEFAULT_PRESENCE_SWEEP_BATCH;
   assertPositiveU32('default_ttl_seconds', defaultTtlSeconds);
-  assertPositiveU32('sweep_batch', sweepBatch);
+  assertPresenceSweepBatch(sweepBatch);
 
   const existing = ctx.db.presenceConfig.singleton.find(true);
   if (!existing) {
@@ -130,6 +141,29 @@ export function installPresenceConfig(
     });
     return;
   }
+}
+
+export function assertPresenceSweepBatch(value: number): void {
+  assertPositiveU32('sweep_batch', value);
+  if (value > MAX_PRESENCE_SWEEP_BATCH) {
+    throw new Error('presence.invalid_sweep_batch');
+  }
+}
+
+export function updatePresenceConfig(
+  ctx: PresenceConfigCtxLike,
+  opts: Required<PresenceInstallOpts>
+): void {
+  assertPositiveU32('default_ttl_seconds', opts.defaultTtlSeconds);
+  assertPresenceSweepBatch(opts.sweepBatch);
+  const existing = ctx.db.presenceConfig.singleton.find(true);
+  if (!existing) throw new Error('presence.config_missing');
+  ctx.db.presenceConfig.singleton.update({
+    ...existing,
+    defaultTtlSeconds: opts.defaultTtlSeconds,
+    sweepBatch: opts.sweepBatch,
+    updatedAt: ctx.timestamp,
+  });
 }
 
 export function upsertPresence(
@@ -233,7 +267,7 @@ export function sweepPresence(
   expiredRows: Iterable<PresenceEntryRow>,
   maxRows = DEFAULT_PRESENCE_SWEEP_BATCH
 ): number {
-  assertPositiveU32('sweep_batch', maxRows);
+  assertPresenceSweepBatch(maxRows);
   const nowMicros = tx.timestamp.microsSinceUnixEpoch as bigint;
   let deleted = 0;
   for (const row of expiredRows) {
@@ -246,12 +280,22 @@ export function sweepPresence(
 }
 
 export function resolvePresenceSweepBatch(
-  ctx: PresenceSweepCtxLike,
+  ctx: PresenceConfigReadCtxLike,
   fallback = DEFAULT_PRESENCE_SWEEP_BATCH
 ): number {
   const cfg = ctx.db.presenceConfig.singleton.find(true);
   const value = Number(cfg?.sweepBatch ?? fallback);
-  return value > 0 ? value : fallback;
+  const safeFallback =
+    Number.isInteger(fallback) &&
+    fallback > 0 &&
+    fallback <= MAX_PRESENCE_SWEEP_BATCH
+      ? fallback
+      : DEFAULT_PRESENCE_SWEEP_BATCH;
+  return Number.isInteger(value) &&
+    value > 0 &&
+    value <= MAX_PRESENCE_SWEEP_BATCH
+    ? value
+    : safeFallback;
 }
 
 export function runPresenceSweep(

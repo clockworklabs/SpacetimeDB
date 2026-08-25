@@ -1,5 +1,7 @@
 export {
   DEFAULT_SWEEP_BATCH,
+  MAX_SWEEP_BATCH,
+  assertRateLimitSweepBatch,
   DEFAULT_SWEEP_INTERVAL_SECONDS,
   consumeRateLimit,
   installRateLimitState,

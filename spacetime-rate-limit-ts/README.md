@@ -137,6 +137,7 @@ for per-action policies, caller-visible status, and admin controls.
 ## Exported defaults
 
 - `DEFAULT_SWEEP_BATCH = 500`
+- `MAX_SWEEP_BATCH = 10_000`
 - `DEFAULT_SWEEP_INTERVAL_SECONDS = 30n`
 
 ## Testing

@@ -4,6 +4,7 @@ const ONE_SECOND_MICROS = 1_000_000n;
 const U32_MAX = 0xffff_ffff;
 
 export const DEFAULT_SWEEP_BATCH = 500;
+export const MAX_SWEEP_BATCH = 10_000;
 export const DEFAULT_SWEEP_INTERVAL_SECONDS = 30n;
 
 export interface ConsumeRateLimitOpts {
@@ -39,6 +40,13 @@ export type RateLimitResult =
 function assertPositiveInt(name: string, value: number): void {
   if (!Number.isInteger(value) || value <= 0 || value > U32_MAX) {
     throw new Error(`rate_limit.invalid_${name}`);
+  }
+}
+
+export function assertRateLimitSweepBatch(value: number): void {
+  assertPositiveInt('sweep_batch', value);
+  if (value > MAX_SWEEP_BATCH) {
+    throw new Error('rate_limit.invalid_sweep_batch');
   }
 }
 
@@ -119,7 +127,7 @@ export function installRateLimitState(
   opts?: RateLimitInstallOpts
 ): void {
   const sweepBatch = opts?.sweepBatch ?? DEFAULT_SWEEP_BATCH;
-  assertPositiveInt('sweep_batch', sweepBatch);
+  assertRateLimitSweepBatch(sweepBatch);
   const sweepIntervalSeconds =
     opts?.sweepIntervalSeconds ?? DEFAULT_SWEEP_INTERVAL_SECONDS;
   if (sweepIntervalSeconds <= 0n)
@@ -155,7 +163,13 @@ export function resolveRateLimitSweepBatch(
   const cfg = ctx.db.rateLimitConfig.singleton.find(true);
   if (!cfg) return fallback;
   const batch = Number(cfg.sweepBatch);
-  return batch > 0 ? batch : fallback;
+  const safeFallback =
+    Number.isInteger(fallback) && fallback > 0 && fallback <= MAX_SWEEP_BATCH
+      ? fallback
+      : DEFAULT_SWEEP_BATCH;
+  return Number.isInteger(batch) && batch > 0 && batch <= MAX_SWEEP_BATCH
+    ? batch
+    : safeFallback;
 }
 
 export interface RateLimitSweepCtxLike extends RateLimitTxLike {
@@ -277,7 +291,7 @@ export function sweepRateLimits(
   expiredRows: Iterable<RateLimitBucketRow>,
   maxRows = DEFAULT_SWEEP_BATCH
 ): number {
-  assertPositiveInt('sweep_batch', maxRows);
+  assertRateLimitSweepBatch(maxRows);
   const nowMicros = tx.timestamp.microsSinceUnixEpoch as bigint;
   let deleted = 0;
   for (const row of expiredRows) {

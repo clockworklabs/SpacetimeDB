@@ -1,6 +1,8 @@
 import { Timestamp } from 'spacetimedb';
 import {
   consumeRateLimit,
+  MAX_SWEEP_BATCH,
+  resolveRateLimitSweepBatch,
   sweepRateLimits,
   type RateLimitBucketRow,
 } from '../src/limit.ts';
@@ -18,6 +20,15 @@ function assert(cond: boolean, name: string, detail = ''): void {
     process.stdout.write(
       `  FAIL ${name}${detail ? `\n       ${detail}` : ''}\n`
     );
+  }
+}
+
+function assertThrows(fn: () => void, expected: string, name: string): void {
+  try {
+    fn();
+    assert(false, name, `expected ${expected}`);
+  } catch (error) {
+    assert(error instanceof Error && error.message === expected, name);
   }
 }
 
@@ -81,6 +92,26 @@ function makeTx(nowMicros = 0n) {
 }
 
 process.stdout.write('\nrate limiter\n');
+
+{
+  const tx = makeTx();
+  assertThrows(
+    () => sweepRateLimits(tx, [], MAX_SWEEP_BATCH + 1),
+    'rate_limit.invalid_sweep_batch',
+    'sweep rejects an excessive batch size'
+  );
+  const batch = resolveRateLimitSweepBatch(
+    {
+      db: {
+        rateLimitConfig: {
+          singleton: { find: () => ({ sweepBatch: MAX_SWEEP_BATCH + 1 }) },
+        },
+      },
+    },
+    750
+  );
+  assert(batch === 750, 'invalid stored sweep batch uses the safe fallback');
+}
 
 assert(
   buildRateLimitKey('a:actor:b', 'c') !== buildRateLimitKey('a', 'b:actor:c'),

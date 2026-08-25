@@ -126,8 +126,9 @@ conn
 - `resolvePresenceSweepBatch` validates configured cleanup batch sizes.
 - `presenceEntryRow`, `presenceConfigRow`, `presenceSweepTickRow`, and
   `presenceTables` support lower-level table composition.
-- `DEFAULT_PRESENCE_TTL_SECONDS`, `DEFAULT_PRESENCE_SWEEP_BATCH`, and
-  `DEFAULT_PRESENCE_STATUS` expose the package defaults.
+- `DEFAULT_PRESENCE_TTL_SECONDS`, `DEFAULT_PRESENCE_SWEEP_BATCH`,
+  `MAX_PRESENCE_SWEEP_BATCH`, and `DEFAULT_PRESENCE_STATUS` expose the package
+  limits and defaults.
 
 Package entrypoints:
 
@@ -136,6 +137,12 @@ Package entrypoints:
 - `@spacetimedb/presence/tables` exports table builders.
 - `@spacetimedb/presence/submodule` exports the ready-made mounted
   namespace.
+
+The ready-made namespace publishes `presence_entry` rows. The `activity` and
+`payloadJson` fields are visible to subscribed clients. Do not store secrets or
+private application data in these fields. Its manual sweep and configuration
+operations require a presence administrator. Sweep batches are limited to
+10,000 rows per call.
 
 ## Testing
 

@@ -1,9 +1,13 @@
 import { Timestamp } from 'spacetimedb';
 import {
   buildPresenceKey,
+  installPresenceConfig,
+  MAX_PRESENCE_SWEEP_BATCH,
   removePresence,
+  resolvePresenceSweepBatch,
   sweepPresence,
   touchPresence,
+  updatePresenceConfig,
   upsertPresence,
   type PresenceEntryRow,
 } from '../src/presence.ts';
@@ -20,6 +24,15 @@ function assert(cond: boolean, name: string, detail = ''): void {
     process.stdout.write(
       `  FAIL ${name}${detail ? `\n       ${detail}` : ''}\n`
     );
+  }
+}
+
+function assertThrows(fn: () => void, expected: string, name: string): void {
+  try {
+    fn();
+    assert(false, name, `expected ${expected}`);
+  } catch (error) {
+    assert(error instanceof Error && error.message === expected, name);
   }
 }
 
@@ -79,6 +92,53 @@ function makeTx(nowMicros = 0n) {
 }
 
 process.stdout.write('\npresence submodule\n');
+
+{
+  let config:
+    | {
+        singleton: boolean;
+        defaultTtlSeconds: number;
+        sweepBatch: number;
+        updatedAt: Timestamp;
+      }
+    | undefined;
+  const ctx = {
+    timestamp: new Timestamp(1n),
+    db: {
+      presenceConfig: {
+        singleton: {
+          find: () => config,
+          update: (row: typeof config) => {
+            config = row;
+          },
+        },
+        insert: (row: NonNullable<typeof config>) => {
+          config = row;
+        },
+      },
+    },
+  };
+  installPresenceConfig(ctx, { defaultTtlSeconds: 30, sweepBatch: 500 });
+  ctx.timestamp = new Timestamp(2n);
+  updatePresenceConfig(ctx, { defaultTtlSeconds: 45, sweepBatch: 750 });
+  assert(
+    config?.defaultTtlSeconds === 45 && config.sweepBatch === 750,
+    'configuration updates an existing row'
+  );
+  assert(
+    resolvePresenceSweepBatch(ctx) === 750,
+    'sweep reads the updated batch size'
+  );
+}
+
+{
+  const tx = makeTx();
+  assertThrows(
+    () => sweepPresence(tx, [], MAX_PRESENCE_SWEEP_BATCH + 1),
+    'presence.invalid_sweep_batch',
+    'sweep rejects an excessive batch size'
+  );
+}
 
 assert(
   buildPresenceKey('room::one', 'user') !==

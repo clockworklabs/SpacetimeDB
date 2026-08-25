@@ -2,6 +2,7 @@ import { Range, SenderError } from 'spacetimedb/server';
 import {
   consumeRateLimit,
   DEFAULT_SWEEP_BATCH,
+  MAX_SWEEP_BATCH,
   runRateLimitSweep,
   sweepRateLimits,
 } from '../index';
@@ -40,8 +41,8 @@ function requireAdmin(ctx: ReducerModuleCtx): void {
   }
 }
 
-function toU32(name: string, value: number): number {
-  if (!Number.isInteger(value) || value <= 0 || value > 0xffff_ffff) {
+function toU32(name: string, value: number, max = 0xffff_ffff): number {
+  if (!Number.isInteger(value) || value <= 0 || value > max) {
     throw new Error(`rate_limit.invalid_${name}`);
   }
   return value;
@@ -106,7 +107,7 @@ export const runSweep = spacetimedb.procedure(
     const maxRows =
       args.maxRows === undefined
         ? undefined
-        : toU32('sweep_batch', Number(args.maxRows));
+        : toU32('sweep_batch', Number(args.maxRows), MAX_SWEEP_BATCH);
     return ctx.withTx(tx => {
       requireAdmin(tx);
       return sweepRateLimits(
@@ -141,7 +142,11 @@ export const updateConfig = spacetimedb.reducer(
     if (!cfg) throw new Error('rate_limit.config_missing');
     ctx.db.rateLimitConfig.singleton.update({
       ...cfg,
-      sweepBatch: toU32('sweep_batch', Number(args.sweepBatch)),
+      sweepBatch: toU32(
+        'sweep_batch',
+        Number(args.sweepBatch),
+        MAX_SWEEP_BATCH
+      ),
       updatedAt: ctx.timestamp,
     });
   }
