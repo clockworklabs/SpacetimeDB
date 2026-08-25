@@ -219,6 +219,10 @@ export function runTranscriptAwareProcess({ command, args, input, env, timeoutMs
       clearTimeout(timeout);
       const stdoutText = Buffer.concat(stdout).toString('utf8');
       const stderrText = Buffer.concat(stderr).toString('utf8');
+      if (status === 0 && !error && parseCompleteClaudeCliResult(stdoutText)) {
+        resolve({ status, signal, stdout: stdoutText, stderr: stderrText, error: null });
+        return;
+      }
       if (recovered) {
         const cliResult = parseCompleteClaudeCliResult(stdoutText);
         if (cliResult) {

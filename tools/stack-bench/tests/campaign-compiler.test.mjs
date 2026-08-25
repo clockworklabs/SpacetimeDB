@@ -258,7 +258,7 @@ test('frozen campaigns require exact runtime images', () => {
   assert.equal(internal.runtime.releaseManifestSha256, null);
 });
 
-test('frozen campaigns reject stale qualification evidence for every selected level', () => {
+test('frozen campaigns accept current qualification evidence for every selected level', () => {
   const qualifiedBuildImages = new Set(compile(definition({ levels: [1, 2] })).bindings
     .map(binding => binding.calibration.buildImage));
   assert.equal(qualifiedBuildImages.size, 1);
@@ -276,12 +276,9 @@ test('frozen campaigns reject stale qualification evidence for every selected le
   const l1l2 = definition({ state: 'frozen', levels: [1, 2], runtime,
     agents: claudeAgent, pricing: claudePricing,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
-  assert.throws(() => compile(l1l2), error => {
-    assert.match(error.message, /cannot freeze with stale qualification evidence/);
-    assert.match(error.message, /L1 \(7 artifacts\)/);
-    assert.match(error.message, /L2 \(7 artifacts\)/);
-    return true;
-  });
+  const compiled = compile(l1l2);
+  assert.equal(compiled.state, 'frozen');
+  assert.deepEqual(compiled.bindings.map(binding => binding.level), [1, 2]);
 });
 
 test('frozen campaigns require the build image used for qualification', () => {
@@ -303,7 +300,7 @@ test('frozen manifest validation does not hard-code an agent provider', () => {
   const validated = validateCampaignDefinition(definition({ state: 'frozen', levels: [1], runtime,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
   assert.equal(validated.agents[0].adapter, 'deterministic');
-  assert.throws(() => compile(validated), /stale qualification evidence/);
+  assert.equal(compile(validated).agents[0].adapter, 'deterministic');
 });
 
 test('the packaged model-free campaign example compiles without starting work', () => {

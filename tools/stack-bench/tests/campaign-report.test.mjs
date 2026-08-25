@@ -41,7 +41,8 @@ test('report read model keeps invalid evidence separate and computes declared di
   const admissionId = 'admission-1';
   let claimed = claimNextAttempt(state, { now: '2026-08-12T00:01:00.000Z', admissionId });
   state = finishCampaignExecution(claimed.state, claimed.claim.executionId,
-    { exitCode: 1, run: null }, { retries: 1, retryOn: ['harness_failure'],
+    { exitCode: 1, run: null, retryAuthority: { transient: true, recoveryClean: true,
+      cause: 'test transient provider failure' } }, { retries: 1, retryOn: ['harness_failure'],
       now: '2026-08-12T00:02:00.000Z' });
   claimed = claimNextAttempt(state, { now: '2026-08-12T00:03:00.000Z', admissionId });
   runs.set(claimed.claim.executionId, run('run-1', claimed.claim.attempt));
