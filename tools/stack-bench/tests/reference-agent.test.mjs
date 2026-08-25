@@ -54,6 +54,16 @@ test('dependency progression seeds once and verifies the same full fixture on la
     assert.equal(upgraded.sourceSha256, fresh.sourceSha256);
     assert.equal(upgraded.seeded, false);
 
+    const dependencyDirectory = join(app, 'client', 'node_modules', '.bin');
+    mkdirSync(dependencyDirectory, { recursive: true });
+    try {
+      symlinkSync(join(app, 'client', 'package.json'), join(dependencyDirectory, 'package-link'), 'file');
+      const afterInstall = prepareReferenceSource({ ...common, mode: 'upgrade', level: 2 });
+      assert.equal(afterInstall.sourceSha256, fresh.sourceSha256);
+    } catch (error) {
+      if (!['EPERM', 'EACCES'].includes(error.code)) throw error;
+    }
+
     writeFileSync(join(app, 'unexpected.txt'), 'not part of the fixture');
     assert.throws(() => prepareReferenceSource({ ...common, mode: 'upgrade', level: 3 }),
       /contains source other than/);

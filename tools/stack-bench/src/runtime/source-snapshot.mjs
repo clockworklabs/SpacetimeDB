@@ -108,6 +108,26 @@ export function hashAppSource(appDir) {
     ? directoryDisposition(rel) !== 'source' : preservedRuntimeFile(rel) });
 }
 
+// Validate only the files that belong to the source identity. Dependency,
+// build-output, and harness directories can contain links created by their
+// own tools and are excluded from the source snapshot and hash.
+export function assertPlainAppSourceTree(appDir) {
+  if (!existsSync(appDir)) return;
+  if (!lstatSync(appDir).isDirectory()) throw new Error('application source root is not a plain directory');
+  const walk = (directory, rel = '') => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const childRel = rel ? join(rel, entry.name) : entry.name;
+      if (entry.isDirectory() && directoryDisposition(childRel) !== 'source') continue;
+      if (!entry.isDirectory() && preservedRuntimeFile(childRel)) continue;
+      if (entry.isDirectory()) walk(join(directory, entry.name), childRel);
+      else if (!entry.isFile()) {
+        throw new Error(`application source contains unsupported filesystem entry ${childRel}`);
+      }
+    }
+  };
+  walk(appDir);
+}
+
 export function restoreAppSource(from, appDir) {
   if (!existsSync(from)) throw new Error(`source snapshot does not exist: ${from}`);
   syncSourceTree(from, appDir);

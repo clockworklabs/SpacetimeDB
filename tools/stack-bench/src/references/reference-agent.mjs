@@ -15,10 +15,10 @@ import { fetchStatus } from '../runtime/readiness.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
-import { assertPlainReferenceSourceTree, inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
+import { inspectImportedReference, loadReferenceRegistry, prepareReferenceFixtureSource,
   validateReferenceRegistry } from './reference-fixtures.mjs';
 import { resolveReferenceSelection } from './reference-selection.mjs';
-import { hashAppSource } from '../runtime/source-snapshot.mjs';
+import { assertPlainAppSourceTree, hashAppSource } from '../runtime/source-snapshot.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const RUN_BUILD = join(ROOT, 'container', 'run-build.mjs');
@@ -99,7 +99,7 @@ export function prepareReferenceSource(args) {
     throw new Error(`${fixture.id} is invalid: ${inspection.failures.join('; ')}`);
   }
   mkdirSync(args.app, { recursive: true });
-  assertPlainReferenceSourceTree(args.app);
+  assertPlainAppSourceTree(args.app);
   const before = hashAppSource(args.app);
   if (before.files.length === 0) {
     if ((args.mode ?? 'build') === 'upgrade') {
