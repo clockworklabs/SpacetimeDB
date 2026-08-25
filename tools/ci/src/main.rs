@@ -65,8 +65,8 @@ const COMMANDS: &[Command] = &[
         package: "ci-docs-build",
     },
     Command {
-        path: &["other-workflows", "coordinate-internal-tests"],
-        package: "ci-coordinate-internal-tests",
+        path: &["other-workflows", "coordinate"],
+        package: "ci-workflow-coordinator",
     },
     Command {
         path: &["other-workflows", "codeowners-check"],

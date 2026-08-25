@@ -83,7 +83,7 @@ members = [
   "tools/ci/commands/docs",
   "tools/ci/commands/codeowners-check",
   "tools/ci/commands/cla-assistant",
-  "tools/ci/commands/coordinate-internal-tests",
+  "tools/ci/commands/workflow-coordinator",
   "tools/ci/commands/workflow-watch",
   "tools/ci/common",
   "tools/keynote-bench-harness",

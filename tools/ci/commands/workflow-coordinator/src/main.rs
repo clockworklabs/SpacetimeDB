@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_macros)]
 
 use anyhow::{bail, ensure, Context, Result};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use duct::{cmd, Expression};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -15,18 +15,31 @@ const PUBLIC_REPO: &str = "clockworklabs/SpacetimeDB";
 const PRIVATE_REPO: &str = "clockworklabs/SpacetimeDBPrivate";
 const PRIVATE_WORKFLOW: &str = "ci.yml";
 const PRIVATE_DEFAULT_BRANCH: &str = "master";
+const REUSE_FAILURE_STEP: &str = "Report reused CI failure on this commit"; // Must match ci.yml.
 
-/// Selects or starts the private workflow for a public Internal Tests run.
+/// Coordinates CI workflow runs.
 #[derive(Parser)]
-#[command(about = "Selects or starts the private workflow for a public Internal Tests run.")]
+#[command(about = "Coordinates CI workflow runs.")]
 struct Cli {
-    /// Immutable public commit to test.
-    #[arg(long)]
-    public_sha: String,
+    #[command(subcommand)]
+    command: CliCommand,
+}
 
-    /// Public pull request number, when coordinating a pull request run.
-    #[arg(long)]
-    public_pr_number: Option<u64>,
+#[derive(Subcommand)]
+enum CliCommand {
+    /// Select or start internal tests for a public commit.
+    InternalTests {
+        /// Immutable public commit to test.
+        #[arg(long)]
+        public_sha: String,
+
+        /// Public pull request number, when coordinating a pull request run.
+        #[arg(long)]
+        public_pr_number: Option<u64>,
+    },
+
+    /// Reuse an equivalent failed merge-queue workflow run.
+    MergeQueueReuse,
 }
 
 #[derive(Debug)]
@@ -141,22 +154,14 @@ fn workflow_runs(event: &str, head_sha: &str) -> Result<Vec<WorkflowRun>> {
     Ok(pages.into_iter().flat_map(|page| page.workflow_runs).collect())
 }
 
-fn workflow_run(run_id: u64) -> Result<WorkflowRunStatus> {
-    get(&format!("/repos/{PRIVATE_REPO}/actions/runs/{run_id}"))
+fn workflow_run(repo: &str, run_id: u64) -> Result<WorkflowRunStatus> {
+    get(&format!("/repos/{repo}/actions/runs/{run_id}"))
 }
 
-fn rerun_failed_jobs(run_id: u64) -> Result<()> {
-    cmd!(
-        "gh",
-        "run",
-        "rerun",
-        run_id.to_string(),
-        "--failed",
-        "--repo",
-        PRIVATE_REPO
-    )
-    .run()
-    .with_context(|| format!("failed to rerun unsuccessful jobs in private run {run_id}"))?;
+fn rerun_failed_jobs(repo: &str, run_id: u64) -> Result<()> {
+    cmd!("gh", "run", "rerun", run_id.to_string(), "--failed", "--repo", repo)
+        .run()
+        .with_context(|| format!("failed to rerun unsuccessful jobs in {repo} run {run_id}"))?;
     Ok(())
 }
 
@@ -249,8 +254,14 @@ struct WorkflowRun {
     run_attempt: u64,
     html_url: String,
     created_at: String,
+    head_commit: Option<WorkflowRunCommit>,
     #[serde(default)]
     pull_requests: Vec<WorkflowRunPullRequest>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct WorkflowRunCommit {
+    tree_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -260,6 +271,24 @@ struct WorkflowRunStatus {
     conclusion: Option<String>,
     run_attempt: u64,
     html_url: String,
+}
+
+#[derive(Deserialize)]
+struct JobsPage {
+    jobs: Vec<Job>,
+}
+
+#[derive(Deserialize)]
+struct Job {
+    conclusion: Option<String>,
+    #[serde(default)]
+    steps: Vec<JobStep>,
+}
+
+#[derive(Deserialize)]
+struct JobStep {
+    name: String,
+    conclusion: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -394,17 +423,17 @@ fn prepare_existing_run(run: WorkflowRun) -> Result<CoordinatedRun> {
     }
 
     println!("Re-running unsuccessful jobs in the existing private run.");
-    rerun_failed_jobs(selected.id)?;
+    rerun_failed_jobs(PRIVATE_REPO, selected.id)?;
     Ok(CoordinatedRun {
-        selected: wait_for_rerun(&selected)?,
+        selected: wait_for_rerun(PRIVATE_REPO, &selected)?,
         did_start: true,
     })
 }
 
 /// Waits for GitHub to expose the new attempt so callers do not receive the stale completed result.
-fn wait_for_rerun(run: &SelectedRun) -> Result<SelectedRun> {
+fn wait_for_rerun(repo: &str, run: &SelectedRun) -> Result<SelectedRun> {
     for _ in 0..30 {
-        let current = workflow_run(run.id)?;
+        let current = workflow_run(repo, run.id)?;
         if current.run_attempt > run.attempt {
             return Ok(SelectedRun {
                 id: current.id,
@@ -416,7 +445,74 @@ fn wait_for_rerun(run: &SelectedRun) -> Result<SelectedRun> {
         }
         std::thread::sleep(Duration::from_secs(2));
     }
-    bail!("timed out waiting for the private run to start its rerun")
+    bail!("timed out waiting for {repo} run {} to start its rerun", run.id)
+}
+
+fn wait_for_completion(repo: &str, mut run: SelectedRun) -> Result<SelectedRun> {
+    while run.status != "completed" {
+        std::thread::sleep(Duration::from_secs(30));
+        let current = workflow_run(repo, run.id)?;
+        run.status = current.status;
+        run.conclusion = current.conclusion;
+        run.attempt = current.run_attempt;
+    }
+    Ok(run)
+}
+
+/// Whether this workflow failed itself, rather than only reporting a failure copied from an older run.
+fn has_original_failure(repo: &str, run_id: u64) -> Result<bool> {
+    let pages: Vec<JobsPage> = get_paginated(&format!(
+        "/repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
+    ))?;
+    Ok(pages.into_iter().flat_map(|page| page.jobs).any(|job| {
+        let reports_reused_failure = job
+            .steps
+            .iter()
+            .any(|step| step.name == REUSE_FAILURE_STEP && step.conclusion.as_deref() == Some("failure"));
+        !reports_reused_failure
+            && job
+                .conclusion
+                .as_deref()
+                .is_some_and(|conclusion| !matches!(conclusion, "success" | "skipped" | "neutral"))
+    }))
+}
+
+fn previous_equivalent_run() -> Result<Option<WorkflowRun>> {
+    let current_tree = cmd!("git", "rev-parse", "HEAD^{tree}")
+        .read()
+        .context("failed to read the current Git tree")?;
+    let mut runs = get::<WorkflowRunsPage>(&format!(
+        "/repos/{PUBLIC_REPO}/actions/workflows/ci.yml/runs?event=merge_group&per_page=100"
+    ))?
+    .workflow_runs;
+    runs.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    for run in runs {
+        if run
+            .head_commit
+            .as_ref()
+            .is_some_and(|commit| commit.tree_id == current_tree)
+            && (run.conclusion.as_deref() == Some("success") || has_original_failure(PUBLIC_REPO, run.id)?)
+        {
+            return Ok(Some(run));
+        }
+    }
+    Ok(None)
+}
+
+fn coordinate_merge_queue_reuse() -> Result<()> {
+    let Some(run) = previous_equivalent_run()? else {
+        write_github_output("reuse", false)?;
+        return Ok(());
+    };
+    println!("Found equivalent merge queue run: {}", run.html_url);
+    let mut selected = wait_for_completion(PUBLIC_REPO, run.into())?;
+    if should_rerun_failed_jobs(&selected) {
+        rerun_failed_jobs(PUBLIC_REPO, selected.id)?;
+        selected = wait_for_completion(PUBLIC_REPO, wait_for_rerun(PUBLIC_REPO, &selected)?)?;
+    }
+    write_github_output("reuse_failed", selected.conclusion.as_deref() != Some("success"))?;
+    write_github_output("reuse", true)?;
+    Ok(())
 }
 
 /// Reuses or reruns `pull_request` CI for a public PR with a linked private PR.
@@ -453,14 +549,20 @@ fn write_github_output(name: &str, value: impl std::fmt::Display) -> Result<()> 
     writeln!(output, "{name}={value}").context("failed to write GITHUB_OUTPUT")
 }
 
-/// Coordinates the public Internal Tests run without checking out or executing private code.
+/// Coordinates CI without checking out or executing private code.
 fn main() -> Result<()> {
-    let args = Cli::parse();
-    let private_source = resolve_private_source(args.public_pr_number)?;
+    let (public_sha, public_pr_number) = match Cli::parse().command {
+        CliCommand::InternalTests {
+            public_sha,
+            public_pr_number,
+        } => (public_sha, public_pr_number),
+        CliCommand::MergeQueueReuse => return coordinate_merge_queue_reuse(),
+    };
+    let private_source = resolve_private_source(public_pr_number)?;
 
     let coordinated = match private_source {
-        PrivateSource::LinkedPrivatePr { pull } => coordinate_linked_private_pr(&args.public_sha, &pull)?,
-        PrivateSource::PrivateMaster { sha } => coordinate_public_only(&args.public_sha, &sha)?,
+        PrivateSource::LinkedPrivatePr { pull } => coordinate_linked_private_pr(&public_sha, &pull)?,
+        PrivateSource::PrivateMaster { sha } => coordinate_public_only(&public_sha, &sha)?,
     };
 
     println!("View run: {}", coordinated.selected.url);
@@ -496,6 +598,9 @@ mod tests {
             run_attempt: 1,
             html_url: format!("https://example.test/{id}"),
             created_at: created_at.to_owned(),
+            head_commit: Some(WorkflowRunCommit {
+                tree_id: "tree".to_owned(),
+            }),
             pull_requests: Vec::new(),
         }
     }

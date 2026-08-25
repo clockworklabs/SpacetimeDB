@@ -23,16 +23,24 @@ permissions:
 
 jobs:
   merge_queue_noop:
-    name: Detect merge queue no-op
+    name: Merge queue no-op/reuse
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
     outputs:
-      skip: ${{ steps.compare.outputs.skip }}
+      skip: ${{ steps.compare.outputs.skip == 'true' || steps.reuse.outputs.reuse == 'true' }}
     steps:
       - name: Checkout merge queue commit
         uses: actions/checkout@v4
+        # If planning cannot check out the repository, leave `skip` unset and run normal CI.
+        continue-on-error: true
 
       - name: Compare merge queue commit to PR head
         id: compare
+        # If the trees cannot be compared, fall back to normal CI.
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD_REF: ${{ github.event.merge_group.head_ref }}
@@ -69,6 +77,25 @@ jobs:
           else
             echo "Merge queue commit ${GITHUB_SHA} differs from PR #${pr_number} head ${pr_head_sha}; running CI normally."
           fi
+
+      # The merge queue coordinator is part of cargo ci and needs the repository's pinned Rust toolchain.
+      - uses: dsherret/rust-toolchain-file@v1
+        if: ${{ github.event_name == 'merge_group' && steps.compare.outputs.skip != 'true' }}
+        # If setup fails, let the reuse attempt fall back to normal CI.
+        continue-on-error: true
+
+      - name: Reuse merge queue run
+        id: reuse
+        if: ${{ github.event_name == 'merge_group' && steps.compare.outputs.skip != 'true' }}
+        # Coordinator errors leave `reuse` unset and run normal CI; a reused CI failure is reported below.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo ci other-workflows coordinate merge-queue-reuse
+
+      - name: Report merge queue workflow reuse failure on this commit
+        if: ${{ steps.reuse.outputs.reuse_failed == 'true' }}
+        run: exit 1
 
   upload-build-artifacts-linux:
     needs: [merge_queue_noop, lints]
