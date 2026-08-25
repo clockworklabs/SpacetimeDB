@@ -160,7 +160,7 @@ jobs:
 
   upload-build-artifacts-windows:
     needs: [merge_queue_noop, lints]
-    if: true
+    if: false
     name: Upload build artifacts (Windows)
     runs-on: spacetimedb-windows-runner
     timeout-minutes: 15
