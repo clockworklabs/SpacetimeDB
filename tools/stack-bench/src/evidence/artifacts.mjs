@@ -27,6 +27,7 @@ export const ARTIFACT_KINDS = Object.freeze([
   'pack_budget_measurement',
   'performance_run',
   'preflight',
+  'progression_state',
   'repair_continuation',
   'repair_process',
   'reference_build',
@@ -46,7 +47,7 @@ const ENVELOPE_KEYS = new Set([
 const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'track', 'backend', 'model', 'guidance',
   'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
   'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
-  'skills', 'runtime', 'progression']);
+  'skills', 'runtime', 'progression', 'progressionOwner']);
 const PAYLOAD_FIELDS = Object.freeze({
   action_check: new Set(['backend', 'results', 'missing']),
   backend_lease_evidence: new Set(['version', 'runId', 'backend', 'track', 'runIndex', 'ownerPid',
@@ -79,6 +80,8 @@ const PAYLOAD_FIELDS = Object.freeze({
     'seededBefore', 'sent', 'delivered', 'lost', 'elapsedMs', 'deliveryLatencyMs', 'server',
     'cpuSecondsPer1kDelivered']),
   preflight: new Set(['schemaVersion', 'generatedAt', 'request', 'ok', 'summary', 'checks']),
+  progression_state: new Set(['schemaVersion', 'owner', 'progression', 'events', 'snapshot',
+    'snapshotSha256']),
   repair_continuation: new Set([...BENCHMARK_RUN_PAYLOAD_FIELDS, 'continuation']),
   repair_process: new Set(['schemaVersion', 'parentRunId', 'level', 'roundsGranted',
     'exitCode', 'signal', 'timedOut', 'streams']),
@@ -204,6 +207,16 @@ function validatePayload(kind, payload) {
     }
   };
   if (['benchmark_run', 'repair_continuation'].includes(kind)) arrayWhenPresent('levels');
+  if (kind === 'progression_state') {
+    if (payload.schemaVersion !== 1) fail('progression_state payload.schemaVersion must be 1');
+    objectWhenPresent('owner');
+    objectWhenPresent('progression');
+    objectWhenPresent('snapshot');
+    arrayWhenPresent('events');
+    if (!HASH.test(payload.snapshotSha256 ?? '')) {
+      fail('progression_state payload.snapshotSha256 is invalid');
+    }
+  }
   if (kind === 'repair_continuation') {
     objectWhenPresent('continuation');
     if (!isObject(payload.continuation)) fail('repair_continuation payload.continuation is required');

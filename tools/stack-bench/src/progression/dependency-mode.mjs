@@ -5,6 +5,7 @@ export const DEPENDENCY_MODE_POLICY = 'dependency-gated';
 
 const ID = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/;
+const HASH = /^[a-f0-9]{64}$/;
 const NODE_STATUSES = new Set(['locked', 'active', 'passed', 'exhausted', 'regressed', 'blocked']);
 const TERMINAL_OUTCOMES = new Set(['passed', 'partial', 'failed']);
 const INCONCLUSIVE_CATEGORIES = new Set([
@@ -469,6 +470,9 @@ function assertState(state) {
       || attemptIds.has(attempt.attemptId) || !Number.isInteger(attempt.level)
       || !definition.strikes.levels[String(attempt.level)]
       || !['conclusive', 'inconclusive'].includes(attempt.outcome)
+      || (attempt.sourceSha256 !== undefined && !HASH.test(attempt.sourceSha256))
+      || (attempt.selectionSha256 !== undefined && !HASH.test(attempt.selectionSha256))
+      || (attempt.runId !== undefined && (typeof attempt.runId !== 'string' || !attempt.runId))
       || (attempt.outcome === 'inconclusive'
         && (typeof attempt.reason !== 'string' || !attempt.reason
           || !INCONCLUSIVE_CATEGORIES.has(attempt.category)))) {
@@ -525,8 +529,20 @@ function validateConclusiveResult(state, result) {
 function applyDependencyResult(inputState, inputResult) {
   if (inputState.phase !== 'active') throw new Error('cannot record a result after progression terminates');
   const result = structuredClone(inputResult);
-  strictObject(result, 'result', new Set(['attemptId', 'outcome', 'category', 'reason', 'nodes']));
+  strictObject(result, 'result', new Set([
+    'attemptId', 'runId', 'outcome', 'category', 'reason', 'nodes',
+    'sourceSha256', 'selectionSha256',
+  ]));
   nonEmptyString(result.attemptId, 'result.attemptId');
+  if (result.sourceSha256 !== undefined && !HASH.test(result.sourceSha256)) {
+    throw new Error('result.sourceSha256 must be a SHA-256 identity');
+  }
+  if (result.selectionSha256 !== undefined && !HASH.test(result.selectionSha256)) {
+    throw new Error('result.selectionSha256 must be a SHA-256 identity');
+  }
+  if (result.runId !== undefined && (typeof result.runId !== 'string' || !result.runId)) {
+    throw new Error('result.runId must be a non-empty string');
+  }
   if (inputState.attempts.some(attempt => attempt.attemptId === result.attemptId)) {
     throw new Error(`duplicate attempt id ${result.attemptId}`);
   }
@@ -541,7 +557,10 @@ function applyDependencyResult(inputState, inputResult) {
     }
     if (result.nodes !== undefined) throw new Error('inconclusive results cannot contain node grades');
     state.attempts.push({ attemptId: result.attemptId, level: state.level,
-      outcome: result.outcome, category: result.category, reason: result.reason });
+      outcome: result.outcome, category: result.category, reason: result.reason,
+      ...(result.runId ? { runId: result.runId } : {}),
+      ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
+      ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}) });
     return state;
   }
   if (result.reason !== undefined || result.category !== undefined) {
@@ -571,7 +590,10 @@ function applyDependencyResult(inputState, inputResult) {
       state.nodes[nodeId].status = 'active';
     }
   }
-  state.attempts.push({ attemptId: result.attemptId, level: state.level, outcome: result.outcome });
+  state.attempts.push({ attemptId: result.attemptId, level: state.level, outcome: result.outcome,
+    ...(result.runId ? { runId: result.runId } : {}),
+    ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
+    ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}) });
 
   const unresolved = nodesAt(state.definition, state.level)
     .filter(node => ['active', 'regressed'].includes(state.nodes[node.id].status));

@@ -26,7 +26,7 @@ import { loadTrack, resultsName, portsFor, workDirFor, assertNoPortCollisions,
   moduleName, dbName, DEFAULT_TRACK } from '../src/composition/tracks.mjs';
 import { killTree } from '../src/runtime/platform.mjs';
 import { formatRepairProgress } from '../src/evidence/scoring.mjs';
-import { emptyArtifactIdentities, readArtifactPayload, writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
+import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact, writeRunJson } from '../src/evidence/artifacts.mjs';
 import { aggregateRunOutcome, classifyBundle, ladderMayAdvance, ladderMayContinue,
   mutationControlEligible, runExitCode } from '../src/evidence/outcomes.mjs';
 import { summarizeSessions } from '../src/evidence/session-metrics.mjs';
@@ -60,6 +60,7 @@ import { progressionLevels, validateProgressionInput }
   from '../src/progression/progression-definition.mjs';
 import { resolveProgressionRecipeAction }
   from '../src/progression/progression-recipe-selection.mjs';
+import { validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
@@ -78,6 +79,10 @@ export function parseArgs(argv) {
       case '--track': a.track = argv[++i]; break;
       case '--levels': a.levels = argv[++i]; a.levelsProvided = true; break;
       case '--progression-json': a.progression = JSON.parse(argv[++i]); break;
+      case '--progression-file': a.progressionFile = resolve(argv[++i]); break;
+      case '--progression-sha256': a.progressionSha256 = argv[++i]; break;
+      case '--campaign-sha256': a.campaignSha256 = argv[++i]; break;
+      case '--campaign-attempt-id': a.campaignAttemptId = argv[++i]; break;
       case '--recipe': a.recipe = argv[++i]; break;
       case '--pack': a.packIds.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--check': a.checkKeys.push(...argv[++i].split(',').filter(Boolean)); break;
@@ -130,8 +135,72 @@ export function parseArgs(argv) {
   if (a.repairFrom && (!Number.isSafeInteger(a.repairLevel) || a.repairLevel < 1)) {
     throw new Error('--repair-from requires --repair-level with a positive integer');
   }
+  if (a.progression && a.progressionFile) {
+    throw new Error('--progression-json cannot be combined with --progression-file');
+  }
+  if ((a.progressionFile === undefined) !== (a.progressionSha256 === undefined)) {
+    throw new Error('--progression-file requires --progression-sha256');
+  }
+  if (a.progressionFile && (!a.campaignSha256 || !a.campaignAttemptId)) {
+    throw new Error('--progression-file requires --campaign-sha256 and --campaign-attempt-id');
+  }
+  if (!a.progressionFile && (a.campaignSha256 || a.campaignAttemptId)) {
+    throw new Error('campaign progression binding requires --progression-file');
+  }
+  if (a.progressionFile) {
+    const unsupported = [
+      [a.maxStalledRepairs !== 3, '--max-stalled-repairs'],
+      [a.skipProbe === true, '--skip-probe'],
+      [a.behavioralReview === true, '--behavioral-review'],
+      [a.mutations !== undefined || a.mutationShardIndex !== undefined
+        || a.mutationShardCount !== undefined, '--mutations'],
+      [a.seedFrom !== undefined, '--seed-from'],
+      [a.repairFrom !== undefined || a.repairLevel !== undefined, '--repair-from'],
+      [a.app !== undefined, '--app'], [a.url !== undefined, '--url'],
+      [a.retainBackend === true, '--retain-backend'],
+      [a.apiKey !== undefined || a.apiKeyFile !== undefined, 'credential override'],
+      [a.recipe !== undefined || a.packIds.length > 0 || a.checkKeys.length > 0
+        || a.featureIds.length > 0 || a.requestedSpecifications.length > 0
+        || a.expectedSpecifications.length > 0 || a.observedSpecifications.length > 0,
+      'direct recipe selection'],
+    ].filter(([changed]) => changed).map(([, name]) => name);
+    if (unsupported.length) {
+      throw new Error(`campaign progression input cannot override ${unsupported.join(', ')}`);
+    }
+    const artifact = readArtifact(a.progressionFile, { expectedKind: 'campaign_plan' });
+    const plan = validateCompiledCampaignPlan(artifact.payload);
+    if (plan.contentSha256 !== a.campaignSha256) {
+      throw new Error('--campaign-sha256 does not match the compiled campaign plan');
+    }
+    const attempt = plan.attempts.find(item => item.id === a.campaignAttemptId);
+    if (!attempt || attempt.stack !== a.backend || attempt.agentAdapter !== a.agentAdapter
+      || attempt.model !== a.model
+      || plan.definition.track !== a.track || attempt.guidance !== a.guidance
+      || canonicalDefinitionJson(attempt.condition) !== canonicalDefinitionJson(a.condition)
+      || canonicalDefinitionJson(attempt.skills) !== canonicalDefinitionJson(a.skills)
+      || canonicalDefinitionJson(plan.definition.selection)
+        !== canonicalDefinitionJson(a.selectionRequest)
+      || canonicalDefinitionJson(attempt.condition?.guidance?.documents?.[attempt.stack])
+        !== canonicalDefinitionJson(a.guidanceDocument)
+      || plan.definition.budgets.fixRounds !== a.fixRounds
+      || plan.definition.budgets.maxCostUsdPerAttempt !== (a.maxBudgetUsd ?? null)
+      || a.parentAttemptId !== attempt.id || a.media !== false) {
+      throw new Error('--campaign-attempt-id does not match the requested campaign attempt');
+    }
+    a.progression = validateProgressionInput(plan.progression);
+    if (a.progression.identity.sha256 !== a.progressionSha256
+      || canonicalDefinitionJson(attempt.progression)
+        !== canonicalDefinitionJson(a.progression.identity)) {
+      throw new Error('--progression-sha256 does not match the compiled campaign plan');
+    }
+    a.progressionOwner = { schemaVersion: 1,
+      campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
+      attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
+        agentAdapter: attempt.agentAdapter, model: attempt.model,
+        conditionSha256: attempt.condition.sha256 } };
+  }
   if (a.progression) {
-    if (a.levelsProvided) throw new Error('--levels cannot be combined with --progression-json');
+    if (a.levelsProvided) throw new Error('--levels cannot be combined with progression input');
     a.progression = validateProgressionInput(a.progression);
     a.levelList = progressionLevels(a.progression);
     a.levels = `${a.levelList[0]}-${a.levelList.at(-1)}`;
@@ -812,7 +881,8 @@ async function main() {
     skills: args.skills ?? [],
     runtime: { buildImage: process.env.STACK_BENCH_IMAGE ?? DEFAULT_BUILD_IMAGE, url },
     selectionRequest: args.selectionRequest,
-    progression: args.progression ?? null,
+    progression: args.progression?.identity ?? null,
+    ...(args.progressionOwner ? { progressionOwner: args.progressionOwner } : {}),
     backendLease: publicBackendLease(readBackendLease(leasePath,
       { token: initialLease.ownershipToken, backend: args.backend, runId })),
     validation: { validatedThrough: track.validatedThrough, beyondValidatedLevels,

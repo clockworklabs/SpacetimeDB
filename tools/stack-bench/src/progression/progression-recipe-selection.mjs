@@ -12,6 +12,27 @@ function unique(values) {
   return [...new Set(values)].sort();
 }
 
+function dependencyClosure(modules, roots, expectedType, { allowed = null, label = 'progression' } = {}) {
+  const found = new Set();
+  const visit = (ref, chain = []) => {
+    const module = modules.get(ref);
+    if (!module) throw new Error(`${label} references module ${ref} outside the selected recipe`);
+    if (module.moduleType !== expectedType) {
+      throw new Error(`${label} ${expectedType} dependency ${ref} has type ${module.moduleType}`);
+    }
+    if (chain.includes(ref)) {
+      throw new Error(`recipe module dependency cycle: ${[...chain, ref].join(' -> ')}`);
+    }
+    if (allowed && !allowed.has(ref)) {
+      throw new Error(`${label} requires ${ref} in its node or ancestors`);
+    }
+    found.add(ref);
+    for (const requiredRef of module.requiresPacks ?? []) visit(requiredRef, [...chain, ref]);
+  };
+  for (const ref of roots) visit(ref);
+  return found;
+}
+
 function validateNodeModuleDependencies(binding, definition, node) {
   const nodes = new Map(definition.nodes.map(item => [item.id, item]));
   const modules = new Map(binding.release.components.packs
@@ -28,44 +49,21 @@ function validateNodeModuleDependencies(binding, definition, node) {
   const scope = [node, ...[...ancestorIds].map(nodeId => nodes.get(nodeId))];
   const allowedFeatures = new Set(scope.flatMap(item => item.featureRefs));
   const allowedSpecifications = new Set(scope.flatMap(item => item.promptModules));
-  const visitModule = (ref, expectedType, chain = []) => {
-    const module = modules.get(ref);
-    if (!module) throw new Error(`progression references module ${ref} outside the selected recipe`);
-    if (module.moduleType !== expectedType) {
-      throw new Error(`progression ${expectedType} dependency ${ref} has type ${module.moduleType}`);
-    }
-    if (chain.includes(ref)) {
-      throw new Error(`recipe module dependency cycle: ${[...chain, ref].join(' -> ')}`);
-    }
-    for (const requiredRef of module.requiresPacks ?? []) {
-      const allowed = expectedType === 'feature' ? allowedFeatures : allowedSpecifications;
-      if (!allowed.has(requiredRef)) {
-        throw new Error(`progression node ${node.id} requires ${requiredRef} in its node or ancestors`);
-      }
-      visitModule(requiredRef, expectedType, [...chain, ref]);
-    }
-  };
-  for (const ref of node.featureRefs) visitModule(ref, 'feature');
-  for (const ref of node.promptModules) visitModule(ref, 'specification');
+  dependencyClosure(modules, node.featureRefs, 'feature', {
+    allowed: allowedFeatures, label: `progression node ${node.id}`,
+  });
+  dependencyClosure(modules, node.promptModules, 'specification', {
+    allowed: allowedSpecifications, label: `progression node ${node.id}`,
+  });
   const checks = new Map(binding.release.checkCatalog.map(check => [check.stableKey, check]));
-  const validateExpected = (ref, chain = []) => {
-    const module = modules.get(ref);
-    if (!module || module.moduleType !== 'specification') {
-      throw new Error(`progression expected specification ${ref} is invalid`);
-    }
-    if (chain.includes(ref)) {
-      throw new Error(`recipe module dependency cycle: ${[...chain, ref].join(' -> ')}`);
-    }
-    for (const requiredRef of module.requiresPacks ?? []) {
-      validateExpected(requiredRef, [...chain, ref]);
-    }
-  };
   for (const selected of node.gradingChecks) {
     const check = checks.get(selected.id);
     if (!check) continue;
     const owner = binding.release.components.packs.find(module => module.id === check.packId);
     if (owner?.moduleType === 'specification') {
-      validateExpected(`${owner.id}@${owner.version}`);
+      dependencyClosure(modules, [`${owner.id}@${owner.version}`], 'specification', {
+        label: 'progression expected specification',
+      });
     }
   }
 }
@@ -108,19 +106,6 @@ function resolveSelections(binding, definition, promptNodeIds, gradingNodeIds, g
   const requestedRefs = new Set(gradingRequested.map(item => item.ref));
   const checkKeys = gradingChecks.map(check => check.id);
   const expectedSpecifications = new Set();
-  const addExpectedSpecification = (ref, chain = []) => {
-    const module = modules.get(ref);
-    if (!module || module.moduleType !== 'specification') {
-      throw new Error(`progression expected specification ${ref} is invalid`);
-    }
-    if (chain.includes(ref)) {
-      throw new Error(`recipe module dependency cycle: ${[...chain, ref].join(' -> ')}`);
-    }
-    if (!requestedRefs.has(ref)) expectedSpecifications.add(ref);
-    for (const requiredRef of module.requiresPacks ?? []) {
-      addExpectedSpecification(requiredRef, [...chain, ref]);
-    }
-  };
   for (const selected of gradingChecks) {
     const check = checkCatalog.get(selected.id);
     if (!check) throw new Error(`progression references check ${selected.id} outside the selected recipe`);
@@ -135,7 +120,11 @@ function resolveSelections(binding, definition, promptNodeIds, gradingNodeIds, g
       throw new Error(`progression check ${selected.id} belongs to an unselected feature`);
     }
     if (owner.moduleType === 'specification' && !requestedRefs.has(ownerRef)) {
-      addExpectedSpecification(ownerRef);
+      for (const ref of dependencyClosure(modules, [ownerRef], 'specification', {
+        label: 'progression expected specification',
+      })) {
+        if (!requestedRefs.has(ref)) expectedSpecifications.add(ref);
+      }
     }
   }
 

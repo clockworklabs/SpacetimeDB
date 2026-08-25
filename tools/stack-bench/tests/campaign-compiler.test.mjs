@@ -6,7 +6,10 @@ import test from 'node:test';
 
 import { campaignIdentity, compileCampaignFile, validateCampaignDefinition,
   validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
+import { attemptArgv } from '../src/campaigns/campaign-runner.mjs';
+import { parseArgs } from '../commands/bench.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { writeArtifact } from '../src/evidence/artifacts.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
 
 function definition(overrides = {}) {
@@ -80,8 +83,9 @@ function dependencyDefinition() {
   const value = modularDefinition();
   value.mode = { id: 'dependency', version: '1.0.0' };
   delete value.levels;
-  value.selection.levels[0].features = ['ecommerce.feature.accounts'];
-  value.selection.levels[0].checks = ['ecommerce.feature.accounts.accounts.1a'];
+  delete value.selection.levels[0].features;
+  delete value.selection.levels[0].checks;
+  delete value.conditions[0].specifications;
   value.progression = {
     schemaVersion: 2,
     kind: 'progression-mode',
@@ -120,26 +124,60 @@ test('campaign compilation binds exact inputs and expands a balanced immutable a
 test('dependency campaigns derive levels and freeze the progression identity in every attempt', () => {
   const plan = compile(dependencyDefinition());
   assert.deepEqual(plan.definition.levels, [1]);
+  assert.equal(plan.definition.progression, undefined);
   assert.equal(plan.progression.identity.id, 'ecommerce-dependency');
   assert.equal(plan.progression.identity.version, '1.0.0');
   assert.match(plan.progression.identity.sha256, /^[a-f0-9]{64}$/);
   assert(plan.attempts.every(attempt =>
-    canonicalDefinitionJson(attempt.progression) === canonicalDefinitionJson(plan.progression)));
+    canonicalDefinitionJson(attempt.progression)
+      === canonicalDefinitionJson(plan.progression.identity)));
   assert.deepEqual(validateCompiledCampaignPlan(plan), plan);
   assert.throws(() => validateCampaignDefinition({ ...dependencyDefinition(), levels: [1, 2] }),
     /levels.*derived/);
 });
 
-test('dependency campaigns reject static product scope that contradicts the graph', () => {
+test('dependency bench input is bound to one fully validated campaign attempt', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-dependency-plan-'));
+  try {
+    const plan = compile(dependencyDefinition());
+    const planPath = join(root, 'plan.json');
+    writeArtifact(planPath, { kind: 'campaign_plan', id: `${plan.id}-plan`, payload: plan });
+    const attempt = plan.attempts[0];
+    const argv = attemptArgv(plan, attempt, join(root, 'result'), 0, planPath);
+    const args = parseArgs(['node', ...argv]);
+    assert.deepEqual(args.progression, plan.progression);
+    assert.deepEqual(args.progressionOwner, { schemaVersion: 1,
+      campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
+      attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
+        agentAdapter: attempt.agentAdapter,
+        model: attempt.model, conditionSha256: attempt.condition.sha256 } });
+    assert.throws(() => parseArgs(['node', ...argv, '--skip-probe']),
+      /cannot override --skip-probe/);
+    const changedParent = [...argv];
+    changedParent[changedParent.indexOf('--parent-attempt-id') + 1] = 'different-attempt';
+    assert.throws(() => parseArgs(['node', ...changedParent]),
+      /does not match the requested campaign attempt/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('dependency campaigns derive product scope and reject duplicate author scope', () => {
   const value = dependencyDefinition();
-  value.selection.levels[0].features = ['ecommerce.feature.catalog'];
-  assert.throws(() => compile(value), /must match the progression graph derived grading scope/);
+  const plan = compile(value);
+  assert.deepEqual(plan.conditions[0].requested.levels[0].selection.requested.features,
+    ['ecommerce.feature.accounts']);
+  assert.deepEqual(plan.conditions[0].requested.levels[0].selection.requested.checks,
+    ['ecommerce.feature.accounts.accounts.1a']);
+  value.selection.levels[0].features = ['ecommerce.feature.accounts'];
+  assert.throws(() => compile(value), /features: is unknown/);
   const specifications = dependencyDefinition();
-  specifications.conditions[0].specifications.levels[0].expected = [
-    'ecommerce.spec.state-durability@1.1.0',
-  ];
-  assert.throws(() => compile(specifications),
-    /must match the progression graph derived grading scope/);
+  specifications.conditions[0].specifications = { levels: [{ level: 1,
+    requested: [], expected: [], observed: [] }] };
+  assert.throws(() => compile(specifications), /progression graph owns specification scope/);
+  const legacy = dependencyDefinition();
+  legacy.selection = { packs: ['accounts'], checks: [] };
+  assert.throws(() => compile(legacy), /require recipe bindings by level/);
 });
 
 test('campaign identity ignores JSON formatting but changes with study semantics', () => {

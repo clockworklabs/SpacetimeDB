@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { gradeArgv, parseArgs, repairHistoryEntry, repairProgressState } from '../commands/bench.mjs';
 import { repairEvidenceDecision } from '../src/evidence/repair-evidence.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { compileProgressionInput } from '../src/progression/progression-definition.mjs';
+import { writeArtifact } from '../src/evidence/artifacts.mjs';
 
 test('direct runs default to ten repair rounds while an explicit budget still wins', () => {
   assert.equal(parseArgs(['node', 'bench', '--backend', 'postgres']).fixRounds, 10);
@@ -39,6 +43,29 @@ test('dependency run levels come only from the compiled progression graph', () =
   assert.throws(() => parseArgs(['node', 'bench', '--backend', 'postgres',
     '--levels', '1-2', '--progression-json', JSON.stringify(progression)]),
   /cannot be combined/);
+});
+
+test('dependency campaign progression rejects an incomplete or unbound plan reference', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-progression-plan-'));
+  try {
+    const progression = compileProgressionInput({
+      schemaVersion: 2, kind: 'progression-mode', id: 'one-level', version: '1.0.0',
+      state: 'draft', title: 'One level',
+      policy: 'dependency-gated', strikes: { default: 1, levels: {} },
+      nodes: [{ id: 'one', title: 'One', questline: 'path', dependencies: [],
+        featureRefs: ['feature.one@1.0.0'], promptModules: [],
+        gradingChecks: [{ id: 'check.one', points: 1 }] }],
+      questlines: [{ id: 'path', title: 'Path', nodes: ['one'] }],
+    });
+    const path = join(root, 'plan.json');
+    writeArtifact(path, { kind: 'campaign_plan', id: 'plan', payload: { progression } });
+    assert.throws(() => parseArgs(['node', 'bench', '--backend', 'postgres',
+      '--progression-file', path, '--progression-sha256', progression.identity.sha256,
+      '--campaign-sha256', 'b'.repeat(64), '--campaign-attempt-id', 'attempt']),
+    /compiled campaign/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('repair progress pauses only on repeated findings without a score gain', () => {

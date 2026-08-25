@@ -29,7 +29,7 @@ function contained(root, path, label) {
   return absolute;
 }
 
-export function attemptArgv(plan, attempt, output, runIndex) {
+export function attemptArgv(plan, attempt, output, runIndex, progressionPath = null) {
   if (!Number.isInteger(runIndex) || runIndex < 0 || runIndex > RUN_INDEX_CAP) {
     throw new Error(`attempt ${attempt.id} requires a run slot from 0 through ${RUN_INDEX_CAP}`);
   }
@@ -46,7 +46,17 @@ export function attemptArgv(plan, attempt, output, runIndex) {
     '--backend', attempt.stack,
     '--track', plan.definition.track];
   if (dependencyMode) {
-    args.push('--progression-json', JSON.stringify(attempt.progression));
+    if (typeof progressionPath !== 'string' || !progressionPath) {
+      throw new Error(`attempt ${attempt.id} requires its compiled campaign plan path`);
+    }
+    if (canonicalDefinitionJson(attempt.progression)
+      !== canonicalDefinitionJson(plan.progression?.identity)) {
+      throw new Error(`attempt ${attempt.id} progression identity does not match its campaign`);
+    }
+    args.push('--progression-file', resolve(progressionPath),
+      '--progression-sha256', attempt.progression.sha256,
+      '--campaign-sha256', plan.contentSha256,
+      '--campaign-attempt-id', attempt.id);
   } else {
     args.push('--levels', levels);
   }
@@ -106,6 +116,13 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
     !== canonicalDefinitionJson(plan.definition.selection), 'selectionRequest');
   mismatch(canonicalDefinitionJson(run.progression ?? null)
     !== canonicalDefinitionJson(attempt.progression ?? null), 'progression');
+  const expectedProgressionOwner = attempt.progression ? { schemaVersion: 1,
+    campaign: { id: plan.id, version: plan.version, sha256: plan.contentSha256 },
+    attempt: { id: attempt.id, track: plan.definition.track, stack: attempt.stack,
+      agentAdapter: attempt.agentAdapter, model: attempt.model,
+      conditionSha256: attempt.condition.sha256 } } : null;
+  mismatch(canonicalDefinitionJson(run.progressionOwner ?? null)
+    !== canonicalDefinitionJson(expectedProgressionOwner), 'progressionOwner');
   mismatch(canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills), 'skills');
   mismatch(!exactLevels && !interruptedPrefix && !gatedPrefix, 'levels');
   mismatch(run.artifactEnvelope?.identities?.agentAdapter?.sha256 !== agent?.identity.sha256,
@@ -661,7 +678,7 @@ export async function executeCampaign(campaignFile, directory,
       let processResult;
       try {
         processResult = await execute(process.execPath,
-        attemptArgv(plan, claim.attempt, output, claim.runIndex), {
+        attemptArgv(plan, claim.attempt, output, claim.runIndex, initialized.paths.plan), {
           cwd: ROOT,
           env: { ...campaignSlotEnvironment(executionEnv, claim.attempt.stack, claim.runIndex),
             STACK_BENCH_SUPERVISOR_STATE: supervisorState },

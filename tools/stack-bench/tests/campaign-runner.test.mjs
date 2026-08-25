@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
@@ -114,15 +114,24 @@ test('dependency attempts pass one progression input and no separate level range
       gradingChecks: [{ id: 'ecommerce.feature.accounts.accounts.1a', points: 1 }] }],
     questlines: [{ id: 'identity', title: 'Identity', nodes: ['accounts'] }],
   });
-  const attempt = { ...plan.attempts[0], mode: { id: 'dependency', version: '1.0.0' }, progression };
-  const argv = attemptArgv(plan, attempt, '/campaign/dependency', 0);
+  const dependencyPlan = { ...plan, progression };
+  const attempt = { ...plan.attempts[0], mode: { id: 'dependency', version: '1.0.0' },
+    progression: progression.identity };
+  const argv = attemptArgv(dependencyPlan, attempt, '/campaign/dependency', 0,
+    '/campaign/plan.json');
   assert.equal(argv.includes('--levels'), false);
-  const index = argv.indexOf('--progression-json');
+  const index = argv.indexOf('--progression-file');
   assert(index > 0);
-  assert.deepEqual(JSON.parse(argv[index + 1]), progression);
-  assert.throws(() => attemptArgv(plan, { ...attempt,
+  assert.equal(argv[index + 1], resolve('/campaign/plan.json'));
+  assert.equal(argv[argv.indexOf('--progression-sha256') + 1], progression.identity.sha256);
+  assert.equal(argv[argv.indexOf('--campaign-sha256') + 1], dependencyPlan.contentSha256);
+  assert.equal(argv[argv.indexOf('--campaign-attempt-id') + 1], attempt.id);
+  assert.throws(() => attemptArgv(dependencyPlan, attempt, '/campaign/dependency', 0),
+    /requires its compiled campaign plan path/);
+  assert.throws(() => attemptArgv(dependencyPlan, { ...attempt,
     mode: { id: 'sequential', version: '1.0.0' },
-  }, '/campaign/dependency', 0), /mode and progression input do not match/);
+  }, '/campaign/dependency', 0, '/campaign/plan.json'),
+  /mode and progression input do not match/);
 });
 
 test('campaign validation accepts only an explicit pass-before-next-level application gate', () => {

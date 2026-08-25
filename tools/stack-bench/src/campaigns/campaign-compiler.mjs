@@ -30,6 +30,7 @@ ROOT_FIELDS.add('runtime');
 const LEGACY_SELECTION_FIELDS = new Set(['packs', 'checks']);
 const MODULAR_SELECTION_FIELDS = new Set(['levels']);
 const MODULAR_LEVEL_FIELDS = new Set(['level', 'recipe', 'features', 'checks']);
+const PROGRESSION_LEVEL_FIELDS = new Set(['level', 'recipe']);
 const STACK_FIELDS = new Set(['id', 'adapterVersion', 'repetitions']);
 const AGENT_FIELDS = new Set(['adapter', 'adapterVersion', 'model']);
 const ORDERING_FIELDS = new Set(['method', 'seed']);
@@ -128,20 +129,25 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
 
   const modularSelection = object(value.selection)
     && Object.hasOwn(value.selection, 'levels');
+  if (value.progression && !modularSelection) {
+    fail(`${source}.selection`, 'progression campaigns require recipe bindings by level');
+  }
   strict(value.selection, `${source}.selection`,
     modularSelection ? MODULAR_SELECTION_FIELDS : LEGACY_SELECTION_FIELDS);
   if (modularSelection) {
     value.selection.levels = exactArray(value.selection.levels, `${source}.selection.levels`,
       (entry, at) => {
-        strict(entry, at, MODULAR_LEVEL_FIELDS);
+        strict(entry, at, value.progression ? PROGRESSION_LEVEL_FIELDS : MODULAR_LEVEL_FIELDS);
         integer(entry.level, `${at}.level`, { min: 1 });
         if (typeof entry.recipe !== 'string'
           || !/^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*@\d+\.\d+\.\d+$/.test(entry.recipe)) {
           fail(`${at}.recipe`, 'must be an exact id@version reference');
         }
-        entry.features = exactArray(entry.features, `${at}.features`, string,
-          { nonEmpty: true, sort: true });
-        entry.checks = exactArray(entry.checks, `${at}.checks`, string, { sort: true });
+        if (!value.progression) {
+          entry.features = exactArray(entry.features, `${at}.features`, string,
+            { nonEmpty: true, sort: true });
+          entry.checks = exactArray(entry.checks, `${at}.checks`, string, { sort: true });
+        }
         return entry;
       }, { nonEmpty: true });
     if (canonicalDefinitionJson(value.selection.levels.map(entry => entry.level))
@@ -305,7 +311,7 @@ function campaignIdentityDocument(definition, engine, progression, bindings, sta
     bindings, stacks, agents, conditions });
 }
 
-function expandAttempts(definition, requestedLevels, progression, stacks, agents, studyConditions) {
+function expandAttempts(definition, requestedLevels, progressionIdentity, stacks, agents, studyConditions) {
   const repetitionsByStack = new Map(definition.stacks.map(stack =>
     [stack.id, stack.repetitions ?? definition.repetitions]));
   const conditions = agents.flatMap((agent, agentIndex) => studyConditions.flatMap(
@@ -337,7 +343,7 @@ function expandAttempts(definition, requestedLevels, progression, stacks, agents
         skills: condition.guidance.skills[stack.id].ids,
         mode: structuredClone(definition.mode),
         levels: requestedLevels,
-        ...(progression ? { progression } : {}),
+        ...(progressionIdentity ? { progression: progressionIdentity } : {}),
         parentAttemptId: definition.id,
       }));
   }
@@ -387,14 +393,6 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
     progressionSelections = new Map(bindingRecords.map(record =>
       [record.level, resolveProgressionRecipeLevelSelection(record.binding,
         progression, record.level)]));
-    for (const record of bindingRecords) {
-      const derived = progressionSelections.get(record.level).grader.request.selection.requested;
-      if (canonicalDefinitionJson(record.modular?.features) !== canonicalDefinitionJson(derived.features)
-        || canonicalDefinitionJson(record.modular?.checks) !== canonicalDefinitionJson(derived.checks)) {
-        fail(`selection.levels.L${record.level}`,
-          'features and checks must match the progression graph derived grading scope');
-      }
-    }
   }
   if (definition.state === 'frozen') {
     for (const binding of bindings) {
@@ -461,14 +459,20 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
       }
       return legacyRequested;
     }
-    if (!ref.specifications) fail('conditions', 'modular selection requires specifications by level');
-    const specifications = new Map(ref.specifications.levels.map(entry => [entry.level, entry]));
-    if (specifications.size !== bindingRecords.length
-      || bindingRecords.some(record => !specifications.has(record.level))) {
+    if (progressionSelections && ref.specifications !== undefined) {
+      fail('conditions', 'progression graph owns specification scope');
+    }
+    if (!progressionSelections && !ref.specifications) {
+      fail('conditions', 'modular selection requires specifications by level');
+    }
+    const specifications = progressionSelections ? null
+      : new Map(ref.specifications.levels.map(entry => [entry.level, entry]));
+    if (specifications && (specifications.size !== bindingRecords.length
+      || bindingRecords.some(record => !specifications.has(record.level)))) {
       fail('conditions', 'specifications must bind every selected level exactly once');
     }
     return { track: definition.track, levels: bindingRecords.map(record => {
-      const declaredSpecifications = specifications.get(record.level);
+      const declaredSpecifications = specifications?.get(record.level) ?? null;
       const selected = progressionSelections?.get(record.level)?.grader
         ?? createBoundRecipeTaskRequest(record.binding, {
           featureIds: record.modular.features,
@@ -477,18 +481,6 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
           expectedSpecifications: declaredSpecifications.expected,
           observedSpecifications: declaredSpecifications.observed,
         });
-      if (progressionSelections) {
-        const derived = selected.request.selection.requested.specifications;
-        if (canonicalDefinitionJson(declaredSpecifications) !== canonicalDefinitionJson({
-          level: record.level,
-          requested: derived.requested,
-          expected: derived.expected,
-          observed: derived.observed,
-        })) {
-          fail(`conditions.specifications.L${record.level}`,
-            'must match the progression graph derived grading scope');
-        }
-      }
       return {
         level: record.level,
         recipe: {
@@ -532,19 +524,23 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
 
 export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
   const absolute = exactSource(resolve(path));
-  const definition = validateCampaignDefinition(loadJson(absolute), {
+  const sourceDefinition = validateCampaignDefinition(loadJson(absolute), {
     source: relative(process.cwd(), absolute).replaceAll('\\', '/'),
   });
-  const requestedLevels = definition.levels;
-  const { bindings, stacks, agents, conditions } = resolveCampaignInputs(definition, { stackBenchRoot });
-  const progression = definition.progression ? compileProgressionInput(definition.progression) : null;
+  const requestedLevels = sourceDefinition.levels;
+  const { bindings, stacks, agents, conditions } = resolveCampaignInputs(sourceDefinition, { stackBenchRoot });
+  const progression = sourceDefinition.progression
+    ? compileProgressionInput(sourceDefinition.progression) : null;
+  const definition = structuredClone(sourceDefinition);
+  if (progression) delete definition.progression;
 
   const sourceSha256 = sha256(readFileSync(absolute));
   const engine = currentEngineIdentity();
-  const identityDocument = campaignIdentityDocument(definition, engine, progression,
+  const identityDocument = campaignIdentityDocument(sourceDefinition, engine, progression,
     bindings, stacks, agents, conditions);
   const contentSha256 = sha256(canonicalDefinitionJson(identityDocument));
-  const attempts = expandAttempts(definition, requestedLevels, progression, stacks, agents, conditions);
+  const attempts = expandAttempts(definition, requestedLevels, progression?.identity ?? null,
+    stacks, agents, conditions);
   const repetitionsByStack = Object.fromEntries(definition.stacks.map(stack =>
     [stack.id, stack.repetitions ?? definition.repetitions]).sort(([left], [right]) =>
     left.localeCompare(right)));
@@ -578,7 +574,16 @@ export function validateCompiledCampaignPlan(input, { requireCurrentInputs = tru
     'attempts', 'summary', 'progression']);
   for (const key of Object.keys(plan)) if (!fields.has(key)) throw new Error(`compiled campaign plan.${key} is unknown`);
   if (plan.campaignSchemaVersion !== CAMPAIGN_SCHEMA_VERSION) throw new Error('compiled campaign schema is unsupported');
-  const definition = validateCampaignDefinition(plan.definition, { source: 'compiled campaign definition' });
+  const progression = plan.progression === null || plan.progression === undefined
+    ? null : validateProgressionInput(plan.progression);
+  const definition = validateCampaignDefinition({ ...plan.definition,
+    ...(progression ? { progression: progression.definition } : {}) },
+  { source: 'compiled campaign definition' });
+  const storedDefinition = structuredClone(definition);
+  if (progression) delete storedDefinition.progression;
+  if (canonicalDefinitionJson(storedDefinition) !== canonicalDefinitionJson(plan.definition)) {
+    throw new Error('compiled campaign definition does not match its progression input');
+  }
   for (const field of ['id', 'version', 'state', 'title']) {
     if (plan[field] !== definition[field]) throw new Error(`compiled campaign ${field} does not match its definition`);
   }
@@ -587,13 +592,6 @@ export function validateCompiledCampaignPlan(input, { requireCurrentInputs = tru
   }
   if (!object(plan.identities) || !object(plan.identities.engine)) {
     throw new Error('compiled campaign engine identity is missing');
-  }
-  const progression = definition.progression ? compileProgressionInput(definition.progression) : null;
-  if (plan.progression !== null && plan.progression !== undefined) {
-    validateProgressionInput(plan.progression);
-  }
-  if (canonicalDefinitionJson(plan.progression ?? null) !== canonicalDefinitionJson(progression)) {
-    throw new Error('compiled campaign progression does not match its definition');
   }
   if (!Array.isArray(plan.bindings) || plan.bindings.length !== definition.levels.length
     || !Array.isArray(plan.stacks) || plan.stacks.length !== definition.stacks.length
@@ -617,7 +615,8 @@ export function validateCompiledCampaignPlan(input, { requireCurrentInputs = tru
     definition, plan.identities.engine, progression, plan.bindings, plan.stacks,
     plan.agents, plan.conditions)));
   if (plan.contentSha256 !== expectedSha256) throw new Error('compiled campaign content identity does not match its inputs');
-  const expectedAttempts = expandAttempts(definition, definition.levels, progression,
+  const expectedAttempts = expandAttempts(plan.definition, definition.levels,
+    progression?.identity ?? null,
     plan.stacks, plan.agents, plan.conditions);
   if (canonicalDefinitionJson(plan.attempts) !== canonicalDefinitionJson(expectedAttempts)) {
     throw new Error('compiled campaign attempt schedule does not match its inputs');

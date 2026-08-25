@@ -1,4 +1,7 @@
 import { progressionEngine } from './progression-engine.mjs';
+import { validateProgressionInput } from './progression-definition.mjs';
+import { acquireProgressionStateLock, progressionStateExists, readProgressionState,
+  releaseProgressionStateLock, writeProgressionState } from './progression-state.mjs';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -25,5 +28,31 @@ export async function runProgressionMode({ definition = null, state: inputState 
       return { status: 'paused', outcome: { kind: result.category,
         reason: result.reason }, state, score: engine.score(state) };
     }
+  }
+}
+
+export async function runPersistedProgressionMode({ progression, owner, statePath, execute,
+  onState = null, engine = progressionEngine } = {}) {
+  progression = validateProgressionInput(progression);
+  if (typeof statePath !== 'string' || !statePath) {
+    throw new Error('persisted progression runner requires statePath');
+  }
+  const lock = acquireProgressionStateLock(statePath, progression, owner);
+  try {
+    let state;
+    if (progressionStateExists(statePath)) {
+      state = readProgressionState(statePath, { progression, owner,
+        requireCurrentEngine: true }).state;
+    } else {
+      state = engine.initialize(progression.definition);
+      writeProgressionState(statePath, { progression, owner, state });
+    }
+    return await runProgressionMode({ state, execute, engine,
+      onState: async next => {
+        writeProgressionState(statePath, { progression, owner, state: next });
+        if (onState) await onState(structuredClone(next));
+      } });
+  } finally {
+    releaseProgressionStateLock(lock);
   }
 }
