@@ -202,7 +202,9 @@ function runSmoke({ command, imageId, resultsDir, destinations, tcpPorts, requir
 export function runPreflight(request, dependencies = {}) {
   const run = commandRunner(dependencies.run ?? execFileSync);
   const env = dependencies.env ?? process.env;
-  const now = dependencies.now ?? Date.now();
+  const readNow = typeof dependencies.now === 'function'
+    ? dependencies.now : dependencies.now === undefined ? Date.now : () => dependencies.now;
+  const startedAt = readNow();
   const home = dependencies.home ?? homedir();
   const exists = dependencies.exists ?? existsSync;
   const statfs = dependencies.statfs ?? statfsSync;
@@ -324,7 +326,9 @@ export function runPreflight(request, dependencies = {}) {
   let dockerInfo = null;
   let imageId = null;
   try {
+    const dockerInfoStartedAt = readNow();
     dockerInfo = JSON.parse(run('docker', ['info', '--format', '{{json .}}']));
+    const dockerInfoFinishedAt = readNow();
     const ok = dockerInfo.OSType === 'linux' && (appliance
       ? dockerInfo.Architecture === 'x86_64'
       : ['x86_64', 'aarch64'].includes(dockerInfo.Architecture));
@@ -344,7 +348,10 @@ export function runPreflight(request, dependencies = {}) {
     add('docker.memory', enoughMemory ? 'pass' : 'fail',
       `${bytes(dockerInfo.MemTotal)} available`,
       enoughMemory ? null : `Allocate at least ${bytes(PREFLIGHT_RESOURCE_FLOORS.memoryBytes)} to Docker.`);
-    const skew = Math.abs(Date.parse(dockerInfo.SystemTime) - now);
+    const engineTime = Date.parse(dockerInfo.SystemTime);
+    const skew = !Number.isFinite(engineTime) ? Number.NaN
+      : engineTime < dockerInfoStartedAt ? dockerInfoStartedAt - engineTime
+        : engineTime > dockerInfoFinishedAt ? engineTime - dockerInfoFinishedAt : 0;
     const clockReady = Number.isFinite(skew) && skew <= PREFLIGHT_RESOURCE_FLOORS.clockSkewMs;
     add('docker.clock', clockReady ? 'pass' : 'fail',
       `host/engine skew ${Number.isFinite(skew) ? skew : 'unknown'} ms`,
@@ -512,7 +519,7 @@ export function runPreflight(request, dependencies = {}) {
 
   const report = {
     schemaVersion: 1,
-    generatedAt: new Date(now).toISOString(),
+    generatedAt: new Date(startedAt).toISOString(),
     request: { backends: request.backends, track: request.track, levels: request.levelList,
       runIndex: request.runIndex, agentAdapter: request.agentAdapter, packs: request.packIds,
       checks: request.checkKeys, recipe: request.recipe ?? null,

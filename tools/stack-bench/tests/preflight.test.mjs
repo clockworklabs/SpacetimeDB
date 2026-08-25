@@ -65,6 +65,32 @@ test('preflight validates exact scope and a model-free container/result-volume s
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('preflight does not count Docker info latency as clock skew', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-clock-'));
+  try {
+    const times = [
+      Date.parse('2026-08-12T12:00:00.000Z'),
+      Date.parse('2026-08-12T12:00:00.100Z'),
+      Date.parse('2026-08-12T12:00:10.100Z'),
+    ];
+    const run = (_file, args) => {
+      if (args[0] === 'info') return dockerInfo({ SystemTime: '2026-08-12T12:00:05.000Z' });
+      if (args[0] === 'compose') return '2.40.0';
+      if (args[0] === 'image') return args[3] === '{{.Os}}/{{.Architecture}}'
+        ? 'linux/amd64' : `${IMAGE_ID}\n`;
+      throw new Error(`unexpected docker command: ${args.join(' ')}`);
+    };
+    const report = runPreflight(request(root), {
+      run, now: () => times.shift(), env: {}, home: root,
+      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
+      pidsOnPort: () => [], probePort: () => ({ free: true }),
+    });
+    const clock = report.checks.find(check => check.id === 'docker.clock');
+    assert.equal(clock.status, 'pass', clock.summary);
+    assert.equal(clock.summary, 'host/engine skew 0 ms');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('preflight validates campaign-owned dependency selections through the progression graph', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-progression-'));
   try {
