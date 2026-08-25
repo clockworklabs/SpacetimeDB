@@ -33,7 +33,7 @@
   "agents": [
     {
       "adapter": "reference-fixture",
-      "adapterVersion": "1.0.0",
+      "adapterVersion": "1.1.0",
       "model": "reference-fixture"
     }
   ],
