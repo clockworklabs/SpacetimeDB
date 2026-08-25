@@ -36,6 +36,7 @@ import { databaseContainerName } from '../src/stacks/database-containers.mjs';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
+import { GRADER_SOURCE_TIMEOUT_MS } from '../src/runtime/grading-timeout.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const RESET = join(ROOT, 'commands', 'reset-backend.mjs');
@@ -232,7 +233,7 @@ export function attachRegressionScope(selection, recipeBinding, declaredSuites, 
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const COMMAND_TIMEOUT_MS = 15 * 60_000;
+const COMMAND_TIMEOUT_MS = GRADER_SOURCE_TIMEOUT_MS;
 const run = (cmd, args, opts = {}) =>
   execFileSync(cmd, args, {
     encoding: 'utf8', stdio: 'pipe', cwd: ROOT, timeout: COMMAND_TIMEOUT_MS, ...opts,

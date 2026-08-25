@@ -63,6 +63,8 @@ import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection 
 import { createLiveProgressionExecution }
   from '../src/progression/live-progression.mjs';
 import { validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
+import { gradingRunTimeoutMs, selectedGradingSourceCount }
+  from '../src/runtime/grading-timeout.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const COMMAND_TIMEOUT_MS = 20 * 60_000;
@@ -452,7 +454,21 @@ function grade(args, appDir, url, label, level, track, parentAttemptId,
   });
   const bundle = join(out ?? join(appDir, 'stack-bench'), 'bundle.json');
   rmSync(bundle, { force: true });
-  try { sh('node', argv, { stdio: 'inherit' }); } catch { /* a current bundle may still explain a scored failure */ }
+  const task = args.recipeTasks?.get(level);
+  const currentChecks = options.observation === 'observed'
+    ? task?.selection?.observedChecks
+    : task?.selection?.scoredChecks ?? task?.selection?.checks;
+  const regressionChecks = options.observation === 'observed' || args.progression
+    ? []
+    : [...(args.recipeTasks?.entries() ?? [])]
+      .filter(([priorLevel]) => priorLevel < level)
+      .flatMap(([, priorTask]) => priorTask.selection?.scoredChecks ?? priorTask.selection?.checks ?? []);
+  const sourceCount = task
+    ? selectedGradingSourceCount(currentChecks, regressionChecks)
+    : suitesFor(track, level).length;
+  try {
+    sh('node', argv, { stdio: 'inherit', timeout: gradingRunTimeoutMs(sourceCount) });
+  } catch { /* a current bundle may still explain a scored failure */ }
   return existsSync(bundle) ? readArtifactPayload(bundle, { expectedKind: 'grade_bundle' }) : null;
 }
 
