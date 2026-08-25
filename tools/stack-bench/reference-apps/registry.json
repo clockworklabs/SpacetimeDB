@@ -16,7 +16,7 @@
       },
       "imported": {
         "path": "reference-apps/ecommerce/progression/mongodb",
-        "sourceSha256": "6dacd8ebd275bff46516eb85b28763597067e3a2da6b63354754755c82a027bb"
+        "sourceSha256": "eb5c36d61cbd088830c4c900f05005186766e3c377be8ee846defcfd7cfa283a"
       },
       "mutationManifests": [],
       "qualification": "Candidate pending model-free Docker grading and targeted mutation coverage."

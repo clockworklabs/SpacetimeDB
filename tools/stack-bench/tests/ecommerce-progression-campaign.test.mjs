@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -9,12 +9,29 @@ import { compileCampaignFile, validateCompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.mjs';
 import { runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
 import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
+import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
+import { loadTrack } from '../src/composition/tracks.mjs';
 import { parseReferenceAgentArgs } from '../src/references/reference-agent.mjs';
 import { loadReferenceRegistry, selectReferenceFixture, validateReferenceRegistry }
   from '../src/references/reference-fixtures.mjs';
 
 const root = join(import.meta.dirname, '..');
 const campaignPath = join(root, 'appliance', 'campaign.ecommerce-progression-reference.json');
+
+function collectInputAttributes(value, attributes = new Set()) {
+  if (Array.isArray(value)) value.forEach(item => collectInputAttributes(item, attributes));
+  else if (value && typeof value === 'object') {
+    if (typeof value.input?.attribute === 'string') attributes.add(value.input.attribute);
+    Object.values(value).forEach(item => collectInputAttributes(item, attributes));
+  }
+  return attributes;
+}
+
+function sourceText(directory) {
+  return readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter(entry => entry.isFile() && /\.(?:js|jsx|ts|tsx|html)$/.test(entry.name))
+    .map(entry => readFileSync(join(entry.parentPath, entry.name), 'utf8')).join('\n');
+}
 
 test('the ecommerce reference pilot resolves the exact L1-L5 progression inputs', () => {
   const plan = compileCampaignFile(campaignPath);
@@ -44,6 +61,25 @@ test('every campaign level resolves one candidate reference for each stack', () 
       assert.equal(fixture.targetPath, `reference-apps/ecommerce/progression/${backend}`);
     }
   }
+});
+
+test('every progression action input is exposed by every reference app', () => {
+  const track = loadTrack('ecommerce');
+  const binding = resolveRecipeRelease(track, 5, 'ecommerce.progression-catalog@1.0.0');
+  const attributes = new Set();
+  for (const execution of binding.plan.execution) {
+    collectInputAttributes(JSON.parse(readFileSync(join(track.dir, execution.source), 'utf8')),
+      attributes);
+  }
+  assert(attributes.size > 0);
+  const missing = [];
+  for (const backend of ['mongodb', 'postgres', 'spacetime']) {
+    const text = sourceText(join(root, 'reference-apps', 'ecommerce', 'progression', backend));
+    for (const attribute of attributes) {
+      if (!text.includes(attribute)) missing.push(`${backend}:${attribute}`);
+    }
+  }
+  assert.deepEqual(missing, []);
 });
 
 test('the model-free reference adapter can advance through progression levels', () => {

@@ -1300,7 +1300,9 @@ function AdminPanel({
           </div>
           <h3 className="section-title">Stock by warehouse</h3>
           {overview.locations.map((loc) => (
-            <div className="admin-location-row" data-testid="admin-location-row" key={loc.id}>
+            <div className="admin-location-row" data-testid="admin-location-row"
+              data-restock-input={JSON.stringify({ itemId: loc.itemId,
+                warehouseId: loc.warehouseId, quantity: 1 })} key={loc.id}>
               <span>
                 {loc.itemName} @ {loc.warehouseName}
               </span>
