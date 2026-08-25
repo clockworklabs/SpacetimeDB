@@ -20,6 +20,9 @@ export default tseslint.config(
       '**/dist/**',
       '**/build/**',
       '**/coverage/**',
+      '**/public/app.js',
+      '**/src/codegen/**',
+      '**/ts-codegen/**',
       '**/templates/angular-ts/.angular/**',
     ],
   },
@@ -70,7 +73,9 @@ export default tseslint.config(
           './templates/angular-ts/tsconfig.app.json',
           './docs/tsconfig.json',
         ],
-        projectService: true,
+        projectService: {
+          allowDefaultProject: ['tools/example-server-identity.ts'],
+        },
         tsconfigRootDir: __dirname,
       },
     },
@@ -116,6 +121,13 @@ export default tseslint.config(
         'error',
         { allowObjectTypes: 'always' },
       ],
+    },
+  },
+  {
+    files: ['spacetime-*-ts/**/example/public/ui.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: globals.browser,
     },
   },
   {

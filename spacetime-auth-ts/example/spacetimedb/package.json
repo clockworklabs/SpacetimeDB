@@ -1,0 +1,20 @@
+{
+  "name": "spacetime-auth-example-module",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "spacetime build",
+    "publish:local": "spacetime publish --server local --yes spacetime-auth-example",
+    "publish:local:reset": "spacetime publish --server local --yes --delete-data=always spacetime-auth-example"
+  },
+  "dependencies": {
+    "@spacetimedb/auth": "workspace:*",
+    "@spacetimedb/rate-limit": "workspace:*",
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^5.9.3"
+  }
+}

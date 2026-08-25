@@ -1,0 +1,12 @@
+node_modules/
+dist/
+src/codegen/
+public/app.js
+public/app.js.map
+.env
+
+# STDB runtime data lives in %LOCALAPPDATA%/auth-ts-example/stdb-data (not here)
+# Listed defensively in case anyone runs STDB with --data-dir=.
+.stdb-data/
+.secrets/
+*.pid

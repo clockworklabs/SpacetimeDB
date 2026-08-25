@@ -4,3 +4,9 @@ dist
 target
 .github
 coverage
+**/public/app.js
+**/public/app.js.map
+**/src/codegen/**
+**/ts-codegen/**
+.stdb-*
+.component-packs

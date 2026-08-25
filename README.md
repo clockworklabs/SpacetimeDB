@@ -170,6 +170,11 @@ Connect from any of these platforms:
 | **C#** (standalone and Unity) | [Get started](https://spacetimedb.com/docs/quickstarts/c-sharp) |
 | **C++** (Unreal Engine) | [Get started](https://spacetimedb.com/docs/quickstarts/c-plus-plus) |
 
+## TypeScript Components
+
+Reusable TypeScript components and their runnable examples are listed in
+[SpacetimeDB TypeScript Components](./COMPONENTS.md).
+
 ## Running with Docker
 
 ```bash

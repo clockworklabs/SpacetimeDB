@@ -205,6 +205,12 @@ __pycache__/
 ## JetBrains
 .idea/
 
+# TypeScript component development outputs
+.component-packs/
+.stdb-*/
+spacetime-*-ts/example/public/app.js
+spacetime-*-ts/example/public/app.js.map
+
 /protobuf
 cs-src/
 crates/bench/spacetime.svg

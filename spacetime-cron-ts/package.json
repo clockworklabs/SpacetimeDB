@@ -1,0 +1,69 @@
+{
+  "name": "@spacetimedb/cron",
+  "description": "Calendar and interval scheduling for SpacetimeDB TypeScript modules.",
+  "version": "0.3.0",
+  "license": "BUSL-1.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./parser": {
+      "types": "./src/parser.ts",
+      "default": "./src/parser.ts"
+    }
+  },
+  "files": [
+    "src",
+    "LICENSE.txt",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clockworklabs/SpacetimeDB.git",
+    "directory": "spacetime-cron-ts"
+  },
+  "homepage": "https://github.com/clockworklabs/SpacetimeDB/tree/master/spacetime-cron-ts#readme",
+  "bugs": {
+    "url": "https://github.com/clockworklabs/SpacetimeDB/issues"
+  },
+  "keywords": [
+    "spacetimedb",
+    "cron",
+    "scheduler",
+    "typescript"
+  ],
+  "scripts": {
+    "format": "prettier . --write --ignore-path ../.prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm run test:parser && pnpm run test:schedule && pnpm run test:validation && pnpm run test:registration",
+    "test:parser": "tsx scripts/test-cron-parser.ts",
+    "test:module:local": "node scripts/test-module-local.mjs",
+    "test:registration": "node --import tsx --import ./scripts/sys-abi-test-register.mjs scripts/test-registration.ts",
+    "test:recovery": "node scripts/test-recovery.mjs",
+    "test:schedule": "tsx scripts/test-schedule.ts",
+    "test:validation": "tsx scripts/test-validation.ts"
+  },
+  "dependencies": {
+    "cron-parser": "5.5.0"
+  },
+  "peerDependencies": {
+    "spacetimedb": "workspace:^"
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "prettier": "^3.3.3",
+    "@types/node": "^25.6.0",
+    "spacetimedb": "workspace:*",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

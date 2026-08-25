@@ -1,0 +1,79 @@
+{
+  "name": "@spacetimedb/files",
+  "description": "Transactional file storage, visibility, hashing, and serving primitives for SpacetimeDB TypeScript modules.",
+  "version": "0.1.0",
+  "license": "BUSL-1.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./constants": {
+      "types": "./src/constants.ts",
+      "default": "./src/constants.ts"
+    },
+    "./rows": {
+      "types": "./src/rows.ts",
+      "default": "./src/rows.ts"
+    },
+    "./procedures": {
+      "types": "./src/procedures.ts",
+      "default": "./src/procedures.ts"
+    },
+    "./handlers": {
+      "types": "./src/handlers.ts",
+      "default": "./src/handlers.ts"
+    },
+    "./submodule": {
+      "types": "./src/submodule.ts",
+      "default": "./src/submodule.ts"
+    }
+  },
+  "files": [
+    "src",
+    "LICENSE.txt",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/clockworklabs/SpacetimeDB.git",
+    "directory": "spacetime-files-ts"
+  },
+  "homepage": "https://github.com/clockworklabs/SpacetimeDB/tree/master/spacetime-files-ts#readme",
+  "bugs": {
+    "url": "https://github.com/clockworklabs/SpacetimeDB/issues"
+  },
+  "keywords": [
+    "spacetimedb",
+    "files",
+    "storage",
+    "typescript"
+  ],
+  "scripts": {
+    "format": "prettier . --write --ignore-path ../.prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path ../.prettierignore",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx scripts/test.ts"
+  },
+  "dependencies": {
+    "@spacetimedb/crypto": "workspace:^"
+  },
+  "peerDependencies": {
+    "spacetimedb": "workspace:^"
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "prettier": "^3.3.3",
+    "@types/node": "^25.6.0",
+    "spacetimedb": "workspace:*",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

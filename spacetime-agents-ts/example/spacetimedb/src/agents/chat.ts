@@ -1,0 +1,20 @@
+import { defineAgent } from '@spacetimedb/agents/kit';
+import getTime from '../tools/getTime';
+import echo from '../tools/echo';
+
+export default defineAgent({
+  defaultModel: 'anthropic/claude-haiku-4.5',
+  defaultSystemPrompt:
+    'You are a helpful assistant. Use tools when they make the answer better.',
+  defaultMaxTurns: 10,
+  defaultMaxHistoryMessages: 50,
+  defaultRetries: 2,
+  summarizerAgentName: 'summarizer',
+  embeddingsProvider: 'openai',
+  embeddingsModel: 'text-embedding-3-small',
+  ragTopK: 4,
+  tools: {
+    get_time: getTime,
+    echo,
+  },
+});

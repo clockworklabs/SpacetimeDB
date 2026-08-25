@@ -1,0 +1,748 @@
+import {
+  DbConnection,
+  type ErrorContext,
+  type EventContext,
+} from './codegen/app/index.ts';
+import type {
+  PresenceEntry,
+  Server,
+  ChatAuthUser as AuthUserRow,
+  ChatRateLimitStatus,
+  MessageThread,
+  ThreadMessage,
+} from './codegen/app/types.ts';
+
+interface AttachmentInput {
+  mimeType: string;
+  filename: string | undefined;
+  bytes: Uint8Array;
+}
+
+declare global {
+  interface Window {
+    chat?: {
+      setDisplayName: (displayName: string) => Promise<void>;
+      setStatus: (
+        status: 'online' | 'away' | 'dnd' | 'invisible'
+      ) => Promise<void>;
+      createServer: (name: string) => Promise<void>;
+      renameServer: (serverId: bigint, name: string) => Promise<void>;
+      deleteServer: (serverId: bigint) => Promise<void>;
+      joinServer: (serverId: bigint) => Promise<void>;
+      leaveServer: (serverId: bigint) => Promise<void>;
+      setActiveServer: (serverId: bigint | null) => void;
+      createRoom: (
+        serverId: bigint,
+        name: string,
+        isPrivate: boolean,
+        category?: string
+      ) => Promise<void>;
+      joinRoom: (roomId: bigint) => Promise<void>;
+      leaveRoom: (roomId: bigint) => Promise<void>;
+      sendMessage: (
+        roomId: bigint,
+        content: string,
+        replyToMessageId?: bigint,
+        attachments?: AttachmentInput[]
+      ) => Promise<void>;
+      sendThreadMessage: (
+        rootMessageId: bigint,
+        content: string
+      ) => Promise<void>;
+      getAttachmentFile: (
+        fileId: bigint
+      ) => Promise<{ filename?: string; mimeType: string; bytes: Uint8Array }>;
+      editMessage: (messageId: bigint, content: string) => Promise<void>;
+      deleteMessage: (messageId: bigint) => Promise<void>;
+      editThreadMessage: (
+        threadMessageId: bigint,
+        content: string
+      ) => Promise<void>;
+      deleteThreadMessage: (threadMessageId: bigint) => Promise<void>;
+      renameRoom: (roomId: bigint, name: string) => Promise<void>;
+      setRoomCategory: (roomId: bigint, category?: string) => Promise<void>;
+      setRoomPrivacy: (roomId: bigint, isPrivate: boolean) => Promise<void>;
+      deleteRoom: (roomId: bigint) => Promise<void>;
+      startTyping: (roomId: bigint) => Promise<void>;
+      stopTyping: (roomId: bigint) => Promise<void>;
+      markRoomRead: (roomId: bigint) => Promise<void>;
+      toggleReaction: (messageId: bigint, emoji: string) => Promise<void>;
+      pinMessage: (messageId: bigint) => Promise<void>;
+      unpinMessage: (messageId: bigint) => Promise<void>;
+      searchMessages: (roomId: bigint, query: string) => Promise<unknown[]>;
+      setActiveRoom: (roomId: bigint | null) => void;
+      heartbeat: () => Promise<void>;
+      signup: (args: {
+        email: string;
+        password: string;
+        name?: string;
+      }) => Promise<void>;
+      login: (args: { email: string; password: string }) => Promise<void>;
+      logout: () => Promise<void>;
+      oauthStart: (provider: 'google' | 'github') => void;
+      forgotPassword: (email: string) => Promise<void>;
+      requestEmailVerify: () => Promise<void>;
+      whoami: () => Promise<{
+        userId: string | undefined;
+        senderIdentityHex: string;
+      }>;
+      setProfile: (args: { name?: string; image?: string }) => Promise<void>;
+    };
+  }
+}
+
+interface ServerConfig {
+  stdbUri: string;
+  appDatabase: string;
+}
+
+interface AuthUser {
+  userId: string;
+  email: string;
+  emailVerified: boolean;
+  name?: string;
+  image?: string;
+}
+
+interface AuthRefreshResponse {
+  user: AuthUser;
+  token: string;
+  sessionExpiresAt: number;
+}
+
+interface AuthMeResponse {
+  user: AuthUser;
+  sessionExpiresAt: number;
+}
+
+const PRESENCE_SCOPE_GLOBAL = 'chat.global';
+const PRESENCE_SCOPE_TYPING_PREFIX = 'chat.typing:';
+const HEARTBEAT_INTERVAL_MS = 15_000;
+const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 15000];
+
+let config: ServerConfig | null = null;
+let conn: DbConnection | null = null;
+let meHex = '';
+let activeServerId: bigint | null = null;
+let activeRoomId: bigint | null = null;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempt = 0;
+let authUser: AuthUser | null = null;
+let sessionExpiresAt: number | undefined;
+
+function normalizeError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
+function emitConn(
+  state: 'connecting' | 'connected' | 'error',
+  detail?: string
+): void {
+  window.dispatchEvent(
+    new CustomEvent('chat:conn', { detail: { state, detail } })
+  );
+}
+
+function emitAuth(): void {
+  window.dispatchEvent(
+    new CustomEvent('chat:auth', {
+      detail: {
+        user: authUser,
+        sessionExpiresAt,
+        senderIdentityHex: meHex,
+      },
+    })
+  );
+}
+
+function emitData(): void {
+  if (!conn) {
+    window.dispatchEvent(
+      new CustomEvent('chat:data', {
+        detail: {
+          meHex,
+          activeServerId,
+          activeRoomId,
+          servers: [],
+          serverMembers: [],
+          rooms: [],
+          users: [],
+          members: [],
+          messages: [],
+          reactions: [],
+          attachments: [],
+          threads: [],
+          threadMessages: [],
+          cursors: [],
+          presence: [],
+          rateLimitStatus: [],
+          authenticated: Boolean(authUser),
+        },
+      })
+    );
+    return;
+  }
+  const c = conn;
+  const serverRows = [...c.db.myServers.iter()].sort((a, b) => {
+    const av = a.createdAt.microsSinceUnixEpoch as bigint;
+    const bv = b.createdAt.microsSinceUnixEpoch as bigint;
+    return av < bv ? -1 : av > bv ? 1 : 0;
+  });
+  const roomRows = [...c.db.myRooms.iter()].sort((a, b) => {
+    if (a.name === 'general') return -1;
+    if (b.name === 'general') return 1;
+    return a.name.localeCompare(b.name);
+  });
+  const userRows = [...c.db.myChatUsers.iter()].sort((a, b) =>
+    a.displayName.localeCompare(b.displayName)
+  );
+  const messageRows = [...c.db.myRoomMessages.iter()].sort((a, b) => {
+    const av = a.createdAt.microsSinceUnixEpoch as bigint;
+    const bv = b.createdAt.microsSinceUnixEpoch as bigint;
+    return av < bv ? -1 : av > bv ? 1 : 0;
+  });
+  const threadRows = [...c.db.myMessageThreads.iter()].sort(
+    (a: MessageThread, b: MessageThread) => {
+      const av = a.updatedAt.microsSinceUnixEpoch as bigint;
+      const bv = b.updatedAt.microsSinceUnixEpoch as bigint;
+      return av < bv ? 1 : av > bv ? -1 : 0;
+    }
+  );
+  const threadMessageRows = [...c.db.myThreadMessages.iter()].sort(
+    (a: ThreadMessage, b: ThreadMessage) => {
+      const av = a.createdAt.microsSinceUnixEpoch as bigint;
+      const bv = b.createdAt.microsSinceUnixEpoch as bigint;
+      return av < bv ? -1 : av > bv ? 1 : 0;
+    }
+  );
+  window.dispatchEvent(
+    new CustomEvent('chat:data', {
+      detail: {
+        meHex,
+        activeServerId,
+        activeRoomId,
+        servers: serverRows,
+        serverMembers: [...c.db.myServerMembers.iter()],
+        rooms: roomRows,
+        users: userRows,
+        members: [...c.db.myRoomMembers.iter()],
+        messages: messageRows,
+        reactions: [...c.db.myRoomMessageReactions.iter()],
+        attachments: [...c.db.myRoomAttachments.iter()].sort(
+          (a, b) => a.ordinal - b.ordinal
+        ),
+        threads: threadRows,
+        threadMessages: threadMessageRows,
+        cursors: [...c.db.myRoomReadCursors.iter()],
+        presence: [...c.db.myPresenceEntries.iter()],
+        rateLimitStatus: [
+          ...c.db.myRateLimitStatus.iter(),
+        ] as ChatRateLimitStatus[],
+        authenticated: Boolean(authUser),
+      },
+    })
+  );
+}
+
+async function callJson<T = unknown>(path: string, body?: unknown): Promise<T> {
+  const r = await fetch(path, {
+    method: body !== undefined ? 'POST' : 'GET',
+    headers: body !== undefined ? { 'content-type': 'application/json' } : {},
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    credentials: 'same-origin',
+  });
+  let data: unknown = null;
+  try {
+    data = await r.json();
+  } catch {
+    /* empty or non-JSON response */
+  }
+  if (!r.ok) {
+    const error =
+      data && typeof data === 'object' && 'error' in data
+        ? String((data as { error: unknown }).error)
+        : `http_${r.status}`;
+    throw new Error(error);
+  }
+  return data as T;
+}
+
+async function loadConfig(): Promise<ServerConfig> {
+  const r = await fetch('/api/config');
+  if (!r.ok) throw new Error(`/api/config returned ${r.status}`);
+  return (await r.json()) as ServerConfig;
+}
+
+function requireConn(): DbConnection {
+  if (!conn) throw new Error('chat.disconnected');
+  return conn;
+}
+
+function clearHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+function scheduleHeartbeat(): void {
+  clearHeartbeat();
+  if (!authUser) return;
+  heartbeatTimer = setInterval(() => {
+    if (!conn || !authUser) return;
+    try {
+      void conn.reducers.heartbeat({}).catch(() => undefined);
+    } catch {
+      // A later heartbeat retries after transient connection failures.
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+function scheduleReconnect(): void {
+  if (reconnectTimer != null) return;
+  const delay =
+    RECONNECT_DELAYS_MS[
+      Math.min(reconnectAttempt, RECONNECT_DELAYS_MS.length - 1)
+    ];
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    reconnectAttempt++;
+    run().catch(err => {
+      emitConn('error', normalizeError(err));
+      scheduleReconnect();
+    });
+  }, delay);
+}
+
+const STDB_TOKEN_KEY = 'chat:stdb_token';
+const AUTH_TOKEN_KEY = 'chat:auth_token';
+
+function loadStdbToken(): string | undefined {
+  try {
+    return localStorage.getItem(STDB_TOKEN_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveStdbToken(token: string): void {
+  try {
+    localStorage.setItem(STDB_TOKEN_KEY, token);
+  } catch {
+    /* Storage can be unavailable. */
+  }
+}
+
+function saveAuthToken(token: string): void {
+  try {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } catch {
+    /* Storage can be unavailable. */
+  }
+}
+
+function clearAuthToken(): void {
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch {
+    /* Storage can be unavailable. */
+  }
+}
+
+function connectStdb(cfg: ServerConfig): Promise<DbConnection> {
+  return new Promise((resolve, reject) => {
+    const priorToken = loadStdbToken();
+    DbConnection.builder()
+      .withUri(cfg.stdbUri)
+      .withDatabaseName(cfg.appDatabase)
+      .withToken(priorToken)
+      .onConnect((c, _identity, token) => {
+        if (token) saveStdbToken(token);
+        resolve(c);
+      })
+      .onDisconnect((_ctx, err) => {
+        conn = null;
+        clearHeartbeat();
+        emitConn('error', err?.message ?? 'disconnected');
+        scheduleReconnect();
+      })
+      .onConnectError((_ctx, err) => reject(err))
+      .build();
+  });
+}
+
+function wireSubscriptions(c: DbConnection): void {
+  c.subscriptionBuilder()
+    .onApplied(() => emitData())
+    .onError((ctx: ErrorContext) =>
+      console.error('subscription error', ctx.event)
+    )
+    .subscribe([
+      'SELECT * FROM my_chat_users',
+      'SELECT * FROM my_servers',
+      'SELECT * FROM my_server_members',
+      'SELECT * FROM my_presence_entries',
+      'SELECT * FROM my_rooms',
+      'SELECT * FROM my_room_members',
+      'SELECT * FROM my_room_messages',
+      'SELECT * FROM my_room_message_reactions',
+      'SELECT * FROM my_room_attachments',
+      'SELECT * FROM my_message_threads',
+      'SELECT * FROM my_thread_messages',
+      'SELECT * FROM my_room_read_cursors',
+      'SELECT * FROM my_auth_user',
+      'SELECT * FROM my_rate_limit_status',
+    ]);
+
+  const reRender = () => emitData();
+  const tables = [
+    c.db.myChatUsers,
+    c.db.myRooms,
+    c.db.myRoomMembers,
+    c.db.myRoomMessages,
+    c.db.myRoomMessageReactions,
+    c.db.myRoomAttachments,
+    c.db.myServerMembers,
+    c.db.myMessageThreads,
+    c.db.myThreadMessages,
+    c.db.myRoomReadCursors,
+    c.db.myPresenceEntries,
+    c.db.myRateLimitStatus,
+  ];
+  for (const t of tables) {
+    t.onInsert(reRender);
+    t.onUpdate(reRender);
+    t.onDelete(reRender);
+  }
+
+  c.db.myServers.onInsert(reRender);
+  c.db.myServers.onUpdate(reRender);
+  c.db.myServers.onDelete((_ctx: EventContext, row: Server) => {
+    if (activeServerId === row.id) {
+      activeServerId = null;
+      activeRoomId = null;
+    }
+    emitData();
+  });
+
+  const syncUserFromRow = (row: AuthUserRow) => {
+    if (!authUser || row.userId !== authUser.userId) return;
+    authUser = {
+      userId: row.userId,
+      email: row.email,
+      emailVerified: row.emailVerified,
+      name: row.name ?? undefined,
+      image: row.image ?? undefined,
+    };
+    emitAuth();
+  };
+  c.db.myAuthUser.onInsert((_ctx: EventContext, row: AuthUserRow) =>
+    syncUserFromRow(row)
+  );
+  c.db.myAuthUser.onUpdate(
+    (_ctx: EventContext, _old: AuthUserRow, neu: AuthUserRow) =>
+      syncUserFromRow(neu)
+  );
+  c.db.myAuthUser.onDelete((_ctx: EventContext, row: AuthUserRow) => {
+    if (!authUser || row.userId !== authUser.userId) return;
+    authUser = null;
+    sessionExpiresAt = undefined;
+    emitAuth();
+    emitData();
+  });
+}
+
+async function bindSession(
+  sessionToken: string,
+  refreshedUser?: AuthUser,
+  exp?: number
+): Promise<void> {
+  saveAuthToken(sessionToken);
+  const c = requireConn();
+  await c.reducers.linkConnection({ sessionToken });
+  const me = await c.procedures.whoami({});
+  meHex = me.senderIdentityHex;
+  if (!refreshedUser) {
+    const meRes = await callJson<AuthMeResponse>('/auth/me');
+    refreshedUser = meRes.user;
+    exp = meRes.sessionExpiresAt;
+  }
+  authUser = refreshedUser;
+  sessionExpiresAt = exp;
+  await c.reducers.heartbeat({});
+  emitAuth();
+  emitData();
+  scheduleHeartbeat();
+}
+
+async function restoreSession(): Promise<boolean> {
+  try {
+    const refreshed = await callJson<AuthRefreshResponse>(
+      '/auth/session/refresh',
+      {}
+    );
+    await bindSession(
+      refreshed.token,
+      refreshed.user,
+      refreshed.sessionExpiresAt
+    );
+    return true;
+  } catch {
+    authUser = null;
+    sessionExpiresAt = undefined;
+    clearAuthToken();
+    emitAuth();
+    clearHeartbeat();
+    return false;
+  }
+}
+
+function installApi(): void {
+  window.chat = {
+    setDisplayName: (displayName: string) => {
+      return requireConn().reducers.setDisplayName({ displayName });
+    },
+    setStatus: status => {
+      // UI passes lowercase strings; map to ChatUserStatus enum tags.
+      const tag = (status.charAt(0).toUpperCase() + status.slice(1)) as
+        | 'Online'
+        | 'Away'
+        | 'Dnd'
+        | 'Invisible';
+      return requireConn().reducers.setStatus({ status: { tag } });
+    },
+    createServer: (name: string) => {
+      return requireConn().reducers.createServer({ name });
+    },
+    renameServer: (serverId: bigint, name: string) => {
+      return requireConn().reducers.renameServer({ serverId, name });
+    },
+    deleteServer: (serverId: bigint) => {
+      return requireConn().reducers.deleteServer({ serverId });
+    },
+    joinServer: (serverId: bigint) => {
+      return requireConn().reducers.joinServer({ serverId });
+    },
+    leaveServer: (serverId: bigint) => {
+      return requireConn().reducers.leaveServer({ serverId });
+    },
+    setActiveServer: (serverId: bigint | null) => {
+      activeServerId = serverId;
+      activeRoomId = null;
+      emitData();
+    },
+    createRoom: (
+      serverId: bigint,
+      name: string,
+      isPrivate: boolean,
+      category?: string
+    ) => {
+      return requireConn().reducers.createRoom({
+        serverId,
+        name,
+        isPrivate,
+        category,
+      });
+    },
+    joinRoom: (roomId: bigint) => {
+      return requireConn().reducers.joinRoom({ roomId });
+    },
+    leaveRoom: (roomId: bigint) => {
+      return requireConn().reducers.leaveRoom({ roomId });
+    },
+    sendMessage: (
+      roomId: bigint,
+      content: string,
+      replyToMessageId?: bigint,
+      atts?: AttachmentInput[]
+    ) => {
+      return requireConn().reducers.sendMessage({
+        roomId,
+        content,
+        replyToMessageId,
+        attachments: atts ?? [],
+      });
+    },
+    sendThreadMessage: (rootMessageId: bigint, content: string) => {
+      return requireConn().reducers.sendThreadMessage({
+        rootMessageId,
+        content,
+      });
+    },
+    getAttachmentFile: async (fileId: bigint) => {
+      return await requireConn().procedures.getAttachmentFile({ fileId });
+    },
+    editMessage: (messageId: bigint, content: string) => {
+      return requireConn().reducers.editMessage({ messageId, content });
+    },
+    deleteMessage: (messageId: bigint) => {
+      return requireConn().reducers.deleteMessage({ messageId });
+    },
+    editThreadMessage: (threadMessageId: bigint, content: string) => {
+      return requireConn().reducers.editThreadMessage({
+        threadMessageId,
+        content,
+      });
+    },
+    deleteThreadMessage: (threadMessageId: bigint) => {
+      return requireConn().reducers.deleteThreadMessage({ threadMessageId });
+    },
+    renameRoom: (roomId: bigint, name: string) => {
+      return requireConn().reducers.renameRoom({ roomId, name });
+    },
+    setRoomCategory: (roomId: bigint, category?: string) => {
+      return requireConn().reducers.setRoomCategory({ roomId, category });
+    },
+    setRoomPrivacy: (roomId: bigint, isPrivate: boolean) => {
+      return requireConn().reducers.setRoomPrivacy({ roomId, isPrivate });
+    },
+    deleteRoom: (roomId: bigint) => {
+      return requireConn().reducers.deleteRoom({ roomId });
+    },
+    startTyping: (roomId: bigint) => {
+      return requireConn().reducers.startTyping({ roomId });
+    },
+    stopTyping: (roomId: bigint) => {
+      return requireConn().reducers.stopTyping({ roomId });
+    },
+    markRoomRead: (roomId: bigint) => {
+      return requireConn().reducers.markRoomRead({ roomId });
+    },
+    toggleReaction: (messageId: bigint, emoji: string) => {
+      return requireConn().reducers.toggleReaction({ messageId, emoji });
+    },
+    pinMessage: (messageId: bigint) => {
+      return requireConn().reducers.pinMessage({ messageId });
+    },
+    unpinMessage: (messageId: bigint) => {
+      return requireConn().reducers.unpinMessage({ messageId });
+    },
+    searchMessages: async (roomId: bigint, query: string) => {
+      return await requireConn().procedures.searchMessages({ roomId, query });
+    },
+    setActiveRoom: (roomId: bigint | null) => {
+      activeRoomId = roomId;
+      emitData();
+    },
+    heartbeat: () => {
+      return requireConn().reducers.heartbeat({});
+    },
+    signup: async args => {
+      const r = await callJson<{ token: string }>('/auth/password/signup', {
+        email: args.email,
+        password: args.password,
+        name: args.name,
+      });
+      await bindSession(r.token);
+    },
+    login: async args => {
+      const r = await callJson<{ token: string }>('/auth/password/login', {
+        email: args.email,
+        password: args.password,
+      });
+      await bindSession(r.token);
+    },
+    logout: async () => {
+      const c = conn;
+      if (c) {
+        try {
+          await c.reducers.unlinkConnection({});
+        } catch {
+          /* best-effort disconnect cleanup */
+        }
+      }
+      await callJson('/auth/logout', {});
+      authUser = null;
+      sessionExpiresAt = undefined;
+      clearAuthToken();
+      clearHeartbeat();
+      emitAuth();
+      emitData();
+    },
+    oauthStart: provider => {
+      window.location.href = `/auth/${provider}/start?redirectTo=/`;
+    },
+    forgotPassword: async email => {
+      await callJson('/auth/password/forgot', { email });
+    },
+    requestEmailVerify: async () => {
+      await callJson('/auth/email/verify-request', {});
+    },
+    whoami: async () => {
+      const r = await requireConn().procedures.whoami({});
+      meHex = r.senderIdentityHex;
+      emitAuth();
+      return {
+        userId: r.userId,
+        senderIdentityHex: r.senderIdentityHex,
+      };
+    },
+    setProfile: args => {
+      return requireConn().reducers.updateProfile({
+        name: args.name,
+        image: args.image,
+      });
+    },
+  };
+}
+
+function typingScopeForRoom(roomId: bigint): string {
+  return `${PRESENCE_SCOPE_TYPING_PREFIX}${roomId.toString()}`;
+}
+
+function derivePresenceSnapshot() {
+  if (!conn)
+    return {
+      global: [] as PresenceEntry[],
+      typingByRoom: {} as Record<string, string[]>,
+    };
+  const entries = [...conn.db.myPresenceEntries.iter()];
+  const global = entries.filter(row => row.scope === PRESENCE_SCOPE_GLOBAL);
+  const typingByRoom: Record<string, string[]> = {};
+  for (const row of entries) {
+    if (!row.scope.startsWith(PRESENCE_SCOPE_TYPING_PREFIX)) continue;
+    const roomId = row.scope.slice(PRESENCE_SCOPE_TYPING_PREFIX.length);
+    if (!typingByRoom[roomId]) typingByRoom[roomId] = [];
+    typingByRoom[roomId].push(row.subject);
+  }
+  return { global, typingByRoom };
+}
+
+async function initializeIdentity(c: DbConnection): Promise<void> {
+  const me = await c.procedures.whoami({});
+  meHex = me.senderIdentityHex;
+  const snap = derivePresenceSnapshot();
+  window.dispatchEvent(
+    new CustomEvent('chat:me', {
+      detail: {
+        meHex,
+        globalPresence: snap.global,
+        typingByRoom: snap.typingByRoom,
+        typingScopeForRoom,
+      },
+    })
+  );
+  emitAuth();
+}
+
+async function run(): Promise<void> {
+  emitConn('connecting');
+  if (!config) config = await loadConfig();
+
+  const c = await connectStdb(config);
+  conn = c;
+  reconnectAttempt = 0;
+  emitConn('connected');
+  wireSubscriptions(c);
+  installApi();
+  await initializeIdentity(c);
+  await restoreSession();
+  window.dispatchEvent(new CustomEvent('chat:ready'));
+}
+
+run().catch(err => {
+  emitConn('error', normalizeError(err));
+  scheduleReconnect();
+});

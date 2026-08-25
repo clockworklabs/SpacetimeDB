@@ -1,0 +1,21 @@
+{
+  "name": "spacetime-presence-example-module",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "spacetime build",
+    "publish:local": "spacetime publish --server local --yes spacetime-presence-example"
+  },
+  "dependencies": {
+    "@spacetimedb/auth": "workspace:*",
+    "@spacetimedb/files": "workspace:*",
+    "@spacetimedb/presence": "workspace:*",
+    "@spacetimedb/rate-limit": "workspace:*",
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^5.9.3"
+  }
+}

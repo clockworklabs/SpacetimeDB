@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A turn-based tactics example using SpacetimeDB grid storage, pathfinding, range queries, and movement validation."
+    />
+    <title>SpacetimeDB Grid</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!-- Auth shell: shown until session is bound -->
+    <div class="auth-shell" id="auth-shell" role="main">
+      <form class="auth-card" id="auth-form">
+        <a
+          href="https://spacetimedb.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          style="display: inline-flex"
+          ><img class="auth-logo" src="/assets/logo.svg" alt="SpacetimeDB"
+        /></a>
+        <h1 id="auth-title">Welcome to Grid</h1>
+        <p class="auth-sub" id="auth-sub">Sign in to continue.</p>
+
+        <div class="auth-oauth">
+          <button type="button" class="btn oauth block" id="oauth-google">
+            <svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.76h3.56c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.56-2.76c-.98.66-2.24 1.06-3.72 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.11A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.44.34-2.11V7.05H2.18A11 11 0 0 0 1 12c0 1.78.43 3.46 1.18 4.95l3.66-2.84z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.05l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38z"
+              />
+            </svg>
+            Continue with Google
+          </button>
+          <button type="button" class="btn oauth block" id="oauth-github">
+            <svg
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"
+              width="16"
+              height="16"
+            >
+              <path
+                d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2c-3.2.7-3.87-1.36-3.87-1.36-.53-1.34-1.3-1.7-1.3-1.7-1.06-.72.08-.7.08-.7 1.17.08 1.79 1.2 1.79 1.2 1.04 1.78 2.73 1.26 3.4.96.11-.75.41-1.26.74-1.55-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.47.11-3.06 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.78 0c2.2-1.49 3.18-1.18 3.18-1.18.63 1.59.23 2.77.11 3.06.74.81 1.19 1.84 1.19 3.1 0 4.43-2.7 5.41-5.27 5.69.42.36.79 1.08.79 2.18v3.23c0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"
+              />
+            </svg>
+            Continue with GitHub
+          </button>
+        </div>
+
+        <div class="auth-divider"><span>or</span></div>
+
+        <div class="auth-field">
+          <label for="auth-email">Email</label>
+          <input
+            id="auth-email"
+            type="email"
+            autocomplete="email"
+            placeholder="you@example.com"
+            required
+          />
+        </div>
+        <div class="auth-field" id="auth-name-field" hidden>
+          <label for="auth-name">Name (optional)</label>
+          <input
+            id="auth-name"
+            type="text"
+            autocomplete="name"
+            placeholder="Display name"
+          />
+        </div>
+        <div class="auth-field">
+          <label for="auth-pass">Password</label>
+          <input
+            id="auth-pass"
+            type="password"
+            autocomplete="current-password"
+            required
+            minlength="8"
+          />
+        </div>
+        <button type="submit" class="btn primary block" id="auth-submit">
+          Sign in
+        </button>
+        <p class="auth-foot" id="forgot-foot">
+          <a id="forgot-link">Forgot password?</a>
+        </p>
+        <p class="auth-foot">
+          <span id="toggle-prompt">Don't have an account?</span>
+          <a id="toggle-link">Sign up</a>
+        </p>
+      </form>
+    </div>
+
+    <!-- Signed-in shell -->
+    <div class="shell" id="shell" role="main" hidden>
+      <header class="topnav">
+        <div class="brand">
+          <a
+            href="https://spacetimedb.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            style="display: inline-flex"
+            ><img
+              class="brand-wordmark"
+              src="/assets/brand.svg"
+              alt="SpacetimeDB"
+          /></a>
+          <span class="brand-sub">Grid Test App</span>
+        </div>
+        <div class="topnav-actions">
+          <span class="user-pill" id="user-pill">
+            <span class="user-avatar" id="user-avatar">?</span>
+            <span id="user-name">Unavailable</span>
+          </span>
+          <button class="btn small" id="btn-logout">Sign out</button>
+        </div>
+      </header>
+
+      <!-- Lobby view (no active match) -->
+      <section class="lobby" id="lobby" hidden>
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Sectors</h2>
+              <p class="panel-sub">
+                Deploy a new mission or join one already in progress.
+              </p>
+            </div>
+            <div class="create-actions">
+              <button class="btn" id="btn-create-match">+ vs Human</button>
+              <button class="btn primary" id="btn-create-match-ai">
+                + Deploy solo (vs aliens)
+              </button>
+            </div>
+          </div>
+          <div class="match-list" id="match-list">
+            <div class="lobby-empty">
+              No missions in this sector. Deploy one to begin.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Match view (active match) -->
+      <section class="match-view" id="match-view" hidden>
+        <div class="board-panel">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 12px;
+            "
+          >
+            <div>
+              <strong id="match-title">Match</strong>
+              <span class="hint" id="match-subtitle"></span>
+            </div>
+            <button class="btn small" id="btn-leave-match">← Lobby</button>
+          </div>
+          <div class="board-canvas-wrap">
+            <canvas id="board-canvas" width="600" height="500"></canvas>
+          </div>
+        </div>
+
+        <aside class="info-panel">
+          <div class="turn-banner" id="turn-banner">
+            Waiting for mission data
+          </div>
+
+          <div>
+            <div
+              class="panel-sub"
+              style="
+                margin-bottom: 6px;
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+              "
+            >
+              Selected unit
+            </div>
+            <div id="selected-unit-info">
+              <div class="hint">click one of your units</div>
+            </div>
+          </div>
+
+          <div>
+            <div
+              class="panel-sub"
+              style="
+                margin-bottom: 6px;
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+              "
+            >
+              Your units
+            </div>
+            <div class="unit-list" id="my-units"></div>
+          </div>
+
+          <div>
+            <div
+              class="panel-sub"
+              style="
+                margin-bottom: 6px;
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+              "
+            >
+              Enemy units
+            </div>
+            <div class="unit-list" id="enemy-units"></div>
+          </div>
+
+          <button
+            class="btn primary"
+            id="btn-end-turn"
+            style="margin-top: auto"
+          >
+            End turn
+          </button>
+        </aside>
+      </section>
+    </div>
+
+    <!-- Win/lose modal -->
+    <div class="backdrop" id="end-backdrop">
+      <div class="modal">
+        <h2 id="end-title"></h2>
+        <p id="end-body"></p>
+        <div class="actions">
+          <button class="btn primary" id="end-back-to-lobby">
+            Back to lobby
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script type="module" src="/app.js"></script>
+    <script type="module" src="./ui.js"></script>
+  </body>
+</html>

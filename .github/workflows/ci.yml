@@ -1686,3 +1686,37 @@ jobs:
       # - name: Print rows in the user table
       #   if: always()
       #   run: spacetime sql quickstart-chat "SELECT * FROM user"
+
+  typescript-components:
+    needs: [merge_queue_noop]
+    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    name: TypeScript - Components
+    runs-on: spacetimedb-new-runner-2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: ./.github/actions/setup-pnpm
+        with:
+          run_install: true
+
+      - name: Install released SpacetimeDB toolchain
+        run: |
+          curl -sSf https://install.spacetimedb.com | sh -s -- --root-dir "$RUNNER_TEMP/spacetime" --yes
+          echo "$RUNNER_TEMP/spacetime/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/spacetime/bin/spacetime" version install 2.8.3
+          "$RUNNER_TEMP/spacetime/bin/spacetime" version use 2.8.3
+
+      - name: Check components
+        run: pnpm components:check
+
+      - name: Build component modules and examples
+        run: pnpm components:build
+
+      - name: Audit packed production dependencies
+        run: pnpm components:audit:prod

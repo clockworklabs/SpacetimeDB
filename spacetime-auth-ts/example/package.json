@@ -1,0 +1,29 @@
+{
+  "name": "spacetime-auth-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:codegen": "spacetime generate --lang typescript --out-dir src/codegen/app --module-path ./spacetimedb -y",
+    "build:module": "pnpm --dir spacetimedb run build && pnpm --dir spacetimedb run publish:local && pnpm run build:codegen && pnpm run build:app",
+    "build:module:fresh": "pnpm --dir spacetimedb run build && pnpm --dir spacetimedb run publish:local:reset && pnpm run build:codegen && pnpm run build:app",
+    "check": "tsc --noEmit",
+    "build:app": "pnpm run check && esbuild src/app.ts --bundle --format=esm --outfile=public/app.js --target=es2022 --sourcemap",
+    "build": "pnpm run build:codegen && pnpm run build:app",
+    "dev": "pnpm run build && tsx server.ts"
+  },
+  "dependencies": {
+    "@spacetimedb/auth": "workspace:*",
+    "@spacetimedb/rate-limit": "workspace:*",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "spacetimedb": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.6.0",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

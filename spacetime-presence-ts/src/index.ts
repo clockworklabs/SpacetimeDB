@@ -1,0 +1,30 @@
+export {
+  presenceEntryRow,
+  presenceConfigRow,
+  presenceSweepTickRow,
+  createPresenceEntryTable,
+  createPresenceConfigTable,
+  presenceEntryTable,
+  presenceConfigTable,
+  presenceTables,
+} from './tables';
+
+export {
+  DEFAULT_PRESENCE_TTL_SECONDS,
+  DEFAULT_PRESENCE_SWEEP_BATCH,
+  DEFAULT_PRESENCE_STATUS,
+  buildPresenceKey,
+  installPresenceConfig,
+  upsertPresence,
+  touchPresence,
+  removePresence,
+  sweepPresence,
+  resolvePresenceSweepBatch,
+  runPresenceSweep,
+  type PresenceConfigCtxLike,
+  type PresenceEntryRow,
+  type PresenceSweepCtxLike,
+  type PresenceTxLike,
+  type PresenceInstallOpts,
+  type PresenceUpsertOpts,
+} from './presence';
