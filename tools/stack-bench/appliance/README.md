@@ -186,8 +186,9 @@ docker compose --env-file /var/lib/stack-bench/operator.env \
   --out /var/lib/stack-bench/results/campaign-001
 ```
 
-`campaign status /var/lib/stack-bench/results/campaign-001` reads the durable
-state. Two controllers cannot own the directory at once. Failed harness or
+`campaign status /var/lib/stack-bench/results/campaign-001` prints a compact
+summary. Add `--full` only when you need the complete durable state. Two controllers
+cannot own the directory at once. Failed harness or
 inconclusive measurement attempts remain visible and retries append new
 execution records. Multiple running attempts are checkpointed independently.
 All controller processes also share persistent resource locks, so another
