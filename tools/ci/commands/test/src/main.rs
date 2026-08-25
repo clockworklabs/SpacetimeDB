@@ -56,6 +56,7 @@ fn main() -> Result<()> {
     cmd!(
         "cargo",
         "build",
+        "-vv",
         "--release",
         "-p",
         "spacetimedb-cli",
@@ -113,6 +114,7 @@ fn main() -> Result<()> {
     cmd!(
         "cargo",
         "run",
+        "-vv",
         "-p",
         "spacetimedb-codegen",
         "--example",
