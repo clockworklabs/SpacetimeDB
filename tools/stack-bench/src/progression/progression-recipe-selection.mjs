@@ -48,11 +48,24 @@ function validateNodeModuleDependencies(binding, definition, node) {
   visitNode(node.id);
   const scope = [node, ...[...ancestorIds].map(nodeId => nodes.get(nodeId))];
   const allowedFeatures = new Set(scope.flatMap(item => item.featureRefs));
-  const allowedSpecifications = new Set(scope.flatMap(item => item.promptModules));
+  const promptModules = scope.flatMap(item => item.promptModules).map(ref => {
+    const module = modules.get(ref);
+    if (!module) throw new Error(`progression references module ${ref} outside the selected recipe`);
+    return { ref, module };
+  });
+  const allowedSpecifications = new Set(promptModules
+    .filter(item => item.module.moduleType === 'specification').map(item => item.ref));
+  const nodeSpecifications = node.promptModules.filter(ref =>
+    modules.get(ref)?.moduleType === 'specification');
+  const unownedPromptFeature = node.promptModules.find(ref =>
+    modules.get(ref)?.moduleType === 'feature' && !node.featureRefs.includes(ref));
+  if (unownedPromptFeature) {
+    throw new Error(`progression node ${node.id} prompt feature ${unownedPromptFeature} is not selected`);
+  }
   dependencyClosure(modules, node.featureRefs, 'feature', {
     allowed: allowedFeatures, label: `progression node ${node.id}`,
   });
-  dependencyClosure(modules, node.promptModules, 'specification', {
+  dependencyClosure(modules, nodeSpecifications, 'specification', {
     allowed: allowedSpecifications, label: `progression node ${node.id}`,
   });
   const checks = new Map(binding.release.checkCatalog.map(check => [check.stableKey, check]));
@@ -87,21 +100,29 @@ function resolveSelections(binding, definition, promptNodeIds, gradingNodeIds, g
     return { ...exactRef(ref), module };
   });
   const promptFeatures = checkedRefs(refsFor(promptNodeIds, 'featureRefs'));
-  const promptSpecifications = checkedRefs(refsFor(promptNodeIds, 'promptModules'));
+  const selectedPromptModules = checkedRefs(refsFor(promptNodeIds, 'promptModules'));
+  const promptSpecifications = selectedPromptModules
+    .filter(item => item.module.moduleType === 'specification');
   if (promptFeatures.some(item => item.module.moduleType !== 'feature')) {
     throw new Error('progression featureRefs must reference feature modules');
   }
-  if (promptSpecifications.some(item => item.module.moduleType !== 'specification')) {
-    throw new Error('progression promptModules must reference specification modules');
+  const promptFeatureRefs = new Set(promptFeatures.map(item => item.ref));
+  if (selectedPromptModules.some(item => item.module.moduleType === 'feature'
+    && !promptFeatureRefs.has(item.ref))) {
+    throw new Error('progression prompt feature must also be selected by featureRefs');
   }
 
   const gradingFeatures = checkedRefs(refsFor(gradingNodeIds, 'featureRefs'));
-  const gradingRequested = checkedRefs(refsFor(gradingNodeIds, 'promptModules'));
+  const selectedGradingModules = checkedRefs(refsFor(gradingNodeIds, 'promptModules'));
+  const gradingRequested = selectedGradingModules
+    .filter(item => item.module.moduleType === 'specification');
   if (gradingFeatures.some(item => item.module.moduleType !== 'feature')) {
     throw new Error('progression featureRefs must reference feature modules');
   }
-  if (gradingRequested.some(item => item.module.moduleType !== 'specification')) {
-    throw new Error('progression promptModules must reference specification modules');
+  const gradingFeatureRefs = new Set(gradingFeatures.map(item => item.ref));
+  if (selectedGradingModules.some(item => item.module.moduleType === 'feature'
+    && !gradingFeatureRefs.has(item.ref))) {
+    throw new Error('progression prompt feature must also be selected by featureRefs');
   }
   const requestedRefs = new Set(gradingRequested.map(item => item.ref));
   const checkKeys = gradingChecks.map(check => check.id);

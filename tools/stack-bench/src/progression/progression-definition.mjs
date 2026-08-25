@@ -117,13 +117,18 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
       if (!pack) fail(`${at}.featureRefs`, `missing pack ${reference}`);
       if (pack.moduleType !== 'feature') fail(`${at}.featureRefs`, `${reference} is not a feature pack`);
     }
-    const promptModules = uniqueStrings(node.promptModules ?? [], `${at}.promptModules`, EXACT_REF,
-      { nonEmpty: false }).sort();
+    const promptModules = uniqueStrings([
+      ...featureRefs,
+      ...(node.promptModules ?? []),
+    ], `${at}.promptModules`, EXACT_REF).sort();
     for (const reference of promptModules) {
       const pack = packs.get(reference);
       if (!pack) fail(`${at}.promptModules`, `missing pack ${reference}`);
-      if (pack.moduleType !== 'specification') {
-        fail(`${at}.promptModules`, `${reference} is not a specification pack`);
+      if (!['feature', 'specification'].includes(pack.moduleType)) {
+        fail(`${at}.promptModules`, `${reference} cannot be used in a prompt`);
+      }
+      if (pack.moduleType === 'feature' && !featureRefs.includes(reference)) {
+        fail(`${at}.promptModules`, `${reference} must also appear in featureRefs`);
       }
     }
     const gradingGroups = uniqueStrings(node.gradingGroups, `${at}.gradingGroups`).sort();
