@@ -57,6 +57,16 @@ pub trait SegmentLen: io::Seek {
     }
 }
 
+pub trait SegmentPos {
+    fn segment_pos(&mut self) -> io::Result<u64>;
+}
+
+impl<T: io::Seek> SegmentPos for T {
+    fn segment_pos(&mut self) -> io::Result<u64> {
+        self.stream_position()
+    }
+}
+
 pub trait SegmentReader: io::BufRead + SegmentLen + Send + Sync {
     /// Whether the segment is considered immutable.
     ///

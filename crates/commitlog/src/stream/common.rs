@@ -6,7 +6,10 @@ use std::{
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncSeek, AsyncWrite};
 
-use crate::{commit, repo::Repo};
+use crate::{
+    commit,
+    repo::{Repo, SegmentPos},
+};
 
 /// How to convert [`crate::repo::SegmentWriter`]s into async I/O types.
 pub trait IntoAsyncWriter {
@@ -133,12 +136,43 @@ impl CommitBuf {
         bytes::Buf::chain(&self.header[..], &self.body[..])
     }
 
-    pub fn as_reader(&self) -> impl io::Read + '_ {
-        io::Read::chain(&self.header[..], &self.body[..])
+    pub fn as_reader(&self, virtual_pos: u64) -> impl io::Read + SegmentPos + '_ {
+        CommitBufReader {
+            inner: io::Read::chain(&self.header[..], &self.body[..]),
+            pos: virtual_pos,
+        }
     }
 
     pub fn filled_len(&self) -> usize {
         self.header.len() + self.body.len()
+    }
+}
+
+struct CommitBufReader<'a> {
+    inner: io::Chain<&'a [u8], &'a [u8]>,
+    pos: u64,
+}
+
+impl<'a> CommitBufReader<'a> {
+    fn new(a: &'a [u8], b: &'a [u8]) -> Self {
+        Self {
+            inner: io::Read::chain(a, b),
+            pos: 0,
+        }
+    }
+}
+
+impl io::Read for CommitBufReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.pos += n as u64;
+        Ok(n)
+    }
+}
+
+impl SegmentPos for CommitBufReader<'_> {
+    fn segment_pos(&mut self) -> io::Result<u64> {
+        Ok(self.pos)
     }
 }
 
