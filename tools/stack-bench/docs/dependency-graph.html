@@ -382,8 +382,8 @@
       "featureRefs": [
         "ecommerce.feature.purchasing@1.2.0"
       ],
-      "checks": 10,
-      "points": 14
+      "checks": 8,
+      "points": 12
     },
     {
       "id": "cart-checkout",
@@ -402,8 +402,8 @@
       "featureRefs": [
         "ecommerce.feature.cart-checkout@1.3.0"
       ],
-      "checks": 11,
-      "points": 15
+      "checks": 10,
+      "points": 13
     },
     {
       "id": "faceted-search",
@@ -576,8 +576,8 @@
       "featureRefs": [
         "ecommerce.progression.payment-records@1.0.0"
       ],
-      "checks": 2,
-      "points": 5
+      "checks": 3,
+      "points": 7
     },
     {
       "id": "stock-alerts",
@@ -618,8 +618,28 @@
       "featureRefs": [
         "ecommerce.l2.operational-views-features@1.0.0"
       ],
-      "checks": 4,
-      "points": 9
+      "checks": 6,
+      "points": 11
+    },
+    {
+      "id": "stock-transfers",
+      "name": "Stock transfers",
+      "level": 3,
+      "state": "draft",
+      "parents": [
+        "purchasing",
+        "warehouse-admin"
+      ],
+      "dependencyReasons": {
+        "purchasing": "The concurrency check overlaps a purchase with a transfer.",
+        "warehouse-admin": "Transfers operate on warehouse stock."
+      },
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.l2.stock-transfers-features@1.0.0"
+      ],
+      "checks": 6,
+      "points": 13
     },
     {
       "id": "fulfilment-queue",
@@ -718,24 +738,6 @@
       ],
       "checks": 7,
       "points": 20
-    },
-    {
-      "id": "stock-transfers",
-      "name": "Stock transfers",
-      "level": 3,
-      "state": "draft",
-      "parents": [
-        "warehouse-admin"
-      ],
-      "dependencyReasons": {
-        "warehouse-admin": "Transfers operate on warehouse stock."
-      },
-      "questline": "inventory",
-      "featureRefs": [
-        "ecommerce.l2.stock-transfers-features@1.0.0"
-      ],
-      "checks": 6,
-      "points": 13
     },
     {
       "id": "managed-support",

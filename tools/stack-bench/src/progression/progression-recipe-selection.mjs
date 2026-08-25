@@ -48,6 +48,7 @@ function validateNodeModuleDependencies(binding, definition, node) {
   visitNode(node.id);
   const scope = [node, ...[...ancestorIds].map(nodeId => nodes.get(nodeId))];
   const allowedFeatures = new Set(scope.flatMap(item => item.featureRefs));
+  const allowedFeatureIds = new Set([...allowedFeatures].map(ref => exactRef(ref).id));
   const promptModules = scope.flatMap(item => item.promptModules).map(ref => {
     const module = modules.get(ref);
     if (!module) throw new Error(`progression references module ${ref} outside the selected recipe`);
@@ -72,6 +73,12 @@ function validateNodeModuleDependencies(binding, definition, node) {
   for (const selected of node.gradingChecks) {
     const check = checks.get(selected.id);
     if (!check) continue;
+    for (const requiredId of check.requiresFeatures ?? []) {
+      if (!allowedFeatureIds.has(requiredId)) {
+        throw new Error(`progression node ${node.id} check ${selected.id} requires feature `
+          + `${requiredId} outside the node and its ancestors`);
+      }
+    }
     const owner = binding.release.components.packs.find(module => module.id === check.packId);
     if (owner?.moduleType === 'specification') {
       dependencyClosure(modules, [`${owner.id}@${owner.version}`], 'specification', {

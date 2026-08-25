@@ -145,6 +145,18 @@ test('binding validation rejects a check borrowed from a selected sibling', () =
   ]), /belongs to an unselected feature/);
 });
 
+test('binding validation rejects a grader check that needs a feature outside its path', () => {
+  const binding = resolveRecipeRelease(loadTrack('ecommerce'), 1,
+    'ecommerce.l1-modular@2.5.0');
+  const value = definition();
+  value.nodes[0].gradingChecks.push({
+    id: 'ecommerce.spec.state-durability.account-state-recovery.105a', points: 1,
+  });
+  assert.throws(() => validateProgressionRecipeBindings(compileProgressionInput(value), [
+    { level: 1, binding },
+  ]), /requires feature ecommerce\.feature\.cart-checkout outside the node and its ancestors/);
+});
+
 test('expected specification dependencies stay in grader scope and out of the agent prompt', () => {
   const binding = structuredClone(resolveRecipeRelease(loadTrack('ecommerce'), 1,
     'ecommerce.l1-modular@2.5.0'));

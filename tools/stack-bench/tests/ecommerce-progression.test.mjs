@@ -59,6 +59,7 @@ test('the ecommerce progression definition is complete and calculated from its d
   assert.deepEqual(byId.get('price-history').dependencies,
     ['cart-checkout', 'catalog-management', 'purchasing']);
   assert.deepEqual(byId.get('warehouse-admin').dependencies, ['catalog', 'staff-access']);
+  assert.deepEqual(byId.get('stock-transfers').dependencies, ['purchasing', 'warehouse-admin']);
   assert.deepEqual(byId.get('catalog-management').dependencies, ['catalog', 'staff-roles']);
   assert(byId.get('warehouse-admin').gradingChecks.every(check =>
     !check.id.includes('spec.access-control.admin-ui')
@@ -148,9 +149,14 @@ test('every progression feature is a whole module and every direct graph edge is
       return [`${pack.id}@${pack.version}`, pack];
     }));
   const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
+  const recipe = compileRecipeFile(join(trackRoot, 'composition', 'recipes',
+    'progression-catalog-1.0.0.json'), { trackRoot });
+  const checkByKey = new Map(recipe.checks.map(check => [check.stableKey, check]));
   const nodeById = new Map(definition.nodes.map(node => [node.id, node]));
   const ownerByRef = new Map(definition.nodes
     .flatMap(node => node.featureRefs.map(reference => [reference, node.id])));
+  const ownerById = new Map([...ownerByRef].map(([reference, owner]) =>
+    [reference.slice(0, reference.lastIndexOf('@')), owner]));
   const ancestors = nodeId => {
     const found = new Set();
     const visit = id => nodeById.get(id).dependencies.forEach(parent => {
@@ -174,8 +180,12 @@ test('every progression feature is a whole module and every direct graph edge is
         assert.equal(fragment.until, undefined, `${node.id} must not slice ${fragment.path}`);
       }
     }
-    const requiredOwners = [...new Set(featurePacks.flatMap(pack => pack.requiresPacks)
-      .map(reference => ownerByRef.get(reference)).filter(Boolean))];
+    const requiredOwners = [...new Set([
+      ...featurePacks.flatMap(pack => pack.requiresPacks)
+        .map(reference => ownerByRef.get(reference)),
+      ...node.gradingChecks.flatMap(check => checkByKey.get(check.id)?.requiresFeatures ?? [])
+        .map(id => ownerById.get(id)),
+    ].filter(owner => owner && owner !== node.id))];
     const directRequiredOwners = requiredOwners.filter(owner => !requiredOwners.some(other =>
       other !== owner && ancestors(other).has(owner))).sort();
     assert.deepEqual(node.dependencies, directRequiredOwners,

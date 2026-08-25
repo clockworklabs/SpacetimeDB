@@ -73,7 +73,6 @@
         "ecommerce.spec.access-control@1.2.0#signed-out-purchase",
         "ecommerce.spec.live-state@1.2.0#purchase-stock",
         "ecommerce.spec.live-state@1.2.0#ranking",
-        "ecommerce.spec.transactional-integrity@1.3.0#books-balance",
         "ecommerce.spec.transactional-integrity@1.3.0#server-price"
       ],
       "dependencies": [
@@ -98,7 +97,6 @@
         "ecommerce.feature.cart-checkout@1.3.0#cart",
         "ecommerce.spec.access-control@1.2.0#cart-boundary",
         "ecommerce.spec.concurrency-safety@1.3.0#duplicate-checkout",
-        "ecommerce.spec.concurrency-safety@1.3.0#stock-limit",
         "ecommerce.spec.live-state@1.2.0#shared-cart",
         "ecommerce.spec.state-durability@1.1.0#account-state-reconnect",
         "ecommerce.spec.state-durability@1.1.0#account-state-reload",
@@ -206,6 +204,10 @@
       ],
       "dependencies": [
         {
+          "id": "purchasing",
+          "reason": "The concurrency check overlaps a purchase with a transfer."
+        },
+        {
           "id": "warehouse-admin",
           "reason": "Transfers operate on warehouse stock."
         }
@@ -277,7 +279,8 @@
         "ecommerce.l2.operational-views-features@1.0.0#operational-views-best-sellers",
         "ecommerce.l2.operational-views-features@1.0.0#operational-views-category-totals",
         "ecommerce.l2.operational-views-features@1.0.0#operational-views-low-stock",
-        "ecommerce.l2.operational-views-features@1.0.0#operational-views-recommendations"
+        "ecommerce.l2.operational-views-features@1.0.0#operational-views-recommendations",
+        "ecommerce.spec.transactional-integrity@1.3.0#books-balance"
       ],
       "dependencies": [
         {
@@ -580,7 +583,8 @@
         "ecommerce.progression.payment-records@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.payment-records@1.0.0#payment"
+        "ecommerce.progression.payment-records@1.0.0#payment",
+        "ecommerce.spec.concurrency-safety@1.3.0#stock-limit"
       ],
       "dependencies": [
         {
