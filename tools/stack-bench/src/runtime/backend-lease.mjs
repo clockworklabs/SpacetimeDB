@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { chmodSync, readFileSync, writeFileSync, renameSync, mkdirSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { executeStackLeaseCapability } from '../stacks/stack-lease-capabilities.mjs';
@@ -185,6 +185,16 @@ export function backendResourceLockKeys(lease, additionalKeys = []) {
     `slot:${lease.track}:${lease.backend}:run${lease.runIndex}`,
     ...additionalKeys,
   ])].sort();
+}
+
+export function existingResourceLockKeys({ root, keys }) {
+  requireString(root, 'lock root');
+  if (!Array.isArray(keys) || keys.length === 0) fail('resource lock keys must be a non-empty array');
+  for (const key of keys) requireString(key, 'resource lock key');
+  return [...new Set(keys)].sort().filter(key => {
+    const digest = createHash('sha256').update(key).digest('hex');
+    return existsSync(resolve(root, `${digest}.lock.json`));
+  });
 }
 
 function processAlive(pid) {

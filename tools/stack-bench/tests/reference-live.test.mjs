@@ -5,7 +5,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { auditReferenceRun, parseReferenceQualificationArgs, referenceQualificationContext,
-  parallelMutationChildArgv, readParallelMutationWorker, referenceQualificationPaths,
+  parallelMutationChildArgv, parallelMutationResourceLockKeys, preflightParallelMutationResources,
+  readParallelMutationWorker, referenceQualificationPaths,
   referenceQualificationRunner,
   referenceQualificationSelectionArgs,
   referenceQualificationWorkRoot, rescueSupervisedLease, runBounded } from '../src/references/reference-live.mjs';
@@ -78,6 +79,36 @@ test('parallel mutation qualification reserves bounded slots and exact child sha
   assert.equal(after('--mutation-shard-count'), '4');
   assert.equal(after('--repetitions'), '1');
   assert.equal(after('--out'), '/results/w3.json');
+});
+
+test('parallel mutation preflight covers every worker slot and Spacetime listener', () => {
+  const args = parseReferenceQualificationArgs(['node', 'reference-live.mjs',
+    '--backend', 'spacetime', '--track', 'ecommerce', '--mutations',
+    '--mutation-workers', '3', '--run-index', '8']);
+  const keys = parallelMutationResourceLockKeys(args);
+  assert.deepEqual(keys, [
+    'listener:http://127.0.0.1:3318',
+    'listener:http://127.0.0.1:3319',
+    'listener:http://127.0.0.1:3320',
+    'slot:ecommerce:spacetime:run10',
+    'slot:ecommerce:spacetime:run8',
+    'slot:ecommerce:spacetime:run9',
+  ]);
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-parallel-preflight-'));
+  try {
+    for (const key of keys) {
+      const digest = createHash('sha256').update(key).digest('hex');
+      const path = join(root, `${digest}.lock.json`);
+      writeFileSync(path, '{}\n');
+      assert.throws(() => preflightParallelMutationResources(args,
+        { STACK_BENCH_RESOURCE_LOCK_DIR: root }), new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      rmSync(path);
+    }
+    assert.doesNotThrow(() => preflightParallelMutationResources(args,
+      { STACK_BENCH_RESOURCE_LOCK_DIR: root }));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('parallel worker evidence is read only from its exact contained output', () => {

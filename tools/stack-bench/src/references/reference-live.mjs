@@ -31,6 +31,7 @@ import { isDeclaredLevel, listTracks, loadTrack } from '../composition/tracks.mj
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { controllerRunner } from '../runtime/runner-environment.mjs';
 import { mergeMutationShards, mutationWorkerSlots } from '../evidence/mutation-shards.mjs';
+import { existingResourceLockKeys, resourceLockScope } from '../runtime/backend-lease.mjs';
 
 export { controllerRunner as referenceQualificationRunner } from '../runtime/runner-environment.mjs';
 
@@ -479,6 +480,27 @@ export function parallelMutationChildArgv(args, context,
   return argv;
 }
 
+export function parallelMutationResourceLockKeys(args) {
+  const slots = mutationWorkerSlots({ workerCount: args.mutationWorkers,
+    runIndex: args.runIndex, maxRunIndex: RUN_INDEX_CAP });
+  const keys = slots.map(runIndex => `slot:${args.track}:${args.backend}:run${runIndex}`);
+  if (args.backend === 'spacetime') {
+    keys.push(...slots.map((_, workerIndex) =>
+      `listener:http://127.0.0.1:${args.spacetimePort + workerIndex}`));
+  }
+  return keys.sort();
+}
+
+export function preflightParallelMutationResources(args, env = process.env) {
+  const occupied = existingResourceLockKeys({
+    root: resourceLockScope(env).root,
+    keys: parallelMutationResourceLockKeys(args),
+  });
+  if (occupied.length) {
+    throw new Error(`parallel mutation resources are already leased: ${occupied.join(', ')}`);
+  }
+}
+
 function identityKey(identity) {
   return JSON.stringify({ id: identity?.id ?? null, version: identity?.version ?? null,
     sha256: identity?.sha256 ?? null, state: identity?.state ?? null });
@@ -539,6 +561,7 @@ async function runParallelMutationRepetition(fixture, args, context, id, repetit
   if (!Array.isArray(manifest.mutations) || manifest.mutations.length < args.mutationWorkers) {
     throw new Error(`--mutation-workers cannot exceed ${manifest.mutations?.length ?? 0} mutations`);
   }
+  preflightParallelMutationResources(args);
   const started = Date.now();
   const workerRoot = join(args.runsRoot, `r${repetition + 1}-workers`);
   mkdirSync(workerRoot, { recursive: true });
