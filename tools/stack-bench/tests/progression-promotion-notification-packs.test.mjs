@@ -118,3 +118,14 @@ test('each prompt states only its feature behavior', () => {
   assert.doesNotMatch(byId['ecommerce.progression.promotion-reporting'],
     /notification|stock|create promotion/i);
 });
+
+test('promotion rules use values accepted by datetime-local inputs', () => {
+  const pack = readPack('progression-promotion-rules-1.0.0.json');
+  const source = pack.checks[0].source;
+  const scenario = compileScenarioDefinition(readJson(join(trackRoot, source)), { source });
+  const values = scenario.features[0].criteria[0].steps
+    .filter(step => step.do === 'fill'
+      && ['promotion-start', 'promotion-end'].includes(step.testid))
+    .map(step => step.text);
+  assert.deepEqual(values, ['2099-01-01T00:00', '2099-12-31T23:59']);
+});

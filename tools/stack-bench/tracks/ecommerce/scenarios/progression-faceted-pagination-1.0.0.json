@@ -17,11 +17,11 @@
           "points": 3,
           "statedBy": "Moving between pages must not omit or repeat an item",
           "steps": [
-            { "do": "expectSequence", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "equals": ["Air Purifier", "Bluetooth Speaker", "Coffee Grinder", "Desk Lamp", "Espresso Machine", "Gaming Mouse", "Headphones", "Induction Cooktop", "Keyboard", "Laptop Stand"] },
+            { "do": "expectSequence", "actor": "visitor", "testid": "item-name", "in": { "testid": "search-results" }, "equals": ["Air Purifier", "Bluetooth Speaker", "Coffee Grinder", "Desk Lamp", "Espresso Machine", "Gaming Mouse", "Headphones", "Induction Cooktop", "Keyboard", "Laptop Stand"] },
             { "do": "click", "actor": "visitor", "testid": "search-next-page" },
-            { "do": "expectSequence", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "equals": ["Mirrorless Camera", "Webcam"] },
+            { "do": "expectSequence", "actor": "visitor", "testid": "item-name", "in": { "testid": "search-results" }, "equals": ["Mirrorless Camera", "Webcam"] },
             { "do": "click", "actor": "visitor", "testid": "search-previous-page" },
-            { "do": "expectSequence", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "equals": ["Air Purifier", "Bluetooth Speaker", "Coffee Grinder", "Desk Lamp", "Espresso Machine", "Gaming Mouse", "Headphones", "Induction Cooktop", "Keyboard", "Laptop Stand"] }
+            { "do": "expectSequence", "actor": "visitor", "testid": "item-name", "in": { "testid": "search-results" }, "equals": ["Air Purifier", "Bluetooth Speaker", "Coffee Grinder", "Desk Lamp", "Espresso Machine", "Gaming Mouse", "Headphones", "Induction Cooktop", "Keyboard", "Laptop Stand"] }
           ]
         }
       ]

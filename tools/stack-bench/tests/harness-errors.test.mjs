@@ -16,6 +16,15 @@ test('a child process non-zero exit remains eligible as an application finding',
   assert.equal(harnessProcessFailure(error), null);
 });
 
+test('a missing harness database container is not blamed on the application', () => {
+  const error = Object.assign(new Error('docker exec failed'), {
+    status: 1,
+    stderr: 'Error response from daemon: No such container: stack-bench-mongodb',
+  });
+  assert.equal(harnessProcessFailure(error),
+    'database container selected by the harness is unavailable');
+});
+
 test('a crashed browser target is inconclusive harness evidence', () => {
   assert.match(harnessBrowserFailure(new Error('browserContext.setOffline: Target crashed ')),
     /^browser target failed in the harness/);

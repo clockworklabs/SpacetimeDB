@@ -8,7 +8,7 @@
     {
       "id": 620,
       "name": "Customer profile",
-      "actors": ["owner", "other"],
+      "actors": ["owner", "privateOwner", "other"],
       "setup": [],
       "criteria": [
         {
@@ -33,11 +33,11 @@
           "points": 2,
           "statedBy": "Each customer can see only their own profile.",
           "steps": [
-            { "do": "signUp", "actor": "owner", "name": "profile-private-owner" },
-            { "do": "click", "actor": "owner", "testid": "profile-link" },
-            { "do": "fill", "actor": "owner", "testid": "profile-name", "text": "Avery Stone" },
-            { "do": "fill", "actor": "owner", "testid": "profile-address", "text": "14 Market Street" },
-            { "do": "click", "actor": "owner", "testid": "profile-save" },
+            { "do": "signUp", "actor": "privateOwner", "name": "profile-private-owner" },
+            { "do": "click", "actor": "privateOwner", "testid": "profile-link" },
+            { "do": "fill", "actor": "privateOwner", "testid": "profile-name", "text": "Avery Stone" },
+            { "do": "fill", "actor": "privateOwner", "testid": "profile-address", "text": "14 Market Street" },
+            { "do": "click", "actor": "privateOwner", "testid": "profile-save" },
             { "do": "signUp", "actor": "other", "name": "profile-other" },
             { "do": "click", "actor": "other", "testid": "profile-link" },
             { "do": "expect", "actor": "other", "testid": "profile-address-summary", "contains": "14 Market Street", "absent": true }

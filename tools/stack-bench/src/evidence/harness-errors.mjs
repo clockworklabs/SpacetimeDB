@@ -6,7 +6,12 @@
 const INFRASTRUCTURE_CODES = new Set(['ETIMEDOUT', 'ENOENT', 'EACCES', 'EPERM', 'EPIPE']);
 
 export function harnessProcessFailure(error) {
-  if (!error || !INFRASTRUCTURE_CODES.has(error.code)) return null;
+  if (!error) return null;
+  const detail = `${error.message ?? ''}\n${error.stderr ?? ''}\n${error.stdout ?? ''}`;
+  if (/No such container:/i.test(detail)) {
+    return 'database container selected by the harness is unavailable';
+  }
+  if (!INFRASTRUCTURE_CODES.has(error.code)) return null;
   const command = error.path ?? error.spawnfile ?? 'child process';
   return `${command} failed in the harness (${error.code})`;
 }

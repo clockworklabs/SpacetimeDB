@@ -40,3 +40,13 @@ test('purchasing and cart packs use focused non-prescriptive contracts', () => {
     assert.deepEqual(scenario.features[0].criteria.map(criterion => criterion.id), criteria);
   }
 });
+
+test('cart criteria use different products so one reservation cannot change the next score', () => {
+  const scenario = compileScenarioDefinition(readJson(join(trackRoot, 'scenarios',
+    'progression-cart-checkout-1.0.0.json')));
+  const [quantity, checkout] = scenario.features[0].criteria;
+  const searched = criterion => criterion.steps
+    .find(step => step.do === 'fill' && step.testid === 'search-input').text;
+  assert.equal(searched(quantity), 'Headphones');
+  assert.equal(searched(checkout), 'Desk Lamp');
+});

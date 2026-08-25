@@ -43,7 +43,7 @@ test('the dependency catalog has exact whole-file instructions and focused check
   assert.doesNotMatch(`${prompt}\n${contract}`, /framework|ORM|database|websocket/i);
   assert.deepEqual([...contract.matchAll(/`([^`]+)`/g)].map(match => match[1]), [
     'item-list', 'item-card', 'item-name', 'item-card', 'item-price', 'item-card',
-    'item-stock', 'item-card', 'search-input', 'search-results', 'item-card',
+    'item-stock', 'item-card', 'item-detail', 'search-input', 'search-results', 'item-card',
   ]);
   assert.deepEqual(pack.checks.map(check => [check.id, check.criteria]), [
     ['values', ['2a']], ['ranking', ['2b']], ['search', ['2d']],
@@ -82,6 +82,9 @@ test('faceted search covers every filter and stable pagination without prompt le
   const checks = filters.criteria[0].steps.filter(step => step.do === 'expect');
   for (const item of ['Coffee Grinder', 'Gaming Mouse', 'Desk Lamp', 'Espresso Machine',
     'Air Purifier']) assert(checks.some(step => step.contains === item));
+  const pagination = selected.find(item => item.check.id === 'pagination').feature;
+  assert(pagination.criteria[0].steps.filter(step => step.do === 'expectSequence')
+    .every(step => step.testid === 'item-name'));
 });
 
 test('catalog and faceted search graph nodes bind to the hardened draft packs', () => {

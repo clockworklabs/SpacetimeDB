@@ -35,17 +35,17 @@
           "points": 2,
           "statedBy": "Checkout creates one order, reduces stock, and empties the cart.",
           "steps": [
-            { "do": "fill", "actor": "checkout", "testid": "search-input", "text": "Headphones", "enter": true },
-            { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "equals": 100 },
-            { "do": "click", "actor": "checkout", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Headphones" } },
+            { "do": "fill", "actor": "checkout", "testid": "search-input", "text": "Desk Lamp", "enter": true },
+            { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "equals": 100 },
+            { "do": "click", "actor": "checkout", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
             { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 1 },
             { "do": "click", "actor": "checkout", "testid": "cart-toggle" },
             { "do": "click", "actor": "checkout", "testid": "checkout-submit" },
             { "do": "wait", "actor": "checkout", "ms": 1500 },
             { "do": "expectNumber", "actor": "checkout", "testid": "cart-count", "equals": 0 },
-            { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Headphones" }, "equals": 99 },
+            { "do": "expectNumber", "actor": "checkout", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "equals": 99 },
             { "do": "click", "actor": "checkout", "testid": "orders-toggle" },
-            { "do": "expect", "actor": "checkout", "testid": "order-item", "contains": "Headphones", "count": 1 }
+            { "do": "expect", "actor": "checkout", "testid": "order-item", "contains": "Desk Lamp", "count": 1 }
           ]
         }
       ]

@@ -105,9 +105,11 @@ test('staff access is self-contained and staff-role checks inherit its interface
     || step.do === 'signUp')));
 
   const roles = selectedCriteria(packs.roles).map(item => item.criterion);
-  assert(roles.every(criterion => criterion.steps[0].testid === 'staff-signin-username'));
-  assert.equal(roles.find(criterion => criterion.id === '621b').steps
-    .some(step => step.do === 'replayAs'), true);
+  assert.equal(roles.find(criterion => criterion.id === '621a').steps[0].actor, 'admin');
+  assert.equal(roles.find(criterion => criterion.id === '621b').steps[0].actor, 'replayAdmin');
+  const replay = roles.find(criterion => criterion.id === '621b').steps
+    .find(step => step.do === 'replayAs');
+  assert.equal(replay.from, 'replayAdmin');
 });
 
 test('profile and staff roles use focused scenarios and dedicated interfaces', () => {
@@ -120,6 +122,9 @@ test('profile and staff roles use focused scenarios and dedicated interfaces', (
       readJson(join(trackRoot, pack.checks[0].source)), { source: pack.checks[0].source });
     assert.deepEqual(scenario.features.map(feature => feature.id), [pack.checks[0].feature]);
   }
+  const profile = selectedCriteria(packs.profile).map(item => item.criterion);
+  assert.equal(profile[0].steps[0].actor, 'owner');
+  assert.equal(profile[1].steps[0].actor, 'privateOwner');
 
   const profileContract = fragmentText(packs.profile.task.contracts[0]);
   for (const hook of ['profile-link', 'profile-name', 'profile-address', 'profile-save',
