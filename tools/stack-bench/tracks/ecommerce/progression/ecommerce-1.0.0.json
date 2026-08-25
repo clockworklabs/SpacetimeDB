@@ -514,7 +514,8 @@
         "ecommerce.progression.promotion-rules@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.promotion-rules@1.0.0#rules"
+        "ecommerce.progression.promotion-rules@1.0.0#values",
+        "ecommerce.progression.promotion-rules@1.0.0#access"
       ],
       "dependencies": [
         {
@@ -535,7 +536,8 @@
         "ecommerce.progression.notification-preferences@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.notification-preferences@1.0.0#preferences"
+        "ecommerce.progression.notification-preferences@1.0.0#persistence",
+        "ecommerce.progression.notification-preferences@1.0.0#privacy"
       ],
       "dependencies": [
         {
@@ -612,7 +614,9 @@
         "ecommerce.progression.promotion-checkout@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.promotion-checkout@1.0.0#checkout"
+        "ecommerce.progression.promotion-checkout@1.0.0#active",
+        "ecommerce.progression.promotion-checkout@1.0.0#expired",
+        "ecommerce.progression.promotion-checkout@1.0.0#exhausted"
       ],
       "dependencies": [
         {
@@ -633,7 +637,8 @@
         "ecommerce.progression.stock-alerts@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.stock-alerts@1.0.0#stock-alert"
+        "ecommerce.progression.stock-alerts@1.0.0#delivery",
+        "ecommerce.progression.stock-alerts@1.0.0#privacy"
       ],
       "dependencies": [
         {
@@ -717,7 +722,8 @@
         "ecommerce.progression.promotion-reporting@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.promotion-reporting@1.0.0#reporting"
+        "ecommerce.progression.promotion-reporting@1.0.0#redemptions",
+        "ecommerce.progression.promotion-reporting@1.0.0#revenue"
       ],
       "dependencies": [
         {
@@ -776,7 +782,8 @@
         "ecommerce.progression.delivery-notifications@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.delivery-notifications@1.0.0#delivery-notification"
+        "ecommerce.progression.delivery-notifications@1.0.0#delivery",
+        "ecommerce.progression.delivery-notifications@1.0.0#privacy"
       ],
       "dependencies": [
         {

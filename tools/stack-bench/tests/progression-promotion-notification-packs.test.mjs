@@ -50,16 +50,16 @@ test('promotion and notification packs declare exact dependencies and check owne
     return [pack.id, pack];
   }));
   assert.deepEqual(packs['ecommerce.progression.notification-preferences'].requiresPacks,
-    ['ecommerce.feature.accounts@1.1.0']);
+    ['ecommerce.feature.accounts@1.2.0']);
   assert.deepEqual(packs['ecommerce.progression.promotion-rules'].requiresPacks,
-    ['ecommerce.progression.staff-access@1.0.0', 'ecommerce.feature.catalog@1.1.0']);
+    ['ecommerce.progression.staff-access@1.0.0', 'ecommerce.feature.catalog@1.2.0']);
   assert.deepEqual(packs['ecommerce.progression.promotion-checkout'].requiresPacks,
-    ['ecommerce.progression.promotion-rules@1.0.0', 'ecommerce.feature.cart-checkout@1.2.0']);
+    ['ecommerce.progression.promotion-rules@1.0.0', 'ecommerce.feature.cart-checkout@1.3.0']);
   assert.deepEqual(packs['ecommerce.progression.stock-alerts'].requiresPacks,
     ['ecommerce.progression.notification-preferences@1.0.0',
-      'ecommerce.feature.warehouse-admin@1.1.0']);
+      'ecommerce.feature.warehouse-admin@1.2.0']);
   assert.deepEqual(packs['ecommerce.progression.delivery-notifications'].requiresPacks,
-    ['ecommerce.l3.order-delivery-features@1.0.0',
+    ['ecommerce.l3.order-delivery-features@1.1.0',
       'ecommerce.progression.notification-preferences@1.0.0']);
   assert.deepEqual(packs['ecommerce.progression.promotion-reporting'].requiresPacks,
     ['ecommerce.progression.promotion-checkout@1.0.0',
