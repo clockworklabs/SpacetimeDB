@@ -12,7 +12,7 @@ export function createProgressionEngine(policies) {
     if (byId.has(policy.id)) throw new Error(`duplicate progression policy ${policy.id}`);
     for (const method of [
       'compile', 'initialize', 'activeNodes', 'promptSelection', 'gradingSelection',
-      'recordResult', 'nextAction', 'score',
+      'recordResult', 'grantStrikes', 'resume', 'nextAction', 'score',
     ]) {
       if (typeof policy[method] !== 'function') {
         throw new Error(`progression policy ${policy.id} requires ${method}()`);
@@ -37,6 +37,8 @@ export function createProgressionEngine(policies) {
     promptSelection: state => statePolicy(state).promptSelection(state),
     gradingSelection: state => statePolicy(state).gradingSelection(state),
     recordResult: (state, result) => statePolicy(state).recordResult(state, result),
+    grantStrikes: (state, grant) => statePolicy(state).grantStrikes(state, grant),
+    resume: state => statePolicy(state).resume(state),
     nextAction: state => statePolicy(state).nextAction(state),
     score: state => statePolicy(state).score(state),
   });
