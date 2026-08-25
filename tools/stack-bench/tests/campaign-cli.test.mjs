@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
 import { auditCompletedReferenceCampaign, campaignStateSummary, parseCampaignArgs,
@@ -18,13 +19,19 @@ test('campaign CLI separates read-only, preparation, execution, and status comma
     'resume');
   assert.equal(parseCampaignArgs(argv('reconcile', './campaign.json', '--out', './results')).command,
     'reconcile');
-  assert.equal(parseCampaignArgs(argv('status', './results')).command, 'status');
+  assert.deepEqual(parseCampaignArgs(argv('status', './results')), {
+    command: 'status', directory: resolve('./results'), full: false,
+  });
+  assert.deepEqual(parseCampaignArgs(argv('status', './results', '--full')), {
+    command: 'status', directory: resolve('./results'), full: true,
+  });
   assert.equal(parseCampaignArgs(argv('inspect', './results')).command, 'inspect');
   assert.equal(parseCampaignArgs(argv('report', './results')).command, 'report');
   assert.equal(parseCampaignArgs(argv('audit', './results')).command, 'audit');
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json')), /usage/);
   assert.throws(() => parseCampaignArgs(argv('run', './campaign.json', '--out', './a', '--out', './b')),
     /usage/);
+  assert.throws(() => parseCampaignArgs(argv('status', './results', '--json')), /usage/);
 });
 
 test('campaign commands print a compact result and retain failed attempt details', () => {

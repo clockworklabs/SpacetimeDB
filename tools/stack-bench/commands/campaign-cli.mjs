@@ -65,7 +65,11 @@ export function parseCampaignArgs(argv) {
   if (['validate', 'show'].includes(command) && path && rest.length === 0) {
     return { command, path: resolve(path) };
   }
-  if (['status', 'inspect', 'report', 'audit'].includes(command) && path && rest.length === 0) {
+  if (command === 'status' && path
+    && (rest.length === 0 || (rest.length === 1 && rest[0] === '--full'))) {
+    return { command, directory: resolve(path), full: rest.length === 1 };
+  }
+  if (['inspect', 'report', 'audit'].includes(command) && path && rest.length === 0) {
     return { command, directory: resolve(path) };
   }
   if (['prepare', 'trial', 'run', 'resume', 'reconcile'].includes(command)
@@ -74,7 +78,7 @@ export function parseCampaignArgs(argv) {
   }
   throw new Error('usage: campaign-cli.mjs modes | validate|show <campaign.json> '
     + '| prepare|trial|run|resume|reconcile <campaign.json> --out <directory> '
-    + '| status|inspect|report|audit <directory>');
+    + '| status <directory> [--full] | inspect|report|audit <directory>');
 }
 
 async function main() {
@@ -87,7 +91,10 @@ async function main() {
     return;
   }
   if (args.command === 'status') {
-    console.log(JSON.stringify(inspectCampaign(args.directory).state, null, 2));
+    const campaign = inspectCampaign(args.directory);
+    console.log(JSON.stringify(args.full
+      ? campaign.state
+      : campaignStateSummary(campaign.plan, campaign.state), null, 2));
     return;
   }
   if (args.command === 'inspect') {
