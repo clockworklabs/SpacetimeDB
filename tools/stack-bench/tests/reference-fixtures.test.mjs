@@ -15,13 +15,38 @@ test('the reference registry binds active, candidate, blocked, and provenance li
   assert.deepEqual(result.issues, []);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'active').length, 18);
   assert.deepEqual(registry.fixtures.filter(fixture => fixture.status === 'candidate')
-    .map(fixture => fixture.id).sort(), []);
+    .map(fixture => fixture.id).sort(), [
+      'ecommerce-progression-mongodb',
+      'ecommerce-progression-postgres',
+      'ecommerce-progression-spacetime',
+    ]);
   assert.equal(registry.fixtures.filter(fixture => fixture.status === 'blocked').length, 3);
   const escaped = structuredClone(registry);
   escaped.fixtures[0].origin = { kind: 'historical-import', source: '../outside',
     sourceSha256: 'a'.repeat(64) };
   escaped.fixtures[0].archivedEvidence = ['results/unbound-grade.json'];
   assert(validateReferenceRegistry(escaped).issues.some(issue => issue.includes('must stay inside')));
+});
+
+test('a recipe-bound full fixture can serve only its declared progression action levels', () => {
+  const registry = loadReferenceRegistry();
+  for (const backend of ['mongodb', 'postgres', 'spacetime']) {
+    for (const level of [1, 2, 3, 4, 5]) {
+      assert.equal(selectReferenceFixture(registry, { backend, track: 'ecommerce', level,
+        recipe: 'ecommerce.progression-catalog@1.0.0' }).id,
+      `ecommerce-progression-${backend}`);
+    }
+  }
+
+  const invalid = structuredClone(registry);
+  invalid.fixtures[0].actionLevels = [1, 2, 2, 6];
+  const issues = validateReferenceRegistry(invalid).issues.filter(issue =>
+    issue.startsWith('ecommerce-progression-mongodb:'));
+  assert(issues.some(issue => issue.includes('unique positive integer levels')));
+  const invalidRange = structuredClone(registry);
+  invalidRange.fixtures[0].actionLevels = [1, 5, 6];
+  assert(validateReferenceRegistry(invalidRange).issues.some(issue =>
+    issue.includes('cannot exceed the fixture level')));
 });
 
 test('reference selection uses an exact recipe release and otherwise keeps the unscoped active fixture', () => {

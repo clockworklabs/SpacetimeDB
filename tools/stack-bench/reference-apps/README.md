@@ -23,6 +23,12 @@ same exact hash. Qualification and mutation evidence remain separate per level;
 the registry does not require duplicate source trees merely to create a new
 selection.
 
+A recipe-bound full fixture can declare `actionLevels` when the same source is
+used for several dependency-progression actions. The list must include its
+declared level, cannot extend above it, and is never valid for an unscoped
+fixture. A fresh action seeds that exact source. Later actions only accept the
+same source hash.
+
 Promotion is fail-closed. An application is not active because an old score was
 full, because a source tree happens to compile, or because a feature score drops
 after mutation. The following must all be true:

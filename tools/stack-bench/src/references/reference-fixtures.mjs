@@ -25,7 +25,7 @@ export function loadReferenceRegistry(path = REGISTRY) {
 
 export function selectReferenceFixture(registry, { backend, track, level, recipe } = {}) {
   const inScope = registry.fixtures.filter(fixture => fixture.backend === backend
-    && fixture.track === track && fixture.level === level);
+    && fixture.track === track && referenceActionLevels(fixture).includes(level));
   const recipeScoped = recipe
     ? inScope.filter(fixture => fixture.recipes?.includes(recipe))
     : [];
@@ -60,10 +60,26 @@ export function validateReferenceRegistry(registry, { root = ROOT } = {}) {
         || !/^[a-z0-9][a-z0-9._-]*@(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/.test(recipe))) {
       issues.push(`${label}: recipes must contain exact recipe identities`);
     }
-    for (const recipe of recipes.length ? recipes : ['<default>']) {
-      const tuple = `${fixture.track}:${fixture.backend}:${fixture.level}:${recipe}`;
-      if (tuples.has(tuple)) issues.push(`${label}: duplicate track/backend/level/recipe`);
-      tuples.add(tuple);
+    const actionLevels = fixture.actionLevels ?? [fixture.level];
+    if (!Array.isArray(actionLevels) || actionLevels.length === 0
+        || actionLevels.some(level => !Number.isInteger(level) || level < 1)
+        || new Set(actionLevels).size !== actionLevels.length) {
+      issues.push(`${label}: actionLevels must contain unique positive integer levels`);
+    } else {
+      if (fixture.actionLevels && recipes.length === 0) {
+        issues.push(`${label}: actionLevels requires at least one exact recipe selector`);
+      }
+      if (!actionLevels.includes(fixture.level)
+          || actionLevels.some(level => level > fixture.level)) {
+        issues.push(`${label}: actionLevels must include and cannot exceed the fixture level`);
+      }
+      for (const actionLevel of actionLevels) {
+        for (const recipe of recipes.length ? recipes : ['<default>']) {
+          const tuple = `${fixture.track}:${fixture.backend}:${actionLevel}:${recipe}`;
+          if (tuples.has(tuple)) issues.push(`${label}: duplicate track/backend/action-level/recipe`);
+          tuples.add(tuple);
+        }
+      }
     }
     if (fixture.source) {
       if (!recipes.length) issues.push(`${label}: derived source requires at least one recipe selector`);
@@ -148,6 +164,10 @@ export function validateReferenceRegistry(registry, { root = ROOT } = {}) {
     }
   }
   return { ok: issues.length === 0, issues };
+}
+
+function referenceActionLevels(fixture) {
+  return Array.isArray(fixture.actionLevels) ? fixture.actionLevels : [fixture.level];
 }
 
 export function inspectImportedReference(fixture, { root = ROOT } = {}) {
