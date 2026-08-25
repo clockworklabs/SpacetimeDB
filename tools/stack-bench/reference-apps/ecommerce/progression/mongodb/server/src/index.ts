@@ -533,6 +533,8 @@ app.post("/api/items/:id/buy", requireAuth, async (req, res) => {
   if (!Types.ObjectId.isValid(itemId)) return res.status(404).json({ error: "Item not found" });
   const item = await Item.findById(itemId);
   if (!item) return res.status(404).json({ error: "Item not found" });
+  const available = await getStockByItem();
+  if ((available.get(itemId) || 0) < 1) return res.status(400).json({ error: "Item is out of stock" });
 
   const decremented = await Stock.findOneAndUpdate(
     { item_id: item._id, quantity: { $gte: 1 } },
@@ -613,6 +615,10 @@ app.post("/api/cart", requireAuth, async (req, res) => {
   if (!Number.isInteger(qty) || qty < 1) return res.status(400).json({ error: "Quantity must be at least 1" });
   const item = await Item.findById(itemId);
   if (!item) return res.status(404).json({ error: "Item not found" });
+  const available = await getStockByItem();
+  if ((available.get(itemId) || 0) < qty) {
+    return res.status(400).json({ error: "Not enough stock is available" });
+  }
 
   const userId = (req as any).user._id.toString();
   await addToCart(userId, item._id, qty);
@@ -632,6 +638,10 @@ app.patch("/api/cart/:itemId", requireAuth, async (req, res) => {
   const cart = await Cart.findOne({ userId });
   const line = cart?.items.find((l) => l.itemId.toString() === itemId);
   if (!cart || !line) return res.status(404).json({ error: "Item is not in your cart" });
+  const available = await getStockByItem();
+  if (qty > line.quantity + (available.get(itemId) || 0)) {
+    return res.status(400).json({ error: "Not enough stock is available" });
+  }
   line.quantity = qty;
   line.reservationExpiresAt = new Date(Date.now() + 90_000);
   await cart.save();
@@ -690,9 +700,14 @@ app.post("/api/checkout", requireAuth, async (req, res) => {
   // can't both see a full cart and both produce an order.
   const claimedCart = await Cart.findOneAndUpdate({ userId },
     { $set: { items: [], promotionCode: "", discount: 0 } });
-  const originalLines = claimedCart?.items || [];
+  const allLines = claimedCart?.items || [];
+  const originalLines = allLines.filter(line => !line.reservationExpiresAt
+    || line.reservationExpiresAt.getTime() > Date.now());
+  const expiredLines = allLines.filter(line => line.reservationExpiresAt
+    && line.reservationExpiresAt.getTime() <= Date.now());
   if (originalLines.length === 0) {
-    return res.status(400).json({ error: "Your cart is empty" });
+    await Cart.updateOne({ userId }, { $set: { items: expiredLines } });
+    return res.status(400).json({ error: allLines.length ? "Your reservation expired" : "Your cart is empty" });
   }
 
   const items = await Item.find({ _id: { $in: originalLines.map((l) => l.itemId) } });
@@ -745,12 +760,21 @@ app.post("/api/checkout", requireAuth, async (req, res) => {
   const subtotal = orderLines.reduce((s, l) => s + l.price * l.quantity, 0);
   const discount = Math.round(subtotal * Number(claimedCart?.discount || 0)) / 100;
   const total = Math.max(0, subtotal - discount);
+  if (claimedCart?.promotionCode) {
+    const now = new Date();
+    const promotion = await Promotion.findOneAndUpdate({ code: claimedCart.promotionCode,
+      start: { $lte: now }, end: { $gte: now }, $expr: { $lt: ["$redemptions", "$limit"] } },
+    { $inc: { redemptions: 1, revenue: total } });
+    if (!promotion) {
+      for (const reservation of reservations) await releaseUnits(reservation.itemId, reservation.warehouseIds);
+      await Cart.updateOne({ userId }, { $set: { items: allLines,
+        promotionCode: claimedCart.promotionCode, discount: claimedCart.discount } });
+      return res.status(400).json({ error: "Promotion is expired or unavailable" });
+    }
+  }
   const order = await Order.create({ userId, items: orderLines, total, discount });
   await Payment.create({ orderId: order._id, userId, amount: total, status: "paid" });
-  if (claimedCart?.promotionCode) {
-    await Promotion.updateOne({ code: claimedCart.promotionCode },
-      { $inc: { redemptions: 1, revenue: total } });
-  }
+  if (expiredLines.length) await Cart.updateOne({ userId }, { $set: { items: expiredLines } });
 
   await Promise.all([
     broadcastItems(),

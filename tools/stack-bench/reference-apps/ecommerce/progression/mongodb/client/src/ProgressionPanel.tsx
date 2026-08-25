@@ -316,7 +316,10 @@ function StaffTools({ token, user, state, items, orders, act, refresh, onRefresh
 
     {section === "activity" && <div className="progression-card">
       {(state.activities || []).map((entry: any) => <div data-testid="activity-entry" key={entry.id}>
-        <span data-testid="activity-actor">{entry.actor}</span> {entry.subject}
+        <span data-testid="activity-actor">{entry.actor}</span>
+        <span data-testid="activity-action">{entry.action}</span>
+        <span data-testid="activity-subject">{entry.subject}</span>
+        <time data-testid="activity-time">{entry.createdAt}</time>
       </div>)}
     </div>}
 

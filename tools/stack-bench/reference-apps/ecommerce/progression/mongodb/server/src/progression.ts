@@ -70,8 +70,8 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
     io.emit("progression:update", { userId: userId || null });
   }
 
-  async function recordActivity(user: any, subject: string) {
-    await Activity.create({ actorId: user._id, actor: user.username, subject });
+  async function recordActivity(user: any, action: string, subject: string) {
+    await Activity.create({ actorId: user._id, actor: user.username, action, subject });
   }
 
   async function ownedTicket(req: Request, id: string) {
@@ -151,7 +151,7 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
     target.roles = roles;
     target.isStaff = roles.length > 0 || target.isStaff;
     await target.save();
-    await recordActivity(req.progressionUser, `Roles updated for ${username}`);
+    await recordActivity(req.progressionUser, "updated roles", username);
     changed();
     res.json({ user: publicUser(target) });
   });
@@ -166,7 +166,7 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
     const warehouses = await Warehouse.find();
     await Stock.insertMany(warehouses.map(warehouse => ({ item_id: item._id,
       warehouse_id: warehouse._id, quantity: 0 })));
-    await recordActivity(req.progressionUser, `Catalog item ${name}`);
+    await recordActivity(req.progressionUser, "created catalog item", name);
     changed();
     res.json({ item });
   });
@@ -226,11 +226,12 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   supportRouter.post("/cases/:caseId/refund", auth, staff, async (req: Request, res) => {
     const ticket = await SupportTicket.findById(req.params.caseId);
     if (!ticket?.orderId) return res.status(404).json({ error: "Order-linked case not found" });
-    const order = await Order.findById(ticket.orderId);
-    if (!order) return res.status(404).json({ error: "Order not found" });
-    if (order.status === "refunded" || ticket.refundTotal > 0) {
+    if (ticket.refundTotal > 0) {
       return res.status(409).json({ error: "Order has already been refunded" });
     }
+    const order = await Order.findOneAndUpdate({ _id: ticket.orderId,
+      status: { $nin: ["refunded", "cancelled"] } }, { $set: { status: "refunded" } }, { new: true });
+    if (!order) return res.status(409).json({ error: "Order has already been refunded" });
     for (const line of order.items) {
       if (line.returned) continue;
       for (const allocation of line.allocations) {
@@ -238,7 +239,6 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
           { $inc: { quantity: allocation.quantity } });
       }
     }
-    order.status = "refunded";
     order.refundTotal = order.total;
     ticket.status = "resolved";
     ticket.refundTotal = order.total;
@@ -248,7 +248,7 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
       $setOnInsert: { userId: order.userId, key: `refund:${order._id}`, type: "refund",
         message: `Refunded ${order.items.map(item => item.name).join(", ")}` },
     }, { upsert: true });
-    await recordActivity(req.progressionUser, `Refunded support case ${ticket.reference}`);
+    await recordActivity(req.progressionUser, "refunded support case", ticket.reference);
     changed(String(order.userId));
     const ownerOrders = await Order.find({ userId: order.userId }).sort({ createdAt: -1 });
     io.to(`user:${order.userId}`).emit("orders:update", ownerOrders.map(value => value.toJSON()));
@@ -267,7 +267,7 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
     }
     const promotion = await Promotion.findOneAndUpdate({ code },
       { code, discount, limit, start, end }, { upsert: true, new: true });
-    await recordActivity(req.progressionUser, `Promotion ${code}`);
+    await recordActivity(req.progressionUser, "created promotion", code);
     changed();
     res.json({ promotion });
   });
@@ -338,7 +338,7 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
     }
     const rule = await ReorderRule.findOneAndUpdate({ itemId: item._id },
       { itemId: item._id, threshold, quantity }, { upsert: true, new: true });
-    await recordActivity(req.progressionUser, `Reorder rule for ${item.name}`);
+    await recordActivity(req.progressionUser, "updated reorder rule", item.name);
     changed();
     res.json({ rule });
   });
@@ -410,7 +410,8 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
     for (const cart of expiredCarts) {
       const expired = cart.items.map(item => ({ itemId: item.itemId, quantity: item.quantity }));
       if (!expired.length) continue;
-      await CartArchive.updateOne({ userId: cart.userId }, { userId: cart.userId, items: expired },
+      await CartArchive.updateOne({ userId: cart.userId },
+        { $set: { userId: cart.userId, items: expired } },
         { upsert: true });
       cart.items = [] as any;
       await cart.save();

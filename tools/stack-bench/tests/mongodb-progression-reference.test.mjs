@@ -53,6 +53,8 @@ test('the MongoDB progression reference binds named actions and its runtime', ()
     readFileSync(join(appRoot, 'server', 'src', 'progression.ts'), 'utf8'),
   ].join('\n');
   const reference = readJson(join(appRoot, 'reference.json'));
+  const serverPackage = readJson(join(appRoot, 'server', 'package.json'));
+  const clientPackage = readJson(join(appRoot, 'client', 'package.json'));
 
   assert.match(clientSource, /data-action-input/);
   assert.match(clientSource, /\/api\/support\/cases\/\$\{ticket\.id\}\/order/);
@@ -64,4 +66,6 @@ test('the MongoDB progression reference binds named actions and its runtime', ()
   assert.deepEqual(reference.installDirectories, ['server', 'client']);
   assert.equal(reference.server.port, 6401);
   assert.equal(reference.client.port, 6673);
+  assert.equal(serverPackage.scripts.typecheck, 'tsc --noEmit');
+  assert.equal(clientPackage.scripts.build, 'vite build');
 });

@@ -86,6 +86,7 @@ const ReorderRuleSchema = new Schema({
 const ActivitySchema = new Schema({
   actorId: { type: Schema.Types.ObjectId, ref: "User", required: true },
   actor: { type: String, required: true },
+  action: { type: String, required: true },
   subject: { type: String, required: true },
 }, options);
 
