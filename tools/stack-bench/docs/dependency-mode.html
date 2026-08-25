@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stack Bench | Dependency Mode</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #050706;
+    --panel: #0b1110;
+    --panel-2: #101817;
+    --line: #21322f;
+    --line-strong: #38544e;
+    --text: #f4f7f6;
+    --muted: #91a19d;
+    --dim: #5c6966;
+    --green: #21f38a;
+    --green-soft: #103824;
+    --cyan: #65c7ff;
+    --cyan-soft: #102939;
+    --yellow: #f6ca57;
+    --yellow-soft: #3b3014;
+    --pink: #ff648f;
+    --pink-soft: #3b1623;
+    --mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-snap-type: y mandatory; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(circle at 70% 0%, rgba(33, 243, 138, .055), transparent 34rem),
+      var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: .16;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: linear-gradient(to bottom, black, transparent 72%);
+  }
+
+  .progress {
+    position: fixed;
+    z-index: 20;
+    top: 0;
+    left: 0;
+    height: 2px;
+    width: 0;
+    background: var(--green);
+    box-shadow: 0 0 18px rgba(33, 243, 138, .65);
+  }
+
+  .nav {
+    position: fixed;
+    z-index: 20;
+    right: 22px;
+    top: 50%;
+    display: grid;
+    gap: 9px;
+    transform: translateY(-50%);
+  }
+
+  .nav button {
+    width: 7px;
+    height: 7px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: #31403d;
+    cursor: pointer;
+  }
+
+  .nav button.active { background: var(--green); box-shadow: 0 0 10px rgba(33, 243, 138, .6); }
+
+  section {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    padding: clamp(42px, 7vh, 78px) clamp(24px, 6vw, 88px);
+    display: grid;
+    place-items: center;
+    scroll-snap-align: start;
+  }
+
+  .frame { width: 100%; max-width: 1080px; min-width: 0; }
+  .narrow { width: 100%; max-width: 880px; min-width: 0; }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 54px;
+    color: #dfe7e5;
+    font: 600 13px/1 var(--mono);
+    letter-spacing: .13em;
+  }
+
+  .brand svg { width: 28px; height: 28px; }
+  .eyebrow {
+    margin-bottom: 14px;
+    color: var(--green);
+    font: 700 12px/1.2 var(--mono);
+    letter-spacing: .15em;
+    text-transform: uppercase;
+  }
+
+  h1, h2, p { margin-top: 0; }
+  h1 { margin-bottom: 18px; font-size: clamp(54px, 8vw, 92px); line-height: .98; letter-spacing: -.055em; }
+  h2 { margin-bottom: 12px; font-size: clamp(32px, 4.2vw, 54px); line-height: 1.04; letter-spacing: -.038em; }
+  .intro {
+    max-width: 720px;
+    margin-bottom: 38px;
+    color: var(--muted);
+    font-size: clamp(17px, 2vw, 21px);
+    line-height: 1.55;
+  }
+
+  .hero { min-height: 100vh; }
+  .hero .frame { padding-bottom: 5vh; }
+  .hero h1 span { color: var(--green); }
+  .hero-line { width: 88px; height: 2px; margin: 36px 0; background: var(--green); }
+  .hero-note { color: var(--muted); font-size: 18px; line-height: 1.55; max-width: 580px; }
+
+  .panel {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(11, 17, 16, .94);
+  }
+
+  .grid-6 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .feature-card { min-height: 144px; padding: 22px; }
+  .feature-card .num { color: var(--green); font: 700 12px/1 var(--mono); }
+  .feature-card h3 { margin: 30px 0 7px; font-size: 19px; }
+  .feature-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+
+  .plan {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    overflow: hidden;
+  }
+
+  .plan-item { min-height: 116px; padding: 22px 18px; border-right: 1px solid var(--line); }
+  .plan-item:last-child { border-right: 0; }
+  .plan-item strong { display: block; margin-bottom: 20px; font-size: 18px; }
+  .plan-item span { color: var(--muted); font: 12px/1.45 var(--mono); }
+
+  .flow-arrow { width: 1px; height: 42px; margin: 0 auto; background: var(--green); position: relative; }
+  .flow-arrow::after {
+    content: "";
+    position: absolute;
+    bottom: -1px;
+    left: -4px;
+    width: 7px;
+    height: 7px;
+    border-right: 1px solid var(--green);
+    border-bottom: 1px solid var(--green);
+    transform: rotate(45deg);
+  }
+
+  .request {
+    display: grid;
+    grid-template-columns: 210px 1fr;
+    border-color: #1e794d;
+  }
+
+  .request-main { padding: 24px; border-right: 1px solid #1e794d; background: rgba(16, 56, 36, .22); }
+  .request-main small, .label { color: var(--green); font: 700 11px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+  .request-main strong { display: block; margin-top: 34px; font-size: 24px; line-height: 1.2; }
+  .request-parts { display: grid; grid-template-columns: repeat(2, 1fr); }
+  .request-part { padding: 22px 24px; border-bottom: 1px solid var(--line); }
+  .request-part:nth-last-child(-n+2) { border-bottom: 0; }
+  .request-part:nth-child(odd) { border-right: 1px solid var(--line); }
+  .request-part strong { display: block; margin-bottom: 7px; font-size: 15px; }
+  .request-part span { color: var(--muted); font: 12px/1.4 var(--mono); }
+
+  .graph-wrap { padding: 24px; overflow: hidden; }
+  .legend { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 22px; color: var(--muted); font: 11px/1 var(--mono); text-transform: uppercase; }
+  .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; }
+  .legend .pass { background: var(--green); }
+  .legend .work { background: var(--yellow); }
+  .legend .open { background: var(--cyan); }
+  .legend .fail { background: var(--pink); }
+  .legend .locked { background: var(--dim); }
+
+  .graph {
+    position: relative;
+    min-width: 760px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 76px;
+  }
+
+  .level-title { margin: 0 0 13px; color: var(--muted); font: 11px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; }
+  .node {
+    position: relative;
+    z-index: 2;
+    height: 54px;
+    margin-bottom: 15px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--panel);
+    font: 600 13px/1 var(--mono);
+  }
+
+  .node b { font: 700 9px/1 var(--mono); letter-spacing: .08em; }
+  .node.pass { border-color: var(--green); background: rgba(16, 56, 36, .48); }
+  .node.pass b { color: var(--green); }
+  .node.work { border-color: var(--yellow); background: rgba(59, 48, 20, .42); }
+  .node.work b { color: var(--yellow); }
+  .node.open { border-color: var(--cyan); background: rgba(16, 41, 57, .4); }
+  .node.open b { color: var(--cyan); }
+  .node.fail { border-color: var(--pink); background: rgba(59, 22, 35, .42); }
+  .node.fail b { color: var(--pink); }
+  .node.locked { opacity: .35; border-style: dashed; }
+  .node.locked b { color: var(--dim); }
+
+  .edge {
+    position: absolute;
+    z-index: 1;
+    height: 1px;
+    background: var(--line-strong);
+    transform-origin: left center;
+  }
+  .edge.live { background: var(--green); box-shadow: 0 0 7px rgba(33, 243, 138, .3); }
+  .e1 { left: 29.1%; top: 66px; width: 10.1%; }
+  .e2 { left: 60.8%; top: 66px; width: 10.1%; }
+  .e3 { left: 29.1%; top: 135px; width: 10.1%; }
+  .e4 { left: 29.1%; top: 204px; width: 10.1%; }
+  .e5 { left: 60.8%; top: 204px; width: 10.1%; }
+  .e6 { left: 29.1%; top: 273px; width: 10.1%; }
+  .e7 { left: 60.8%; top: 273px; width: 10.1%; }
+
+  .cycle {
+    display: grid;
+    grid-template-columns: repeat(7, auto);
+    gap: 12px;
+    align-items: center;
+    padding: 30px;
+  }
+
+  .cycle-node { min-width: 110px; padding: 20px 14px; text-align: center; }
+  .cycle-node strong { display: block; margin-bottom: 7px; font-size: 15px; }
+  .cycle-node span { color: var(--muted); font: 10px/1.4 var(--mono); }
+  .cycle-node.current { border-color: var(--yellow); box-shadow: inset 0 0 0 1px rgba(246, 202, 87, .12); }
+  .arr { color: var(--green); font: 18px/1 var(--mono); }
+  .repair-loop { margin-top: 14px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .metric { padding: 18px; }
+  .metric span { display: block; color: var(--muted); font: 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+  .metric strong { display: block; margin-top: 10px; font: 600 21px/1.1 var(--mono); }
+  .metric strong.yellow { color: var(--yellow); }
+  .metric strong.green { color: var(--green); }
+
+  .split { display: grid; grid-template-columns: 1fr 88px 1fr; align-items: stretch; }
+  .split-panel { padding: 26px; }
+  .split-panel h3 { margin: 0 0 22px; font-size: 21px; }
+  .module { display: flex; align-items: center; justify-content: space-between; padding: 13px 0; border-top: 1px solid var(--line); }
+  .module span { font-size: 14px; }
+  .module b { color: var(--green); font: 10px/1 var(--mono); }
+  .module.off b { color: var(--dim); }
+  .split-mid { display: grid; place-items: center; color: var(--green); font: 24px/1 var(--mono); }
+
+  .test-wheel {
+    min-height: 360px;
+    display: grid;
+    grid-template-columns: 1fr 220px 1fr;
+    gap: 28px;
+    align-items: center;
+  }
+  .test-col { display: grid; gap: 12px; }
+  .test-card { padding: 16px 18px; }
+  .test-card strong { display: block; margin-bottom: 5px; font-size: 14px; }
+  .test-card span { color: var(--muted); font: 11px/1.4 var(--mono); }
+  .app-core {
+    width: 190px;
+    height: 190px;
+    margin: auto;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--green);
+    border-radius: 50%;
+    background: rgba(16, 56, 36, .27);
+    text-align: center;
+    font: 700 15px/1.5 var(--mono);
+  }
+  .app-core span { display: block; color: var(--muted); font: 10px/1.5 var(--mono); }
+
+  .scores { display: grid; grid-template-columns: 1fr 230px; gap: 34px; align-items: stretch; }
+  .score-list { padding: 24px; }
+  .score-row { display: grid; grid-template-columns: 150px 1fr 55px; gap: 18px; align-items: center; margin-bottom: 24px; }
+  .score-row:last-child { margin-bottom: 0; }
+  .score-name strong { display: block; font-size: 15px; }
+  .score-name span { color: var(--muted); font: 10px/1.4 var(--mono); }
+  .bar { height: 10px; overflow: hidden; border-radius: 9px; background: #172421; }
+  .bar i { display: block; height: 100%; background: #49bd7c; }
+  .score-pct { text-align: right; font: 700 14px/1 var(--mono); }
+  .overall { padding: 28px; display: grid; align-content: center; }
+  .overall span { color: var(--muted); font: 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; }
+  .overall strong { margin: 14px 0 10px; font-size: 68px; letter-spacing: -.06em; }
+  .overall p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+  .evidence { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .evidence-card { min-height: 155px; padding: 22px; }
+  .evidence-card svg { width: 26px; height: 26px; stroke: var(--green); fill: none; stroke-width: 1.5; }
+  .evidence-card strong { display: block; margin: 30px 0 7px; font-size: 16px; }
+  .evidence-card span { color: var(--muted); font-size: 13px; line-height: 1.4; }
+
+  .footer-note { margin-top: 24px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+  .footer-note strong { color: var(--text); }
+
+  @media (max-width: 820px) {
+    html { scroll-snap-type: none; }
+    section { min-height: auto; padding: 70px 20px; }
+    .nav { display: none; }
+    .grid-6 { grid-template-columns: repeat(2, 1fr); }
+    .plan { grid-template-columns: 1fr; }
+    .plan-item { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+    .request { grid-template-columns: 1fr; }
+    .request-main { border-right: 0; border-bottom: 1px solid #1e794d; }
+    .graph-wrap { width: 100%; max-width: 100%; overflow-x: auto; }
+    .cycle { grid-template-columns: 1fr; }
+    .arr { transform: rotate(90deg); text-align: center; }
+    .repair-loop, .evidence { grid-template-columns: repeat(2, 1fr); }
+    .split { grid-template-columns: 1fr; gap: 12px; }
+    .split-mid { transform: rotate(90deg); }
+    .test-wheel { grid-template-columns: 1fr; }
+    .scores { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 520px) {
+    .grid-6, .request-parts, .repair-loop, .evidence { grid-template-columns: 1fr; }
+    .request-part { border-right: 0 !important; }
+    .score-row { grid-template-columns: 105px 1fr 45px; gap: 10px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<nav class="nav" id="nav" aria-label="Sections"></nav>
+
+<section class="hero" data-title="Introduction">
+  <div class="frame">
+    <div class="brand">
+      <svg viewBox="0 0 35 32" aria-hidden="true">
+        <path d="M28.8002 15.317C28.5535 9.53226 29.63 6.19046 35 0L24.2649 10.9106C26.8343 14.2552 26.6051 19.0995 23.5774 22.1767C20.5498 25.2538 15.7834 25.4867 12.4925 22.8754L7.35285 28.1361C9.73784 26.7321 13.4208 27.1349 15.6425 27.3779C16.2579 27.4452 16.7611 27.5003 17.0937 27.5013C20.1371 27.6534 23.2301 26.5483 25.5544 24.186C27.9465 21.7549 29.0284 18.4965 28.8002 15.317Z" fill="#D7D8D9"/>
+        <path d="M17.9063 4.49871C18.2389 4.49971 18.7421 4.55476 19.3575 4.62207C21.5792 4.86508 25.2622 5.26792 27.6472 3.86395L22.5075 9.12462C19.2166 6.51328 14.4502 6.74618 11.4226 9.82332C8.3949 12.9005 8.16574 17.7448 10.7351 21.0894L0 32C5.36996 25.8095 6.44651 22.4677 6.1998 16.683C5.97163 13.5035 7.05355 10.2451 9.44557 7.81402C11.7699 5.45167 14.8629 4.34657 17.9063 4.49871Z" fill="#D7D8D9"/>
+        <path fill-rule="evenodd" clip-rule="evenodd" d="M24.7486 16C24.7486 20.0687 21.5033 23.367 17.5 23.367C13.4967 23.367 10.2514 20.0687 10.2514 16C10.2514 11.9313 13.4967 8.63292 17.5 8.63292C21.5033 8.63292 24.7486 11.9313 24.7486 16ZM17.5 21.6C20.5752 21.6 23.0682 19.0928 23.0682 16C23.0682 12.9072 20.5752 10.4 17.5 10.4C14.4248 10.4 11.9318 12.9072 11.9318 16C11.9318 19.0928 14.4248 21.6 17.5 21.6Z" fill="#D7D8D9"/>
+      </svg>
+      <span>SpacetimeDB</span>
+    </div>
+    <div class="eyebrow">Stack Bench</div>
+    <h1>Dependency<br><span>mode</span></h1>
+    <div class="hero-line"></div>
+    <p class="hero-note">Build the same product across multiple stacks. Test each feature. Repair failures. Open harder work only when its dependencies pass.</p>
+  </div>
+</section>
+
+<section data-title="What it does">
+  <div class="frame">
+    <div class="eyebrow">What Stack Bench does</div>
+    <h2>One system controls the full run.</h2>
+    <p class="intro">The run plan, agent work, app services, tests, repairs, scoring, and evidence stay together.</p>
+    <div class="grid-6">
+      <article class="panel feature-card"><span class="num">01</span><h3>Plan</h3><p>Freeze the model, stack, features, tests, and limits.</p></article>
+      <article class="panel feature-card"><span class="num">02</span><h3>Build</h3><p>Give the agent an isolated workspace and exact stack access.</p></article>
+      <article class="panel feature-card"><span class="num">03</span><h3>Test</h3><p>Run product checks against the working application.</p></article>
+      <article class="panel feature-card"><span class="num">04</span><h3>Repair</h3><p>Return failed checks to the agent within a set limit.</p></article>
+      <article class="panel feature-card"><span class="num">05</span><h3>Score</h3><p>Measure each feature path, then compare complete runs.</p></article>
+      <article class="panel feature-card"><span class="num">06</span><h3>Record</h3><p>Keep the prompt, source, results, cost, time, and visuals.</p></article>
+    </div>
+  </div>
+</section>
+
+<section data-title="Run plan">
+  <div class="frame">
+    <div class="eyebrow">Run setup</div>
+    <h2>Each run starts with a fixed plan.</h2>
+    <p class="intro">The same choices are recorded for every attempt. The plan also defines which features can open later.</p>
+    <div class="panel plan">
+      <div class="plan-item"><strong>Model</strong><span>provider<br>exact model</span></div>
+      <div class="plan-item"><strong>Stack</strong><span>backend<br>selected tools</span></div>
+      <div class="plan-item"><strong>Graph</strong><span>levels<br>feature links</span></div>
+      <div class="plan-item"><strong>Tests</strong><span>checks<br>scoring rules</span></div>
+      <div class="plan-item"><strong>Limits</strong><span>repair attempts<br>cost and time</span></div>
+    </div>
+    <div class="flow-arrow"></div>
+    <div class="panel request">
+      <div class="request-main"><small>Agent request</small><strong>Work on the current features</strong></div>
+      <div class="request-parts">
+        <div class="request-part"><strong>Product brief</strong><span>the app and current work</span></div>
+        <div class="request-part"><strong>Stack access</strong><span>connection details and ports</span></div>
+        <div class="request-part"><strong>API reference</strong><span>selected SDK material</span></div>
+        <div class="request-part"><strong>Testing interface</strong><span>required hooks and lint command</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section data-title="Feature graph">
+  <div class="frame">
+    <div class="eyebrow">Feature graph</div>
+    <h2>Passed features open the next work.</h2>
+    <p class="intro">Each path moves independently. A failed feature stops its children. Other paths continue.</p>
+    <div class="panel graph-wrap">
+      <div class="legend"><span><i class="pass"></i>passed</span><span><i class="work"></i>working</span><span><i class="open"></i>open</span><span><i class="fail"></i>failed</span><span><i class="locked"></i>locked</span></div>
+      <div class="graph">
+        <span class="edge live e1"></span><span class="edge live e2"></span><span class="edge e3"></span><span class="edge live e4"></span><span class="edge e5"></span><span class="edge live e6"></span><span class="edge live e7"></span>
+        <div><h3 class="level-title">Level 1</h3><div class="node pass"><span>accounts</span><b>PASS</b></div><div class="node fail"><span>catalog</span><b>FAIL</b></div><div class="node pass"><span>cart</span><b>PASS</b></div><div class="node pass"><span>warehouse</span><b>PASS</b></div></div>
+        <div><h3 class="level-title">Level 2</h3><div class="node pass"><span>operator access</span><b>PASS</b></div><div class="node locked"><span>search</span><b>LOCKED</b></div><div class="node work"><span>checkout</span><b>WORKING</b></div><div class="node pass"><span>stock transfers</span><b>PASS</b></div></div>
+        <div><h3 class="level-title">Level 3</h3><div class="node open"><span>account recovery</span><b>OPEN</b></div><div class="node locked"><span>recommendations</span><b>LOCKED</b></div><div class="node locked"><span>returns</span><b>LOCKED</b></div><div class="node open"><span>scheduled restocks</span><b>OPEN</b></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section data-title="Build and repair">
+  <div class="frame">
+    <div class="eyebrow">Build and repair</div>
+    <h2>Every open feature gets a fair attempt.</h2>
+    <p class="intro">Stack Bench builds the current work, tests it, and returns useful failures. A repair attempt counts only after a valid test finds an app defect.</p>
+    <div class="panel cycle">
+      <div class="panel cycle-node"><strong>Open</strong><span>dependencies passed</span></div><div class="arr">›</div>
+      <div class="panel cycle-node"><strong>Build</strong><span>current features</span></div><div class="arr">›</div>
+      <div class="panel cycle-node current"><strong>Test</strong><span>product checks</span></div><div class="arr">›</div>
+      <div class="panel cycle-node"><strong>Pass or repair</strong><span>record the result</span></div>
+    </div>
+    <div class="repair-loop">
+      <div class="panel metric"><span>Level</span><strong>L2</strong></div>
+      <div class="panel metric"><span>Repairs</span><strong class="yellow">2 of 3</strong></div>
+      <div class="panel metric"><span>Features passed</span><strong class="green">4 of 6</strong></div>
+      <div class="panel metric"><span>Cost</span><strong>$6.40</strong></div>
+    </div>
+    <p class="footer-note">Provider errors and test-system failures are recorded separately. They do not use the app's repair limit.</p>
+  </div>
+</section>
+
+<section data-title="Prompt and tests">
+  <div class="frame">
+    <div class="eyebrow">Modular inputs</div>
+    <h2>What we ask and what we test are separate.</h2>
+    <p class="intro">A run can change the prompt without changing the grader. This supports direct requests, minimal requests, and checks for production behavior.</p>
+    <div class="split">
+      <div class="panel split-panel">
+        <h3>Agent request</h3>
+        <div class="module"><span>Product brief</span><b>INCLUDED</b></div>
+        <div class="module"><span>Current features</span><b>INCLUDED</b></div>
+        <div class="module"><span>Stack access</span><b>INCLUDED</b></div>
+        <div class="module off"><span>Future features</span><b>NOT YET</b></div>
+        <div class="module off"><span>Optional quality details</span><b>RUN CHOICE</b></div>
+      </div>
+      <div class="split-mid">≠</div>
+      <div class="panel split-panel">
+        <h3>Grader</h3>
+        <div class="module"><span>Current feature checks</span><b>SCORED</b></div>
+        <div class="module"><span>Earlier feature checks</span><b>RETESTED</b></div>
+        <div class="module"><span>Selected quality checks</span><b>SCORED</b></div>
+        <div class="module"><span>Test-system health</span><b>VALIDATED</b></div>
+        <div class="module off"><span>Locked feature checks</span><b>NOT RUN</b></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section data-title="Testing">
+  <div class="frame">
+    <div class="eyebrow">Product testing</div>
+    <h2>The grader tests the working application.</h2>
+    <p class="intro">Checks use real user actions and direct system probes. They verify both what users see and what the stack stores.</p>
+    <div class="test-wheel">
+      <div class="test-col">
+        <div class="panel test-card"><strong>User flows</strong><span>multiple users and browser sessions</span></div>
+        <div class="panel test-card"><strong>Access and ownership</strong><span>protected and cross-account actions</span></div>
+        <div class="panel test-card"><strong>Durability and recovery</strong><span>reload, reconnect, and restart</span></div>
+      </div>
+      <div class="app-core">APP UNDER TEST<span>visible and stored state</span></div>
+      <div class="test-col">
+        <div class="panel test-card"><strong>Live state</strong><span>outside changes reach open pages</span></div>
+        <div class="panel test-card"><strong>Concurrency</strong><span>overlapping actions and exact totals</span></div>
+        <div class="panel test-card"><strong>Operations</strong><span>inventory, pricing, shipping, and revenue</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section data-title="Scoring">
+  <div class="frame">
+    <div class="eyebrow">Scoring</div>
+    <h2>Scores show how far each feature path gets.</h2>
+    <p class="intro">Each product area keeps its own score. Stack Bench averages the area scores so one weak path does not erase the rest of the run.</p>
+    <div class="scores">
+      <div class="panel score-list">
+        <div class="score-row"><div class="score-name"><strong>Identity</strong><span>12 of 12 points</span></div><div class="bar"><i style="width:100%"></i></div><div class="score-pct">100%</div></div>
+        <div class="score-row"><div class="score-name"><strong>Inventory</strong><span>15 of 20 points</span></div><div class="bar"><i style="width:75%"></i></div><div class="score-pct">75%</div></div>
+        <div class="score-row"><div class="score-name"><strong>Fulfilment</strong><span>8 of 16 points</span></div><div class="bar"><i style="width:50%"></i></div><div class="score-pct">50%</div></div>
+        <div class="score-row"><div class="score-name"><strong>Reviews</strong><span>6 of 6 points</span></div><div class="bar"><i style="width:100%"></i></div><div class="score-pct">100%</div></div>
+      </div>
+      <div class="panel overall"><span>Overall score</span><strong>81%</strong><p>Average of the four product-area scores.</p></div>
+    </div>
+  </div>
+</section>
+
+<section data-title="Run record">
+  <div class="frame">
+    <div class="eyebrow">Run record</div>
+    <h2>Every result keeps its full context.</h2>
+    <p class="intro">You can see what ran, how the app changed, why checks passed or failed, and what the run cost.</p>
+    <div class="evidence">
+      <div class="panel evidence-card"><svg viewBox="0 0 24 24"><path d="M5 3h10l4 4v14H5zM15 3v5h5M8 12h8M8 16h6"/></svg><strong>Run plan</strong><span>Model, stack, graph, prompt modules, tests, and limits.</span></div>
+      <div class="panel evidence-card"><svg viewBox="0 0 24 24"><path d="M4 19V5h16v14zM8 9h8M8 13h5"/></svg><strong>Source</strong><span>The application at each tested level and repair.</span></div>
+      <div class="panel evidence-card"><svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6M4 21h16"/></svg><strong>Test evidence</strong><span>Check results, screenshots, video, logs, and stored state.</span></div>
+      <div class="panel evidence-card"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 6.5C17 4.6 14.8 3 12 3S7 4.6 7 6.5 9.2 10 12 10s5 1.6 5 3.5S14.8 17 12 17s-5-1.6-5-3.5"/></svg><strong>Run totals</strong><span>Score, cost, duration, repairs, token use, and code size.</span></div>
+    </div>
+    <p class="footer-note"><strong>Resume is exact.</strong> Additional repair attempts continue from the recorded source and state. They do not rewrite the earlier run.</p>
+  </div>
+</section>
+
+<script>
+  const sections = [...document.querySelectorAll('section')];
+  const nav = document.getElementById('nav');
+  const progress = document.getElementById('progress');
+
+  sections.forEach((section, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.title = section.dataset.title;
+    button.setAttribute('aria-label', `Go to ${section.dataset.title}`);
+    button.addEventListener('click', () => section.scrollIntoView());
+    nav.appendChild(button);
+  });
+
+  const dots = [...nav.children];
+  const setActive = index => {
+    dots.forEach((dot, dotIndex) => dot.classList.toggle('active', dotIndex === index));
+    progress.style.width = `${((index + 1) / sections.length) * 100}%`;
+  };
+
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) setActive(sections.indexOf(entry.target));
+    });
+  }, { threshold: .55 });
+
+  sections.forEach(section => observer.observe(section));
+  setActive(0);
+
+  addEventListener('keydown', event => {
+    if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' '].includes(event.key)) return;
+    event.preventDefault();
+    const current = Math.max(0, dots.findIndex(dot => dot.classList.contains('active')));
+    const next = ['ArrowDown', 'PageDown', ' '].includes(event.key) ? current + 1 : current - 1;
+    sections[Math.max(0, Math.min(sections.length - 1, next))].scrollIntoView();
+  });
+</script>
+</body>
+</html>
