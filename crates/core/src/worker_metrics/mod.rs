@@ -191,10 +191,32 @@ pub fn record_module_host_init_attempt(database_identity: Identity) {
         .inc();
 }
 
-pub fn record_module_host_init_failure(database_identity: Identity) {
+/// Causes of module host initialization failure.
+///
+/// These values are metric labels, so changes may require changes to dashboards and alerting rules.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum ModuleHostInitFailureCause {
+    /// The module's init reducer ran out of energy.
+    OutOfEnergy,
+    /// Any failure not covered by a more specific cause.
+    Other,
+}
+
+impl ModuleHostInitFailureCause {
+    pub const ALL: [Self; 2] = [Self::OutOfEnergy, Self::Other];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OutOfEnergy => "out_of_energy",
+            Self::Other => "other",
+        }
+    }
+}
+
+pub fn record_module_host_init_failure(database_identity: Identity, cause: ModuleHostInitFailureCause) {
     WORKER_METRICS
         .module_host_init_failures
-        .with_label_values(&database_identity)
+        .with_label_values(&database_identity, cause.as_str())
         .inc();
 }
 
@@ -518,7 +540,7 @@ metrics_group!(
 
         #[name = spacetime_module_host_init_failures_total]
         #[help = "The cumulative number of failed module host initialization attempts"]
-        #[labels(database_identity: Identity)]
+        #[labels(database_identity: Identity, cause: str)]
         pub module_host_init_failures: IntCounterVec,
 
         #[name = spacetime_reducer_wait_time_sec]
@@ -895,6 +917,22 @@ mod tests {
     fn client_disconnect_cause_labels_are_unique() {
         let mut labels = HashSet::new();
         for cause in ClientDisconnectCause::ALL {
+            assert!(labels.insert(cause.as_str()), "duplicate label for {cause:?}");
+        }
+    }
+
+    #[test]
+    fn client_reject_cause_labels_are_unique() {
+        let mut labels = HashSet::new();
+        for cause in ClientRejectCause::ALL {
+            assert!(labels.insert(cause.as_str()), "duplicate label for {cause:?}");
+        }
+    }
+
+    #[test]
+    fn module_host_init_failure_cause_labels_are_unique() {
+        let mut labels = HashSet::new();
+        for cause in ModuleHostInitFailureCause::ALL {
             assert!(labels.insert(cause.as_str()), "duplicate label for {cause:?}");
         }
     }
