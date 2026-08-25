@@ -31,18 +31,19 @@ const release = {
   ],
 };
 
-const plan = { recipe: { task: {
+const plan = { packs: release.components.packs, recipe: { task: {
+  mode: 'fresh',
   requirements: [
-    { id: 'frame', owners: ['recipe'], text: 'Build this product.\n' },
-    { id: 'accounts', owners: ['example.accounts'], text: 'Support accounts.\n' },
-    { id: 'cart', owners: ['example.cart'], text: 'Support a cart.\n' },
-    { id: 'durability', owners: ['example.durability'], text: 'Survive restarts.\n' },
-    { id: 'concurrency', owners: ['example.concurrency'], text: 'Handle races.\n' },
-    { id: 'reconnect', owners: ['example.reconnect'], text: 'Catch up after reconnect.\n' },
+    { id: 'frame', owners: ['recipe'], modes: ['fresh'], text: 'Build this product.\n' },
+    { id: 'accounts', owners: ['example.accounts'], modes: ['fresh'], text: 'Support accounts.\n' },
+    { id: 'cart', owners: ['example.cart'], modes: ['fresh'], text: 'Support a cart.\n' },
+    { id: 'durability', owners: ['example.durability'], modes: ['fresh'], text: 'Survive restarts.\n' },
+    { id: 'concurrency', owners: ['example.concurrency'], modes: ['fresh'], text: 'Handle races.\n' },
+    { id: 'reconnect', owners: ['example.reconnect'], modes: ['fresh'], text: 'Catch up after reconnect.\n' },
   ],
   contracts: [
-    { id: 'cart-hook', owners: ['example.cart'], text: 'Expose a cart button.\n' },
-    { id: 'probe-hook', owners: ['example.concurrency'], text: 'DO NOT LEAK.\n' },
+    { id: 'cart-hook', owners: ['example.cart'], modes: ['fresh'], text: 'Expose a cart button.\n' },
+    { id: 'probe-hook', owners: ['example.concurrency'], modes: ['fresh'], text: 'DO NOT LEAK.\n' },
   ],
 } } };
 

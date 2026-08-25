@@ -7,7 +7,7 @@
   "title": "Warehouse administration",
   "moduleType": "feature",
   "description": "Warehouse inventory, restocking, and revenue views.",
-  "requiresPacks": ["ecommerce.feature.catalog@1.1.0", "ecommerce.progression.staff-access@1.0.0"],
+  "requiresPacks": ["ecommerce.feature.catalog@1.2.0", "ecommerce.progression.staff-access@1.0.0"],
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],

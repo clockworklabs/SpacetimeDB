@@ -72,6 +72,8 @@ export function resolveModularRecipeSelection(release, {
   }
 
   const featureSet = new Set(requestedFeatures.length ? requestedFeatures : features.keys());
+  const selectedStableFamilies = new Set([...featureSet].map(id => features.get(id)?.stableId)
+    .filter(Boolean));
   const treatmentSets = Object.fromEntries(Object.entries(inputTreatments)
     .map(([treatment, refs]) => [treatment, new Set(refs)]));
   const moduleByRef = new Map(modules.map(module => [`${module.id}@${module.version}`, module]));
@@ -113,7 +115,8 @@ export function resolveModularRecipeSelection(release, {
   const observedIds = idsFor('observed');
   const promptPacks = new Set([...featureSet, ...requestedIds]);
   const applies = check => check.requiresFeatures === undefined
-    || check.requiresFeatures.every(featureId => featureSet.has(featureId));
+    || check.requiresFeatures.every(featureId => featureSet.has(featureId)
+      || selectedStableFamilies.has(features.get(featureId)?.stableId));
   const selectChecks = (ids, observation, treatment) => release.checkCatalog
     .filter(check => ids.has(check.packId) && applies(check)
       && (check.observations === undefined
@@ -281,7 +284,7 @@ export function selectRecipeRelease(release, options = {}) {
   };
 }
 
-export function composeSelectedRecipeTask(plan, selection) {
+export function composeSelectedRecipeTask(plan, selection, { taskMode = null } = {}) {
   const taskPacks = selection?.schemaVersion === 3 ? selection.promptPacks : selection?.taskPacks;
   if (!plan?.recipe?.task || !Array.isArray(taskPacks)
     || typeof selection.sha256 !== 'string') {
@@ -289,10 +292,28 @@ export function composeSelectedRecipeTask(plan, selection) {
   }
   const owners = new Set(['recipe', ...taskPacks]);
   const features = new Set(selection.features ?? []);
-  const select = fragments => fragments.filter(fragment =>
-    fragment.owners.some(owner => owners.has(owner))
-    && (fragment.requiresFeatures === undefined
-      || fragment.requiresFeatures.every(featureId => features.has(featureId))));
+  const featureModules = new Map(plan.packs.filter(pack => pack.moduleType === 'feature')
+    .map(pack => [pack.id, pack]));
+  const selectedStableFamilies = new Set([...features].map(id => featureModules.get(id)?.stableId)
+    .filter(Boolean));
+  const featureApplies = featureId => features.has(featureId)
+    || selectedStableFamilies.has(featureModules.get(featureId)?.stableId);
+  const actionSelectable = plan.recipe.task.mode === 'action';
+  const mode = taskMode ?? plan.recipe.task.mode;
+  if (!['fresh', 'upgrade'].includes(mode)) {
+    throw new Error('selected task mode must be fresh or upgrade');
+  }
+  if (!actionSelectable && mode !== plan.recipe.task.mode) {
+    throw new Error(`recipe task mode is ${plan.recipe.task.mode}, not ${mode}`);
+  }
+  const applies = fragment => fragment.ownerConditions
+    ? fragment.ownerConditions.some(entry => owners.has(entry.owner)
+      && entry.modes.includes(mode) && entry.requiresFeatures.every(featureApplies))
+    : fragment.owners.some(owner => owners.has(owner))
+      && fragment.modes.includes(mode)
+      && (fragment.requiresFeatures === undefined
+        || fragment.requiresFeatures.every(featureApplies));
+  const select = fragments => fragments.filter(applies);
   const requirements = select(plan.recipe.task.requirements);
   const contracts = select(plan.recipe.task.contracts);
   const compose = fragments => selection.schemaVersion === 3
@@ -304,6 +325,7 @@ export function composeSelectedRecipeTask(plan, selection) {
     schemaVersion: 1,
     recipeContentSha256: selection.recipe.contentSha256,
     selectionSha256: selection.taskSelectionSha256 ?? selection.sha256,
+    ...(actionSelectable ? { taskMode: mode } : {}),
     requirementIds: requirements.map(fragment => fragment.id),
     contractIds: contracts.map(fragment => fragment.id),
     requirementSha256: sha256(requirementText),
@@ -340,7 +362,11 @@ export function createModularRecipeTaskRequest(binding, options = {}) {
     throw new Error('modular recipe task request requires a resolved recipe binding');
   }
   const selection = resolveModularRecipeSelection(binding.release, options);
-  const task = composeSelectedRecipeTask(binding.plan, selection);
+  const actionSelectable = binding.plan.recipe.task.mode === 'action';
+  const taskMode = options.taskMode ?? binding.plan.recipe.task.mode;
+  const task = composeSelectedRecipeTask(binding.plan, selection, {
+    taskMode,
+  });
   const request = {
     schemaVersion: 3,
     recipe: { id: binding.release.id, version: binding.release.version,
@@ -354,10 +380,12 @@ export function createModularRecipeTaskRequest(binding, options = {}) {
       scoredChecks: selection.scoredChecks.map(check => check.stableKey),
       observedChecks: selection.observedChecks.map(check => check.stableKey),
     },
-    task: { sha256: task.sha256, requirementSha256: task.requirementSha256,
+    task: { ...(actionSelectable ? { mode: taskMode } : {}),
+      sha256: task.sha256, requirementSha256: task.requirementSha256,
       contractSha256: task.contractSha256 },
   };
-  return { request, selection, task };
+  return { request, selection, task,
+    taskMode };
 }
 
 export function resolveRecipeTaskRequest(binding, request) {
@@ -381,14 +409,21 @@ export function resolveModularRecipeTaskRequest(binding, request) {
     throw new Error('modular recipe task request is invalid');
   }
   const requested = request.selection.requested;
-  const resolved = createModularRecipeTaskRequest(binding, {
+  const options = {
     featureIds: requested?.features,
     requestedSpecifications: requested?.specifications?.requested,
     expectedSpecifications: requested?.specifications?.expected,
     observedSpecifications: requested?.specifications?.observed,
     checkKeys: requested?.checks,
     dependencyExpansion: requested?.dependencyExpansion,
-  });
+  };
+  const actionSelectable = binding.plan?.recipe?.task?.mode === 'action';
+  const taskMode = actionSelectable ? request.task.mode : binding.plan?.recipe?.task?.mode;
+  if ((actionSelectable && !['fresh', 'upgrade'].includes(taskMode))
+    || (!actionSelectable && request.task.mode !== undefined)) {
+    throw new Error('modular recipe task mode is invalid');
+  }
+  const resolved = createModularRecipeTaskRequest(binding, { ...options, taskMode });
   if (!same(resolved.request, request)) {
     throw new Error('modular recipe task changed after request resolution');
   }
@@ -443,6 +478,7 @@ export function createAgentVisibleTaskRequest(binding, selected) {
     // its owning specification has been deliberately removed.
     checkKeys: [],
     dependencyExpansion: requested.dependencyExpansion,
+    taskMode: resolved.taskMode,
   });
   if (visible.task.sha256 !== resolved.task.sha256) {
     throw new Error('undisclosed treatment removal changed the agent task');

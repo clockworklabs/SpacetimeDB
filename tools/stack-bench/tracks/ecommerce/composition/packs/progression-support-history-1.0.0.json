@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.support-history", "version": "1.0.0", "state": "draft", "moduleType": "feature",
   "title": "Customer support history", "description": "Durable account-owned support history.",
-  "requiresPacks": ["ecommerce.feature.accounts@1.1.0", "ecommerce.progression.support-intake@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "requiresPacks": ["ecommerce.feature.accounts@1.2.0", "ecommerce.progression.support-intake@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 50000 },
   "task": {
     "requirements": [{ "id": "ecommerce.progression.support-history", "path": "prompts/modular/support-history-1.0.0.md", "order": 2110, "from": "## Customer support history", "modes": ["upgrade"] }],

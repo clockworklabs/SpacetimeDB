@@ -110,6 +110,7 @@ const TASK_FRAGMENT_FIELDS = new Set([
   'id', 'path', 'order', 'from', 'until', 'modes', 'requiresFeatures',
 ]);
 const TASK_MODES = new Set(['fresh', 'upgrade']);
+const RECIPE_TASK_MODES = new Set([...TASK_MODES, 'action']);
 
 function taskFragmentDefinition(fragment, at) {
   strictObject(fragment, at, TASK_FRAGMENT_FIELDS);
@@ -375,13 +376,17 @@ export function compileRecipeDefinition(input, { source = '<recipe>' } = {}) {
   id(recipe.track, `${source}.track`);
   validateFileRef(recipe.fixture, `${source}.fixture`);
   strictObject(recipe.task, `${source}.task`, TASK_FIELDS);
-  if (!TASK_MODES.has(recipe.task.mode)) {
-    fail(`${source}.task.mode`, 'must be fresh or upgrade');
+  if (!RECIPE_TASK_MODES.has(recipe.task.mode)) {
+    fail(`${source}.task.mode`, 'must be fresh, upgrade, or action');
   }
   if (recipe.task.mode === 'upgrade') {
     validateFileRef(recipe.task.baseRecipe, `${source}.task.baseRecipe`);
   } else if (recipe.task.baseRecipe !== undefined) {
     fail(`${source}.task.baseRecipe`, 'is allowed only for upgrade recipes');
+  }
+  if (recipe.task.mode !== 'action'
+    && (recipe.execution === 'all-selected-sources' || recipe.scoring?.mode === 'source-points')) {
+    fail(source, 'automatic execution and source scoring require an action recipe');
   }
   recipe.task.framing = taskFragmentSet(recipe.task.framing, `${source}.task.framing`);
   if (recipe.task.framing.requirements.length === 0) {
@@ -396,29 +401,30 @@ export function compileRecipeDefinition(input, { source = '<recipe>' } = {}) {
     if (packIds.has(selection.id)) fail(`${at}.id`, `duplicate selected pack ${selection.id}`);
     packIds.add(selection.id);
     selection.includeRoles = uniqueStrings(selection.includeRoles, `${at}.includeRoles`);
-    if (selection.includeRoles.length === 0) fail(`${at}.includeRoles`, 'must not be empty');
     for (const role of selection.includeRoles) {
       if (!ROLES.has(role)) fail(`${at}.includeRoles`, `unknown role ${role}`);
     }
   });
-  if (!Array.isArray(recipe.execution) || recipe.execution.length === 0) {
-    fail(`${source}.execution`, 'must not be empty');
+  if (recipe.execution !== 'all-selected-sources') {
+    if (!Array.isArray(recipe.execution) || recipe.execution.length === 0) {
+      fail(`${source}.execution`, 'must be a non-empty array or "all-selected-sources"');
+    }
+    const executionIds = new Set();
+    const executionSources = new Set();
+    recipe.execution.forEach((entry, index) => {
+      const at = `${source}.execution[${index}]`;
+      strictObject(entry, at, EXECUTION_FIELDS);
+      string(entry.id, `${at}.id`);
+      string(entry.source, `${at}.source`);
+      if (executionIds.has(entry.id)) fail(`${at}.id`, `duplicate execution id ${entry.id}`);
+      if (executionSources.has(entry.source)) fail(`${at}.source`, `duplicate execution source ${entry.source}`);
+      executionIds.add(entry.id);
+      executionSources.add(entry.source);
+    });
   }
-  const executionIds = new Set();
-  const executionSources = new Set();
-  recipe.execution.forEach((entry, index) => {
-    const at = `${source}.execution[${index}]`;
-    strictObject(entry, at, EXECUTION_FIELDS);
-    string(entry.id, `${at}.id`);
-    string(entry.source, `${at}.source`);
-    if (executionIds.has(entry.id)) fail(`${at}.id`, `duplicate execution id ${entry.id}`);
-    if (executionSources.has(entry.source)) fail(`${at}.source`, `duplicate execution source ${entry.source}`);
-    executionIds.add(entry.id);
-    executionSources.add(entry.source);
-  });
   strictObject(recipe.scoring, `${source}.scoring`, SCORING_FIELDS);
-  if (!['legacy-source-points', 'explicit'].includes(recipe.scoring.mode)) {
-    fail(`${source}.scoring.mode`, 'must be legacy-source-points or explicit');
+  if (!['legacy-source-points', 'source-points', 'explicit'].includes(recipe.scoring.mode)) {
+    fail(`${source}.scoring.mode`, 'must be legacy-source-points, source-points, or explicit');
   }
   if (recipe.scoring.mode === 'explicit') {
     if (!isObject(recipe.scoring.weights)) fail(`${source}.scoring.weights`, 'must be an object');
@@ -500,6 +506,10 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
     if (pack.id !== selection.id || pack.version !== selection.version) {
       fail(at, `expected ${selection.id}@${selection.version}, found ${pack.id}@${pack.version}`);
     }
+    if (selection.includeRoles.length === 0
+      && (recipe.task.mode !== 'action' || pack.moduleType === undefined)) {
+      fail(`${at}.includeRoles`, 'can be empty only for an action catalog dependency');
+    }
     const ref = `${pack.id}@${pack.version}`;
     selectedByRef.set(ref, pack);
     selectedPacks.push({ selection, pack, path: packRef.relative });
@@ -565,17 +575,41 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
 
   const fragmentSources = new Map();
   const composedFragments = { requirements: new Map(), contracts: new Map() };
+  const moduleTypeById = new Map(selectedPacks.map(({ pack }) => [pack.id, pack.moduleType]));
   const addFragment = (kind, fragment, owner) => {
-    if (!fragment.modes.includes(recipe.task.mode)) return;
+    if (recipe.task.mode !== 'action' && !fragment.modes.includes(recipe.task.mode)) return;
     const at = `${owner}.task.${kind}.${fragment.id}`;
     const definition = resolveTaskFragment(fragment, { trackRoot: root, source: at,
       sourceCache: fragmentSources });
     const current = composedFragments[kind].get(fragment.id);
     if (current) {
-      const comparable = value => JSON.stringify({ ...value, owners: undefined });
+      const comparable = value => JSON.stringify({ ...value, owners: undefined,
+        order: undefined, modes: undefined, requiresFeatures: undefined,
+        ownerConditions: undefined });
       if (comparable(current) !== comparable(definition)) {
         fail(at, `shared fragment ${fragment.id} does not match its other owner`);
       }
+      const condition = value => ({
+        modes: value.modes,
+        requiresFeatures: value.requiresFeatures ?? [],
+      });
+      const differs = JSON.stringify(condition(current)) !== JSON.stringify(condition(definition));
+      if ((differs || current.order !== definition.order)
+        && (moduleTypeById.get(owner) !== 'feature'
+          || current.owners.some(existingOwner => moduleTypeById.get(existingOwner) !== 'feature'))) {
+        fail(at, `shared fragment ${fragment.id} does not match its other owner`);
+      }
+      if (current.ownerConditions) {
+        current.ownerConditions.push({ owner, ...condition(definition) });
+      } else if (differs) {
+        current.ownerConditions = current.owners.map(existingOwner => ({
+          owner: existingOwner, ...condition(current),
+        }));
+        current.ownerConditions.push({ owner, ...condition(definition) });
+        delete current.requiresFeatures;
+      }
+      current.order = Math.min(current.order, definition.order);
+      current.modes = [...new Set([...current.modes, ...definition.modes])].sort();
       current.owners.push(owner);
       return;
     }
@@ -583,7 +617,8 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
   };
   for (const fragment of recipe.task.framing.requirements) addFragment('requirements', fragment, 'recipe');
   for (const fragment of recipe.task.framing.contracts) addFragment('contracts', fragment, 'recipe');
-  for (const { pack } of selectedPacks) {
+  for (const { pack, selection } of selectedPacks) {
+    if (selection.includeRoles.length === 0) continue;
     for (const fragment of pack.task.requirements) addFragment('requirements', fragment, pack.id);
     for (const fragment of pack.task.contracts) addFragment('contracts', fragment, pack.id);
   }
@@ -669,7 +704,13 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
     if (!bySource.has(selected.source)) bySource.set(selected.source, []);
     bySource.get(selected.source).push(selected);
   }
-  const execution = recipe.execution.map(entry => {
+  const executionEntries = recipe.execution === 'all-selected-sources'
+    ? [...bySource.keys()].sort().map((source, index) => ({
+      id: `selected-source-${String(index + 1).padStart(3, '0')}`,
+      source,
+    }))
+    : recipe.execution;
+  const execution = executionEntries.map(entry => {
     const normalized = contained(root, root, entry.source, `${recipeSource}.execution.${entry.id}.source`).relative;
     const selected = bySource.get(normalized);
     if (!selected) fail(`${recipeSource}.execution.${entry.id}`, `source has no selected check groups: ${normalized}`);
@@ -761,9 +802,11 @@ export function compileRecipeFile(recipePath, { trackRoot, availableCapabilities
       evidence: pack.evidence,
       budget: pack.budget,
       task: {
-        requirementIds: pack.task.requirements.filter(fragment => fragment.modes.includes(recipe.task.mode))
+        requirementIds: pack.task.requirements.filter(fragment => recipe.task.mode === 'action'
+          || fragment.modes.includes(recipe.task.mode))
           .map(fragment => fragment.id),
-        contractIds: pack.task.contracts.filter(fragment => fragment.modes.includes(recipe.task.mode))
+        contractIds: pack.task.contracts.filter(fragment => recipe.task.mode === 'action'
+          || fragment.modes.includes(recipe.task.mode))
           .map(fragment => fragment.id),
       },
       actions: [...new Set(selectedFeatures.filter(feature => feature.packId === pack.id)

@@ -53,6 +53,8 @@ function taskDocuments(plan, trackRoot) {
     until: fragment.until,
     modes: fragment.modes,
     owners: fragment.owners,
+    ...(fragment.ownerConditions === undefined
+      ? {} : { ownerConditions: fragment.ownerConditions }),
     ...(fragment.requiresFeatures === undefined
       ? {} : { requiresFeatures: fragment.requiresFeatures }),
     sha256: sha256(fragment.text),
@@ -165,11 +167,15 @@ export function buildRecipeRelease(recipePath, { trackRoot } = {}) {
     task: {
       mode: plan.recipe.task.mode,
       baseMeaningSha256: baseRelease?.meaningSha256 ?? null,
-      requirements: documents.requirements.map(({ id, owners, requiresFeatures, text }) => ({
-        id, owners, ...(requiresFeatures === undefined ? {} : { requiresFeatures }), text,
+      requirements: documents.requirements.map(({ id, owners, ownerConditions,
+        requiresFeatures, text }) => ({
+        id, owners, ...(ownerConditions === undefined ? {} : { ownerConditions }),
+        ...(requiresFeatures === undefined ? {} : { requiresFeatures }), text,
       })),
-      contracts: documents.contracts.map(({ id, owners, requiresFeatures, text }) => ({
-        id, owners, ...(requiresFeatures === undefined ? {} : { requiresFeatures }), text,
+      contracts: documents.contracts.map(({ id, owners, ownerConditions,
+        requiresFeatures, text }) => ({
+        id, owners, ...(ownerConditions === undefined ? {} : { ownerConditions }),
+        ...(requiresFeatures === undefined ? {} : { requiresFeatures }), text,
       })),
     },
     checks: details.map(detail => ({

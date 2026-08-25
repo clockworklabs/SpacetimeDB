@@ -16,13 +16,13 @@
       "title": "Accounts",
       "questline": "identity",
       "featureRefs": [
-        "ecommerce.feature.accounts@1.1.0"
+        "ecommerce.feature.accounts@1.2.0"
       ],
       "gradingGroups": [
-        "ecommerce.feature.accounts@1.1.0#account-create",
-        "ecommerce.feature.accounts@1.1.0#account-duplicate",
-        "ecommerce.feature.accounts@1.1.0#account-password",
-        "ecommerce.feature.accounts@1.1.0#account-signout",
+        "ecommerce.feature.accounts@1.2.0#account-create",
+        "ecommerce.feature.accounts@1.2.0#account-duplicate",
+        "ecommerce.feature.accounts@1.2.0#account-password",
+        "ecommerce.feature.accounts@1.2.0#account-signout",
         "ecommerce.spec.state-durability@1.1.0#session-reload"
       ],
       "dependencies": []
@@ -32,10 +32,12 @@
       "title": "Catalog",
       "questline": "catalog-pricing",
       "featureRefs": [
-        "ecommerce.feature.catalog@1.1.0"
+        "ecommerce.feature.catalog@1.2.0"
       ],
       "gradingGroups": [
-        "ecommerce.feature.catalog@1.1.0#catalog"
+        "ecommerce.feature.catalog@1.2.0#values",
+        "ecommerce.feature.catalog@1.2.0#ranking",
+        "ecommerce.feature.catalog@1.2.0#search"
       ],
       "dependencies": []
     },
@@ -467,7 +469,9 @@
         "ecommerce.progression.support-triage@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.support-triage@1.0.0#triage"
+        "ecommerce.progression.support-triage@1.0.0#assignment",
+        "ecommerce.progression.support-triage@1.0.0#priority",
+        "ecommerce.progression.support-triage@1.0.0#status"
       ],
       "dependencies": [
         {
@@ -488,7 +492,8 @@
         "ecommerce.progression.support-history@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.support-history@1.0.0#history"
+        "ecommerce.progression.support-history@1.0.0#persistence",
+        "ecommerce.progression.support-history@1.0.0#privacy"
       ],
       "dependencies": [
         {

@@ -292,8 +292,13 @@ function validateRequestedScope(input) {
         }
       }
     }
-    strict(entry.task, `${at}.task`, new Set(['sha256', 'requirementSha256',
-      'contractSha256', 'requirementIds', 'contractIds']));
+    strict(entry.task, `${at}.task`, new Set([
+      ...(Object.hasOwn(entry.task ?? {}, 'mode') ? ['mode'] : []),
+      'sha256', 'requirementSha256', 'contractSha256', 'requirementIds', 'contractIds',
+    ]));
+    if (entry.task.mode !== undefined && !['fresh', 'upgrade'].includes(entry.task.mode)) {
+      fail(`${at}.task.mode`, 'must be fresh or upgrade');
+    }
     for (const field of ['sha256', 'requirementSha256', 'contractSha256']) {
       if (!HASH.test(entry.task[field])) fail(`${at}.task.${field}`, 'must be a SHA-256 digest');
     }

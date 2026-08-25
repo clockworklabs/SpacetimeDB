@@ -506,6 +506,8 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
           })),
         },
         task: {
+          ...(selected.request.task.mode === undefined
+            ? {} : { mode: selected.request.task.mode }),
           sha256: selected.task.sha256,
           requirementSha256: selected.task.requirementSha256,
           contractSha256: selected.task.contractSha256,
