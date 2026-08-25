@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatMoney } from '../types';
 
 export interface CartLine {
@@ -15,6 +15,8 @@ interface CartPanelProps {
   onChangeQuantity: (itemId: bigint, quantity: number) => Promise<void>;
   onRemove: (itemId: bigint) => Promise<void>;
   onCheckout: () => Promise<void>;
+  reservations: readonly { itemId: bigint; expiresMicros: bigint; expired: boolean }[];
+  onApplyPromotion: (code: string) => Promise<void> | void;
 }
 
 export default function CartPanel({
@@ -23,9 +25,19 @@ export default function CartPanel({
   onChangeQuantity,
   onRemove,
   onCheckout,
+  reservations,
+  onApplyPromotion,
 }: CartPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
+  const [promotionCode, setPromotionCode] = useState('');
+  const [promotionError, setPromotionError] = useState<string | null>(null);
+  const [, setClock] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(value => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const total = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
 
@@ -97,6 +109,12 @@ export default function CartPanel({
               >
                 Remove
               </button>
+              {(() => {
+                const reservation = reservations.find(row => row.itemId === line.itemId);
+                if (!reservation || reservation.expired) return <span data-testid="cart-item-expired">expired</span>;
+                const seconds = Math.max(0, Number((reservation.expiresMicros - BigInt(Date.now()) * 1000n) / 1_000_000n));
+                return <span data-testid="cart-reservation-timer">{seconds}</span>;
+              })()}
             </div>
           ))}
           {error && (
@@ -106,6 +124,15 @@ export default function CartPanel({
           )}
         </div>
         <div className="panel-footer">
+          <div className="inline-form">
+            <input data-testid="cart-promotion" value={promotionCode} onChange={event => setPromotionCode(event.target.value)} placeholder="Promotion code" />
+            <button className="btn btn-ghost btn-sm" data-testid="apply-promotion" onClick={async () => {
+              setPromotionError(null);
+              try { await onApplyPromotion(promotionCode); }
+              catch (error) { setPromotionError(error instanceof Error ? error.message : 'Promotion refused.'); }
+            }}>Apply</button>
+          </div>
+          {promotionError && <div className="error-text" data-testid="promotion-error">{promotionError}</div>}
           <div className="cart-total-row">
             <span>Total</span>
             <span data-testid="cart-total">{formatMoney(total)}</span>

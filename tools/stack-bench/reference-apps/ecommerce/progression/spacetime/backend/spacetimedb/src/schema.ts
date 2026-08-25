@@ -373,6 +373,14 @@ export const recommendationDismissal = table(
   }
 );
 
+export const maintenanceTick = table(
+  { name: 'maintenance_tick' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+  }
+);
+
 const spacetimedb = schema({
   item,
   warehouse,
@@ -407,6 +415,7 @@ const spacetimedb = schema({
   deliverySchedule,
   reorderRule,
   recommendationDismissal,
+  maintenanceTick,
 });
 
 export default spacetimedb;

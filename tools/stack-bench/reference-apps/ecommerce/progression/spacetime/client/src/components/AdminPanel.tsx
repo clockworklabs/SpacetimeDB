@@ -122,7 +122,9 @@ export default function AdminPanel({
               const k = String(item.id);
               const transfer = transferInputs[k] ?? { from: '', to: '', qty: '' };
               return (
-                <tr data-testid="admin-item-row" key={k}>
+                <tr data-testid="admin-item-row" key={k}
+                  data-price-input={JSON.stringify({ itemId: Number(item.id), price: Number(priceInputs[k] ?? item.price) })}
+                  data-transfer-input={JSON.stringify({ itemId: Number(item.id), fromWarehouseId: Number(transfer.from || 0), toWarehouseId: Number(transfer.to || 0), quantity: Number(transfer.qty || 0) })}>
                   <td>{item.name}</td>
                   <td>{formatMoney(item.price)}</td>
                   <td data-testid="admin-stock">{totalStockOf(item.id)}</td>
@@ -275,7 +277,8 @@ export default function AdminPanel({
               warehouses.map((wh) => {
                 const k = key(item.id, wh.id);
                 return (
-                  <tr data-testid="admin-location-row" key={k}>
+                  <tr data-testid="admin-location-row" key={k}
+                    data-restock-input={JSON.stringify({ itemId: Number(item.id), warehouseId: Number(wh.id), quantity: Number(restockInputs[k] || 0) })}>
                     <td>{item.name}</td>
                     <td>{wh.name}</td>
                     <td data-testid="admin-location-qty">{stockOf(item.id, wh.id)}</td>

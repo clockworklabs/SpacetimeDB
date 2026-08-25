@@ -8,6 +8,7 @@ import OrdersPanel, { OrderView } from './components/OrdersPanel';
 import AdminPanel from './components/AdminPanel';
 import FulfilmentPanel from './components/FulfilmentPanel';
 import AuthWidget from './components/AuthWidget';
+import ProgressionWorkbench from './components/ProgressionWorkbench';
 import { formatMoney } from './types';
 
 const LOW_STOCK_THRESHOLD = 10;
@@ -38,6 +39,24 @@ export default function App() {
   const [queueRows] = useTable(tables.fulfilmentQueue);
   const [categoryTotalRows] = useTable(tables.categoryTotals);
   const [recommendedRows] = useTable(tables.recommended);
+  const [catalogDetailRows] = useTable(tables.catalogDetails);
+  const [itemVariantRows] = useTable(tables.itemVariant);
+  const [profileRows] = useTable(tables.myProfile);
+  const [staffRoleRows] = useTable(tables.staffRoles);
+  const [supportTicketRows] = useTable(tables.visibleSupportTickets);
+  const [supportReplyRows] = useTable(tables.visibleSupportReplies);
+  const [preferenceRows] = useTable(tables.myNotificationPreferences);
+  const [notificationRows] = useTable(tables.myNotifications);
+  const [reservationRows] = useTable(tables.myReservations);
+  const [expiredCartRows] = useTable(tables.myExpiredCart);
+  const [restockRows] = useTable(tables.visibleRestocks);
+  const [stockLedgerRows] = useTable(tables.visibleStockLedger);
+  const [paymentRows] = useTable(tables.myPayments);
+  const [activityRows] = useTable(tables.activityHistory);
+  const [promotionReportRows] = useTable(tables.promotionReports);
+  const [promotionRows] = useTable(tables.visiblePromotions);
+  const [reorderRuleRows] = useTable(tables.visibleReorderRules);
+  const [completedOrderRows] = useTable(tables.completedOrders);
 
   const currentUser = currentUserRows[0] ?? null;
   const isSignedIn = currentUser !== null;
@@ -48,6 +67,11 @@ export default function App() {
   const [selectedItemId, setSelectedItemId] = useState<bigint | null>(null);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [buyError, setBuyError] = useState<string | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [minimumPrice, setMinimumPrice] = useState('');
+  const [maximumPrice, setMaximumPrice] = useState('');
+  const [inStockOnly, setInStockOnly] = useState(false);
+  const [searchPage, setSearchPage] = useState(0);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -107,6 +131,14 @@ export default function App() {
     return map;
   }, [reviews]);
 
+  const itemVariantsByItem = useMemo(() => {
+    const map = new Map<bigint, string[]>();
+    for (const row of itemVariantRows) {
+      map.set(row.itemId, [...(map.get(row.itemId) ?? []), row.name]);
+    }
+    return map;
+  }, [itemVariantRows]);
+
   const purchasedItemIds = useMemo(() => {
     const set = new Set<bigint>();
     for (const li of orderItemRows) set.add(li.itemId);
@@ -124,11 +156,21 @@ export default function App() {
     return arr.slice(0, 10);
   }, [items, purchaseCountByItem]);
 
-  const searchResults = useMemo(() => {
+  const filteredSearchResults = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return [];
-    return items.filter((i) => i.name.toLowerCase().includes(q));
-  }, [items, searchQuery]);
+    const min = minimumPrice === '' ? -Infinity : Number(minimumPrice);
+    const max = maximumPrice === '' ? Infinity : Number(maximumPrice);
+    const categoryByItem = new Map(catalogDetailRows.map(row => [row.itemId, row.category]));
+    return [...items]
+      .filter(item => !q || item.name.toLowerCase().includes(q))
+      .filter(item => !categoryFilter || categoryByItem.get(item.id) === categoryFilter)
+      .filter(item => item.price >= min && item.price <= max)
+      .filter(item => !inStockOnly || (stockByItem.get(item.id) ?? 0) > 0)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [items, searchQuery, categoryFilter, minimumPrice, maximumPrice, inStockOnly, catalogDetailRows, stockByItem]);
+
+  const searchResults = filteredSearchResults.slice(searchPage * 6, searchPage * 6 + 6);
+  const categories = [...new Set(catalogDetailRows.map(row => row.category))].sort();
 
   const cartLines: CartLine[] = useMemo(
     () =>
@@ -157,6 +199,11 @@ export default function App() {
         createdAt: microsToDate(o.createdAt.microsSinceUnixEpoch),
         total: o.total,
         status: o.status,
+        discount: o.discount,
+        refundedTotal: o.refundedTotal,
+        payments: paymentRows
+          .filter(payment => payment.orderId === o.orderId)
+          .map(payment => ({ amount: payment.amount, status: payment.status })),
         items: orderItemRows
           .filter((li) => li.orderId === o.orderId)
           .map((li) => ({
@@ -166,7 +213,7 @@ export default function App() {
             returned: li.returned,
           })),
       })),
-    [orderRows, orderItemRows]
+    [orderRows, orderItemRows, paymentRows]
   );
 
   const revenue = revenueRows[0]?.total ?? 0;
@@ -190,6 +237,10 @@ export default function App() {
     } catch (err) {
       setBuyError(err instanceof Error ? err.message : 'Could not add to cart.');
     }
+  };
+
+  const handleStockAlert = async (itemId: bigint) => {
+    await conn?.reducers.requestStockAlert({ itemId });
   };
 
   const handleSignUp = async (username: string, password: string) => {
@@ -263,7 +314,33 @@ export default function App() {
     );
   }
 
-  const showingSearch = searchQuery.trim().length > 0;
+  const showingSearch = searchQuery.trim().length > 0 || categoryFilter !== '' || minimumPrice !== '' || maximumPrice !== '' || inStockOnly;
+  const progressionWorkbench = () => (
+    <ProgressionWorkbench
+      conn={conn}
+      items={items}
+      warehouses={warehouses}
+      orders={orderViews}
+      itemVariants={itemVariantRows}
+      profile={profileRows[0] ?? null}
+      staffRoles={staffRoleRows}
+      supportTickets={supportTicketRows}
+      supportReplies={supportReplyRows}
+      preferences={preferenceRows[0] ?? null}
+      notifications={notificationRows}
+      expiredCart={expiredCartRows}
+      restocks={restockRows}
+      stockLedger={stockLedgerRows}
+      activity={activityRows}
+      promotionReports={promotionReportRows}
+      promotions={promotionRows}
+      reorderRules={reorderRuleRows}
+      completedOrders={completedOrderRows}
+      isSignedIn={isSignedIn}
+      isStaff={isStaff}
+      isAdmin={isAdmin}
+    />
+  );
 
   return (
     <div className="app">
@@ -283,6 +360,11 @@ export default function App() {
             setActivePanel(null);
           }}
         />
+        <input data-testid="category-filter" list="category-options" placeholder="Category" value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); setSearchPage(0); }} />
+        <datalist id="category-options">{categories.map(category => <option key={category}>{category}</option>)}</datalist>
+        <input data-testid="minimum-price" type="number" placeholder="Min" value={minimumPrice} onChange={e => { setMinimumPrice(e.target.value); setSearchPage(0); }} />
+        <input data-testid="maximum-price" type="number" placeholder="Max" value={maximumPrice} onChange={e => { setMaximumPrice(e.target.value); setSearchPage(0); }} />
+        <label><input data-testid="in-stock-filter" type="checkbox" checked={inStockOnly} onChange={e => { setInStockOnly(e.target.checked); setSearchPage(0); }} />In stock</label>
         <div className="header-spacer" />
         <div className="header-actions">
           {isAdmin && (
@@ -362,6 +444,23 @@ export default function App() {
               onOpen={setSelectedItemId}
               onBuyNow={handleBuyNow}
               onAddToCart={handleAddToCart}
+              onStockAlert={handleStockAlert}
+              variants={itemVariantsByItem.get(item.id) ?? []}
+            />
+          ))}
+        </div>
+        <div className="item-list">
+          {items.filter(item => !storefrontItems.some(featured => featured.id === item.id)).map(item => (
+            <ItemCard
+              key={`managed-${String(item.id)}`}
+              item={item}
+              stock={stockByItem.get(item.id) ?? 0}
+              isSignedIn={isSignedIn}
+              onOpen={setSelectedItemId}
+              onBuyNow={handleBuyNow}
+              onAddToCart={handleAddToCart}
+              onStockAlert={handleStockAlert}
+              variants={itemVariantsByItem.get(item.id) ?? []}
             />
           ))}
         </div>
@@ -369,16 +468,21 @@ export default function App() {
         <h1 className="section-title" style={{ marginTop: 32 }}>
           Recommended for you
         </h1>
+        <div data-testid="recommendations">
         <div className="recommended-list" data-testid="recommended-list">
           {recommendedRows.length === 0 && (
             <div className="empty-state">Buy something to get recommendations.</div>
           )}
           {recommendedRows.map((r) => (
             <div className="recommended-item" data-testid="recommended-item" key={String(r.itemId)}>
-              <span>{r.name}</span>
-              <span>{formatMoney(r.price)}</span>
+              <span data-testid="recommendation-item">
+                {r.name} <span data-testid="recommendation-rank">{recommendedRows.indexOf(r) + 1}</span>
+                <span>{formatMoney(r.price)}</span>
+                <button className="btn btn-ghost btn-sm" data-testid="dismiss-recommendation" onClick={() => conn?.reducers.dismissRecommendation({ itemId: r.itemId })}>Dismiss</button>
+              </span>
             </div>
           ))}
+        </div>
         </div>
 
         {showingSearch && (
@@ -399,11 +503,19 @@ export default function App() {
                   onOpen={setSelectedItemId}
                   onBuyNow={handleBuyNow}
                   onAddToCart={handleAddToCart}
+                  onStockAlert={handleStockAlert}
+                  variants={itemVariantsByItem.get(item.id) ?? []}
                 />
               ))}
             </div>
+            <div className="search-pagination">
+              <button className="btn btn-ghost btn-sm" data-testid="search-previous-page" disabled={searchPage === 0} onClick={() => setSearchPage(page => Math.max(0, page - 1))}>Previous</button>
+              <button className="btn btn-ghost btn-sm" data-testid="search-next-page" disabled={(searchPage + 1) * 6 >= filteredSearchResults.length} onClick={() => setSearchPage(page => page + 1)}>Next</button>
+            </div>
           </>
         )}
+
+        {activePanel !== 'admin' && activePanel !== 'staff' && progressionWorkbench()}
       </main>
 
       {activePanel === 'cart' && (
@@ -413,6 +525,8 @@ export default function App() {
           onChangeQuantity={handleChangeQuantity}
           onRemove={handleRemove}
           onCheckout={handleCheckout}
+          reservations={reservationRows}
+          onApplyPromotion={(code) => conn?.reducers.applyPromotion({ code })}
         />
       )}
 
@@ -457,6 +571,7 @@ export default function App() {
               <div className="admin-section">
                 <FulfilmentPanel queue={queueRows} onShip={handleShipOrder} />
               </div>
+              {progressionWorkbench()}
             </div>
           </div>
         </>
@@ -479,6 +594,7 @@ export default function App() {
             </div>
             <div className="panel-body">
               <FulfilmentPanel queue={queueRows} onShip={handleShipOrder} />
+              {progressionWorkbench()}
             </div>
           </div>
         </>

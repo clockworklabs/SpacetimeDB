@@ -13,6 +13,9 @@ export interface OrderView {
   createdAt: Date;
   total: number;
   status: string;
+  discount: number;
+  refundedTotal: number;
+  payments: { amount: number; status: string }[];
   items: OrderItemView[];
 }
 
@@ -68,6 +71,8 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
               className="order-item"
               data-testid="order-item"
               data-entity-id={String(order.orderId)}
+              data-ship-input={JSON.stringify({ orderId: Number(order.orderId) })}
+              data-cancel-input={JSON.stringify({ orderId: Number(order.orderId) })}
               key={String(order.orderId)}
             >
               <div className="order-item-names">{order.items.map((i) => i.name).join(', ')}</div>
@@ -80,6 +85,21 @@ export default function OrdersPanel({ orders, onClose, onCancel, onReturn }: Ord
                   {formatMoney(order.total)}
                 </span>
               </div>
+              {order.discount > 0 && <div data-testid="order-discount">Discount: {formatMoney(order.discount)}</div>}
+              {order.refundedTotal > 0 && <div data-testid="order-refund-total">Refund: {formatMoney(order.refundedTotal)}</div>}
+              {order.payments.map((payment, index) => payment.status === 'refunded' ? (
+                <div data-testid="refund-entry" key={`refund-${index}`}>
+                  {order.items.map(item => item.name).join(', ')}
+                  <span data-testid="payment-amount">{formatMoney(payment.amount)}</span>
+                  <span data-testid="payment-status">{payment.status}</span>
+                </div>
+              ) : (
+                <div data-testid="payment-record" key={`payment-${index}`}>
+                  {order.items.map(item => item.name).join(', ')}
+                  <span data-testid="payment-amount">{formatMoney(payment.amount)}</span>
+                  <span data-testid="payment-status">{payment.status}</span>
+                </div>
+              ))}
               <div className="order-item-lines">
                 {order.items.map((item) => (
                   <div className="order-item-line" key={String(item.itemId)}>

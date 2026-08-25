@@ -26,6 +26,7 @@ export default function AuthWidget({
         <span className="current-user" data-testid="current-user">
           {currentUsername}
         </span>
+        <span className="current-user" data-testid="staff-current-user">{currentUsername}</span>
         <button type="button" className="btn btn-ghost btn-sm" data-testid="signout" onClick={onSignOut}>
           Sign out
         </button>
@@ -120,6 +121,12 @@ export default function AuthWidget({
           </button>
         </div>
       )}
+
+      <div className="auth-form staff-auth-form">
+        <input type="text" data-testid="staff-signin-username" placeholder="Staff username" value={signInUsername} onChange={(e) => setSignInUsername(e.target.value)} />
+        <input type="password" data-testid="staff-signin-password" placeholder="Staff password" value={signInPassword} onChange={(e) => setSignInPassword(e.target.value)} />
+        <button type="button" className="btn btn-ghost btn-sm" data-testid="staff-signin-submit" onClick={submitSignIn}>Staff sign in</button>
+      </div>
 
       {error && (
         <div className="error-text" data-testid="auth-error">

@@ -21,6 +21,44 @@
   --header-h: 64px;
 }
 
+.progression-workbench {
+  display: grid;
+  gap: 16px;
+  margin-top: 40px;
+}
+
+.feature-links,
+.feature-card,
+.feature-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.feature-card {
+  padding: 16px;
+  border: 1px solid var(--border, #d8dee6);
+  border-radius: 8px;
+}
+
+.feature-card h2 {
+  flex-basis: 100%;
+  margin: 0 0 4px;
+}
+
+.feature-row {
+  flex-basis: 100%;
+  padding: 8px 0;
+  border-top: 1px solid var(--border, #d8dee6);
+}
+
+.search-pagination {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
 * {
   box-sizing: border-box;
 }

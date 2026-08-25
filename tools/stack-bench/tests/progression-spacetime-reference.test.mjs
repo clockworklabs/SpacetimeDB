@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 
 const root = join(import.meta.dirname, '..');
@@ -8,6 +8,26 @@ const appRoot = join(root, 'reference-apps', 'ecommerce', 'progression', 'spacet
 const trackRoot = join(root, 'tracks', 'ecommerce');
 const read = path => readFileSync(path, 'utf8');
 const readJson = path => JSON.parse(read(path));
+
+function filesBelow(directory) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? filesBelow(path) : [path];
+  });
+}
+
+function collectScenarioInterface(value, interfaceNames) {
+  if (Array.isArray(value)) {
+    for (const entry of value) collectScenarioInterface(entry, interfaceNames);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  if (typeof value.testid === 'string') interfaceNames.testids.add(value.testid);
+  if (typeof value.attribute === 'string' && value.attribute.startsWith('data-')) {
+    interfaceNames.attributes.add(value.attribute);
+  }
+  for (const entry of Object.values(value)) collectScenarioInterface(entry, interfaceNames);
+}
 
 const backendMarkers = {
   accounts: 'export const signUp',
@@ -48,7 +68,7 @@ const backendMarkers = {
   'cart-recovery': 'export const restoreExpiredCart',
   'delivery-notifications': 'export const myNotifications',
   'recommendation-feedback': 'export const dismissRecommendation',
-  'support-refunds': 'export const refundSupportOrder',
+  'support-refunds': 'export const supportRefund',
 };
 
 test('the SpacetimeDB progression backend covers every graph feature', () => {
@@ -68,4 +88,38 @@ test('the progression candidate retains the maintained SpacetimeDB build layout'
   assert.equal(reference.moduleDirectory, 'backend/spacetimedb');
   assert.equal(reference.bindingsDirectory, 'client/src/module_bindings');
   assert.deepEqual(reference.installDirectories, ['backend/spacetimedb', 'client']);
+});
+
+test('the client implements the exact testing interface of every graph feature', () => {
+  const graph = readJson(join(trackRoot, 'progression', 'ecommerce-1.0.0.json'));
+  const catalogPath = join(trackRoot, 'composition', 'recipes', 'progression-catalog-1.0.0.json');
+  const catalog = readJson(catalogPath);
+  const packs = new Map(catalog.packs.map(entry => [
+    `${entry.id}@${entry.version}`,
+    resolve(dirname(catalogPath), entry.path),
+  ]));
+  const interfaceNames = { testids: new Set(), attributes: new Set() };
+
+  for (const node of graph.nodes) {
+    for (const featureRef of node.featureRefs) {
+      const packPath = packs.get(featureRef);
+      assert(packPath, `catalog must resolve ${featureRef}`);
+      const pack = readJson(packPath);
+      for (const check of pack.checks ?? []) {
+        const scenarioPath = resolve(dirname(packPath), '..', '..', check.source);
+        collectScenarioInterface(readJson(scenarioPath), interfaceNames);
+      }
+    }
+  }
+
+  const clientSource = filesBelow(join(appRoot, 'client', 'src'))
+    .filter(path => /\.(tsx|ts)$/.test(path) && !path.includes('module_bindings'))
+    .map(read)
+    .join('\n');
+  for (const testid of interfaceNames.testids) {
+    assert(clientSource.includes(`data-testid="${testid}"`), `client must expose ${testid}`);
+  }
+  for (const attribute of interfaceNames.attributes) {
+    assert(clientSource.includes(`${attribute}=`), `client must expose ${attribute}`);
+  }
 });

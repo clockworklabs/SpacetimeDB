@@ -1,6 +1,7 @@
 import {
   t,
   SenderError,
+  ScheduleAt,
   type InferSchema,
   type ReducerCtx,
   type ViewCtx,
@@ -39,6 +40,7 @@ import spacetimedb, {
   deliverySchedule,
   reorderRule,
   recommendationDismissal,
+  maintenanceTick,
 } from './schema';
 
 export { default } from './schema';
@@ -299,7 +301,8 @@ function processMaintenance(ctx: Ctx) {
     });
     for (const alert of [...ctx.db.stockAlert.itemId.filter(pending.itemId)]) {
       if (alert.fulfilled) continue;
-      notify(ctx, alert.accountId, 'stock', 'Stock is available again.');
+      const name = ctx.db.item.id.find(pending.itemId)?.name ?? 'Item';
+      notify(ctx, alert.accountId, 'stock', `${name} is available again.`);
       ctx.db.stockAlert.id.update({ ...alert, fulfilled: true });
     }
   }
@@ -392,6 +395,13 @@ export const init = spacetimedb.init((ctx) => {
       passwordHash: hashPassword('stackbench-customer-2026'),
       isAdmin: false,
       isStaff: false,
+    });
+  }
+
+  if ([...ctx.db.maintenanceTick.iter()].length === 0) {
+    ctx.db.maintenanceTick.insert({
+      id: 0n,
+      scheduledAt: ScheduleAt.time(nowMicros(ctx) + SECOND),
     });
   }
 });
@@ -495,6 +505,8 @@ const MyOrderView = t.object('MyOrderView', {
   createdAt: t.timestamp(),
   total: t.f64(),
   status: t.string(),
+  discount: t.f64(),
+  refundedTotal: t.f64(),
 });
 
 export const myOrders = spacetimedb.view(
@@ -505,7 +517,14 @@ export const myOrders = spacetimedb.view(
     if (accountId === null) return [];
     const rows = [...ctx.db.customerOrder.accountId.filter(accountId)];
     rows.sort((a, b) => (b.createdAt.microsSinceUnixEpoch > a.createdAt.microsSinceUnixEpoch ? 1 : -1));
-    return rows.map((o) => ({ orderId: o.id, createdAt: o.createdAt, total: o.total, status: o.status }));
+    return rows.map((o) => ({
+      orderId: o.id,
+      createdAt: o.createdAt,
+      total: o.total,
+      status: o.status,
+      discount: o.discount,
+      refundedTotal: o.refundedTotal,
+    }));
   }
 );
 
@@ -664,10 +683,12 @@ export const recommended = spacetimedb.view(
     }
 
     const purchasedCategoryIds = new Set<bigint>();
+    const purchasedItemIds = new Set<bigint>();
     for (const order of ctx.db.customerOrder.accountId.filter(accountId)) {
       if (!isOrderCounted(order)) continue;
       for (const li of ctx.db.orderItem.orderId.filter(order.id)) {
         if (li.returned) continue;
+        purchasedItemIds.add(li.itemId);
         const link = ctx.db.itemCategory.itemId.find(li.itemId);
         if (link) purchasedCategoryIds.add(link.categoryId);
       }
@@ -684,6 +705,7 @@ export const recommended = spacetimedb.view(
     const candidates: Array<{ itemId: bigint; name: string; price: number }> = [];
     for (const link of ctx.db.itemCategory.iter()) {
       if (!purchasedCategoryIds.has(link.categoryId)) continue;
+      if (purchasedItemIds.has(link.itemId)) continue;
       if (cartItemIds.has(link.itemId)) continue;
       if (dismissedItemIds.has(link.itemId)) continue;
       const it = ctx.db.item.id.find(link.itemId);
@@ -1062,7 +1084,17 @@ export const returnOrderItem = spacetimedb.reducer(
 
 // --- progression maintenance ---
 
-export const runMaintenance = spacetimedb.reducer((ctx) => processMaintenance(ctx));
+export const processMaintenanceTick = spacetimedb.reducer(
+  { onSchedule: maintenanceTick },
+  { tick: maintenanceTick.rowType },
+  (ctx) => {
+    processMaintenance(ctx);
+    ctx.db.maintenanceTick.insert({
+      id: 0n,
+      scheduledAt: ScheduleAt.time(nowMicros(ctx) + SECOND),
+    });
+  }
+);
 
 export const saveProfile = spacetimedb.reducer(
   { name: t.string(), address: t.string() },
@@ -1174,7 +1206,7 @@ export const linkSupportOrder = spacetimedb.reducer(
   }
 );
 
-export const refundSupportOrder = spacetimedb.reducer(
+export const supportRefund = spacetimedb.reducer(
   { ticketId: t.u64() },
   (ctx, { ticketId }) => {
     requireStaffOrAdmin(ctx);
@@ -1183,8 +1215,9 @@ export const refundSupportOrder = spacetimedb.reducer(
     const order = ctx.db.customerOrder.id.find(ticket.orderId);
     if (!order) throw new SenderError('Order not found.');
     if (order.refundedTotal > 0) throw new SenderError('The order was already refunded.');
-    ctx.db.customerOrder.id.update({ ...order, refundedTotal: order.total });
+    ctx.db.customerOrder.id.update({ ...order, refundedTotal: order.total, status: 'refunded' });
     ctx.db.supportTicket.id.update({ ...ticket, refundTotal: order.total, status: 'refunded' });
+    ctx.db.paymentRecord.insert({ id: 0n, orderId: order.id, amount: -order.total, status: 'refunded' });
   }
 );
 
@@ -1306,6 +1339,20 @@ export const myProfile = spacetimedb.view(
   }
 );
 
+const CatalogDetailView = t.object('CatalogDetailView', {
+  itemId: t.u64(),
+  category: t.string(),
+});
+
+export const catalogDetails = spacetimedb.view(
+  { name: 'catalog_details', public: true },
+  t.array(CatalogDetailView),
+  (ctx) => [...ctx.db.itemCategory.iter()].map(row => ({
+    itemId: row.itemId,
+    category: ctx.db.category.id.find(row.categoryId)?.name ?? '',
+  }))
+);
+
 const StaffRoleView = t.object('StaffRoleView', {
   accountId: t.u64(),
   username: t.string(),
@@ -1318,7 +1365,7 @@ export const staffRoles = spacetimedb.view(
   (ctx) => {
     const accountId = getAccountId(ctx);
     const actor = accountId === null ? null : ctx.db.account.id.find(accountId);
-    if (!actor?.isAdmin) return [];
+    if (!actor || (!actor.isAdmin && !actor.isStaff)) return [];
     return [...ctx.db.account.iter()].filter(row => row.isStaff || row.isAdmin).map(row => ({
       accountId: row.id,
       username: row.username,
@@ -1544,6 +1591,7 @@ export const visibleStockLedger = spacetimedb.view(
 const CompletedOrderView = t.object('CompletedOrderView', {
   orderId: t.u64(),
   status: t.string(),
+  itemNames: t.array(t.string()),
 });
 
 export const completedOrders = spacetimedb.view(
@@ -1554,7 +1602,11 @@ export const completedOrders = spacetimedb.view(
     const actor = accountId === null ? null : ctx.db.account.id.find(accountId);
     if (!actor || (!actor.isAdmin && !actor.isStaff)) return [];
     return [...ctx.db.customerOrder.iter()].filter(row => row.status !== 'pending')
-      .map(row => ({ orderId: row.id, status: row.status }));
+      .map(row => ({
+        orderId: row.id,
+        status: row.status,
+        itemNames: [...ctx.db.orderItem.orderId.filter(row.id)].map(itemRow => itemRow.itemName),
+      }));
   }
 );
 
@@ -1564,6 +1616,33 @@ const PromotionReportView = t.object('PromotionReportView', {
   redemptions: t.u32(),
   revenue: t.f64(),
 });
+
+const PromotionView = t.object('PromotionView', {
+  id: t.u64(),
+  code: t.string(),
+  discountPercent: t.f64(),
+  startMicros: t.i64(),
+  endMicros: t.i64(),
+  usageLimit: t.u32(),
+});
+
+export const visiblePromotions = spacetimedb.view(
+  { name: 'visible_promotions', public: true },
+  t.array(PromotionView),
+  (ctx) => {
+    const accountId = getAccountId(ctx);
+    const actor = accountId === null ? null : ctx.db.account.id.find(accountId);
+    if (!actor || (!actor.isAdmin && !actor.isStaff)) return [];
+    return [...ctx.db.promotion.iter()].map(row => ({
+      id: row.id,
+      code: row.code,
+      discountPercent: row.discountPercent,
+      startMicros: row.startMicros,
+      endMicros: row.endMicros,
+      usageLimit: row.usageLimit,
+    }));
+  }
+);
 
 export const promotionReports = spacetimedb.view(
   { name: 'promotion_reports', public: true },

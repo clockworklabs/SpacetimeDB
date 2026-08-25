@@ -8,6 +8,8 @@ interface ItemCardProps {
   onOpen: (itemId: bigint) => void;
   onBuyNow: (itemId: bigint) => void;
   onAddToCart: (itemId: bigint) => void;
+  onStockAlert: (itemId: bigint) => void;
+  variants: readonly string[];
 }
 
 export default function ItemCard({
@@ -17,12 +19,14 @@ export default function ItemCard({
   onOpen,
   onBuyNow,
   onAddToCart,
+  onStockAlert,
+  variants,
 }: ItemCardProps) {
   const outOfStock = stock <= 0;
   const lowStock = !outOfStock && stock <= 5;
 
   return (
-    <div className={`item-card${outOfStock ? ' out-of-stock-card' : ''}`} data-testid="item-card">
+    <div className={`item-card${outOfStock ? ' out-of-stock-card' : ''}`} data-testid="item-card" data-buy-input={JSON.stringify({ itemId: Number(item.id) })}>
       <button
         type="button"
         className="item-card-name"
@@ -37,6 +41,9 @@ export default function ItemCard({
           {formatMoney(item.price)}
         </span>
       </div>
+      {variants.map(variant => (
+        <span className="badge badge-muted" data-testid="item-variant" key={variant}>{variant}</span>
+      ))}
       <div className="item-card-row">
         <span>
           Stock:{' '}
@@ -74,6 +81,11 @@ export default function ItemCard({
             Add to cart
           </button>
         </div>
+      )}
+      {isSignedIn && outOfStock && (
+        <button type="button" className="btn btn-ghost" data-testid="stock-alert" onClick={() => onStockAlert(item.id)}>
+          Alert me
+        </button>
       )}
     </div>
   );
