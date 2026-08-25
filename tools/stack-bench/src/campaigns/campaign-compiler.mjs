@@ -1,5 +1,5 @@
-import { readFileSync, realpathSync } from 'node:fs';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 
 
 import { agentAdapterIdentity, AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
@@ -9,7 +9,7 @@ import { currentEngineIdentity } from '../evidence/artifacts.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
 import { recipeReleaseIdentity, resolveRecipeRelease } from '../composition/recipe-release.mjs';
 import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../composition/recipe-selection.mjs';
-import { compileProgressionInput, progressionLevels,
+import { compileProgressionDefinitionFile, compileProgressionInput, progressionLevels,
   validateProgressionInput } from '../progression/progression-definition.mjs';
 import { resolveProgressionRecipeLevelSelection, validateProgressionRecipeBindings }
   from '../progression/progression-recipe-selection.mjs';
@@ -50,6 +50,7 @@ const OUTCOME_METRICS = new Set(['firstBuildScoreRate', 'finalScoreRate', 'total
   'invalidAttemptRate']);
 const DISPERSION = new Set(['median-iqr', 'mean-sd']);
 const IMAGE_DIGEST = /^[^\s@]+@sha256:[a-f0-9]{64}$/;
+const EXACT_REF = /^([a-z][a-z0-9]*(?:[._:-][a-z0-9]+)*)@(\d+\.\d+\.\d+)$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -108,14 +109,22 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
     if (value.progression === undefined) {
       fail(`${source}.progression`, 'is required for dependency mode');
     }
-    const progression = compileProgressionInput(value.progression);
-    value.progression = progression.definition;
-    const derivedLevels = progressionLevels(progression);
-    if (value.levels !== undefined
-      && canonicalDefinitionJson(value.levels) !== canonicalDefinitionJson(derivedLevels)) {
-      fail(`${source}.levels`, 'must match the levels derived from progression');
+    if (typeof value.progression === 'string') {
+      if (!EXACT_REF.test(value.progression)) {
+        fail(`${source}.progression`, 'must be an exact id@version reference');
+      }
+      value.levels = exactArray(value.levels, `${source}.levels`,
+        (level, at) => integer(level, at, { min: 1 }), { nonEmpty: true });
+    } else {
+      const progression = compileProgressionInput(value.progression);
+      value.progression = progression.definition;
+      const derivedLevels = progressionLevels(progression);
+      if (value.levels !== undefined
+        && canonicalDefinitionJson(value.levels) !== canonicalDefinitionJson(derivedLevels)) {
+        fail(`${source}.levels`, 'must match the levels derived from progression');
+      }
+      value.levels = derivedLevels;
     }
-    value.levels = derivedLevels;
   } else {
     if (value.progression !== undefined) {
       fail(`${source}.progression`, 'does not apply to sequential mode');
@@ -350,11 +359,37 @@ function expandAttempts(definition, requestedLevels, progressionIdentity, stacks
   return attempts;
 }
 
+function resolveCampaignProgression(input, track) {
+  if (typeof input !== 'string') return compileProgressionInput(input);
+  const match = EXACT_REF.exec(input);
+  if (!match) fail('progression', 'must be an exact id@version reference');
+  const directory = join(track.dir, 'progression');
+  const candidates = readdirSync(directory)
+    .filter(name => name.endsWith('.json'))
+    .map(name => join(directory, name))
+    .filter(path => {
+      const value = loadJson(path);
+      return value.id === match[1] && value.version === match[2];
+    });
+  if (candidates.length !== 1) {
+    fail('progression', `must resolve exactly one ${input} definition in track ${track.name}`);
+  }
+  return compileProgressionInput(compileProgressionDefinitionFile(candidates[0], {
+    trackRoot: track.dir,
+  }));
+}
+
 function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
   if (!listTracks({ includeInternal: true }).includes(definition.track)) {
     fail('track', `is unknown; available tracks: ${listTracks({ includeInternal: true }).join(', ')}`);
   }
   const track = loadTrack(definition.track);
+  const progression = definition.progression
+    ? resolveCampaignProgression(definition.progression, track) : null;
+  if (progression && canonicalDefinitionJson(progressionLevels(progression))
+    !== canonicalDefinitionJson(definition.levels)) {
+    fail('levels', 'must match the levels derived from progression');
+  }
   const modularLevels = new Map((definition.selection.levels ?? [])
     .map(selection => [selection.level, selection]));
   const bindingRecords = definition.levels.map(level => {
@@ -387,8 +422,7 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
   });
   const bindings = bindingRecords.map(record => record.publicBinding);
   let progressionSelections = null;
-  if (definition.progression) {
-    const progression = compileProgressionInput(definition.progression);
+  if (progression) {
     validateProgressionRecipeBindings(progression, bindingRecords);
     progressionSelections = new Map(bindingRecords.map(record =>
       [record.level, resolveProgressionRecipeLevelSelection(record.binding,
@@ -521,7 +555,7 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
     stackBenchRoot: resolve(stackBenchRoot), frozen: definition.state === 'frozen',
     requested: requestedForCondition,
   });
-  return { bindings, stacks, agents, conditions };
+  return { bindings, stacks, agents, conditions, progression };
 }
 
 export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
@@ -530,15 +564,17 @@ export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
     source: relative(process.cwd(), absolute).replaceAll('\\', '/'),
   });
   const requestedLevels = sourceDefinition.levels;
-  const { bindings, stacks, agents, conditions } = resolveCampaignInputs(sourceDefinition, { stackBenchRoot });
-  const progression = sourceDefinition.progression
-    ? compileProgressionInput(sourceDefinition.progression) : null;
-  const definition = structuredClone(sourceDefinition);
+  const { bindings, stacks, agents, conditions, progression } =
+    resolveCampaignInputs(sourceDefinition, { stackBenchRoot });
+  const resolvedDefinition = progression
+    ? { ...sourceDefinition, progression: progression.definition }
+    : sourceDefinition;
+  const definition = structuredClone(resolvedDefinition);
   if (progression) delete definition.progression;
 
   const sourceSha256 = sha256(readFileSync(absolute));
   const engine = currentEngineIdentity();
-  const identityDocument = campaignIdentityDocument(sourceDefinition, engine, progression,
+  const identityDocument = campaignIdentityDocument(resolvedDefinition, engine, progression,
     bindings, stacks, agents, conditions);
   const contentSha256 = sha256(canonicalDefinitionJson(identityDocument));
   const attempts = expandAttempts(definition, requestedLevels, progression?.identity ?? null,
