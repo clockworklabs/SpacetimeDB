@@ -18,6 +18,10 @@ export const stubAdapter = defineStackAdapter('stub', stackLeaseCapability('stub
   'run-policy': runPolicyProvider('stub',
     { 'reset-enabled': false, 'sandbox-probe-required': false, 'product-review-enabled': false,
       'product-review-comparisons': [], 'retain-host-supported': false, 'supervisor-env': () => ({}) }),
+  admission: operationProvider('stub', 'admission', {
+    requirements: () => ({ docker: false, services: false, ports: false,
+      credentials: false, providerAccess: false }),
+  }),
   agent: operationProvider('stub', 'agent', {
     'connection-url': noConnectionUrl,
     'minimal-guidance-supported': () => true,

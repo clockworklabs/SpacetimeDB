@@ -58,7 +58,7 @@ import { mutationControlArgv, mutationControlTimeoutMs } from '../src/evidence/m
 import { progressionEngine } from '../src/progression/progression-engine.mjs';
 import { progressionLevels, validateProgressionInput }
   from '../src/progression/progression-definition.mjs';
-import { resolveProgressionRecipeAction }
+import { resolveProgressionRecipeAction, resolveProgressionRecipeLevelSelection }
   from '../src/progression/progression-recipe-selection.mjs';
 import { createLiveProgressionExecution }
   from '../src/progression/live-progression.mjs';
@@ -473,6 +473,17 @@ function validateMutationInput(args) {
   }
 }
 
+export function validateProgressionCampaignLevelScope(binding, progression, declared, level) {
+  if (!declared) throw new Error(`study condition does not bind requested L${level}`);
+  const derived = resolveProgressionRecipeLevelSelection(binding, progression, level);
+  if (declared.recipe.contentSha256 !== derived.grader.request.recipe.contentSha256
+    || declared.selection.sha256 !== derived.grader.selection.sha256
+    || declared.task.sha256 !== derived.grader.task.sha256) {
+    throw new Error(`dependency campaign graph-derived scope changed before L${level}`);
+  }
+  return derived;
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   let repairGrant = null;
@@ -547,9 +558,11 @@ async function main() {
     const declared = args.condition?.requested?.levels?.find(entry => entry.level === level) ?? null;
     const modularSelection = args.selectionRequest.levels?.find(entry => entry.level === level) ?? null;
     if (declared?.selection?.schemaVersion === 3) {
-      const expected = { level, recipe: `${declared.recipe.id}@${declared.recipe.version}`,
-        features: declared.selection.requested.features,
-        checks: declared.selection.requested.checks };
+      const expected = args.progression
+        ? { level, recipe: `${declared.recipe.id}@${declared.recipe.version}` }
+        : { level, recipe: `${declared.recipe.id}@${declared.recipe.version}`,
+          features: declared.selection.requested.features,
+          checks: declared.selection.requested.checks };
       if (canonicalDefinitionJson(modularSelection) !== canonicalDefinitionJson(expected)) {
         throw new Error(`campaign selection changed before L${level}`);
       }
@@ -564,6 +577,9 @@ async function main() {
     }
     if (binding) {
       args.recipeBindings.set(level, binding);
+      if (args.progression) {
+        validateProgressionCampaignLevelScope(binding, args.progression, declared, level);
+      }
       const requested = declared?.selection?.requested;
       const options = requested?.features
         ? { featureIds: requested.features,

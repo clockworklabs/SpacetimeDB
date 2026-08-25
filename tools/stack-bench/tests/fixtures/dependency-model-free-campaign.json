@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 3,
+  "kind": "campaign-manifest",
+  "id": "dependency-model-free-proof",
+  "version": "1.0.0",
+  "state": "draft",
+  "title": "Internal dependency campaign proof",
+  "track": "ecommerce",
+  "mode": { "id": "dependency", "version": "1.0.0" },
+  "selection": {
+    "levels": [
+      {
+        "level": 1,
+        "recipe": "ecommerce.l1-modular@2.5.0"
+      }
+    ]
+  },
+  "progression": {
+    "schemaVersion": 2,
+    "kind": "progression-mode",
+    "id": "dependency-model-free-proof",
+    "version": "1.0.0",
+    "state": "draft",
+    "title": "Internal dependency campaign proof",
+    "policy": "dependency-gated",
+    "strikes": {
+      "default": 3,
+      "levels": {}
+    },
+    "nodes": [
+      {
+        "id": "accounts",
+        "title": "Accounts",
+        "questline": "identity",
+        "dependencies": [],
+        "featureRefs": ["ecommerce.feature.accounts@1.1.0"],
+        "promptModules": [],
+        "gradingChecks": [
+          {
+            "id": "ecommerce.feature.accounts.accounts.1a",
+            "points": 1
+          }
+        ]
+      }
+    ],
+    "questlines": [
+      {
+        "id": "identity",
+        "title": "Identity",
+        "nodes": ["accounts"]
+      }
+    ]
+  },
+  "stacks": [
+    { "id": "stub", "adapterVersion": "1.0.0" }
+  ],
+  "agents": [
+    {
+      "adapter": "deterministic",
+      "adapterVersion": "1.1.0",
+      "model": "deterministic-stall"
+    }
+  ],
+  "conditions": [
+    {
+      "id": "model-free",
+      "version": "1.0.0",
+      "guidanceProfile": "model-free-stub@1.0.0",
+      "repairPolicy": "scored-only@1.0.0"
+    }
+  ],
+  "repetitions": 1,
+  "parallelism": 1,
+  "ordering": {
+    "method": "balanced-rotation",
+    "seed": "internal-model-free-proof"
+  },
+  "budgets": {
+    "fixRounds": 2,
+    "attemptTimeoutMinutes": 10,
+    "maxCostUsdPerAttempt": null
+  },
+  "attemptPolicy": {
+    "retries": 0,
+    "retryOn": [],
+    "excludeFromAnalysis": [
+      "contaminated",
+      "harness_failure",
+      "inconclusive",
+      "ungraded"
+    ]
+  },
+  "runtime": {
+    "releaseManifestSha256": null,
+    "controllerImage": null,
+    "buildImage": null,
+    "platform": "linux/amd64"
+  },
+  "pricing": {
+    "currency": "USD",
+    "capturedAt": "2026-08-25T00:00:00.000Z",
+    "source": "internal deterministic adapter makes no provider calls",
+    "models": {
+      "deterministic-stall": {
+        "inputPerMillion": 0,
+        "outputPerMillion": 0,
+        "cacheWritePerMillion": 0,
+        "cacheReadPerMillion": 0
+      }
+    }
+  },
+  "analysis": {
+    "primaryMetric": "finalScoreRate",
+    "secondaryMetrics": [
+      "totalCostUsd",
+      "totalDurationMs",
+      "invalidAttemptRate"
+    ],
+    "dispersion": "median-iqr",
+    "invalidAttempts": "report-separately",
+    "missingData": "no-imputation",
+    "comparisonUnit": "stack-agent-condition-recipe"
+  }
+}

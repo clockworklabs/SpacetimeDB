@@ -23,6 +23,14 @@ function strictObject(value, at, fields) {
   }
 }
 
+function validateSourceEvidence(value, at) {
+  strictObject(value, at, new Set(['kind', 'id', 'sha256']));
+  if (value.kind !== 'grade_bundle' || typeof value.id !== 'string' || !value.id
+    || !HASH.test(value.sha256 ?? '')) {
+    throw new Error(`${at} must identify one grade bundle artifact`);
+  }
+}
+
 function nonEmptyString(value, at) {
   if (typeof value !== 'string' || value.trim().length === 0) fail(at, 'must be a non-empty string');
   return value;
@@ -478,6 +486,8 @@ function assertState(state) {
           || !INCONCLUSIVE_CATEGORIES.has(attempt.category)))) {
       throw new Error(`invalid dependency mode attempt at index ${index}`);
     }
+    if (attempt.evidence !== undefined) validateSourceEvidence(attempt.evidence,
+      `attempts[${index}].evidence`);
     attemptIds.add(attempt.attemptId);
   });
   if (!Array.isArray(state.grants) || !Array.isArray(state.events)) {
@@ -531,7 +541,7 @@ function applyDependencyResult(inputState, inputResult) {
   const result = structuredClone(inputResult);
   strictObject(result, 'result', new Set([
     'attemptId', 'runId', 'outcome', 'category', 'reason', 'nodes',
-    'sourceSha256', 'selectionSha256',
+    'sourceSha256', 'selectionSha256', 'evidence',
   ]));
   nonEmptyString(result.attemptId, 'result.attemptId');
   if (result.sourceSha256 !== undefined && !HASH.test(result.sourceSha256)) {
@@ -542,6 +552,13 @@ function applyDependencyResult(inputState, inputResult) {
   }
   if (result.runId !== undefined && (typeof result.runId !== 'string' || !result.runId)) {
     throw new Error('result.runId must be a non-empty string');
+  }
+  if (result.evidence !== undefined) {
+    validateSourceEvidence(result.evidence, 'result.evidence');
+    if (!result.runId
+      || result.attemptId !== `${result.runId}-progression-${inputState.attempts.length + 1}`) {
+      throw new Error('result.attemptId does not match its owned progression sequence');
+    }
   }
   if (inputState.attempts.some(attempt => attempt.attemptId === result.attemptId)) {
     throw new Error(`duplicate attempt id ${result.attemptId}`);
@@ -559,6 +576,7 @@ function applyDependencyResult(inputState, inputResult) {
     state.attempts.push({ attemptId: result.attemptId, level: state.level,
       outcome: result.outcome, category: result.category, reason: result.reason,
       ...(result.runId ? { runId: result.runId } : {}),
+      ...(result.evidence ? { evidence: result.evidence } : {}),
       ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
       ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}) });
     return state;
@@ -592,6 +610,7 @@ function applyDependencyResult(inputState, inputResult) {
   }
   state.attempts.push({ attemptId: result.attemptId, level: state.level, outcome: result.outcome,
     ...(result.runId ? { runId: result.runId } : {}),
+    ...(result.evidence ? { evidence: result.evidence } : {}),
     ...(result.sourceSha256 ? { sourceSha256: result.sourceSha256 } : {}),
     ...(result.selectionSha256 ? { selectionSha256: result.selectionSha256 } : {}) });
 

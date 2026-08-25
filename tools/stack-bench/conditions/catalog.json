@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "kind": "study-condition-catalog",
   "guidanceProfiles": {
+    "model-free-stub@1.0.0": "guidance/model-free-stub.json",
     "prescribed@1.0.0": "guidance/prescribed.json",
     "neutral@1.0.0": "guidance/neutral.json",
     "neutral@1.1.0": "guidance/neutral-1.1.0.json"

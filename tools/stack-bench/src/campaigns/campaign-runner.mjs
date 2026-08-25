@@ -17,6 +17,9 @@ import { validateReleaseManifest } from '../releases/release-manifest.mjs';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { readProgressionState } from '../progression/progression-state.mjs';
 import { liveProgressionStatus } from '../progression/live-progression.mjs';
+import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
+import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
+import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const BENCH = join(ROOT, 'commands', 'bench.mjs');
@@ -587,6 +590,62 @@ function assertAdmissionReferences(plan, directory, state) {
   return state;
 }
 
+const RESOURCE_FREE_REQUIREMENTS = Object.freeze({
+  docker: false,
+  services: false,
+  ports: false,
+  credentials: false,
+  providerAccess: false,
+});
+
+function hasNoAgentResources(agent) {
+  return agent.costLimit === 'non-billable'
+    && agent.apiKeyEnvironmentVariable === null
+    && agent.credentialEnvironmentVariables.length === 0
+    && agent.credentialFiles.length === 0
+    && agent.outboundDestinations.length === 0
+    && agent.requiredExecutables.length === 0
+    && agent.credentialStatusCommand === null;
+}
+
+function hasNoStackResources(stack) {
+  const adapter = STACK_ADAPTER_REGISTRY.get(stack.id);
+  const capability = adapter.capabilities.admission;
+  if (!capability?.operations.includes('requirements')) return false;
+  return canonicalDefinitionJson(executeStackCapability(adapter, 'admission', 'requirements'))
+    === canonicalDefinitionJson(RESOURCE_FREE_REQUIREMENTS);
+}
+
+export function campaignUsesNoExternalResources(plan) {
+  return plan.stacks.every(hasNoStackResources)
+    && plan.agents.every(agent => hasNoAgentResources(AGENT_ADAPTER_REGISTRY.get(agent.adapter)));
+}
+
+function resourceFreeAdmissionReport(request) {
+  return {
+    schemaVersion: 1,
+    request: {
+      backends: request.backends,
+      track: request.track,
+      levels: request.levelList,
+      runIndex: request.runIndex,
+      agentAdapter: request.agentAdapter,
+      packs: request.packIds,
+      checks: request.checkKeys,
+      recipe: request.recipe ?? null,
+      requestedScopeCount: request.requestedScopes?.length ?? 0,
+      image: request.image,
+      resultsDir: request.resultsDir,
+      agentSkills: request.agentSkills ?? null,
+      smoke: request.smoke,
+    },
+    ok: true,
+    summary: { passed: 1, failed: 0, warnings: 0 },
+    checks: [{ id: 'resources.none', status: 'pass',
+      summary: 'The selected stack and agent require no external resources' }],
+  };
+}
+
 export function inspectCampaign(directory) {
   const current = readCampaignState(directory);
   return { ...current,
@@ -612,9 +671,10 @@ export function runCampaignAdmission(plan, directory,
     uuid = randomUUID } = {}) {
   const executionEnv = campaignExecutionEnvironment(plan, env);
   const reports = [];
+  const resourceFree = campaignUsesNoExternalResources(plan);
   for (const adapter of [...new Set(plan.agents.map(agent => agent.adapter))].sort()) {
     for (let runIndex = 0; runIndex < plan.summary.parallelism; runIndex += 1) {
-      reports.push(preflight({
+      const request = {
         backends: plan.stacks.map(stack => stack.id),
         track: plan.definition.track,
         levels: `${Math.min(...plan.definition.levels)}-${Math.max(...plan.definition.levels)}`,
@@ -627,8 +687,10 @@ export function runCampaignAdmission(plan, directory,
         smoke: true,
         image: plan.definition.runtime.buildImage ?? executionEnv.STACK_BENCH_IMAGE,
         resultsDir: resolve(directory),
-      }, { env: campaignSlotEnvironment(executionEnv,
-        plan.stacks.some(stack => stack.id === 'spacetime') ? 'spacetime' : null, runIndex) }));
+      };
+      reports.push(resourceFree ? resourceFreeAdmissionReport(request) : preflight(request,
+        { env: campaignSlotEnvironment(executionEnv,
+          plan.stacks.some(stack => stack.id === 'spacetime') ? 'spacetime' : null, runIndex) }));
     }
   }
   const id = `${plan.id}-admission-${now.replace(/[-:.TZ]/g, '').slice(0, 14)}-${uuid()}`;

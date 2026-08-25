@@ -1,6 +1,7 @@
 import { validateCheckEvidence } from '../evidence/check-evidence.mjs';
 import { validateArtifact } from '../evidence/artifacts.mjs';
 import { canonicalDefinitionJson } from '../composition/definition-plan.mjs';
+import { sha256 } from '../evidence/provenance.mjs';
 import { validateProgressionOwner } from './progression-state.mjs';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -21,14 +22,15 @@ function sameKeys(left, right) {
   return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
 }
 
-function inconclusive(attemptId, runId, sourceSha256, selectionSha256, category, reason) {
+function inconclusive(attemptId, runId, sourceSha256, selectionSha256, evidence, category, reason) {
   return { attemptId, runId, sourceSha256, selectionSha256,
+    ...(evidence ? { evidence } : {}),
     outcome: 'inconclusive', category, reason };
 }
 
 export function gradeBundleToProgressionResult(input, action,
   { owner, runArtifact, progressionIdentity, selectionSha256,
-    sourceSha256, recipeIdentity } = {}) {
+    sourceSha256, recipeIdentity, sequence } = {}) {
   const artifact = validateArtifact(input, { source: '<progression-grade-bundle>' });
   const run = validateArtifact(runArtifact, { source: '<progression-benchmark-run>' });
   owner = validateProgressionOwner(owner, { requireWorkspace: true });
@@ -36,7 +38,16 @@ export function gradeBundleToProgressionResult(input, action,
     throw new Error('grade bundle conversion requires an artifact and progression grading action');
   }
   const bundle = artifact.payload;
-  const attemptId = artifact.attempt.id;
+  if (sequence !== undefined && (!Number.isSafeInteger(sequence) || sequence < 1)) {
+    throw new Error('progression grading sequence must be a positive integer');
+  }
+  const attemptId = sequence === undefined
+    ? artifact.attempt.id : `${run.id}-progression-${sequence}`;
+  const evidence = sequence === undefined ? null : {
+    kind: 'grade_bundle',
+    id: artifact.id,
+    sha256: sha256(canonicalDefinitionJson(artifact)),
+  };
   const campaignOwner = { schemaVersion: owner.schemaVersion,
     campaign: owner.campaign, attempt: owner.attempt };
   if (!['benchmark_run', 'repair_continuation'].includes(run.kind)
@@ -44,18 +55,25 @@ export function gradeBundleToProgressionResult(input, action,
     || artifact.attempt.parentId !== run.id) {
     throw new Error('grade bundle does not belong to the owned progression benchmark run');
   }
-  if (!object(progressionIdentity) || !HASH.test(progressionIdentity.sha256 ?? '')
-    || run.payload.backend !== owner.attempt.stack || run.payload.model !== owner.attempt.model
-    || run.payload.condition?.sha256 !== owner.attempt.conditionSha256
-    || canonicalDefinitionJson(run.payload.progressionOwner)
-      !== canonicalDefinitionJson(campaignOwner)
-    || canonicalDefinitionJson(run.payload.progression)
-      !== canonicalDefinitionJson(progressionIdentity)
-    || run.identities.agentAdapter?.id !== owner.attempt.agentAdapter
-    || run.identities.stackAdapter?.id !== owner.attempt.stack
-    || artifact.identities.engine?.sha256 !== run.identities.engine?.sha256
-    || artifact.identities.stackAdapter?.id !== owner.attempt.stack) {
-    throw new Error('grade bundle benchmark owner does not match the progression campaign attempt');
+  const ownerMismatches = [];
+  const mismatch = (changed, field) => { if (changed) ownerMismatches.push(field); };
+  mismatch(!object(progressionIdentity) || !HASH.test(progressionIdentity?.sha256 ?? ''),
+    'progressionIdentity');
+  mismatch(run.payload.backend !== owner.attempt.stack, 'run.backend');
+  mismatch(run.payload.model !== owner.attempt.model, 'run.model');
+  mismatch(run.payload.condition?.sha256 !== owner.attempt.conditionSha256, 'run.condition');
+  mismatch(canonicalDefinitionJson(run.payload.progressionOwner)
+    !== canonicalDefinitionJson(campaignOwner), 'run.progressionOwner');
+  mismatch(canonicalDefinitionJson(run.payload.progression)
+    !== canonicalDefinitionJson(progressionIdentity), 'run.progression');
+  mismatch(run.identities.agentAdapter?.id !== owner.attempt.agentAdapter,
+    'run.agentAdapter');
+  mismatch(run.identities.stackAdapter?.id !== owner.attempt.stack, 'run.stackAdapter');
+  mismatch(artifact.identities.engine?.sha256 !== run.identities.engine?.sha256,
+    'grade.engine');
+  mismatch(artifact.identities.stackAdapter?.id !== owner.attempt.stack, 'grade.stackAdapter');
+  if (ownerMismatches.length) {
+    throw new Error(`grade bundle benchmark owner does not match the progression campaign attempt: ${ownerMismatches.join(', ')}`);
   }
   if (!object(recipeIdentity) || typeof recipeIdentity.id !== 'string'
     || typeof recipeIdentity.version !== 'string' || !HASH.test(recipeIdentity.sha256 ?? '')
@@ -108,12 +126,12 @@ export function gradeBundleToProgressionResult(input, action,
     throw new Error(`grade bundle outcome ${JSON.stringify(outcome)} is not supported`);
   }
   if (outcome === 'harness_failure') {
-    return inconclusive(attemptId, run.id, sourceSha256, selectionSha256,
+    return inconclusive(attemptId, run.id, sourceSha256, selectionSha256, evidence,
       'harness_failure', bundle.outcome.reason
       ?? bundle.error ?? 'grader reported a harness failure');
   }
   if (['inconclusive', 'ungraded'].includes(outcome)) {
-    return inconclusive(attemptId, run.id, sourceSha256, selectionSha256,
+    return inconclusive(attemptId, run.id, sourceSha256, selectionSha256, evidence,
       'inconclusive_evidence', bundle.outcome.reason
       ?? bundle.error ?? 'grader evidence was inconclusive');
   }
@@ -137,6 +155,7 @@ export function gradeBundleToProgressionResult(input, action,
       throw new Error('grade bundle application abort is incomplete or inconsistent');
     }
     return { attemptId, runId: run.id, sourceSha256, selectionSha256,
+      ...(evidence ? { evidence } : {}),
       outcome: 'conclusive', nodes: nodeIds.map(nodeId => ({
       id: nodeId,
       checks: expected.filter(check => check.nodeId === nodeId)
@@ -178,7 +197,7 @@ export function gradeBundleToProgressionResult(input, action,
     .filter(evidence => !['passed', 'failed'].includes(evidence.status));
   if (nonMeasured.length) {
     const harness = nonMeasured.some(evidence => evidence.status === 'harness_failure');
-    return inconclusive(attemptId, run.id, sourceSha256, selectionSha256,
+    return inconclusive(attemptId, run.id, sourceSha256, selectionSha256, evidence,
       harness ? 'harness_failure' : 'inconclusive_evidence',
       'one or more selected checks did not produce measured evidence');
   }
@@ -196,6 +215,7 @@ export function gradeBundleToProgressionResult(input, action,
     throw new Error('grade bundle passed outcome contradicts failed check evidence');
   }
   return { attemptId, runId: run.id, sourceSha256, selectionSha256,
+    ...(evidence ? { evidence } : {}),
     outcome: 'conclusive', nodes: nodeIds.map(nodeId => ({
     id: nodeId,
     checks: expected.filter(check => check.nodeId === nodeId).map(check => ({

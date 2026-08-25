@@ -77,6 +77,7 @@ export function createLiveProgressionExecution({ progression, owner, statePath, 
           progressionIdentity: progression.identity,
           selectionSha256: selected.grader.selectionSha256,
           sourceSha256: source.sha256,
+          sequence,
           recipeIdentity: {
             id: recipe.id,
             version: recipe.version,
