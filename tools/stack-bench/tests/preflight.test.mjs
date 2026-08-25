@@ -7,8 +7,11 @@ import test from 'node:test';
 import { parsePreflightArgs, probeLoopbackPort, runPreflight } from '../src/runtime/preflight.mjs';
 import { createArtifact, validateArtifact } from '../src/evidence/artifacts.mjs';
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.mjs';
+import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
 
 const IMAGE_ID = `sha256:${'a'.repeat(64)}`;
+const progressionCampaign = join(import.meta.dirname, '..', 'appliance',
+  'campaign.ecommerce-progression-reference.json');
 
 function dockerInfo(overrides = {}) {
   return JSON.stringify({ OSType: 'linux', Architecture: 'x86_64', ServerVersion: '29.0.0',
@@ -59,6 +62,34 @@ test('preflight validates exact scope and a model-free container/result-volume s
       'host.docker.internal:host-gateway');
     const artifact = createArtifact({ kind: 'preflight', id: 'preflight-test', payload: report });
     assert.equal(validateArtifact(artifact).payload.ok, true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('preflight validates campaign-owned dependency selections through the progression graph', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-preflight-progression-'));
+  try {
+    const plan = compileCampaignFile(progressionCampaign);
+    const report = runPreflight({
+      backends: ['mongodb'],
+      track: plan.definition.track,
+      levelList: plan.definition.levels,
+      runIndex: 0,
+      agentAdapter: 'reference-fixture',
+      packIds: [],
+      checkKeys: [],
+      requestedScopes: plan.conditions.map(condition => condition.requested),
+      progression: plan.progression,
+      smoke: false,
+      image: 'unavailable-in-focused-test',
+      resultsDir: root,
+    }, {
+      run: () => { throw new Error('Docker unavailable in this focused test'); },
+      env: {}, home: root,
+      statfs: () => ({ bavail: 20n, bsize: 1024n ** 3n }),
+      pidsOnPort: () => [], probePort: () => ({ free: true }),
+    });
+    const scope = report.checks.find(check => check.id === 'request.scope');
+    assert.equal(scope.status, 'pass', scope.summary);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

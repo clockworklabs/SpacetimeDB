@@ -20,6 +20,7 @@ import { liveProgressionStatus } from '../progression/live-progression.mjs';
 import { AGENT_ADAPTER_REGISTRY } from '../agents/agent-adapters.mjs';
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { executeStackCapability } from '../stacks/stack-adapter-contract.mjs';
+import { DEFAULT_BUILD_IMAGE } from '../composition/product-config.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const BENCH = join(ROOT, 'commands', 'bench.mjs');
@@ -694,8 +695,10 @@ export function runCampaignAdmission(plan, directory,
         packIds: plan.definition.selection.packs ?? [],
         checkKeys: plan.definition.selection.checks ?? [],
         requestedScopes: plan.conditions.map(condition => condition.requested),
+        progression: plan.progression,
         smoke: true,
-        image: plan.definition.runtime.buildImage ?? executionEnv.STACK_BENCH_IMAGE,
+        image: plan.definition.runtime.buildImage ?? executionEnv.STACK_BENCH_IMAGE
+          ?? DEFAULT_BUILD_IMAGE,
         resultsDir: resolve(directory),
       };
       reports.push(resourceFree ? resourceFreeAdmissionReport(request) : preflight(request,

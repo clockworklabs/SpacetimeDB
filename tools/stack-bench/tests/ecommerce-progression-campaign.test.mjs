@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { AGENT_ADAPTER_REGISTRY } from '../src/agents/agent-adapters.mjs';
 import { compileCampaignFile, validateCompiledCampaignPlan }
   from '../src/campaigns/campaign-compiler.mjs';
+import { runCampaignAdmission } from '../src/campaigns/campaign-runner.mjs';
+import { DEFAULT_BUILD_IMAGE } from '../src/composition/product-config.mjs';
 import { parseReferenceAgentArgs } from '../src/references/reference-agent.mjs';
 import { loadReferenceRegistry, selectReferenceFixture, validateReferenceRegistry }
   from '../src/references/reference-fixtures.mjs';
@@ -56,4 +60,29 @@ test('the model-free reference adapter can advance through progression levels', 
   ]);
   assert.equal(parsed.mode, 'upgrade');
   assert.equal(parsed.level, 2);
+});
+
+test('campaign admission sends the exact progression and default build image to preflight', () => {
+  const output = mkdtempSync(join(tmpdir(), 'stack-bench-progression-admission-'));
+  try {
+    const plan = compileCampaignFile(campaignPath);
+    const calls = [];
+    const admission = runCampaignAdmission(plan, output, {
+      env: {}, now: '2026-08-25T00:00:00.000Z', uuid: () => 'test',
+      preflight: request => {
+        calls.push(request);
+        return { schemaVersion: 1, generatedAt: '2026-08-25T00:00:00.000Z',
+          request: { backends: request.backends, track: request.track,
+            levels: request.levelList, runIndex: request.runIndex,
+            agentAdapter: request.agentAdapter, packs: request.packIds,
+            checks: request.checkKeys, image: request.image,
+            resultsDir: request.resultsDir, smoke: request.smoke },
+          ok: true, summary: { passed: 0, failed: 0, warnings: 0 }, checks: [] };
+      },
+    });
+    assert.equal(admission.payload.ok, true);
+    assert.equal(calls.length, 3);
+    assert(calls.every(call => call.image === DEFAULT_BUILD_IMAGE));
+    assert(calls.every(call => call.progression.identity.sha256 === plan.progression.identity.sha256));
+  } finally { rmSync(output, { recursive: true, force: true }); }
 });
