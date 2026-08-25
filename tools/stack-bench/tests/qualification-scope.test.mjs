@@ -42,6 +42,25 @@ function fixture() {
     'docker-compose.yaml', 'appliance/Controller.Dockerfile', 'appliance/docker-compose.yaml',
     'tracks/ecommerce/walk.mjs',
   ]) write(root, path, `${path}\n`);
+  write(root, 'commands/bench.mjs', "import '../src/stacks/stack-adapters.mjs';\n");
+  write(root, 'grader/grade.mjs', "import '../src/stacks/stack-adapters.mjs';\n");
+  write(root, 'src/stacks/stack-adapters.mjs', [
+    "import './backends/mongodb-adapter.mjs';",
+    "import './backends/mongodb-identity.mjs';",
+    "import './backends/mongodb-operations.mjs';",
+    "import './backends/postgres-adapter.mjs';",
+    "import './backends/postgres-identity.mjs';",
+    "import './backends/postgres-operations.mjs';",
+    "import './backends/spacetime-adapter.mjs';",
+    "import './backends/spacetime-identity.mjs';",
+    "import './backends/spacetime-operations.mjs';",
+    '',
+  ].join('\n'));
+  for (const stack of ['mongodb', 'postgres', 'spacetime']) {
+    write(root, `src/stacks/backends/${stack}-adapter.mjs`, `${stack} adapter\n`);
+    write(root, `src/stacks/backends/${stack}-identity.mjs`, `${stack} identity\n`);
+    write(root, `src/stacks/backends/${stack}-operations.mjs`, `${stack} operations\n`);
+  }
   return root;
 }
 
@@ -62,7 +81,7 @@ test('qualification identities isolate stack, mutation, and selected-check input
     const mongoReference = scoped(root, 'reference', 'mongodb');
     const postgresReference = scoped(root, 'reference', 'postgres');
     const mongoMutation = scoped(root, 'mutation', 'mongodb');
-    assert.equal(mongoReference.executableSha256, postgresReference.executableSha256);
+    assert.notEqual(mongoReference.executableSha256, postgresReference.executableSha256);
     assert.equal(mongoReference.checksSha256, postgresReference.checksSha256);
     assert.notDeepEqual(mongoReference.stack, postgresReference.stack);
     assert.notEqual(mongoReference.sha256, postgresReference.sha256);
@@ -79,6 +98,40 @@ test('qualification identities isolate stack, mutation, and selected-check input
       stack: 'mongodb', reference: changedReference, stackBenchRoot: root });
     assert.notEqual(changedMongo.sha256, mongoReference.sha256);
     assert.deepEqual(scoped(root, 'reference', 'postgres'), postgresReference);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('stack-owned reset and version changes invalidate only their stack', () => {
+  const root = fixture();
+  try {
+    const beforeMongoReference = scoped(root, 'reference', 'mongodb');
+    const beforeMongoMutation = scoped(root, 'mutation', 'mongodb');
+    const beforePostgresReference = scoped(root, 'reference', 'postgres');
+    const beforePostgresMutation = scoped(root, 'mutation', 'postgres');
+    const beforeNull = scoped(root, 'null');
+
+    write(root, 'src/stacks/backends/postgres-operations.mjs', 'changed postgres reset\n');
+    assert.deepEqual(scoped(root, 'reference', 'mongodb'), beforeMongoReference);
+    assert.deepEqual(scoped(root, 'mutation', 'mongodb'), beforeMongoMutation);
+    assert.notEqual(scoped(root, 'reference', 'postgres').sha256, beforePostgresReference.sha256);
+    assert.notEqual(scoped(root, 'mutation', 'postgres').sha256, beforePostgresMutation.sha256);
+    assert.deepEqual(scoped(root, 'null'), beforeNull);
+
+    const afterResetMongo = scoped(root, 'reference', 'mongodb');
+    const afterResetPostgres = scoped(root, 'reference', 'postgres');
+    const afterResetNull = scoped(root, 'null');
+    write(root, 'src/stacks/backends/postgres-identity.mjs', 'changed postgres version\n');
+    assert.deepEqual(scoped(root, 'reference', 'mongodb'), afterResetMongo);
+    assert.notEqual(scoped(root, 'reference', 'postgres').sha256, afterResetPostgres.sha256);
+    assert.deepEqual(scoped(root, 'null'), afterResetNull);
+
+    const afterVersionMongo = scoped(root, 'reference', 'mongodb');
+    const afterVersionPostgres = scoped(root, 'reference', 'postgres');
+    const afterVersionNull = scoped(root, 'null');
+    write(root, 'src/stacks/backends/postgres-adapter.mjs', 'changed postgres adapter\n');
+    assert.deepEqual(scoped(root, 'reference', 'mongodb'), afterVersionMongo);
+    assert.notEqual(scoped(root, 'reference', 'postgres').sha256, afterVersionPostgres.sha256);
+    assert.deepEqual(scoped(root, 'null'), afterVersionNull);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -131,5 +184,10 @@ test('unmapped executable imports and tampered identities fail closed', () => {
       /unknown/);
     assert.throws(() => validateQualificationScopeIdentity({ ...identity, sha256: digest('0') }),
       /does not match/);
+
+    write(root, 'src/stacks/stack-adapters.mjs',
+      "import './backends/unowned-reset.mjs';\n");
+    write(root, 'src/stacks/backends/unowned-reset.mjs', 'unowned\n');
+    assert.throws(() => scoped(root, 'reference', 'mongodb'), /unmapped stack-owned module/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

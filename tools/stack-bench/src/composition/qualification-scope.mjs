@@ -3,7 +3,7 @@ import { dirname, extname, join, relative, resolve } from 'node:path';
 
 import { canonicalDefinitionJson, canonicalizeDefinition } from './definition-plan.mjs';
 import { hashFiles, sha256 } from '../evidence/provenance.mjs';
-import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
+import { stackAdapterVersion } from '../stacks/stack-identities.mjs';
 
 export const QUALIFICATION_SCOPE_SCHEMA_VERSION = 1;
 
@@ -23,6 +23,21 @@ const CHILD_ENTRYPOINTS = Object.freeze({
   ],
   'grader/mutation-test.mjs': ['grader/grade.mjs'],
 });
+const STACK_OWNED_MODULES = new Map([
+  ['src/stacks/backends/mongodb-adapter.mjs', 'mongodb'],
+  ['src/stacks/backends/mongodb-identity.mjs', 'mongodb'],
+  ['src/stacks/backends/mongodb-operations.mjs', 'mongodb'],
+  ['src/stacks/backends/postgres-adapter.mjs', 'postgres'],
+  ['src/stacks/backends/postgres-identity.mjs', 'postgres'],
+  ['src/stacks/backends/postgres-operations.mjs', 'postgres'],
+  ['src/stacks/backends/spacetime-adapter.mjs', 'spacetime'],
+  ['src/stacks/backends/spacetime-identity.mjs', 'spacetime'],
+  ['src/stacks/backends/spacetime-operations.mjs', 'spacetime'],
+  ['src/stacks/backends/stub-adapter.mjs', 'stub'],
+  ['src/stacks/backends/stub-identity.mjs', 'stub'],
+]);
+const STACK_OWNED_ROOT = 'src/stacks/backends/';
+const BACKEND_ONLY_MODULES = new Set(['src/stacks/stack-adapters.mjs']);
 const RUNTIME_INPUTS = Object.freeze([
   'package.json',
   'package-lock.json',
@@ -74,16 +89,26 @@ function localImports(path, root) {
   return imports;
 }
 
-function moduleGraph(root, entrypoints) {
+function moduleOwner(relativePath) {
+  if (BACKEND_ONLY_MODULES.has(relativePath)) return '*';
+  if (!relativePath.startsWith(STACK_OWNED_ROOT)) return null;
+  const owner = STACK_OWNED_MODULES.get(relativePath);
+  if (!owner) fail(`unmapped stack-owned module ${relativePath}`);
+  return owner;
+}
+
+function moduleGraph(root, entrypoints, { stack }) {
   const pending = entrypoints.map(path => resolve(root, path));
   const files = new Set();
   while (pending.length) {
     const path = pending.pop();
     if (files.has(path)) continue;
-    if (!existsSync(path)) fail(`mapped input does not exist: ${relative(root, path).replaceAll('\\', '/')}`);
+    const relativePath = relative(root, path).replaceAll('\\', '/');
+    if (!existsSync(path)) fail(`mapped input does not exist: ${relativePath}`);
+    const owner = moduleOwner(relativePath);
+    if (owner && (stack === null || (owner !== '*' && owner !== stack))) continue;
     files.add(path);
     pending.push(...localImports(path, root));
-    const relativePath = relative(root, path).replaceAll('\\', '/');
     pending.push(...(CHILD_ENTRYPOINTS[relativePath] ?? []).map(child => resolve(root, child)));
   }
   return [...files];
@@ -134,7 +159,7 @@ export function qualificationScopeIdentity({ kind, release, stack = null, refere
     if (kind === 'reference' && mutation !== null) fail('reference evidence cannot declare a mutation');
   }
 
-  const files = moduleGraph(root, KIND_ENTRYPOINTS[kind]);
+  const files = moduleGraph(root, KIND_ENTRYPOINTS[kind], { stack });
   for (const input of RUNTIME_INPUTS) {
     const path = resolve(root, input);
     if (!existsSync(path)) fail(`mapped runtime input does not exist: ${input}`);
@@ -144,7 +169,7 @@ export function qualificationScopeIdentity({ kind, release, stack = null, refere
   if (!existsSync(trackWalk)) fail(`mapped track walk does not exist: tracks/${release.track}/walk.mjs`);
   files.push(trackWalk);
   const executable = hashFiles(files, { base: root });
-  const adapter = stack === null ? null : STACK_ADAPTER_REGISTRY.get(stack);
+  const adapter = stack === null ? null : { id: stack, version: stackAdapterVersion(stack) };
   const document = canonicalizeDefinition({
     schemaVersion: QUALIFICATION_SCOPE_SCHEMA_VERSION,
     kind,
