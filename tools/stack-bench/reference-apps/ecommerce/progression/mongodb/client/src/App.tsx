@@ -735,7 +735,9 @@ export default function App() {
             <div className="empty-state">You haven't placed any orders yet</div>
           ) : (
             orders.map((order) => (
-              <div className="order-item" data-testid="order-item" data-entity-id={String(order.id)} key={order.id}>
+              <div className="order-item" data-testid="order-item" data-entity-id={String(order.id)}
+                data-ship-input={JSON.stringify({ orderId: order.id })}
+                data-cancel-input={JSON.stringify({ orderId: order.id })} key={order.id}>
                 <div className="order-item-header">
                   <span>{new Date(order.createdAt).toLocaleString()}</span>
                   <span data-testid="order-status">{order.status}</span>
@@ -822,7 +824,8 @@ function ItemCard({
 }) {
   const outOfStock = item.stock === 0;
   return (
-    <div className={`item-card${outOfStock ? " out-of-stock-card" : ""}`} data-testid={testId} onClick={onOpen}>
+    <div className={`item-card${outOfStock ? " out-of-stock-card" : ""}`} data-testid={testId}
+      data-buy-input={JSON.stringify({ itemId: item.id })} onClick={onOpen}>
       <div className="item-name" data-testid="item-name">
         {item.name}
       </div>
@@ -995,7 +998,8 @@ function CartLineRow({
   };
 
   return (
-    <div className="cart-item" data-testid="cart-item">
+    <div className="cart-item" data-testid="cart-item"
+      data-cart-input={JSON.stringify({ itemId: line.itemId, quantity: -3 })}>
       <span className="cart-item-name">{line.name}</span>
       <span data-testid="cart-reservation-timer">{line.reservationSeconds || 0}</span>
       {line.expired && <span data-testid="cart-item-expired">Expired</span>}
@@ -1204,7 +1208,19 @@ function AdminPanel({
           {overview.items.map((it) => {
             const transfer = transferFor(it.id);
             return (
-              <div className="admin-item-row" data-testid="admin-item-row" key={it.id}>
+              <div className="admin-item-row" data-testid="admin-item-row"
+                data-price-input={JSON.stringify({ itemId: it.id,
+                  price: it.name === "Gaming Mouse" ? 1 : it.price })}
+                data-transfer-input={it.name === "Headphones" && warehouses.length >= 2
+                  ? JSON.stringify({
+                    itemId: it.id,
+                    fromWarehouseId: warehouses.find((warehouse) => warehouse.name === "East")?.id
+                      ?? warehouses[0].id,
+                    toWarehouseId: warehouses.find((warehouse) => warehouse.name === "West")?.id
+                      ?? warehouses[1].id,
+                    quantity: 25,
+                  })
+                  : undefined} key={it.id}>
                 <span>{it.name}</span>
                 <span data-testid="admin-stock">{it.stock}</span>
                 <div className="admin-price-controls">
