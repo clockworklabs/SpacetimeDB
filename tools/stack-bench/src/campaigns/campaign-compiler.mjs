@@ -379,7 +379,10 @@ function resolveCampaignProgression(input, track) {
   }));
 }
 
-function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
+function resolveCampaignInputs(definition, {
+  stackBenchRoot = ROOT,
+  calibrationResolver = resolveCalibrationForRelease,
+} = {}) {
   if (!listTracks({ includeInternal: true }).includes(definition.track)) {
     fail('track', `is unknown; available tracks: ${listTracks({ includeInternal: true }).join(', ')}`);
   }
@@ -398,7 +401,7 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
     if (!binding) fail('levels', `L${level} has no recipe release`);
     const selectedTask = modular ? null : createRecipeTaskRequest(binding, {
       packIds: definition.selection.packs, checkKeys: definition.selection.checks });
-    const calibration = resolveCalibrationForRelease(binding.release, {
+    const calibration = calibrationResolver(binding.release, {
       trackRoot: track.dir, stackBenchRoot: resolve(stackBenchRoot),
     });
     const publicBinding = {
@@ -558,14 +561,17 @@ function resolveCampaignInputs(definition, { stackBenchRoot = ROOT } = {}) {
   return { bindings, stacks, agents, conditions, progression };
 }
 
-export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
+export function compileCampaignFile(path, {
+  stackBenchRoot = ROOT,
+  calibrationResolver = resolveCalibrationForRelease,
+} = {}) {
   const absolute = exactSource(resolve(path));
   const sourceDefinition = validateCampaignDefinition(loadJson(absolute), {
     source: relative(process.cwd(), absolute).replaceAll('\\', '/'),
   });
   const requestedLevels = sourceDefinition.levels;
   const { bindings, stacks, agents, conditions, progression } =
-    resolveCampaignInputs(sourceDefinition, { stackBenchRoot });
+    resolveCampaignInputs(sourceDefinition, { stackBenchRoot, calibrationResolver });
   const resolvedDefinition = progression
     ? { ...sourceDefinition, progression: progression.definition }
     : sourceDefinition;
@@ -604,7 +610,10 @@ export function compileCampaignFile(path, { stackBenchRoot = ROOT } = {}) {
   });
 }
 
-export function validateCompiledCampaignPlan(input, { requireCurrentInputs = true } = {}) {
+export function validateCompiledCampaignPlan(input, {
+  requireCurrentInputs = true,
+  calibrationResolver = resolveCalibrationForRelease,
+} = {}) {
   if (!object(input)) throw new Error('compiled campaign plan must be an object');
   const plan = canonicalizeDefinition(input);
   const fields = new Set(['campaignSchemaVersion', 'id', 'version', 'state', 'title', 'source',
@@ -642,7 +651,7 @@ export function validateCompiledCampaignPlan(input, { requireCurrentInputs = tru
     if (canonicalDefinitionJson(plan.identities.engine) !== canonicalDefinitionJson(currentEngine)) {
       throw new Error('compiled campaign engine identity does not match this executable');
     }
-    const resolved = resolveCampaignInputs(definition);
+    const resolved = resolveCampaignInputs(definition, { calibrationResolver });
     for (const field of ['bindings', 'stacks', 'agents', 'conditions']) {
       if (canonicalDefinitionJson(plan[field]) !== canonicalDefinitionJson(resolved[field])) {
         throw new Error(`compiled campaign ${field} do not match current resolved inputs`);
@@ -672,8 +681,8 @@ export function validateCompiledCampaignPlan(input, { requireCurrentInputs = tru
   return plan;
 }
 
-export function campaignIdentity(plan) {
-  const validated = validateCompiledCampaignPlan(plan);
+export function campaignIdentity(plan, options = {}) {
+  const validated = validateCompiledCampaignPlan(plan, options);
   return { id: validated.id, version: validated.version, sha256: validated.contentSha256,
     state: validated.state };
 }

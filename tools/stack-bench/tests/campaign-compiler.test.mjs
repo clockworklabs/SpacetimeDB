@@ -52,13 +52,34 @@ function definition(overrides = {}) {
   };
 }
 
-function compile(value) {
+function compile(value, options = {}) {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-'));
   const path = join(root, 'campaign.json');
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
-  try { return compileCampaignFile(path); }
+  try { return compileCampaignFile(path, options); }
   finally { rmSync(root, { recursive: true, force: true }); }
 }
+
+const QUALIFIED_BUILD_IMAGE = `sha256:${'d'.repeat(64)}`;
+
+function resolvedQualification(release) {
+  return {
+    id: `${release.id}-test-calibration`,
+    version: release.version,
+    state: 'qualified',
+    contentSha256: sha256(canonicalDefinitionJson({
+      kind: 'resolved-test-calibration',
+      recipe: { id: release.id, version: release.version, sha256: release.contentSha256 },
+    })),
+    qualification: {
+      buildImage: QUALIFIED_BUILD_IMAGE,
+      stacks: ['mongodb', 'postgres', 'spacetime'].map(id => ({ id, status: 'qualified' })),
+    },
+    qualificationStaleness: [],
+  };
+}
+
+const resolvedQualificationOptions = { calibrationResolver: resolvedQualification };
 
 const modularFeatures = [
   'ecommerce.feature.accounts',
@@ -104,14 +125,15 @@ function dependencyDefinition() {
 }
 
 test('campaign compilation binds exact inputs and expands a balanced immutable attempt plan', () => {
-  const plan = compile(definition());
+  const plan = compile(definition(), resolvedQualificationOptions);
   assert.equal(plan.summary.attempts, 9);
   assert.equal(plan.bindings[0].recipe.id, 'ecommerce.l1-modular');
   assert.match(plan.bindings[0].recipe.contentSha256, /^[a-f0-9]{64}$/);
-  assert.equal(plan.bindings[0].calibration.id, 'ecommerce.l1-modular-calibration');
+  assert.equal(plan.bindings[0].calibration.id, 'ecommerce.l1-modular-test-calibration');
   assert.equal(plan.bindings[0].selection.completeness, 'full');
-  assert.deepEqual(campaignIdentity(plan), { id: plan.id, version: '1.0.0',
-    sha256: plan.contentSha256, state: 'draft' });
+  assert.deepEqual(campaignIdentity(plan, resolvedQualificationOptions), {
+    id: plan.id, version: '1.0.0', sha256: plan.contentSha256, state: 'draft',
+  });
   for (let repetition = 1; repetition <= 3; repetition += 1) {
     const attempts = plan.attempts.filter(attempt => attempt.repetition === repetition);
     assert.deepEqual([...attempts.map(attempt => attempt.order)].sort(), [1, 2, 3]);
@@ -355,8 +377,9 @@ test('frozen campaigns require exact runtime images', () => {
   assert.equal(internal.runtime.releaseManifestSha256, null);
 });
 
-test('frozen campaigns accept current qualification evidence for every selected level', () => {
-  const qualifiedBuildImages = new Set(compile(definition({ levels: [1, 2] })).bindings
+test('frozen campaigns accept a resolved qualification result for every selected level', () => {
+  const qualifiedBuildImages = new Set(compile(definition({ levels: [1, 2] }),
+    resolvedQualificationOptions).bindings
     .map(binding => binding.calibration.buildImage));
   assert.equal(qualifiedBuildImages.size, 1);
   const [qualifiedBuildImage] = qualifiedBuildImages;
@@ -373,7 +396,7 @@ test('frozen campaigns accept current qualification evidence for every selected 
   const l1l2 = definition({ state: 'frozen', levels: [1, 2], runtime,
     agents: claudeAgent, pricing: claudePricing,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
-  const compiled = compile(l1l2);
+  const compiled = compile(l1l2, resolvedQualificationOptions);
   assert.equal(compiled.state, 'frozen');
   assert.deepEqual(compiled.bindings.map(binding => binding.level), [1, 2]);
 });
@@ -385,11 +408,13 @@ test('frozen campaigns require the build image used for qualification', () => {
     platform: 'linux/amd64' };
   const frozen = definition({ state: 'frozen', levels: [1], runtime,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } });
-  assert.throws(() => compile(frozen), /buildImage does not match the qualified build image/);
+  assert.throws(() => compile(frozen, resolvedQualificationOptions),
+    /buildImage does not match the qualified build image/);
 });
 
 test('frozen manifest validation does not hard-code an agent provider', () => {
-  const qualifiedBuildImage = compile(definition()).bindings[0].calibration.buildImage;
+  const qualifiedBuildImage = compile(definition(), resolvedQualificationOptions)
+    .bindings[0].calibration.buildImage;
   const runtime = { releaseManifestSha256: 'a'.repeat(64),
     controllerImage: `registry.example/stack-bench-controller@sha256:${'b'.repeat(64)}`,
     buildImage: `registry.example/stack-bench-build@${qualifiedBuildImage}`,
@@ -397,7 +422,7 @@ test('frozen manifest validation does not hard-code an agent provider', () => {
   const validated = validateCampaignDefinition(definition({ state: 'frozen', levels: [1], runtime,
     budgets: { fixRounds: 3, attemptTimeoutMinutes: 240, maxCostUsdPerAttempt: 25 } }));
   assert.equal(validated.agents[0].adapter, 'deterministic');
-  assert.equal(compile(validated).agents[0].adapter, 'deterministic');
+  assert.equal(compile(validated, resolvedQualificationOptions).agents[0].adapter, 'deterministic');
 });
 
 test('the packaged model-free campaign example compiles without starting work', () => {
