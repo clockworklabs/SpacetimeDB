@@ -85,7 +85,12 @@ export default function CartPanel({
             </div>
           )}
           {lines.map((line) => (
-            <div className="cart-item" data-testid="cart-item" key={String(line.itemId)}>
+            <div
+              className="cart-item"
+              data-testid="cart-item"
+              data-cart-input={JSON.stringify({ itemId: line.itemId.toString(), quantity: -3 })}
+              key={String(line.itemId)}
+            >
               <div className="cart-item-info">
                 <div className="cart-item-name">{line.name}</div>
                 <div className="cart-item-price">{formatMoney(line.price)} each</div>
