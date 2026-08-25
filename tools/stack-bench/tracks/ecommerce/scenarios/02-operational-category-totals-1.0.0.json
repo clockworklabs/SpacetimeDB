@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Ecommerce L2 category totals",
+  "note": "This scenario owns only the category sales totals check.",
+  "features": [
+    {
+      "id": 5,
+      "name": "Category sales totals",
+      "actors": ["admin", "customer"],
+      "setup": [
+        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
+        { "do": "signUp", "actor": "customer", "name": "category-totals" },
+        { "do": "click", "actor": "admin", "testid": "admin-link" }
+      ],
+      "criteria": [
+        {
+          "id": "5b",
+          "desc": "a purchase updates that category's units and revenue live",
+          "points": 3,
+          "statedBy": "Category totals show units sold and revenue for each category",
+          "steps": [
+            { "do": "recordNumber", "actor": "admin", "testid": "category-units", "in": { "testid": "category-row", "contains": "Audio" }, "as": "audio-units" },
+            { "do": "recordNumber", "actor": "admin", "testid": "category-revenue", "in": { "testid": "category-row", "contains": "Audio" }, "as": "audio-revenue" },
+            { "do": "fill", "actor": "customer", "testid": "search-input", "text": "Bluetooth Speaker", "enter": true, "settleMs": 1500 },
+            { "do": "click", "actor": "customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
+            { "do": "expectNumber", "actor": "admin", "testid": "category-units", "in": { "testid": "category-row", "contains": "Audio" }, "relativeTo": "audio-units", "plus": 1, "within": 10000 },
+            { "do": "expectNumber", "actor": "admin", "testid": "category-revenue", "in": { "testid": "category-row", "contains": "Audio" }, "relativeTo": "audio-revenue", "plus": 79.5, "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 2,
+  "name": "Ecommerce L2 signed-out best sellers",
+  "note": "This scenario owns only the signed-out recommendation check.",
+  "features": [
+    {
+      "id": 5,
+      "name": "Signed-out best sellers",
+      "actors": ["visitor"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "5d",
+          "desc": "a signed-out visitor sees a best seller in the recommendations list",
+          "points": 1,
+          "statedBy": "Signed-out visitors see best sellers",
+          "steps": [
+            { "do": "expect", "actor": "visitor", "testid": "recommended-item", "contains": "Bluetooth Speaker", "within": 10000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

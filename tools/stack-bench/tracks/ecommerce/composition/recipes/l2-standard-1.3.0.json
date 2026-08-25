@@ -41,6 +41,10 @@
   ],
   "execution": [
     { "id": "features", "source": "scenarios/02-features.json" },
+    { "id": "fulfilment-live", "source": "scenarios/02-fulfilment-live-1.0.0.json" },
+    { "id": "fulfilment-warehouse", "source": "scenarios/02-queue-warehouse-1.4.0.json" },
+    { "id": "fulfilment-ship", "source": "scenarios/02-fulfilment-ship-1.0.0.json" },
+    { "id": "fulfilment-access", "source": "scenarios/02-fulfilment-access-1.0.0.json" },
     { "id": "invariants", "source": "scenarios/02-invariants.json" },
     { "id": "server-actions", "source": "scenarios/02-server-actions-1.0.0.json" },
     { "id": "features@L1", "source": "scenarios/01-features.json" },

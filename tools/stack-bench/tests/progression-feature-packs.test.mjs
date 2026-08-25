@@ -85,13 +85,16 @@ test('each split pack owns only its prompt and exact dependencies', () => {
       'ecommerce.feature.cart-checkout@1.3.0']);
   assert.deepEqual(transfers.requiresPacks, ['ecommerce.feature.warehouse-admin@1.2.0']);
   assert.deepEqual(views.requiresPacks,
-    ['ecommerce.feature.purchasing@1.2.0', 'ecommerce.feature.warehouse-admin@1.2.0']);
+    ['ecommerce.feature.cart-checkout@1.3.0', 'ecommerce.feature.purchasing@1.2.0',
+      'ecommerce.feature.warehouse-admin@1.2.0']);
 
   assert.doesNotMatch(fragmentText(cancellation.task.requirements[0]), /return|price|Live operational views/i);
   assert.doesNotMatch(fragmentText(returns.task.requirements[0]), /cancel|price|Live operational views/i);
   assert.doesNotMatch(fragmentText(pricing.task.requirements[0]), /Cancelling and returning|Live operational views/);
   assert.doesNotMatch(fragmentText(transfers.task.requirements[0]), /Cancelling and returning|Live operational views/);
   assert.doesNotMatch(fragmentText(views.task.requirements[0]), /cancel|return|price/i);
+  assert.doesNotMatch(fragmentText(views.task.requirements[0]),
+    /warehouse utilisation|fulfilment queue depth/i);
 });
 
 test('dependency-owned checks use only interfaces supplied by their parents', () => {

@@ -273,11 +273,16 @@
         "ecommerce.l2.operational-views-features@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.l2.operational-views-features@1.0.0#operational-views-core",
-        "ecommerce.l2.operational-views-features@1.0.0#operational-views-kept-purchases",
-        "ecommerce.l2.operational-views-features@1.0.0#operational-views-low-stock"
+        "ecommerce.l2.operational-views-features@1.0.0#operational-views-best-sellers",
+        "ecommerce.l2.operational-views-features@1.0.0#operational-views-category-totals",
+        "ecommerce.l2.operational-views-features@1.0.0#operational-views-low-stock",
+        "ecommerce.l2.operational-views-features@1.0.0#operational-views-recommendations"
       ],
       "dependencies": [
+        {
+          "id": "cart-checkout",
+          "reason": "Recommendations exclude items already in the customer's cart."
+        },
         {
           "id": "purchasing",
           "reason": "Sales views need order activity."

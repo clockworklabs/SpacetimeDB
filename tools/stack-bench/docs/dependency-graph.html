@@ -605,10 +605,12 @@
       "level": 3,
       "state": "draft",
       "parents": [
+        "cart-checkout",
         "purchasing",
         "warehouse-admin"
       ],
       "dependencyReasons": {
+        "cart-checkout": "Recommendations exclude items already in the customer's cart.",
         "purchasing": "Sales views need order activity.",
         "warehouse-admin": "Stock views need warehouse activity."
       },
