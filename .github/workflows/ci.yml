@@ -119,6 +119,7 @@ jobs:
       # avoid invalidating otherwise reusable artifacts in the prebuilt target cache.
       - &restore-source-mtimes
         name: Restore source mtimes from git history
+        if: runner.os == 'Linux'
         shell: bash
         run: git restore-mtime --quiet
 
