@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Staff access",
+  "features": [
+    {
+      "id": 601,
+      "name": "Staff access",
+      "actors": ["customer", "staff", "admin"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "601a",
+          "desc": "staff and administrators can sign in and open staff tools",
+          "points": 2,
+          "statedBy": "Staff and administrators can sign in and use staff areas.",
+          "steps": [
+            { "do": "fill", "actor": "staff", "testid": "staff-signin-username", "text": "staff" },
+            { "do": "fill", "actor": "staff", "testid": "staff-signin-password", "text": "stackbench-staff-2026" },
+            { "do": "click", "actor": "staff", "testid": "staff-signin-submit" },
+            { "do": "expect", "actor": "staff", "testid": "staff-current-user", "contains": "staff", "within": 6000 },
+            { "do": "expect", "actor": "staff", "testid": "staff-link", "within": 6000 },
+            { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
+            { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
+            { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
+            { "do": "expect", "actor": "admin", "testid": "staff-current-user", "contains": "admin", "within": 6000 },
+            { "do": "expect", "actor": "admin", "testid": "staff-link", "within": 6000 }
+          ]
+        },
+        {
+          "id": "601b",
+          "desc": "customers cannot open staff tools",
+          "points": 2,
+          "statedBy": "Customers cannot open staff tools.",
+          "steps": [
+            { "do": "fill", "actor": "customer", "testid": "staff-signin-username", "text": "customer" },
+            { "do": "fill", "actor": "customer", "testid": "staff-signin-password", "text": "stackbench-customer-2026" },
+            { "do": "click", "actor": "customer", "testid": "staff-signin-submit" },
+            { "do": "expect", "actor": "customer", "testid": "staff-current-user", "contains": "customer", "within": 6000 },
+            { "do": "expect", "actor": "customer", "testid": "staff-link", "absent": true },
+            { "do": "expect", "actor": "customer", "testid": "admin-link", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}

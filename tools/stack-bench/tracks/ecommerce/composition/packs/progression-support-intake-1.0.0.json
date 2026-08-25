@@ -4,8 +4,8 @@
   "requiresPacks": [], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.progression.support-intake", "path": "prompts/modular/support-intake-1.0.0.md", "order": 1200, "from": "## Support intake", "modes": ["fresh", "upgrade"] }],
-    "contracts": [{ "id": "ecommerce.progression.support-intake-hooks", "path": "contracts/support-intake-1.0.md", "order": 2900, "from": "## Support intake hooks", "modes": ["fresh", "upgrade"] }]
+    "requirements": [{ "id": "ecommerce.progression.support-intake", "path": "prompts/modular/support-intake-1.0.0.md", "order": 1200, "modes": ["fresh", "upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.support-intake-hooks", "path": "contracts/support-intake-1.0.md", "order": 2900, "modes": ["fresh", "upgrade"] }]
   },
   "checks": [{ "id": "ticket-create", "stableId": "support-intake", "source": "scenarios/progression-support-intake-1.0.0.json", "feature": 610, "role": "feature" }]
 }
