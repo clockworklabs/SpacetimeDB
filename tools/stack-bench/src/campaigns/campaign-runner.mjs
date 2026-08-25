@@ -15,6 +15,8 @@ import { runPreflight } from '../runtime/preflight.mjs';
 import { sha256 } from '../evidence/provenance.mjs';
 import { validateReleaseManifest } from '../releases/release-manifest.mjs';
 import { RUN_INDEX_CAP } from '../composition/tracks.mjs';
+import { readProgressionState } from '../progression/progression-state.mjs';
+import { liveProgressionStatus } from '../progression/live-progression.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const BENCH = join(ROOT, 'commands', 'bench.mjs');
@@ -80,12 +82,15 @@ export function attemptArgv(plan, attempt, output, runIndex, progressionPath = n
   return args;
 }
 
-export function validateCampaignRun(plan, attempt, run, { buildImage = null } = {}) {
+export function validateCampaignRun(plan, attempt, run, {
+  buildImage = null, resultDir = null,
+} = {}) {
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter
     && item.model === attempt.model);
   const condition = plan.conditions.find(item => item.sha256 === attempt.condition?.sha256);
   const expectedLevels = [...attempt.levels].sort((a, b) => a - b);
   const actualLevels = (run.levels ?? []).map(level => level.level).sort((a, b) => a - b);
+  const dependencyMode = attempt.mode?.id === 'dependency';
   const exactLevels = canonicalDefinitionJson(actualLevels) === canonicalDefinitionJson(expectedLevels);
   const ladder = run.validation?.ladder;
   const lastActualLevel = actualLevels.at(-1) ?? null;
@@ -103,6 +108,10 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
   const interruptedPrefix = actualLevels.length < expectedLevels.length
     && actualLevels.every((level, index) => level === expectedLevels[index])
     && ['harness_failure', 'ungraded'].includes(run.outcome?.kind);
+  const dependencyPrefix = dependencyMode && actualLevels.length > 0
+    && actualLevels.length <= expectedLevels.length
+    && actualLevels.every((level, index) => level === expectedLevels[index])
+    && run.validation?.ladder?.policy === 'dependency-gated';
   const mismatches = [];
   const mismatch = (condition, field) => { if (condition) mismatches.push(field); };
   mismatch(run.artifactEnvelope?.attempt?.parentId !== attempt.id, 'attempt.parentId');
@@ -124,7 +133,7 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
   mismatch(canonicalDefinitionJson(run.progressionOwner ?? null)
     !== canonicalDefinitionJson(expectedProgressionOwner), 'progressionOwner');
   mismatch(canonicalDefinitionJson(run.skills) !== canonicalDefinitionJson(attempt.skills), 'skills');
-  mismatch(!exactLevels && !interruptedPrefix && !gatedPrefix, 'levels');
+  mismatch(!exactLevels && !interruptedPrefix && !gatedPrefix && !dependencyPrefix, 'levels');
   mismatch(run.artifactEnvelope?.identities?.agentAdapter?.sha256 !== agent?.identity.sha256,
     'identities.agentAdapter.sha256');
   mismatch(run.artifactEnvelope?.identities?.engine?.sha256 !== plan.identities.engine.sha256,
@@ -139,6 +148,7 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
   mismatch(plan.definition.runtime.buildImage === null && buildImage !== null
     && run.runtime?.buildImage !== buildImage, 'runtime.buildImage');
   for (const level of run.levels ?? []) {
+    if (dependencyMode) continue;
     const plannedLevel = condition?.requested?.levels?.find(item => item.level === level.level);
     if (plannedLevel?.selection?.schemaVersion === 3) {
       const selectionAt = `levels.L${level.level}.selection`;
@@ -245,7 +255,8 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
     mismatch(observation.artifact === null && numericEvidence, `${at}.artifact`);
     mismatch(observation.artifact !== null && !numericEvidence, `${at}.artifact`);
   }
-  if ((exactLevels || gatedPrefix) && ['passed', 'app_failure'].includes(run.outcome?.kind)) {
+  if (!dependencyMode && (exactLevels || gatedPrefix)
+    && ['passed', 'app_failure'].includes(run.outcome?.kind)) {
     const levelOutcomes = (run.levels ?? []).map(level => level.outcome?.kind);
     mismatch(run.outcome.kind === 'passed' && levelOutcomes.some(kind => kind !== 'passed'),
       'outcome.kind');
@@ -313,6 +324,51 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
       }
     }
   }
+  if (dependencyMode) {
+    if (typeof resultDir !== 'string' || !resultDir) {
+      mismatch(true, 'progressionState');
+    } else {
+      try {
+        const owner = { ...expectedProgressionOwner,
+          workspace: { appDirectory: 'source' } };
+        const stored = readProgressionState(join(resolve(resultDir), 'progression-state.json'), {
+          progression: plan.progression,
+          owner,
+        });
+        mismatch(canonicalDefinitionJson(run.progressionStatus)
+          !== canonicalDefinitionJson(liveProgressionStatus(stored.state)), 'progressionStatus');
+        mismatch(canonicalDefinitionJson(ladder?.requestedLevels)
+          !== canonicalDefinitionJson(expectedLevels), 'validation.ladder.requestedLevels');
+        const conclusiveLevels = [...new Set(stored.state.attempts
+          .filter(item => item.outcome === 'conclusive').map(item => item.level))];
+        mismatch(canonicalDefinitionJson(ladder?.completedLevels)
+          !== canonicalDefinitionJson(conclusiveLevels), 'validation.ladder.completedLevels');
+        for (const level of run.levels ?? []) {
+          const last = [...stored.state.attempts].reverse()
+            .find(item => item.level === level.level);
+          mismatch(!last, `levels.L${level.level}.progressionAttempt`);
+          mismatch(last?.selectionSha256 && level.selection?.sha256 !== last.selectionSha256,
+            `levels.L${level.level}.selection.sha256`);
+          const validScore = Number.isSafeInteger(level.score) && Number.isSafeInteger(level.max)
+            && level.max > 0 && level.score >= 0 && level.score <= level.max;
+          mismatch(last?.outcome === 'conclusive' && !validScore,
+            `levels.L${level.level}.score`);
+          mismatch(last?.outcome === 'inconclusive' && level.graded !== false,
+            `levels.L${level.level}.graded`);
+        }
+        if (stored.state.phase === 'terminal') {
+          const expectedOutcome = stored.state.terminalOutcome.kind === 'passed'
+            ? 'passed' : 'app_failure';
+          mismatch(run.outcome?.kind !== expectedOutcome, 'outcome.kind');
+        } else {
+          mismatch(stored.state.attempts.at(-1)?.outcome !== 'inconclusive',
+            'progressionState.phase');
+        }
+      } catch {
+        mismatch(true, 'progressionState');
+      }
+    }
+  }
   if (plan.definition.budgets.maxCostUsdPerAttempt !== null) {
     const cost = run.totals?.costUsd;
     const missingAllowed = interruptedPrefix && actualLevels.length === 0 && cost == null;
@@ -352,7 +408,10 @@ function readAttemptResult(plan, attempt, output, processResult) {
   if (existsSync(runPath)) {
     try {
       run = readArtifactPayload(runPath, { expectedKind: 'benchmark_run' });
-      validateCampaignRun(plan, attempt, run, { buildImage: processResult.buildImage });
+      validateCampaignRun(plan, attempt, run, {
+        buildImage: processResult.buildImage,
+        resultDir: output,
+      });
     }
     catch (error) { artifactError = error; }
   }

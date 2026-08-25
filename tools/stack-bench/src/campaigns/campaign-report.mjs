@@ -467,7 +467,8 @@ export function generateCampaignReport(directory, { output = join(resolve(direct
   }
   const report = buildCampaignReport(plan, state, (_attempt, execution) =>
     validateCampaignRun(plan, _attempt,
-      readArtifactPayload(join(paths.root, execution.output, 'run.json'), { expectedKind: 'benchmark_run' })));
+      readArtifactPayload(join(paths.root, execution.output, 'run.json'), { expectedKind: 'benchmark_run' }),
+      { resultDir: join(paths.root, execution.output) }));
   mkdirSync(output, { recursive: true });
   const reportPath = join(output, 'report.json');
   writeArtifact(reportPath, { kind: 'campaign_report', id: `${plan.id}-report-${report.contentSha256.slice(0, 16)}`,

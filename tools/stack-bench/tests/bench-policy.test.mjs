@@ -152,3 +152,20 @@ test('later-level grading receives prior selected checks as regression scope', (
   assert(index > 0);
   assert.deepEqual(JSON.parse(argv[index + 1]), ['prior/a', 'prior/b']);
 });
+
+test('dependency grading uses its exact action scope without a second regression selection', () => {
+  const track = loadTrack('ecommerce');
+  const args = { backend: 'postgres', track: 'ecommerce', runIndex: 0, media: false,
+    progression: { identity: { policy: 'dependency-gated' } },
+    recipeTasks: new Map([
+      [1, { request: { schemaVersion: 3 }, selection: { scoredChecks: [
+        { stableKey: 'prior/a' },
+      ] } }],
+      [2, { request: { schemaVersion: 3 }, selection: { scoredChecks: [
+        { stableKey: 'prior/a' }, { stableKey: 'current/b' },
+      ] } }],
+    ]) };
+  const argv = gradeArgv(args, '/app', 'http://localhost:6573', 'postgres-l2', 2,
+    track, 'attempt');
+  assert.equal(argv.includes('--regression-checks-json'), false);
+});

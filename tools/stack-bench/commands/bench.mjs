@@ -60,6 +60,8 @@ import { progressionLevels, validateProgressionInput }
   from '../src/progression/progression-definition.mjs';
 import { resolveProgressionRecipeAction }
   from '../src/progression/progression-recipe-selection.mjs';
+import { createLiveProgressionExecution }
+  from '../src/progression/live-progression.mjs';
 import { validateCompiledCampaignPlan } from '../src/campaigns/campaign-compiler.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
@@ -407,7 +409,7 @@ export function gradeArgv(args, appDir, url, label, level, track, parentAttemptI
     ...(args.recipe ? ['--recipe', args.recipe] : []),
     ...(args.recipeTasks?.get(level)
       ? ['--recipe-task-json', JSON.stringify(args.recipeTasks.get(level).request)] : []),
-    ...(observation === 'scored' && args.recipeTasks
+    ...(observation === 'scored' && args.recipeTasks && !args.progression
       ? ['--regression-checks-json', JSON.stringify([...args.recipeTasks.entries()]
         .filter(([priorLevel]) => priorLevel < level)
         .flatMap(([, task]) => task.selection.scoredChecks.map(check => check.stableKey)))] : []),
@@ -539,6 +541,7 @@ async function main() {
   // acquiring a backend lease or paying for a build. A pack that exists at L2
   // but not L1 is not a late grading surprise; it is an invalid run request.
   args.recipeTasks = new Map();
+  args.recipeBindings = new Map();
   args.selectionRequest ??= { packs: [...args.packIds], checks: [...args.checkKeys] };
   for (const level of args.levelList) {
     const declared = args.condition?.requested?.levels?.find(entry => entry.level === level) ?? null;
@@ -560,6 +563,7 @@ async function main() {
       throw new Error(`L${level} has no recipe release, so --pack/--check cannot be resolved`);
     }
     if (binding) {
+      args.recipeBindings.set(level, binding);
       const requested = declared?.selection?.requested;
       const options = requested?.features
         ? { featureIds: requested.features,
@@ -588,8 +592,10 @@ async function main() {
       ?.find(entry => entry.level === state.level) ?? null;
     const binding = resolveRecipeRelease(track, state.level,
       declared ? `${declared.recipe.id}@${declared.recipe.version}` : null);
-    args.progressionBoundary = resolveProgressionRecipeAction(binding, state);
-    throw new Error('dependency progression execution is not enabled in the live bench runner');
+    resolveProgressionRecipeAction(binding, state);
+    if (!args.progressionOwner) {
+      throw new Error('live dependency progression requires an exact compiled campaign attempt');
+    }
   }
   if (repairGrant) {
     const expectedSelection = repairGrant.level.selection?.sha256 ?? null;
@@ -886,9 +892,52 @@ async function main() {
     backendLease: publicBackendLease(readBackendLease(leasePath,
       { token: initialLease.ownershipToken, backend: args.backend, runId })),
     validation: { validatedThrough: track.validatedThrough, beyondValidatedLevels,
-      ladder: { policy: 'pass-before-next-level', requestedLevels: [...args.levelList],
+      ladder: { policy: args.progression ? args.progression.identity.policy : 'pass-before-next-level',
+        requestedLevels: [...args.levelList],
         completedLevels: [], stoppedAfterLevel: null, blockedLevels: [] } }, levels: [] };
   activeRun = run;
+
+  const progressionOwner = args.progression ? {
+    ...args.progressionOwner,
+    workspace: { appDirectory: 'source' },
+  } : null;
+  const progressionExecution = args.progression ? createLiveProgressionExecution({
+      progression: args.progression,
+      owner: progressionOwner,
+      statePath: join(args.out, 'progression-state.json'),
+      runId,
+      outputDir: args.out,
+      appDir,
+      track: args.track,
+      backend: args.backend,
+      identities: run.identities,
+      recipeBindings: args.recipeBindings,
+      getRunArtifact: () => {
+        writeRunJson(join(args.out, 'run.json'), run);
+        return readArtifact(join(args.out, 'run.json'));
+      },
+      onState: status => {
+        run.progressionStatus = status;
+        writeRunJson(join(args.out, 'run.json'), run);
+      },
+    }) : null;
+  progressionExecution?.initialize();
+
+  const bindProgressionAction = level => {
+    if (!progressionExecution) return null;
+    const selected = progressionExecution.bind(level);
+    if (selected.action.type === 'terminal') return selected;
+    args.recipeTasks.set(level, {
+      request: selected.grader.request,
+      selection: selected.grader.selection,
+      task: selected.grader.task,
+      agentRequest: selected.agent.request,
+      progressionAction: selected.action,
+    });
+    return selected;
+  };
+
+  const recordProgressionGrade = input => progressionExecution?.record(input) ?? null;
 
   const runAgentForLevel = async (mode, level) => {
     try {
@@ -925,6 +974,9 @@ async function main() {
     const t0 = Date.now();
     const continuing = Boolean(args.repairGrant);
     console.log(`\n================ ${args.backend} — level ${level} ================`);
+
+    let progressionSelection = bindProgressionAction(level);
+    if (progressionSelection?.action.type === 'terminal') break;
 
     const firstMode = continuing ? 'resume' : args.seedFrom ? 'upgrade' : 'build';
     const build = await runAgentForLevel(
@@ -1092,6 +1144,7 @@ async function main() {
     let repairStopReason = null;
     let repairProgress = repairProgressState(null, bundle);
     const pauseForRepeatedFindings = () => {
+      if (args.progression) return false;
       repairProgress = repairProgressState(repairProgress, bundle);
       if (args.maxStalledRepairs === 0
         || repairProgress.stalledRounds < args.maxStalledRepairs) return false;
@@ -1107,8 +1160,43 @@ async function main() {
       console.log('  repairs skipped: the initial grade did not complete, so there are no reliable findings to fix');
     }
 
+    let progressionNext = recordProgressionGrade({
+      selected: progressionSelection,
+      bundle,
+      level,
+      repair: {
+        status: !initialGradeUsable ? 'ungraded'
+          : initialBundleOutcome.kind === 'passed' ? 'not-needed' : 'incomplete',
+        budgetRounds: progressionSelection
+          ? Math.max(0, progressionSelection.action.strikes.budget - 1) : args.fixRounds,
+        roundsUsed: 0,
+        ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
+        stopReason: !initialGradeUsable ? 'initial-grading-failed'
+          : initialBundleOutcome.kind === 'passed' ? 'not-needed' : null,
+      },
+    });
+    const progressionMayRepair = () => !args.progression
+      || (progressionNext?.type === 'repair' && progressionNext.level === level);
+    const recordRepairProgression = () => {
+      progressionNext = recordProgressionGrade({
+        selected: progressionSelection,
+        bundle,
+        level,
+        repair: {
+          status: classifyBundle(bundle).kind === 'passed' ? 'corrected' : 'incomplete',
+          budgetRounds: progressionSelection
+            ? Math.max(0, progressionSelection.action.strikes.budget - 1) : args.fixRounds,
+          roundsUsed: fixRounds,
+          ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
+          stopReason: null,
+        },
+      });
+      return progressionMayRepair();
+    };
+
     // Hand back findings and let the agent fix, until clean or out of rounds.
-    while (ladderMayContinue(classifyBundle(bundle)) && fixRounds < args.fixRounds) {
+    while (ladderMayContinue(classifyBundle(bundle)) && progressionMayRepair()
+      && (args.progression || fixRounds < args.fixRounds)) {
       let wroteReport = true;
       try {
         sh('node', [join(ROOT, 'commands', 'report-bugs.mjs'), '--app', appDir,
@@ -1138,7 +1226,11 @@ async function main() {
       const snapshot = join(tmpdir(), `stack-bench-snapshot-${args.backend}-${args.track}-run${args.runIndex}-l${level}`);
       snapshotSource(appDir, snapshot);
       fixRounds += 1;
-      console.log(`--- fix round ${fixRounds}/${args.fixRounds} ---`);
+      if (args.progression) progressionSelection = bindProgressionAction(level);
+      const displayedRepairBudget = args.progression
+        ? Math.max(0, progressionSelection.action.strikes.budget - 1)
+        : args.fixRounds;
+      console.log(`--- fix round ${fixRounds}/${displayedRepairBudget} ---`);
       const fix = await runAgentForLevel('fix', level);
       fixCost += fix.costUsd;
       fixSessions.push({ round: fixRounds, sessionId: fix.sessionId ?? null,
@@ -1156,6 +1248,7 @@ async function main() {
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
           'agent session failed'));
         repairStopReason = 'agent-session-failure';
+        recordRepairProgression();
         break;
       }
 
@@ -1183,6 +1276,7 @@ async function main() {
           : '    application setup is still failing; keeping the attempted repair for the next round');
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
           'kept because the app became gradeable'));
+        if (!recordRepairProgression()) break;
         if (pauseForRepeatedFindings()) break;
         continue;
       }
@@ -1192,6 +1286,7 @@ async function main() {
         bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback${fixRounds}`, level, track, runId);
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
           'rolled back because the result could not be compared'));
+        if (!recordRepairProgression()) break;
         if (pauseForRepeatedFindings()) break;
         continue;
       }
@@ -1215,6 +1310,7 @@ async function main() {
         regressed = true;
         repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
           'rolled back because earlier behavior regressed'));
+        if (!recordRepairProgression()) break;
         if (pauseForRepeatedFindings()) break;
         continue;
       }
@@ -1225,6 +1321,7 @@ async function main() {
       }
       repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
         shared.after === shared.before ? 'kept with no score gain' : 'kept'));
+      if (!recordRepairProgression()) break;
       if (pauseForRepeatedFindings()) break;
     }
 
@@ -1234,9 +1331,15 @@ async function main() {
     // instead, and leave the score null.
     const finalBundleOutcome = classifyBundle(bundle);
     const graded = !['ungraded', 'harness_failure'].includes(finalBundleOutcome.kind);
+    const progressionStrikes = progressionExecution?.state.strikes?.[String(level)] ?? null;
+    const repairBudgetRounds = progressionStrikes
+      ? Math.max(0, progressionStrikes.budget - 1) : args.fixRounds;
+    const repairBudgetExhausted = progressionStrikes
+      ? progressionStrikes.used >= progressionStrikes.budget
+      : fixRounds >= args.fixRounds;
     const repairStatus = !graded ? 'ungraded'
       : finalBundleOutcome.kind === 'passed' ? (fixRounds > 0 ? 'corrected' : 'not-needed')
-        : fixRounds >= args.fixRounds ? 'budget-exhausted' : 'incomplete';
+        : repairBudgetExhausted ? 'budget-exhausted' : 'incomplete';
     const stopReason = repairStopReason ?? ({
       'not-needed': 'not-needed',
       corrected: 'passed',
@@ -1244,10 +1347,14 @@ async function main() {
     }[repairStatus] ?? null);
     const repair = {
       status: repairStatus,
-      budgetRounds: args.fixRounds,
+      budgetRounds: repairBudgetRounds,
       roundsUsed: fixRounds,
-      stallLimitRounds: args.maxStalledRepairs,
+      ...(!args.progression ? { stallLimitRounds: args.maxStalledRepairs } : {}),
       stopReason,
+      ...(progressionStrikes ? {
+        strikeBudget: progressionStrikes.budget,
+        strikesUsed: progressionStrikes.used,
+      } : {}),
     };
     if (continuing) {
       run.continuation.cumulativeRoundsAfter = run.continuation.cumulativeRoundsBefore + fixRounds;
@@ -1324,9 +1431,30 @@ async function main() {
       outcome: finalBundleOutcome,
       durationSec: Math.round((Date.now() - t0) / 1000),
     });
-    run.validation.ladder.completedLevels.push(level);
+    if (!args.progression
+      || progressionExecution.state.attempts.at(-1)?.outcome === 'conclusive') {
+      run.validation.ladder.completedLevels.push(level);
+    }
     writeRunJson(join(args.out, 'run.json'), run);
     const blockedLevels = args.levelList.filter(candidate => candidate > level);
+    if (args.progression) {
+      if (progressionExecution.state.phase === 'terminal') {
+        if (blockedLevels.length) run.validation.ladder.stoppedAfterLevel = level;
+        run.validation.ladder.blockedLevels = blockedLevels;
+        writeRunJson(join(args.out, 'run.json'), run);
+        break;
+      }
+      if (progressionExecution.state.level <= level) {
+        if (progressionExecution.state.attempts.at(-1)?.outcome === 'inconclusive') {
+          run.validation.ladder.stoppedAfterLevel = level;
+          run.validation.ladder.blockedLevels = [level, ...blockedLevels];
+          writeRunJson(join(args.out, 'run.json'), run);
+          break;
+        }
+        throw new Error(`dependency progression did not leave L${level} after its strike budget`);
+      }
+      continue;
+    }
     if (blockedLevels.length && !ladderMayAdvance(finalBundleOutcome)) {
       run.validation.ladder.stoppedAfterLevel = level;
       run.validation.ladder.blockedLevels = blockedLevels;

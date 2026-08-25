@@ -47,7 +47,7 @@ const ENVELOPE_KEYS = new Set([
 const BENCHMARK_RUN_PAYLOAD_FIELDS = new Set(['status', 'track', 'backend', 'model', 'guidance',
   'condition', 'stack', 'setup', 'backendLease', 'backendDiagnostics', 'validation', 'levels',
   'contaminated', 'contamination', 'mutationControl', 'totals', 'outcome', 'selectionRequest',
-  'skills', 'runtime', 'progression', 'progressionOwner']);
+  'skills', 'runtime', 'progression', 'progressionOwner', 'progressionStatus']);
 const PAYLOAD_FIELDS = Object.freeze({
   action_check: new Set(['backend', 'results', 'missing']),
   backend_lease_evidence: new Set(['version', 'runId', 'backend', 'track', 'runIndex', 'ownerPid',
@@ -207,6 +207,32 @@ function validatePayload(kind, payload) {
     }
   };
   if (['benchmark_run', 'repair_continuation'].includes(kind)) arrayWhenPresent('levels');
+  if (['benchmark_run', 'repair_continuation'].includes(kind)
+    && payload.progressionStatus !== undefined) {
+    objectWhenPresent('progressionStatus');
+    if (!isObject(payload.progression)) {
+      fail(`${kind} payload.progressionStatus requires progression`);
+    }
+    const fields = new Set(['stateArtifact', 'phase', 'level', 'attempts', 'score']);
+    for (const key of Object.keys(payload.progressionStatus)) {
+      if (!fields.has(key)) fail(`${kind} payload.progressionStatus.${key} is unknown`);
+    }
+    if (payload.progressionStatus.stateArtifact !== 'progression-state.json') {
+      fail(`${kind} payload.progressionStatus.stateArtifact is invalid`);
+    }
+    if (!['active', 'terminal'].includes(payload.progressionStatus.phase)) {
+      fail(`${kind} payload.progressionStatus.phase is invalid`);
+    }
+    for (const [field, minimum] of [['level', 1], ['attempts', 0]]) {
+      if (!Number.isSafeInteger(payload.progressionStatus[field])
+        || payload.progressionStatus[field] < minimum) {
+        fail(`${kind} payload.progressionStatus.${field} is invalid`);
+      }
+    }
+    if (!isObject(payload.progressionStatus.score)) {
+      fail(`${kind} payload.progressionStatus.score must be an object`);
+    }
+  }
   if (kind === 'progression_state') {
     if (payload.schemaVersion !== 1) fail('progression_state payload.schemaVersion must be 1');
     objectWhenPresent('owner');
@@ -509,7 +535,7 @@ function validatePayload(kind, payload) {
     objectWhenPresent('repair');
     if (!isObject(payload.repair)) fail('source_checkpoint payload.repair is required');
     const repairFields = new Set(['status', 'budgetRounds', 'roundsUsed', 'stallLimitRounds',
-      'stopReason']);
+      'stopReason', 'strikeBudget', 'strikesUsed']);
     for (const key of Object.keys(payload.repair)) {
       if (!repairFields.has(key)) fail(`source_checkpoint payload.repair.${key} is unknown`);
     }
@@ -527,6 +553,13 @@ function validatePayload(kind, payload) {
     }
     if (payload.repair.roundsUsed > payload.repair.budgetRounds) {
       fail('source_checkpoint payload.repair.roundsUsed exceeds its budget');
+    }
+    if (payload.repair.strikeBudget !== undefined || payload.repair.strikesUsed !== undefined) {
+      if (!Number.isSafeInteger(payload.repair.strikeBudget) || payload.repair.strikeBudget < 1
+        || !Number.isSafeInteger(payload.repair.strikesUsed) || payload.repair.strikesUsed < 0
+        || payload.repair.strikesUsed > payload.repair.strikeBudget) {
+        fail('source_checkpoint payload.repair strike use is invalid');
+      }
     }
     if (payload.repair.stopReason !== null && typeof payload.repair.stopReason !== 'string') {
       fail('source_checkpoint payload.repair.stopReason must be a string or null');
