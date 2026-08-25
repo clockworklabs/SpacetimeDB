@@ -61,6 +61,7 @@ const CartLineSchema = new Schema(
     itemId: { type: Schema.Types.ObjectId, ref: "Item", required: true },
     quantity: { type: Number, required: true, min: 1 },
     reservationExpiresAt: { type: Date, default: null },
+    reservedWarehouseIds: { type: [Schema.Types.ObjectId], default: [] },
   },
   { _id: false }
 );
@@ -71,6 +72,7 @@ const CartSchema = new Schema(
     items: { type: [CartLineSchema], default: [] },
     promotionCode: { type: String, default: "" },
     discount: { type: Number, default: 0 },
+    inactiveExpiresAt: { type: Date, default: null },
   },
   { timestamps: true, toJSON: idTransform, toObject: idTransform }
 );

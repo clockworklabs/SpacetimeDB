@@ -9,6 +9,7 @@ import jwt from "jsonwebtoken";
 import { Item, Warehouse, Stock, User, Cart, Order, Review } from "./models.js";
 import { Dismissal, Payment, Promotion } from "./progression-models.js";
 import { installProgressionRoutes } from "./progression.js";
+import { releaseStock, reserveStock } from "./stock-reservations.js";
 
 const PORT = Number(process.env.PORT) || 6401;
 const DATABASE_URL = process.env.DATABASE_URL || "mongodb://localhost:6537/stackbench_ecom_run0";
@@ -120,15 +121,6 @@ async function getStockByItem(): Promise<Map<string, number>> {
   const rows = await Stock.aggregate([{ $group: { _id: "$item_id", total: { $sum: "$quantity" } } }]);
   const map = new Map<string, number>();
   for (const row of rows) map.set(row._id.toString(), row.total);
-  const activeReservations = await Cart.aggregate([
-    { $unwind: "$items" },
-    { $match: { "items.reservationExpiresAt": { $gt: new Date() } } },
-    { $group: { _id: "$items.itemId", total: { $sum: "$items.quantity" } } },
-  ]);
-  for (const row of activeReservations) {
-    const key = row._id.toString();
-    map.set(key, Math.max(0, (map.get(key) || 0) - row.total));
-  }
   return map;
 }
 
@@ -533,15 +525,8 @@ app.post("/api/items/:id/buy", requireAuth, async (req, res) => {
   if (!Types.ObjectId.isValid(itemId)) return res.status(404).json({ error: "Item not found" });
   const item = await Item.findById(itemId);
   if (!item) return res.status(404).json({ error: "Item not found" });
-  const available = await getStockByItem();
-  if ((available.get(itemId) || 0) < 1) return res.status(400).json({ error: "Item is out of stock" });
-
-  const decremented = await Stock.findOneAndUpdate(
-    { item_id: item._id, quantity: { $gte: 1 } },
-    { $inc: { quantity: -1 } },
-    { sort: { quantity: -1 } }
-  );
-  if (!decremented) return res.status(400).json({ error: "Item is out of stock" });
+  const reservedWarehouseIds = await reserveStock(item._id, 1);
+  if (!reservedWarehouseIds) return res.status(400).json({ error: "Item is out of stock" });
 
   const user = (req as any).user;
   const order = await Order.create({
@@ -552,7 +537,7 @@ app.post("/api/items/:id/buy", requireAuth, async (req, res) => {
         name: item.name,
         price: item.price,
         quantity: 1,
-        allocations: [{ warehouseId: decremented.warehouse_id, quantity: 1 }],
+        allocations: [{ warehouseId: reservedWarehouseIds[0], quantity: 1 }],
       },
     ],
     total: item.price,
@@ -583,7 +568,8 @@ app.get("/api/cart", requireAuth, async (req, res) => {
 // item from different tabs/clients can never both observe "no line yet" and
 // both push a duplicate line — MongoDB serializes per-document writes, so at
 // most one of the two update filters below can match at a time.
-async function addToCart(userId: string, itemId: Types.ObjectId, qty: number) {
+async function addToCart(userId: string, itemId: Types.ObjectId, qty: number,
+  reservedWarehouseIds: Types.ObjectId[]) {
   try {
     await Cart.updateOne({ userId }, { $setOnInsert: { userId, items: [] } }, { upsert: true });
   } catch (err: any) {
@@ -594,14 +580,17 @@ async function addToCart(userId: string, itemId: Types.ObjectId, qty: number) {
     const incResult = await Cart.updateOne(
       { userId, "items.itemId": itemId },
       { $inc: { "items.$.quantity": qty },
-        $set: { "items.$.reservationExpiresAt": new Date(Date.now() + 90_000) } }
+        $set: { "items.$.reservationExpiresAt": new Date(Date.now() + 90_000),
+          inactiveExpiresAt: new Date(Date.now() + 300_000) },
+        $push: { "items.$.reservedWarehouseIds": { $each: reservedWarehouseIds } } }
     );
     if (incResult.matchedCount > 0) return;
 
     const pushResult = await Cart.updateOne(
       { userId, "items.itemId": { $ne: itemId } },
       { $push: { items: { itemId, quantity: qty,
-        reservationExpiresAt: new Date(Date.now() + 90_000) } } }
+        reservationExpiresAt: new Date(Date.now() + 90_000), reservedWarehouseIds } },
+        $set: { inactiveExpiresAt: new Date(Date.now() + 300_000) } }
     );
     if (pushResult.matchedCount > 0) return;
   }
@@ -615,13 +604,15 @@ app.post("/api/cart", requireAuth, async (req, res) => {
   if (!Number.isInteger(qty) || qty < 1) return res.status(400).json({ error: "Quantity must be at least 1" });
   const item = await Item.findById(itemId);
   if (!item) return res.status(404).json({ error: "Item not found" });
-  const available = await getStockByItem();
-  if ((available.get(itemId) || 0) < qty) {
-    return res.status(400).json({ error: "Not enough stock is available" });
-  }
-
   const userId = (req as any).user._id.toString();
-  await addToCart(userId, item._id, qty);
+  const reservedWarehouseIds = await reserveStock(item._id, qty);
+  if (!reservedWarehouseIds) return res.status(400).json({ error: "Not enough stock is available" });
+  try {
+    await addToCart(userId, item._id, qty, reservedWarehouseIds);
+  } catch (error) {
+    await releaseStock(item._id, reservedWarehouseIds);
+    throw error;
+  }
 
   await Promise.all([broadcastCart(userId), broadcastRecommendedForUser(userId)]);
   res.json(await getCartLive(userId));
@@ -638,13 +629,23 @@ app.patch("/api/cart/:itemId", requireAuth, async (req, res) => {
   const cart = await Cart.findOne({ userId });
   const line = cart?.items.find((l) => l.itemId.toString() === itemId);
   if (!cart || !line) return res.status(404).json({ error: "Item is not in your cart" });
-  const available = await getStockByItem();
-  if (qty > line.quantity + (available.get(itemId) || 0)) {
-    return res.status(400).json({ error: "Not enough stock is available" });
-  }
+  const held = [...(line.reservedWarehouseIds || [])] as Types.ObjectId[];
+  const needed = Math.max(0, qty - held.length);
+  const added = needed ? await reserveStock(line.itemId as Types.ObjectId, needed) : [];
+  if (added === null) return res.status(400).json({ error: "Not enough stock is available" });
+  const kept = held.slice(0, qty);
+  const released = held.slice(qty);
   line.quantity = qty;
+  line.reservedWarehouseIds = [...kept, ...added] as any;
   line.reservationExpiresAt = new Date(Date.now() + 90_000);
-  await cart.save();
+  cart.inactiveExpiresAt = new Date(Date.now() + 300_000);
+  try {
+    await cart.save();
+  } catch (error) {
+    await releaseStock(line.itemId as Types.ObjectId, added);
+    throw error;
+  }
+  await releaseStock(line.itemId as Types.ObjectId, released);
 
   await broadcastCart(userId);
   res.json(await getCartLive(userId));
@@ -655,8 +656,12 @@ app.delete("/api/cart/:itemId", requireAuth, async (req, res) => {
   const userId = (req as any).user._id.toString();
   const cart = await Cart.findOne({ userId });
   if (cart) {
+    const removed = cart.items.find((line) => line.itemId.toString() === itemId);
     cart.items = cart.items.filter((l) => l.itemId.toString() !== itemId) as any;
+    cart.inactiveExpiresAt = new Date(Date.now() + 300_000);
     await cart.save();
+    if (removed) await releaseStock(removed.itemId as Types.ObjectId,
+      [...(removed.reservedWarehouseIds || [])] as Types.ObjectId[]);
   }
   await Promise.all([broadcastCart(userId), broadcastRecommendedForUser(userId)]);
   res.json(await getCartLive(userId));
@@ -665,33 +670,6 @@ app.delete("/api/cart/:itemId", requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 // Checkout
 // ---------------------------------------------------------------------------
-
-// Reserve `qty` units of an item across whatever warehouses have stock,
-// one atomic unit at a time. Returns the list of warehouse ids the units were
-// taken from (for compensating rollback) or null if the full quantity could
-// not be reserved, having already rolled back its own partial progress.
-async function reserveUnits(itemId: Types.ObjectId, qty: number): Promise<Types.ObjectId[] | null> {
-  const taken: Types.ObjectId[] = [];
-  for (let i = 0; i < qty; i++) {
-    const doc = await Stock.findOneAndUpdate(
-      { item_id: itemId, quantity: { $gte: 1 } },
-      { $inc: { quantity: -1 } },
-      { sort: { quantity: -1 } }
-    );
-    if (!doc) {
-      await releaseUnits(itemId, taken);
-      return null;
-    }
-    taken.push(doc.warehouse_id as any);
-  }
-  return taken;
-}
-
-async function releaseUnits(itemId: Types.ObjectId, warehouseIds: Types.ObjectId[]) {
-  for (const warehouseId of warehouseIds) {
-    await Stock.updateOne({ item_id: itemId, warehouse_id: warehouseId }, { $inc: { quantity: 1 } });
-  }
-}
 
 app.post("/api/checkout", requireAuth, async (req, res) => {
   const userId = (req as any).user._id.toString();
@@ -713,7 +691,6 @@ app.post("/api/checkout", requireAuth, async (req, res) => {
   const items = await Item.find({ _id: { $in: originalLines.map((l) => l.itemId) } });
   const itemMap = new Map(items.map((i) => [i._id.toString(), i]));
 
-  const reservations: Array<{ itemId: Types.ObjectId; warehouseIds: Types.ObjectId[] }> = [];
   let failure: string | null = null;
   const orderLines: Array<{
     itemId: Types.ObjectId;
@@ -729,12 +706,11 @@ app.post("/api/checkout", requireAuth, async (req, res) => {
       failure = "An item in your cart no longer exists";
       break;
     }
-    const warehouseIds = await reserveUnits(item._id, line.quantity);
-    if (!warehouseIds) {
-      failure = `Not enough stock of ${item.name}`;
+    const warehouseIds = [...(line.reservedWarehouseIds || [])] as Types.ObjectId[];
+    if (warehouseIds.length < line.quantity) {
+      failure = `The reservation for ${item.name} expired`;
       break;
     }
-    reservations.push({ itemId: item._id, warehouseIds });
     const allocationCounts = new Map<string, { warehouseId: Types.ObjectId; quantity: number }>();
     for (const wId of warehouseIds) {
       const key = wId.toString();
@@ -752,8 +728,7 @@ app.post("/api/checkout", requireAuth, async (req, res) => {
   }
 
   if (failure) {
-    for (const r of reservations) await releaseUnits(r.itemId, r.warehouseIds);
-    await Cart.updateOne({ userId }, { $set: { items: originalLines } });
+    await Cart.updateOne({ userId }, { $set: { items: allLines } });
     return res.status(400).json({ error: failure });
   }
 
@@ -766,7 +741,6 @@ app.post("/api/checkout", requireAuth, async (req, res) => {
       start: { $lte: now }, end: { $gte: now }, $expr: { $lt: ["$redemptions", "$limit"] } },
     { $inc: { redemptions: 1, revenue: total } });
     if (!promotion) {
-      for (const reservation of reservations) await releaseUnits(reservation.itemId, reservation.warehouseIds);
       await Cart.updateOne({ userId }, { $set: { items: allLines,
         promotionCode: claimedCart.promotionCode, discount: claimedCart.discount } });
       return res.status(400).json({ error: "Promotion is expired or unavailable" });

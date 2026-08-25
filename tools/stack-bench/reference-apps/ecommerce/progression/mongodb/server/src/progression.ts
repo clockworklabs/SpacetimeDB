@@ -9,6 +9,7 @@ import {
   Activity, CartArchive, Dismissal, Notification, Payment, Preference, Profile, Promotion,
   ReorderRule, ScheduledRestock, StockAlert, StockLedger, SupportTicket,
 } from "./progression-models.js";
+import { releaseStock, reserveStock } from "./stock-reservations.js";
 
 type Request = express.Request & { progressionUser?: any };
 
@@ -352,7 +353,11 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
   });
 
   router.post("/cart/restore", auth, async (req: Request, res) => {
-    const archive = await CartArchive.findOne({ userId: req.progressionUser._id });
+    const currentCart = await Cart.findOne({ userId: req.progressionUser._id });
+    if (currentCart?.items.length) {
+      return res.status(409).json({ error: "Empty the current cart before restoring an expired cart" });
+    }
+    const archive = await CartArchive.findOneAndDelete({ userId: req.progressionUser._id });
     if (!archive) return res.status(404).json({ error: "No expired cart is available" });
     const restored: any[] = [];
     const unavailable: string[] = [];
@@ -361,13 +366,21 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
       const total = await Stock.aggregate([{ $match: { item_id: archived.itemId } },
         { $group: { _id: null, total: { $sum: "$quantity" } } }]);
       const quantity = Math.min(Number(archived.quantity), total[0]?.total || 0);
-      if (!item || quantity < 1) unavailable.push(item?.name || "Unavailable item");
+      const reservedWarehouseIds = item && quantity > 0
+        ? await reserveStock(archived.itemId as Types.ObjectId, quantity) : null;
+      if (!item || !reservedWarehouseIds) unavailable.push(item?.name || "Unavailable item");
       else restored.push({ itemId: archived.itemId, quantity,
-        reservationExpiresAt: new Date(Date.now() + 90_000) });
+        reservationExpiresAt: new Date(Date.now() + 90_000), reservedWarehouseIds });
     }
-    await Cart.updateOne({ userId: req.progressionUser._id }, { $set: { items: restored } },
-      { upsert: true });
-    await CartArchive.deleteOne({ _id: archive._id });
+    const restoredCart = await Cart.findOneAndUpdate({ userId: req.progressionUser._id,
+      items: { $size: 0 } }, { $set: { items: restored,
+      inactiveExpiresAt: new Date(Date.now() + 300_000) } });
+    if (!restoredCart) {
+      for (const line of restored) await releaseStock(line.itemId,
+        line.reservedWarehouseIds as Types.ObjectId[]);
+      await CartArchive.create({ userId: req.progressionUser._id, items: archive.items });
+      return res.status(409).json({ error: "The cart changed while it was being restored" });
+    }
     changed(String(req.progressionUser._id));
     res.json({ restored: restored.length, unavailable });
   });
@@ -378,6 +391,21 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
 
   async function processTimers() {
     const now = new Date();
+
+    const reservationCarts = await Cart.find({ items: { $elemMatch: {
+      reservationExpiresAt: { $lte: now }, "reservedWarehouseIds.0": { $exists: true },
+    } } });
+    for (const cart of reservationCarts) {
+      for (const line of cart.items.filter(value => value.reservationExpiresAt
+        && value.reservationExpiresAt <= now && value.reservedWarehouseIds?.length)) {
+        const result = await Cart.updateOne({ _id: cart._id, items: { $elemMatch: {
+          itemId: line.itemId, reservationExpiresAt: line.reservationExpiresAt,
+          "reservedWarehouseIds.0": { $exists: true },
+        } } }, { $set: { "items.$.reservedWarehouseIds": [] } }, { timestamps: false });
+        if (result.modifiedCount) await releaseStock(line.itemId as Types.ObjectId,
+          [...line.reservedWarehouseIds] as Types.ObjectId[]);
+      }
+    }
     const due = await ScheduledRestock.find({ status: "pending", dueAt: { $lte: now } });
     for (const restock of due) {
       const claimed = await ScheduledRestock.findOneAndUpdate({ _id: restock._id, status: "pending" },
@@ -405,16 +433,18 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
       io.to(`user:${order.userId}`).emit("orders:update", ownerOrders.map(value => value.toJSON()));
     }
 
-    const expiredCarts = await Cart.find({ items: { $ne: [] },
-      updatedAt: { $lte: new Date(Date.now() - 300_000) } });
+    const expiredCarts = await Cart.find({ items: { $ne: [] }, inactiveExpiresAt: { $lte: now } });
     for (const cart of expiredCarts) {
-      const expired = cart.items.map(item => ({ itemId: item.itemId, quantity: item.quantity }));
+      const claimed = await Cart.findOneAndUpdate({ _id: cart._id, items: { $ne: [] },
+        inactiveExpiresAt: { $lte: now } }, { $set: { items: [], inactiveExpiresAt: null } });
+      if (!claimed) continue;
+      const expired = claimed.items.map(item => ({ itemId: item.itemId, quantity: item.quantity }));
       if (!expired.length) continue;
+      for (const line of claimed.items) await releaseStock(line.itemId as Types.ObjectId,
+        [...(line.reservedWarehouseIds || [])] as Types.ObjectId[]);
       await CartArchive.updateOne({ userId: cart.userId },
         { $set: { userId: cart.userId, items: expired } },
         { upsert: true });
-      cart.items = [] as any;
-      await cart.save();
     }
 
     const rules = await ReorderRule.find();
@@ -446,7 +476,7 @@ export function installProgressionRoutes(app: express.Express, io: SocketIOServe
       alert.sent = true;
       await alert.save();
     }
-    if (due.length || shipped.length || expiredCarts.length) changed();
+    if (due.length || shipped.length || expiredCarts.length || reservationCarts.length) changed();
   }
 
   const timer = setInterval(() => processTimers().catch(error =>
