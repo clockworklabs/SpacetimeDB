@@ -15,7 +15,7 @@
   "budget": { "status": "bounded", "maxRuntimeMs": 24000 },
   "task": {
     "requirements": [
-      { "id": "ecommerce.progression.cancellation-queue", "path": "prompts/fragments/order-cancellation-1.0.0.md", "order": 2045, "from": "## Fulfilment queue integration", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.operations-access-features"] }
+      { "id": "ecommerce.progression.cancellation-queue", "path": "prompts/modular/cancellation-queue-1.0.0.md", "order": 2045, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.operations-access-features"] }
     ],
     "contracts": []
   },
