@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     ])
     .run()?;
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
-    cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
+    cmd!("cargo", "test", "-vv", "-p", "spacetimedb-codegen").run()?;
     // Pre-build the CLI so that it _doesn't_ get `cargo update`d, since that may break the build.
     cmd!("cargo", "build", "-vv", "-p", "spacetimedb-cli").run()?;
     // Make sure the `Cargo.lock` file reflects the latest available versions.
@@ -31,7 +31,7 @@ fn main() -> Result<()> {
     // of dependencies than what is in the workspace lock file.
     //
     // For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
-    cmd!("cargo", "update").run()?;
+    cmd!("cargo", "update", "-vv").run()?;
     let cli_path = ci_common::repo_root()
         .join("target/debug/spacetimedb-cli")
         .with_extension(std::env::consts::EXE_EXTENSION);

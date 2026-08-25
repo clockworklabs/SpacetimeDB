@@ -308,6 +308,7 @@ fn main() -> Result<()> {
     cmd!(
         "cargo",
         "clippy",
+        "-vv",
         "--timings",
         "--all",
         "--tests",
@@ -320,6 +321,7 @@ fn main() -> Result<()> {
     cmd!(
         "cargo",
         "clippy",
+        "-vv",
         "--timings",
         "--no-default-features",
         "--features=browser",
@@ -336,7 +338,10 @@ fn main() -> Result<()> {
         .dir("crates/bindings-csharp")
         .run()?;
     pnpm(["lint"]).run()?;
-    cmd!("cargo", "test", "--doc", "--target", "wasm32-unknown-unknown")
+    cmd!("cargo", "test", "-vv", "--doc", "--target", "wasm32-unknown-unknown")
+        .dir("crates/bindings")
+        .run()?;
+    cmd!("cargo", "test", "-vv", "--doc")
         .dir("crates/bindings")
         .run()?;
     cmd!("cargo", "test", "--doc").dir("crates/bindings").run()?;
@@ -345,7 +350,7 @@ fn main() -> Result<()> {
     // We won't pass `--no-deps`, though,
     // since we want everything reachable through it to also work.
     // This includes `sats` and `lib`.
-    cmd!("cargo", "doc")
+    cmd!("cargo", "doc", "-vv")
         .dir("crates/bindings")
         // Make `cargo doc` exit with error on warnings, most notably broken links
         .env("RUSTDOCFLAGS", "--deny warnings")

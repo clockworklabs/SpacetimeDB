@@ -529,7 +529,7 @@ jobs:
 
           INSTALLED_WASM_BINDGEN_VERSION="$(wasm-bindgen --version 2>/dev/null | awk '{print $2}' || true)"
           if [ "${INSTALLED_WASM_BINDGEN_VERSION}" != "${REQUIRED_WASM_BINDGEN_VERSION}" ]; then
-            cargo install --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
+            cargo install -vv --locked --force wasm-bindgen-cli --version "${REQUIRED_WASM_BINDGEN_VERSION}"
           fi
 
           wasm-bindgen --version
@@ -583,7 +583,7 @@ jobs:
         run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
 
       - name: Run index scan benchmark regression check
-        run: cargo run --release -p spacetimedb-index-scan-gate
+        run: cargo run -vv --release -p spacetimedb-index-scan-gate
 
   lints:
     needs: [merge_queue_noop]
@@ -889,7 +889,7 @@ jobs:
 
               cd "$GITHUB_WORKSPACE/sdks/unreal"
               cargo --version
-              cargo test -- --test-threads=1
+              cargo test -vv -- --test-threads=1
             '
 
   cli_docs:
@@ -1019,8 +1019,8 @@ jobs:
         run: |
           export CARGO_HOME="$HOME/.cargo"
           echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
+          cargo install -vv --force --path crates/cli --locked --message-format=short
+          cargo install -vv --force --path crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 
@@ -1142,8 +1142,8 @@ jobs:
         run: |
           export CARGO_HOME="$HOME/.cargo"
           echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --locked --message-format=short
+          cargo install -vv --force --path crates/cli --locked --message-format=short
+          cargo install -vv --force --path crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 
@@ -1262,8 +1262,8 @@ jobs:
         run: |
           export CARGO_HOME="$HOME/.cargo"
           echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-          cargo install --force --path crates/cli --locked --message-format=short
-          cargo install --force --path crates/standalone --features allow_loopback_http_for_tests --locked --message-format=short
+          cargo install -vv --force --path crates/cli --locked --message-format=short
+          cargo install -vv --force --path crates/standalone --features allow_loopback_http_for_tests --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 

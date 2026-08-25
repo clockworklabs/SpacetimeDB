@@ -24,6 +24,7 @@ fn main() -> Result<()> {
     cmd!(
         "cargo",
         "test",
+        "-vv",
         "--all",
         "--exclude",
         "spacetimedb-smoketests",
@@ -43,6 +44,7 @@ fn main() -> Result<()> {
     cmd!(
         "cargo",
         "test",
+        "-vv",
         "-p",
         "spacetimedb",
         "--features",
@@ -70,6 +72,7 @@ fn main() -> Result<()> {
     cmd!(
         "cargo",
         "test",
+        "-vv",
         "-p",
         "spacetimedb-sdk",
         "--features",
@@ -84,6 +87,7 @@ fn main() -> Result<()> {
     cmd!(
         "cargo",
         "test",
+        "-vv",
         "-p",
         "spacetimedb-sdk",
         "--features",
@@ -102,6 +106,7 @@ fn main() -> Result<()> {
     cmd!(
         "cargo",
         "test",
+        "-vv",
         "-p",
         "spacetimedb-durability",
         "--features",
