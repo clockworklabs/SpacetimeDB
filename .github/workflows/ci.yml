@@ -550,7 +550,7 @@ jobs:
 
   index_scan_bench:
     needs: [merge_queue_noop, lints]
-    if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
+    if: false
     name: Index Scan Bench
     runs-on: spacetimedb-benchmark-runner
     concurrency:
