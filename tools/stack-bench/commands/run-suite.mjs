@@ -265,6 +265,21 @@ export async function verifyReseedProbe(url, expectation, { fetchImpl = fetch } 
   return { ok: true, detail: null, count: value.length };
 }
 
+export async function waitForReseedProbe(url, expectation, {
+  attempts = 17, intervalMs = 500, probe = verifyReseedProbe, sleepImpl = sleep,
+} = {}) {
+  if (!Number.isInteger(attempts) || attempts < 1) {
+    throw new Error('reseed probe attempts must be a positive integer');
+  }
+  let result = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    result = await probe(url, expectation);
+    if (result.ok || attempt === attempts) return result;
+    await sleepImpl(intervalMs);
+  }
+  return result;
+}
+
 // The benchmark's own database containers. A generated app that connects
 // somewhere else is not measuring what we think it is: one Postgres app pointed
 // at an unrelated project's container on 5433 and graded "fine" while writing to
@@ -675,8 +690,7 @@ async function main() {
         }
       }
 
-      await sleep(8000);                    // let startup seeding finish
-      const seeded = await verifyReseedProbe(args.reseedProbe, args.reseedProbeExpectation);
+      const seeded = await waitForReseedProbe(args.reseedProbe, args.reseedProbeExpectation);
       if (!seeded.ok) {
         lastResetFailure = seeded.detail;
         lastResetOutcome = { kind: 'app_failure', phase: 'application-seed',

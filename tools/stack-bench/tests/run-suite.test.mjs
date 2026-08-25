@@ -8,7 +8,7 @@ import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selectio
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, resetFailureOutcome, suitesForRecipe,
-  runGraderChild, verifyReseedProbe } from '../commands/run-suite.mjs';
+  runGraderChild, verifyReseedProbe, waitForReseedProbe } from '../commands/run-suite.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 
@@ -106,6 +106,36 @@ test('reseed proof distinguishes a healthy empty app from restored startup data'
     { fetchImpl: async () => response({ items: [] }) }),
   { ok: false, count: 0,
     detail: 'startup data is missing: items contains 0 entries, expected at least 1' });
+});
+
+test('reseed readiness returns as soon as startup data is restored', async () => {
+  const observed = [];
+  const waits = [];
+  const result = await waitForReseedProbe('http://app/api/items', { jsonPath: 'items', minCount: 1 }, {
+    attempts: 5,
+    intervalMs: 25,
+    probe: async () => {
+      observed.push(observed.length + 1);
+      return observed.length < 3
+        ? { ok: false, count: 0, detail: 'startup data is missing' }
+        : { ok: true, count: 12, detail: null };
+    },
+    sleepImpl: async ms => waits.push(ms),
+  });
+  assert.deepEqual(result, { ok: true, count: 12, detail: null });
+  assert.deepEqual(observed, [1, 2, 3]);
+  assert.deepEqual(waits, [25, 25]);
+});
+
+test('reseed readiness returns the last failure after its bounded attempts', async () => {
+  let calls = 0;
+  const result = await waitForReseedProbe('http://app/api/items', {}, {
+    attempts: 2, intervalMs: 0,
+    probe: async () => ({ ok: false, count: calls++, detail: 'not ready' }),
+    sleepImpl: async () => {},
+  });
+  assert.deepEqual(result, { ok: false, count: 1, detail: 'not ready' });
+  assert.equal(calls, 2);
 });
 
 test('an application setup failure receives the exact current and inherited denominators', () => {
