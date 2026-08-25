@@ -14,10 +14,10 @@
   "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
   "task": {
     "requirements": [
-      { "id": "ecommerce.feature.warehouse-admin.requirement", "path": "prompts/modular/l1-features.md", "order": 600, "from": "## Warehouse administration", "modes": ["fresh", "upgrade"] }
+      { "id": "ecommerce.feature.warehouse-admin.requirement", "path": "prompts/modular/warehouse-administration-1.0.0.md", "order": 600, "modes": ["fresh", "upgrade"] }
     ],
     "contracts": [
-      { "id": "ecommerce.feature.warehouse-admin.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2500, "from": "## Warehouse administration hooks", "modes": ["fresh", "upgrade"] }
+      { "id": "ecommerce.feature.warehouse-admin.hooks", "path": "contracts/warehouse-administration-1.0.md", "order": 2500, "modes": ["fresh", "upgrade"] }
     ]
   },
   "checks": [

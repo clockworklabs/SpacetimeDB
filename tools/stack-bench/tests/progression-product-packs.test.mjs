@@ -11,11 +11,12 @@ const readPack = name => compilePackDefinition(
   JSON.parse(readFileSync(join(packRoot, name), 'utf8')), { source: name });
 const cases = [
   ['feature-reviews-1.2.0.json', ['fresh', 'upgrade']],
+  ['feature-warehouse-admin-1.2.0.json', ['fresh', 'upgrade']],
   ['progression-catalog-management-1.0.0.json', ['upgrade']],
   ['progression-payment-records-1.0.0.json', ['upgrade']],
 ];
 
-test('review, catalog management, and payment packs have dedicated prompt modules', () => {
+test('review, warehouse, catalog management, and payment packs have dedicated prompt modules', () => {
   const packs = cases.map(([name]) => readPack(name));
   for (const [index, pack] of packs.entries()) {
     assert.equal(pack.state, 'draft');
