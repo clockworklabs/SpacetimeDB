@@ -3,6 +3,7 @@ import { io, Socket } from "socket.io-client";
 import { ProgressionPanel } from "./ProgressionPanel";
 
 const TOKEN_KEY = "mongodb_shop_token";
+const CATALOG_PAGE_SIZE = 10;
 
 interface ItemT {
   id: string;
@@ -513,7 +514,8 @@ export default function App() {
       && (!categoryFilter || it.category === categoryFilter)
       && it.price >= min && it.price <= max && (!inStockOnly || it.stock > 0));
   }, [items, searchQuery, categoryFilter, minimumPrice, maximumPrice, inStockOnly]);
-  const searchResults = filteredItems.slice(searchPage * 6, searchPage * 6 + 6);
+  const searchResults = filteredItems.slice(searchPage * CATALOG_PAGE_SIZE,
+    searchPage * CATALOG_PAGE_SIZE + CATALOG_PAGE_SIZE);
 
   const cartCount = cart.items.reduce((s, l) => s + l.quantity, 0);
   const selectedItem = items.find((it) => it.id === selectedItemId) || null;
@@ -537,7 +539,7 @@ export default function App() {
           data-testid="search-input"
           placeholder="Search items..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e) => { setSearchQuery(e.target.value); setSearchPage(0); }}
           onKeyDown={(e) => {
             if (e.key === "Escape") setSearchQuery("");
           }}
@@ -616,15 +618,12 @@ export default function App() {
                     />
                   ))}
                 </div>
-                {filteredItems.slice(12).map((item) => <ItemCard key={`overflow-${item.id}`}
-                  item={item} isCustomer={isCustomer} onOpen={() => setSelectedItemId(item.id)}
-                  onBuy={() => handleBuyNow(item.id)} onAddToCart={() => handleAddToCart(item.id)} />)}
               </div>
               <div className="pager">
                 <button data-testid="search-previous-page" className="btn btn-ghost btn-sm"
                   disabled={searchPage === 0} onClick={() => setSearchPage(page => Math.max(0, page - 1))}>Previous</button>
                 <button data-testid="search-next-page" className="btn btn-ghost btn-sm"
-                  disabled={(searchPage + 1) * 6 >= filteredItems.length}
+                  disabled={(searchPage + 1) * CATALOG_PAGE_SIZE >= filteredItems.length}
                   onClick={() => setSearchPage(page => page + 1)}>Next</button>
               </div>
             </section>

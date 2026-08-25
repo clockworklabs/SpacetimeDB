@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 const trackRoot = join(import.meta.dirname, '..', 'tracks', 'ecommerce');
+const referenceRoot = join(import.meta.dirname, '..', 'reference-apps', 'ecommerce', 'progression');
 const readJson = path => JSON.parse(readFileSync(path, 'utf8'));
 
 function selectedChecks() {
@@ -62,9 +63,20 @@ function inspectSteps(steps, navigation, secondPageItems, failures, context) {
   }
 }
 
-test('graph-selected scenarios navigate to products outside the first catalog page', () => {
+test('progression references use the storefront contract page size', () => {
+  for (const backend of ['mongodb', 'postgres', 'spacetime']) {
+    const source = readFileSync(join(referenceRoot, backend, 'client', 'src', 'App.tsx'), 'utf8');
+    assert.match(source, /const CATALOG_PAGE_SIZE = 10;/, backend);
+    assert.match(source, /slice\(searchPage \* CATALOG_PAGE_SIZE,/, backend);
+    assert.match(source, /\(searchPage \+ 1\) \* CATALOG_PAGE_SIZE/, backend);
+    assert.equal(source.match(/data-testid="search-results"/g)?.length, 1, backend);
+    assert.doesNotMatch(source, /filteredItems\.slice\(12\)/, backend);
+  }
+});
+
+test('graph-selected scenarios navigate to products outside the first ten catalog items', () => {
   const fixture = readJson(join(trackRoot, 'composition', 'fixtures', 'operations-1.0.0.json'));
-  const secondPageItems = new Set(fixture.items.map(item => item.name).sort().slice(6));
+  const secondPageItems = new Set(fixture.items.map(item => item.name).sort().slice(10));
   const failures = [];
 
   for (const check of selectedChecks()) {

@@ -27,6 +27,7 @@ type QueueItem = { id: number; createdAt: string; items: { name: string; quantit
 type QueueState = { queue: QueueItem[]; depth: number };
 
 let toastId = 0;
+const CATALOG_PAGE_SIZE = 10;
 type Toast = { id: number; kind: "buy-error" | "auth-error" | "review-error" | "order-error"; message: string };
 
 async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
@@ -201,7 +202,8 @@ export default function App() {
       && (!maximumPrice || item.price <= Number(maximumPrice))
       && (!inStockOnly || item.stock > 0))
       .sort((a, b) => a.name.localeCompare(b.name))
-      .slice(searchPage * 6, searchPage * 6 + 6);
+      .slice(searchPage * CATALOG_PAGE_SIZE,
+        searchPage * CATALOG_PAGE_SIZE + CATALOG_PAGE_SIZE);
   }, [items, search, categoryFilter, minimumPrice, maximumPrice, inStockOnly, searchPage]);
   const filteredItemCount = items.filter((item) => (!search.trim() || item.name.toLowerCase().includes(search.trim().toLowerCase()))
     && (!categoryFilter || item.category === categoryFilter)
@@ -483,12 +485,10 @@ export default function App() {
         </div>
 
         <h2 className="section-title">{search.trim() ? "Search results" : "Best sellers"}</h2>
-        {visibleItems.length === 0 ? (
-          <div className="empty-state" data-testid="search-results">
-            No items found.
-          </div>
-        ) : (
-          <div data-testid="search-results">
+        <div data-testid="search-results">
+          {visibleItems.length === 0 ? (
+            <div className="empty-state">No items found.</div>
+          ) : (
             <div className="item-list" data-testid="item-list">{visibleItems.map((it) => (
               <ItemCard
                 key={it.id}
@@ -500,11 +500,13 @@ export default function App() {
                 onStockAlert={() => requestStockAlert(it.id)}
               />
             ))}</div>
-          </div>
-        )}
+          )}
+        </div>
         <div className="search-pagination">
           <button data-testid="search-previous-page" disabled={searchPage === 0} onClick={() => setSearchPage(searchPage - 1)}>Previous</button>
-          <button data-testid="search-next-page" disabled={(searchPage + 1) * 6 >= filteredItemCount} onClick={() => setSearchPage(searchPage + 1)}>Next</button>
+          <button data-testid="search-next-page"
+            disabled={(searchPage + 1) * CATALOG_PAGE_SIZE >= filteredItemCount}
+            onClick={() => setSearchPage(searchPage + 1)}>Next</button>
         </div>
       </main>
 

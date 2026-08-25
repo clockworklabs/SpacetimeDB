@@ -96,6 +96,29 @@ export function completeUnvisitedHooks(hooks, results) {
   return results;
 }
 
+export function completeAbortedHooks(hooks, results, error) {
+  const visited = new Set(results.map(result => result.id));
+  const detail = String(error?.message ?? error ?? 'unknown error').split(/\r?\n/)[0];
+  let failureRecorded = false;
+  for (const hook of hooks) {
+    if (visited.has(hook.id)) continue;
+    if (hook.stage === 'scenario') {
+      results.push({ id: hook.id, status: 'SCENARIO', detail: hook.note });
+    } else if (!failureRecorded) {
+      results.push({ id: hook.id, status: 'FAIL',
+        detail: `golden path aborted before this hook: ${detail}` });
+      failureRecorded = true;
+    } else {
+      results.push({ id: hook.id, status: 'BLOCKED', detail: 'golden path aborted' });
+    }
+  }
+  if (!failureRecorded) {
+    results.push({ id: 'golden-path', status: 'FAIL',
+      detail: `golden path aborted after checking all hooks: ${detail}` });
+  }
+  return results;
+}
+
 async function run() {
   const args = parseArgs(process.argv);
   const track = loadTrack(args.track);
@@ -122,11 +145,7 @@ async function run() {
     completeUnvisitedHooks(hooks, results);
   } catch (err) {
     console.error(`Golden path aborted: ${err.message}`);
-    for (const h of hooks) {
-      if (!results.some(r => r.id === h.id)) {
-        results.push({ id: h.id, status: h.stage === 'scenario' ? 'SCENARIO' : 'BLOCKED', detail: 'golden path aborted' });
-      }
-    }
+    completeAbortedHooks(hooks, results, err);
   } finally {
     await browser.close();
   }

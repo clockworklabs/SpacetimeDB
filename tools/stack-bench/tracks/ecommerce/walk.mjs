@@ -108,13 +108,16 @@ export async function walk({ page, args, byStage, blocked, checkHook, results, u
 
   // Stage: cart — add a known item, then open the cart.
   if (ok) {
-    const card = page.locator(tid('item-card'), { hasText: CART_ITEM }).first();
-    if (!(await card.isVisible().catch(() => false))) {
-      // The item detail view may still be covering the storefront.
-      await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-    }
-    await page.locator(tid('item-card'), { hasText: CART_ITEM }).first()
-      .locator(tid('add-to-cart')).first().click();
+    // Search reaches the product regardless of ranking or page size.
+    const search = page.locator(tid('search-input')).first();
+    await search.fill(CART_ITEM);
+    await search.press('Enter').catch(() => {});
+    const card = page.locator(tid('search-results')).first()
+      .locator(tid('item-card'), { hasText: CART_ITEM }).first();
+    await card.waitFor({ state: 'visible', timeout: CHECK_TIMEOUT });
+    await card.locator(tid('add-to-cart')).first().click();
+    await search.fill('');
+    await search.press('Enter').catch(() => {});
     await page.locator(tid('cart-toggle')).first().click();
     for (const h of byStage('cart')) ok = (await checkHook(page, h, results)) && ok;
   } else blocked('cart');

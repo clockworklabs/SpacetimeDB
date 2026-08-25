@@ -12,6 +12,7 @@ import ProgressionWorkbench from './components/ProgressionWorkbench';
 import { formatMoney } from './types';
 
 const LOW_STOCK_THRESHOLD = 10;
+const CATALOG_PAGE_SIZE = 10;
 type ActivePanel = 'cart' | 'orders' | 'admin' | 'staff' | null;
 
 function microsToDate(micros: bigint): Date {
@@ -145,7 +146,7 @@ export default function App() {
     return set;
   }, [orderItemRows]);
 
-  const storefrontItems = useMemo(() => {
+  const rankedItems = useMemo(() => {
     const arr = [...items];
     arr.sort((a, b) => {
       const pa = purchaseCountByItem.get(a.id) ?? 0;
@@ -153,7 +154,7 @@ export default function App() {
       if (pb !== pa) return pb - pa;
       return a.name.localeCompare(b.name);
     });
-    return arr.slice(0, 10);
+    return arr;
   }, [items, purchaseCountByItem]);
 
   const filteredSearchResults = useMemo(() => {
@@ -169,7 +170,11 @@ export default function App() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [items, searchQuery, categoryFilter, minimumPrice, maximumPrice, inStockOnly, catalogDetailRows, stockByItem]);
 
-  const searchResults = filteredSearchResults.slice(searchPage * 6, searchPage * 6 + 6);
+  const showingSearch = searchQuery.trim().length > 0 || categoryFilter !== ''
+    || minimumPrice !== '' || maximumPrice !== '' || inStockOnly;
+  const catalogItems = showingSearch ? filteredSearchResults : rankedItems;
+  const searchResults = catalogItems.slice(searchPage * CATALOG_PAGE_SIZE,
+    searchPage * CATALOG_PAGE_SIZE + CATALOG_PAGE_SIZE);
   const categories = [...new Set(catalogDetailRows.map(row => row.category))].sort();
 
   const cartLines: CartLine[] = useMemo(
@@ -314,7 +319,6 @@ export default function App() {
     );
   }
 
-  const showingSearch = searchQuery.trim().length > 0 || categoryFilter !== '' || minimumPrice !== '' || maximumPrice !== '' || inStockOnly;
   const progressionWorkbench = () => (
     <ProgressionWorkbench
       conn={conn}
@@ -356,6 +360,7 @@ export default function App() {
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);
+            setSearchPage(0);
             setSelectedItemId(null);
             setActivePanel(null);
           }}
@@ -433,36 +438,34 @@ export default function App() {
           />
         )}
 
-        <h1 className="section-title">Best sellers</h1>
-        <div className="item-list" data-testid="item-list">
-          {storefrontItems.map((item) => (
-            <ItemCard
-              key={String(item.id)}
-              item={item}
-              stock={stockByItem.get(item.id) ?? 0}
-              isSignedIn={isSignedIn}
-              onOpen={setSelectedItemId}
-              onBuyNow={handleBuyNow}
-              onAddToCart={handleAddToCart}
-              onStockAlert={handleStockAlert}
-              variants={itemVariantsByItem.get(item.id) ?? []}
-            />
-          ))}
+        <h1 className="section-title">{showingSearch ? 'Search results' : 'Best sellers'}</h1>
+        <div data-testid="item-list">
+          <div className="item-list" data-testid="search-results">
+            {searchResults.length === 0 && (
+              <div className="empty-state">No items match "{searchQuery}".</div>
+            )}
+            {searchResults.map((item) => (
+              <ItemCard
+                key={String(item.id)}
+                item={item}
+                stock={stockByItem.get(item.id) ?? 0}
+                isSignedIn={isSignedIn}
+                onOpen={setSelectedItemId}
+                onBuyNow={handleBuyNow}
+                onAddToCart={handleAddToCart}
+                onStockAlert={handleStockAlert}
+                variants={itemVariantsByItem.get(item.id) ?? []}
+              />
+            ))}
+          </div>
         </div>
-        <div className="item-list">
-          {items.filter(item => !storefrontItems.some(featured => featured.id === item.id)).map(item => (
-            <ItemCard
-              key={`managed-${String(item.id)}`}
-              item={item}
-              stock={stockByItem.get(item.id) ?? 0}
-              isSignedIn={isSignedIn}
-              onOpen={setSelectedItemId}
-              onBuyNow={handleBuyNow}
-              onAddToCart={handleAddToCart}
-              onStockAlert={handleStockAlert}
-              variants={itemVariantsByItem.get(item.id) ?? []}
-            />
-          ))}
+        <div className="search-pagination">
+          <button className="btn btn-ghost btn-sm" data-testid="search-previous-page"
+            disabled={searchPage === 0}
+            onClick={() => setSearchPage(page => Math.max(0, page - 1))}>Previous</button>
+          <button className="btn btn-ghost btn-sm" data-testid="search-next-page"
+            disabled={(searchPage + 1) * CATALOG_PAGE_SIZE >= catalogItems.length}
+            onClick={() => setSearchPage(page => page + 1)}>Next</button>
         </div>
 
         <h1 className="section-title" style={{ marginTop: 32 }}>
@@ -484,36 +487,6 @@ export default function App() {
           ))}
         </div>
         </div>
-
-        {showingSearch && (
-          <>
-            <h1 className="section-title" style={{ marginTop: 32 }}>
-              Search results
-            </h1>
-            <div className="item-list" data-testid="search-results">
-              {searchResults.length === 0 && (
-                <div className="empty-state">No items match "{searchQuery}".</div>
-              )}
-              {searchResults.map((item) => (
-                <ItemCard
-                  key={String(item.id)}
-                  item={item}
-                  stock={stockByItem.get(item.id) ?? 0}
-                  isSignedIn={isSignedIn}
-                  onOpen={setSelectedItemId}
-                  onBuyNow={handleBuyNow}
-                  onAddToCart={handleAddToCart}
-                  onStockAlert={handleStockAlert}
-                  variants={itemVariantsByItem.get(item.id) ?? []}
-                />
-              ))}
-            </div>
-            <div className="search-pagination">
-              <button className="btn btn-ghost btn-sm" data-testid="search-previous-page" disabled={searchPage === 0} onClick={() => setSearchPage(page => Math.max(0, page - 1))}>Previous</button>
-              <button className="btn btn-ghost btn-sm" data-testid="search-next-page" disabled={(searchPage + 1) * 6 >= filteredSearchResults.length} onClick={() => setSearchPage(page => page + 1)}>Next</button>
-            </div>
-          </>
-        )}
 
         {activePanel !== 'admin' && activePanel !== 'staff' && progressionWorkbench()}
       </main>
