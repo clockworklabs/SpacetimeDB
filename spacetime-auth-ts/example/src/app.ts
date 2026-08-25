@@ -2,6 +2,7 @@
 
 import {
   DbConnection,
+  tables,
   type EventContext,
   type ErrorContext,
 } from './codegen/app';
@@ -245,7 +246,7 @@ function wireSubscriptions(c: DbConnection) {
   c.subscriptionBuilder()
     .onApplied(() => broadcastNotes())
     .onError((ctx: ErrorContext) => console.error('sub error', ctx.event))
-    .subscribe(['SELECT * FROM my_notes', 'SELECT * FROM my_auth_user']);
+    .subscribe([tables.myNotes, tables.myAuthUser]);
 
   c.db.myNotes.onInsert(() => broadcastNotes());
   c.db.myNotes.onUpdate(() => broadcastNotes());

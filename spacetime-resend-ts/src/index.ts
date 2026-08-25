@@ -1,4 +1,4 @@
-// Top-level entry. Only re-exports registered reducers/procedures (the runtime rejects other public exports).
+// Registered SpacetimeDB exports for direct module publication.
 
 export { default, init } from './submodule/schema';
 export {
@@ -6,7 +6,6 @@ export {
   replay_webhook_event,
 } from './submodule/webhooks';
 
-// Setup procedures explicit (avoid re-exporting helpers from auth.ts / config.ts).
 export {
   set_resend_config,
   get_resend_config_status,

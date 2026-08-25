@@ -113,7 +113,7 @@ Host match rules -> mounted Grid tables and helpers
 
 The browser first subscribes to caller-scoped match views. It creates a second,
 match-filtered subscription only for the selected match. Public catalogs and the
-open-match lobby are intentionally shared; private match state is restricted by
+open-match lobby are shared; private match state is restricted by
 the linked authenticated user and participation checks.
 
 ## Security and deployment boundaries

@@ -11,6 +11,7 @@
 
 import {
   DbConnection,
+  tables,
   type ErrorContext,
   type SubscriptionHandle,
 } from './codegen/app';
@@ -280,15 +281,15 @@ function setActiveMatch(matchId: bigint | null): void {
     .onApplied(() => broadcastState())
     .onError((ctx: ErrorContext) => console.error('match sub error', ctx.event))
     .subscribe([
-      `SELECT * FROM my_player_units WHERE match_id = ${matchId}`,
-      `SELECT * FROM my_grid_entities WHERE grid_id = ${m.gridId}`,
-      `SELECT * FROM my_cell_states WHERE grid_id = ${m.gridId}`,
-      `SELECT * FROM my_grids WHERE id = ${m.gridId}`,
+      tables.myPlayerUnits.where(row => row.matchId.eq(matchId)),
+      tables.myGridEntities.where(row => row.gridId.eq(m.gridId)),
+      tables.myCellStates.where(row => row.gridId.eq(m.gridId)),
+      tables.myGrids.where(row => row.id.eq(m.gridId)),
     ]);
 }
 
 function wireRowHandlers(conn: DbConnection): void {
-  const tables = [
+  const tableAccessors = [
     conn.db.myMatches,
     conn.db.myMatchParticipants,
     conn.db.myPlayerUnits,
@@ -299,7 +300,7 @@ function wireRowHandlers(conn: DbConnection): void {
     conn.db.actorDirectory,
     conn.db.lobbyOpenMatches,
   ];
-  for (const t of tables) {
+  for (const t of tableAccessors) {
     t.onInsert(() => broadcastState());
     t.onUpdate(() => broadcastState());
     t.onDelete(() => broadcastState());
@@ -338,11 +339,11 @@ async function bindSession(
           console.error('global sub error', ctx.event)
         )
         .subscribe([
-          'SELECT * FROM my_matches',
-          'SELECT * FROM my_match_participants',
-          'SELECT * FROM unit_type',
-          'SELECT * FROM actor_directory',
-          'SELECT * FROM lobby_open_matches',
+          tables.myMatches,
+          tables.myMatchParticipants,
+          tables.unitType,
+          tables.actorDirectory,
+          tables.lobbyOpenMatches,
         ]);
 
       // Re-open per-match subscription if a match was active before reconnect.

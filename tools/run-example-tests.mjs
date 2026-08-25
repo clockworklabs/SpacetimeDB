@@ -1,23 +1,24 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { releasePackages } from './release-packages.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-const targets = [
-  'spacetime-agents-ts/example',
-  'spacetime-agents-ts/example/spacetimedb',
-  'spacetime-api-keys-ts/example',
-  'spacetime-files-ts/example',
-  'spacetime-grid-ts/example',
-  'spacetime-lobby-ts/example',
-  'spacetime-posthog-ts/example',
-  'spacetime-presence-ts/example',
-  'spacetime-rate-limit-ts/example',
-  'spacetime-resend-ts/example',
-];
+const targets = releasePackages
+  .flatMap(packageDir => [
+    `${packageDir}/example`,
+    `${packageDir}/example/spacetimedb`,
+  ])
+  .filter(target => {
+    const manifestPath = resolve(root, target, 'package.json');
+    if (!existsSync(manifestPath)) return false;
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    return Boolean(manifest.scripts?.['test:unit']);
+  });
 
 const failures = [];
 for (const target of targets) {

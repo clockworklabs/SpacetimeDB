@@ -209,6 +209,7 @@ __pycache__/
 .stdb-*/
 spacetime-*-ts/example/public/app.js
 spacetime-*-ts/example/public/app.js.map
+spacetime-*-ts/ts-codegen/
 
 /protobuf
 cs-src/

@@ -1,5 +1,6 @@
 import {
   DbConnection,
+  tables,
   type ErrorContext,
   type EventContext,
   type SubscriptionEventContext,
@@ -513,10 +514,7 @@ function wireDataHandlers() {
       console.error('subscription error:', ctx.event);
       showError('Subscription failed. Check the server console.');
     })
-    .subscribe([
-      'SELECT * FROM my_dispatch_emails',
-      'SELECT * FROM my_dispatch_delivery_events',
-    ]);
+    .subscribe([tables.myDispatchEmails, tables.myDispatchDeliveryEvents]);
 }
 
 async function sendDispatch(

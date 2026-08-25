@@ -166,7 +166,7 @@ updated.
 - Browser provider actions are automatic only for a non-production loopback host.
   Production and externally bound development servers default to disabled. Add
   application authentication and rate limiting, then set
-  `STRIPE_ALLOW_BROWSER_PROVIDER_ACTIONS=1` deliberately.
+  `STRIPE_ALLOW_BROWSER_PROVIDER_ACTIONS=1` only when required.
 - The server owns Checkout return URLs. Set `STRIPE_RETURN_BASE_URL` to the public
   HTTPS origin in production; browser-supplied redirect URLs are ignored.
 - Checkout success in the UI is a redirect result; authoritative fulfillment must
@@ -197,7 +197,7 @@ create a test Checkout session.
 
 ## Important files
 
-- `spacetimedb/src/submodule/operations.ts`: application catalog and Stripe
+- `spacetimedb/src/store/operations.ts`: application catalog and Stripe
   delegation.
 - `server.ts`: safe startup configuration and server identity authorization.
 - `src/app.ts`: typed browser-side SpacetimeDB adapter.

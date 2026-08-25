@@ -1,4 +1,4 @@
-// Top-level entry. Only re-exports registered STDB exports.
+// Registered SpacetimeDB exports for direct module publication.
 
 export { default, init } from './submodule/schema';
 export {

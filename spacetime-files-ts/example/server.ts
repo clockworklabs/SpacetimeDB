@@ -97,7 +97,7 @@ app.get('/api/config', (_req: Request, res: Response) => {
 });
 
 app.listen(PORT, HOST, () => {
-  console.log(`Vault test app running at http://${HOST}:${PORT}`);
+  console.log(`Vault example running at http://${HOST}:${PORT}`);
   console.log(`  STDB ws  -> ${STDB_URI}`);
   console.log(`  STDB http-> ${STDB_HTTP} (proxy /files/*)`);
   console.log(`  Database -> ${STDB_APP_DB}`);

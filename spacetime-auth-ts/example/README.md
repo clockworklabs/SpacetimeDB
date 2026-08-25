@@ -125,7 +125,7 @@ by the browser.
 
 ## Development mailer
 
-The example intentionally uses a console mailer. Password-reset and
+The example uses a console mailer. Password-reset and
 email-verification messages, including their one-time links, appear in the
 SpacetimeDB module logs. Production deployments require a delivery provider.
 
@@ -183,7 +183,7 @@ spacetime sql --server http://127.0.0.1:3000 spacetime-auth-example "SELECT * FR
 - **OAuth reports a redirect mismatch:** compare the registered callback byte for
   byte with the URL derived from `AUTH_ISSUER_URL`.
 - **Sessions fail after a fresh publish:** clear site data and sign in again;
-  the database was deliberately replaced.
+  the database was replaced.
 
 ## Important files
 

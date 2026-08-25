@@ -1,4 +1,4 @@
-import { DbConnection, type ErrorContext } from './codegen';
+import { DbConnection, tables, type ErrorContext } from './codegen';
 
 import {
   TOKEN_KEY_PREFIX,
@@ -1042,20 +1042,20 @@ async function run(): Promise<void> {
       console.error('subscription error', ctx.event)
     )
     .subscribe([
-      'SELECT * FROM my_profile',
-      'SELECT * FROM players',
-      'SELECT * FROM my_lobby_tickets',
-      'SELECT * FROM my_lobby_rooms',
-      'SELECT * FROM my_lobby_room_seats',
-      'SELECT * FROM lobby_queue_summary',
-      'SELECT * FROM my_lobby_ratings',
-      'SELECT * FROM lobby_ranked_leaderboard',
-      'SELECT * FROM ship_catalog',
-      'SELECT * FROM maneuver_catalog',
-      'SELECT * FROM my_duels',
-      'SELECT * FROM my_duel_combatants',
-      'SELECT * FROM my_duel_round_logs',
-      'SELECT * FROM my_duel_maneuvers',
+      tables.myProfile,
+      tables.players,
+      tables.myLobbyTickets,
+      tables.myLobbyRooms,
+      tables.myLobbyRoomSeats,
+      tables.lobbyQueueSummary,
+      tables.myLobbyRatings,
+      tables.lobbyRankedLeaderboard,
+      tables.shipCatalog,
+      tables.maneuverCatalog,
+      tables.myDuels,
+      tables.myDuelCombatants,
+      tables.myDuelRoundLogs,
+      tables.myDuelManeuvers,
     ]);
   wireTables();
   wireActions();

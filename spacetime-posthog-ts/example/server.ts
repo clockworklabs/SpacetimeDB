@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
-import { DbConnection, type ErrorContext } from './src/codegen';
+import { DbConnection, tables, type ErrorContext } from './src/codegen';
 import { PRODUCTS, SCENARIOS } from './catalog/catalog';
 import {
   discardStoredServerToken,
@@ -183,7 +183,7 @@ function startAnalyticsDelivery(connection: DbConnection): void {
     .onError(ctx =>
       console.error(`[posthog] outbox subscription failed: ${ctx.event}`)
     )
-    .subscribe(['SELECT * FROM posthog_outbox_admin']);
+    .subscribe([tables.posthogOutboxAdmin]);
 }
 
 // Derive the PostHog app (dashboard) URL from the ingestion host, e.g.

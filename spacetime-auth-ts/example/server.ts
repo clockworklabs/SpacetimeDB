@@ -194,7 +194,7 @@ try {
 }
 
 app.listen(PORT, HOST, () => {
-  console.log(`Notes test app running at http://${HOST}:${PORT}`);
+  console.log(`Notes example running at http://${HOST}:${PORT}`);
   console.log(`  STDB ws  -> ${STDB_URI}`);
   console.log(`  STDB http-> ${STDB_HTTP}  (proxying /auth/*)`);
   console.log(`  Database -> ${STDB_APP_DB}`);

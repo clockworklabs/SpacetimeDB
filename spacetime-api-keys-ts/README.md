@@ -88,7 +88,7 @@ Key lifecycle operations:
 Each owner may have up to 50 active, unexpired keys. Expiration may be set up to
 10 years from creation.
 
-## Verify In A Host App
+## Verify in a host app
 
 Mounted apps can use the transactional helper directly:
 
@@ -152,7 +152,7 @@ Package entrypoints:
 - `@spacetimedb/api-keys/submodule` supplies the mountable namespace,
   helpers, operations, and views for host applications.
 
-## Tables And Views
+## Tables and views
 
 Private tables:
 
@@ -171,7 +171,7 @@ Public views:
 chosen age. Schedule it from the host according to the application's retention
 policy.
 
-## Security Model
+## Security model
 
 - Raw keys are returned once. Persistent state contains the hash and lookup
   prefix.

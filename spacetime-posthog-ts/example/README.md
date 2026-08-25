@@ -123,7 +123,7 @@ Submodule administrator grants are available only through module operations.
   private configuration table through the authenticated CLI owner.
 - `.stdb-server-token`, `.env`, and logs are ignored and must not be committed.
 - The development server binds to loopback by default. Setting `HOST` to another
-  address deliberately expands its network exposure.
+  address expands its network exposure.
 - The example server is scoped to local development. Production deployments
   should provision service identities and
   lifecycle supervision explicitly.
@@ -145,7 +145,7 @@ advance through the authorized server identity.
 - **Connection targets disagree:** `STDB_URI`, `STDB_HTTP`, and the server selected
   by the publish script must refer to the same SpacetimeDB instance.
 - **Server identity cannot be authorized:** publish with the currently logged-in
-  CLI identity, then restart. Remove `.stdb-server-token` only when deliberately
+  CLI identity, then restart. Remove `.stdb-server-token` only when
   replacing the local server identity.
 - **Events stay queued:** verify `POSTHOG_PROJECT_API_KEY`, inspect server output,
   and confirm the PostHog host is reachable.

@@ -1,4 +1,8 @@
-import { DbConnection, type ErrorContext } from './codegen/app/index.ts';
+import {
+  DbConnection,
+  tables,
+  type ErrorContext,
+} from './codegen/app/index.ts';
 import { parseShareKey, shareKeyFromHash } from './share-key';
 
 import {
@@ -254,22 +258,20 @@ function subscribeAll(): void {
   if (subscribed) return;
   subscribed = true;
   const c = requireConn();
-  const queries = [
-    `SELECT * FROM world WHERE owner_subject = '${colonyId}'`,
-    `SELECT * FROM world_event WHERE owner_subject = '${colonyId}'`,
-    `SELECT * FROM colony_grid WHERE id = ${gridId}`,
-    `SELECT * FROM colony_cells WHERE grid_id = ${gridId}`,
-    `SELECT * FROM colony_entities WHERE grid_id = ${gridId}`,
-    `SELECT * FROM presence_entry WHERE scope = '${colonyId}'`,
-  ];
-  if (mode === 'owner') queries.push('SELECT * FROM my_access_keys');
-
   c.subscriptionBuilder()
     .onApplied(() => renderWorld())
     .onError((ctx: ErrorContext) =>
       console.error('subscription error', ctx.event)
     )
-    .subscribe(queries);
+    .subscribe([
+      tables.world.where(row => row.ownerSubject.eq(colonyId)),
+      tables.worldEvent.where(row => row.ownerSubject.eq(colonyId)),
+      tables.colonyGrid.where(row => row.id.eq(gridId)),
+      tables.colonyCells.where(row => row.gridId.eq(gridId)),
+      tables.colonyEntities.where(row => row.gridId.eq(gridId)),
+      tables.presenceEntry.where(row => row.scope.eq(colonyId)),
+      ...(mode === 'owner' ? [tables.myAccessKeys] : []),
+    ]);
 
   c.db.world.onInsert(() => renderWorld());
   c.db.world.onUpdate(() => renderWorld());

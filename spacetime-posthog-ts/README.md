@@ -17,7 +17,7 @@ Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
-This submodule can be published directly as its own STDB module from the root entrypoint.
+This submodule can be published directly as its own SpacetimeDB module from the root entry point.
 
 ## Usage
 

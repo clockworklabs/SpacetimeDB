@@ -256,7 +256,7 @@ try {
 }
 
 app.listen(PORT, HOST, () => {
-  console.log(`Agents test app running at http://${HOST}:${PORT}`);
+  console.log(`Agents example running at http://${HOST}:${PORT}`);
   console.log(`  STDB ws  -> ${STDB_URI}`);
   console.log(`  STDB http-> ${STDB_HTTP}  (proxying /auth/*, /files)`);
   console.log(`  Database -> ${STDB_APP_DB}`);

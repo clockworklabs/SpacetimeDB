@@ -1,5 +1,6 @@
 import {
   DbConnection,
+  tables,
   type ErrorContext,
   type EventContext,
 } from './codegen/app/index.ts';
@@ -380,24 +381,24 @@ function wireSubscriptions(c: DbConnection): void {
       console.error('subscription error', ctx.event)
     )
     .subscribe([
-      'SELECT * FROM my_chat_users',
-      'SELECT * FROM my_servers',
-      'SELECT * FROM my_server_members',
-      'SELECT * FROM my_presence_entries',
-      'SELECT * FROM my_rooms',
-      'SELECT * FROM my_room_members',
-      'SELECT * FROM my_room_messages',
-      'SELECT * FROM my_room_message_reactions',
-      'SELECT * FROM my_room_attachments',
-      'SELECT * FROM my_message_threads',
-      'SELECT * FROM my_thread_messages',
-      'SELECT * FROM my_room_read_cursors',
-      'SELECT * FROM my_auth_user',
-      'SELECT * FROM my_rate_limit_status',
+      tables.myChatUsers,
+      tables.myServers,
+      tables.myServerMembers,
+      tables.myPresenceEntries,
+      tables.myRooms,
+      tables.myRoomMembers,
+      tables.myRoomMessages,
+      tables.myRoomMessageReactions,
+      tables.myRoomAttachments,
+      tables.myMessageThreads,
+      tables.myThreadMessages,
+      tables.myRoomReadCursors,
+      tables.myAuthUser,
+      tables.myRateLimitStatus,
     ]);
 
   const reRender = () => emitData();
-  const tables = [
+  const tableAccessors = [
     c.db.myChatUsers,
     c.db.myRooms,
     c.db.myRoomMembers,
@@ -411,7 +412,7 @@ function wireSubscriptions(c: DbConnection): void {
     c.db.myPresenceEntries,
     c.db.myRateLimitStatus,
   ];
-  for (const t of tables) {
+  for (const t of tableAccessors) {
     t.onInsert(reRender);
     t.onUpdate(reRender);
     t.onDelete(reRender);

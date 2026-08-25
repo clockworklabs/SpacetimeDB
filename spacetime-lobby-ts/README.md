@@ -39,7 +39,7 @@ export default spacetimedb;
 ```
 
 Mounted host modules can call helpers with an explicit subject after they have
-validated auth or mapped the STDB identity to an app user ID:
+validated auth or mapped the SpacetimeDB identity to an application user ID:
 
 ```ts
 lobby.joinQueue(ctx.as.lobby, {

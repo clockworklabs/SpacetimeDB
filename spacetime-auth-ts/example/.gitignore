@@ -5,8 +5,7 @@ public/app.js
 public/app.js.map
 .env
 
-# STDB runtime data lives in %LOCALAPPDATA%/auth-ts-example/stdb-data (not here)
-# Listed defensively in case anyone runs STDB with --data-dir=.
+# Local SpacetimeDB state and secrets.
 .stdb-data/
 .secrets/
 *.pid

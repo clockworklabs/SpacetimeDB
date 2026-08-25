@@ -1,6 +1,7 @@
 // STDB connection + chat ops + auth. Exposes window.auth and window.stdb.
 import {
   DbConnection,
+  tables,
   type ErrorContext,
   type EventContext,
   type SubscriptionHandle,
@@ -316,7 +317,7 @@ function setActiveThread(threadId: bigint | null): void {
     .onError((ctx: ErrorContext) =>
       console.error('message sub error', ctx.event)
     )
-    .subscribe([`SELECT * FROM my_messages WHERE thread_id = ${threadId}`]);
+    .subscribe([tables.myMessages.where(row => row.threadId.eq(threadId))]);
 }
 
 function wireRowHandlers(conn: DbConnection): void {
@@ -416,11 +417,11 @@ async function bindSession(
         console.error('global sub error', ctx.event)
       )
       .subscribe([
-        'SELECT * FROM my_threads',
-        'SELECT * FROM my_thread_locks',
-        'SELECT * FROM agent_override',
-        'SELECT * FROM my_files',
-        'SELECT * FROM my_auth_user',
+        tables.myThreads,
+        tables.myThreadLocks,
+        tables.agentOverride,
+        tables.myFiles,
+        tables.myAuthUser,
       ]);
 
     const previousActive = activeThreadId;

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response } from 'express';
 import dotenv from 'dotenv';
-import { DbConnection, type ErrorContext } from './src/codegen/app';
+import { DbConnection, tables, type ErrorContext } from './src/codegen/app';
 import {
   discardStoredServerToken,
   grantServerIdentity,
@@ -341,7 +341,7 @@ async function seedCatalogIfEmpty(conn: DbConnection): Promise<void> {
         resolved = true;
         reject(new Error(`catalog probe failed: ${ctx.event}`));
       })
-      .subscribe(['SELECT * FROM store_product']);
+      .subscribe([tables.storeProduct]);
   });
 
   const count = conn.db.storeProduct.count();
@@ -412,6 +412,6 @@ async function seedCatalogIfEmpty(conn: DbConnection): Promise<void> {
   }
 
   app.listen(PORT, HOST, () => {
-    console.log(`Premium store test app running at http://${HOST}:${PORT}`);
+    console.log(`Premium Store example running at http://${HOST}:${PORT}`);
   });
 })();

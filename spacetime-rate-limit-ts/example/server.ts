@@ -35,6 +35,6 @@ app.get('/api/config', (_req: Request, res: Response) => {
 });
 
 app.listen(PORT, HOST, () => {
-  console.log(`Rate-limit test app running at http://${HOST}:${PORT}`);
+  console.log(`Rate-limit example running at http://${HOST}:${PORT}`);
   console.log(`  STDB -> ${STDB_URI} (${STDB_APP_DB})`);
 });

@@ -18,7 +18,7 @@ Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
-This submodule can be published directly as its own STDB module from the root entrypoint.
+This submodule can be published directly as its own SpacetimeDB module from the root entry point.
 
 ## Usage
 
@@ -193,7 +193,7 @@ Both entry points verify the Stripe signature in-module against the configured
 `webhookSigningSecret` (HMAC-SHA256 over `${timestamp}.${rawBody}` via
 `@spacetimedb/crypto`). Missing secrets produce a service-unavailable response:
 
-- `stripe_webhook_handler` (HTTP) - for direct Stripe -> STDB delivery.
+- `stripe_webhook_handler` (HTTP) - for direct Stripe-to-SpacetimeDB delivery.
 - `ingest_stripe_webhook` (reducer) - for a relay forwarding the raw body +
   `stripe-signature` header over the SDK; it verifies before mutating state.
 

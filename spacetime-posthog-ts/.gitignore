@@ -1,5 +1,0 @@
-node_modules
-dist
-ts-codegen
-*.tsbuildinfo
-.DS_Store

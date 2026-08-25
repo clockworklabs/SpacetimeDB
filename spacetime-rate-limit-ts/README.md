@@ -134,7 +134,7 @@ See the
 [Powerhouse host module](./example/spacetimedb/)
 for per-action policies, caller-visible status, and admin controls.
 
-## Exported Defaults
+## Exported defaults
 
 - `DEFAULT_SWEEP_BATCH = 500`
 - `DEFAULT_SWEEP_INTERVAL_SECONDS = 30n`

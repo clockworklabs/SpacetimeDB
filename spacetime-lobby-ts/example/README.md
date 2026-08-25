@@ -152,7 +152,7 @@ For a release smoke test:
   inspect `lobby_queue_summary` for queued tickets.
 - **The page connects to stale state:** verify `STDB_URI` targets the server
   registered as `local` by the publish scripts.
-- **State disappears after republishing:** `build:module:fresh` deliberately
+- **State disappears after republishing:** `build:module:fresh`
   deletes all local rows, including ratings.
 
 ## Important files

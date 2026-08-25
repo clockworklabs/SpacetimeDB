@@ -1,5 +1,6 @@
 import {
   DbConnection,
+  tables,
   type EventContext,
   type ErrorContext,
 } from './codegen/app';
@@ -214,7 +215,7 @@ async function main() {
       console.error('catalog sub error', ctx.event);
       updateConnState('error', String(ctx.event));
     })
-    .subscribe(['SELECT * FROM store_product']);
+    .subscribe([tables.storeProduct]);
 }
 
 main();

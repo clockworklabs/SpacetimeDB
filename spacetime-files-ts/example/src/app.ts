@@ -1,5 +1,5 @@
 // SpacetimeDB connection and file-manager UI composition.
-import { DbConnection, type ErrorContext } from './codegen/app';
+import { DbConnection, tables, type ErrorContext } from './codegen/app';
 import type { FileSummary, Folder } from './codegen/app/types';
 import {
   loadToken,
@@ -1177,7 +1177,7 @@ async function main(): Promise<void> {
     .onError((ctx: ErrorContext) =>
       console.error('subscription error', ctx.event)
     )
-    .subscribe(['SELECT * FROM my_folders', 'SELECT * FROM my_file_summaries']);
+    .subscribe([tables.myFolders, tables.myFileSummaries]);
 
   conn.db.myFolders.onInsert(scheduleRefresh);
   conn.db.myFolders.onUpdate(scheduleRefresh);

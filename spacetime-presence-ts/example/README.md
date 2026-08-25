@@ -171,7 +171,7 @@ For a release smoke test, use two accounts and verify:
 - **Users appear offline too quickly:** confirm the browser remains connected and
   heartbeat calls reach the module within the configured limit.
 - **A browser token is rejected after a fresh publish:** clear site data and sign in
-  again because the database and signing state were deliberately reset.
+  again because the database and signing state were reset.
 
 ## Important files
 

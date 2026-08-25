@@ -1,5 +1,6 @@
 import {
   DbConnection,
+  tables,
   type ErrorContext,
   type EventContext,
 } from './codegen/app/index.ts';
@@ -311,12 +312,12 @@ function wireDataHandlers(conn: DbConnection): void {
       console.error('subscription error', ctx.event)
     )
     .subscribe([
-      'SELECT * FROM reactor_state',
-      'SELECT * FROM reactor_events',
-      'SELECT * FROM reactor_limit_status',
-      'SELECT * FROM reactor_players',
-      'SELECT * FROM reactor_shop',
-      'SELECT * FROM rate_limit_demo_config',
+      tables.reactorState,
+      tables.reactorEvents,
+      tables.reactorLimitStatus,
+      tables.reactorPlayers,
+      tables.reactorShop,
+      tables.rateLimitDemoConfig,
     ]);
 
   db.reactorState.onInsert(() => broadcastState());

@@ -1,4 +1,9 @@
-import { DbConnection, type ErrorContext, type EventContext } from './codegen';
+import {
+  DbConnection,
+  tables,
+  type ErrorContext,
+  type EventContext,
+} from './codegen';
 import {
   MAX_MACHINE_LEVEL,
   RUSH_CYCLE_TICKS,
@@ -986,15 +991,15 @@ async function run(): Promise<void> {
       console.error('subscription error', ctx.event)
     )
     .subscribe([
-      'SELECT * FROM cafe_products',
-      'SELECT * FROM cafe_variants',
-      'SELECT * FROM cafe_scenarios',
-      'SELECT * FROM cafe_config',
-      'SELECT * FROM cafe_metrics',
-      'SELECT * FROM cafe_econ',
-      'SELECT * FROM cafe_queue',
-      'SELECT * FROM cafe_recent_sessions',
-      'SELECT * FROM cafe_analytics_summary',
+      tables.cafeProducts,
+      tables.cafeVariants,
+      tables.cafeScenarios,
+      tables.cafeConfig,
+      tables.cafeMetrics,
+      tables.cafeEcon,
+      tables.cafeQueue,
+      tables.cafeRecentSessions,
+      tables.cafeAnalyticsSummary,
     ]);
 
   wireTableEvents();

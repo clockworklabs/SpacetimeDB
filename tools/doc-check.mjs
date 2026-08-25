@@ -20,7 +20,6 @@ const documentationFiles = [
     if (existsSync(resolve(root, exampleReadme))) files.push(exampleReadme);
     return files;
   }),
-  'spacetime-stripe-ts/example/spacetimedb/README.md',
 ];
 
 function fail(file, line, message) {

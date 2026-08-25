@@ -17,7 +17,7 @@ Requires SpacetimeDB 2.8.3 or later for submodule mounting.
 For the install-to-publish workflow, see
 [Getting started](https://spacetimedb.com/docs/).
 
-This submodule can be published directly as its own STDB module from the root entrypoint.
+This submodule can be published directly as its own SpacetimeDB module from the root entry point.
 
 ## Usage
 
@@ -202,7 +202,7 @@ spacetime call --server http://127.0.0.1:3000 resend-ts set_resend_config '"re_.
 spacetime call --server http://127.0.0.1:3000 resend-ts send_email \
   null \
   '["delivered@resend.dev"]' \
-  '"Test from STDB"' \
+  '"Test from SpacetimeDB"' \
   '"<p>Hello.</p>"' \
   null null null null \
   '"{\"userId\":\"u_123\"}"' \

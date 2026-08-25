@@ -142,7 +142,7 @@ For a release smoke test, use two independent browser identities and verify:
 4. A public file is reachable through `/files?id=<fileId>`; an owner-only file returns 403.
 5. Oversized uploads and invalid or conflicting paths fail atomically.
 6. Refresh preserves the owning development identity unless the database was
-   deliberately reset.
+   reset.
 
 ## Troubleshooting
 
@@ -152,7 +152,7 @@ For a release smoke test, use two independent browser identities and verify:
   target the database used by `STDB_URI`.
 - **An upload exceeds the limit:** keep example files below 4 MB; use an external
   object store for larger production assets.
-- **Files disappear after a fresh publish:** `build:module:fresh` deliberately
+- **Files disappear after a fresh publish:** `build:module:fresh`
   replaces the local database and all of its rows.
 
 ## Important files
