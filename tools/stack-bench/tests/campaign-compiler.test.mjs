@@ -11,13 +11,14 @@ import { sha256 } from '../src/evidence/provenance.mjs';
 
 function definition(overrides = {}) {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     kind: 'campaign-manifest',
     id: 'ecommerce-l1-comparison',
     version: '1.0.0',
     state: 'draft',
     title: 'Ecommerce L1 comparison',
     track: 'ecommerce',
+    mode: { id: 'sequential', version: '1.0.0' },
     levels: [1],
     selection: { packs: [], checks: [] },
     stacks: [
@@ -216,6 +217,13 @@ test('campaigns freeze independent stack counts and bounded parallel capacity', 
 
 test('campaign validation rejects ambiguity, silent fallback, and incomplete analysis policy', () => {
   assert.throws(() => validateCampaignDefinition({ ...definition(), surprise: true }), /surprise.*unknown/);
+  assert.throws(() => validateCampaignDefinition({ ...definition(), mode: undefined }), /mode must be an object/);
+  assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
+    id: 'dependency', version: '1.0.0',
+  } }), /unknown dependency@1\.0\.0/);
+  assert.throws(() => validateCampaignDefinition({ ...definition(), mode: {
+    id: 'sequential', version: '1.0.0', graph: 'not-allowed',
+  } }), /graph is unknown for sequential mode/);
   assert.throws(() => validateCampaignDefinition(definition({ levels: [1, 3] })), /ascending and contiguous/);
   assert.throws(() => validateCampaignDefinition(definition({ stacks: [
     { id: 'postgres', adapterVersion: '1.3.0' }, { id: 'postgres', adapterVersion: '1.3.0' },

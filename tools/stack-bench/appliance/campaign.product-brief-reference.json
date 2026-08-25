@@ -1,11 +1,12 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "kind": "campaign-manifest",
   "id": "ecommerce-l1-product-brief-reference",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "state": "draft",
   "title": "Ecommerce L1 product brief and quality validation",
   "track": "ecommerce",
+  "mode": { "id": "sequential", "version": "1.0.0" },
   "levels": [1],
   "selection": {
     "levels": [

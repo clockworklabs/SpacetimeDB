@@ -12,14 +12,15 @@ import { createBoundRecipeTaskRequest, createRecipeTaskRequest } from '../compos
 import { STACK_ADAPTER_REGISTRY } from '../stacks/stack-adapters.mjs';
 import { listTracks, loadTrack, RUN_INDEX_CAP } from '../composition/tracks.mjs';
 import { resolveStudyConditions, validateConditionReference } from './condition-compiler.mjs';
+import { validateCampaignMode } from './campaign-mode.mjs';
 
-export const CAMPAIGN_SCHEMA_VERSION = 2;
+export const CAMPAIGN_SCHEMA_VERSION = 3;
 import { STACK_BENCH_ROOT as ROOT } from '../project-paths.mjs';
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-z][a-z0-9]*(?:[.:-][a-z0-9]+)*$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
 const ROOT_FIELDS = new Set(['schemaVersion', 'kind', 'id', 'version', 'state', 'title',
-  'track', 'levels', 'selection', 'stacks', 'agents', 'conditions', 'repetitions', 'ordering',
+  'track', 'mode', 'levels', 'selection', 'stacks', 'agents', 'conditions', 'repetitions', 'ordering',
   'parallelism', 'budgets', 'attemptPolicy', 'pricing', 'analysis']);
 ROOT_FIELDS.add('runtime');
 const LEGACY_SELECTION_FIELDS = new Set(['packs', 'checks']);
@@ -97,6 +98,7 @@ export function validateCampaignDefinition(input, { source = '<campaign>' } = {}
   if (!['draft', 'frozen'].includes(value.state)) fail(`${source}.state`, 'must be draft or frozen');
   string(value.title, `${source}.title`);
   identifier(value.track, `${source}.track`);
+  value.mode = validateCampaignMode(value.mode, { at: `${source}.mode` });
   value.levels = exactArray(value.levels, `${source}.levels`, (level, at) => integer(level, at, { min: 1 }),
     { nonEmpty: true });
   for (let index = 1; index < value.levels.length; index += 1) {
@@ -311,6 +313,7 @@ function expandAttempts(definition, requestedLevels, stacks, agents, studyCondit
           repair: condition.repair },
         guidance: condition.guidance.mode,
         skills: condition.guidance.skills[stack.id].ids,
+        mode: structuredClone(definition.mode),
         levels: requestedLevels,
         parentAttemptId: definition.id,
       }));
