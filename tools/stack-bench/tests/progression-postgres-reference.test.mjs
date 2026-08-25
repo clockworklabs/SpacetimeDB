@@ -11,6 +11,8 @@ test('PostgreSQL progression reference has local production builds', () => {
   const client = JSON.parse(read('client', 'package.json'));
   assert.equal(server.scripts.build, 'tsc --noEmit');
   assert.equal(client.scripts.build, 'vite build');
+  assert.match(server.dependencies['drizzle-orm'], /0\.45\.[2-9]|0\.[5-9]\d|[1-9]\d*\./);
+  assert.match(client.devDependencies.vite, /8\./);
 });
 
 test('PostgreSQL progression reference exposes required progression actions', () => {
