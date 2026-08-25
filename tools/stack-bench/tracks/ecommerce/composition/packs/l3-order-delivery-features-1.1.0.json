@@ -14,8 +14,8 @@
   "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 190000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.l3.order-delivery", "path": "prompts/modular/l3-features-1.0.0.md", "order": 3020, "from": "## Order delivery", "until": "## Cart expiration", "modes": ["upgrade"] }],
-    "contracts": [{ "id": "ecommerce.l3.order-delivery-hooks", "path": "contracts/l3-hooks-1.0.md", "order": 3920, "from": "## Order delivery hooks", "modes": ["upgrade"] }]
+    "requirements": [{ "id": "ecommerce.l3.order-delivery", "path": "prompts/modular/order-delivery-1.0.0.md", "order": 3020, "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.l3.order-delivery-hooks", "path": "contracts/order-delivery-1.0.md", "order": 3920, "modes": ["upgrade"] }]
   },
   "checks": [
     { "id": "automatic-delivery", "stableId": "order-delivery", "source": "scenarios/03-order-delivery-1.0.0.json", "feature": 303, "role": "feature" },
