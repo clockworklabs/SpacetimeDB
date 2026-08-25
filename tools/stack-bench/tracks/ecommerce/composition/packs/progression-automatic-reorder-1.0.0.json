@@ -9,7 +9,8 @@
   "description": "Threshold rules schedule one pending restock.",
   "requiresPacks": [
     "ecommerce.l3.scheduled-restocks-features@1.1.0",
-    "ecommerce.l2.operational-views-features@1.0.0"
+    "ecommerce.l2.operational-views-features@1.0.0",
+    "ecommerce.progression.staff-roles@1.0.0"
   ],
   "conflictsWith": [],
   "capabilities": ["browser"],
@@ -17,13 +18,14 @@
   "budget": { "status": "bounded", "maxRuntimeMs": 90000 },
   "task": {
     "requirements": [
-      { "id": "ecommerce.progression.automatic-reorder", "path": "prompts/modular/progression-features-1.0.0.md", "order": 5010, "from": "## Automatic reorder rules", "until": "## Cart recovery", "modes": ["upgrade"] }
+      { "id": "ecommerce.progression.automatic-reorder", "path": "prompts/modular/progression-automatic-reorder-1.0.0.md", "order": 5010, "modes": ["upgrade"] }
     ],
     "contracts": [
-      { "id": "ecommerce.progression.automatic-reorder-hooks", "path": "contracts/progression-hooks-1.0.md", "order": 5910, "from": "## Automatic reorder hooks", "until": "## Cart recovery hooks", "modes": ["upgrade"] }
+      { "id": "ecommerce.progression.automatic-reorder-hooks", "path": "contracts/progression-automatic-reorder-1.0.md", "order": 5910, "modes": ["upgrade"] }
     ]
   },
   "checks": [
-    { "id": "threshold", "stableId": "automatic-reorder", "source": "scenarios/progression-automatic-reorder-1.0.0.json", "feature": 502, "role": "feature" }
+    { "id": "threshold", "stableId": "automatic-reorder", "source": "scenarios/progression-automatic-reorder-1.0.0.json", "feature": 502, "criteria": ["502a", "502b"], "role": "feature" },
+    { "id": "access", "stableId": "automatic-reorder", "source": "scenarios/progression-automatic-reorder-1.0.0.json", "feature": 502, "criteria": ["502c"], "role": "feature" }
   ]
 }

@@ -14,13 +14,14 @@
   "budget": { "status": "bounded", "maxRuntimeMs": 350000 },
   "task": {
     "requirements": [
-      { "id": "ecommerce.progression.cart-recovery", "path": "prompts/modular/progression-features-1.0.0.md", "order": 5020, "from": "## Cart recovery", "until": "## Recommendation feedback", "modes": ["upgrade"] }
+      { "id": "ecommerce.progression.cart-recovery", "path": "prompts/modular/progression-cart-recovery-1.0.0.md", "order": 5020, "modes": ["upgrade"] }
     ],
     "contracts": [
-      { "id": "ecommerce.progression.cart-recovery-hooks", "path": "contracts/progression-hooks-1.0.md", "order": 5920, "from": "## Cart recovery hooks", "until": "## Recommendation feedback hooks", "modes": ["upgrade"] }
+      { "id": "ecommerce.progression.cart-recovery-hooks", "path": "contracts/progression-cart-recovery-1.0.md", "order": 5920, "modes": ["upgrade"] }
     ]
   },
   "checks": [
-    { "id": "restore", "stableId": "cart-recovery", "source": "scenarios/progression-cart-recovery-1.0.0.json", "feature": 503, "role": "feature" }
+    { "id": "available", "stableId": "cart-recovery", "source": "scenarios/progression-cart-recovery-1.0.0.json", "feature": 503, "criteria": ["503a"], "role": "feature" },
+    { "id": "partial", "stableId": "cart-recovery", "source": "scenarios/progression-cart-recovery-1.0.0.json", "feature": 503, "criteria": ["503b"], "role": "feature" }
   ]
 }

@@ -8,22 +8,29 @@
     {
       "id": 403,
       "name": "Recommendations use customer activity",
-      "actors": ["audio-customer", "home-customer"],
+      "actors": ["sales-helper", "audio-customer", "home-customer", "computing-customer"],
       "setup": [
+        { "do": "signUp", "actor": "sales-helper", "name": "recommend-sales" },
+        { "do": "click", "actor": "sales-helper", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "settleMs": 500 },
+        { "do": "click", "actor": "sales-helper", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "settleMs": 500 },
+        { "do": "click", "actor": "sales-helper", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" }, "settleMs": 500 },
         { "do": "signUp", "actor": "audio-customer", "name": "recommend-audio" },
         { "do": "click", "actor": "audio-customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Bluetooth Speaker" } },
         { "do": "signUp", "actor": "home-customer", "name": "recommend-home" },
-        { "do": "click", "actor": "home-customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } }
+        { "do": "click", "actor": "home-customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Coffee Grinder" } },
+        { "do": "signUp", "actor": "computing-customer", "name": "recommend-computing" },
+        { "do": "click", "actor": "computing-customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Keyboard" } }
       ],
       "criteria": [
         {
           "id": "403a",
-          "desc": "customers with different activity receive different relevant results",
-          "points": 3,
-          "statedBy": "Recommendations use the signed-in customer's own activity.",
+          "desc": "recommendations follow the customer's categories, global sales, and name tie-break",
+          "points": 4,
+          "statedBy": "Order the remaining items by global units sold, highest first, then by item name.",
           "steps": [
             { "do": "expect", "actor": "audio-customer", "testid": "recommendation-item", "in": { "testid": "recommendations" }, "contains": "Headphones" },
-            { "do": "expect", "actor": "home-customer", "testid": "recommendation-item", "in": { "testid": "recommendations" }, "contains": "Desk Lamp" }
+            { "do": "expectNumber", "actor": "home-customer", "testid": "recommendation-rank", "in": { "testid": "recommendation-item", "contains": "Desk Lamp" }, "equals": 1, "within": 10000 },
+            { "do": "expectSequence", "actor": "computing-customer", "testid": "recommendation-item", "in": { "testid": "recommendations" }, "equals": ["Gaming Mouse", "Laptop Stand", "Webcam"], "within": 10000 }
           ]
         },
         {
@@ -33,7 +40,9 @@
           "statedBy": "Customer recommendation profiles are isolated.",
           "steps": [
             { "do": "click", "actor": "audio-customer", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Headphones" } },
-            { "do": "expect", "actor": "home-customer", "testid": "recommendation-item", "in": { "testid": "recommendations" }, "contains": "Desk Lamp" }
+            { "do": "expect", "actor": "audio-customer", "testid": "recommendation-item", "in": { "testid": "recommendations" }, "contains": "Headphones", "absent": true },
+            { "do": "expectNumber", "actor": "home-customer", "testid": "recommendation-rank", "in": { "testid": "recommendation-item", "contains": "Desk Lamp" }, "equals": 1, "within": 10000 },
+            { "do": "expectSequence", "actor": "computing-customer", "testid": "recommendation-item", "in": { "testid": "recommendations" }, "equals": ["Gaming Mouse", "Laptop Stand", "Webcam"], "within": 10000 }
           ]
         }
       ]

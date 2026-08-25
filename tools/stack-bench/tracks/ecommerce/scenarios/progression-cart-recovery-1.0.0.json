@@ -7,12 +7,15 @@
   "features": [
     {
       "id": 503,
-      "name": "An expired cart can be restored safely",
-      "actors": ["shopper"],
+      "name": "Expired carts restore only available items",
+      "actors": ["available-shopper", "partial-shopper"],
       "setup": [
-        { "do": "signUp", "actor": "shopper", "name": "cart-recovery" },
-        { "do": "click", "actor": "shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
-        { "do": "wait", "actor": "shopper", "ms": 310000 }
+        { "do": "signUp", "actor": "available-shopper", "name": "cart-recovery-available" },
+        { "do": "click", "actor": "available-shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Keyboard" } },
+        { "do": "signUp", "actor": "partial-shopper", "name": "cart-recovery-partial" },
+        { "do": "click", "actor": "partial-shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Webcam" } },
+        { "do": "click", "actor": "partial-shopper", "testid": "add-to-cart", "in": { "testid": "item-card", "contains": "Mirrorless Camera" } },
+        { "do": "wait", "actor": "available-shopper", "ms": 310000 }
       ],
       "criteria": [
         {
@@ -21,18 +24,25 @@
           "points": 3,
           "statedBy": "A customer can restore the available items from an expired cart.",
           "steps": [
-            { "do": "click", "actor": "shopper", "testid": "restore-cart", "in": { "testid": "expired-cart" } },
-            { "do": "click", "actor": "shopper", "testid": "cart-toggle" },
-            { "do": "expect", "actor": "shopper", "testid": "cart-item", "contains": "Keyboard" }
+            { "do": "click", "actor": "available-shopper", "testid": "restore-cart", "in": { "testid": "expired-cart" } },
+            { "do": "click", "actor": "available-shopper", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "available-shopper", "testid": "cart-item", "contains": "Keyboard" },
+            { "do": "expect", "actor": "available-shopper", "testid": "cart-restore-warning", "absent": true }
           ]
         },
         {
           "id": "503b",
-          "desc": "a successful restore does not show an availability warning",
-          "points": 1,
-          "statedBy": "Cart recovery clearly reports items that cannot be restored.",
+          "desc": "a partial restore keeps available items and names each unavailable item",
+          "points": 3,
+          "statedBy": "Restore the available items and list each item that could not be restored.",
           "steps": [
-            { "do": "expect", "actor": "shopper", "testid": "cart-restore-warning", "absent": true }
+            { "do": "dbSetStock", "item": "Mirrorless Camera", "warehouse": "East", "quantity": 0, "settleMs": 2000 },
+            { "do": "dbSetStock", "item": "Mirrorless Camera", "warehouse": "West", "quantity": 0, "settleMs": 2000 },
+            { "do": "click", "actor": "partial-shopper", "testid": "restore-cart", "in": { "testid": "expired-cart" } },
+            { "do": "click", "actor": "partial-shopper", "testid": "cart-toggle" },
+            { "do": "expect", "actor": "partial-shopper", "testid": "cart-item", "contains": "Webcam" },
+            { "do": "expect", "actor": "partial-shopper", "testid": "cart-item", "contains": "Mirrorless Camera", "absent": true },
+            { "do": "expect", "actor": "partial-shopper", "testid": "cart-restore-warning", "contains": "Mirrorless Camera" }
           ]
         }
       ]

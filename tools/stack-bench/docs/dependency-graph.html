@@ -797,7 +797,7 @@
         "ecommerce.progression.personalized-recommendations@1.0.0"
       ],
       "checks": 2,
-      "points": 5
+      "points": 6
     },
     {
       "id": "staff-activity",
@@ -840,6 +840,28 @@
       "points": 5
     },
     {
+      "id": "automatic-reorder",
+      "name": "Automatic reorder rules",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "operational-views",
+        "scheduled-restocks",
+        "staff-roles"
+      ],
+      "dependencyReasons": {
+        "operational-views": "Reorder decisions use current stock views.",
+        "scheduled-restocks": "Rules create scheduled restocks.",
+        "staff-roles": "Only warehouse staff can manage reorder rules."
+      },
+      "questline": "inventory",
+      "featureRefs": [
+        "ecommerce.progression.automatic-reorder@1.0.0"
+      ],
+      "checks": 3,
+      "points": 7
+    },
+    {
       "id": "order-delivery",
       "name": "Order delivery",
       "level": 4,
@@ -878,26 +900,6 @@
       ],
       "checks": 2,
       "points": 3
-    },
-    {
-      "id": "automatic-reorder",
-      "name": "Automatic reorder rules",
-      "level": 4,
-      "state": "draft",
-      "parents": [
-        "operational-views",
-        "scheduled-restocks"
-      ],
-      "dependencyReasons": {
-        "operational-views": "Reorder decisions use current stock views.",
-        "scheduled-restocks": "Rules create scheduled restocks."
-      },
-      "questline": "inventory",
-      "featureRefs": [
-        "ecommerce.progression.automatic-reorder@1.0.0"
-      ],
-      "checks": 2,
-      "points": 5
     },
     {
       "id": "cart-expiration",
@@ -1011,7 +1013,7 @@
         "ecommerce.progression.cart-recovery@1.0.0"
       ],
       "checks": 2,
-      "points": 4
+      "points": 6
     }
   ]
 };

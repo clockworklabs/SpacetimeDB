@@ -669,7 +669,8 @@
         "ecommerce.progression.personalized-recommendations@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.personalized-recommendations@1.0.0#customer-results"
+        "ecommerce.progression.personalized-recommendations@1.0.0#ordering",
+        "ecommerce.progression.personalized-recommendations@1.0.0#isolation"
       ],
       "dependencies": [
         {
@@ -754,7 +755,8 @@
         "ecommerce.progression.automatic-reorder@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.automatic-reorder@1.0.0#threshold"
+        "ecommerce.progression.automatic-reorder@1.0.0#threshold",
+        "ecommerce.progression.automatic-reorder@1.0.0#access"
       ],
       "dependencies": [
         {
@@ -764,6 +766,10 @@
         {
           "id": "scheduled-restocks",
           "reason": "Rules create scheduled restocks."
+        },
+        {
+          "id": "staff-roles",
+          "reason": "Only warehouse staff can manage reorder rules."
         }
       ]
     },
@@ -775,7 +781,8 @@
         "ecommerce.progression.cart-recovery@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.progression.cart-recovery@1.0.0#restore"
+        "ecommerce.progression.cart-recovery@1.0.0#available",
+        "ecommerce.progression.cart-recovery@1.0.0#partial"
       ],
       "dependencies": [
         {

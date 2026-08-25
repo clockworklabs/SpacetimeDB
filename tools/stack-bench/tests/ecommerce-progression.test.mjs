@@ -47,7 +47,7 @@ test('the ecommerce progression definition is complete and calculated from its d
   assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
     142);
   assert.equal(definition.nodes.flatMap(node => node.gradingChecks)
-    .reduce((total, check) => total + check.points, 0), 277);
+    .reduce((total, check) => total + check.points, 0), 282);
   assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
     === node.dependencies.length));
   assert(definition.questlines.every(questline =>
@@ -72,6 +72,8 @@ test('the ecommerce progression definition is complete and calculated from its d
     check.id === 'ecommerce.returns-pricing.cancellation-and-return.3d'));
   assert.deepEqual(byId.get('personalized-recommendations').dependencies,
     ['operational-views', 'purchasing']);
+  assert.deepEqual(byId.get('automatic-reorder').dependencies,
+    ['operational-views', 'scheduled-restocks', 'staff-roles']);
   assert.deepEqual(byId.get('order-delivery').dependencies,
     ['fulfilment-queue', 'order-cancellation']);
   assert.deepEqual(byId.get('order-returns').dependencies,
