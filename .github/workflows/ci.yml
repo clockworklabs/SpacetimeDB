@@ -1687,10 +1687,10 @@ jobs:
       #   if: always()
       #   run: spacetime sql quickstart-chat "SELECT * FROM user"
 
-  typescript-components:
+  typescript-submodules:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
-    name: TypeScript - Components
+    name: TypeScript - Submodules
     runs-on: spacetimedb-new-runner-2
     steps:
       - name: Checkout repository
@@ -1712,11 +1712,11 @@ jobs:
           "$RUNNER_TEMP/spacetime/bin/spacetime" version install 2.8.3
           "$RUNNER_TEMP/spacetime/bin/spacetime" version use 2.8.3
 
-      - name: Check components
-        run: pnpm components:check
+      - name: Check submodules
+        run: pnpm submodules:check
 
-      - name: Build component modules and examples
-        run: pnpm components:build
+      - name: Build submodule packages and examples
+        run: pnpm submodules:build
 
       - name: Audit packed production dependencies
-        run: pnpm components:audit:prod
+        run: pnpm submodules:audit:prod

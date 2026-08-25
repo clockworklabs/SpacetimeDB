@@ -9,4 +9,3 @@ coverage
 **/src/codegen/**
 **/ts-codegen/**
 .stdb-*
-.component-packs

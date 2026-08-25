@@ -6,10 +6,10 @@ can issue scoped bearer links that allow another browser to view or modify it.
 
 ## What this demonstrates
 
-- Mounting the API Keys component under the `apiKeys` namespace.
+- Mounting the API Keys submodule under the `apiKeys` namespace.
 - Creating, rotating, validating, and revoking scoped bearer keys.
 - Validating keys in native SpacetimeDB HTTP handlers.
-- Composing API Keys with the Grid and Presence components.
+- Composing the API Keys, Grid, and Presence submodules.
 - Giving owners native reducer access while routing key holders through HTTP.
 - Recording allowed and rejected holder actions in an audit-style world event log.
 - Returning a raw key only at creation or rotation time.
@@ -56,7 +56,7 @@ local rows.
 
 ## Use in your project
 
-This workspace tests the component source in this repository. Consumer applications install published releases:
+This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
 npm install @spacetimedb/api-keys @spacetimedb/crypto spacetimedb@^2.8.3
@@ -190,7 +190,7 @@ For a release smoke test:
 
 ## Important files
 
-- `spacetimedb/src/index.ts` - colony schema, component mounts, views, reducers,
+- `spacetimedb/src/index.ts` - colony schema, submodule mounts, views, reducers,
   and HTTP handlers.
 - `server.ts` - static server and colony-route proxy.
 - `src/app.ts` - owner/holder modes, key handling, subscriptions, and UI logic.

@@ -101,7 +101,7 @@ export const init = spacetimedb.init(ctx => {
 // ── Client-facing management ─────────────────────────────────────────────────
 
 // These reducers are intentionally open so the local browser can exercise the
-// component. Production applications must enforce their own admin policy.
+// submodule. Production applications must enforce their own admin policy.
 
 const jobs: Record<string, CronJobReference> = { digest, cleanup };
 

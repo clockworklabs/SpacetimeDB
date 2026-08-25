@@ -97,12 +97,12 @@ if (tracked.status !== 0) {
     if (!existsSync(absolutePath)) continue;
 
     const normalizedRepositoryPath = repositoryPath.replaceAll('\\', '/');
-    const isComponentPath = releasePackages.some(
+    const isSubmodulePath = releasePackages.some(
       packageDir =>
         normalizedRepositoryPath === packageDir ||
         normalizedRepositoryPath.startsWith(`${packageDir}/`)
     );
-    if (!isComponentPath && normalizedRepositoryPath !== 'pnpm-lock.yaml') {
+    if (!isSubmodulePath && normalizedRepositoryPath !== 'pnpm-lock.yaml') {
       continue;
     }
     if (
@@ -410,7 +410,7 @@ for (const packageDir of releasePackages) {
       fail(packageDir, `${sourceName} imports a Node-only API`);
   }
 
-  const packDirectory = mkdtempSync(join(tmpdir(), 'stdb-component-pack-'));
+  const packDirectory = mkdtempSync(join(tmpdir(), 'stdb-submodule-pack-'));
   const packed = spawnSync(
     pnpmCommand,
     ['pack', '--json', '--pack-destination', packDirectory],

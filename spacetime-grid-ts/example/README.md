@@ -1,17 +1,17 @@
 # Grid tactics example
 
 This example is a turn-based hex-grid tactics game built with
-[`@spacetimedb/grid`](../). The mounted Grid component owns grids, cell
+[`@spacetimedb/grid`](../). The mounted Grid submodule owns grids, cell
 state, and entity positions; the host module owns matches, participants, unit
 statistics, turns, and combat rules.
 
 ## What this demonstrates
 
-- Mounting Grid and Auth components in one host module.
+- Mounting the Grid and Auth submodules in one host module.
 - Authenticated match membership and caller-scoped subscriptions.
 - Hex-grid pathfinding with `computePathImpl`.
 - Movement and attack ranges with `cellsInRangeImpl`.
-- Layering application rules over component-owned spatial state.
+- Layering application rules over submodule-owned spatial state.
 - Human-versus-human matchmaking and a solo match against the built-in Xeno
   Garrison actor.
 
@@ -58,7 +58,7 @@ database. Use `pnpm run build:module` when existing matches must be preserved.
 
 ## Use in your project
 
-This workspace tests the component source in this repository. Consumer applications install published releases:
+This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
 npm install @spacetimedb/grid spacetimedb@^2.8.3
@@ -158,7 +158,7 @@ For a release smoke test:
 
 ## Important files
 
-- `spacetimedb/src/index.ts` - component mounts, auth integration, match schema,
+- `spacetimedb/src/index.ts` - submodule mounts, auth integration, match schema,
   scoped views, and game rules.
 - `src/app.ts` - auth/session linking, subscriptions, and interaction bridge.
 - `server.ts` - auth bootstrap, static serving, and same-origin proxy.

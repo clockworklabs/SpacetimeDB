@@ -47,7 +47,7 @@ export const create_player_grid = spacetimedb.procedure(
 );
 ```
 
-The component treats owner values as opaque strings. Host operations must map
+The submodule treats owner values as opaque strings. Host operations must map
 the authenticated caller to that string before calling helpers such as
 `createGrid` or `moveEntity`. See the
 [Grid Tactics host module](./example/spacetimedb/)

@@ -8,7 +8,7 @@ catalog state.
 
 ## What this demonstrates
 
-- Mounting the Stripe component inside an application-owned store module.
+- Mounting the Stripe submodule inside an application-owned store module.
 - Keeping Stripe credentials in private module state.
 - Using a narrow server API for customer lookup, price validation, and Checkout;
   the browser never receives the privileged service identity.
@@ -66,7 +66,7 @@ database. Use `pnpm run build:module` to preserve existing data.
 
 ## Use in your project
 
-This workspace tests the component source in this repository. Consumer applications install published releases:
+This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
 npm install @spacetimedb/stripe @spacetimedb/crypto spacetimedb@^2.8.3
@@ -83,7 +83,7 @@ webhook route. The product catalog and storefront are demonstration code.
 | --------------------------------------- | ------------------------------------ | ------------------------------------------------------------- |
 | `STRIPE_SECRET_KEY`                     | empty                                | Required for provider operations. Use a test-mode key.        |
 | `STRIPE_WEBHOOK_SECRET`                 | empty                                | Verifies incoming Stripe webhook signatures.                  |
-| `STRIPE_VERSION`                        | component default                    | Optional Stripe API-version override.                         |
+| `STRIPE_VERSION`                        | submodule default                    | Optional Stripe API-version override.                         |
 | `STRIPE_SYNC_PRICES`                    | `0`                                  | Set to `1` to create/link missing test prices during startup. |
 | `STRIPE_ALLOW_BROWSER_PROVIDER_ACTIONS` | automatic on non-production loopback | Explicit provider-action opt-in for other environments.       |
 | `STRIPE_RETURN_BASE_URL`                | `http://127.0.0.1:8787`              | Server-owned Checkout return origin.                          |
@@ -152,7 +152,7 @@ http://127.0.0.1:3000/v1/database/spacetime-stripe-example/route/stripe/webhook
 ```
 
 Use the signing secret produced by the forwarding tool as
-`STRIPE_WEBHOOK_SECRET`, then restart so the private component configuration is
+`STRIPE_WEBHOOK_SECRET`, then restart so the private submodule configuration is
 updated.
 
 ## Security and deployment boundaries

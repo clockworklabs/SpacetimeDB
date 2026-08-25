@@ -20,7 +20,7 @@ const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 const spacetimeCommand =
   process.platform === 'win32' ? 'spacetime.exe' : 'spacetime';
-const temporaryRoot = mkdtempSync(join(tmpdir(), 'stdb-components-consumer-'));
+const temporaryRoot = mkdtempSync(join(tmpdir(), 'stdb-submodules-consumer-'));
 const packDirectory = join(temporaryRoot, 'packs');
 mkdirSync(packDirectory);
 
@@ -83,7 +83,7 @@ try {
     join(temporaryRoot, 'package.json'),
     `${JSON.stringify(
       {
-        name: 'spacetimedb-components-consumer-check',
+        name: 'spacetimedb-submodules-consumer-check',
         private: true,
         type: 'module',
         dependencies,

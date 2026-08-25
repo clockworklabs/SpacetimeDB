@@ -3,15 +3,15 @@
 Context Cafe is a small robot café simulator that demonstrates the mounted
 `@spacetimedb/posthog/submodule`. SpacetimeDB owns the catalog, simulation,
 per-browser café state, metrics, and analytics outbox. A dedicated local server
-identity delivers queued events to PostHog; the browser never receives component
+identity delivers queued events to PostHog; the browser never receives submodule
 administrator privileges or the PostHog project key.
 
 ## What this demonstrates
 
-- Mounting the PostHog component under the `posthog` namespace.
+- Mounting the PostHog submodule under the `posthog` namespace.
 - Enqueuing analytics in deterministic reducers for delivery outside
   transactions.
-- Delivering the component outbox from an authorized server connection.
+- Delivering the submodule outbox from an authorized server connection.
 - Caller-scoped café state and safe public aggregate delivery metrics.
 - Editing prices and availability while watching simulated conversion change.
 - Synchronizing a TypeScript-authored catalog from `catalog/catalog.ts`.
@@ -22,7 +22,7 @@ administrator privileges or the PostHog project key.
 - The released SpacetimeDB 2.8 CLI.
 - A local SpacetimeDB server reachable as `local`.
 - A logged-in CLI identity. The identity that publishes the fresh database becomes
-  its initial component administrator.
+  its initial submodule administrator.
 - Optional: a PostHog project API key for real event delivery.
 
 Select the supported CLI release, then keep the local server running in a
@@ -62,7 +62,7 @@ database. Use `pnpm run build:module` when existing data must be preserved.
 
 ## Use in your project
 
-This workspace tests the component source in this repository. Consumer
+This workspace tests the submodule source in this repository. Consumer
 applications install the published release:
 
 ```bash
@@ -115,11 +115,11 @@ The Node server exposes only:
 | `GET /api/health` | Local health probe.                                        |
 | `GET /api/config` | Browser-safe database and PostHog dashboard configuration. |
 
-Component administrator grants are available only through module operations.
+Submodule administrator grants are available only through module operations.
 
 ## Security and deployment boundaries
 
-- `POSTHOG_PROJECT_API_KEY` is loaded by the server and written to the component's
+- `POSTHOG_PROJECT_API_KEY` is loaded by the server and written to the submodule's
   private configuration table through the authenticated CLI owner.
 - `.stdb-server-token`, `.env`, and logs are ignored and must not be committed.
 - The development server binds to loopback by default. Setting `HOST` to another

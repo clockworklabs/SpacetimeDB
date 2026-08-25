@@ -3,11 +3,11 @@
 Dispatch demonstrates a host module that mounts
 `@spacetimedb/resend/submodule`: compose an email, send it through Resend, and
 watch verified delivery events stream back through SpacetimeDB. Provider credentials
-and component administration remain outside the browser.
+and submodule administration remain outside the browser.
 
 ## What this demonstrates
 
-- Mounting the Resend component under the `resend` namespace.
+- Mounting the Resend submodule under the `resend` namespace.
 - Calling a host `send_dispatch` procedure backed by a private API key.
 - Showing caller-scoped email and delivery-event views in real time.
 - Receiving Resend webhooks through a native SpacetimeDB HTTP route.
@@ -63,7 +63,7 @@ database. Use `pnpm run build:module` to preserve existing data.
 
 ## Use in your project
 
-This workspace tests the component source in this repository. Consumer applications install published releases:
+This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
 npm install @spacetimedb/resend @spacetimedb/rate-limit @spacetimedb/crypto spacetimedb@^2.8.3
@@ -139,11 +139,11 @@ Authorized example server
 ## Security and deployment boundaries
 
 - The browser never receives the Resend API key, signing secret, server token, or
-  component administrator role.
+  submodule administrator role.
 - `send_dispatch` accepts only server-configured recipients. It allows five sends
   per caller every ten minutes and 25 sends globally per hour.
 - Provider failures return a stable application error while detailed delivery
-  state remains in private component tables.
+  state remains in private submodule tables.
 - `.env` and `.stdb-server-token` are ignored and must not be committed.
 - The development server binds to loopback by default.
 - A production deployment should provision its service identity and secret store

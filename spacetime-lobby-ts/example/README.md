@@ -1,16 +1,16 @@
 # Starclash lobby example
 
 Starclash is a ranked one-on-one spaceship duel built with
-[`@spacetimedb/lobby`](../). The mounted Lobby component owns queue tickets,
+[`@spacetimedb/lobby`](../). The mounted Lobby submodule owns queue tickets,
 rooms, seats, and ratings; the host module owns ship selection, duel state,
 maneuvers, combat resolution, and round logs.
 
 ## What this demonstrates
 
-- Mounting the Lobby component in a host game module.
+- Mounting the Lobby submodule in a host game module.
 - Ranked queue matching, room joining, rematches, and rating updates.
 - Falling back from a public queue to a server-controlled AI opponent.
-- Keeping component matchmaking state separate from application game state.
+- Keeping submodule matchmaking state separate from application game state.
 - Caller-scoped ticket, room, seat, rating, duel, and maneuver views.
 - Driving a realtime UI entirely from SpacetimeDB subscriptions.
 
@@ -58,7 +58,7 @@ be preserved.
 
 ## Use in your project
 
-This workspace tests the component source in this repository. Consumer
+This workspace tests the submodule source in this repository. Consumer
 applications install the published release:
 
 ```bash
@@ -85,13 +85,13 @@ The Node process serves static files, `GET /api/health`, and browser-safe
 ## Match and duel lifecycle
 
 1. A player sets a display name and ship class.
-2. `find_duel` joins the ranked public pool through the Lobby component.
+2. `find_duel` joins the ranked public pool through the Lobby submodule.
 3. Once two compatible tickets are matched, both subjects join the resulting
    room and the host module creates duel state.
 4. Each pilot chooses a maneuver. The module resolves the round only when the
    required choices exist, then records combat changes and a round log.
 5. A completed or abandoned duel reports its result to Lobby and closes the room.
-6. The component updates ratings; players can queue again.
+6. The submodule updates ratings; players can queue again.
 
 The fallback action cancels the player's public ticket and creates a match in an
 AI-specific pool with a server-controlled subject.

@@ -7,7 +7,7 @@ under the `rateLimit` namespace.
 
 ## What this demonstrates
 
-- Mounting the Rate Limit component in an application module.
+- Mounting the Rate Limit submodule in an application module.
 - Deriving server-owned actor keys and fixed gameplay scopes.
 - Enforcing limits from procedures with typed allow/deny results.
 - Using independent buckets for taps, overcharge, upgrades, and repair.
@@ -56,7 +56,7 @@ players, upgrades, and limiter state.
 
 ## Use in your project
 
-This workspace tests the component source in this repository. Consumer
+This workspace tests the submodule source in this repository. Consumer
 applications install the published release:
 
 ```bash
@@ -89,7 +89,7 @@ The returned result includes remaining capacity, reset time, and retry delay.
 The mounted `consume` procedure is reserved for administrators; normal gameplay
 uses the lower-level helper inside the host procedure's transaction.
 
-The component implements fixed-window limiting. Application heat and cooldown
+The submodule implements fixed-window limiting. Application heat and cooldown
 mechanics are separate game rules layered over the rate limit, so a request may
 be rejected by either system.
 
@@ -169,7 +169,7 @@ For a release smoke test:
 
 ## Important files
 
-- `spacetimedb/src/index.ts` - component mount, reactor rules, scoped views, and
+- `spacetimedb/src/index.ts` - submodule mount, reactor rules, scoped views, and
   bounded maintenance operations.
 - `src/app.ts` - connection, procedures, subscriptions, and UI bridge.
 - `server.ts` - static development server and browser-safe configuration.

@@ -7,7 +7,7 @@ This example is a small browser dashboard backed directly by SpacetimeDB. It sho
 
 The dashboard subscribes to the sanitized `cron_jobs` view, exact calendar targets, interval estimates, run outcomes, and application activity. The private job rows retain typed arguments without exposing them to browser subscriptions. Controls can reschedule or disable either job. Selecting `cleanup` also supplies its typed row-retention argument when scheduling.
 
-This is a local development example. Its scheduling reducers accept any connected caller so the browser can exercise the component. Add application authorization before deploying equivalent controls. The example also enables `publicTables`, which exposes run history and trigger state for the dashboard. Review that visibility before using the same option in an application.
+This is a local development example. Its scheduling reducers accept any connected caller so the browser can exercise the submodule. Add application authorization before deploying equivalent controls. The example also enables `publicTables`, which exposes run history and trigger state for the dashboard. Review that visibility before using the same option in an application.
 
 ## What this demonstrates
 
@@ -68,7 +68,7 @@ pnpm run build:module
 
 ## Use in your project
 
-This workspace tests the component source in this repository. Consumer
+This workspace tests the submodule source in this repository. Consumer
 applications install the published release:
 
 ```bash
@@ -134,7 +134,7 @@ only the status required by their users.
 ## Authorization and deployment boundaries
 
 - `scheduleCron`, `scheduleEvery`, and `unscheduleJob` are open so a local browser
-  can exercise the component. Production modules must authorize these calls.
+  can exercise the submodule. Production modules must authorize these calls.
 - Job names and argument types are part of the database schema. Changing an
   existing argument type requires a schema migration or a new job name.
 - Reducer handlers must remain deterministic. Use a Cron procedure for HTTP or

@@ -63,7 +63,7 @@ database. Use `pnpm run build:module` to republish while preserving existing row
 
 ## Use in your project
 
-This workspace tests the component source in this repository. Consumer applications install published releases:
+This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
 npm install @spacetimedb/agents spacetimedb@^2.8.3

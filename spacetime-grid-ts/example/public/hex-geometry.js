@@ -15,7 +15,7 @@ export function cellKey(x, y) {
   return `${x},${y}`;
 }
 
-// Keep this formula aligned with the Grid component's server distance rule.
+// Keep this formula aligned with the Grid submodule's server distance rule.
 export function axialHexDistance(ax, ay, bx, by) {
   return (
     (Math.abs(ax - bx) + Math.abs(ax + ay - bx - by) + Math.abs(ay - by)) / 2

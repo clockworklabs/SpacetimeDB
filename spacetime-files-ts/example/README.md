@@ -2,7 +2,7 @@
 
 Vault is a small Drive-style file manager built with
 [`@spacetimedb/files`](../). File bytes and file records live in the mounted
-Files component; the host module adds identity-owned folder metadata and scoped
+Files submodule; the host module adds identity-owned folder metadata and scoped
 views.
 
 ## What this demonstrates
@@ -11,7 +11,7 @@ views.
 - Identity-owned folders and caller-scoped file-summary subscriptions.
 - Keeping file bytes out of realtime subscriptions.
 - Reading private bytes through a sender-aware procedure.
-- Serving explicitly public files through the component HTTP handler.
+- Serving explicitly public files through the submodule HTTP handler.
 - Drag-and-drop uploads, folder traversal, search, previews, bulk actions, and ZIP
   downloads in a browser client.
 
@@ -55,7 +55,7 @@ database. Use `pnpm run build:module` when existing local files must be preserve
 
 ## Use in your project
 
-This workspace tests the component source in this repository. Consumer applications install published releases:
+This workspace tests the submodule source in this repository. Consumer applications install published releases:
 
 ```bash
 npm install @spacetimedb/files @spacetimedb/crypto spacetimedb@^2.8.3
@@ -100,7 +100,7 @@ changes its confidentiality and creates a public download path.
 - File and folder paths are owner-scoped. Two identities can each use `/docs`
   and `/docs/readme.txt`.
 - Public links use the stable numeric file ID.
-- The component stores bytes in SpacetimeDB rows and caps each file at 4 MB.
+- The submodule stores bytes in SpacetimeDB rows and caps each file at 4 MB.
 - Vault demonstrates in-row storage for small assets. Use dedicated infrastructure
   for streaming uploads, media transformation, backups, and CDN delivery.
 

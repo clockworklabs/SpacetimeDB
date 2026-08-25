@@ -21,7 +21,7 @@ For the install-to-publish workflow, see
 
 ### Integrate into an application
 
-Mount the component in the host schema and install its private state from the
+Mount the submodule in the host schema and install its private state from the
 host lifecycle hook:
 
 ```ts
@@ -43,7 +43,7 @@ The root package exports a standalone `init`. The `./submodule` entrypoint
 leaves lifecycle ownership with the host module.
 
 Next, wrap `verifyApiKey` in the host operation that needs bearer-token access;
-the component validates key material and scopes, while the host decides what a
+the submodule validates key material and scopes, while the host decides what a
 scope authorizes. The complete
 [Colony host module](./example/spacetimedb/)
 shows scoped HTTP routes and one-time key delivery.

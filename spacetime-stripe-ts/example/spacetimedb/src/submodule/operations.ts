@@ -117,17 +117,14 @@ function getLookupKey(databaseIdentity: string, productId: string): string {
   return `stdb_${safeDb}_${safeProduct}`;
 }
 
-function encodeFormComponent(value: string): string {
+function encodeFormField(value: string): string {
   return encodeURIComponent(value).replace(/%20/g, '+');
 }
 
 function formBody(pairs: Array<[string, string | undefined]>): string {
   return pairs
     .filter((pair): pair is [string, string] => pair[1] !== undefined)
-    .map(
-      ([key, value]) =>
-        `${encodeFormComponent(key)}=${encodeFormComponent(value)}`
-    )
+    .map(([key, value]) => `${encodeFormField(key)}=${encodeFormField(value)}`)
     .join('&');
 }
 
