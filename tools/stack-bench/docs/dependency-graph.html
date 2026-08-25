@@ -625,7 +625,7 @@
       "id": "fulfilment-queue",
       "name": "Fulfilment queue",
       "level": 3,
-      "state": "qualified",
+      "state": "draft",
       "parents": [
         "purchasing",
         "warehouse-admin"
@@ -636,10 +636,10 @@
       },
       "questline": "orders",
       "featureRefs": [
-        "ecommerce.operations-access-features@1.0.0"
+        "ecommerce.progression.fulfilment-queue@1.0.0"
       ],
-      "checks": 11,
-      "points": 16
+      "checks": 9,
+      "points": 12
     },
     {
       "id": "order-cancellation",
@@ -658,8 +658,8 @@
       "featureRefs": [
         "ecommerce.l2.order-cancellation-features@1.0.0"
       ],
-      "checks": 3,
-      "points": 6
+      "checks": 4,
+      "points": 8
     },
     {
       "id": "reservations",

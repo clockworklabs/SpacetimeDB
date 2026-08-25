@@ -168,14 +168,14 @@
       "title": "Fulfilment queue",
       "questline": "orders",
       "featureRefs": [
-        "ecommerce.operations-access-features@1.0.0"
+        "ecommerce.progression.fulfilment-queue@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.operations-access-features@1.0.0#fulfilment-core",
-        "ecommerce.operations-access-features@1.0.0#fulfilment-independent",
-        "ecommerce.operations-access-features@1.0.0#fulfilment-warehouse",
-        "ecommerce.operations-access-specifications@1.0.0#operator-authorization-direct",
-        "ecommerce.operations-access-specifications@1.0.0#order-owner-direct",
+        "ecommerce.progression.fulfilment-queue@1.0.0#fulfilment-access",
+        "ecommerce.progression.fulfilment-queue@1.0.0#fulfilment-live",
+        "ecommerce.progression.fulfilment-queue@1.0.0#fulfilment-ship",
+        "ecommerce.progression.fulfilment-queue@1.0.0#fulfilment-warehouse",
+        "ecommerce.progression.operations-access-specifications@1.0.0#operator-authorization-direct",
         "ecommerce.spec.concurrency-safety@1.3.0#last-unit",
         "ecommerce.spec.concurrency-safety@1.3.0#restock-race"
       ],
@@ -204,7 +204,7 @@
         "ecommerce.inventory-operations-specifications@1.0.0#stock-conservation-contention",
         "ecommerce.inventory-operations-specifications@1.0.0#stock-conservation-directional",
         "ecommerce.inventory-operations-specifications@1.0.0#stock-conservation-fresh-client",
-        "ecommerce.operations-access-specifications@1.0.0#operator-transfer-authorization"
+        "ecommerce.progression.operations-access-specifications@1.0.0#operator-transfer-authorization"
       ],
       "dependencies": [
         {
@@ -223,7 +223,8 @@
       "gradingGroups": [
         "ecommerce.l2.order-cancellation-features@1.0.0#cancellation-core",
         "ecommerce.l2.order-cancellation-features@1.0.0#cancellation-history",
-        "ecommerce.progression.cancellation-accounting-specifications@1.0.0#cancellation-accounting"
+        "ecommerce.progression.cancellation-accounting-specifications@1.0.0#cancellation-accounting",
+        "ecommerce.progression.operations-access-specifications@1.0.0#order-owner-direct"
       ],
       "dependencies": [
         {
@@ -244,7 +245,7 @@
         "ecommerce.l2.price-history-features@1.0.0"
       ],
       "gradingGroups": [
-        "ecommerce.operations-access-specifications@1.0.0#operator-price-authorization",
+        "ecommerce.progression.operations-access-specifications@1.0.0#operator-price-authorization",
         "ecommerce.l2.price-history-features@1.0.0#price-cart-checkout",
         "ecommerce.l2.price-history-features@1.0.0#price-history-exact",
         "ecommerce.l2.price-history-features@1.0.0#price-live-independent",

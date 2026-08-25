@@ -8,7 +8,7 @@
   "moduleType": "feature",
   "title": "Order delivery",
   "description": "Automatic delivery and final cancellation.",
-  "requiresPacks": ["ecommerce.operations-access-features@1.0.0", "ecommerce.l2.order-cancellation-features@1.0.0"],
+  "requiresPacks": ["ecommerce.progression.fulfilment-queue@1.0.0", "ecommerce.l2.order-cancellation-features@1.0.0"],
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],

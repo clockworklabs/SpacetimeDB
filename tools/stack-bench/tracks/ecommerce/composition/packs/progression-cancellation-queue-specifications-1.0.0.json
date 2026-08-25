@@ -15,11 +15,11 @@
   "budget": { "status": "bounded", "maxRuntimeMs": 24000 },
   "task": {
     "requirements": [
-      { "id": "ecommerce.progression.cancellation-queue", "path": "prompts/modular/cancellation-queue-1.0.0.md", "order": 2045, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.operations-access-features"] }
+      { "id": "ecommerce.progression.cancellation-queue", "path": "prompts/modular/cancellation-queue-1.0.0.md", "order": 2045, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.progression.fulfilment-queue"] }
     ],
     "contracts": []
   },
   "checks": [
-    { "id": "queue-removal", "stableId": "cancellation-and-return", "source": "scenarios/02-cancellation-queue-1.0.0.json", "feature": 3, "criteria": ["3d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.operations-access-features"] }
+    { "id": "queue-removal", "stableId": "cancellation-and-return", "source": "scenarios/02-cancellation-queue-1.0.0.json", "feature": 3, "criteria": ["3d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.progression.fulfilment-queue"] }
   ]
 }

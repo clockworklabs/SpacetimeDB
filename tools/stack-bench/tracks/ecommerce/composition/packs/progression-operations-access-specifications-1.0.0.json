@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.operations-access-specifications",
+  "stableId": "ecommerce.operations-access",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "specification",
+  "title": "Server-enforced operations access",
+  "description": "Direct authorization checks owned by the product work they protect.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser", "direct-server-call", "request-replay"],
+  "evidence": ["server-refusal", "server-response"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 44000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.progression.transfer-authorization", "path": "prompts/modular/transfer-authorization-1.0.0.md", "order": 2930, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.stock-transfers-features"] },
+      { "id": "ecommerce.progression.price-authorization", "path": "prompts/modular/price-authorization-1.0.0.md", "order": 2940, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.price-history-features"] },
+      { "id": "ecommerce.progression.shipping-authorization", "path": "prompts/modular/shipping-authorization-1.0.0.md", "order": 2950, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.progression.fulfilment-queue"] },
+      { "id": "ecommerce.progression.order-ownership", "path": "prompts/modular/order-ownership-1.0.0.md", "order": 2960, "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "operator-transfer-authorization", "stableId": "operator-authorization", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 201, "criteria": ["201a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.stock-transfers-features"] },
+    { "id": "operator-price-authorization", "stableId": "operator-authorization", "source": "scenarios/02-strengthened-1.4.0.json", "feature": 201, "criteria": ["201b"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.price-history-features"] },
+    { "id": "operator-authorization-direct", "stableId": "operator-authorization", "source": "scenarios/02-server-actions-1.1.0.json", "feature": 201, "criteria": ["201c"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.progression.fulfilment-queue"] },
+    { "id": "order-owner-direct", "stableId": "order-owner", "source": "scenarios/02-server-actions-1.1.0.json", "feature": 204, "criteria": ["204a"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features"] }
+  ]
+}
