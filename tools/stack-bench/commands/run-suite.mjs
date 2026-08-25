@@ -232,11 +232,13 @@ async function answers(url, attempts = 3) {
   return false;
 }
 
-export async function verifyReseedProbe(url, expectation, { fetchImpl = fetch } = {}) {
+export async function verifyReseedProbe(url, expectation, {
+  fetchImpl = fetch, timeoutMs = 5000,
+} = {}) {
   if (!expectation) return { ok: true, detail: null, count: null };
   let response;
   try {
-    response = await fetchImpl(url, { signal: AbortSignal.timeout(5000) });
+    response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
   } catch (error) {
     return { ok: false, count: null,
       detail: `startup data probe could not be read: ${error.message}` };
@@ -266,14 +268,15 @@ export async function verifyReseedProbe(url, expectation, { fetchImpl = fetch } 
 }
 
 export async function waitForReseedProbe(url, expectation, {
-  attempts = 17, intervalMs = 500, probe = verifyReseedProbe, sleepImpl = sleep,
+  attempts = 9, intervalMs = 250, probeTimeoutMs = 1000,
+  probe = verifyReseedProbe, sleepImpl = sleep,
 } = {}) {
   if (!Number.isInteger(attempts) || attempts < 1) {
     throw new Error('reseed probe attempts must be a positive integer');
   }
   let result = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    result = await probe(url, expectation);
+    result = await probe(url, expectation, { timeoutMs: probeTimeoutMs });
     if (result.ok || attempt === attempts) return result;
     await sleepImpl(intervalMs);
   }
