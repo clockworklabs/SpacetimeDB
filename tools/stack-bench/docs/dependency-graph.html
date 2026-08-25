@@ -98,7 +98,7 @@
 
   .graph-canvas {
     position: relative;
-    min-width: 850px;
+    min-width: 1120px;
     min-height: 680px;
     padding: 22px;
   }
@@ -115,22 +115,22 @@
 
   .edge {
     fill: none;
-    stroke-width: 1.5;
-    opacity: .2;
+    stroke-width: 1.75;
+    opacity: .38;
     transition: opacity 120ms ease, stroke-width 120ms ease;
   }
 
   .edge.qualified { stroke: var(--green); }
   .edge.draft { stroke: var(--yellow); }
-  .edge.muted { opacity: .035; }
-  .edge.active { opacity: 1; stroke-width: 2.5; }
+  .edge.muted { opacity: .025; }
+  .edge.active { opacity: 1; stroke-width: 2.75; }
 
   .levels {
     position: relative;
     z-index: 1;
     display: grid;
     grid-template-columns: repeat(3, minmax(220px, 1fr));
-    gap: 24px;
+    gap: 112px;
   }
 
   .level-head {
@@ -207,11 +207,11 @@
     <div class="graph-canvas" id="graph-canvas">
       <svg id="edges" aria-hidden="true">
         <defs>
-          <marker id="arrow-qualified" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L7,3.5 L0,7 Z" fill="#21f38a"></path>
+          <marker id="arrow-qualified" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#21f38a"></path>
           </marker>
-          <marker id="arrow-draft" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L7,3.5 L0,7 Z" fill="#f3c959"></path>
+          <marker id="arrow-draft" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+            <path d="M0,0 L10,5 L0,10 Z" fill="#f3c959"></path>
           </marker>
         </defs>
       </svg>
@@ -277,16 +277,23 @@
       for (const parentId of child.parents) {
         const parentNode = document.querySelector(`[data-id="${parentId}"]`);
         const parentBox = parentNode.getBoundingClientRect();
+        const outgoing = features
+          .filter(feature => feature.parents.includes(parentId))
+          .sort((a, b) => document.querySelector(`[data-id="${a.id}"]`).getBoundingClientRect().top - document.querySelector(`[data-id="${b.id}"]`).getBoundingClientRect().top);
+        const incoming = [...child.parents]
+          .sort((a, b) => document.querySelector(`[data-id="${a}"]`).getBoundingClientRect().top - document.querySelector(`[data-id="${b}"]`).getBoundingClientRect().top);
+        const outgoingIndex = outgoing.findIndex(feature => feature.id === child.id);
+        const incomingIndex = incoming.indexOf(parentId);
         const x1 = parentBox.right - canvasBox.left;
-        const y1 = parentBox.top + parentBox.height / 2 - canvasBox.top;
+        const y1 = parentBox.top + parentBox.height * (outgoingIndex + 1) / (outgoing.length + 1) - canvasBox.top;
         const x2 = childBox.left - canvasBox.left;
-        const y2 = childBox.top + childBox.height / 2 - canvasBox.top;
-        const bend = Math.max(36, (x2 - x1) * .46);
+        const y2 = childBox.top + childBox.height * (incomingIndex + 1) / (incoming.length + 1) - canvasBox.top;
+        const middle = x1 + (x2 - x1) / 2;
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.classList.add('edge', child.state);
         path.dataset.parent = parentId;
         path.dataset.child = child.id;
-        path.setAttribute('d', `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`);
+        path.setAttribute('d', `M ${x1} ${y1} C ${middle} ${y1}, ${middle} ${y2}, ${x2} ${y2}`);
         path.setAttribute('marker-end', `url(#arrow-${child.state})`);
         edges.appendChild(path);
       }
