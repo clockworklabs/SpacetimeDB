@@ -142,6 +142,28 @@ test('every progression feature reference and scored check binds to repository d
       'ecommerce.feature.catalog.catalog-values.2a']);
 });
 
+test('signed-out purchase access does not depend on cart controls', () => {
+  const pack = compilePackDefinition(
+    readJson(join(packRoot, 'spec-access-control-1.3.0.json')),
+    { source: 'spec-access-control-1.3.0.json' },
+  );
+  const purchase = pack.checks.find(check => check.id === 'signed-out-purchase');
+  assert.deepEqual(purchase.requiresFeatures, ['ecommerce.feature.purchasing']);
+  assert.equal(purchase.source, 'scenarios/progression-signed-out-purchase-1.0.0.json');
+
+  const scenario = compileScenarioDefinition(readJson(join(trackRoot, purchase.source)), {
+    source: purchase.source,
+  });
+  const criterion = scenario.features.find(feature => feature.id === purchase.feature)
+    .criteria.find(candidate => candidate.id === '3a');
+  assert.equal(criterion.points, 1);
+  assert.deepEqual(criterion.steps.map(step => step.testid), ['buy-now']);
+
+  const cartBoundary = pack.checks.find(check => check.id === 'cart-boundary');
+  assert.deepEqual(cartBoundary.requiresFeatures, ['ecommerce.feature.cart-checkout']);
+  assert.notEqual(cartBoundary.source, purchase.source);
+});
+
 test('every progression feature is a whole module and every direct graph edge is required', () => {
   const packByRef = new Map(readdirSync(packRoot).filter(name => name.endsWith('.json'))
     .map(name => {
