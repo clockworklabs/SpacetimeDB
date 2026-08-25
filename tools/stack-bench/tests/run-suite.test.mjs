@@ -6,7 +6,7 @@ import test from 'node:test';
 
 import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selection.mjs';
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
-import { childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
+import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, resetFailureOutcome, suitesForRecipe,
   runGraderChild, verifyReseedProbe } from '../commands/run-suite.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
@@ -120,7 +120,7 @@ test('an application setup failure receives the exact current and inherited deno
     regression: { score: 0, max: 2 } });
 });
 
-test('a new grade removes only prior outputs that it owns', () => {
+test('a new grade removes every prior grade output but keeps operator records', () => {
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-grade-cleanup-'));
   try {
     mkdirSync(join(root, 'failure-media'), { recursive: true });
@@ -128,12 +128,16 @@ test('a new grade removes only prior outputs that it owns', () => {
     writeFileSync(join(root, 'grading-features.json'), 'old');
     writeFileSync(join(root, 'grader-features.stdout.log'), 'old');
     writeFileSync(join(root, 'grader-features.stderr.log'), 'old');
+    writeFileSync(join(root, 'grading-account-create@L1.json'), 'stale earlier level');
+    writeFileSync(join(root, 'grader-account-create@L1.stdout.log'), 'stale earlier level');
     writeFileSync(join(root, 'operator-notes.txt'), 'keep');
-    clearPreviousGradeOutputs(root, [{ id: 'features' }]);
+    clearPreviousGradeOutputs(root);
     assert.equal(existsSync(join(root, 'bundle.json')), false);
     assert.equal(existsSync(join(root, 'grading-features.json')), false);
     assert.equal(existsSync(join(root, 'grader-features.stdout.log')), false);
     assert.equal(existsSync(join(root, 'grader-features.stderr.log')), false);
+    assert.equal(existsSync(join(root, 'grading-account-create@L1.json')), false);
+    assert.equal(existsSync(join(root, 'grader-account-create@L1.stdout.log')), false);
     assert.equal(existsSync(join(root, 'failure-media')), false);
     assert.equal(readFileSync(join(root, 'operator-notes.txt'), 'utf8'), 'keep');
   } finally { rmSync(root, { recursive: true, force: true }); }
@@ -192,6 +196,37 @@ test('recipe execution keeps inherited suites out of the current-level score', (
   assert.equal(inherited.length, 31);
   assert(inherited.every(suite => suite.fromLevel === 1));
   assert.equal(suites.filter(suite => !suite.inherited).length, 10);
+});
+
+test('L2 grading rechecks the exact selected L1 score without adding it to L2 points', () => {
+  const track = loadTrack('ecommerce');
+  const l1 = resolveRecipeRelease(track, 1, 'ecommerce.l1-modular@2.5.0');
+  const l2 = resolveRecipeRelease(track, 2, 'ecommerce.l2-standard@1.6.0');
+  const prior = createBoundRecipeTaskRequest(l1, {
+    featureIds: ['ecommerce.feature.accounts', 'ecommerce.feature.cart-checkout',
+      'ecommerce.feature.catalog', 'ecommerce.feature.purchasing',
+      'ecommerce.feature.reviews', 'ecommerce.feature.warehouse-admin'],
+    expectedSpecifications: ['ecommerce.spec.access-control@1.2.0',
+      'ecommerce.spec.concurrency-safety@1.3.0',
+      'ecommerce.spec.external-data-sync@1.1.0', 'ecommerce.spec.live-state@1.2.0',
+      'ecommerce.spec.state-durability@1.1.0',
+      'ecommerce.spec.transactional-integrity@1.3.0'],
+  });
+  const current = createBoundRecipeTaskRequest(l2, {
+    featureIds: ['ecommerce.inventory-operations-features',
+      'ecommerce.operations-access-features', 'ecommerce.returns-pricing-features'],
+    expectedSpecifications: ['ecommerce.inventory-operations-specifications@1.0.0',
+      'ecommerce.operations-access-specifications@1.0.0',
+      'ecommerce.returns-pricing-specifications@1.0.0'],
+  });
+  const scope = attachRegressionScope(current.selection, l2, suitesForRecipe(track, l2),
+    prior.selection.scoredChecks.map(check => check.stableKey));
+  assert.equal(scope.scoredPoints, 59);
+  assert.equal(scope.regressionPoints, 58);
+  assert.equal(scope.regressionChecks.length, prior.selection.scoredChecks.length);
+  assert.equal(scope.checks.length,
+    current.selection.scoredChecks.length + prior.selection.scoredChecks.length);
+  assert.match(scope.evaluationSha256, /^[a-f0-9]{64}$/);
 });
 
 test('cumulative ownership survives inherited execution id renames', () => {

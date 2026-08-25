@@ -88,7 +88,7 @@ test('one named server action maps DOM input symmetrically and verifies its outc
       assert.equal(testid, 'item-card');
       assert.deepEqual(options, { contains: 'Desk Lamp' });
       return {
-        waitFor: async value => assert.deepEqual(value, { state: 'visible', timeout: 5000 }),
+        waitFor: async value => assert.deepEqual(value, { state: 'attached', timeout: 5000 }),
         getAttribute: async attribute => {
           assert.equal(attribute, 'data-action-input');
           return JSON.stringify({ itemId: 'item-42' });

@@ -155,6 +155,8 @@ test('unknown kinds, fields, malformed payloads, and backward timestamps fail cl
   assert.throws(() => createArtifact({ kind: 'grade_bundle', id: 'scored-observed', payload: {
     ...observedPayload, selection: { ...observedPayload.selection, scoredPoints: 1 },
   } }), /contribute zero score/);
+  assert.doesNotThrow(() => createArtifact({ kind: 'grade_bundle', id: 'source-bound-scored',
+    payload: { observation: 'scored', source: { sha256: 'b'.repeat(64) }, suites: {}, totals: {} } }));
   assert.doesNotThrow(() => createArtifact({ kind: 'reference_qualification', id: 'legacy-reference' }));
   assert.throws(() => createArtifact({ kind: 'reference_qualification', id: 'bad-runner', payload: {
     runner: { schemaVersion: 1, mode: 'desktop', platform: 'win32', architecture: 'x64' },

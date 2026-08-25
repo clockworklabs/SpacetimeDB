@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 
 
-import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from '../evidence/artifacts.mjs';
+import { currentEngineIdentity, emptyArtifactIdentities, readArtifact, readArtifactPayload,
+  writeArtifact } from '../evidence/artifacts.mjs';
 import { acquireCampaignLock, releaseCampaignLock } from './campaign-lock.mjs';
 import { compileCampaignFile } from './campaign-compiler.mjs';
 import { claimNextAttempt, finishCampaignExecution, initializeCampaignDirectory,
@@ -137,6 +138,37 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
       `${selectionAt}.observedChecks`);
       mismatch(level.selection?.scoredPoints !== plannedLevel.selection.scoredPoints,
         `${selectionAt}.scoredPoints`);
+      const priorChecks = (condition?.requested?.levels ?? [])
+        .filter(item => item.level < level.level)
+        .flatMap(item => item.selection?.scoredChecks ?? []);
+      const expectedRegression = priorChecks.map(check => ({ stableKey: check.stableKey,
+        points: check.points }));
+      const actualRegression = (level.selection?.regressionChecks ?? []).map(check => ({
+        stableKey: check?.stableKey, points: check?.points,
+      }));
+      mismatch(canonicalDefinitionJson(actualRegression)
+        !== canonicalDefinitionJson(expectedRegression), `${selectionAt}.regressionChecks`);
+      const regressionPoints = expectedRegression.reduce((total, check) => total + check.points, 0);
+      if (regressionPoints > 0) {
+        const expectedEvaluationSha256 = sha256(Buffer.from(canonicalDefinitionJson({
+          schemaVersion: 1,
+          selectionSha256: plannedLevel.selection.sha256,
+          regressionChecks: expectedRegression.map(check => check.stableKey).sort(),
+        })));
+        mismatch(level.selection?.evaluationSha256 !== expectedEvaluationSha256,
+          `${selectionAt}.evaluationSha256`);
+        mismatch(level.selection?.regressionPoints !== regressionPoints,
+          `${selectionAt}.regressionPoints`);
+        for (const [name, regression] of [['firstBuild', level.firstBuild?.regression],
+          ['final', level.regression]]) {
+          mismatch(!Number.isSafeInteger(regression?.score)
+            || regression.max !== regressionPoints || regression.score < 0
+            || regression.score > regression.max, `levels.L${level.level}.${name}.regression`);
+        }
+      } else {
+        mismatch(level.regression !== null && level.regression !== undefined,
+          `levels.L${level.level}.regression`);
+      }
     }
     const selectedChecks = level.selection?.observedChecks;
     if (!Array.isArray(selectedChecks) || selectedChecks.length === 0) {
@@ -232,8 +264,12 @@ export function validateCampaignRun(plan, attempt, run, { buildImage = null } = 
         mismatch(repair.status !== expected, `${at}.status`);
         mismatch(validScore && level.score !== level.max, `levels.L${level.level}.score`);
       } else if (level.outcome?.kind === 'app_failure') {
-        mismatch(repair.status !== 'budget-exhausted', `${at}.status`);
-        mismatch(repair.roundsUsed !== repair.budgetRounds, `${at}.roundsUsed`);
+        const exhausted = repair.status === 'budget-exhausted'
+          && repair.roundsUsed === repair.budgetRounds;
+        const paused = repair.status === 'incomplete'
+          && repair.stopReason === 'repeated-findings'
+          && repair.roundsUsed > 0 && repair.roundsUsed < repair.budgetRounds;
+        mismatch(!exhausted && !paused, `${at}.status`);
         // The level score covers only the newly requested criteria. A level can
         // earn every one of those points and still fail if an inherited
         // guarantee regressed. Test-development checks cannot create an
@@ -288,6 +324,10 @@ function readAttemptResult(plan, attempt, output, processResult) {
 export function verifyCampaignRuntime(plan, env = process.env) {
   if (plan.state !== 'frozen') return structuredClone(plan.definition.runtime);
   const expected = plan.definition.runtime;
+  const plannedEngine = plan.identities?.engine;
+  if (!plannedEngine?.sha256 || currentEngineIdentity().sha256 !== plannedEngine.sha256) {
+    throw new Error('running Stack Bench engine does not match the frozen campaign');
+  }
   if (env.STACK_BENCH_CONTROLLER_IMAGE !== expected.controllerImage) {
     throw new Error('running controller image does not match the frozen campaign');
   }

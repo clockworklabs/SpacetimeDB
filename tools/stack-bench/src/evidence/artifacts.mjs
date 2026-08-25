@@ -406,9 +406,13 @@ function validatePayload(kind, payload) {
     if (!['scored', 'observed'].includes(observation)) {
       fail('grade_bundle payload.observation must be scored or observed');
     }
+    if (payload.source !== undefined
+      && (!isObject(payload.source) || Object.keys(payload.source).length !== 1
+        || !HASH.test(payload.source.sha256 ?? ''))) {
+      fail('grade_bundle payload.source must contain its application SHA-256');
+    }
     if (observation === 'observed') {
-      if (!isObject(payload.source) || Object.keys(payload.source).length !== 1
-        || !HASH.test(payload.source.sha256 ?? '')) {
+      if (payload.source === undefined) {
         fail('grade_bundle observed payload.source must contain its first-build SHA-256');
       }
       if (payload.selection?.observation !== 'observed'
@@ -417,8 +421,6 @@ function validatePayload(kind, payload) {
         || payload.selection.observedPoints < 0) {
         fail('grade_bundle observed selection must be diagnostic and contribute zero score');
       }
-    } else if (payload.source !== undefined) {
-      fail('grade_bundle scored observation cannot claim an observed source');
     }
     for (const [suiteId, suite] of Object.entries(payload.suites ?? {})) {
       if (isObject(suite)) validateGradeFeatures(suite.features, `grade_bundle payload.suites.${suiteId}.features`);
@@ -490,7 +492,8 @@ function validatePayload(kind, payload) {
     }
     objectWhenPresent('repair');
     if (!isObject(payload.repair)) fail('source_checkpoint payload.repair is required');
-    const repairFields = new Set(['status', 'budgetRounds', 'roundsUsed', 'stopReason']);
+    const repairFields = new Set(['status', 'budgetRounds', 'roundsUsed', 'stallLimitRounds',
+      'stopReason']);
     for (const key of Object.keys(payload.repair)) {
       if (!repairFields.has(key)) fail(`source_checkpoint payload.repair.${key} is unknown`);
     }
@@ -500,6 +503,11 @@ function validatePayload(kind, payload) {
       if (!Number.isSafeInteger(payload.repair[field]) || payload.repair[field] < 0) {
         fail(`source_checkpoint payload.repair.${field} must be a non-negative integer`);
       }
+    }
+    if (payload.repair.stallLimitRounds !== undefined
+      && (!Number.isSafeInteger(payload.repair.stallLimitRounds)
+        || payload.repair.stallLimitRounds < 0)) {
+      fail('source_checkpoint payload.repair.stallLimitRounds must be a non-negative integer');
     }
     if (payload.repair.roundsUsed > payload.repair.budgetRounds) {
       fail('source_checkpoint payload.repair.roundsUsed exceeds its budget');

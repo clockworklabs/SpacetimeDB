@@ -114,3 +114,58 @@ test('application setup failures become actionable repair feedback without crite
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('contract feedback reports the clean-state observation without claiming the element exists', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-contract-repair-'));
+  try {
+    const app = join(root, 'app');
+    const grading = join(app, 'stack-bench');
+    mkdirSync(grading, { recursive: true });
+    writeArtifact(join(grading, 'contract-lint.json'), {
+      kind: 'contract_lint', id: 'contract-repair-lint', identities: {},
+      payload: {
+        label: 'spacetime-l1', url: 'http://app', level: 1, pass: false,
+        counts: { lintable: 2, pass: 0, fail: 1, blocked: 1, scenario: 1 },
+        results: [
+          { id: 'review-average', status: 'FAIL',
+            detail: 'no element matching [data-testid="review-average"] became visible — expected: the item average as a number' },
+          { id: 'cart-panel', status: 'BLOCKED', detail: 'earlier golden-path step failed' },
+        ],
+      },
+    });
+
+    const reported = spawnSync(process.execPath, [CLI, '--app', app], { encoding: 'utf8' });
+    assert.equal(reported.status, 0, reported.stderr);
+    const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
+    assert.match(repair, /clean test state/);
+    assert.match(repair, /review-average/);
+    assert.match(repair, /no element matching/);
+    assert.doesNotMatch(repair, /These elements exist/);
+    assert.doesNotMatch(repair, /cart-panel/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('repair feedback states clean authority and summarizes earlier failed rounds', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-history-'));
+  try {
+    const app = join(root, 'app');
+    writeGrade(app, 'failed', 'the owner check still failed');
+    const history = [{ round: 1, beforeScore: 4, beforeMax: 6, afterScore: 4,
+      afterMax: 6, result: 'kept with no score gain', remainingFailures: ['accounts/owner'] }];
+    const archive = join(app, 'stack-bench', 'records', 'bug-report-round2.md');
+    const reported = spawnSync(process.execPath,
+      [CLI, '--app', app, '--history-json', JSON.stringify(history), '--archive', archive],
+      { encoding: 'utf8' });
+    assert.equal(reported.status, 0, reported.stderr);
+    const repair = readFileSync(join(app, 'BUG_REPORT.md'), 'utf8');
+    assert.match(repair, /clean database reset and a fresh/);
+    assert.match(repair, /Round 1: 4\/6 to 4\/6/);
+    assert.match(repair, /accounts\/owner/);
+    assert.match(repair, /warm local check/);
+    assert.equal(readFileSync(archive, 'utf8'), repair);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

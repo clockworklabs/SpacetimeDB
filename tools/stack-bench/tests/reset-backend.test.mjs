@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { createBackendLease, writeBackendLease } from '../src/runtime/backend-lease.mjs';
 import { resetBackend } from '../src/stacks/backend-reset.mjs';
+import { resetPostgres } from '../src/stacks/stack-backend-operations.mjs';
 import { containerReachableSpacetimeUri } from '../src/runtime/spacetime-target.mjs';
 import { GeneratedAppLayoutError, resolveSpacetimeModuleLayout } from '../src/runtime/spacetime-layout.mjs';
 
@@ -62,6 +63,28 @@ test('the reset entrypoint reports a generated layout separately from a harness 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('PostgreSQL reset removes schema changes left by earlier repairs', () => {
+  const lease = {
+    resources: {
+      database: 'stackbench_ecom_run0',
+      container: { name: 'postgres-service', id: 'a'.repeat(64) },
+    },
+  };
+  const calls = [];
+  const exec = (command, args, options) => {
+    calls.push({ command, args, options });
+    if (args[0] === 'inspect') return `${lease.resources.container.id}\n`;
+    return '';
+  };
+
+  resetPostgres({ lease, exec });
+  const reset = calls.find(call => call.args.includes('psql'));
+  const sql = reset.args[reset.args.indexOf('-c') + 1];
+  assert.match(sql, /DROP SCHEMA public CASCADE/);
+  assert.match(sql, /CREATE SCHEMA public/);
+  assert.doesNotMatch(sql, /TRUNCATE TABLE/);
 });
 
 test('Spacetime reset publishes inside the exact leased build container', () => {

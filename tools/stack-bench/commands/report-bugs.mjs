@@ -3,7 +3,7 @@
 // Selectors, test mechanics, local topology and raw paths are deliberately
 // removed so a fix cannot overfit the harness instead of repairing the app.
 
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { sanitiseConsoleError, sanitiseDiagnostic } from '../src/evidence/diagnostic-sanitizer.mjs';
 import { emptyArtifactIdentities, readArtifact, readArtifactPayload, writeArtifact } from '../src/evidence/artifacts.mjs';
@@ -16,6 +16,7 @@ function parseArgs(argv) {
     if (argv[i] === '--app') args.app = argv[++i];
     else if (argv[i] === '--out') args.out = argv[++i];
     else if (argv[i] === '--archive') args.archive = argv[++i];
+    else if (argv[i] === '--history-json') args.history = JSON.parse(argv[++i]);
     else { console.error(`Unknown argument: ${argv[i]}`); process.exit(2); }
   }
   if (!args.app) {
@@ -23,6 +24,8 @@ function parseArgs(argv) {
     process.exit(2);
   }
   args.out ??= join(args.app, 'BUG_REPORT.md');
+  args.history ??= [];
+  if (!Array.isArray(args.history)) throw new Error('--history-json must contain an array');
   return args;
 }
 
@@ -66,7 +69,7 @@ for (const file of readdirSync(resultsDir).filter(name => /^grading-.*\.json$/.t
   }
 }
 
-// Missing contract hooks are separate because the test id is itself the public
+// Contract failures are separate because the test id is itself the public
 // requirement here. Behavioural failures above must never expose one.
 const lintPath = join(resultsDir, 'contract-lint.json');
 if (existsSync(lintPath)) {
@@ -74,8 +77,9 @@ if (existsSync(lintPath)) {
   for (const result of (lint.results ?? []).filter(item => item.status === 'FAIL')) {
     bugs.push({
       area: 'Testing hooks',
-      expected: `The element described as "${(result.detail ?? '').split('expected: ').pop()}" must carry data-testid="${result.id}"`,
-      observed: 'no element with that test id was found',
+      expected: `A visible element for "${(result.detail ?? '').split('expected: ').pop()}" must use data-testid="${result.id}"`,
+      observed: sanitiseDiagnostic(result.detail
+        ?? `no visible element with data-testid="${result.id}" was found after a clean reset`, 500),
       contract: true,
     });
   }
@@ -106,15 +110,30 @@ if (bugs.length === 0) {
 }
 
 const behavioural = bugs.filter(bug => !bug.contract);
-const missingHooks = bugs.filter(bug => bug.contract);
+const contractFailures = bugs.filter(bug => bug.contract);
 const lines = [
   '# Bug Report',
   '',
-  'Automated verification found the following problems. Fix the app so the',
-  'behaviour matches, then redeploy. Do not change behaviour that is already',
-  'correct.',
+  'Stack Bench found these problems after a clean database reset and a fresh',
+  'application restart. Fix the app so the behaviour matches, then redeploy.',
+  'Do not change behaviour that is already correct. A check against warm local',
+  'state does not replace the clean verification result below.',
   '',
 ];
+
+if (args.history.length) {
+  lines.push('## Earlier repair results', '');
+  lines.push('These earlier rounds did not complete the repair:', '');
+  for (const item of args.history) {
+    const before = `${item.beforeScore}/${item.beforeMax}`;
+    const after = `${item.afterScore}/${item.afterMax}`;
+    const remaining = Array.isArray(item.remainingFailures) && item.remainingFailures.length
+      ? item.remainingFailures.join(', ') : 'not recorded';
+    lines.push(`- Round ${item.round}: ${before} to ${after}; ${item.result}; remaining: ${remaining}`);
+  }
+  lines.push('', 'Use the current source as the starting point. Do not repeat an earlier',
+    'approach only because a warm local check appeared to pass.', '');
+}
 
 if (behavioural.length) {
   lines.push('## Behaviour', '');
@@ -130,14 +149,22 @@ if (behavioural.length) {
   });
 }
 
-if (missingHooks.length) {
-  lines.push('## Missing testing hooks', '');
-  lines.push('These elements exist in the spec but carry no test id, so they cannot', 'be verified:', '');
-  missingHooks.forEach(bug => lines.push(`- ${bug.expected}`));
+if (contractFailures.length) {
+  lines.push('## Testing interface', '');
+  lines.push('Stack Bench could not find these required elements in the clean test state:', '');
+  contractFailures.forEach(bug => {
+    lines.push(`- **Expected:** ${bug.expected}`);
+    lines.push(`  **Actual:** ${bug.observed}`);
+  });
   lines.push('');
 }
 
-writeFileSync(args.out, lines.join('\n'));
+const reportText = lines.join('\n');
+writeFileSync(args.out, reportText);
+if (args.archive) {
+  mkdirSync(dirname(args.archive), { recursive: true });
+  writeFileSync(args.archive, reportText);
+}
 
 const vaguePct = Math.round((vagueBugs / bugs.length) * 100);
 console.log(`Wrote ${bugs.length} bug(s) to ${args.out}`);

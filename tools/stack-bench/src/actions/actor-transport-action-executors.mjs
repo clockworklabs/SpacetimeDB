@@ -584,7 +584,10 @@ async function callAction({ input, capabilities, signal }) {
   }
 
   const target = source.loc(input.input.testid, { contains: input.input.contains });
-  await target.waitFor({ state: 'visible', timeout: transport.defaultWithin });
+  // The attribute is machine-readable action input. A drawer can cover its
+  // source element without removing it from the application contract. Requiring
+  // screen visibility here made layout decide a server-behaviour score.
+  await target.waitFor({ state: 'attached', timeout: transport.defaultWithin });
   const raw = await target.getAttribute(input.input.attribute);
   if (raw === null || raw === '') {
     fail(`${input.input.testid} exposes no ${input.input.attribute} value for action "${input.action}"`);

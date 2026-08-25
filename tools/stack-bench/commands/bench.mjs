@@ -62,6 +62,7 @@ const COMMAND_TIMEOUT_MS = 20 * 60_000;
 export function parseArgs(argv) {
   const a = { model: null, agentAdapter: 'claude-code',
     fixRounds: 10, runIndex: 0, levels: '1', media: true,
+    maxStalledRepairs: 3,
     guidance: 'prescribed', track: DEFAULT_TRACK, packIds: [], checkKeys: [],
     featureIds: [], requestedSpecifications: [], expectedSpecifications: [],
     observedSpecifications: [],
@@ -76,6 +77,7 @@ export function parseArgs(argv) {
       case '--check': a.checkKeys.push(...argv[++i].split(',').filter(Boolean)); break;
       case '--model': a.model = argv[++i]; break;
       case '--fix-rounds': a.fixRounds = Number(argv[++i]); break;
+      case '--max-stalled-repairs': a.maxStalledRepairs = Number(argv[++i]); break;
       case '--max-budget-usd': a.maxBudgetUsd = Number(argv[++i]); break;
       case '--run-index': a.runIndex = parseInt(argv[++i], 10); break;
       case '--out': a.out = argv[++i]; break;
@@ -130,6 +132,10 @@ export function parseArgs(argv) {
   if (!Number.isInteger(a.fixRounds) || a.fixRounds < 0 || a.fixRounds > 20) {
     throw new Error('--fix-rounds must be an integer from 0 through 20');
   }
+  if (!Number.isInteger(a.maxStalledRepairs) || a.maxStalledRepairs < 0
+    || a.maxStalledRepairs > 20) {
+    throw new Error('--max-stalled-repairs must be an integer from 0 through 20');
+  }
   if (a.maxBudgetUsd !== undefined && (!Number.isFinite(a.maxBudgetUsd) || a.maxBudgetUsd <= 0)) {
     throw new Error('--max-budget-usd must be a positive number');
   }
@@ -137,6 +143,44 @@ export function parseArgs(argv) {
     throw new Error('--mutation-shard-index and --mutation-shard-count must be supplied together');
   }
   return a;
+}
+
+export function repairProgressState(previous, bundle) {
+  const outcome = classifyBundle(bundle);
+  const score = bundle?.totals?.score ?? null;
+  const fingerprint = canonicalDefinitionJson({
+    kind: outcome.kind,
+    phase: outcome.phase ?? null,
+    appFailures: [...(outcome.appFailures ?? [])].sort(),
+    inconclusive: [...(outcome.inconclusive ?? [])].sort(),
+    harnessFailures: [...(outcome.harnessFailures ?? [])].sort(),
+    contractFailures: (bundle?.suites?.lint?.results ?? [])
+      .filter(result => result.status === 'FAIL')
+      .map(result => ({ id: result.id, detail: result.detail ?? null })),
+  });
+  const stalledRounds = previous && score !== null && previous.score !== null
+    && score <= previous.score && fingerprint === previous.fingerprint
+    ? previous.stalledRounds + 1 : 0;
+  return { score, fingerprint, stalledRounds };
+}
+
+export function repairHistoryEntry(round, before, after, result) {
+  const failureKeys = bundle => {
+    const outcome = classifyBundle(bundle);
+    const contract = (bundle?.suites?.lint?.results ?? [])
+      .filter(item => item.status === 'FAIL').map(item => `testing-interface/${item.id}`);
+    return [...new Set([...(outcome.appFailures ?? []).filter(key => key !== 'contract-lint'),
+      ...contract])].sort();
+  };
+  return {
+    round,
+    beforeScore: before?.totals?.score ?? null,
+    beforeMax: before?.totals?.max ?? null,
+    afterScore: after?.totals?.score ?? null,
+    afterMax: after?.totals?.max ?? null,
+    result,
+    remainingFailures: failureKeys(after),
+  };
 }
 
 function snapshotSource(appDir, to) {
@@ -281,6 +325,10 @@ export function gradeArgv(args, appDir, url, label, level, track, parentAttemptI
     ...(args.recipe ? ['--recipe', args.recipe] : []),
     ...(args.recipeTasks?.get(level)
       ? ['--recipe-task-json', JSON.stringify(args.recipeTasks.get(level).request)] : []),
+    ...(observation === 'scored' && args.recipeTasks
+      ? ['--regression-checks-json', JSON.stringify([...args.recipeTasks.entries()]
+        .filter(([priorLevel]) => priorLevel < level)
+        .flatMap(([, task]) => task.selection.scoredChecks.map(check => check.stableKey)))] : []),
     ...(args.media && observation === 'scored' ? [] : ['--no-media']),
     ...(!executeStackCapability(STACK_ADAPTER_REGISTRY.get(args.backend),
       'run-policy', 'reset-enabled')
@@ -291,7 +339,10 @@ export function gradeArgv(args, appDir, url, label, level, track, parentAttemptI
 function grade(args, appDir, url, label, level, track, parentAttemptId,
   options = {}) {
   const { out = null } = options;
-  const argv = gradeArgv(args, appDir, url, label, level, track, parentAttemptId, options);
+  const source = hashAppSource(appDir);
+  const argv = gradeArgv(args, appDir, url, label, level, track, parentAttemptId, {
+    ...options, sourceSha256: options.sourceSha256 ?? source.sha256,
+  });
   const bundle = join(out ?? join(appDir, 'stack-bench'), 'bundle.json');
   rmSync(bundle, { force: true });
   try { sh('node', argv, { stdio: 'inherit' }); } catch { /* a current bundle may still explain a scored failure */ }
@@ -855,6 +906,7 @@ async function main() {
     const firstBuild = {
       score: bundle?.totals?.score ?? null,
       max: bundle?.totals?.max ?? null,
+      regression: bundle?.totals?.regression ?? null,
       contractPass: bundle?.totals?.contractPass ?? null,
       outcome: classifyBundle(bundle),
       source: firstBuildSource,
@@ -942,8 +994,19 @@ async function main() {
     let fixRounds = 0;
     let fixCost = 0;
     const fixSessions = [];
+    const repairHistory = [];
     let regressed = false;
     let repairStopReason = null;
+    let repairProgress = repairProgressState(null, bundle);
+    const pauseForRepeatedFindings = () => {
+      repairProgress = repairProgressState(repairProgress, bundle);
+      if (args.maxStalledRepairs === 0
+        || repairProgress.stalledRounds < args.maxStalledRepairs) return false;
+      repairStopReason = 'repeated-findings';
+      console.log(`    pausing after ${repairProgress.stalledRounds} repair rounds `
+        + 'with the same failed checks and no score gain');
+      return true;
+    };
     const initialBundleOutcome = classifyBundle(bundle);
     const initialGradeUsable = ladderMayContinue(initialBundleOutcome);
     if (!initialGradeUsable) {
@@ -956,6 +1019,7 @@ async function main() {
       let wroteReport = true;
       try {
         sh('node', [join(ROOT, 'commands', 'report-bugs.mjs'), '--app', appDir,
+          '--history-json', JSON.stringify(repairHistory),
           '--archive', join(appDir, 'stack-bench', 'records',
             `bug-report-l${level}-round${fixRounds + 1}.md`)], { stdio: 'pipe' });
       } catch (err) {
@@ -996,6 +1060,8 @@ async function main() {
       if (fixFailure) {
         console.log(`    coding session failed: ${fixFailure.reason}; stopping repairs`);
         bundle = { outcome: fixFailure };
+        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+          'agent session failed'));
         repairStopReason = 'agent-session-failure';
         break;
       }
@@ -1022,12 +1088,18 @@ async function main() {
         console.log(afterMax > 0
           ? `    application setup is now gradeable (${after}/${afterMax}); keeping this repair`
           : '    application setup is still failing; keeping the attempted repair for the next round');
+        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+          'kept because the app became gradeable'));
+        if (pauseForRepeatedFindings()) break;
         continue;
       }
       if (decision.action === 'rollback-no-comparison') {
         console.log('    no criteria were conclusively scored in both rounds; rolling back this fix');
         restoreSource(snapshot, appDir);
         bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback${fixRounds}`, level, track, runId);
+        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+          'rolled back because the result could not be compared'));
+        if (pauseForRepeatedFindings()) break;
         continue;
       }
       if (shared.points < Math.min(beforeMax, afterMax)) {
@@ -1048,6 +1120,9 @@ async function main() {
         restoreSource(snapshot, appDir);
         bundle = grade(args, appDir, url, `${args.backend}-l${level}-rollback${fixRounds}`, level, track, runId);
         regressed = true;
+        repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+          'rolled back because earlier behavior regressed'));
+        if (pauseForRepeatedFindings()) break;
         continue;
       }
       if (shared.after === shared.before) {
@@ -1055,6 +1130,9 @@ async function main() {
         console.log(`    ${formatRepairProgress(shared, { before, beforeMax, after, afterMax })}; `
           + (remaining > 0 ? `${remaining} correction round(s) remain` : 'correction budget exhausted'));
       }
+      repairHistory.push(repairHistoryEntry(fixRounds, beforeBundle, bundle,
+        shared.after === shared.before ? 'kept with no score gain' : 'kept'));
+      if (pauseForRepeatedFindings()) break;
     }
 
     // A grading run that crashed writes no bundle, and recording that as 0/0
@@ -1075,6 +1153,7 @@ async function main() {
       status: repairStatus,
       budgetRounds: args.fixRounds,
       roundsUsed: fixRounds,
+      stallLimitRounds: args.maxStalledRepairs,
       stopReason,
     };
     if (continuing) {
@@ -1128,6 +1207,7 @@ async function main() {
       code: bundle?.code ?? null,
       fixCostUsd: Number(fixCost.toFixed(4)),
       fixSessions,
+      repairHistory,
       sessionTotals,
       tokens: sessionTotals.tokens,
       // Carried up so a run summary can explain a cost, not just report one.
@@ -1146,7 +1226,7 @@ async function main() {
       repair,
       checkpoint,
       // Keep the summary flag derived from the typed status so the two cannot drift.
-      stalled: repairStatus === 'budget-exhausted',
+      stalled: repairStatus === 'budget-exhausted' || repairStopReason === 'repeated-findings',
       regressed,
       outcome: finalBundleOutcome,
       durationSec: Math.round((Date.now() - t0) / 1000),

@@ -31,12 +31,17 @@ function requireCompletedFailure(level, parent) {
     || (level.outcome.harnessFailures?.length ?? 0) > 0) {
     throw new Error(`L${level.level} does not have complete conclusive measurement`);
   }
-  if (level.repair?.status !== 'budget-exhausted'
+  const exhausted = level.repair?.status === 'budget-exhausted'
+    && level.repair?.roundsUsed === level.repair?.budgetRounds;
+  const paused = level.repair?.status === 'incomplete'
+    && level.repair?.stopReason === 'repeated-findings'
+    && level.repair?.roundsUsed > 0
+    && level.repair?.roundsUsed < level.repair?.budgetRounds;
+  if ((!exhausted && !paused)
     || !Number.isSafeInteger(level.repair?.budgetRounds)
     || level.repair.budgetRounds < 0
-    || level.repair.roundsUsed !== level.repair.budgetRounds
     || level.fixRounds !== level.repair.roundsUsed) {
-    throw new Error(`L${level.level} did not exhaust one coherent repair budget`);
+    throw new Error(`L${level.level} did not exhaust or pause one coherent repair budget`);
   }
   if (!Number.isSafeInteger(level.score) || !Number.isSafeInteger(level.max)
     || level.max < 1 || level.score < 0 || level.score >= level.max) {

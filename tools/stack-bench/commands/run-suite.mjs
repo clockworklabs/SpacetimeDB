@@ -32,6 +32,8 @@ import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pa
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.mjs';
+import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
+import { sha256 } from '../src/evidence/provenance.mjs';
 
 import { STACK_BENCH_ROOT as ROOT } from '../src/project-paths.mjs';
 const RESET = join(ROOT, 'commands', 'reset-backend.mjs');
@@ -81,10 +83,11 @@ export function applicationFailureTotals(selection, declaredSuites) {
     regression: regressionMax ? { score: 0, max: regressionMax } : null };
 }
 
-export function clearPreviousGradeOutputs(output, declaredSuites) {
+export function clearPreviousGradeOutputs(output) {
+  const generated = existsSync(output) ? readdirSync(output).filter(name =>
+    /^grading-.+\.json$/.test(name) || /^grader-.+\.(?:stdout|stderr)\.log$/.test(name)) : [];
   for (const name of ['bundle.json', 'contract-lint.json', 'actions.json', 'media', 'failure-media',
-    ...declaredSuites.flatMap(suite => [`grading-${suite.id}.json`,
-      `grader-${suite.id}.stdout.log`, `grader-${suite.id}.stderr.log`])]) {
+    ...generated]) {
     rmSync(join(output, name), { recursive: true, force: true });
   }
 }
@@ -121,6 +124,7 @@ function parseArgs(argv) {
       case '--level': a.level = argv[++i]; break;
       case '--recipe': a.recipe = argv[++i]; break;
       case '--recipe-task-json': a.recipeTask = JSON.parse(argv[++i]); break;
+      case '--regression-checks-json': a.regressionChecks = JSON.parse(argv[++i]); break;
       case '--observation': a.observation = argv[++i]; break;
       case '--source-sha256': a.sourceSha256 = argv[++i]; break;
       case '--no-media': a.media = false; break;
@@ -147,13 +151,18 @@ function parseArgs(argv) {
   if (a.observation === 'observed' && !/^[a-f0-9]{64}$/.test(a.sourceSha256 ?? '')) {
     throw new Error('observed specifications require --source-sha256');
   }
-  if (a.observation === 'scored' && a.sourceSha256 !== undefined) {
-    throw new Error('--source-sha256 is reserved for observed specifications');
+  if (a.sourceSha256 !== undefined && !/^[a-f0-9]{64}$/.test(a.sourceSha256)) {
+    throw new Error('--source-sha256 must be a SHA-256 digest');
   }
   if (a.reseedProbeExpectation && !a.reseedProbe) {
     throw new Error('--reseed-probe-expectation-json requires --reseed-probe');
   }
   a.out ??= join(a.app, 'stack-bench');
+  a.regressionChecks ??= [];
+  if (!Array.isArray(a.regressionChecks)
+    || a.regressionChecks.some(key => typeof key !== 'string' || !key)) {
+    throw new Error('--regression-checks-json must contain stable check keys');
+  }
   return a;
 }
 
@@ -171,6 +180,38 @@ export function selectObservationScope(selectedTask, observation = 'scored') {
     checks: selection.observedChecks,
     scoredPoints: 0,
     observedPoints: selection.observedChecks.reduce((total, check) => total + check.points, 0),
+  };
+}
+
+export function attachRegressionScope(selection, recipeBinding, declaredSuites, stableKeys = []) {
+  if (!stableKeys.length) return selection;
+  if (!selection || !recipeBinding?.release?.checkCatalog) {
+    throw new Error('regression checks require a recipe-bound scored selection');
+  }
+  const uniqueKeys = [...new Set(stableKeys)];
+  if (uniqueKeys.length !== stableKeys.length) throw new Error('regression checks contain duplicates');
+  const currentKeys = new Set(selection.checks.map(check => check.stableKey));
+  const catalog = new Map(recipeBinding.release.checkCatalog
+    .map(check => [check.stableKey, check]));
+  const inheritedSuites = new Set(declaredSuites.filter(suite => suite.inherited)
+    .map(suite => suite.id));
+  const regressionChecks = uniqueKeys.map(key => {
+    if (currentKeys.has(key)) throw new Error(`regression check ${key} is already in the current score`);
+    const check = catalog.get(key);
+    if (!check) throw new Error(`regression check ${key} is absent from the cumulative recipe`);
+    if (!inheritedSuites.has(check.executionId)) {
+      throw new Error(`regression check ${key} does not belong to an inherited execution`);
+    }
+    return { ...check, treatment: check.treatment ?? 'regression' };
+  });
+  const evaluationDocument = { schemaVersion: 1, selectionSha256: selection.sha256,
+    regressionChecks: uniqueKeys.slice().sort() };
+  return {
+    ...selection,
+    checks: [...selection.checks, ...regressionChecks],
+    regressionChecks,
+    regressionPoints: regressionChecks.reduce((total, check) => total + check.points, 0),
+    evaluationSha256: sha256(Buffer.from(canonicalDefinitionJson(evaluationDocument))),
   };
 }
 
@@ -366,7 +407,9 @@ function lint(args) {
   } catch { /* non-zero exit means hooks failed; the report still lands */ }
   if (!existsSync(out)) { console.log('NO REPORT'); return null; }
   const r = readArtifactPayload(out, { expectedKind: 'contract_lint' });
-  console.log(r.pass ? `PASS (${r.counts.pass} hooks)` : `FAIL (${r.counts.fail + r.counts.blocked} missing)`);
+  console.log(r.pass
+    ? `PASS (${r.counts.pass} hooks)`
+    : `FAIL (${r.counts.fail} failed, ${r.counts.blocked} blocked)`);
   return r;
 }
 
@@ -403,7 +446,9 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
     ? `${args.recipeTask.recipe.id}@${args.recipeTask.recipe.version}` : null);
   if (requestedRecipe) argv.push('--recipe', requestedRecipe);
   for (const check of selectedChecks) argv.push('--selected-check', check.stableKey);
-  if (args.selection?.sha256) argv.push('--selection-sha256', args.selection.sha256);
+  if (args.selection?.sha256) {
+    argv.push('--selection-sha256', args.selection.evaluationSha256 ?? args.selection.sha256);
+  }
   argv.push('--parent-attempt-id', bundleArtifactId);
   // The out-of-band write goes straight to this run's database, with no
   // app code in the loop; only the harness knows which one that is.
@@ -467,17 +512,23 @@ async function main() {
         ? resolveBoundRecipeTaskRequest(recipeBinding, args.recipeTask)
         : createBoundRecipeTaskRequest(recipeBinding, args))
     : null;
-  const selection = selectObservationScope(selectedTask, args.observation);
-  if (args.observation === 'observed') {
+  let selection = selectObservationScope(selectedTask, args.observation);
+  if (args.sourceSha256) {
     const source = hashAppSource(args.app);
     if (source.sha256 !== args.sourceSha256) {
-      throw new Error('live application source changed after the bound first-build snapshot');
+      throw new Error('live application source differs from the source selected for grading');
     }
   }
   args.selection = selection;
   const declaredSuites = recipeBinding
     ? suitesForRecipe(track, recipeBinding)
     : suitesFor(track, args.level);
+  if (args.observation === 'scored') {
+    selection = attachRegressionScope(selection, recipeBinding, declaredSuites,
+      args.regressionChecks);
+  } else if (args.regressionChecks.length) {
+    throw new Error('observed grading cannot include regression checks');
+  }
   if (selection) {
     const suiteIds = new Set(declaredSuites.map(suite => suite.id));
     const unmapped = selection.checks.filter(check => !suiteIds.has(check.executionId));
@@ -495,9 +546,10 @@ async function main() {
   args.bundleArtifactId = bundleArtifactId;
   mkdirSync(args.out, { recursive: true });
   // A structural abort can happen before any suite overwrites its old result.
-  // Remove only the exact outputs this grading pass owns so repair feedback
-  // cannot mix a current startup failure with criteria from the prior round.
-  clearPreviousGradeOutputs(args.out, declaredSuites);
+  // Remove all outputs from the prior grade. A cumulative level can rename
+  // inherited suites, so deleting only the current names leaves stale L1
+  // evidence in an L2 result package.
+  clearPreviousGradeOutputs(args.out);
 
   console.log(`\n=== ${args.label} (${args.backend}) ===`);
   console.log(`  app: ${args.app}`);
@@ -522,25 +574,35 @@ async function main() {
       state: calibration.state, contentSha256: calibration.contentSha256 } : null,
     label: args.label, track: args.track, backend: args.backend, url: args.url, app: args.app,
     level: Number(args.level), observation: args.observation,
-    ...(args.observation === 'observed' ? { source: { sha256: args.sourceSha256 } } : {}),
+    ...(args.sourceSha256 ? { source: { sha256: args.sourceSha256 } } : {}),
     suites: {}, totals: {},
     selection: selection ? { ...selection, attemptedChecks: [], reportedChecks: [], notRun: [] } : null,
   };
   const selectedPackIds = new Set(selection?.checks.map(check => check.packId) ?? []);
   const selectedPackDefinitions = recipeBinding?.plan.packs
     .filter(pack => selectedPackIds.has(pack.id)) ?? [];
-  const writeBundle = () => writeArtifact(join(args.out, 'bundle.json'), {
-    kind: 'grade_bundle',
-    id: bundleArtifactId,
-    attempt: { id: bundleArtifactId, parentId: args.parentAttemptId ?? null },
-    timestamps: { startedAt, completedAt: new Date().toISOString() },
-    identities: recipeArtifactIdentities(recipeBinding?.release ?? null, {
-      calibration: calibration ? { id: calibration.id, version: calibration.version,
-        sha256: calibration.contentSha256, state: calibration.state } : null,
-      stackAdapter: { id: args.backend },
-    }),
-    payload: bundle,
-  });
+  const writeBundle = () => {
+    if (args.sourceSha256) {
+      const current = hashAppSource(args.app);
+      if (current.sha256 !== args.sourceSha256) {
+        bundle.error = 'application source changed while grading was in progress';
+        bundle.outcome = { kind: 'harness_failure', phase: 'source-provenance',
+          reason: bundle.error };
+      }
+    }
+    return writeArtifact(join(args.out, 'bundle.json'), {
+      kind: 'grade_bundle',
+      id: bundleArtifactId,
+      attempt: { id: bundleArtifactId, parentId: args.parentAttemptId ?? null },
+      timestamps: { startedAt, completedAt: new Date().toISOString() },
+      identities: recipeArtifactIdentities(recipeBinding?.release ?? null, {
+        calibration: calibration ? { id: calibration.id, version: calibration.version,
+          sha256: calibration.contentSha256, state: calibration.state } : null,
+        stackAdapter: { id: args.backend },
+      }),
+      payload: bundle,
+    });
+  };
   const recordApplicationAbort = () => {
     bundle.totals = applicationFailureTotals(selection, declaredSuites);
   };

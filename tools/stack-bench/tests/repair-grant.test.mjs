@@ -69,6 +69,17 @@ test('a finite grant is derived only from the exact exhausted parent checkpoint'
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('a finite grant can continue an exact repeated-findings checkpoint', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stack-bench-repair-paused-'));
+  try {
+    parentFixture(root, { repair: { status: 'incomplete', budgetRounds: 10,
+      roundsUsed: 4, stopReason: 'repeated-findings' } });
+    const resolved = createRepairGrant(root, { level: 1, rounds: 3 });
+    assert.equal(resolved.grant.roundsGranted, 3);
+    assert.equal(resolved.grant.cumulativeRoundsBefore, 4);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test('repair grants reject incomplete evidence, remaining budget, and changed source bytes', () => {
   const incompleteRoot = mkdtempSync(join(tmpdir(), 'stack-bench-repair-incomplete-'));
   const remainingRoot = mkdtempSync(join(tmpdir(), 'stack-bench-repair-remaining-'));
@@ -80,7 +91,7 @@ test('repair grants reject incomplete evidence, remaining budget, and changed so
 
     parentFixture(remainingRoot, { repair: { status: 'incomplete', budgetRounds: 3,
       roundsUsed: 2, stopReason: 'agent-session-failure' } });
-    assert.throws(() => inspectRepairParent(remainingRoot, 1), /did not exhaust/);
+    assert.throws(() => inspectRepairParent(remainingRoot, 1), /did not exhaust or pause/);
 
     const changed = parentFixture(changedRoot);
     writeFileSync(join(changedRoot, changed.checkpoint.directory, 'app.js'),

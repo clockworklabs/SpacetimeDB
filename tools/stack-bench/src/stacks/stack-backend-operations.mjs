@@ -20,11 +20,9 @@ export function resetPostgres({ lease, exec = execFileSync }) {
   inspectContainer(lease.resources.container, exec, 'reset');
   exec('docker', ['exec', lease.resources.container.name, 'psql', '-U', 'stackbench',
     '-d', lease.resources.database, '-c',
-    `DO $$ DECLARE r RECORD; BEGIN
-       FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-         EXECUTE 'TRUNCATE TABLE ' || quote_ident(r.tablename) || ' RESTART IDENTITY CASCADE';
-       END LOOP;
-     END $$;`], { stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
+    'DROP SCHEMA public CASCADE; CREATE SCHEMA public; '
+      + 'GRANT ALL ON SCHEMA public TO stackbench;'],
+  { stdio: 'pipe', timeout: RESET_TIMEOUT_MS });
   return `reset postgres database ${lease.resources.database}`;
 }
 

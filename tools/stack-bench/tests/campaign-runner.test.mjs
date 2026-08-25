@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { compileCampaignFile } from '../src/campaigns/campaign-compiler.mjs';
-import { emptyArtifactIdentities, readArtifact, writeArtifact } from '../src/evidence/artifacts.mjs';
+import { currentEngineIdentity, emptyArtifactIdentities, readArtifact,
+  writeArtifact } from '../src/evidence/artifacts.mjs';
 import { attemptArgv, campaignExecutionEnvironment, campaignSlotEnvironment, executeCampaign,
   reconcileCampaign, runCampaignAdmission, validateCampaignRun } from '../src/campaigns/campaign-runner.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
@@ -166,7 +167,7 @@ test('campaign validation accepts a zero-level interrupted run without invented 
   /does not match.*backend/);
 });
 
-test('campaign validation rejects an application result that stopped before its correction budget', () => {
+test('campaign validation accepts an explicit repeated-findings pause but rejects an unexplained stop', () => {
   const plan = compileCampaignFile(example);
   const attempt = plan.attempts[0];
   const agent = plan.agents.find(item => item.adapter === attempt.agentAdapter);
@@ -184,6 +185,10 @@ test('campaign validation rejects an application result that stopped before its 
     outcome: { kind: 'app_failure' } }], outcome: { kind: 'app_failure' } };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
     /levels\.L1\.repair/);
+  run.levels[0] = { ...run.levels[0],
+    repair: { status: 'incomplete', budgetRounds: 3, roundsUsed: 1,
+      stopReason: 'repeated-findings' } };
+  assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
   run.levels[0] = { ...run.levels[0], fixRounds: 3,
     repair: { status: 'budget-exhausted', budgetRounds: 3, roundsUsed: 3, stopReason: null } };
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run);
@@ -195,8 +200,9 @@ test('campaign validation rejects an application result that stopped before its 
   assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run,
     'a behaviorally perfect app may still fail the separately reported contract lint');
   run.levels[0] = { ...run.levels[0], regression: { score: 0, max: 1 } };
-  assert.equal(validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }), run,
-    'a perfect requested score may still lose an inherited guarantee');
+  assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
+    /levels\.L1\.regression/,
+    'L1 has no earlier level and cannot report an inherited regression');
   run.levels[0] = { ...run.levels[0], regression: null, contractPass: null,
     outcome: { kind: 'app_failure', appFailures: ['systems/diagnostic'] } };
   assert.throws(() => validateCampaignRun(plan, attempt, run, { buildImage: 'test-build-image' }),
@@ -396,11 +402,12 @@ test('a frozen campaign proves its release and both runtime images before admiss
   const root = mkdtempSync(join(tmpdir(), 'stack-bench-campaign-runtime-'));
   try {
     const { path, manifest, runtime } = frozenRuntime(root);
-    const plan = { state: 'frozen', definition: { runtime } };
+    const plan = { state: 'frozen', identities: { engine: currentEngineIdentity() },
+      definition: { runtime } };
     const env = { STACK_BENCH_CONTROLLER_IMAGE: runtime.controllerImage,
       STACK_BENCH_RELEASE_MANIFEST: path };
     assert.equal(campaignExecutionEnvironment(plan, env).STACK_BENCH_IMAGE, runtime.buildImage);
-    const internalPlan = { state: 'frozen', definition: { runtime: {
+    const internalPlan = { state: 'frozen', identities: plan.identities, definition: { runtime: {
       ...runtime, releaseManifestSha256: null,
     } } };
     assert.equal(campaignExecutionEnvironment(internalPlan, {
@@ -409,6 +416,9 @@ test('a frozen campaign proves its release and both runtime images before admiss
     assert.throws(() => campaignExecutionEnvironment(plan, { ...env,
       STACK_BENCH_CONTROLLER_IMAGE: `registry.example/controller@sha256:${'1'.repeat(64)}` }),
     /controller image does not match/);
+    assert.throws(() => campaignExecutionEnvironment({ ...plan,
+      identities: { engine: { ...plan.identities.engine, sha256: '0'.repeat(64) } } }, env),
+    /engine does not match/);
     assert.throws(() => campaignExecutionEnvironment(plan, { ...env,
       STACK_BENCH_IMAGE: `registry.example/build@sha256:${'2'.repeat(64)}` }), /conflicts/);
     const wrongImages = structuredClone(manifest);
@@ -417,7 +427,8 @@ test('a frozen campaign proves its release and both runtime images before admiss
     wrongController.reference = `registry.example/stack-bench/controller@sha256:${wrongController.digest}`;
     const wrongContent = `${JSON.stringify(wrongImages, null, 2)}\n`;
     writeFileSync(path, wrongContent);
-    assert.throws(() => campaignExecutionEnvironment({ state: 'frozen', definition: {
+    assert.throws(() => campaignExecutionEnvironment({ state: 'frozen', identities: plan.identities,
+      definition: {
       runtime: { ...runtime, releaseManifestSha256: sha256(wrongContent) },
     } }, env), /release manifest images do not match/);
     writeFileSync(path, '{}\n');

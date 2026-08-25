@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 // Stack Bench UI-contract linter.
 //
-// Walks the app's golden path (register -> create room -> enter room -> send a
-// message) using ONLY contract testids, checking every lintable hook for the
-// requested level along the way. Hooks with stage "scenario" need a second
-// user or timing and are reported as SCENARIO (not checked here).
+// Walks the selected track's declared path using only contract test ids. It
+// checks every lintable hook for the requested level. Hooks with stage
+// "scenario" need separate setup and are checked by the scenario suites.
 //
 // Usage: node lint.mjs --url http://localhost:6173 --level 3 [--json] [--headed]
 // Exit codes: 0 = all lintable hooks pass, 1 = failures, 2 = usage/infra error.
@@ -77,7 +76,7 @@ async function checkHook(page, hook, results) {
     results.push({
       id: hook.id,
       status: 'FAIL',
-      detail: `no element matching ${tid(hook.id)} became ${hook.check}` +
+      detail: `no element matching ${tid(hook.id)} became ${hook.check} during contract stage ${JSON.stringify(hook.stage)}` +
         (hook.revealedBy ? ` (after clicking ${tid(hook.revealedBy)})` : '') +
         ` — expected: ${hook.element}`,
     });
