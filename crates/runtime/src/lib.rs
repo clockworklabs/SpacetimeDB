@@ -309,10 +309,10 @@ impl Handle {
 
     #[cfg(feature = "simulation")]
     pub fn into_sim(self) -> sim::Handle {
-        return match self {
+        match self {
             Handle::Tokio(_) => panic!("tokio handle does not exist in simulation"),
             Handle::Simulation(handle) => handle,
-        };
+        }
     }
 }
 
