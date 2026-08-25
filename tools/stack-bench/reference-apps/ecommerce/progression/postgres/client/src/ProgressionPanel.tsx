@@ -4,7 +4,7 @@ type Account = { id: number; username: string; isAdmin: boolean; isStaff: boolea
 type Item = { id: number; name: string; price: number; stock: number; category: string; variants?: string[] };
 type Order = {
   id: number; status: string; total: number; discount?: number; paymentStatus?: string;
-  paymentAmount?: number; refundTotal?: number;
+  paymentAmount?: number; refundTotal?: number; items?: Array<{ name: string }>;
 };
 type ProgressionState = any;
 
@@ -30,17 +30,22 @@ export function ProgressionPanel({
   const [profile, setProfile] = useState({ name: state?.profile?.name ?? "", address: state?.profile?.address ?? "" });
   const [signin, setSignin] = useState({ username: "", password: "" });
   const [support, setSupport] = useState({ email: "", subject: "", message: "" });
+  const [createdReference, setCreatedReference] = useState("");
   const [catalog, setCatalog] = useState({ name: "", category: "", price: "", variants: "" });
   const [promotion, setPromotion] = useState({ code: "", discount: "", start: "", end: "", limit: "" });
   const [promotionCode, setPromotionCode] = useState("");
   const [restock, setRestock] = useState({ item: "", warehouse: "East", quantity: "", delaySeconds: "90" });
   const [reply, setReply] = useState<Record<number, string>>({});
+  const [supportOrders, setSupportOrders] = useState<Record<number, number>>({});
   const [reorders, setReorders] = useState<Record<number, { threshold: string; quantity: string }>>({});
   const [preferences, setPreferences] = useState({ order: false, stock: false });
 
   useEffect(() => {
     if (state?.preferences) setPreferences(state.preferences);
   }, [state?.preferences?.order, state?.preferences?.stock]);
+  useEffect(() => {
+    if (state?.profile) setProfile({ name: state.profile.name, address: state.profile.address });
+  }, [state?.profile?.name, state?.profile?.address]);
 
   const run = async (work: () => Promise<unknown>) => {
     try { await work(); setMessage(""); await reload(); }
@@ -67,7 +72,7 @@ export function ProgressionPanel({
         <button data-testid="staff-signin-submit" onClick={() => run(async () => {
           await request("/api/auth/signin", "POST", signin); window.location.reload();
         })}>Sign in</button>
-        {staff && <span data-testid="staff-current-user">{account?.username}</span>}
+        {account && <span data-testid="staff-current-user">{account.username}</span>}
       </article>
 
       {account && <article className="progression-card" id="profile">
@@ -88,7 +93,10 @@ export function ProgressionPanel({
           onChange={(event) => setSupport({ ...support, subject: event.target.value })} />
         <textarea data-testid="support-message" value={support.message} placeholder="Message"
           onChange={(event) => setSupport({ ...support, message: event.target.value })} />
-        <button data-testid="support-submit" onClick={() => run(() => request("/api/support/cases", "POST", support))}>Open case</button>
+        <button data-testid="support-submit" onClick={() => run(async () => {
+          const created = await request("/api/support/cases", "POST", support); setCreatedReference(created.reference);
+        })}>Open case</button>
+        {createdReference && <strong data-testid="support-reference">{createdReference}</strong>}
         {(state?.support ?? []).map((entry: any) => <div data-testid="support-ticket" key={entry.id}>
           <strong data-testid="support-reference">{entry.reference}</strong>
           <span data-testid="support-status">{entry.status}</span>
@@ -105,15 +113,16 @@ export function ProgressionPanel({
             </select>
             <button data-testid="support-update">Update</button>
           </>}
-          {account && <select data-testid="support-order-option" defaultValue="">
+          {account && <select data-testid="support-order-option" value={supportOrders[entry.id] ?? ""}
+            onChange={(event) => setSupportOrders({ ...supportOrders, [entry.id]: Number(event.target.value) })}>
             <option value="">Select order</option>{orders.map((order) => <option value={order.id} key={order.id}>{order.id}</option>)}
           </select>}
-          {account && orders[0] && <button data-testid="support-link-order"
-            data-action-input={JSON.stringify({ caseId: entry.id, orderId: orders[0].id })}
-            onClick={() => run(() => request(`/api/support/cases/${entry.id}/order`, "POST", { orderId: orders[0].id }))}>Link order</button>}
+          {account && supportOrders[entry.id] && <button data-testid="support-link-order"
+            data-action-input={JSON.stringify({ caseId: entry.id, orderId: supportOrders[entry.id] })}
+            onClick={() => run(() => request(`/api/support/cases/${entry.id}/order`, "POST", { orderId: supportOrders[entry.id] }))}>Link order</button>}
           {entry.orderId && <span data-testid="support-order">Order {entry.orderId}</span>}
           {staff && entry.orderId && <button data-testid="support-refund"
-            data-action-input={JSON.stringify({ caseId: entry.id, orderId: entry.orderId })}
+            data-action-input={JSON.stringify({ caseId: entry.id })}
             onClick={() => run(() => request(`/api/support/cases/${entry.id}/refund`, "POST"))}>Refund order</button>}
           <span data-testid="support-refund-total">{entry.refundTotal}</span>
           {entry.replies.map((item: any) => <div data-testid="support-reply-item" key={item.id}>{item.username}: {item.message}</div>)}
@@ -155,7 +164,7 @@ export function ProgressionPanel({
           <span data-testid="payment-amount">{order.paymentAmount?.toFixed(2)}</span>
           <span data-testid="order-discount">{order.discount?.toFixed(2)}</span>
           <span data-testid="order-refund-total">{order.refundTotal?.toFixed(2)}</span>
-          {order.refundTotal ? <span data-testid="refund-entry">Refund {order.refundTotal.toFixed(2)}</span> : null}
+          {order.refundTotal ? <span data-testid="refund-entry">{order.items?.map((item) => item.name).join(", ")} refund {order.refundTotal.toFixed(2)}</span> : null}
         </div>)}
         <input data-testid="cart-promotion" value={promotionCode} placeholder="Promotion code"
           onChange={(event) => setPromotionCode(event.target.value)} />
@@ -184,7 +193,10 @@ export function ProgressionPanel({
           <input data-testid="schedule-restock-warehouse" value={restock.warehouse} onChange={(e) => setRestock({ ...restock, warehouse: e.target.value })} />
           <input data-testid="schedule-restock-qty" value={restock.quantity} onChange={(e) => setRestock({ ...restock, quantity: e.target.value })} />
           <input data-testid="schedule-restock-delay" value={restock.delaySeconds} onChange={(e) => setRestock({ ...restock, delaySeconds: e.target.value })} />
-          <button data-testid="schedule-restock-submit" data-action-input={JSON.stringify(restock)} onClick={() => run(() =>
+          <button data-testid="schedule-restock-submit" data-action-input={JSON.stringify({
+            item: restock.item, warehouse: restock.warehouse, quantity: Number(restock.quantity),
+            delaySeconds: Number(restock.delaySeconds),
+          })} onClick={() => run(() =>
             request("/api/admin/scheduled-restocks", "POST", { ...restock, quantity: Number(restock.quantity), delaySeconds: Number(restock.delaySeconds) }))}>Schedule</button>
           {(state?.pendingRestocks ?? []).map((item: any) => <div key={item.id}>
             <span data-testid="pending-restock-item">{item.item}</span>
@@ -202,7 +214,7 @@ export function ProgressionPanel({
           <input data-testid="promotion-limit" value={promotion.limit} onChange={(e) => setPromotion({ ...promotion, limit: e.target.value })} />
           <button data-testid="promotion-submit" onClick={() => run(() => request("/api/promotions", "POST", promotion))}>Save promotion</button>
           {(state?.promotions ?? []).map((item: any) => <div data-testid="promotion-item" key={item.id}>
-            {item.code} <span data-testid="promotion-report"><span data-testid="promotion-redemptions">{item.redemptions}</span> <span data-testid="promotion-revenue">{item.revenue}</span></span>
+            <span data-testid="promotion-report">{item.code} <span data-testid="promotion-redemptions">{item.redemptions}</span> <span data-testid="promotion-revenue">{item.revenue}</span></span>
           </div>)}
         </article>
         <article className="progression-card">

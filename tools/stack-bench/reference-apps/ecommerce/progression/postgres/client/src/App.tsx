@@ -1002,6 +1002,15 @@ function OrdersPanel(props: {
                   </div>
                 ))}
               </div>
+              <div data-testid="payment-record">
+                <span data-testid="payment-status">{o.paymentStatus}</span>
+                <span data-testid="payment-amount">{money(o.paymentAmount ?? o.total)}</span>
+                <span data-testid="order-discount">{money(o.discount ?? 0)}</span>
+                <span data-testid="order-refund-total">{money(o.refundTotal ?? 0)}</span>
+                {(o.refundTotal ?? 0) > 0 && <span data-testid="refund-entry">
+                  {o.items.map((item) => item.name).join(", ")} refund {money(o.refundTotal ?? 0)}
+                </span>}
+              </div>
               <div className="order-item-top">
                 <div className="order-total" data-testid="order-total">
                   {money(o.total)}
@@ -1031,6 +1040,7 @@ function AdminPanel(props: {
   const [restockAmounts, setRestockAmounts] = useState<Record<string, number>>({});
   const [transferState, setTransferState] = useState<Record<number, { from: number; to: number; qty: number }>>({});
   const [priceState, setPriceState] = useState<Record<number, number>>({});
+  const [namedRestock, setNamedRestock] = useState({ item: "", warehouse: "", quantity: "" });
 
   if (!admin) {
     return (
@@ -1069,6 +1079,21 @@ function AdminPanel(props: {
         <button className="close-btn" onClick={onClose} aria-label="Close">
           ×
         </button>
+      </div>
+
+      <div className="admin-section">
+        <h4>Restock item</h4>
+        <input className="input" data-testid="restock-item" value={namedRestock.item}
+          onChange={(event) => setNamedRestock({ ...namedRestock, item: event.target.value })} />
+        <input className="input" data-testid="restock-warehouse" value={namedRestock.warehouse}
+          onChange={(event) => setNamedRestock({ ...namedRestock, warehouse: event.target.value })} />
+        <input className="input" data-testid="restock-quantity" value={namedRestock.quantity}
+          onChange={(event) => setNamedRestock({ ...namedRestock, quantity: event.target.value })} />
+        <button className="btn btn-sm" data-testid="restock-submit" onClick={() => {
+          const item = admin.items.find((entry) => entry.name.toLowerCase() === namedRestock.item.toLowerCase());
+          const warehouse = admin.warehouses.find((entry) => entry.name.toLowerCase() === namedRestock.warehouse.toLowerCase());
+          if (item && warehouse) onRestock(item.id, warehouse.id, Math.max(1, Number(namedRestock.quantity)));
+        }}>Restock</button>
       </div>
 
       <div className="revenue-box">

@@ -538,8 +538,8 @@ export function registerProgression(app: Express, dependencies: Dependencies) {
   app.post("/api/promotions", dependencies.requireStaff, asyncRoute(async (req, res) => {
     const code = String(req.body?.code ?? "").trim().toUpperCase();
     const discount = Number(req.body?.discount);
-    const start = new Date(String(req.body?.start));
-    const end = new Date(String(req.body?.end));
+    const start = new Date(String(req.body?.start || "2000-01-01"));
+    const end = new Date(String(req.body?.end || "2100-01-01"));
     const limit = Number(req.body?.limit);
     if (!code || !(discount > 0 && discount <= 100) || Number.isNaN(start.valueOf())
       || Number.isNaN(end.valueOf()) || !Number.isInteger(limit) || limit < 1 || start >= end) {
