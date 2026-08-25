@@ -4,8 +4,12 @@
   "requiresPacks": ["ecommerce.progression.staff-access@1.0.0", "ecommerce.progression.support-intake@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 45000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.progression.support-triage", "path": "prompts/modular/business-features-1.0.0.md", "order": 2100, "from": "## Support triage", "until": "## Customer support history", "modes": ["upgrade"] }],
-    "contracts": [{ "id": "ecommerce.progression.support-hooks", "path": "contracts/business-hooks-1.0.md", "order": 2900, "from": "## Support hooks", "until": "## Promotion hooks", "modes": ["upgrade"] }]
+    "requirements": [{ "id": "ecommerce.progression.support-triage", "path": "prompts/modular/support-triage-1.0.0.md", "order": 2100, "from": "## Support triage", "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.support-triage-hooks", "path": "contracts/support-triage-1.0.md", "order": 2900, "from": "## Support triage hooks", "modes": ["upgrade"] }]
   },
-  "checks": [{ "id": "triage", "stableId": "support-triage", "source": "scenarios/progression-staff-support-1.0.0.json", "feature": 611, "role": "feature" }]
+  "checks": [
+    { "id": "assignment", "stableId": "support-assignment", "source": "scenarios/progression-support-triage-1.0.0.json", "feature": 611, "criteria": ["611a"], "role": "feature" },
+    { "id": "priority", "stableId": "support-priority", "source": "scenarios/progression-support-triage-1.0.0.json", "feature": 611, "criteria": ["611b"], "role": "feature" },
+    { "id": "status", "stableId": "support-status", "source": "scenarios/progression-support-triage-1.0.0.json", "feature": 611, "criteria": ["611c"], "role": "feature" }
+  ]
 }

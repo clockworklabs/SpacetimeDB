@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.feature.catalog",
+  "version": "1.2.0",
+  "state": "draft",
+  "title": "Catalog",
+  "moduleType": "feature",
+  "description": "Public catalog values, ranking, and search.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.feature.catalog.requirement", "path": "prompts/modular/catalog-feature-1.0.0.md", "order": 200, "from": "## Catalog", "modes": ["fresh", "upgrade"] }
+    ],
+    "contracts": [
+      { "id": "ecommerce.feature.catalog.hooks", "path": "prompts/modular/l1-hooks.md", "order": 2000, "from": "## Catalog hooks", "until": "## Account hooks", "modes": ["fresh", "upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "values", "stableId": "catalog-values", "source": "scenarios/01-core-2.4.0.json", "feature": 2, "criteria": ["2a"], "role": "feature" },
+    { "id": "ranking", "stableId": "catalog-ranking", "source": "scenarios/01-core-2.4.0.json", "feature": 2, "criteria": ["2b"], "role": "feature" },
+    { "id": "search", "stableId": "catalog-search", "source": "scenarios/01-core-2.4.0.json", "feature": 2, "criteria": ["2d"], "role": "feature" }
+  ]
+}

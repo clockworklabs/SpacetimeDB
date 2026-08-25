@@ -4,8 +4,11 @@
   "requiresPacks": ["ecommerce.feature.accounts@1.1.0", "ecommerce.progression.support-intake@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 50000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.progression.support-history", "path": "prompts/modular/business-features-1.0.0.md", "order": 2110, "from": "## Customer support history", "until": "## Managed support cases", "modes": ["upgrade"] }],
-    "contracts": [{ "id": "ecommerce.progression.support-hooks", "path": "contracts/business-hooks-1.0.md", "order": 2900, "from": "## Support hooks", "until": "## Promotion hooks", "modes": ["upgrade"] }]
+    "requirements": [{ "id": "ecommerce.progression.support-history", "path": "prompts/modular/support-history-1.0.0.md", "order": 2110, "from": "## Customer support history", "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.support-history-hooks", "path": "contracts/support-history-1.0.md", "order": 2900, "from": "## Customer support history hooks", "modes": ["upgrade"] }]
   },
-  "checks": [{ "id": "history", "stableId": "support-history", "source": "scenarios/progression-staff-support-1.0.0.json", "feature": 612, "role": "feature" }]
+  "checks": [
+    { "id": "persistence", "stableId": "support-history-persistence", "source": "scenarios/progression-support-history-1.0.0.json", "feature": 612, "criteria": ["612a"], "role": "feature" },
+    { "id": "privacy", "stableId": "support-history-privacy", "source": "scenarios/progression-support-history-1.0.0.json", "feature": 612, "criteria": ["612b"], "role": "feature" }
+  ]
 }
