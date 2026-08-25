@@ -1319,7 +1319,7 @@ jobs:
     needs: [merge_queue_noop]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Verify global.json files are symlinks
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner-2-staging
     permissions:
       contents: read
     env:
