@@ -14,10 +14,10 @@
   "budget": { "status": "bounded", "maxRuntimeMs": 70000 },
   "task": {
     "requirements": [
-      { "id": "ecommerce.progression.recommendation-feedback", "path": "prompts/modular/progression-features-1.0.0.md", "order": 5030, "from": "## Recommendation feedback", "modes": ["upgrade"] }
+      { "id": "ecommerce.progression.recommendation-feedback", "path": "prompts/modular/recommendation-feedback-1.0.0.md", "order": 5030, "modes": ["upgrade"] }
     ],
     "contracts": [
-      { "id": "ecommerce.progression.recommendation-feedback-hooks", "path": "contracts/progression-hooks-1.0.md", "order": 5930, "from": "## Recommendation feedback hooks", "modes": ["upgrade"] }
+      { "id": "ecommerce.progression.recommendation-feedback-hooks", "path": "contracts/recommendation-feedback-1.0.md", "order": 5930, "modes": ["upgrade"] }
     ]
   },
   "checks": [
