@@ -143,7 +143,7 @@ default for every selected stack; a stack can override it independently.
 {
   "stacks": [
     { "id": "spacetime", "adapterVersion": "1.0.0", "repetitions": 5 },
-    { "id": "postgres", "adapterVersion": "1.2.0", "repetitions": 8 },
+    { "id": "postgres", "adapterVersion": "1.3.0", "repetitions": 8 },
     { "id": "mongodb", "adapterVersion": "1.2.0", "repetitions": 3 }
   ],
   "repetitions": 1,

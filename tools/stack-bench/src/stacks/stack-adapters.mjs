@@ -144,7 +144,7 @@ export const STACK_ADAPTER_REGISTRY = createStackAdapterRegistry([
     'build-container': operationProvider('postgres', 'build-container', { plan: standardBuildContainerPlan }),
     reference: operationProvider('postgres', 'reference', { deploy: deployPostgresReference }),
     orchestrator: operationProvider('postgres', 'orchestrator', { config: standardOrchestratorConfig }),
-  }, { version: '1.2.0' }),
+  }, { version: '1.3.0' }),
   adapter('mongodb', stackLeaseCapability('mongodb'), {
     reset: operationProvider('mongodb', 'reset',
       { run: resetMongoDb, 'requires-reseed': () => true }),

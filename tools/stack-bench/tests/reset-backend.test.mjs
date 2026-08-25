@@ -65,7 +65,7 @@ test('the reset entrypoint reports a generated layout separately from a harness 
   }
 });
 
-test('PostgreSQL reset removes schema changes left by earlier repairs', () => {
+test('PostgreSQL per-check reset clears rows without removing the app schema', () => {
   const lease = {
     resources: {
       database: 'stackbench_ecom_run0',
@@ -82,9 +82,48 @@ test('PostgreSQL reset removes schema changes left by earlier repairs', () => {
   resetPostgres({ lease, exec });
   const reset = calls.find(call => call.args.includes('psql'));
   const sql = reset.args[reset.args.indexOf('-c') + 1];
-  assert.match(sql, /DROP SCHEMA public CASCADE/);
-  assert.match(sql, /CREATE SCHEMA public/);
-  assert.doesNotMatch(sql, /TRUNCATE TABLE/);
+  assert.match(sql, /FROM pg_tables WHERE schemaname = 'public'/);
+  assert.match(sql, /TRUNCATE TABLE/);
+  assert.match(sql, /RESTART IDENTITY CASCADE/);
+  assert.doesNotMatch(sql, /DROP SCHEMA/);
+  assert.equal(reset.args[reset.args.indexOf('-v') + 1], 'ON_ERROR_STOP=1');
+  assert.equal(reset.args[reset.args.indexOf('-d') + 1], lease.resources.database);
+});
+
+test('PostgreSQL reset preserves schema and does not touch another lease database', {
+  skip: process.env.STACK_BENCH_POSTGRES_RESET_SMOKE !== '1',
+}, () => {
+  const suffix = `${process.pid}_${Date.now()}`;
+  const target = `stackbench_reset_${suffix}`;
+  const neighbor = `stackbench_neighbor_${suffix}`;
+  const container = 'stack-bench-postgres';
+  const docker = (args, options = {}) => execFileSync('docker', args,
+    { encoding: 'utf8', stdio: 'pipe', timeout: 120_000, ...options });
+  const database = (name, sql) => docker(['exec', container, 'psql', '-U', 'stackbench',
+    '-d', name, '-v', 'ON_ERROR_STOP=1', '-tAc', sql]);
+  try {
+    const id = docker(['inspect', '--format', '{{.Id}}', container]).trim();
+    for (const name of [target, neighbor]) {
+      docker(['exec', container, 'psql', '-U', 'stackbench', '-d', 'postgres',
+        '-v', 'ON_ERROR_STOP=1', '-c', `CREATE DATABASE ${name} OWNER stackbench;`]);
+      database(name, 'CREATE TABLE item (id bigserial PRIMARY KEY, name text NOT NULL); '
+        + "INSERT INTO item(name) VALUES ('kept schema');");
+    }
+    resetPostgres({ lease: { resources: { database: target,
+      container: { name: container, id } } } });
+    assert.equal(database(target,
+      "SELECT to_regclass('public.item') IS NOT NULL, count(*) FROM item;").trim(), 't|0');
+    database(target, "INSERT INTO item(name) VALUES ('reseeded');");
+    assert.equal(database(target, "SELECT id FROM item WHERE name = 'reseeded';").trim(), '1');
+    assert.equal(database(neighbor, 'SELECT count(*) FROM item;').trim(), '1');
+  } finally {
+    for (const name of [target, neighbor]) {
+      try {
+        docker(['exec', container, 'psql', '-U', 'stackbench', '-d', 'postgres',
+          '-v', 'ON_ERROR_STOP=1', '-c', `DROP DATABASE IF EXISTS ${name} WITH (FORCE);`]);
+      } catch { /* keep the original test failure */ }
+    }
+  }
 });
 
 test('Spacetime reset publishes inside the exact leased build container', () => {

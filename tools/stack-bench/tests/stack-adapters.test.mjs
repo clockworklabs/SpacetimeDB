@@ -9,7 +9,7 @@ import { leasedDatabaseEnvironment, STACK_ADAPTER_REGISTRY } from '../src/stacks
 test('built-in and deterministic test stack adapters preserve the proven port grid', () => {
   assert.deepEqual(STACK_ADAPTER_REGISTRY.ids, ['mongodb', 'postgres', 'spacetime', 'stub']);
   const postgres = STACK_ADAPTER_REGISTRY.get('postgres');
-  assert.equal(postgres.version, '1.2.0');
+  assert.equal(postgres.version, '1.3.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('mongodb').version, '1.2.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('spacetime').version, '1.0.0');
   assert.equal(STACK_ADAPTER_REGISTRY.get('stub').version, '1.0.0');
