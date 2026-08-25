@@ -12,6 +12,9 @@
       "setup": [
         { "do": "signUp", "actor": "owner", "name": "delivery-owner" },
         { "do": "signUp", "actor": "other", "name": "delivery-other" },
+        { "do": "click", "actor": "owner", "testid": "notification-settings" },
+        { "do": "click", "actor": "owner", "testid": "notification-order" },
+        { "do": "click", "actor": "owner", "testid": "notification-save" },
         { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
         { "do": "click", "actor": "owner", "testid": "buy-now", "in": { "testid": "item-card", "contains": "Desk Lamp" } },
         { "do": "click", "actor": "staff", "testid": "staff-link" },

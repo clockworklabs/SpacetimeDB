@@ -17,13 +17,14 @@
   "budget": { "status": "bounded", "maxRuntimeMs": 110000 },
   "task": {
     "requirements": [
-      { "id": "ecommerce.progression.delivery-notifications", "path": "prompts/modular/progression-features-1.0.0.md", "order": 5000, "from": "## Delivery notifications", "until": "## Automatic reorder rules", "modes": ["upgrade"] }
+      { "id": "ecommerce.progression.delivery-notifications", "path": "prompts/modular/delivery-notifications-1.0.0.md", "order": 5000, "modes": ["upgrade"] }
     ],
     "contracts": [
-      { "id": "ecommerce.progression.delivery-notification-hooks", "path": "contracts/progression-hooks-1.0.md", "order": 5900, "from": "## Delivery notification hooks", "until": "## Automatic reorder hooks", "modes": ["upgrade"] }
+      { "id": "ecommerce.progression.delivery-notification-hooks", "path": "contracts/delivery-notifications-1.0.md", "order": 5900, "modes": ["upgrade"] }
     ]
   },
   "checks": [
-    { "id": "delivery-notification", "stableId": "delivery-notifications", "source": "scenarios/progression-delivery-notifications-1.0.0.json", "feature": 501, "role": "feature" }
+    { "id": "delivery", "stableId": "delivery-notification-delivery", "source": "scenarios/progression-delivery-notifications-1.0.0.json", "feature": 501, "criteria": ["501a"], "role": "feature" },
+    { "id": "privacy", "stableId": "delivery-notification-privacy", "source": "scenarios/progression-delivery-notifications-1.0.0.json", "feature": 501, "criteria": ["501b"], "role": "feature" }
   ]
 }

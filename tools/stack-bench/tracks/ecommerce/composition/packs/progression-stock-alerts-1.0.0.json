@@ -4,8 +4,11 @@
   "requiresPacks": ["ecommerce.progression.notification-preferences@1.0.0", "ecommerce.feature.warehouse-admin@1.2.0"], "conflictsWith": [], "capabilities": ["browser", "direct-database-write"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 60000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.progression.stock-alerts", "path": "prompts/modular/business-features-1.0.0.md", "order": 3300, "from": "## Stock alerts", "modes": ["upgrade"] }],
-    "contracts": [{ "id": "ecommerce.progression.notification-hooks", "path": "contracts/business-hooks-1.0.md", "order": 3990, "from": "## Notification hooks", "modes": ["upgrade"] }]
+    "requirements": [{ "id": "ecommerce.progression.stock-alerts", "path": "prompts/modular/stock-alerts-1.0.0.md", "order": 3300, "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.stock-alert-hooks", "path": "contracts/stock-alerts-1.0.md", "order": 3990, "modes": ["upgrade"] }]
   },
-  "checks": [{ "id": "stock-alert", "stableId": "stock-alerts", "source": "scenarios/progression-promotions-notifications-1.0.0.json", "feature": 631, "role": "feature" }]
+  "checks": [
+    { "id": "delivery", "stableId": "stock-alert-delivery", "source": "scenarios/progression-stock-alerts-1.0.0.json", "feature": 631, "criteria": ["631a"], "role": "feature" },
+    { "id": "privacy", "stableId": "stock-alert-privacy", "source": "scenarios/progression-stock-alerts-1.0.0.json", "feature": 631, "criteria": ["631b"], "role": "feature" }
+  ]
 }

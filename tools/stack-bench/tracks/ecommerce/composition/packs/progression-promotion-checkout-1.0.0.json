@@ -4,8 +4,12 @@
   "requiresPacks": ["ecommerce.progression.promotion-rules@1.0.0", "ecommerce.feature.cart-checkout@1.3.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 55000 },
   "task": {
-    "requirements": [{ "id": "ecommerce.progression.promotion-checkout", "path": "prompts/modular/business-features-1.0.0.md", "order": 3200, "from": "## Promotion checkout", "until": "## Promotion reporting", "modes": ["upgrade"] }],
-    "contracts": [{ "id": "ecommerce.progression.promotion-hooks", "path": "contracts/business-hooks-1.0.md", "order": 3950, "from": "## Promotion hooks", "until": "## Notification hooks", "modes": ["upgrade"] }]
+    "requirements": [{ "id": "ecommerce.progression.promotion-checkout", "path": "prompts/modular/promotion-checkout-1.0.0.md", "order": 3200, "modes": ["upgrade"] }],
+    "contracts": [{ "id": "ecommerce.progression.promotion-checkout-hooks", "path": "contracts/promotion-checkout-1.0.md", "order": 3950, "modes": ["upgrade"] }]
   },
-  "checks": [{ "id": "checkout", "stableId": "promotion-checkout", "source": "scenarios/progression-promotions-notifications-1.0.0.json", "feature": 621, "role": "feature" }]
+  "checks": [
+    { "id": "active", "stableId": "promotion-checkout-active", "source": "scenarios/progression-promotion-checkout-1.0.0.json", "feature": 621, "criteria": ["621a"], "role": "feature" },
+    { "id": "expired", "stableId": "promotion-checkout-expired", "source": "scenarios/progression-promotion-checkout-1.0.0.json", "feature": 621, "criteria": ["621b"], "role": "feature" },
+    { "id": "exhausted", "stableId": "promotion-checkout-exhausted", "source": "scenarios/progression-promotion-checkout-1.0.0.json", "feature": 621, "criteria": ["621c"], "role": "feature" }
+  ]
 }

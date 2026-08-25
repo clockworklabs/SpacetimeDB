@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 5,
+  "name": "Promotion rules",
+  "features": [
+    {
+      "id": 620,
+      "name": "Staff-managed promotion rules",
+      "actors": ["staff", "customer"],
+      "setup": [
+        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
+        { "do": "signUp", "actor": "customer", "name": "promotion-customer" }
+      ],
+      "criteria": [
+        {
+          "id": "620a",
+          "desc": "staff can save every bounded promotion value",
+          "points": 2,
+          "statedBy": "Staff can create a promotion code with a discount, active period, and redemption limit.",
+          "steps": [
+            { "do": "click", "actor": "staff", "testid": "promotions-link" },
+            { "do": "fill", "actor": "staff", "testid": "promotion-code", "text": "SAVE10" },
+            { "do": "fill", "actor": "staff", "testid": "promotion-discount", "text": "10" },
+            { "do": "fill", "actor": "staff", "testid": "promotion-start", "text": "2099-01-01" },
+            { "do": "fill", "actor": "staff", "testid": "promotion-end", "text": "2099-12-31" },
+            { "do": "fill", "actor": "staff", "testid": "promotion-limit", "text": "2" },
+            { "do": "click", "actor": "staff", "testid": "promotion-submit" },
+            { "do": "expectNumber", "actor": "staff", "testid": "promotion-discount", "in": { "testid": "promotion-item", "contains": "SAVE10" }, "equals": 10 },
+            { "do": "expect", "actor": "staff", "testid": "promotion-start", "in": { "testid": "promotion-item", "contains": "SAVE10" }, "contains": "2099-01-01" },
+            { "do": "expect", "actor": "staff", "testid": "promotion-end", "in": { "testid": "promotion-item", "contains": "SAVE10" }, "contains": "2099-12-31" },
+            { "do": "expectNumber", "actor": "staff", "testid": "promotion-limit", "in": { "testid": "promotion-item", "contains": "SAVE10" }, "equals": 2 }
+          ]
+        },
+        {
+          "id": "620b",
+          "desc": "customers cannot open promotion management",
+          "points": 2,
+          "statedBy": "Customers cannot manage promotion rules.",
+          "steps": [
+            { "do": "expect", "actor": "customer", "testid": "promotions-link", "absent": true },
+            { "do": "replayAs", "actor": "customer", "from": "staff", "match": "SAVE10", "swap": { "find": "SAVE10", "with": "HACK10" }, "settleMs": 1500 },
+            { "do": "expectReplayRejected", "actor": "customer" },
+            { "do": "expect", "actor": "staff", "testid": "promotion-item", "contains": "HACK10", "absent": true }
+          ]
+        }
+      ]
+    }
+  ]
+}
