@@ -1,13 +1,5 @@
 import { ScheduleAt } from 'spacetimedb';
-import {
-  Router,
-  Range,
-  schema,
-  table,
-  t,
-  type InferSchema,
-  type TransactionCtx,
-} from 'spacetimedb/server';
+import { Router, Range, t, type TransactionCtx } from 'spacetimedb/server';
 import {
   installPresenceConfig,
   removePresence,
@@ -58,6 +50,12 @@ import {
   typingScope,
 } from './chat-policy';
 import { registerChatViews } from './views';
+import {
+  chatSweepTick,
+  setSweepReducer,
+  spacetimedb,
+  type DbSchema,
+} from './schema';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const TYPING_TTL_SECONDS = 4;
@@ -84,22 +82,7 @@ const consoleSendMail: SendMailFn = (_ctx, params: MailParams) => {
 // Chat presence states. The presence-ts submodule's presence_entry.status
 // stays a free-form string (the submodule is consumer-agnostic); chat_user
 // pins down the exact set of values this app supports.
-import {
-  chatUserStatus,
-  chatUser,
-  server,
-  serverMember,
-  room,
-  roomMember,
-  message,
-  messageReaction,
-  messageThread,
-  threadMessage,
-  attachment,
-  roomReadCursor,
-  roomActivityEvent,
-  presenceEntry,
-} from './model';
+import { chatUserStatus, message } from './model';
 import {
   canModerateRoom,
   canReadAttachmentFile,
@@ -127,47 +110,9 @@ import {
   type Tx,
 } from './domain';
 
-const presenceConfig = table(
-  { name: 'presence_config', public: false },
-  {
-    singleton: t.bool().primaryKey(),
-    defaultTtlSeconds: t.u32(),
-    sweepBatch: t.u32(),
-    updatedAt: t.timestamp(),
-  }
-);
-
-const chatSweepTick = table(
-  { name: 'chat_sweep_tick', scheduled: (): any => chat_sweep },
-  {
-    scheduledId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-  }
-);
-
-const spacetimedb = schema({
-  auth,
-  files,
-  rateLimit,
-  chatUser,
-  server,
-  serverMember,
-  room,
-  roomMember,
-  message,
-  messageReaction,
-  messageThread,
-  threadMessage,
-  attachment,
-  roomReadCursor,
-  roomActivityEvent,
-  presenceEntry,
-  presenceConfig,
-  chatSweepTick,
-});
 export default spacetimedb;
 
-export type DbSchema = InferSchema<typeof spacetimedb>;
+export type { DbSchema } from './schema';
 export const {
   myServers,
   myServerMembers,
@@ -1134,6 +1079,8 @@ export const chat_sweep = spacetimedb.reducer(
     }
   }
 );
+
+setSweepReducer(chat_sweep);
 
 export const authPasswordSignup = spacetimedb.httpHandler((ctx, req) =>
   passwordSignupHandler(ctx.as.auth, req)

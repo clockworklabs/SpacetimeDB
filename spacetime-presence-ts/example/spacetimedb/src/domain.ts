@@ -10,7 +10,7 @@ import { consumeRateLimit } from '@spacetimedb/rate-limit/submodule';
 import { removePresence, upsertPresence } from '@spacetimedb/presence';
 import { PRESENCE_SCOPE_GLOBAL, typingScope } from './chat-policy';
 import { ChatUserStatus } from './model';
-import type { DbSchema } from './index';
+import type { DbSchema } from './schema';
 
 const ONE_SECOND_MICROS = 1_000_000n;
 const GLOBAL_PRESENCE_TTL_SECONDS = 35;

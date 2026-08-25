@@ -22,9 +22,9 @@ import {
   serverMember,
   threadMessage,
 } from './model';
-import type { DbSchema } from './index';
+import type { DbSchema } from './schema';
 
-type SpacetimeDb = typeof import('./index').default;
+type SpacetimeDb = typeof import('./schema').spacetimedb;
 
 function myRoomIds(ctx: ViewCtx<DbSchema>): Set<bigint> {
   const out = new Set<bigint>();
