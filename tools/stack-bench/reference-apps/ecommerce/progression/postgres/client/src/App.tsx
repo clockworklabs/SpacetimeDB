@@ -756,6 +756,7 @@ function ItemCard(props: {
     <div
       className={`item-card${outOfStock ? " out-of-stock-card" : ""}`}
       data-testid="item-card"
+      data-buy-input={JSON.stringify({ itemId: item.id })}
       onClick={onOpen}
     >
       <div className="item-row">
@@ -905,7 +906,8 @@ function CartPanel(props: {
       ) : (
         <div className="stack">
           {cart.items.map((line) => (
-            <div className="cart-item" data-testid={line.expired ? "cart-item-expired" : "cart-item"} key={line.itemId}>
+            <div className="cart-item" data-testid={line.expired ? "cart-item-expired" : "cart-item"}
+              data-cart-input={JSON.stringify({ itemId: line.itemId, quantity: -3 })} key={line.itemId}>
               <div className="cart-item-top">
                 <span className="item-name">{line.name}</span>
                 <span>{money(line.lineTotal)}</span>
