@@ -59,6 +59,7 @@ test('the ecommerce progression definition is complete and calculated from its d
   assert.deepEqual(byId.get('price-history').dependencies,
     ['cart-checkout', 'catalog-management', 'purchasing']);
   assert.deepEqual(byId.get('warehouse-admin').dependencies, ['catalog', 'staff-access']);
+  assert.deepEqual(byId.get('catalog-management').dependencies, ['catalog', 'staff-roles']);
   assert(byId.get('warehouse-admin').gradingChecks.every(check =>
     !check.id.includes('spec.access-control.admin-ui')
     && !check.id.includes('spec.access-control.admin-write')
