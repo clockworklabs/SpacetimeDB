@@ -207,8 +207,10 @@ __pycache__/
 
 # TypeScript submodule development outputs
 .stdb-*/
+spacetime-*-ts/example/.stdb-*
 spacetime-*-ts/example/public/app.js
 spacetime-*-ts/example/public/app.js.map
+spacetime-*-ts/example/src/codegen/
 spacetime-*-ts/ts-codegen/
 
 /protobuf

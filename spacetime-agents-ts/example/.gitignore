@@ -1,5 +1,0 @@
-.env
-node_modules/
-public/app.js
-public/app.js.map
-src/codegen/
