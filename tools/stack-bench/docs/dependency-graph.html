@@ -103,25 +103,12 @@
     padding: 22px;
   }
 
-  #edges {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    overflow: visible;
-  }
-
-  .edge { fill: none; stroke: var(--line-strong); stroke-width: 1.4; }
-  .edge { stroke: #55706a; }
-
   .levels {
     position: relative;
     z-index: 1;
     display: grid;
     grid-template-columns: repeat(3, minmax(220px, 1fr));
-    gap: 68px;
+    gap: 24px;
   }
 
   .level-head {
@@ -194,7 +181,6 @@
 
   <section class="graph-panel" aria-label="Feature graph">
     <div class="graph-canvas" id="graph-canvas">
-      <svg id="edges" aria-hidden="true"></svg>
       <div class="levels" id="levels"></div>
     </div>
   </section>
@@ -224,8 +210,6 @@
 
   const byId = new Map(features.map(feature => [feature.id, feature]));
   const levels = document.getElementById('levels');
-  const canvas = document.getElementById('graph-canvas');
-  const edges = document.getElementById('edges');
 
   for (let level = 1; level <= 3; level += 1) {
     const column = document.createElement('div');
@@ -247,31 +231,6 @@
     levels.appendChild(column);
   }
 
-  function drawEdges() {
-    const canvasBox = canvas.getBoundingClientRect();
-    edges.replaceChildren();
-
-    for (const child of features) {
-      for (const parentId of child.parents) {
-        const parent = byId.get(parentId);
-        const from = document.querySelector(`[data-id="${parentId}"]`).getBoundingClientRect();
-        const to = document.querySelector(`[data-id="${child.id}"]`).getBoundingClientRect();
-        const x1 = from.right - canvasBox.left;
-        const y1 = from.top + from.height / 2 - canvasBox.top;
-        const x2 = to.left - canvasBox.left;
-        const y2 = to.top + to.height / 2 - canvasBox.top;
-        const bend = x1 + (x2 - x1) / 2;
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', `M${x1} ${y1} H${bend} V${y2} H${x2}`);
-        path.setAttribute('class', 'edge');
-        edges.appendChild(path);
-      }
-    }
-  }
-
-  addEventListener('resize', drawEdges);
-  new ResizeObserver(drawEdges).observe(canvas);
-  drawEdges();
 </script>
 </body>
 </html>
