@@ -360,14 +360,10 @@
         "ecommerce.l3.order-returns-features@1.1.0#return-before-shipping"
       ],
       "dependencies": [
-        {
-          "id": "order-delivery",
-          "reason": "Only a shipped or delivered item can be returned."
-        },
-        {
-          "id": "warehouse-admin",
-          "reason": "Returned stock needs a warehouse destination."
-        }
+      {
+        "id": "order-delivery",
+        "reason": "Only a shipped or delivered item can be returned."
+      }
       ]
     },
     {
@@ -675,16 +671,12 @@
         "ecommerce.progression.personalized-recommendations@1.0.0#ordering",
         "ecommerce.progression.personalized-recommendations@1.0.0#isolation"
       ],
-      "dependencies": [
-        {
-          "id": "operational-views",
-          "reason": "Recommendations use aggregate product activity."
-        },
-        {
-          "id": "purchasing",
-          "reason": "Recommendations use the customer's purchase history."
-        }
-      ]
+    "dependencies": [
+      {
+        "id": "operational-views",
+        "reason": "Recommendations use aggregate product activity."
+      }
+    ]
     },
     {
       "id": "staff-activity",
@@ -696,14 +688,10 @@
       "gradingGroups": [
         "ecommerce.progression.staff-activity@1.0.0#activity"
       ],
-      "dependencies": [
-        {
-          "id": "staff-roles",
-          "reason": "The history is visible only to authorized staff."
-        },
-        {
-          "id": "catalog-management",
-          "reason": "Catalog changes provide attributable staff activity."
+    "dependencies": [
+      {
+        "id": "catalog-management",
+        "reason": "Catalog changes provide attributable staff activity."
         }
       ]
     },

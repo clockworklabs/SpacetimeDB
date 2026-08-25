@@ -780,37 +780,15 @@
       "points": 12
     },
     {
-      "id": "personalized-recommendations",
-      "name": "Personalized recommendations",
-      "level": 4,
-      "state": "draft",
-      "parents": [
-        "operational-views",
-        "purchasing"
-      ],
-      "dependencyReasons": {
-        "operational-views": "Recommendations use aggregate product activity.",
-        "purchasing": "Recommendations use the customer's purchase history."
-      },
-      "questline": "reviews",
-      "featureRefs": [
-        "ecommerce.progression.personalized-recommendations@1.0.0"
-      ],
-      "checks": 2,
-      "points": 6
-    },
-    {
       "id": "staff-activity",
       "name": "Staff activity history",
       "level": 4,
       "state": "draft",
       "parents": [
-        "catalog-management",
-        "staff-roles"
+        "catalog-management"
       ],
       "dependencyReasons": {
-        "catalog-management": "Catalog changes provide attributable staff activity.",
-        "staff-roles": "The history is visible only to authorized staff."
+        "catalog-management": "Catalog changes provide attributable staff activity."
       },
       "questline": "operations",
       "featureRefs": [
@@ -860,6 +838,24 @@
       ],
       "checks": 3,
       "points": 7
+    },
+    {
+      "id": "personalized-recommendations",
+      "name": "Personalized recommendations",
+      "level": 4,
+      "state": "draft",
+      "parents": [
+        "operational-views"
+      ],
+      "dependencyReasons": {
+        "operational-views": "Recommendations use aggregate product activity."
+      },
+      "questline": "reviews",
+      "featureRefs": [
+        "ecommerce.progression.personalized-recommendations@1.0.0"
+      ],
+      "checks": 2,
+      "points": 6
     },
     {
       "id": "order-delivery",
@@ -940,26 +936,6 @@
       "points": 5
     },
     {
-      "id": "order-returns",
-      "name": "Returns",
-      "level": 5,
-      "state": "draft",
-      "parents": [
-        "order-delivery",
-        "warehouse-admin"
-      ],
-      "dependencyReasons": {
-        "order-delivery": "Only a shipped or delivered item can be returned.",
-        "warehouse-admin": "Returned stock needs a warehouse destination."
-      },
-      "questline": "orders",
-      "featureRefs": [
-        "ecommerce.l3.order-returns-features@1.1.0"
-      ],
-      "checks": 2,
-      "points": 4
-    },
-    {
       "id": "support-refunds",
       "name": "Support refunds",
       "level": 5,
@@ -993,6 +969,24 @@
       "questline": "reviews",
       "featureRefs": [
         "ecommerce.progression.recommendation-feedback@1.0.0"
+      ],
+      "checks": 2,
+      "points": 4
+    },
+    {
+      "id": "order-returns",
+      "name": "Returns",
+      "level": 5,
+      "state": "draft",
+      "parents": [
+        "order-delivery"
+      ],
+      "dependencyReasons": {
+        "order-delivery": "Only a shipped or delivered item can be returned."
+      },
+      "questline": "orders",
+      "featureRefs": [
+        "ecommerce.l3.order-returns-features@1.1.0"
       ],
       "checks": 2,
       "points": 4

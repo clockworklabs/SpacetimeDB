@@ -72,13 +72,13 @@ test('the ecommerce progression definition is complete and calculated from its d
   assert(byId.get('order-delivery').gradingChecks.some(check =>
     check.id === 'ecommerce.returns-pricing.cancellation-and-return.3d'));
   assert.deepEqual(byId.get('personalized-recommendations').dependencies,
-    ['operational-views', 'purchasing']);
+    ['operational-views']);
   assert.deepEqual(byId.get('automatic-reorder').dependencies,
     ['operational-views', 'scheduled-restocks', 'staff-roles']);
   assert.deepEqual(byId.get('order-delivery').dependencies,
     ['fulfilment-queue', 'order-cancellation']);
   assert.deepEqual(byId.get('order-returns').dependencies,
-    ['order-delivery', 'warehouse-admin']);
+    ['order-delivery']);
   assert.deepEqual(byId.get('support-refunds').dependencies,
     ['order-cancellation', 'order-support']);
 });
@@ -139,6 +139,48 @@ test('every progression feature reference and scored check binds to repository d
     ['ecommerce.feature.catalog.catalog-ranking.2b',
       'ecommerce.feature.catalog.catalog-search.2d',
       'ecommerce.feature.catalog.catalog-values.2a']);
+});
+
+test('every progression feature is a whole module and every direct graph edge is required', () => {
+  const packByRef = new Map(readdirSync(packRoot).filter(name => name.endsWith('.json'))
+    .map(name => {
+      const pack = compilePackDefinition(readJson(join(packRoot, name)), { source: name });
+      return [`${pack.id}@${pack.version}`, pack];
+    }));
+  const definition = compileProgressionDefinitionFile(definitionPath, { trackRoot });
+  const nodeById = new Map(definition.nodes.map(node => [node.id, node]));
+  const ownerByRef = new Map(definition.nodes
+    .flatMap(node => node.featureRefs.map(reference => [reference, node.id])));
+  const ancestors = nodeId => {
+    const found = new Set();
+    const visit = id => nodeById.get(id).dependencies.forEach(parent => {
+      if (found.has(parent)) return;
+      found.add(parent);
+      visit(parent);
+    });
+    visit(nodeId);
+    return found;
+  };
+
+  for (const node of definition.nodes) {
+    const featurePacks = node.featureRefs.map(reference => packByRef.get(reference));
+    for (const pack of featurePacks) {
+      assert.equal(pack.task.requirements.length, 1,
+        `${node.id} must have one product prompt module`);
+      assert.equal(pack.task.contracts.length, 1,
+        `${node.id} must have one testing interface module`);
+      for (const fragment of [...pack.task.requirements, ...pack.task.contracts]) {
+        assert.equal(fragment.from, undefined, `${node.id} must not slice ${fragment.path}`);
+        assert.equal(fragment.until, undefined, `${node.id} must not slice ${fragment.path}`);
+      }
+    }
+    const requiredOwners = [...new Set(featurePacks.flatMap(pack => pack.requiresPacks)
+      .map(reference => ownerByRef.get(reference)).filter(Boolean))];
+    const directRequiredOwners = requiredOwners.filter(owner => !requiredOwners.some(other =>
+      other !== owner && ancestors(other).has(owner))).sort();
+    assert.deepEqual(node.dependencies, directRequiredOwners,
+      `${node.id} graph parents must be the minimal feature dependency set`);
+  }
 });
 
 test('one progression catalog binds every node and selects only current work', () => {
