@@ -21,6 +21,9 @@
     ]
   },
   "checks": [
-    { "id": "warehouse-view", "source": "scenarios/01-warehouse-admin-2.4.0.json", "feature": 7, "criteria": ["7b"], "role": "feature" }
+    { "id": "access-boundary", "source": "scenarios/01-warehouse-admin-staff-1.0.0.json", "feature": 7, "criteria": ["7a"], "role": "feature" },
+    { "id": "warehouse-view", "source": "scenarios/01-warehouse-admin-staff-1.0.0.json", "feature": 7, "criteria": ["7b"], "role": "feature" },
+    { "id": "warehouse-stock", "source": "scenarios/01-warehouse-stock-live-staff-1.0.0.json", "feature": 7, "criteria": ["7c"], "role": "feature" },
+    { "id": "admin-write", "source": "scenarios/01-admin-write-staff-1.0.0.json", "feature": 103, "criteria": ["103a"], "role": "feature" }
   ]
 }

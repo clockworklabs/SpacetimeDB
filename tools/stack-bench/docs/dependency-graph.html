@@ -440,8 +440,8 @@
       "featureRefs": [
         "ecommerce.feature.warehouse-admin@1.2.0"
       ],
-      "checks": 11,
-      "points": 13
+      "checks": 7,
+      "points": 9
     },
     {
       "id": "promotion-rules",
@@ -636,8 +636,8 @@
       "featureRefs": [
         "ecommerce.operations-access-features@1.0.0"
       ],
-      "checks": 7,
-      "points": 12
+      "checks": 11,
+      "points": 16
     },
     {
       "id": "order-cancellation",
@@ -657,7 +657,7 @@
         "ecommerce.l2.order-cancellation-features@1.0.0"
       ],
       "checks": 3,
-      "points": 7
+      "points": 6
     },
     {
       "id": "reservations",
@@ -761,10 +761,12 @@
       "level": 4,
       "state": "draft",
       "parents": [
+        "cart-checkout",
         "catalog-management",
         "purchasing"
       ],
       "dependencyReasons": {
+        "cart-checkout": "A price change must update an open cart and checkout total.",
         "catalog-management": "Price changes are a catalog operation.",
         "purchasing": "Paid order prices must remain fixed."
       },
@@ -852,8 +854,8 @@
       "featureRefs": [
         "ecommerce.l3.order-delivery-features@1.1.0"
       ],
-      "checks": 4,
-      "points": 12
+      "checks": 5,
+      "points": 13
     },
     {
       "id": "promotion-reporting",

@@ -45,7 +45,7 @@ test('the ecommerce progression definition is complete and calculated from its d
   ])), { 1: 4, 2: 10, 3: 12, 4: 8, 5: 5 });
   assert.equal(definition.questlines.length, 10);
   assert.equal(new Set(definition.nodes.flatMap(node => node.gradingChecks.map(check => check.id))).size,
-    141);
+    142);
   assert.equal(definition.nodes.flatMap(node => node.gradingChecks)
     .reduce((total, check) => total + check.points, 0), 277);
   assert(definition.nodes.every(node => Object.keys(node.dependencyReasons).length
@@ -56,7 +56,20 @@ test('the ecommerce progression definition is complete and calculated from its d
   const byId = new Map(definition.nodes.map(node => [node.id, node]));
   assert.deepEqual(byId.get('faceted-search').dependencies, ['catalog']);
   assert.deepEqual(byId.get('scheduled-restocks').dependencies, ['warehouse-admin']);
-  assert.deepEqual(byId.get('price-history').dependencies, ['catalog-management', 'purchasing']);
+  assert.deepEqual(byId.get('price-history').dependencies,
+    ['cart-checkout', 'catalog-management', 'purchasing']);
+  assert.deepEqual(byId.get('warehouse-admin').dependencies, ['catalog', 'staff-access']);
+  assert(byId.get('warehouse-admin').gradingChecks.every(check =>
+    !check.id.includes('spec.access-control.admin-ui')
+    && !check.id.includes('spec.access-control.admin-write')
+    && !check.id.includes('spec.live-state.warehouse-stock')
+    && !check.id.includes('spec.concurrency-safety')));
+  assert(byId.get('fulfilment-queue').gradingChecks.some(check =>
+    check.id === 'ecommerce.spec.concurrency-safety.last-unit.201a'));
+  assert(byId.get('fulfilment-queue').gradingChecks.some(check =>
+    check.id === 'ecommerce.spec.concurrency-safety.restock-race.202a'));
+  assert(byId.get('order-delivery').gradingChecks.some(check =>
+    check.id === 'ecommerce.returns-pricing.cancellation-and-return.3d'));
   assert.deepEqual(byId.get('personalized-recommendations').dependencies,
     ['operational-views', 'purchasing']);
   assert.deepEqual(byId.get('order-delivery').dependencies,
@@ -93,8 +106,27 @@ test('every progression feature reference and scored check binds to repository d
   });
   const actual = new Map(definition.nodes.flatMap(node => node.gradingChecks)
     .map(check => [check.id, check.points]));
+  const movedChecks = new Map([
+    ['ecommerce.spec.access-control.admin-ui.7a',
+      'ecommerce.feature.warehouse-admin.access-boundary.7a'],
+    ['ecommerce.spec.access-control.admin-write.103a',
+      'ecommerce.feature.warehouse-admin.admin-write.103a'],
+    ['ecommerce.spec.live-state.warehouse-stock.7c',
+      'ecommerce.feature.warehouse-admin.warehouse-stock.7c'],
+  ]);
   for (const check of recipe.checks.filter(item => item.points > 0)) {
     if (check.stableKey.startsWith('ecommerce.feature.catalog.catalog.')) continue;
+    if (check.stableKey === 'ecommerce.returns-pricing.cancellation-and-return.3a') {
+      assert.equal(actual.get(check.stableKey)
+        + actual.get('ecommerce.returns-pricing.cancellation-and-return.3d'), check.points,
+      'progression must preserve cancellation points after separating queue integration');
+      continue;
+    }
+    if (movedChecks.has(check.stableKey)) {
+      assert.equal(actual.get(movedChecks.get(check.stableKey)), check.points,
+        `progression must preserve ${check.stableKey} under its feature owner`);
+      continue;
+    }
     assert.equal(actual.get(check.stableKey), check.points,
       `progression must preserve ${check.stableKey} from the L3 candidate`);
   }

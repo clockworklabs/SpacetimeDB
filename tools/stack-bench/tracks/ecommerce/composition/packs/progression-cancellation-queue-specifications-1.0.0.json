@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.progression.cancellation-queue-specifications",
+  "stableId": "ecommerce.returns-pricing",
+  "version": "1.0.0",
+  "state": "draft",
+  "moduleType": "specification",
+  "title": "Cancellation and fulfilment",
+  "description": "A cancelled pending order leaves the fulfilment queue.",
+  "requiresPacks": [],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 24000 },
+  "task": {
+    "requirements": [
+      { "id": "ecommerce.progression.cancellation-queue", "path": "prompts/fragments/order-cancellation-1.0.0.md", "order": 2045, "from": "## Fulfilment queue integration", "modes": ["upgrade"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.operations-access-features"] }
+    ],
+    "contracts": []
+  },
+  "checks": [
+    { "id": "queue-removal", "stableId": "cancellation-and-return", "source": "scenarios/02-cancellation-queue-1.0.0.json", "feature": 3, "criteria": ["3d"], "role": "guarantee", "observations": ["requested", "unmentioned"], "requiresFeatures": ["ecommerce.l2.order-cancellation-features", "ecommerce.operations-access-features"] }
+  ]
+}

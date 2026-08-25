@@ -47,6 +47,7 @@
     { "path": "../packs/operations-access-specifications-1.0.0.json", "id": "ecommerce.operations-access-specifications", "version": "1.0.0", "includeRoles": ["guarantee"] },
     { "path": "../packs/progression-automatic-reorder-1.0.0.json", "id": "ecommerce.progression.automatic-reorder", "version": "1.0.0", "includeRoles": ["feature"] },
     { "path": "../packs/progression-cancellation-accounting-specifications-1.0.0.json", "id": "ecommerce.progression.cancellation-accounting-specifications", "version": "1.0.0", "includeRoles": ["guarantee"] },
+    { "path": "../packs/progression-cancellation-queue-specifications-1.0.0.json", "id": "ecommerce.progression.cancellation-queue-specifications", "version": "1.0.0", "includeRoles": ["guarantee"] },
     { "path": "../packs/progression-cart-recovery-1.0.0.json", "id": "ecommerce.progression.cart-recovery", "version": "1.0.0", "includeRoles": ["feature"] },
     { "path": "../packs/progression-catalog-management-1.0.0.json", "id": "ecommerce.progression.catalog-management", "version": "1.0.0", "includeRoles": ["feature"] },
     { "path": "../packs/progression-customer-profile-1.0.0.json", "id": "ecommerce.progression.customer-profile", "version": "1.0.0", "includeRoles": ["feature"] },

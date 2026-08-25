@@ -44,14 +44,22 @@ function fragmentText(fragment) {
   return source.slice(start, end);
 }
 
-test('split L2 feature packs preserve every established feature check and point', () => {
-  const split = splitNames.flatMap(name => selectedChecks(readPack(name)));
+test('split L2 feature packs preserve every established feature point', () => {
+  const split = [...splitNames, 'progression-cancellation-queue-specifications-1.0.0.json']
+    .flatMap(name => selectedChecks(readPack(name)));
   const established = [
     'inventory-operations-features-1.2.0.json',
     'returns-pricing-features-1.1.0.json',
   ].flatMap(name => selectedChecks(readPack(name)))
     .sort((left, right) => left.key.localeCompare(right.key));
-  assert.deepEqual(split.sort((left, right) => left.key.localeCompare(right.key)), established);
+  const totalByFamily = checks => checks.reduce((totals, check) => {
+    const family = check.key === 'ecommerce.returns-pricing.cancellation-and-return.3d'
+      ? 'ecommerce.returns-pricing.cancellation-and-return.3a'
+      : check.key;
+    totals.set(family, (totals.get(family) ?? 0) + check.points);
+    return totals;
+  }, new Map());
+  assert.deepEqual(totalByFamily(split), totalByFamily(established));
 });
 
 test('each split pack owns only its prompt and exact dependencies', () => {
@@ -73,7 +81,8 @@ test('each split pack owns only its prompt and exact dependencies', () => {
   assert.deepEqual(returns.requiresPacks,
     ['ecommerce.l3.order-delivery-features@1.1.0', 'ecommerce.feature.warehouse-admin@1.2.0']);
   assert.deepEqual(pricing.requiresPacks,
-    ['ecommerce.feature.catalog@1.1.0', 'ecommerce.feature.purchasing@1.2.0']);
+    ['ecommerce.feature.catalog@1.2.0', 'ecommerce.feature.purchasing@1.2.0',
+      'ecommerce.feature.cart-checkout@1.3.0']);
   assert.deepEqual(transfers.requiresPacks, ['ecommerce.feature.warehouse-admin@1.2.0']);
   assert.deepEqual(views.requiresPacks,
     ['ecommerce.feature.purchasing@1.2.0', 'ecommerce.feature.warehouse-admin@1.2.0']);
@@ -83,6 +92,43 @@ test('each split pack owns only its prompt and exact dependencies', () => {
   assert.doesNotMatch(fragmentText(pricing.task.requirements[0]), /Cancelling and returning|Live operational views/);
   assert.doesNotMatch(fragmentText(transfers.task.requirements[0]), /Cancelling and returning|Live operational views/);
   assert.doesNotMatch(fragmentText(views.task.requirements[0]), /cancel|return|price/i);
+});
+
+test('dependency-owned checks use only interfaces supplied by their parents', () => {
+  const warehouse = readPack('feature-warehouse-admin-1.2.0.json');
+  assert.deepEqual(warehouse.requiresPacks,
+    ['ecommerce.feature.catalog@1.2.0', 'ecommerce.progression.staff-access@1.0.0']);
+  assert.deepEqual(warehouse.checks.map(check => [check.id, check.criteria]), [
+    ['access-boundary', ['7a']], ['warehouse-view', ['7b']], ['warehouse-stock', ['7c']],
+    ['admin-write', ['103a']],
+  ]);
+  for (const check of warehouse.checks) {
+    const scenario = readJson(join(trackRoot, check.source));
+    const setup = scenario.features.find(feature => feature.id === check.feature).setup;
+    assert(setup.some(step => step.testid === 'staff-signin-submit'));
+    assert.equal(setup.some(step => step.do === 'signIn' || step.do === 'signUp'), false);
+  }
+
+  const cancellation = readPack('l2-order-cancellation-features-1.0.0.json');
+  assert(cancellation.checks.find(check => check.id === 'cancellation-core').source
+    .endsWith('02-order-cancellation-core-1.0.0.json'));
+  const cancellationScenario = readJson(join(trackRoot,
+    cancellation.checks.find(check => check.id === 'cancellation-core').source));
+  assert.equal(JSON.stringify(cancellationScenario).includes('queue-item'), false);
+
+  const queue = readPack('progression-cancellation-queue-specifications-1.0.0.json');
+  assert.deepEqual(queue.requiresPacks, []);
+  assert.deepEqual(queue.task.requirements[0].requiresFeatures,
+    ['ecommerce.l2.order-cancellation-features', 'ecommerce.operations-access-features']);
+  assert.deepEqual(queue.checks.map(check => [check.id, check.criteria]), [
+    ['queue-removal', ['3d']],
+  ]);
+
+  const staffScenario = readJson(join(trackRoot, 'scenarios',
+    'progression-core-business-1.0.0.json'));
+  const activitySetup = staffScenario.features.find(feature => feature.id === 624).setup;
+  assert(activitySetup.some(step => step.testid === 'catalog-save'));
+  assert.equal(activitySetup.some(step => step.testid === 'price-submit'), false);
 });
 
 test('catalog and faceted search expose only their own product work', () => {

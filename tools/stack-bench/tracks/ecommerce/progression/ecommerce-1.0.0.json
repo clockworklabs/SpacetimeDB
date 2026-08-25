@@ -123,15 +123,13 @@
         "ecommerce.feature.warehouse-admin@1.2.0"
       ],
       "gradingGroups": [
+        "ecommerce.feature.warehouse-admin@1.2.0#access-boundary",
         "ecommerce.feature.warehouse-admin@1.2.0#warehouse-view",
-        "ecommerce.spec.access-control@1.2.0#admin-ui",
-        "ecommerce.spec.access-control@1.2.0#admin-write",
-        "ecommerce.spec.concurrency-safety@1.3.0#last-unit",
-        "ecommerce.spec.concurrency-safety@1.3.0#restock-race",
+        "ecommerce.feature.warehouse-admin@1.2.0#warehouse-stock",
+        "ecommerce.feature.warehouse-admin@1.2.0#admin-write",
         "ecommerce.spec.external-data-sync@1.1.0#external-live",
         "ecommerce.spec.external-data-sync@1.1.0#external-reconnect",
-        "ecommerce.spec.external-data-sync@1.1.0#external-server-restart",
-        "ecommerce.spec.live-state@1.2.0#warehouse-stock"
+        "ecommerce.spec.external-data-sync@1.1.0#external-server-restart"
       ],
       "dependencies": [
         {
@@ -177,7 +175,9 @@
         "ecommerce.operations-access-features@1.0.0#fulfilment-independent",
         "ecommerce.operations-access-features@1.0.0#fulfilment-warehouse",
         "ecommerce.operations-access-specifications@1.0.0#operator-authorization-direct",
-        "ecommerce.operations-access-specifications@1.0.0#order-owner-direct"
+        "ecommerce.operations-access-specifications@1.0.0#order-owner-direct",
+        "ecommerce.spec.concurrency-safety@1.3.0#last-unit",
+        "ecommerce.spec.concurrency-safety@1.3.0#restock-race"
       ],
       "dependencies": [
         {
@@ -258,6 +258,10 @@
         {
           "id": "catalog-management",
           "reason": "Price changes are a catalog operation."
+        },
+        {
+          "id": "cart-checkout",
+          "reason": "A price change must update an open cart and checkout total."
         }
       ]
     },
@@ -321,6 +325,7 @@
         "ecommerce.l3.order-delivery-features@1.1.0"
       ],
       "gradingGroups": [
+        "ecommerce.progression.cancellation-queue-specifications@1.0.0#queue-removal",
         "ecommerce.l3.deferred-durability-specifications@1.0.0#delivery-restart",
         "ecommerce.l3.deferred-integrity-specifications@1.0.0#delivery-once",
         "ecommerce.l3.order-delivery-features@1.1.0#automatic-delivery",

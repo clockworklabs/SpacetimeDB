@@ -169,12 +169,24 @@
       "name": "Staff activity history",
       "actors": ["admin", "staff", "customer"],
       "setup": [
-        { "do": "signIn", "actor": "admin", "name": "admin", "password": "stackbench-admin-2026", "exact": true },
-        { "do": "signIn", "actor": "staff", "name": "staff", "password": "stackbench-staff-2026", "exact": true },
-        { "do": "signUp", "actor": "customer", "name": "activity-customer" },
+        { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
+        { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
+        { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
+        { "do": "expect", "actor": "admin", "testid": "staff-current-user", "contains": "admin", "within": 6000 },
+        { "do": "fill", "actor": "staff", "testid": "staff-signin-username", "text": "staff" },
+        { "do": "fill", "actor": "staff", "testid": "staff-signin-password", "text": "stackbench-staff-2026" },
+        { "do": "click", "actor": "staff", "testid": "staff-signin-submit" },
+        { "do": "expect", "actor": "staff", "testid": "staff-current-user", "contains": "staff", "within": 6000 },
+        { "do": "fill", "actor": "customer", "testid": "staff-signin-username", "text": "customer" },
+        { "do": "fill", "actor": "customer", "testid": "staff-signin-password", "text": "stackbench-customer-2026" },
+        { "do": "click", "actor": "customer", "testid": "staff-signin-submit" },
+        { "do": "expect", "actor": "customer", "testid": "staff-current-user", "contains": "customer", "within": 6000 },
         { "do": "click", "actor": "admin", "testid": "admin-link" },
-        { "do": "fill", "actor": "admin", "testid": "price-input", "text": "43.00", "in": { "testid": "admin-item-row", "contains": "Desk Lamp" } },
-        { "do": "click", "actor": "admin", "testid": "price-submit", "in": { "testid": "admin-item-row", "contains": "Desk Lamp" } }
+        { "do": "fill", "actor": "admin", "testid": "catalog-name", "text": "Activity Mug" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-category", "text": "Kitchen" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-price", "text": "43.00" },
+        { "do": "fill", "actor": "admin", "testid": "catalog-variants", "text": "Green" },
+        { "do": "click", "actor": "admin", "testid": "catalog-save" }
       ],
       "criteria": [
         {
@@ -185,8 +197,8 @@
           "steps": [
             { "do": "click", "actor": "staff", "testid": "staff-link" },
             { "do": "click", "actor": "staff", "testid": "activity-link" },
-            { "do": "expect", "actor": "staff", "testid": "activity-entry", "contains": "Desk Lamp", "within": 10000 },
-            { "do": "expect", "actor": "staff", "testid": "activity-actor", "in": { "testid": "activity-entry", "contains": "Desk Lamp" }, "contains": "admin", "within": 10000 }
+            { "do": "expect", "actor": "staff", "testid": "activity-entry", "contains": "Activity Mug", "within": 10000 },
+            { "do": "expect", "actor": "staff", "testid": "activity-actor", "in": { "testid": "activity-entry", "contains": "Activity Mug" }, "contains": "admin", "within": 10000 }
           ]
         },
         {

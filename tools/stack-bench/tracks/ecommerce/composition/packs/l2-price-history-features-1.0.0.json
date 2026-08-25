@@ -8,7 +8,7 @@
   "moduleType": "feature",
   "title": "Price history",
   "description": "Update live prices without changing paid order prices.",
-  "requiresPacks": ["ecommerce.feature.catalog@1.2.0", "ecommerce.feature.purchasing@1.2.0"],
+  "requiresPacks": ["ecommerce.feature.catalog@1.2.0", "ecommerce.feature.purchasing@1.2.0", "ecommerce.feature.cart-checkout@1.3.0"],
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],

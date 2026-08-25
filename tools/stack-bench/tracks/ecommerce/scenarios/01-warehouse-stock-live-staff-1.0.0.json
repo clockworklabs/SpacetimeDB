@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Warehouse restock reaches the storefront through staff access",
+  "features": [
+    {
+      "id": 7,
+      "name": "Warehouse stock stays live",
+      "actors": ["admin", "visitor"],
+      "setup": [
+        { "do": "fill", "actor": "admin", "testid": "staff-signin-username", "text": "admin" },
+        { "do": "fill", "actor": "admin", "testid": "staff-signin-password", "text": "stackbench-admin-2026" },
+        { "do": "click", "actor": "admin", "testid": "staff-signin-submit" },
+        { "do": "expect", "actor": "admin", "testid": "staff-current-user", "contains": "admin", "within": 6000 },
+        { "do": "click", "actor": "admin", "testid": "admin-link" },
+        { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Gaming Mouse", "enter": true, "settleMs": 1500 },
+        { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "equals": 100 }
+      ],
+      "criteria": [
+        {
+          "id": "7c",
+          "desc": "the storefront stock is the sum across warehouses, and a restock raises it live",
+          "points": 2,
+          "statedBy": "an item's stock on the storefront is the sum of that item's units across all warehouses",
+          "steps": [
+            { "do": "fill", "actor": "admin", "testid": "restock-input", "text": "25", "in": { "testid": "admin-location-row", "contains": "Gaming Mouse" } },
+            { "do": "click", "actor": "admin", "testid": "restock-submit", "in": { "testid": "admin-location-row", "contains": "Gaming Mouse" } },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Gaming Mouse" }, "equals": 125, "within": 10000 },
+            { "do": "expectNumber", "actor": "admin", "testid": "admin-stock", "in": { "testid": "admin-item-row", "contains": "Gaming Mouse" }, "equals": 125 }
+          ]
+        }
+      ]
+    }
+  ]
+}
