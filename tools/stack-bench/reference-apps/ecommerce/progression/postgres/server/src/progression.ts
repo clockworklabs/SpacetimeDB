@@ -690,6 +690,11 @@ export async function processProgressionTimers() {
   let catalogChanged = false;
   try {
     await client.query("BEGIN");
+    const timerLock = await client.query(`SELECT pg_try_advisory_xact_lock(7392015) AS locked`);
+    if (!timerLock.rows[0].locked) {
+      await client.query("ROLLBACK");
+      return;
+    }
 
     const expiredReservations = await client.query(
       `SELECT ci.id, ci.item_id, c.account_id
