@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "kind": "test-pack",
+  "id": "ecommerce.l3.scheduled-restocks-features",
+  "stableId": "ecommerce.l3.scheduled-restocks",
+  "version": "1.1.0",
+  "state": "draft",
+  "moduleType": "feature",
+  "title": "Scheduled restocks",
+  "description": "Pending, completed, and cancelled scheduled restocks.",
+  "requiresPacks": ["ecommerce.feature.warehouse-admin@1.2.0"],
+  "conflictsWith": [],
+  "capabilities": ["browser"],
+  "evidence": ["browser-observation"],
+  "budget": { "status": "bounded", "maxRuntimeMs": 90000 },
+  "task": {
+    "requirements": [{ "id": "ecommerce.l3.scheduled-restocks", "path": "prompts/modular/l3-features-1.0.0.md", "order": 3010, "from": "## Scheduled restocks", "until": "## Order delivery", "modes": ["upgrade"] }],
+    "contracts": [
+      { "id": "ecommerce.l3.scheduled-restock-hooks", "path": "contracts/l3-hooks-1.0.md", "order": 3910, "from": "## Scheduled restock hooks", "until": "## Order delivery hooks", "modes": ["upgrade"] },
+      { "id": "ecommerce.l3.scheduled-restock-testing-calls", "path": "prompts/fragments/named-actions-scheduled-restocks-1.0.0.md", "order": 3911, "modes": ["upgrade"] }
+    ]
+  },
+  "checks": [
+    { "id": "pending", "stableId": "scheduled-restocks", "source": "scenarios/03-scheduled-restocks-1.0.0.json", "feature": 302, "role": "feature" },
+    { "id": "applies", "stableId": "scheduled-restocks", "source": "scenarios/03-scheduled-restocks-1.0.0.json", "feature": 305, "role": "feature" },
+    { "id": "cancels", "stableId": "scheduled-restocks", "source": "scenarios/03-scheduled-restocks-1.0.0.json", "feature": 306, "role": "feature" }
+  ]
+}

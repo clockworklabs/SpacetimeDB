@@ -15,7 +15,7 @@ const splitNames = [
   'l2-stock-transfers-features-1.0.0.json',
   'l2-operational-views-features-1.0.0.json',
   'l2-order-cancellation-features-1.0.0.json',
-  'l3-order-returns-features-1.0.0.json',
+  'l3-order-returns-features-1.1.0.json',
   'l2-price-history-features-1.0.0.json',
 ];
 
@@ -69,14 +69,14 @@ test('each split pack owns only its prompt and exact dependencies', () => {
   const views = packs['ecommerce.l2.operational-views-features'];
 
   assert.deepEqual(cancellation.requiresPacks,
-    ['ecommerce.feature.purchasing@1.1.0', 'ecommerce.operations-access-features@1.0.0']);
+    ['ecommerce.feature.purchasing@1.2.0', 'ecommerce.feature.warehouse-admin@1.2.0']);
   assert.deepEqual(returns.requiresPacks,
-    ['ecommerce.l3.order-delivery-features@1.0.0', 'ecommerce.feature.warehouse-admin@1.1.0']);
+    ['ecommerce.l3.order-delivery-features@1.1.0', 'ecommerce.feature.warehouse-admin@1.2.0']);
   assert.deepEqual(pricing.requiresPacks,
-    ['ecommerce.feature.catalog@1.1.0', 'ecommerce.feature.purchasing@1.1.0']);
-  assert.deepEqual(transfers.requiresPacks, ['ecommerce.feature.warehouse-admin@1.1.0']);
+    ['ecommerce.feature.catalog@1.1.0', 'ecommerce.feature.purchasing@1.2.0']);
+  assert.deepEqual(transfers.requiresPacks, ['ecommerce.feature.warehouse-admin@1.2.0']);
   assert.deepEqual(views.requiresPacks,
-    ['ecommerce.feature.purchasing@1.1.0', 'ecommerce.feature.warehouse-admin@1.1.0']);
+    ['ecommerce.feature.purchasing@1.2.0', 'ecommerce.feature.warehouse-admin@1.2.0']);
 
   assert.doesNotMatch(fragmentText(cancellation.task.requirements[0]), /return|price|Live operational views/i);
   assert.doesNotMatch(fragmentText(returns.task.requirements[0]), /cancel|price|Live operational views/i);

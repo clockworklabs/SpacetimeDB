@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.payment-records", "version": "1.0.0", "state": "draft", "moduleType": "feature",
   "title": "Payment records", "description": "Exact and non-duplicated payment records at checkout.",
-  "requiresPacks": ["ecommerce.feature.cart-checkout@1.2.0", "ecommerce.feature.purchasing@1.1.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "requiresPacks": ["ecommerce.feature.cart-checkout@1.3.0", "ecommerce.feature.purchasing@1.2.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 30000 },
   "task": {
     "requirements": [{ "id": "ecommerce.progression.payment-records", "path": "prompts/modular/core-business-features-1.0.0.md", "order": 1350, "from": "## Payment records", "until": "## Staff activity history", "modes": ["upgrade"] }],

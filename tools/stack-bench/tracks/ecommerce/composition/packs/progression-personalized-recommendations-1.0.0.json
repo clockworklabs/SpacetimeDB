@@ -8,7 +8,7 @@
   "title": "Personalized recommendations",
   "description": "Deterministic recommendations isolated by customer.",
   "requiresPacks": [
-    "ecommerce.feature.reviews@1.1.0",
+    "ecommerce.feature.purchasing@1.2.0",
     "ecommerce.l2.operational-views-features@1.0.0"
   ],
   "conflictsWith": [],

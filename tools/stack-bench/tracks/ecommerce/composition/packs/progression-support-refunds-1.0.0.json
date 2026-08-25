@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.support-refunds", "version": "1.0.0", "state": "draft", "moduleType": "feature",
   "title": "Support refunds", "description": "Consistent case resolution and order refunds.",
-  "requiresPacks": ["ecommerce.progression.order-support@1.0.0", "ecommerce.l2.cancellation-returns-features@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "requiresPacks": ["ecommerce.progression.order-support@1.0.0", "ecommerce.l2.order-cancellation-features@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 70000 },
   "task": {
     "requirements": [{ "id": "ecommerce.progression.support-refunds", "path": "prompts/modular/business-features-1.0.0.md", "order": 5100, "from": "## Support refunds", "until": "## Promotion rules", "modes": ["upgrade"] }],

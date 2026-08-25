@@ -61,10 +61,10 @@
       "title": "Purchasing and orders",
       "questline": "orders",
       "featureRefs": [
-        "ecommerce.feature.purchasing@1.1.0"
+        "ecommerce.feature.purchasing@1.2.0"
       ],
       "gradingGroups": [
-        "ecommerce.feature.purchasing@1.1.0#purchase-order",
+        "ecommerce.feature.purchasing@1.2.0#purchase-order",
         "ecommerce.spec.access-control@1.2.0#order-ownership",
         "ecommerce.spec.access-control@1.2.0#purchase-attribution",
         "ecommerce.spec.access-control@1.2.0#purchase-session",
@@ -90,10 +90,10 @@
       "title": "Cart and checkout",
       "questline": "shopping",
       "featureRefs": [
-        "ecommerce.feature.cart-checkout@1.2.0"
+        "ecommerce.feature.cart-checkout@1.3.0"
       ],
       "gradingGroups": [
-        "ecommerce.feature.cart-checkout@1.2.0#cart",
+        "ecommerce.feature.cart-checkout@1.3.0#cart",
         "ecommerce.spec.access-control@1.2.0#cart-boundary",
         "ecommerce.spec.concurrency-safety@1.3.0#duplicate-checkout",
         "ecommerce.spec.concurrency-safety@1.3.0#stock-limit",
@@ -118,10 +118,10 @@
       "title": "Warehouse administration",
       "questline": "inventory",
       "featureRefs": [
-        "ecommerce.feature.warehouse-admin@1.1.0"
+        "ecommerce.feature.warehouse-admin@1.2.0"
       ],
       "gradingGroups": [
-        "ecommerce.feature.warehouse-admin@1.1.0#warehouse-view",
+        "ecommerce.feature.warehouse-admin@1.2.0#warehouse-view",
         "ecommerce.spec.access-control@1.2.0#admin-ui",
         "ecommerce.spec.access-control@1.2.0#admin-write",
         "ecommerce.spec.concurrency-safety@1.3.0#last-unit",
@@ -147,10 +147,10 @@
       "title": "Reviews",
       "questline": "reviews",
       "featureRefs": [
-        "ecommerce.feature.reviews@1.1.0"
+        "ecommerce.feature.reviews@1.2.0"
       ],
       "gradingGroups": [
-        "ecommerce.feature.reviews@1.1.0#reviews",
+        "ecommerce.feature.reviews@1.2.0#reviews",
         "ecommerce.spec.access-control@1.2.0#review-eligibility",
         "ecommerce.spec.live-state@1.2.0#open-list",
         "ecommerce.spec.live-state@1.2.0#rating",
@@ -287,17 +287,17 @@
       "title": "Reservations",
       "questline": "shopping",
       "featureRefs": [
-        "ecommerce.l3.reservations-features@1.0.0"
+        "ecommerce.l3.reservations-features@1.1.0"
       ],
       "gradingGroups": [
         "ecommerce.l3.deferred-durability-specifications@1.0.0#reservation-restart",
         "ecommerce.l3.deferred-integrity-specifications@1.0.0#reservation-stock",
         "ecommerce.l3.deferred-integrity-specifications@1.0.0#reserved-checkout",
-        "ecommerce.l3.reservations-features@1.0.0#checkout",
-        "ecommerce.l3.reservations-features@1.0.0#countdown",
-        "ecommerce.l3.reservations-features@1.0.0#expiry",
-        "ecommerce.l3.reservations-features@1.0.0#renewal",
-        "ecommerce.l3.reservations-features@1.0.0#stock-hold",
+        "ecommerce.l3.reservations-features@1.1.0#checkout",
+        "ecommerce.l3.reservations-features@1.1.0#countdown",
+        "ecommerce.l3.reservations-features@1.1.0#expiry",
+        "ecommerce.l3.reservations-features@1.1.0#renewal",
+        "ecommerce.l3.reservations-features@1.1.0#stock-hold",
         "ecommerce.l3.server-time-specifications@1.0.0#no-browser"
       ],
       "dependencies": [
@@ -316,13 +316,13 @@
       "title": "Order delivery",
       "questline": "orders",
       "featureRefs": [
-        "ecommerce.l3.order-delivery-features@1.0.0"
+        "ecommerce.l3.order-delivery-features@1.1.0"
       ],
       "gradingGroups": [
         "ecommerce.l3.deferred-durability-specifications@1.0.0#delivery-restart",
         "ecommerce.l3.deferred-integrity-specifications@1.0.0#delivery-once",
-        "ecommerce.l3.order-delivery-features@1.0.0#automatic-delivery",
-        "ecommerce.l3.order-delivery-features@1.0.0#cancel-final"
+        "ecommerce.l3.order-delivery-features@1.1.0#automatic-delivery",
+        "ecommerce.l3.order-delivery-features@1.1.0#cancel-final"
       ],
       "dependencies": [
         {
@@ -340,10 +340,10 @@
       "title": "Returns",
       "questline": "orders",
       "featureRefs": [
-        "ecommerce.l3.order-returns-features@1.0.0"
+        "ecommerce.l3.order-returns-features@1.1.0"
       ],
       "gradingGroups": [
-        "ecommerce.l3.order-returns-features@1.0.0#return-complete"
+        "ecommerce.l3.order-returns-features@1.1.0#return-complete"
       ],
       "dependencies": [
         {
@@ -361,15 +361,15 @@
       "title": "Scheduled restocks",
       "questline": "inventory",
       "featureRefs": [
-        "ecommerce.l3.scheduled-restocks-features@1.0.0"
+        "ecommerce.l3.scheduled-restocks-features@1.1.0"
       ],
       "gradingGroups": [
         "ecommerce.l3.deferred-access-specifications@1.0.0#customer-refused",
         "ecommerce.l3.deferred-durability-specifications@1.0.0#restock-restart",
         "ecommerce.l3.deferred-integrity-specifications@1.0.0#restock-once",
-        "ecommerce.l3.scheduled-restocks-features@1.0.0#applies",
-        "ecommerce.l3.scheduled-restocks-features@1.0.0#cancels",
-        "ecommerce.l3.scheduled-restocks-features@1.0.0#pending",
+        "ecommerce.l3.scheduled-restocks-features@1.1.0#applies",
+        "ecommerce.l3.scheduled-restocks-features@1.1.0#cancels",
+        "ecommerce.l3.scheduled-restocks-features@1.1.0#pending",
         "ecommerce.l3.server-time-specifications@1.0.0#not-early"
       ],
       "dependencies": [
@@ -384,10 +384,10 @@
       "title": "Cart expiration",
       "questline": "shopping",
       "featureRefs": [
-        "ecommerce.l3.cart-expiration-features@1.0.0"
+        "ecommerce.l3.cart-expiration-features@1.1.0"
       ],
       "gradingGroups": [
-        "ecommerce.l3.cart-expiration-features@1.0.0#inactive-cart",
+        "ecommerce.l3.cart-expiration-features@1.1.0#inactive-cart",
         "ecommerce.l3.deferred-durability-specifications@1.0.0#cart-restart"
       ],
       "dependencies": [

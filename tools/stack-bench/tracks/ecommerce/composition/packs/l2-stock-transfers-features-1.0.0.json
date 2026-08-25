@@ -8,7 +8,7 @@
   "moduleType": "feature",
   "title": "Stock transfers",
   "description": "Move stock between warehouses without changing the total.",
-  "requiresPacks": ["ecommerce.feature.warehouse-admin@1.1.0"],
+  "requiresPacks": ["ecommerce.feature.warehouse-admin@1.2.0"],
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],

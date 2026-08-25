@@ -38,4 +38,20 @@ test('authored progression rejects missing packs, groups, and feature grading ow
     input.nodes[1].gradingGroups.push(input.nodes[0].gradingGroups[0]);
     assert.throws(() => compileProgressionDefinition(input, { trackRoot }), /already owned/);
   });
+  await t.test('prompt modules must support their calculated build mode', () => {
+    const input = definition();
+    const reviews = input.nodes.find(node => node.id === 'reviews');
+    reviews.featureRefs = ['ecommerce.feature.reviews@1.1.0'];
+    reviews.gradingGroups = reviews.gradingGroups.map(reference =>
+      reference.replace('ecommerce.feature.reviews@1.2.0', 'ecommerce.feature.reviews@1.1.0'));
+    assert.throws(() => compileProgressionDefinition(input, { trackRoot }),
+      /compose no upgrade requirements/);
+  });
+  await t.test('feature pack dependencies must be graph ancestors', () => {
+    const input = definition();
+    const warehouse = input.nodes.find(node => node.id === 'warehouse-admin');
+    warehouse.dependencies = warehouse.dependencies.filter(dependency => dependency.id !== 'staff-access');
+    assert.throws(() => compileProgressionDefinition(input, { trackRoot }),
+      /requires feature .* outside the node and its ancestors/);
+  });
 });

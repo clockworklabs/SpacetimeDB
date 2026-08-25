@@ -171,7 +171,7 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
       dependencies: structuredClone(node.dependencies),
     };
   });
-  return compileDependencyMode({
+  const compiled = compileDependencyMode({
     schemaVersion: 2,
     kind: 'progression-mode',
     id: definition.id,
@@ -183,6 +183,47 @@ export function compileProgressionDefinition(input, { trackRoot, source = '<prog
     nodes,
     questlines: structuredClone(definition.questlines),
   }, { source });
+  const byId = new Map(compiled.nodes.map(node => [node.id, node]));
+  const ancestorIds = nodeId => {
+    const found = new Set();
+    const visit = id => {
+      for (const dependency of byId.get(id).dependencies) {
+        if (found.has(dependency)) continue;
+        found.add(dependency);
+        visit(dependency);
+      }
+    };
+    visit(nodeId);
+    return found;
+  };
+  for (const node of compiled.nodes) {
+    const mode = node.level === 1 ? 'fresh' : 'upgrade';
+    const promptPacks = node.promptModules.map(reference => packs.get(reference));
+    if (!promptPacks.some(pack => pack.task.requirements.some(fragment =>
+      fragment.modes.includes(mode)))) {
+      fail(`${source}.nodes.${node.id}.promptModules`,
+        `compose no ${mode} requirements at calculated level ${node.level}`);
+    }
+    if (!promptPacks.some(pack => pack.task.contracts.some(fragment =>
+      fragment.modes.includes(mode)))) {
+      fail(`${source}.nodes.${node.id}.promptModules`,
+        `compose no ${mode} testing interface at calculated level ${node.level}`);
+    }
+    const allowedFeatures = new Set([node.id, ...ancestorIds(node.id)]
+      .flatMap(id => byId.get(id).featureRefs));
+    for (const featureRef of node.featureRefs) {
+      for (const requiredRef of packs.get(featureRef).requiresPacks) {
+        const required = packs.get(requiredRef);
+        if (!required) fail(`${source}.nodes.${node.id}.featureRefs`,
+          `${featureRef} requires missing pack ${requiredRef}`);
+        if (required.moduleType === 'feature' && !allowedFeatures.has(requiredRef)) {
+          fail(`${source}.nodes.${node.id}.dependencies`,
+            `${featureRef} requires feature ${requiredRef} outside the node and its ancestors`);
+        }
+      }
+    }
+  }
+  return compiled;
 }
 
 export function compileProgressionDefinitionFile(path, { trackRoot } = {}) {

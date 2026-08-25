@@ -7,7 +7,7 @@
   "moduleType": "feature",
   "title": "Cart recovery",
   "description": "Safe restoration of available items from an expired cart.",
-  "requiresPacks": ["ecommerce.l3.cart-expiration-features@1.0.0"],
+  "requiresPacks": ["ecommerce.l3.cart-expiration-features@1.1.0"],
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],

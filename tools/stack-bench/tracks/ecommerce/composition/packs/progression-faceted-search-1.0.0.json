@@ -8,8 +8,7 @@
   "title": "Faceted search",
   "description": "Combined catalogue filters with stable pagination.",
   "requiresPacks": [
-    "ecommerce.feature.catalog@1.1.0",
-    "ecommerce.feature.warehouse-admin@1.1.0"
+    "ecommerce.feature.catalog@1.1.0"
   ],
   "conflictsWith": [],
   "capabilities": ["browser"],

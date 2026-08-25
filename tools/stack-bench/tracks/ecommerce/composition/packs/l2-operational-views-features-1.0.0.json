@@ -8,7 +8,7 @@
   "moduleType": "feature",
   "title": "Operational views",
   "description": "Live stock, sales, queue, and recommendation views.",
-  "requiresPacks": ["ecommerce.feature.purchasing@1.1.0", "ecommerce.feature.warehouse-admin@1.1.0"],
+  "requiresPacks": ["ecommerce.feature.purchasing@1.2.0", "ecommerce.feature.warehouse-admin@1.2.0"],
   "conflictsWith": [],
   "capabilities": ["browser"],
   "evidence": ["browser-observation"],

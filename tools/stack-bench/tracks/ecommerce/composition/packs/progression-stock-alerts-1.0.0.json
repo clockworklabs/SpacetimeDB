@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.progression.stock-alerts", "version": "1.0.0", "state": "draft", "moduleType": "feature",
   "title": "Stock alerts", "description": "Private one-time alerts when stock returns.",
-  "requiresPacks": ["ecommerce.progression.notification-preferences@1.0.0", "ecommerce.feature.warehouse-admin@1.1.0"], "conflictsWith": [], "capabilities": ["browser", "direct-database-write"], "evidence": ["browser-observation"],
+  "requiresPacks": ["ecommerce.progression.notification-preferences@1.0.0", "ecommerce.feature.warehouse-admin@1.2.0"], "conflictsWith": [], "capabilities": ["browser", "direct-database-write"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 60000 },
   "task": {
     "requirements": [{ "id": "ecommerce.progression.stock-alerts", "path": "prompts/modular/business-features-1.0.0.md", "order": 3300, "from": "## Stock alerts", "modes": ["upgrade"] }],

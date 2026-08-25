@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1, "kind": "test-pack", "id": "ecommerce.l2.order-cancellation-features", "stableId": "ecommerce.returns-pricing", "version": "1.0.0", "state": "draft", "moduleType": "feature",
   "title": "Order cancellation", "description": "Cancel pending orders without losing stock or accounting accuracy.",
-  "requiresPacks": ["ecommerce.feature.purchasing@1.1.0", "ecommerce.operations-access-features@1.0.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
+  "requiresPacks": ["ecommerce.feature.purchasing@1.2.0", "ecommerce.feature.warehouse-admin@1.2.0"], "conflictsWith": [], "capabilities": ["browser"], "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 60000 },
   "task": {
     "requirements": [{ "id": "ecommerce.l2.order-cancellation", "path": "prompts/fragments/order-cancellation-1.0.0.md", "order": 2040, "modes": ["upgrade"] }],
