@@ -2,6 +2,63 @@
   "schemaVersion": 4,
   "fixtures": [
     {
+      "id": "ecommerce-progression-mongodb",
+      "backend": "mongodb",
+      "track": "ecommerce",
+      "level": 5,
+      "status": "candidate",
+      "recipes": ["ecommerce.progression-catalog@1.0.0"],
+      "targetPath": "reference-apps/ecommerce/progression/mongodb",
+      "origin": {
+        "kind": "authored",
+        "note": "Full-graph reference candidate for the ecommerce progression recipe."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/progression/mongodb",
+        "sourceSha256": "cde62d71a588bbeb888435c7a056268387e0a14cf32653323af805b031453120"
+      },
+      "mutationManifests": [],
+      "qualification": "Candidate pending model-free Docker grading and targeted mutation coverage."
+    },
+    {
+      "id": "ecommerce-progression-postgres",
+      "backend": "postgres",
+      "track": "ecommerce",
+      "level": 5,
+      "status": "candidate",
+      "recipes": ["ecommerce.progression-catalog@1.0.0"],
+      "targetPath": "reference-apps/ecommerce/progression/postgres",
+      "origin": {
+        "kind": "authored",
+        "note": "Full-graph reference candidate for the ecommerce progression recipe."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/progression/postgres",
+        "sourceSha256": "ba0dd648ce3f75a0db64049b81718e5b3b2719a9ac9748b9786170936a89cc6f"
+      },
+      "mutationManifests": [],
+      "qualification": "Candidate pending model-free Docker grading and targeted mutation coverage."
+    },
+    {
+      "id": "ecommerce-progression-spacetime",
+      "backend": "spacetime",
+      "track": "ecommerce",
+      "level": 5,
+      "status": "candidate",
+      "recipes": ["ecommerce.progression-catalog@1.0.0"],
+      "targetPath": "reference-apps/ecommerce/progression/spacetime",
+      "origin": {
+        "kind": "authored",
+        "note": "Full-graph reference candidate for the ecommerce progression recipe."
+      },
+      "imported": {
+        "path": "reference-apps/ecommerce/progression/spacetime",
+        "sourceSha256": "6668f35f76dd00f6aa0f5277df73d9886612513c8d7b13914d6280479c6d5849"
+      },
+      "mutationManifests": [],
+      "qualification": "Candidate pending model-free Docker grading and targeted mutation coverage."
+    },
+    {
       "id": "ecommerce-l1-mongodb",
       "backend": "mongodb",
       "track": "ecommerce",
