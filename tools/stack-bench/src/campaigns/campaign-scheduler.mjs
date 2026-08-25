@@ -340,9 +340,11 @@ export function writeCampaignState(path, plan, state) {
     identities: identities(plan), payload: assertStateMatchesPlan(validateCampaignState(state), plan) });
 }
 
-export function readCampaignState(directory) {
+export function readCampaignState(directory, { requireCurrentInputs = true } = {}) {
   const target = paths(directory);
-  const plan = validateCompiledCampaignPlan(readArtifact(target.plan, { expectedKind: 'campaign_plan' }).payload);
+  const plan = validateCompiledCampaignPlan(
+    readArtifact(target.plan, { expectedKind: 'campaign_plan' }).payload,
+    { requireCurrentInputs });
   const state = validateCampaignState(readArtifact(target.state, { expectedKind: 'campaign_state' }).payload);
   return { paths: target, plan, state: assertStateMatchesPlan(state, plan) };
 }

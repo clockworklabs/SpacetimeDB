@@ -82,7 +82,7 @@ export function dependencyProgress(plan, attempt, executionDirectory) {
 }
 
 export function inspectCampaignSummary(directory) {
-  const { plan, state } = readCampaignState(directory);
+  const { plan, state } = readCampaignState(directory, { requireCurrentInputs: false });
   return {
     id: plan.id,
     version: plan.version,

@@ -670,8 +670,8 @@ function resourceFreeAdmissionReport(request) {
   };
 }
 
-export function inspectCampaign(directory) {
-  const current = readCampaignState(directory);
+export function inspectCampaign(directory, { requireCurrentInputs = true } = {}) {
+  const current = readCampaignState(directory, { requireCurrentInputs });
   return { ...current,
     state: assertAdmissionReferences(current.plan, current.paths.root, current.state) };
 }

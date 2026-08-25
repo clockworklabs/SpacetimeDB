@@ -458,7 +458,7 @@ export function renderCampaignHtml(report, { evidencePrefix = '..' } = {}) {
 }
 
 export function generateCampaignReport(directory, { output = join(resolve(directory), 'report') } = {}) {
-  const { plan, state, paths } = inspectCampaign(directory);
+  const { plan, state, paths } = inspectCampaign(directory, { requireCurrentInputs: false });
   if (state.status === 'running') throw new Error('cannot report while a campaign attempt is running');
   output = resolve(output);
   const outputRelative = relative(paths.root, output);

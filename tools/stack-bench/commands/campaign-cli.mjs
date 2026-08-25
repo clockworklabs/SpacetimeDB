@@ -91,7 +91,7 @@ async function main() {
     return;
   }
   if (args.command === 'status') {
-    const campaign = inspectCampaign(args.directory);
+    const campaign = inspectCampaign(args.directory, { requireCurrentInputs: false });
     console.log(JSON.stringify(args.full
       ? campaign.state
       : campaignStateSummary(campaign.plan, campaign.state), null, 2));

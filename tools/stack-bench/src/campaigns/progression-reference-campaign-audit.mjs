@@ -86,7 +86,7 @@ export function auditProgressionReferenceCampaign(directory, {
   readState = readCampaignState,
   resolveRelease = resolveRecipeRelease,
 } = {}) {
-  const { plan, state, paths } = readState(directory);
+  const { plan, state, paths } = readState(directory, { requireCurrentInputs: false });
   if (state.status !== 'completed') {
     throw new Error('reference campaign audit requires a completed campaign');
   }
