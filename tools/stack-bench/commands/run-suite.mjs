@@ -31,6 +31,8 @@ import { STACK_ADAPTER_REGISTRY } from '../src/stacks/stack-adapters.mjs';
 import { aggregatePackRuntime, exceededPackBudgets } from '../src/composition/pack-runtime.mjs';
 import { hashAppSource } from '../src/runtime/source-snapshot.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
+import { readBackendLease } from '../src/runtime/backend-lease.mjs';
+import { databaseContainerName } from '../src/stacks/database-containers.mjs';
 import { redactCredentials } from '../src/evidence/diagnostic-sanitizer.mjs';
 import { canonicalDefinitionJson } from '../src/composition/definition-plan.mjs';
 import { sha256 } from '../src/evidence/provenance.mjs';
@@ -109,6 +111,20 @@ export function runGraderChild(argv, output, suiteId, { execute = spawnSync } = 
   }
   if (failure) Object.assign(failure, { stdout, stderr, status: result.status, signal: result.signal });
   return { stdout, stderr, failure, stdoutName, stderrName };
+}
+
+export function databaseContainerForGrading(backend, env = process.env, {
+  readLease = readBackendLease,
+} = {}) {
+  if (!['mongodb', 'postgres'].includes(backend)) return null;
+  const path = String(env.STACK_BENCH_LEASE ?? '').trim();
+  const token = String(env.STACK_BENCH_LEASE_TOKEN ?? '').trim();
+  if (!path && !token) return databaseContainerName(backend, env);
+  if (!path || !token) throw new Error('database grading requires both lease path and lease token');
+  const lease = readLease(path, { token, backend });
+  const container = String(lease.resources?.container?.name ?? '').trim();
+  if (!container) throw new Error(`active ${backend} lease has no database container`);
+  return container;
 }
 
 function parseArgs(argv) {
@@ -471,6 +487,7 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
   // The out-of-band write goes straight to this run's database, with no
   // app code in the loop; only the harness knows which one that is.
   argv.push('--db-name', `stackbench${track.slug ? '_' + track.slug : ''}_run${args.runIndex ?? 0}`);
+  if (args.databaseContainer) argv.push('--database-container', args.databaseContainer);
   if (args.restartSpec) argv.push('--restart-spec', JSON.stringify(args.restartSpec));
   else if (args.restartCmd) argv.push('--restart-cmd', args.restartCmd);
   // The systems criteria run scripts the app itself ships (back-office writes),
@@ -520,6 +537,7 @@ function gradeSuite(args, suite, track, recipeBinding, bundleArtifactId, selecte
 async function main() {
   const startedAt = new Date().toISOString();
   const args = parseArgs(process.argv);
+  args.databaseContainer = databaseContainerForGrading(args.backend);
   const track = loadTrack(args.track);
   const recipeBinding = resolveRecipeRelease(track, args.level, args.recipeTask?.recipe ?? args.recipe);
   if (!recipeBinding && (args.packIds.length || args.checkKeys.length)) {

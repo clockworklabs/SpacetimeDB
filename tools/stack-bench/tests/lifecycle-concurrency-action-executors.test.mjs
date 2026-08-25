@@ -175,6 +175,21 @@ test('database-write feedback preserves the actionable schema error ahead of ter
   assert.match(result.summary, /MISSING/);
 });
 
+test('direct database writes target the container selected by the run lease', async () => {
+  const calls = [];
+  const capability = createDatabaseWriteCapability({
+    backend: 'mongodb',
+    dbName: 'bench',
+    mongoContainer: 'leased-mongodb',
+    expand: value => value,
+    exec: (command, args) => { calls.push([command, args]); return 'OK\n'; },
+  });
+  const result = await run({ do: 'dbSetStock', item: 'Desk Lamp', warehouse: 'East',
+    quantity: 5, settleMs: 0 }, services(new Map(), { databaseWrite: capability }));
+  assert.equal(result.status, 'passed');
+  assert.deepEqual(calls[0][1].slice(0, 2), ['exec', 'leased-mongodb']);
+});
+
 test('offline lifecycle preserves settling time and verifies browser network state', async () => {
   const offlineStates = [];
   const waits = [];

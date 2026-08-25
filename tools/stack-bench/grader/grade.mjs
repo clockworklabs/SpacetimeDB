@@ -116,6 +116,7 @@ function parseArgs(argv) {
       case '--parent-attempt-id': args.parentAttemptId = argv[++i]; break;
       // Which database to write to directly for out-of-band writes.
       case '--db-name': args.dbName = argv[++i]; break;
+      case '--database-container': args.databaseContainer = argv[++i]; break;
       case '--app': args.app = argv[++i]; break;
       case '--media': args.media = argv[++i]; break;
       // Lightweight evidence for otherwise media-free qualification runs.
@@ -482,6 +483,10 @@ function browserActionCapabilities(actors, ctx) {
       backend: ctx.backend,
       spacetime: ctx.spacetime,
       dbName: ctx.dbName,
+      ...(ctx.backend === 'mongodb' && ctx.databaseContainer
+        ? { mongoContainer: ctx.databaseContainer } : {}),
+      ...(ctx.backend === 'postgres' && ctx.databaseContainer
+        ? { postgresContainer: ctx.databaseContainer } : {}),
       expand: value => expand(value, ctx),
     }),
     'named-actions': namedActions,
@@ -852,6 +857,7 @@ async function main() {
   const ctx = { runId, roomName: base => `${base}-${runId}`, restartCmd: args.restartCmd,
     restartSpec: args.restartSpec, url: args.url,
     backend: args.backend, actions, spacetime, dbName: args.dbName,
+    databaseContainer: args.databaseContainer,
     appDir: args.app };
 
   const browser = await chromium.launch({ headless: !args.headed });

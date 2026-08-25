@@ -8,7 +8,8 @@ import { createBoundRecipeTaskRequest } from '../src/composition/recipe-selectio
 import { resolveRecipeRelease } from '../src/composition/recipe-release.mjs';
 import { attachRegressionScope, childFailureDetail, clearPreviousGradeOutputs, findMutationBackups, selectObservationScope,
   applicationFailureTotals, resetFailureOutcome, suitesForRecipe,
-  runGraderChild, verifyReseedProbe, waitForReseedProbe } from '../commands/run-suite.mjs';
+  databaseContainerForGrading, runGraderChild, verifyReseedProbe, waitForReseedProbe }
+  from '../commands/run-suite.mjs';
 import { loadTrack } from '../src/composition/tracks.mjs';
 import { GENERATED_APP_LAYOUT_EXIT_CODE } from '../src/stacks/backend-reset.mjs';
 
@@ -81,6 +82,26 @@ test('grader subprocess output is retained with credentials redacted', () => {
     assert.equal(readFileSync(join(root, result.stderrName), 'utf8'),
       '[redacted credential]\nError: browser closed\n');
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('database grading uses the exact container from the authenticated run lease', () => {
+  const calls = [];
+  const container = databaseContainerForGrading('mongodb', {
+    STACK_BENCH_LEASE: 'private/lease.json',
+    STACK_BENCH_LEASE_TOKEN: 'secret-token',
+  }, {
+    readLease: (path, expected) => {
+      calls.push({ path, expected });
+      return { resources: { container: { name: 'stack-bench-mongodb' } } };
+    },
+  });
+  assert.equal(container, 'stack-bench-mongodb');
+  assert.deepEqual(calls, [{ path: 'private/lease.json',
+    expected: { token: 'secret-token', backend: 'mongodb' } }]);
+  assert.throws(() => databaseContainerForGrading('postgres', {
+    STACK_BENCH_LEASE: 'private/lease.json',
+  }), /both lease path and lease token/);
+  assert.equal(databaseContainerForGrading('spacetime', {}), null);
 });
 
 test('generated layout and restart defects are repairable app failures, not harness failures', () => {
