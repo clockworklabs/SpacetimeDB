@@ -7,7 +7,7 @@ SDK_PATH="$(realpath "$SDK_PATH")"
 STDB_PATH="$SDK_PATH/../.."
 DOTNET_VERSION="${1:-}"
 
-source "$SDK_PATH/tools~/spacetime-command.sh"
+cd "$STDB_PATH"
 
 GLOBAL_JSON_BACKUPS=()
 
@@ -68,5 +68,4 @@ if [ -n "$DOTNET_VERSION" ]; then
     BUILD_OPTIONS+=("--build-options=--dotnet-version $DOTNET_VERSION")
 fi
 
-prepare_spacetime "$STDB_PATH"
-"${SPACETIME[@]}" generate -y -l csharp -o "$STDB_PATH/templates/chat-console-cs/module_bindings" --module-path "$STDB_PATH/templates/chat-console-cs/spacetimedb" "${BUILD_OPTIONS[@]}"
+cargo ci run-spacetime generate -y -l csharp -o "$STDB_PATH/templates/chat-console-cs/module_bindings" --module-path "$STDB_PATH/templates/chat-console-cs/spacetimedb" "${BUILD_OPTIONS[@]}"

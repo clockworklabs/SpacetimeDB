@@ -82,6 +82,13 @@ const COMMANDS: &[Command] = &[
     },
 ];
 
+// Utilities are available as explicit subcommands, but are not run by a bare
+// `cargo ci` invocation.
+const UTILITY_COMMANDS: &[Command] = &[Command {
+    path: &["run-spacetime"],
+    package: "ci-run-spacetime",
+}];
+
 fn print_help() {
     println!("Usage: cargo ci [--skip <COMMAND>...]");
     println!("       cargo ci <COMMAND> [ARGS]...");
@@ -90,11 +97,17 @@ fn print_help() {
     for command in COMMANDS {
         println!("  {}", command.path.join(" "));
     }
+    println!();
+    println!("Utilities:");
+    for command in UTILITY_COMMANDS {
+        println!("  {}", command.path.join(" "));
+    }
 }
 
 fn command_for(args: &[String]) -> Option<(&'static Command, usize)> {
     COMMANDS
         .iter()
+        .chain(UTILITY_COMMANDS)
         .filter_map(|command| {
             args.get(..command.path.len())
                 .is_some_and(|head| head.iter().map(String::as_str).eq(command.path.iter().copied()))

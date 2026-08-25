@@ -1593,16 +1593,17 @@ jobs:
           retention-days: 14
 
   typescript-test:
-    needs: [merge_queue_noop]
+    needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: TypeScript - Tests
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - *find-git-ref
+      - *checkout-sources
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -1612,31 +1613,6 @@ jobs:
       - uses: ./.github/actions/setup-pnpm
         with:
           run_install: true
-
-      # - name: Extract SpacetimeDB branch name from file
-      #   id: extract-branch
-      #   run: |
-      #     # Define the path to the branch file
-      #     BRANCH_FILE=".github/spacetimedb-branch.txt"
-
-      #     # Default to master if file doesn't exist
-      #     if [ ! -f "$BRANCH_FILE" ]; then
-      #       echo "::notice::No SpacetimeDB branch file found, using 'master'"
-      #       echo "branch=master" >> $GITHUB_OUTPUT
-      #       exit 0
-      #     fi
-
-      #     # Read and trim whitespace from the file
-      #     branch=$(cat "$BRANCH_FILE" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-
-      #     # Fallback to master if empty
-      #     if [ -z "$branch" ]; then
-      #       echo "::warning::SpacetimeDB branch file is empty, using 'master'"
-      #       branch="master"
-      #     fi
-
-      #     echo "branch=$branch" >> $GITHUB_OUTPUT
-      #     echo "Using SpacetimeDB branch from file: $branch"
 
       - name: Install Rust toolchain
         uses: dsherret/rust-toolchain-file@v1
@@ -1652,19 +1628,11 @@ jobs:
       - *restore-openssl
       - *configure-cached-openssl
 
-      # - name: Install SpacetimeDB CLI from the local checkout
-      #   run: |
-      #     export CARGO_HOME="$HOME/.cargo"
-      #     echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-      #     cargo install --force --path crates/cli --locked --message-format=short
-      #     cargo install --force --path crates/standalone --locked --message-format=short
-      #     # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-      #     ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
-      #     # Clear any existing information
-      #     spacetime server clear -y
+      - *download-build-artifacts
+      - *extract-build-artifacts
 
       - name: Run TypeScript tests
-        run: cargo ci typescript-test
+        run: cargo ci typescript-test --prebuilt-runtime
 
       - name: Upload timing reports
         if: always()

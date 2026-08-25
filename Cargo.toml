@@ -78,6 +78,7 @@ members = [
   "tools/ci/commands/cli-docs",
   "tools/ci/commands/global-json-policy",
   "tools/ci/commands/publish-checks",
+  "tools/ci/commands/run-spacetime",
   "tools/ci/commands/typescript-test",
   "tools/ci/commands/version-upgrade-check",
   "tools/ci/commands/docs",

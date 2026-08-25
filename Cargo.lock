@@ -971,6 +971,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-run-spacetime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duct",
+]
+
+[[package]]
 name = "ci-smoketest-checks"
 version = "0.1.0"
 

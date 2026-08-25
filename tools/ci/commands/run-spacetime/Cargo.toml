@@ -1,0 +1,11 @@
+[package]
+name = "ci-run-spacetime"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+duct.workspace = true
+
+[lints]
+workspace = true

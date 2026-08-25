@@ -7,7 +7,7 @@ SDK_PATH="$(realpath "$SDK_PATH")"
 STDB_PATH="$SDK_PATH/../.."
 DOTNET_VERSION="${1:-}"
 
-source "$SDK_PATH/tools~/spacetime-command.sh"
+cd "$STDB_PATH"
 
 GLOBAL_JSON_BACKUPS=()
 
@@ -83,7 +83,6 @@ if [ -n "$DOTNET_VERSION" ]; then
     BUILD_OPTIONS+=("--build-options=--dotnet-version $DOTNET_VERSION")
 fi
 
-prepare_spacetime "$STDB_PATH"
-"${SPACETIME[@]}" generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/client/module_bindings" --module-path "$SDK_PATH/examples~/regression-tests/server" "${BUILD_OPTIONS[@]}"
-"${SPACETIME[@]}" generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/republishing/client/module_bindings" --module-path "$SDK_PATH/examples~/regression-tests/republishing/server-republish" "${BUILD_OPTIONS[@]}"
-"${SPACETIME[@]}" generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/procedure-client/module_bindings" --module-path "$STDB_PATH/modules/sdk-test-procedure" "${BUILD_OPTIONS[@]}"
+cargo ci run-spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/client/module_bindings" --module-path "$SDK_PATH/examples~/regression-tests/server" "${BUILD_OPTIONS[@]}"
+cargo ci run-spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/republishing/client/module_bindings" --module-path "$SDK_PATH/examples~/regression-tests/republishing/server-republish" "${BUILD_OPTIONS[@]}"
+cargo ci run-spacetime generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/procedure-client/module_bindings" --module-path "$STDB_PATH/modules/sdk-test-procedure" "${BUILD_OPTIONS[@]}"

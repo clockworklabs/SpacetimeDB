@@ -1,8 +1,14 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Result};
 use duct::{cmd, Expression};
+use std::env;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
+
+pub struct PrebuiltRuntime {
+    pub cli: PathBuf,
+    pub standalone: PathBuf,
+}
 
 pub fn ensure_repo_root() -> Result<()> {
     if !Path::new("Cargo.toml").exists() {
@@ -18,6 +24,31 @@ pub fn repo_root() -> PathBuf {
         .and_then(|p| p.parent())
         .expect("failed to find repo root")
         .to_path_buf()
+}
+
+pub fn require_prebuilt_runtime() -> Result<PrebuiltRuntime> {
+    let target_dir = env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo_root().join("target"));
+    let release_dir = target_dir.join("release");
+    let binary_path = |name: &str| release_dir.join(name).with_extension(env::consts::EXE_EXTENSION);
+    let runtime = PrebuiltRuntime {
+        cli: binary_path("spacetimedb-cli"),
+        standalone: binary_path("spacetimedb-standalone"),
+    };
+
+    for (name, path) in [
+        ("spacetimedb-cli", &runtime.cli),
+        ("spacetimedb-standalone", &runtime.standalone),
+    ] {
+        ensure!(
+            path.is_file(),
+            "--prebuilt-runtime requires {name} at {}",
+            path.display()
+        );
+    }
+
+    Ok(runtime)
 }
 
 pub fn pnpm<I, S>(args: I) -> Expression

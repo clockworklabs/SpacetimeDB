@@ -1,9 +1,8 @@
 #![allow(clippy::disallowed_macros)]
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use ci_common::pnpm;
 use clap::Parser;
 use duct::cmd;
-use std::{env, path::PathBuf};
 
 /// Runs tests
 ///
@@ -17,33 +16,11 @@ struct Cli {
     prebuilt_runtime: bool,
 }
 
-fn runtime_binary_path(binary_name: &str) -> PathBuf {
-    let target_dir = env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| ci_common::repo_root().join("target"));
-    target_dir
-        .join("release")
-        .join(binary_name)
-        .with_extension(env::consts::EXE_EXTENSION)
-}
-
-fn verify_prebuilt_runtime() -> Result<()> {
-    for binary_name in ["spacetimedb-cli", "spacetimedb-standalone"] {
-        let binary_path = runtime_binary_path(binary_name);
-        ensure!(
-            binary_path.is_file(),
-            "--prebuilt-runtime requires {binary_name} at {}",
-            binary_path.display()
-        );
-    }
-    Ok(())
-}
-
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if cli.prebuilt_runtime {
-        verify_prebuilt_runtime()?;
+        ci_common::require_prebuilt_runtime()?;
     }
 
     pnpm(["build"]).dir("crates/bindings-typescript").run()?;
