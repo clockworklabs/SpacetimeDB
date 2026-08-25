@@ -824,47 +824,28 @@ jobs:
           path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
           retention-days: 14
 
-  wasm_bindings:
-    needs: [merge_queue_noop]
+  module_latest_deps:
+    needs: [merge_queue_noop, upload-build-artifacts-linux]
     if: ${{ needs.merge_queue_noop.outputs.skip != 'true' }}
     name: Build and test wasm bindings
     runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       RUST_BACKTRACE: full
+      ARTIFACT_SUFFIX: linux
     steps:
-      - uses: actions/checkout@v3
+      - *find-git-ref
+      - *checkout-sources
 
       - uses: dsherret/rust-toolchain-file@v1
-      - name: Set default rust toolchain
-        run: rustup default $(rustup show active-toolchain | cut -d' ' -f1)
+      - *set-default-rust-toolchain
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
-      - *set-native-cache-keys
-      - *restore-jemalloc
-      - *configure-cached-jemalloc
-      - *restore-zstd
-      - *configure-cached-zstd
-      - *restore-openssl
-      - *configure-cached-openssl
+      - *download-build-artifacts
+      - *extract-build-artifacts
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - uses: ./.github/actions/setup-pnpm
-
-      - name: Run bindgen tests
-        run: cargo ci wasm-bindings
-
-      - name: Upload timing reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cargo-timings-wasm-bindings
-          path: ${{ env.CARGO_TARGET_DIR }}/cargo-timings/
-          retention-days: 14
+      - name: Build module with latest compatible dependencies
+        run: cargo ci module-latest-deps --prebuilt-cli
 
   publish_checks:
     needs: [merge_queue_noop]

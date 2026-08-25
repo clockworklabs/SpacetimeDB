@@ -1,5 +1,5 @@
 [package]
-name = "ci-wasm-bindings"
+name = "ci-module-latest-deps"
 version = "0.1.0"
 edition.workspace = true
 

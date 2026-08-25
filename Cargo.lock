@@ -962,6 +962,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci-module-latest-deps"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ci-common",
+ "clap 4.5.50",
+ "duct",
+]
+
+[[package]]
 name = "ci-publish-checks"
 version = "0.1.0"
 dependencies = [
@@ -1029,16 +1039,6 @@ name = "ci-version-upgrade-check"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap 4.5.50",
- "duct",
-]
-
-[[package]]
-name = "ci-wasm-bindings"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ci-common",
  "clap 4.5.50",
  "duct",
 ]

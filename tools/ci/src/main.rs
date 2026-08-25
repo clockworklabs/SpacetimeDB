@@ -21,8 +21,8 @@ const COMMANDS: &[Command] = &[
         package: "ci-lint",
     },
     Command {
-        path: &["wasm-bindings"],
-        package: "ci-wasm-bindings",
+        path: &["module-latest-deps"],
+        package: "ci-module-latest-deps",
     },
     Command {
         path: &["smoketests"],
