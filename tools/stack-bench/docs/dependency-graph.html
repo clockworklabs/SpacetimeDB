@@ -67,29 +67,12 @@
     margin-bottom: 18px;
   }
 
-  .brand-row { display: flex; align-items: center; gap: 10px; margin-bottom: 17px; }
-  .brand-row svg { width: 24px; height: 22px; }
-  .brand-row span { font: 600 12px/1 var(--mono); letter-spacing: .12em; }
-
-  h1 { margin: 0 0 7px; font-size: 28px; line-height: 1.1; letter-spacing: -.025em; }
+  h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.1; letter-spacing: -.025em; }
   .subtitle { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
-
-  .run-meta {
-    display: flex;
-    align-items: center;
-    gap: 18px;
-    padding-top: 8px;
-    color: var(--muted);
-    font: 11px/1.4 var(--mono);
-  }
-
-  .run-meta strong { color: var(--text); font-weight: 600; }
-  .run-meta i { width: 1px; height: 28px; background: var(--line); }
 
   .toolbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 18px;
     min-height: 52px;
     margin-bottom: 14px;
@@ -105,16 +88,7 @@
   .legend .qualified { background: var(--green); }
   .legend .draft { background: var(--yellow); }
 
-  .toolbar-note { color: var(--dim); font: 10px/1.3 var(--mono); }
-
-  .workspace {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
-    gap: 14px;
-    min-height: 650px;
-  }
-
-  .graph-panel, .details {
+  .graph-panel {
     border: 1px solid var(--line);
     border-radius: 10px;
     background: rgba(11, 17, 16, .96);
@@ -178,12 +152,10 @@
     background: var(--panel-raised);
     color: var(--text);
     text-align: left;
-    cursor: pointer;
+    cursor: default;
   }
 
-  .node:hover, .node.selected { outline: 1px solid rgba(255, 255, 255, .22); outline-offset: 2px; }
-  .node .name { min-width: 0; font: 600 13px/1.25 var(--mono); }
-  .node .id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font: 9px/1.2 var(--mono); }
+  .node .name { min-width: 0; grid-row: 1 / span 2; font: 600 13px/1.25 var(--mono); }
   .node .state { grid-row: 1 / span 2; grid-column: 2; font: 700 13px/1 var(--mono); }
 
   .node.qualified { border-color: #287b55; background: var(--green-bg); }
@@ -191,47 +163,15 @@
   .node.draft { border-color: #766329; background: var(--yellow-bg); }
   .node.draft .state { color: var(--yellow); }
 
-  .details { padding: 21px; }
-  .details-kicker { margin-bottom: 15px; color: var(--green); font: 700 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
-  .details h2 { margin: 0 0 8px; font-size: 21px; line-height: 1.2; }
-  .details-id { margin: 0 0 24px; color: var(--muted); font: 10px/1.4 var(--mono); word-break: break-word; }
-  .detail-row { padding: 14px 0; border-top: 1px solid var(--line); }
-  .detail-row span { display: block; margin-bottom: 7px; color: var(--dim); font: 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
-  .detail-row strong { color: var(--text); font-size: 13px; font-weight: 550; line-height: 1.45; }
-  .detail-row .status { font-family: var(--mono); }
-  .details-help { margin: 24px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
-
-  .summary {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 10px;
-    margin-top: 14px;
-  }
-
-  .summary-item {
-    padding: 15px;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    background: rgba(11, 17, 16, .94);
-  }
-
-  .summary-item span { display: block; margin-bottom: 7px; color: var(--dim); font: 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
-  .summary-item strong { font: 600 16px/1 var(--mono); }
+  .footnote { margin: 14px 2px 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
   @media (max-width: 900px) {
     header { display: block; }
-    .run-meta { margin-top: 18px; }
-    .workspace { grid-template-columns: 1fr; }
-    .details { min-height: 250px; }
-    .summary { grid-template-columns: repeat(3, 1fr); }
   }
 
   @media (max-width: 560px) {
     .shell { padding: 16px; }
-    .run-meta { align-items: flex-start; gap: 10px; }
     .toolbar { display: block; }
-    .toolbar-note { margin-top: 12px; }
-    .summary { grid-template-columns: repeat(2, 1fr); }
   }
 </style>
 </head>
@@ -239,21 +179,8 @@
 <main class="shell">
   <header>
     <div>
-      <div class="brand-row">
-        <svg viewBox="0 0 35 32" aria-hidden="true">
-          <path d="M28.8002 15.317C28.5535 9.53226 29.63 6.19046 35 0L24.2649 10.9106C26.8343 14.2552 26.6051 19.0995 23.5774 22.1767C20.5498 25.2538 15.7834 25.4867 12.4925 22.8754L7.35285 28.1361C9.73784 26.7321 13.4208 27.1349 15.6425 27.3779C16.2579 27.4452 16.7611 27.5003 17.0937 27.5013C20.1371 27.6534 23.2301 26.5483 25.5544 24.186C27.9465 21.7549 29.0284 18.4965 28.8002 15.317Z" fill="#D7D8D9"/>
-          <path d="M17.9063 4.49871C18.2389 4.49971 18.7421 4.55476 19.3575 4.62207C21.5792 4.86508 25.2622 5.26792 27.6472 3.86395L22.5075 9.12462C19.2166 6.51328 14.4502 6.74618 11.4226 9.82332C8.3949 12.9005 8.16574 17.7448 10.7351 21.0894L0 32C5.36996 25.8095 6.44651 22.4677 6.1998 16.683C5.97163 13.5035 7.05355 10.2451 9.44557 7.81402C11.7699 5.45167 14.8629 4.34657 17.9063 4.49871Z" fill="#D7D8D9"/>
-          <path fill-rule="evenodd" clip-rule="evenodd" d="M24.7486 16C24.7486 20.0687 21.5033 23.367 17.5 23.367C13.4967 23.367 10.2514 20.0687 10.2514 16C10.2514 11.9313 13.4967 8.63292 17.5 8.63292C21.5033 8.63292 24.7486 11.9313 24.7486 16ZM17.5 21.6C20.5752 21.6 23.0682 19.0928 23.0682 16C23.0682 12.9072 20.5752 10.4 17.5 10.4C14.4248 10.4 11.9318 12.9072 11.9318 16C11.9318 19.0928 14.4248 21.6 17.5 21.6Z" fill="#D7D8D9"/>
-        </svg>
-        <span>STACK BENCH</span>
-      </div>
-      <h1>Feature dependency graph</h1>
-      <p class="subtitle">Current ecommerce feature modules and the paths that connect them.</p>
-    </div>
-    <div class="run-meta">
-      <span>GRAPH<br><strong>ecommerce draft</strong></span><i></i>
-      <span>LEVELS<br><strong>3</strong></span><i></i>
-      <span>FEATURES<br><strong>13</strong></span>
+      <h1>Ecommerce dependency graph</h1>
+      <p class="subtitle">Six L1 features, three L2 features, and four draft L3 features.</p>
     </div>
   </header>
 
@@ -262,38 +189,15 @@
       <span><i class="qualified"></i>Qualified feature pack</span>
       <span><i class="draft"></i>Draft feature pack</span>
     </div>
-    <div class="toolbar-note">Select a feature to inspect it</div>
   </div>
 
-  <div class="workspace">
-    <section class="graph-panel" aria-label="Feature graph">
-      <div class="graph-canvas" id="graph-canvas">
-        <svg id="edges" aria-hidden="true"></svg>
-        <div class="levels" id="levels"></div>
-      </div>
-    </section>
-
-    <aside class="details" id="details" aria-live="polite">
-      <div class="details-kicker">Feature module</div>
-      <h2 id="detail-name"></h2>
-      <p class="details-id" id="detail-id"></p>
-      <div class="detail-row"><span>Release status</span><strong class="status" id="detail-state"></strong></div>
-      <div class="detail-row"><span>Level</span><strong id="detail-level"></strong></div>
-      <div class="detail-row"><span>Depends on</span><strong id="detail-parents"></strong></div>
-      <div class="detail-row"><span>Feature pack</span><strong id="detail-pack"></strong></div>
-      <div class="detail-row"><span>Product work</span><strong id="detail-scope"></strong></div>
-      <p class="details-help" id="detail-help"></p>
-    </aside>
-  </div>
-
-  <div class="summary" aria-label="Graph summary">
-    <div class="summary-item"><span>L1 features</span><strong>6</strong></div>
-    <div class="summary-item"><span>L2 features</span><strong>3</strong></div>
-    <div class="summary-item"><span>L3 features</span><strong>4</strong></div>
-    <div class="summary-item"><span>Qualified</span><strong>9</strong></div>
-    <div class="summary-item"><span>Draft</span><strong>4</strong></div>
-  </div>
-  <p class="subtitle" style="margin:14px 2px 0">L4 and L5 have product targets, but their feature modules and dependency links are not defined yet.</p>
+  <section class="graph-panel" aria-label="Feature graph">
+    <div class="graph-canvas" id="graph-canvas">
+      <svg id="edges" aria-hidden="true"></svg>
+      <div class="levels" id="levels"></div>
+    </div>
+  </section>
+  <p class="footnote">L4 and L5 do not have defined feature modules or dependency links yet.</p>
 </main>
 
 <script>
@@ -326,34 +230,15 @@
     column.innerHTML = `<div class="level-head"><span>Level ${level}</span><b>${items.length} features</b></div>`;
 
     for (const feature of items) {
-      const node = document.createElement('button');
-      node.type = 'button';
+      const node = document.createElement('div');
       node.className = `node ${feature.state}`;
       node.dataset.id = feature.id;
       node.setAttribute('aria-label', `${feature.name}, ${feature.state}`);
-      node.innerHTML = `<span class="name">${feature.name}</span><span class="id">${feature.id}</span><span class="state" title="${feature.state}">●</span>`;
-      node.addEventListener('click', () => selectFeature(feature.id));
+      node.innerHTML = `<span class="name">${feature.name}</span><span class="state" title="${feature.state}">●</span>`;
       column.appendChild(node);
     }
 
     levels.appendChild(column);
-  }
-
-  function selectFeature(id) {
-    const feature = byId.get(id);
-    if (!feature) return;
-
-    document.querySelectorAll('.node').forEach(node => node.classList.toggle('selected', node.dataset.id === id));
-    document.getElementById('detail-name').textContent = feature.name;
-    document.getElementById('detail-id').textContent = feature.id;
-    document.getElementById('detail-state').textContent = feature.state.toUpperCase();
-    document.getElementById('detail-level').textContent = `Level ${feature.level}`;
-    document.getElementById('detail-parents').textContent = feature.parents.length ? feature.parents.map(parent => byId.get(parent).name).join(', ') : 'None';
-    document.getElementById('detail-pack').textContent = feature.pack;
-    document.getElementById('detail-scope').textContent = feature.scope;
-    document.getElementById('detail-help').textContent = feature.level === 1
-      ? 'This feature starts a product path.'
-      : 'Every listed dependency must pass before this feature opens.';
   }
 
   function drawEdges() {
@@ -380,7 +265,6 @@
 
   addEventListener('resize', drawEdges);
   new ResizeObserver(drawEdges).observe(canvas);
-  selectFeature('returns-pricing');
   drawEdges();
 </script>
 </body>
