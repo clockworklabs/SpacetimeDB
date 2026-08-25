@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "status": "draft",
+  "track": "ecommerce",
+  "level": 3,
+  "name": "Faceted search pagination",
+  "features": [
+    {
+      "id": 402,
+      "name": "Pages are stable",
+      "actors": ["visitor"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "402a",
+          "desc": "moving between pages returns the same ordered items without duplicates",
+          "points": 3,
+          "statedBy": "Moving between pages must not omit or repeat an item",
+          "steps": [
+            { "do": "expectSequence", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "equals": ["Air Purifier", "Bluetooth Speaker", "Coffee Grinder", "Desk Lamp", "Espresso Machine", "Gaming Mouse"] },
+            { "do": "click", "actor": "visitor", "testid": "search-next-page" },
+            { "do": "expectSequence", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "equals": ["Headphones", "Induction Cooktop", "Keyboard", "Laptop Stand", "Mirrorless Camera", "Webcam"] },
+            { "do": "click", "actor": "visitor", "testid": "search-previous-page" },
+            { "do": "expectSequence", "actor": "visitor", "testid": "item-card", "in": { "testid": "search-results" }, "equals": ["Air Purifier", "Bluetooth Speaker", "Coffee Grinder", "Desk Lamp", "Espresso Machine", "Gaming Mouse"] }
+          ]
+        }
+      ]
+    }
+  ]
+}

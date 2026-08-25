@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Ecommerce L1 catalog search",
+  "note": "This scenario owns only the full-catalog search check.",
+  "features": [
+    {
+      "id": 2,
+      "name": "Public catalog search",
+      "actors": ["visitor"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "2d",
+          "desc": "case-insensitive partial search finds an item outside the storefront top ten",
+          "points": 1,
+          "statedBy": "Search matches any part of an item name without regard to case across the full catalog",
+          "steps": [
+            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "mirrorLESS", "enter": true, "settleMs": 1500 },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Mirrorless Camera", "in": { "testid": "search-results" } }
+          ]
+        }
+      ]
+    }
+  ]
+}

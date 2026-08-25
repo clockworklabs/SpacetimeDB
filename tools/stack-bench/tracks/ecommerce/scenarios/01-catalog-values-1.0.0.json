@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "track": "ecommerce",
+  "level": 1,
+  "name": "Ecommerce L1 catalog values",
+  "note": "This scenario owns only the public catalog value check.",
+  "features": [
+    {
+      "id": 2,
+      "name": "Public catalog values",
+      "actors": ["visitor"],
+      "setup": [],
+      "criteria": [
+        {
+          "id": "2a",
+          "desc": "a signed-out visitor sees the seeded item name, price, and total stock",
+          "points": 1,
+          "statedBy": "Each item shows its name, price, and total stock",
+          "steps": [
+            { "do": "fill", "actor": "visitor", "testid": "search-input", "text": "Air Purifier", "enter": true, "settleMs": 1500 },
+            { "do": "expect", "actor": "visitor", "testid": "item-card", "contains": "Air Purifier", "in": { "testid": "search-results" } },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-price", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 189 },
+            { "do": "expectNumber", "actor": "visitor", "testid": "item-stock", "in": { "testid": "item-card", "contains": "Air Purifier" }, "equals": 100 }
+          ]
+        }
+      ]
+    }
+  ]
+}

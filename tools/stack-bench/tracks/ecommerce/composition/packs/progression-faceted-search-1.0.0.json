@@ -11,19 +11,19 @@
     "ecommerce.feature.catalog@1.2.0"
   ],
   "conflictsWith": [],
-  "capabilities": ["browser"],
+  "capabilities": ["browser", "direct-database-write"],
   "evidence": ["browser-observation"],
   "budget": { "status": "bounded", "maxRuntimeMs": 60000 },
   "task": {
     "requirements": [
-      { "id": "ecommerce.progression.faceted-search", "path": "prompts/modular/progression-features-1.0.0.md", "order": 4000, "from": "## Faceted search", "until": "## Personalized recommendations", "modes": ["upgrade"] }
+      { "id": "ecommerce.progression.faceted-search", "path": "prompts/modular/faceted-search-1.0.0.md", "order": 4000, "modes": ["upgrade"] }
     ],
     "contracts": [
-      { "id": "ecommerce.progression.faceted-search-hooks", "path": "contracts/progression-hooks-1.0.md", "order": 4900, "from": "## Faceted search hooks", "until": "## Personalized recommendation hooks", "modes": ["upgrade"] }
+      { "id": "ecommerce.progression.faceted-search-hooks", "path": "contracts/faceted-search-1.0.md", "order": 4900, "modes": ["upgrade"] }
     ]
   },
   "checks": [
-    { "id": "filters", "stableId": "faceted-search", "source": "scenarios/progression-faceted-search-1.0.0.json", "feature": 401, "role": "feature" },
-    { "id": "pagination", "stableId": "faceted-search", "source": "scenarios/progression-faceted-search-1.0.0.json", "feature": 402, "role": "feature" }
+    { "id": "filters", "stableId": "faceted-search", "source": "scenarios/progression-faceted-filters-1.0.0.json", "feature": 401, "criteria": ["401a"], "role": "feature" },
+    { "id": "pagination", "stableId": "faceted-search", "source": "scenarios/progression-faceted-pagination-1.0.0.json", "feature": 402, "criteria": ["402a"], "role": "feature" }
   ]
 }
